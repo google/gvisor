@@ -1,0 +1,331 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package gofer
+
+import (
+	"fmt"
+	"syscall"
+
+	"gvisor.googlesource.com/gvisor/pkg/p9"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
+)
+
+// Lookup loads an Inode at name into a Dirent based on the session's cache
+// policy.
+func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
+	if i.session().cachePolicy != cacheNone {
+		// Check to see if we have readdirCache that indicates the
+		// child does not exist.  Avoid holding readdirMu longer than
+		// we need to.
+		i.readdirMu.Lock()
+		if i.readdirCache != nil && !i.readdirCache.Contains(name) {
+			// No such child.  Return a negative dirent.
+			i.readdirMu.Unlock()
+			return fs.NewNegativeDirent(name), nil
+		}
+		i.readdirMu.Unlock()
+	}
+
+	// Get a p9.File for name.
+	qids, newFile, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
+	if err != nil {
+		if err == syscall.ENOENT {
+			if i.session().cachePolicy != cacheNone {
+				// Return a negative Dirent. It will stay cached until something
+				// is created over it.
+				return fs.NewNegativeDirent(name), nil
+			}
+			return nil, syserror.ENOENT
+		}
+		return nil, err
+	}
+
+	// Construct the Inode operations.
+	sattr, node := newInodeOperations(ctx, i.fileState.s, newFile, qids[0], mask, p9attr)
+
+	// Construct a positive Dirent.
+	return fs.NewDirent(fs.NewInode(node, dir.MountSource, sattr), name), nil
+}
+
+// Creates a new Inode at name and returns its File based on the session's cache policy.
+//
+// Ownership is currently ignored.
+func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perm fs.FilePermissions) (*fs.File, error) {
+	// Create replaces the directory fid with the newly created/opened
+	// file, so clone this directory so it doesn't change out from under
+	// this node.
+	_, newFile, err := i.fileState.file.walk(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map the FileFlags to p9 OpenFlags.
+	var openFlags p9.OpenFlags
+	switch {
+	case flags.Read && flags.Write:
+		openFlags = p9.ReadWrite
+	case flags.Read:
+		openFlags = p9.ReadOnly
+	case flags.Write:
+		openFlags = p9.WriteOnly
+	default:
+		panic(fmt.Sprintf("Create called with unknown or unset open flags: %v", flags))
+	}
+
+	owner := fs.FileOwnerFromContext(ctx)
+	hostFile, err := newFile.create(ctx, name, openFlags, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	if err != nil {
+		// Could not create the file.
+		return nil, err
+	}
+
+	i.touchModificationTime(ctx)
+
+	// Get the attributes of the file.
+	qid, mask, p9attr, err := getattr(ctx, newFile)
+	if err != nil {
+		newFile.close(ctx)
+		return nil, err
+	}
+
+	// Get an unopened p9.File for the file we created so that it can be
+	// cloned and re-opened multiple times after creation.
+	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
+	if err != nil {
+		newFile.close(ctx)
+		return nil, err
+	}
+
+	// Construct the InodeOperations.
+	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr)
+
+	// Construct the positive Dirent.
+	d := fs.NewDirent(fs.NewInode(iops, dir.MountSource, sattr), name)
+	defer d.DecRef()
+
+	// Construct the new file, caching the handles if allowed.
+	h := &handles{
+		File: newFile,
+		Host: hostFile,
+	}
+	if isFileCachable(iops.session(), d.Inode) {
+		iops.fileState.setHandlesForCachedIO(flags, h)
+	}
+	return NewFile(ctx, d, flags, iops, h), nil
+}
+
+// CreateLink uses Create to create a symlink between oldname and newname.
+func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname string, newname string) error {
+	owner := fs.FileOwnerFromContext(ctx)
+	if _, err := i.fileState.file.symlink(ctx, oldname, newname, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
+		return err
+	}
+	i.touchModificationTime(ctx)
+	return nil
+}
+
+// CreateHardLink implements InodeOperations.CreateHardLink.
+func (i *inodeOperations) CreateHardLink(ctx context.Context, _ *fs.Inode, target *fs.Inode, newName string) error {
+	targetOpts, ok := target.InodeOperations.(*inodeOperations)
+	if !ok {
+		return syscall.EXDEV
+	}
+
+	if err := i.fileState.file.link(ctx, &targetOpts.fileState.file, newName); err != nil {
+		return err
+	}
+	// TODO: Don't increase link count because we can't properly accounts for links
+	// with gofers.
+	i.touchModificationTime(ctx)
+	return nil
+}
+
+// CreateDirectory uses Create to create a directory named s under inodeOperations.
+func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s string, perm fs.FilePermissions) error {
+	owner := fs.FileOwnerFromContext(ctx)
+	if _, err := i.fileState.file.mkdir(ctx, s, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
+		return err
+	}
+	if i.session().cachePolicy == cacheAll {
+		// Increase link count.
+		i.cachingInodeOps.IncLinks(ctx)
+
+		// Invalidate readdir cache.
+		i.markDirectoryDirty()
+	}
+	return nil
+}
+
+// Bind implements InodeOperations.
+func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, ep unix.BoundEndpoint, perm fs.FilePermissions) error {
+	if i.session().endpoints == nil {
+		return syscall.EOPNOTSUPP
+	}
+
+	// Create replaces the directory fid with the newly created/opened
+	// file, so clone this directory so it doesn't change out from under
+	// this node.
+	_, newFile, err := i.fileState.file.walk(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	// Stabilize the endpoint map while creation is in progress.
+	unlock := i.session().endpoints.lock()
+	defer unlock()
+
+	// Create a regular file in the gofer and then mark it as a socket by
+	// adding this inode key in the 'endpoints' map.
+	owner := fs.FileOwnerFromContext(ctx)
+	hostFile, err := newFile.create(ctx, name, p9.ReadWrite, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
+	if err != nil {
+		return err
+	}
+	// We're not going to use this file.
+	hostFile.Close()
+
+	i.touchModificationTime(ctx)
+
+	// Get the attributes of the file to create inode key.
+	qid, _, attr, err := getattr(ctx, newFile)
+	if err != nil {
+		newFile.close(ctx)
+		return err
+	}
+
+	key := device.MultiDeviceKey{
+		Device:          attr.RDev,
+		SecondaryDevice: i.session().connID,
+		Inode:           qid.Path,
+	}
+	i.session().endpoints.add(key, ep)
+
+	return nil
+}
+
+// CreateFifo implements fs.InodeOperations.CreateFifo. Gofer nodes do not support the
+// creation of fifos and always returns EOPNOTSUPP.
+func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
+	return syscall.EOPNOTSUPP
+}
+
+// Remove implements InodeOperations.Remove.
+func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string) error {
+	var key device.MultiDeviceKey
+	removeSocket := false
+	if i.session().endpoints != nil {
+		// Find out if file being deleted is a socket that needs to be
+		// removed from endpoint map.
+		if d, err := i.Lookup(ctx, dir, name); err == nil {
+			defer d.DecRef()
+			if fs.IsSocket(d.Inode.StableAttr) {
+				child := d.Inode.InodeOperations.(*inodeOperations)
+				key = child.fileState.key
+				removeSocket = true
+
+				// Stabilize the endpoint map while deletion is in progress.
+				unlock := i.session().endpoints.lock()
+				defer unlock()
+			}
+		}
+	}
+
+	if err := i.fileState.file.unlinkAt(ctx, name, 0); err != nil {
+		return err
+	}
+	if removeSocket {
+		i.session().endpoints.remove(key)
+	}
+	i.touchModificationTime(ctx)
+
+	return nil
+}
+
+// Remove implements InodeOperations.RemoveDirectory.
+func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, name string) error {
+	// 0x200 = AT_REMOVEDIR.
+	if err := i.fileState.file.unlinkAt(ctx, name, 0x200); err != nil {
+		return err
+	}
+	if i.session().cachePolicy == cacheAll {
+		// Decrease link count and updates atime.
+		i.cachingInodeOps.DecLinks(ctx)
+
+		// Invalidate readdir cache.
+		i.markDirectoryDirty()
+	}
+	return nil
+}
+
+// Rename renames this node.
+func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
+	// Unwrap the new parent to a *inodeOperations.
+	newParentInodeOperations, ok := newParent.InodeOperations.(*inodeOperations)
+	if !ok {
+		return syscall.EXDEV
+	}
+
+	// Unwrap the old parent to a *inodeOperations.
+	oldParentInodeOperations, ok := oldParent.InodeOperations.(*inodeOperations)
+	if !ok {
+		return syscall.EXDEV
+	}
+
+	// Do the rename.
+	if err := i.fileState.file.rename(ctx, newParentInodeOperations.fileState.file, newName); err != nil {
+		return err
+	}
+
+	// Update cached state.
+	if i.session().cachePolicy == cacheAll {
+		// Is the renamed entity a directory? Fix link counts.
+		if fs.IsDir(i.fileState.sattr) {
+			oldParentInodeOperations.cachingInodeOps.DecLinks(ctx)
+			newParentInodeOperations.cachingInodeOps.IncLinks(ctx)
+		}
+
+		// Mark old directory dirty.
+		oldParentInodeOperations.markDirectoryDirty()
+		if oldParent != newParent {
+			// Mark new directory dirty.
+			newParentInodeOperations.markDirectoryDirty()
+		}
+	}
+	return nil
+}
+
+func (i *inodeOperations) touchModificationTime(ctx context.Context) {
+	if i.session().cachePolicy == cacheAll {
+		i.cachingInodeOps.TouchModificationTime(ctx)
+
+		// Invalidate readdir cache.
+		i.markDirectoryDirty()
+	}
+}
+
+// markDirectoryDirty marks any cached data dirty for this directory. This is necessary in order
+// to ensure that this node does not retain stale state throughout its lifetime across multiple
+// open directory handles.
+//
+// Currently this means invalidating any readdir caches.
+func (i *inodeOperations) markDirectoryDirty() {
+	i.readdirMu.Lock()
+	defer i.readdirMu.Unlock()
+	i.readdirCache = nil
+}

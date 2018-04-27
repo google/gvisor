@@ -1,0 +1,385 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package fs
+
+import (
+	"errors"
+
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
+)
+
+var (
+	// ErrResolveViaReadlink is a special error value returned by
+	// InodeOperations.Getlink() to indicate that a link should be
+	// resolved automatically by walking to the path returned by
+	// InodeOperations.Readlink().
+	ErrResolveViaReadlink = errors.New("link should be resolved via Readlink()")
+)
+
+// TimeSpec contains access and modification timestamps. If either ATimeOmit or
+// MTimeOmit is true, then the corresponding timestamp should not be updated.
+// If either ATimeSetSystemTime or MTimeSetSystemTime are set then the
+// corresponding timestamp should be ignored and the time will be set to the
+// current system time.
+type TimeSpec struct {
+	ATime              ktime.Time
+	ATimeOmit          bool
+	ATimeSetSystemTime bool
+	MTime              ktime.Time
+	MTimeOmit          bool
+	MTimeSetSystemTime bool
+}
+
+// InodeOperations are operations on an Inode that diverge per file system.
+//
+// Objects that implement InodeOperations may cache file system "private"
+// data that is useful for implementing these methods. In contrast, Inode
+// contains state that is common to all Inodes; this state may be optionally
+// used by InodeOperations. An object that implements InodeOperations may
+// not take a reference on an Inode.
+type InodeOperations interface {
+	// Release releases all private file system data held by this object.
+	// Once Release is called, this object is dead (no other methods will
+	// ever be called).
+	Release(context.Context)
+
+	// Lookup loads an Inode at name under dir into a Dirent. The name
+	// is a valid component path: it contains no "/"s nor is the empty
+	// string.
+	//
+	// Lookup may return one of:
+	//
+	// * A nil Dirent and a non-nil error. If the reason that Lookup failed
+	//   was because the name does not exist under Inode, then must return
+	//   syserror.ENOENT.
+	//
+	// * If name does not exist under dir and the file system wishes this
+	//   fact to be cached, a non-nil Dirent containing a nil Inode and a
+	//   nil error. This is a negative Dirent and must have exactly one
+	//   reference (at-construction reference).
+	//
+	// * If name does exist under this dir, a non-nil Dirent containing a
+	//   non-nil Inode, and a nil error. File systems that take extra
+	//   references on this Dirent should implement DirentOperations.
+	Lookup(ctx context.Context, dir *Inode, name string) (*Dirent, error)
+
+	// Create creates an Inode at name under dir and returns a new File
+	// whose Dirent backs the new Inode. Implementations must ensure that
+	// name does not already exist. Create may return one of:
+	//
+	// * A nil File and a non-nil error.
+	//
+	// * A non-nil File and a nil error. File.Dirent will be a new Dirent,
+	// with a single reference held by File. File systems that take extra
+	// references on this Dirent should implement DirentOperations.
+	//
+	// The caller must ensure that this operation is permitted.
+	Create(ctx context.Context, dir *Inode, name string, flags FileFlags, perm FilePermissions) (*File, error)
+
+	// CreateDirectory creates a new directory under this dir.
+	// CreateDirectory should otherwise do the same as Create.
+	//
+	// The caller must ensure that this operation is permitted.
+	CreateDirectory(ctx context.Context, dir *Inode, name string, perm FilePermissions) error
+
+	// CreateLink creates a symbolic link under dir between newname
+	// and oldname. CreateLink should otherwise do the same as Create.
+	//
+	// The caller must ensure that this operation is permitted.
+	CreateLink(ctx context.Context, dir *Inode, oldname string, newname string) error
+
+	// CreateHardLink creates a hard link under dir between the target
+	// Inode and name. Implementations must ensure that name does not
+	// already exist.
+	//
+	// The caller must ensure this operation is permitted.
+	CreateHardLink(ctx context.Context, dir *Inode, target *Inode, name string) error
+
+	// CreateFifo creates a new named pipe under dir at name.
+	// Implementations must ensure that an Inode at name does not
+	// already exist.
+	//
+	// The caller must ensure that this operation is permitted.
+	CreateFifo(ctx context.Context, dir *Inode, name string, perm FilePermissions) error
+
+	// Remove removes the given named non-directory under dir.
+	//
+	// The caller must ensure that this operation is permitted.
+	//
+	// TODO: merge Remove and RemoveDirectory, Remove
+	// just needs a type flag.
+	Remove(ctx context.Context, dir *Inode, name string) error
+
+	// RemoveDirectory removes the given named directory under dir.
+	//
+	// The caller must ensure that this operation is permitted.
+	//
+	// RemoveDirectory should check that the directory to be
+	// removed is empty.
+	RemoveDirectory(ctx context.Context, dir *Inode, name string) error
+
+	// Rename atomically renames oldName under oldParent to newName
+	// under newParent where oldParent and newParent are directories.
+	//
+	// Implementations are responsible for rejecting renames that
+	// replace non-empty directories.
+	Rename(ctx context.Context, oldParent *Inode, oldName string, newParent *Inode, newName string) error
+
+	// Bind binds a new socket under dir at the given name.
+	// Implementations must ensure that name does not already exist.
+	//
+	// The caller must ensure that this operation is permitted.
+	Bind(ctx context.Context, dir *Inode, name string, data unix.BoundEndpoint, perm FilePermissions) error
+
+	// BoundEndpoint returns the socket endpoint at path stored in
+	// or generated by an Inode.
+	//
+	// The path is only relevant for generated endpoint because stored
+	// endpoints already know their path. It is ok for the endpoint to
+	// hold onto their path because the only way to change a bind
+	// address is to rebind the socket.
+	//
+	// This is valid iff the type of the Inode is a Socket, which
+	// generally implies that this Inode was created via CreateSocket.
+	//
+	// If there is no socket endpoint available, nil will be returned.
+	BoundEndpoint(inode *Inode, path string) unix.BoundEndpoint
+
+	// GetFile returns a new open File backed by a Dirent and FileFlags.
+	// It may block as long as it is done with ctx.
+	//
+	// The returned File will uniquely back an application fd.
+	GetFile(ctx context.Context, d *Dirent, flags FileFlags) (*File, error)
+
+	// UnstableAttr returns the most up-to-date "unstable" attributes of
+	// an Inode, where "unstable" means that they change in response to
+	// file system events.
+	UnstableAttr(ctx context.Context, inode *Inode) (UnstableAttr, error)
+
+	// Getxattr retrieves the value of extended attribute name. Inodes that
+	// do not support extended attributes return EOPNOTSUPP. Inodes that
+	// support extended attributes but don't have a value at name return
+	// ENODATA.
+	Getxattr(inode *Inode, name string) ([]byte, error)
+
+	// Setxattr sets the value of extended attribute name. Inodes that
+	// do not support extended attributes return EOPNOTSUPP.
+	Setxattr(inode *Inode, name string, value []byte) error
+
+	// Listxattr returns the set of all extended attributes names that
+	// have values. Inodes that do not support extended attributes return
+	// EOPNOTSUPP.
+	Listxattr(inode *Inode) (map[string]struct{}, error)
+
+	// Check determines whether an Inode can be accessed with the
+	// requested permission mask using the context (which gives access
+	// to Credentials and UserNamespace).
+	Check(ctx context.Context, inode *Inode, p PermMask) bool
+
+	// SetPermissions sets new permissions for an Inode.  Returns false
+	// if it was not possible to set the new permissions.
+	//
+	// The caller must ensure that this operation is permitted.
+	SetPermissions(ctx context.Context, inode *Inode, f FilePermissions) bool
+
+	// SetOwner sets the ownership for this file.
+	//
+	// If either UID or GID are set to auth.NoID, its value will not be
+	// changed.
+	//
+	// The caller must ensure that this operation is permitted.
+	SetOwner(ctx context.Context, inode *Inode, owner FileOwner) error
+
+	// SetTimestamps sets the access and modification timestamps of an
+	// Inode according to the access and modification times in the TimeSpec.
+	//
+	// If either ATimeOmit or MTimeOmit is set, then the corresponding
+	// timestamp is not updated.
+	//
+	// If either ATimeSetSystemTime or MTimeSetSystemTime is true, that
+	// timestamp is set to the current time instead.
+	//
+	// The caller must ensure that this operation is permitted.
+	SetTimestamps(ctx context.Context, inode *Inode, ts TimeSpec) error
+
+	// Truncate changes the size of an Inode. Truncate should not check
+	// permissions internally, as it is used for both sys_truncate and
+	// sys_ftruncate.
+	//
+	// Implementations need not check that length >= 0.
+	Truncate(ctx context.Context, inode *Inode, size int64) error
+
+	// WriteOut writes cached Inode state to a backing filesystem in a
+	// synchronous manner.
+	//
+	// File systems that do not cache metadata or data via an Inode
+	// implement WriteOut as a no-op. File systems that are entirely in
+	// memory also implement WriteOut as a no-op. Otherwise file systems
+	// call Inode.Sync to write back page cached data and cached metadata
+	// followed by syncing writeback handles.
+	//
+	// It derives from include/linux/fs.h:super_operations->write_inode.
+	WriteOut(ctx context.Context, inode *Inode) error
+
+	// Readlink reads the symlink path of an Inode.
+	//
+	// Readlink is permitted to return a different path depending on ctx,
+	// the request originator.
+	//
+	// The caller must ensure that this operation is permitted.
+	//
+	// Readlink should check that Inode is a symlink and its content is
+	// at least readable.
+	Readlink(ctx context.Context, inode *Inode) (string, error)
+
+	// Getlink resolves a symlink to a target *Dirent.
+	//
+	// Filesystems that can resolve the link by walking to the path returned
+	// by Readlink should return (nil, ErrResolveViaReadlink), which
+	// triggers link resolution via Realink and Lookup.
+	//
+	// Some links cannot be followed by Lookup. In this case, Getlink can
+	// return the Dirent of the link target. The caller holds a reference
+	// to the Dirent. Filesystems that return a non-nil *Dirent from Getlink
+	// cannot participate in an overlay because it is impossible for the
+	// overlay to ascertain whether or not the *Dirent should contain an
+	// overlayEntry.
+	//
+	// Any error returned from Getlink other than ErrResolveViaReadlink
+	// indicates the caller's inability to traverse this Inode as a link
+	// (e.g. syserror.ENOLINK indicates that the Inode is not a link,
+	// syscall.EPERM indicates that traversing the link is not allowed, etc).
+	Getlink(context.Context, *Inode) (*Dirent, error)
+
+	// Mappable returns a memmap.Mappable that provides memory mappings of the
+	// Inode's data. Mappable may return nil if this is not supported. The
+	// returned Mappable must remain valid until InodeOperations.Release is
+	// called.
+	Mappable(*Inode) memmap.Mappable
+
+	// The below methods require cleanup.
+
+	// AddLink increments the hard link count of an Inode.
+	//
+	// Remove in favor of Inode.IncLink.
+	AddLink()
+
+	// DropLink decrements the hard link count of an Inode.
+	//
+	// Remove in favor of Inode.DecLink.
+	DropLink()
+
+	// NotifyStatusChange sets the status change time to the current time.
+	//
+	// Remove in favor of updating the Inode's cached status change time.
+	NotifyStatusChange(ctx context.Context)
+
+	// IsVirtual indicates whether or not this corresponds to a virtual
+	// resource.
+	//
+	// If IsVirtual returns true, then caching will be disabled for this
+	// node, and fs.Dirent.Freeze() will not stop operations on the node.
+	//
+	// Remove in favor of freezing specific mounts.
+	IsVirtual() bool
+
+	// StatFS returns a filesystem Info implementation or an error.  If
+	// the filesystem does not support this operation (maybe in the future
+	// it will), then ENOSYS should be returned.
+	//
+	// Move to MountSourceOperations.
+	StatFS(context.Context) (Info, error)
+
+	HandleOperations
+}
+
+// HandleOperations are extended InodeOperations that are only implemented
+// for file systems that use fs/handle.go:Handle to generate open Files.
+//
+// Handle is deprecated; these methods are deprecated as well.
+//
+// Filesystems are encouraged to implement the File interface directly
+// instead of using Handle. To indicate that the below methods should never
+// be called, embed DeprecatedFileOperations to satisfy this interface.
+type HandleOperations interface {
+	waiter.Waitable
+
+	// DeprecatedPreadv is deprecated in favor of filesystems
+	// implementing File.Preadv directly.
+	//
+	// DeprecatedPreadv reads up to dst.NumBytes() bytes into dst, starting at
+	// the given offset, and returns the number of bytes read.
+	//
+	// Preadv may return a partial read result before EOF is reached.
+	//
+	// If a symlink, Preadv reads the target value of the symlink.
+	//
+	// Preadv should not check for readable permissions.
+	DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error)
+
+	// DeprecatedPwritev is deprecated in favor of filesystems
+	// implementing File.Pwritev directly.
+	//
+	// DeprecatedPwritev writes up to src.NumBytes() bytes from src to the
+	// Inode, starting at the given offset and returns the number of bytes
+	// written.
+	//
+	// Pwritev should not check that the Inode has writable permissions.
+	DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error)
+
+	// DeprecatedReaddir is deprecated in favor of filesystems
+	// implementing File.Readdir directly.
+	//
+	// DeprecatedReaddir emits directory entries by calling dirCtx.EmitDir,
+	// beginning with the entry at offset.
+	//
+	// Entries for "." and ".." must *not* be included.
+	//
+	// If the offset returned is the same as the argument offset, then
+	// nothing has been serialized.  This is equivalent to reaching EOF.
+	// In this case serializer.Written() should return 0.
+	//
+	// The order of entries to emit must be consistent between Readdir
+	// calls, and must start with the given offset.
+	//
+	// The caller must ensure that this operation is permitted.
+	DeprecatedReaddir(ctx context.Context, dirCtx *DirCtx, offset int) (int, error)
+
+	// DeprecatedFsync is deprecated in favor of filesystems implementing
+	// File.Fsync directly.
+	//
+	// DeprecatedFsync syncs a file.
+	DeprecatedFsync() error
+
+	// DeprecatedMappable is deprecated in favor of filesystems implementing
+	// File.Mappable directly.
+	//
+	// DeprecatedMappable returns a Mappable if the Inode can be mapped.
+	DeprecatedMappable(ctx context.Context, inode *Inode) (memmap.Mappable, bool)
+
+	// DeprecatedFlush is deprecated in favor of filesystems implementing
+	// File.Flush directly.
+	//
+	// DeprecatedFlush flushes a file.
+	//
+	// Implementations may choose to free up memory or complete pending I/O
+	// but also may implement Flush as a no-op.
+	DeprecatedFlush() error
+}

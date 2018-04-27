@@ -1,0 +1,140 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor.state.statefile;
+
+// Slice is a slice value.
+message Slice {
+  uint32 length    = 1;
+  uint32 capacity  = 2;
+  uint64 ref_value = 3;
+}
+
+// Array is an array value.
+message Array {
+  repeated Object contents = 1;
+}
+
+// Map is a map value.
+message Map {
+  repeated Object keys   = 1;
+  repeated Object values = 2;
+}
+
+// Interface is an interface value.
+message Interface {
+  string type  = 1;
+  Object value = 2;
+}
+
+// Struct is a basic composite value.
+message Struct {
+  repeated Field fields = 1;
+}
+
+// Field encodes a single field.
+message Field {
+  string name  = 1;
+  Object value = 2;
+}
+
+// Uint16s encodes an uint16 array. To be used inside oneof structure.
+message Uint16s {
+  // There is no 16-bit type in protobuf so we use variable length 32-bit here.
+  repeated uint32 values = 1;
+}
+
+// Uint32s encodes an uint32 array. To be used inside oneof structure.
+message Uint32s {
+  repeated fixed32 values = 1;
+}
+
+// Uint64s encodes an uint64 array. To be used inside oneof structure.
+message Uint64s {
+  repeated fixed64 values = 1;
+}
+
+// Uintptrs encodes an uintptr array. To be used inside oneof structure.
+message Uintptrs {
+  repeated fixed64 values = 1;
+}
+
+// Int8s encodes an int8 array. To be used inside oneof structure.
+message Int8s {
+  bytes values = 1;
+}
+
+// Int16s encodes an int16 array. To be used inside oneof structure.
+message Int16s {
+  // There is no 16-bit type in protobuf so we use variable length 32-bit here.
+  repeated int32 values = 1;
+}
+
+// Int32s encodes an int32 array. To be used inside oneof structure.
+message Int32s {
+  repeated sfixed32 values = 1;
+}
+
+// Int64s encodes an int64 array. To be used inside oneof structure.
+message Int64s {
+  repeated sfixed64 values = 1;
+}
+
+// Bools encodes a boolean array. To be used inside oneof structure.
+message Bools {
+  repeated bool values = 1;
+}
+
+// Float64s encodes a float64 array. To be used inside oneof structure.
+message Float64s {
+  repeated double values = 1;
+}
+
+// Float32s encodes a float32 array. To be used inside oneof structure.
+message Float32s {
+  repeated float values = 1;
+}
+
+// Object are primitive encodings.
+//
+// Note that ref_value references an Object.id, below.
+message Object {
+  oneof value {
+    bool      bool_value          = 1;
+    string    string_value        = 2;
+    int64     int64_value         = 3;
+    uint64    uint64_value        = 4;
+    double    double_value        = 5;
+    uint64    ref_value           = 6;
+    Slice     slice_value         = 7;
+    Array     array_value         = 8;
+    Interface interface_value     = 9;
+    Struct    struct_value        = 10;
+    Map       map_value           = 11;
+    bytes     byte_array_value    = 12;
+    Uint16s   uint16_array_value  = 13;
+    Uint32s   uint32_array_value  = 14;
+    Uint64s   uint64_array_value  = 15;
+    Uintptrs  uintptr_array_value = 16;
+    Int8s     int8_array_value    = 17;
+    Int16s    int16_array_value   = 18;
+    Int32s    int32_array_value   = 19;
+    Int64s    int64_array_value   = 20;
+    Bools     bool_array_value    = 21;
+    Float64s  float64_array_value = 22;
+    Float32s  float32_array_value = 23;
+  }
+}

@@ -1,0 +1,99 @@
+digraph {
+  subgraph {
+    App;
+  }
+  subgraph {
+    Interrupt;
+    InterruptAfterSignalDeliveryStop;
+  }
+  subgraph {
+    Syscall;
+    SyscallAfterPtraceEventSeccomp;
+    SyscallEnter;
+    SyscallAfterSyscallEnterStop;
+    SyscallAfterSysemuStop;
+    SyscallInvoke;
+    SyscallAfterPtraceEventClone;
+    SyscallAfterExecStop;
+    SyscallAfterVforkStop;
+    SyscallReinvoke;
+    SyscallExit;
+  }
+  subgraph {
+    Vsyscall;
+    VsyscallAfterPtraceEventSeccomp;
+    VsyscallInvoke;
+  }
+  subgraph {
+    Exit;
+    ExitMain; // leave thread group, release resources, reparent children, kill PID namespace and wait if TGID 1
+    ExitNotify; // signal parent/tracer, become waitable
+    ExitDone; // represented by t.runState == nil
+  }
+
+  // Task exit
+  Exit -> ExitMain;
+  ExitMain -> ExitNotify;
+  ExitNotify -> ExitDone;
+
+  // Execution of untrusted application code
+  App -> App;
+
+  // Interrupts (usually signal delivery)
+  App -> Interrupt;
+  Interrupt -> Interrupt; // if other interrupt conditions may still apply
+  Interrupt -> Exit; // if killed
+
+  // Syscalls
+  App -> Syscall;
+  Syscall -> SyscallEnter;
+  SyscallEnter -> SyscallInvoke;
+  SyscallInvoke -> SyscallExit;
+  SyscallExit -> App;
+
+  // exit, exit_group
+  SyscallInvoke -> Exit;
+
+  // execve
+  SyscallInvoke -> SyscallAfterExecStop;
+  SyscallAfterExecStop -> SyscallExit;
+  SyscallAfterExecStop -> App; // fatal signal pending
+
+  // vfork
+  SyscallInvoke -> SyscallAfterVforkStop;
+  SyscallAfterVforkStop -> SyscallExit;
+
+  // Vsyscalls
+  App -> Vsyscall;
+  Vsyscall -> VsyscallInvoke;
+  Vsyscall -> App; // fault while reading return address from stack
+  VsyscallInvoke -> App;
+
+  // ptrace-specific branches
+  Interrupt -> InterruptAfterSignalDeliveryStop;
+  InterruptAfterSignalDeliveryStop -> Interrupt;
+  SyscallEnter -> SyscallAfterSyscallEnterStop;
+  SyscallAfterSyscallEnterStop -> SyscallInvoke;
+  SyscallAfterSyscallEnterStop -> SyscallExit; // skipped by tracer
+  SyscallAfterSyscallEnterStop -> App; // fatal signal pending
+  SyscallEnter -> SyscallAfterSysemuStop;
+  SyscallAfterSysemuStop -> SyscallExit;
+  SyscallAfterSysemuStop -> App; // fatal signal pending
+  SyscallInvoke -> SyscallAfterPtraceEventClone;
+  SyscallAfterPtraceEventClone -> SyscallExit;
+  SyscallAfterPtraceEventClone -> SyscallAfterVforkStop;
+
+  // seccomp
+  Syscall -> App; // SECCOMP_RET_TRAP, SECCOMP_RET_ERRNO, SECCOMP_RET_KILL, SECCOMP_RET_TRACE without tracer
+  Syscall -> SyscallAfterPtraceEventSeccomp; // SECCOMP_RET_TRACE
+  SyscallAfterPtraceEventSeccomp -> SyscallEnter;
+  SyscallAfterPtraceEventSeccomp -> SyscallExit; // skipped by tracer
+  SyscallAfterPtraceEventSeccomp -> App; // fatal signal pending
+  Vsyscall -> VsyscallAfterPtraceEventSeccomp;
+  VsyscallAfterPtraceEventSeccomp -> VsyscallInvoke;
+  VsyscallAfterPtraceEventSeccomp -> App;
+
+  // Autosave
+  SyscallInvoke -> SyscallReinvoke;
+  SyscallReinvoke -> SyscallInvoke;
+}

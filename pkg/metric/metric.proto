@@ -1,0 +1,68 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor;
+
+// MetricMetadata contains all of the metadata describing a single metric.
+message MetricMetadata {
+  // name is the unique name of the metric, usually in a "directory" format
+  // (e.g., /foo/count).
+  string name = 1;
+
+  // description is a human-readable description of the metric.
+  string description = 2;
+
+  // cumulative indicates that this metric is never decremented.
+  bool cumulative = 3;
+
+  // sync indicates that values from the final metric event should be
+  // synchronized to the backing monitoring system at exit.
+  //
+  // If sync is false, values are only sent to the monitoring system
+  // periodically. There is no guarantee that values will ever be received by
+  // the monitoring system.
+  bool sync = 4;
+
+  enum Type { UINT64 = 0; }
+
+  // type is the type of the metric value.
+  Type type = 5;
+}
+
+// MetricRegistration contains the metadata for all metrics that will be in
+// future MetricUpdates.
+message MetricRegistration {
+  repeated MetricMetadata metrics = 1;
+}
+
+// MetricValue the value of a metric at a single point in time.
+message MetricValue {
+  // name is the unique name of the metric, as in MetricMetadata.
+  string name = 1;
+
+  // value is the value of the metric at a single point in time. The field set
+  // depends on the type of the metric.
+  oneof value {
+    uint64 uint64_value = 2;
+  }
+}
+
+// MetricUpdate contains new values for multiple distinct metrics.
+//
+// Metrics whose values have not changed are not included.
+message MetricUpdate {
+  repeated MetricValue metrics = 1;
+}

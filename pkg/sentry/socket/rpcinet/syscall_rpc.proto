@@ -1,0 +1,351 @@
+syntax = "proto3";
+
+// package syscall_rpc is a set of networking related system calls that can be
+// forwarded to a socket gofer.
+//
+// TODO: Document individual RPCs.
+package syscall_rpc;
+
+message SendmsgRequest {
+  uint32 fd = 1;
+  bytes data = 2;
+  bytes address = 3;
+  bool more = 4;
+  bool end_of_record = 5;
+}
+
+message SendmsgResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 length = 2;
+  }
+}
+
+message IOCtlRequest {
+  uint32 fd = 1;
+  uint32 cmd = 2;
+  uint64 arg = 3;
+}
+
+message IOCtlResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint64 value = 2;
+  }
+}
+
+message RecvmsgRequest {
+  uint32 fd = 1;
+  uint32 length = 2;
+  bool sender = 3;
+  bool peek = 4;
+  bool trunc = 5;
+}
+
+message OpenRequest {
+  bytes path = 1;
+  uint32 flags = 2;
+  uint32 mode = 3;
+}
+
+message OpenResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 fd = 2;
+  }
+}
+
+message ReadRequest {
+  uint32 fd = 1;
+  uint32 length = 2;
+}
+
+message ReadResponse {
+  oneof result {
+    uint32 error_number = 1;
+    bytes data = 2;
+  }
+}
+
+message ReadFileRequest {
+  string path = 1;
+}
+
+message ReadFileResponse {
+  oneof result {
+    uint32 error_number = 1;
+    bytes data = 2;
+  }
+}
+
+message WriteRequest {
+  uint32 fd = 1;
+  bytes data = 2;
+}
+
+message WriteResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 length = 2;
+  }
+}
+
+message WriteFileRequest {
+  string path = 1;
+  bytes content = 2;
+}
+
+message WriteFileResponse {
+  uint32 error_number = 1;
+  uint32 written = 2;
+}
+
+message AddressResponse {
+  bytes address = 1;
+  uint32 length = 2;
+}
+
+message RecvmsgResponse {
+  message ResultPayload {
+    bytes data = 1;
+    AddressResponse address = 2;
+    uint32 length = 3;
+  }
+  oneof result {
+    uint32 error_number = 1;
+    ResultPayload payload = 2;
+  }
+}
+
+message BindRequest {
+  uint32 fd = 1;
+  bytes address = 2;
+}
+
+message BindResponse {
+  uint32 error_number = 1;
+}
+
+message AcceptRequest {
+  uint32 fd = 1;
+  bool peer = 2;
+  int64 flags = 3;
+}
+
+message AcceptResponse {
+  message ResultPayload {
+    uint32 fd = 1;
+    AddressResponse address = 2;
+  }
+  oneof result {
+    uint32 error_number = 1;
+    ResultPayload payload = 2;
+  }
+}
+
+message ConnectRequest {
+  uint32 fd = 1;
+  bytes address = 2;
+}
+
+message ConnectResponse {
+  uint32 error_number = 1;
+}
+
+message ListenRequest {
+  uint32 fd = 1;
+  int64 backlog = 2;
+}
+
+message ListenResponse {
+  uint32 error_number = 1;
+}
+
+message ShutdownRequest {
+  uint32 fd = 1;
+  int64 how = 2;
+}
+
+message ShutdownResponse {
+  uint32 error_number = 1;
+}
+
+message CloseRequest {
+  uint32 fd = 1;
+}
+
+message CloseResponse {
+  uint32 error_number = 1;
+}
+
+message GetSockOptRequest {
+  uint32 fd = 1;
+  int64 level = 2;
+  int64 name = 3;
+  uint32 length = 4;
+}
+
+message GetSockOptResponse {
+  oneof result {
+    uint32 error_number = 1;
+    bytes opt = 2;
+  }
+}
+
+message SetSockOptRequest {
+  uint32 fd = 1;
+  int64 level = 2;
+  int64 name = 3;
+  bytes opt = 4;
+}
+
+message SetSockOptResponse {
+  uint32 error_number = 1;
+}
+
+message GetSockNameRequest {
+  uint32 fd = 1;
+}
+
+message GetSockNameResponse {
+  oneof result {
+    uint32 error_number = 1;
+    AddressResponse address = 2;
+  }
+}
+
+message GetPeerNameRequest {
+  uint32 fd = 1;
+}
+
+message GetPeerNameResponse {
+  oneof result {
+    uint32 error_number = 1;
+    AddressResponse address = 2;
+  }
+}
+
+message SocketRequest {
+  int64 family = 1;
+  int64 type = 2;
+  int64 protocol = 3;
+}
+
+message SocketResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 fd = 2;
+  }
+}
+
+message EpollWaitRequest {
+  uint32 fd = 1;
+  uint32 num_events = 2;
+  sint64 msec = 3;
+}
+
+message EpollEvent {
+  uint32 fd = 1;
+  uint32 events = 2;
+}
+
+message EpollEvents {
+  repeated EpollEvent events = 1;
+}
+
+message EpollWaitResponse {
+  oneof result {
+    uint32 error_number = 1;
+    EpollEvents events = 2;
+  }
+}
+
+message EpollCtlRequest {
+  uint32 epfd = 1;
+  int64 op = 2;
+  uint32 fd = 3;
+  EpollEvent event = 4;
+}
+
+message EpollCtlResponse {
+  uint32 error_number = 1;
+}
+
+message EpollCreate1Request {
+  int64 flag = 1;
+}
+
+message EpollCreate1Response {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 fd = 2;
+  }
+}
+
+message PollRequest {
+  uint32 fd = 1;
+  uint32 events = 2;
+}
+
+message PollResponse {
+  oneof result {
+    uint32 error_number = 1;
+    uint32 events = 2;
+  }
+}
+
+message SyscallRequest {
+  oneof args {
+    SocketRequest socket = 1;
+    SendmsgRequest sendmsg = 2;
+    RecvmsgRequest recvmsg = 3;
+    BindRequest bind = 4;
+    AcceptRequest accept = 5;
+    ConnectRequest connect = 6;
+    ListenRequest listen = 7;
+    ShutdownRequest shutdown = 8;
+    CloseRequest close = 9;
+    GetSockOptRequest get_sock_opt = 10;
+    SetSockOptRequest set_sock_opt = 11;
+    GetSockNameRequest get_sock_name = 12;
+    GetPeerNameRequest get_peer_name = 13;
+    EpollWaitRequest epoll_wait = 14;
+    EpollCtlRequest epoll_ctl = 15;
+    EpollCreate1Request epoll_create1 = 16;
+    PollRequest poll = 17;
+    ReadRequest read = 18;
+    WriteRequest write = 19;
+    OpenRequest open = 20;
+    IOCtlRequest ioctl = 21;
+    WriteFileRequest write_file = 22;
+    ReadFileRequest read_file = 23;
+  }
+}
+
+message SyscallResponse {
+  oneof result {
+    SocketResponse socket = 1;
+    SendmsgResponse sendmsg = 2;
+    RecvmsgResponse recvmsg = 3;
+    BindResponse bind = 4;
+    AcceptResponse accept = 5;
+    ConnectResponse connect = 6;
+    ListenResponse listen = 7;
+    ShutdownResponse shutdown = 8;
+    CloseResponse close = 9;
+    GetSockOptResponse get_sock_opt = 10;
+    SetSockOptResponse set_sock_opt = 11;
+    GetSockNameResponse get_sock_name = 12;
+    GetPeerNameResponse get_peer_name = 13;
+    EpollWaitResponse epoll_wait = 14;
+    EpollCtlResponse epoll_ctl = 15;
+    EpollCreate1Response epoll_create1 = 16;
+    PollResponse poll = 17;
+    ReadResponse read = 18;
+    WriteResponse write = 19;
+    OpenResponse open = 20;
+    IOCtlResponse ioctl = 21;
+    WriteFileResponse write_file = 22;
+    ReadFileResponse read_file = 23;
+  }
+}

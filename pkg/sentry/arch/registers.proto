@@ -1,0 +1,55 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor;
+
+message AMD64Registers {
+  uint64 rax = 1;
+  uint64 rbx = 2;
+  uint64 rcx = 3;
+  uint64 rdx = 4;
+  uint64 rsi = 5;
+  uint64 rdi = 6;
+  uint64 rsp = 7;
+  uint64 rbp = 8;
+
+  uint64 r8 = 9;
+  uint64 r9 = 10;
+  uint64 r10 = 11;
+  uint64 r11 = 12;
+  uint64 r12 = 13;
+  uint64 r13 = 14;
+  uint64 r14 = 15;
+  uint64 r15 = 16;
+
+  uint64 rip = 17;
+  uint64 rflags = 18;
+  uint64 orig_rax = 19;
+  uint64 cs = 20;
+  uint64 ds = 21;
+  uint64 es = 22;
+  uint64 fs = 23;
+  uint64 gs = 24;
+  uint64 ss = 25;
+  uint64 fs_base = 26;
+  uint64 gs_base = 27;
+}
+
+message Registers {
+  oneof arch {
+    AMD64Registers amd64 = 1;
+  }
+}

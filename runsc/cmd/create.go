@@ -1,0 +1,93 @@
+// Copyright 2018 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"context"
+	"flag"
+	"github.com/google/subcommands"
+	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
+)
+
+// Create implements subcommands.Command for the "create" command.
+type Create struct {
+	// bundleDir is the path to the bundle directory (defaults to the
+	// current working directory).
+	bundleDir string
+
+	// pidFile is the filename that the sandbox pid will be written to.
+	// This file should only be created once the sandbox process is ready
+	// to use (i.e. control server has started and is listening).
+	pidFile string
+
+	// consoleSocket is the path to an AF_UNIX socket which will receive a
+	// file descriptor referencing the master end of the console's
+	// pseudoterminal.  This is ignored unless spec.Process.Terminal is
+	// true.
+	consoleSocket string
+}
+
+// Name implements subcommands.Command.Name.
+func (*Create) Name() string {
+	return "create"
+}
+
+// Synopsis implements subcommands.Command.Synopsis.
+func (*Create) Synopsis() string {
+	return "create a secure container"
+}
+
+// Usage implements subcommands.Command.Usage.
+func (*Create) Usage() string {
+	return `create [flags] <container id> - create a secure container
+`
+}
+
+// SetFlags implements subcommands.Command.SetFlags.
+func (c *Create) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
+	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
+	f.StringVar(&c.pidFile, "pid-file", "", "filename that the sandbox pid will be written to")
+}
+
+// Execute implements subcommands.Command.Execute.
+func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if f.NArg() != 1 {
+		f.Usage()
+		return subcommands.ExitUsageError
+	}
+
+	id := f.Arg(0)
+	conf := args[0].(*boot.Config)
+
+	bundleDir := c.bundleDir
+	if bundleDir == "" {
+		bundleDir = getwdOrDie()
+	}
+	spec, err := specutils.ReadSpec(bundleDir)
+	if err != nil {
+		Fatalf("error reading spec: %v", err)
+	}
+	specutils.LogSpec(spec)
+
+	// Create the sandbox process, passing additional command line
+	// arguments to the sandbox process.
+	if _, err := sandbox.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile, commandLineFlags()); err != nil {
+		Fatalf("error creating sandbox: %v", err)
+	}
+	return subcommands.ExitSuccess
+}
