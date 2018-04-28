@@ -36,7 +36,7 @@ Two other approaches are commonly taken to provide stronger isolation than
 native containers.
 
 ![Machine-level virtualization](g3doc/Machine-Virtualization.png "Machine-level
-virtualization")
+virtualization"){style="display:block;margin:auto"}
 
 **Machine-level virtualization**, such as [KVM][kvm] and [Xen][xen], exposes
 virtualized hardware to a guest kernel via a Virtual Machine Monitor (VMM). This
@@ -48,7 +48,7 @@ performance (though nested virtualization may bring challenges in this area),
 but for containers it often requires additional proxies and agents, and may
 require a larger resource footprint and slower start-up times.
 
-![Rule-based execution](g3doc/Rule-Based-Execution.png "Rule-based execution")
+![Rule-based execution](g3doc/Rule-Based-Execution.png "Rule-based execution"){style="display:block;margin:auto"}
 
 **Rule-based execution**, such as [seccomp][seccomp], [SELinux][selinux] and
 [AppArmor][apparmor], allows the specification of a fine-grained security policy
@@ -63,7 +63,7 @@ making this approach challenging to apply universally.
 Rule-based execution is often combined with additional layers for
 defense-in-depth.
 
-![gVisor](g3doc/Layers.png "gVisor")
+![gVisor](g3doc/Layers.png "gVisor"){style="display:block;margin:auto"}
 
 **gVisor** provides a third isolation mechanism, distinct from those mentioned
 above.
@@ -107,7 +107,7 @@ application to directly control the system calls it makes.
 
 ### File System Access
 
-![Sentry](g3doc/Sentry-Gofer.png)
+![Sentry](g3doc/Sentry-Gofer.png){style="display:block;margin:auto"}
 
 In order to provide defense-in-depth and limit the host system surface, the
 gVisor container runtime is normally split into two separate processes. First,
