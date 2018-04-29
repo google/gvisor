@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package tun contains methods to open TAP and TUN devices.
 package tun
 
 import (
