@@ -45,7 +45,7 @@ performance (though nested virtualization may bring challenges in this area),
 but for containers it often requires additional proxies and agents, and may
 require a larger resource footprint and slower start-up times.
 
-<p align="center"><img src="g3doc/Machine-Virtualization.png"></p>
+![Machine-level virtualization](g3doc/Machine-Virtualization.png "Machine-level virtualization")
 
 **Rule-based execution**, such as [seccomp][seccomp], [SELinux][selinux] and
 [AppArmor][apparmor], allows the specification of a fine-grained security policy
@@ -57,13 +57,15 @@ However, in practice it can be extremely difficult (if not impossible) to
 reliably define a policy for arbitrary, previously unknown applications,
 making this approach challenging to apply universally.
 
+![Rule-based execution](g3doc/Rule-Based-Execution.png "Rule-based execution")
+
 Rule-based execution is often combined with additional layers for
 defense-in-depth.
 
-<p align="center"><img src="g3doc/Rule-Based-Execution.png"></p>
-
 **gVisor** provides a third isolation mechanism, distinct from those mentioned
 above.
+
+![gVisor](g3doc/Layers.png "gVisor")
 
 gVisor intercepts application system calls and acts as the guest kernel, without
 the need for translation through virtualized hardware. gVisor may be thought of
@@ -75,8 +77,6 @@ reduced application compatibility and higher per-system call overhead.
 
 On top of this, gVisor employs rule-based execution to provide defense-in-depth
 (details below).
-
-<p align="center"><img src="g3doc/Layers.png"></p>
 
 gVisor's approach is similar to [User Mode Linux (UML)][uml], although UML
 virtualizes hardware internally and thus provides a fixed resource footprint.
@@ -106,6 +106,8 @@ application to directly control the system calls it makes.
 
 ### File System Access
 
+![Sentry](g3doc/Sentry-Gofer.png "Sentry and Gofer")
+
 In order to provide defense-in-depth and limit the host system surface, the
 gVisor container runtime is normally split into two separate processes. First,
 the *Sentry* process includes the kernel and is responsible for executing user
@@ -118,8 +120,6 @@ application, and passing them to the Sentry process, which has no host file
 access itself. Furthermore, the Sentry runs in an empty user namespace, and the
 system calls made by gVisor to the host are restricted using seccomp filters in
 order to provide defense-in-depth.
-
-<p align="center"><img src="g3doc/Sentry-Gofer.png"></p>
 
 ### Network Access
 
