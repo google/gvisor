@@ -404,11 +404,6 @@ Sensitive security-related questions and comments can be sent to the private
 
 See [Contributing.md](CONTRIBUTING.md).
 
-## Disclaimer
-
-This is not an official Google product (experimental or otherwise), it is just
-code that happens to be owned by Google.
-
 [apparmor]: https://wiki.ubuntu.com/AppArmor
 [bazel]: https://bazel.build
 [bug]: https://github.com/google/gvisor/issues
