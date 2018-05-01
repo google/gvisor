@@ -610,7 +610,14 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		flags |= linux.MSG_DONTWAIT
 	}
 
-	n, err := recvSingleMsg(t, s, msgPtr, flags, false, ktime.Time{})
+	var haveDeadline bool
+	var deadline ktime.Time
+	if dl := s.RecvTimeout(); dl != 0 {
+		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
+		haveDeadline = true
+	}
+
+	n, err := recvSingleMsg(t, s, msgPtr, flags, haveDeadline, deadline)
 	return n, nil, err
 }
 
