@@ -535,8 +535,6 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, binPath string, common
 			nss = append(nss, userns)
 			setUIDGIDMappings(cmd, s.Spec)
 		} else {
-			// TODO: Retrict capabilities since it's using current user
-			// namespace, i.e. root.
 			log.Infof("Sandbox will be started in the current user namespace")
 		}
 		// When running in the caller's defined user namespace, apply the same
