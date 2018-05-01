@@ -70,4 +70,4 @@ the one above, the
 [Software Grant and Corporate Contributor License Agreement]
 (https://cla.developers.google.com/about/google-corporate).
 
-[gostyle][https://github.com/golang/go/wiki/CodeReviewComments]
+[gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
