@@ -65,8 +65,6 @@ defense-in-depth.
 **gVisor** provides a third isolation mechanism, distinct from those mentioned
 above.
 
-![gVisor](g3doc/Layers.png "gVisor")
-
 gVisor intercepts application system calls and acts as the guest kernel, without
 the need for translation through virtualized hardware. gVisor may be thought of
 as either a merged guest kernel and VMM, or as seccomp on steroids. This
@@ -74,6 +72,8 @@ architecture allows it to provide a flexible resource footprint (i.e. one based
 on threads and memory mappings, not fixed guest physical resources) while also
 lowering the fixed costs of virtualization. However, this comes at the price of
 reduced application compatibility and higher per-system call overhead.
+
+![gVisor](g3doc/Layers.png "gVisor")
 
 On top of this, gVisor employs rule-based execution to provide defense-in-depth
 (details below).
@@ -106,14 +106,14 @@ application to directly control the system calls it makes.
 
 ### File System Access
 
-![Sentry](g3doc/Sentry-Gofer.png "Sentry and Gofer")
-
 In order to provide defense-in-depth and limit the host system surface, the
 gVisor container runtime is normally split into two separate processes. First,
 the *Sentry* process includes the kernel and is responsible for executing user
 code and handling system calls. Second, file system operations that extend beyond
 the sandbox (not internal proc or tmp files, pipes, etc.) are sent to a proxy,
 called a *Gofer*, via a 9P connection.
+
+![Sentry](g3doc/Sentry-Gofer.png "Sentry and Gofer")
 
 The Gofer acts as a file system proxy by opening host files on behalf of the
 application, and passing them to the Sentry process, which has no host file
@@ -227,7 +227,6 @@ Terminal support works too:
 ```
 docker run --runtime=runsc -it ubuntu /bin/bash
 ```
-
 
 ### Kubernetes Support (Experimental)
 
