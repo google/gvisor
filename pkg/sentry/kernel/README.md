@@ -87,7 +87,7 @@ kept separate from the main "app" state to reduce the size of the latter.
 4. `SyscallReinvoke`, which does not correspond to anything in Linux, and exists
 solely to serve the autosave feature.
 
-![dot -Tsvg -Goverlap=false -orun_states.svg run_states.dot](g3doc/run_states.dot "Task control flow graph")
+![dot -Tpng -Goverlap=false -orun_states.png run_states.dot](g3doc/run_states.png "Task control flow graph")
 
 States before which a stop may occur are represented as implementations of the
 `taskRunState` interface named `run(state)`, allowing them to be saved and
