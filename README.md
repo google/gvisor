@@ -168,6 +168,8 @@ and Docker.
 
 * [git][git]
 * [Bazel][bazel]
+* [Python 2.7][python] (See [bug #8](https://github.com/google/gvisor/issues/8)
+  for Python 3 support updates)
 * [Docker version 17.09.0 or greater][docker]
 
 ### Getting the source
@@ -417,6 +419,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [kvm]: https://www.linux-kvm.org
 [netstack]: https://github.com/google/netstack
 [oci]: https://www.opencontainers.org
+[python]: https://python.org
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [seccomp]: https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt
 [selinux]: https://selinuxproject.org
