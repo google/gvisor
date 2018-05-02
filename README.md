@@ -142,12 +142,13 @@ mapping functionality. Today, gVisor supports two platforms:
   executing host system calls. This platform can run anywhere that `ptrace`
   works (even VMs without nested virtualization).
 
-* The **KVM** platform allows the Sentry to act as both guest OS and VMM,
-  switching back and forth between the two worlds seamlessly. The KVM platform
-  can run on bare-metal or on a VM with nested virtualization enabled. While
-  there is no virtualized hardware layer -- the sandbox retains a process model
-  -- gVisor leverages virtualization extensions available on modern processors
-  in order to improve isolation and performance of address space switches.
+* The **KVM** platform (experimental) allows the Sentry to act as both guest OS
+  and VMM, switching back and forth between the two worlds seamlessly. The KVM
+  platform can run on bare-metal or on a VM with nested virtualization enabled.
+  While there is no virtualized hardware layer -- the sandbox retains a process
+  model -- gVisor leverages virtualization extensions available on modern
+  processors in order to improve isolation and performance of address space
+  switches.
 
 ### Performance
 
