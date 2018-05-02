@@ -37,6 +37,7 @@ import (
 	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/arp"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
@@ -177,7 +178,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
 	// Run().
-	networkStack := newEmptyNetworkStack(conf)
+	networkStack := newEmptyNetworkStack(conf, k)
 
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
@@ -337,7 +338,7 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newEmptyNetworkStack(conf *Config) inet.Stack {
+func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) inet.Stack {
 	switch conf.Network {
 	case NetworkHost:
 		return hostinet.NewStack()
@@ -346,7 +347,7 @@ func newEmptyNetworkStack(conf *Config) inet.Stack {
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
 		protoNames := []string{tcp.ProtocolName, udp.ProtocolName}
-		return &epsocket.Stack{stack.New(netProtos, protoNames)}
+		return &epsocket.Stack{stack.New(clock, netProtos, protoNames)}
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

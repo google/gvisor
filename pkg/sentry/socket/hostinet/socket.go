@@ -57,6 +57,8 @@ type socketOperations struct {
 	queue waiter.Queue
 }
 
+var _ = socket.Socket(&socketOperations{})
+
 func newSocketFile(ctx context.Context, fd int, nonblock bool) (*fs.File, *syserr.Error) {
 	s := &socketOperations{fd: fd}
 	if err := fdnotifier.AddFD(int32(fd), &s.queue); err != nil {
@@ -339,14 +341,14 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, unix.ControlMessages, *syserr.Error) {
+func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	// Whitelist flags.
 	//
 	// FIXME: We can't support MSG_ERRQUEUE because it uses ancillary
 	// messages that netstack/tcpip/transport/unix doesn't understand. Kill the
 	// Socket interface's dependence on netstack.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC) != 0 {
-		return 0, nil, 0, unix.ControlMessages{}, syserr.ErrInvalidArgument
+		return 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 
 	var senderAddr []byte
@@ -411,11 +413,11 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		}
 	}
 
-	return int(n), senderAddr, uint32(len(senderAddr)), unix.ControlMessages{}, syserr.FromError(err)
+	return int(n), senderAddr, uint32(len(senderAddr)), socket.ControlMessages{}, syserr.FromError(err)
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
+func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Whitelist flags.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_EOR|syscall.MSG_FASTOPEN|syscall.MSG_MORE|syscall.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument

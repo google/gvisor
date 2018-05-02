@@ -305,7 +305,7 @@ func (s *Socket) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, unix.ControlMessages, *syserr.Error) {
+func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	from := linux.SockAddrNetlink{
 		Family: linux.AF_NETLINK,
 		PortID: 0,
@@ -323,7 +323,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		if trunc {
 			n = int64(r.MsgSize)
 		}
-		return int(n), from, fromLen, unix.ControlMessages{}, syserr.FromError(err)
+		return int(n), from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
 	}
 
 	// We'll have to block. Register for notification and keep trying to
@@ -337,14 +337,14 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			if trunc {
 				n = int64(r.MsgSize)
 			}
-			return int(n), from, fromLen, unix.ControlMessages{}, syserr.FromError(err)
+			return int(n), from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, unix.ControlMessages{}, syserr.ErrTryAgain
+				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, unix.ControlMessages{}, syserr.FromError(err)
+			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }
@@ -459,7 +459,7 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 }
 
 // sendMsg is the core of message send, used for SendMsg and Write.
-func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
+func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	dstPort := int32(0)
 
 	if len(to) != 0 {
@@ -506,12 +506,12 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
+func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	return s.sendMsg(t, src, to, flags, controlMessages)
 }
 
 // Write implements fs.FileOperations.Write.
 func (s *Socket) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
-	n, err := s.sendMsg(ctx, src, nil, 0, unix.ControlMessages{})
+	n, err := s.sendMsg(ctx, src, nil, 0, socket.ControlMessages{})
 	return int64(n), err.ToError()
 }

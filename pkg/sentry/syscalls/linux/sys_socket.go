@@ -731,10 +731,11 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 	// Fast path when no control message nor name buffers are provided.
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
-		n, _, _, _, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
+		n, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
 		if err != nil {
 			return 0, syserror.ConvertIntr(err.ToError(), kernel.ERESTARTSYS)
 		}
+		cms.Unix.Release()
 		return uintptr(n), nil
 	}
 
@@ -745,17 +746,21 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
-	defer cms.Release()
+	defer cms.Unix.Release()
 
 	controlData := make([]byte, 0, msg.ControlLen)
 
 	if cr, ok := s.(unix.Credentialer); ok && cr.Passcred() {
-		creds, _ := cms.Credentials.(control.SCMCredentials)
+		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)
 		controlData = control.PackCredentials(t, creds, controlData)
 	}
 
-	if cms.Rights != nil {
-		controlData = control.PackRights(t, cms.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData)
+	if cms.IP.HasTimestamp {
+		controlData = control.PackTimestamp(t, cms.IP.Timestamp, controlData)
+	}
+
+	if cms.Unix.Rights != nil {
+		controlData = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData)
 	}
 
 	// Copy the address to the caller.
@@ -823,7 +828,7 @@ func recvFrom(t *kernel.Task, fd kdefs.FD, bufPtr usermem.Addr, bufLen uint64, f
 	}
 
 	n, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
-	cm.Release()
+	cm.Unix.Release()
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
@@ -997,7 +1002,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 	}
 
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), controlMessages)
+	n, e := s.SendMsg(t, src, to, int(flags), socket.ControlMessages{Unix: controlMessages})
 	err = handleIOError(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendmsg", file)
 	if err != nil {
 		controlMessages.Release()
@@ -1048,7 +1053,7 @@ func sendTo(t *kernel.Task, fd kdefs.FD, bufPtr usermem.Addr, bufLen uint64, fla
 	}
 
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), control.New(t, s, nil))
+	n, e := s.SendMsg(t, src, to, int(flags), socket.ControlMessages{Unix: control.New(t, s, nil)})
 	return uintptr(n), handleIOError(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendto", file)
 }
 

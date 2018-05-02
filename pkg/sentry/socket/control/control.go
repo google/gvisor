@@ -208,6 +208,31 @@ func putCmsg(buf []byte, msgType uint32, align uint, data []int32) []byte {
 	return alignSlice(buf, align)
 }
 
+func putCmsgStruct(buf []byte, msgType uint32, align uint, data interface{}) []byte {
+	if cap(buf)-len(buf) < linux.SizeOfControlMessageHeader {
+		return buf
+	}
+	ob := buf
+
+	buf = putUint64(buf, uint64(linux.SizeOfControlMessageHeader))
+	buf = putUint32(buf, linux.SOL_SOCKET)
+	buf = putUint32(buf, msgType)
+
+	hdrBuf := buf
+
+	buf = binary.Marshal(buf, usermem.ByteOrder, data)
+
+	// Check if we went over.
+	if cap(buf) != cap(ob) {
+		return hdrBuf
+	}
+
+	// Fix up length.
+	putUint64(ob, uint64(len(buf)-len(ob)))
+
+	return alignSlice(buf, align)
+}
+
 // Credentials implements SCMCredentials.Credentials.
 func (c *scmCredentials) Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID, auth.GID) {
 	// "When a process's user and group IDs are passed over a UNIX domain
@@ -259,6 +284,16 @@ func alignSlice(buf []byte, align uint) []byte {
 		return buf
 	}
 	return buf[:aligned]
+}
+
+// PackTimestamp packs a SO_TIMESTAMP socket control message.
+func PackTimestamp(t *kernel.Task, timestamp int64, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SO_TIMESTAMP,
+		t.Arch().Width(),
+		linux.NsecToTimeval(timestamp),
+	)
 }
 
 // Parse parses a raw socket control message into portable objects.

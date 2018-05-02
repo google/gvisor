@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/syserr",
+        "//pkg/tcpip",
         "//pkg/tcpip/transport/unix",
     ],
 )

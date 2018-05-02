@@ -95,7 +95,7 @@ func TestTimeStampEnabledConnect(t *testing.T) {
 	// There should be 5 views to read and each of them should
 	// contain the same data.
 	for i := 0; i < 5; i++ {
-		got, err := c.EP.Read(nil)
+		got, _, err := c.EP.Read(nil)
 		if err != nil {
 			t.Fatalf("Unexpected error from Read: %v", err)
 		}
@@ -296,7 +296,7 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	}
 
 	// Issue a read and we should data.
-	got, err := c.EP.Read(nil)
+	got, _, err := c.EP.Read(nil)
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}

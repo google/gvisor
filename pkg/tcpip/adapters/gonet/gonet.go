@@ -268,7 +268,7 @@ type opErrorer interface {
 // commonRead implements the common logic between net.Conn.Read and
 // net.PacketConn.ReadFrom.
 func commonRead(ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, addr *tcpip.FullAddress, errorer opErrorer) ([]byte, error) {
-	read, err := ep.Read(addr)
+	read, _, err := ep.Read(addr)
 
 	if err == tcpip.ErrWouldBlock {
 		// Create wait queue entry that notifies a channel.
@@ -276,7 +276,7 @@ func commonRead(ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan struct{}, a
 		wq.EventRegister(&waitEntry, waiter.EventIn)
 		defer wq.EventUnregister(&waitEntry)
 		for {
-			read, err = ep.Read(addr)
+			read, _, err = ep.Read(addr)
 			if err != tcpip.ErrWouldBlock {
 				break
 			}

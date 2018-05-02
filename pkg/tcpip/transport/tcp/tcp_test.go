@@ -147,7 +147,7 @@ func TestSimpleReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestSimpleReceive(t *testing.T) {
 	}
 
 	// Receive data.
-	v, err := c.EP.Read(nil)
+	v, _, err := c.EP.Read(nil)
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 
 	// Wait 200ms and check that no data has been received.
 	time.Sleep(200 * time.Millisecond)
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -243,7 +243,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	// Receive data.
 	read := make([]byte, 0, 6)
 	for len(read) < len(data) {
-		v, err := c.EP.Read(nil)
+		v, _, err := c.EP.Read(nil)
 		if err != nil {
 			if err == tcpip.ErrWouldBlock {
 				// Wait for receive to be notified.
@@ -284,7 +284,7 @@ func TestOutOfOrderFlood(t *testing.T) {
 	opt := tcpip.ReceiveBufferSizeOption(10)
 	c.CreateConnected(789, 30000, &opt)
 
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -414,7 +414,7 @@ func TestFullWindowReceive(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	_, err := c.EP.Read(nil)
+	_, _, err := c.EP.Read(nil)
 	if err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestFullWindowReceive(t *testing.T) {
 	)
 
 	// Receive data and check it.
-	v, err := c.EP.Read(nil)
+	v, _, err := c.EP.Read(nil)
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	_, err := c.EP.Read(nil)
+	_, _, err := c.EP.Read(nil)
 	if err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -551,7 +551,7 @@ func TestNoWindowShrinking(t *testing.T) {
 	// Receive data and check it.
 	read := make([]byte, 0, 10)
 	for len(read) < len(data) {
-		v, err := c.EP.Read(nil)
+		v, _, err := c.EP.Read(nil)
 		if err != nil {
 			t.Fatalf("Unexpected error from Read: %v", err)
 		}
@@ -954,7 +954,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	}
 
 	// Read some data. An ack should be sent in response to that.
-	v, err := c.EP.Read(nil)
+	v, _, err := c.EP.Read(nil)
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -1337,7 +1337,7 @@ func TestReceiveOnResetConnection(t *testing.T) {
 
 loop:
 	for {
-		switch _, err := c.EP.Read(nil); err {
+		switch _, _, err := c.EP.Read(nil); err {
 		case nil:
 			t.Fatalf("Unexpected success.")
 		case tcpip.ErrWouldBlock:
@@ -2293,7 +2293,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	if _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
 
@@ -2345,7 +2345,7 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Check that peek works.
 	peekBuf := make([]byte, 10)
-	n, err := c.EP.Peek([][]byte{peekBuf})
+	n, _, err := c.EP.Peek([][]byte{peekBuf})
 	if err != nil {
 		t.Fatalf("Unexpected error from Peek: %v", err)
 	}
@@ -2356,7 +2356,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	}
 
 	// Receive data.
-	v, err := c.EP.Read(nil)
+	v, _, err := c.EP.Read(nil)
 	if err != nil {
 		t.Fatalf("Unexpected error from Read: %v", err)
 	}
@@ -2367,11 +2367,11 @@ func TestReadAfterClosedState(t *testing.T) {
 
 	// Now that we drained the queue, check that functions fail with the
 	// right error code.
-	if _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
 		t.Fatalf("Unexpected return from Read: got %v, want %v", err, tcpip.ErrClosedForReceive)
 	}
 
-	if _, err := c.EP.Peek([][]byte{peekBuf}); err != tcpip.ErrClosedForReceive {
+	if _, _, err := c.EP.Peek([][]byte{peekBuf}); err != tcpip.ErrClosedForReceive {
 		t.Fatalf("Unexpected return from Peek: got %v, want %v", err, tcpip.ErrClosedForReceive)
 	}
 }
@@ -2479,7 +2479,7 @@ func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 }
 
 func TestDefaultBufferSizes(t *testing.T) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2525,7 +2525,7 @@ func TestDefaultBufferSizes(t *testing.T) {
 }
 
 func TestMinMaxBufferSizes(t *testing.T) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2575,7 +2575,7 @@ func TestSelfConnect(t *testing.T) {
 	// it checks that if an endpoint binds to say 127.0.0.1:1000 then
 	// connects to 127.0.0.1:1000, then it will be connected to itself, and
 	// is able to send and receive data through the same endpoint.
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
 
 	id := loopback.New()
 	if testing.Verbose() {
@@ -2637,13 +2637,13 @@ func TestSelfConnect(t *testing.T) {
 	// Read back what was written.
 	wq.EventUnregister(&waitEntry)
 	wq.EventRegister(&waitEntry, waiter.EventIn)
-	rd, err := ep.Read(nil)
+	rd, _, err := ep.Read(nil)
 	if err != nil {
 		if err != tcpip.ErrWouldBlock {
 			t.Fatalf("Read failed: %v", err)
 		}
 		<-notifyCh
-		rd, err = ep.Read(nil)
+		rd, _, err = ep.Read(nil)
 		if err != nil {
 			t.Fatalf("Read failed: %v", err)
 		}

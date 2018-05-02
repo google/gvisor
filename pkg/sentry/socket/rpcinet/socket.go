@@ -402,7 +402,7 @@ func rpcRecvMsg(t *kernel.Task, req *pb.SyscallRequest_Recvmsg) (*pb.RecvmsgResp
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, unix.ControlMessages, *syserr.Error) {
+func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	req := &pb.SyscallRequest_Recvmsg{&pb.RecvmsgRequest{
 		Fd:     s.fd,
 		Length: uint32(dst.NumBytes()),
@@ -414,10 +414,10 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	res, err := rpcRecvMsg(t, req)
 	if err == nil {
 		n, e := dst.CopyOut(t, res.Data)
-		return int(n), res.Address.GetAddress(), res.Address.GetLength(), unix.ControlMessages{}, syserr.FromError(e)
+		return int(n), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 	}
 	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
-		return 0, nil, 0, unix.ControlMessages{}, err
+		return 0, nil, 0, socket.ControlMessages{}, err
 	}
 
 	// We'll have to block. Register for notifications and keep trying to
@@ -430,17 +430,17 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		res, err := rpcRecvMsg(t, req)
 		if err == nil {
 			n, e := dst.CopyOut(t, res.Data)
-			return int(n), res.Address.GetAddress(), res.Address.GetLength(), unix.ControlMessages{}, syserr.FromError(e)
+			return int(n), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 		}
 		if err != syserr.ErrWouldBlock {
-			return 0, nil, 0, unix.ControlMessages{}, err
+			return 0, nil, 0, socket.ControlMessages{}, err
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, unix.ControlMessages{}, syserr.ErrTryAgain
+				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, unix.ControlMessages{}, syserr.FromError(err)
+			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }
@@ -459,14 +459,14 @@ func rpcSendMsg(t *kernel.Task, req *pb.SyscallRequest_Sendmsg) (uint32, *syserr
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
+func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Whitelist flags.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_EOR|syscall.MSG_FASTOPEN|syscall.MSG_MORE|syscall.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument
 	}
 
-	// Reject control messages.
-	if !controlMessages.Empty() {
+	// Reject Unix control messages.
+	if !controlMessages.Unix.Empty() {
 		return 0, syserr.ErrInvalidArgument
 	}
 

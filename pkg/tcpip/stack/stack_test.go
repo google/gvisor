@@ -176,7 +176,7 @@ func TestNetworkReceive(t *testing.T) {
 	// Create a stack with the fake network protocol, one nic, and two
 	// addresses attached to it: 1 & 2.
 	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 	if err := s.CreateNIC(1, id); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestNetworkSend(t *testing.T) {
 	// address: 1. The route table sends all packets through the only
 	// existing nic.
 	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 	if err := s.CreateNIC(1, id); err != nil {
 		t.Fatalf("NewNIC failed: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 	// Create a stack with the fake network protocol, two nics, and two
 	// addresses per nic, the first nic has odd address, the second one has
 	// even addresses.
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id1, linkEP1 := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id1); err != nil {
@@ -371,7 +371,7 @@ func TestRoutes(t *testing.T) {
 	// Create a stack with the fake network protocol, two nics, and two
 	// addresses per nic, the first nic has odd address, the second one has
 	// even addresses.
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id1, _ := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id1); err != nil {
@@ -435,7 +435,7 @@ func TestRoutes(t *testing.T) {
 }
 
 func TestAddressRemoval(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, linkEP := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -479,7 +479,7 @@ func TestAddressRemoval(t *testing.T) {
 }
 
 func TestDelayedRemovalDueToRoute(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, linkEP := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -547,7 +547,7 @@ func TestDelayedRemovalDueToRoute(t *testing.T) {
 }
 
 func TestPromiscuousMode(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, linkEP := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -607,7 +607,7 @@ func TestAddressSpoofing(t *testing.T) {
 	srcAddr := tcpip.Address("\x01")
 	dstAddr := tcpip.Address("\x02")
 
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, _ := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -648,7 +648,7 @@ func TestAddressSpoofing(t *testing.T) {
 
 // Set the subnet, then check that packet is delivered.
 func TestSubnetAcceptsMatchingPacket(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, linkEP := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -682,7 +682,7 @@ func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 
 // Set destination outside the subnet, then check it doesn't get delivered.
 func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, nil)
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, nil)
 
 	id, linkEP := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -714,7 +714,7 @@ func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
 }
 
 func TestNetworkOptions(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{})
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, []string{})
 
 	// Try an unsupported network protocol.
 	if err := s.SetNetworkProtocolOption(tcpip.NetworkProtocolNumber(99999), fakeNetGoodOption(false)); err != tcpip.ErrUnknownProtocol {

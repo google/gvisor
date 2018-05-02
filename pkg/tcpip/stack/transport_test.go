@@ -46,8 +46,8 @@ func (*fakeTransportEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask 
 	return mask
 }
 
-func (*fakeTransportEndpoint) Read(*tcpip.FullAddress) (buffer.View, *tcpip.Error) {
-	return buffer.View{}, nil
+func (*fakeTransportEndpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	return buffer.View{}, tcpip.ControlMessages{}, nil
 }
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tcpip.Error) {
@@ -67,8 +67,8 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) 
 	return uintptr(len(v)), nil
 }
 
-func (f *fakeTransportEndpoint) Peek([][]byte) (uintptr, *tcpip.Error) {
-	return 0, nil
+func (f *fakeTransportEndpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
+	return 0, tcpip.ControlMessages{}, nil
 }
 
 // SetSockOpt sets a socket option. Currently not supported.
@@ -210,7 +210,7 @@ func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
 
 func TestTransportReceive(t *testing.T) {
 	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"})
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, []string{"fakeTrans"})
 	if err := s.CreateNIC(1, id); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestTransportReceive(t *testing.T) {
 
 func TestTransportControlReceive(t *testing.T) {
 	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"})
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, []string{"fakeTrans"})
 	if err := s.CreateNIC(1, id); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -336,7 +336,7 @@ func TestTransportControlReceive(t *testing.T) {
 
 func TestTransportSend(t *testing.T) {
 	id, _ := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"})
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, []string{"fakeTrans"})
 	if err := s.CreateNIC(1, id); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestTransportSend(t *testing.T) {
 }
 
 func TestTransportOptions(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"})
+	s := stack.New(&tcpip.StdClock{}, []string{"fakeNet"}, []string{"fakeTrans"})
 
 	// Try an unsupported transport protocol.
 	if err := s.SetTransportProtocolOption(tcpip.TransportProtocolNumber(99999), fakeTransportGoodOption(false)); err != tcpip.ErrUnknownProtocol {

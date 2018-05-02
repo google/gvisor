@@ -162,7 +162,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) error
 	// DHCPOFFER
 	for {
 		var addr tcpip.FullAddress
-		v, err := epin.Read(&addr)
+		v, _, err := epin.Read(&addr)
 		if err == tcpip.ErrWouldBlock {
 			select {
 			case <-ch:
@@ -216,7 +216,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) error
 	// DHCPACK
 	for {
 		var addr tcpip.FullAddress
-		v, err := epin.Read(&addr)
+		v, _, err := epin.Read(&addr)
 		if err == tcpip.ErrWouldBlock {
 			select {
 			case <-ch:

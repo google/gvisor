@@ -109,6 +109,7 @@ type SocketOperations struct {
 	// readMu protects access to readView, control, and sender.
 	readMu   sync.Mutex `state:"nosave"`
 	readView buffer.View
+	readCM   tcpip.ControlMessages
 	sender   tcpip.FullAddress
 }
 
@@ -210,12 +211,13 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 	s.readView = nil
 	s.sender = tcpip.FullAddress{}
 
-	v, err := s.Endpoint.Read(&s.sender)
+	v, cms, err := s.Endpoint.Read(&s.sender)
 	if err != nil {
 		return syserr.TranslateNetstackError(err)
 	}
 
 	s.readView = v
+	s.readCM = cms
 
 	return nil
 }
@@ -230,7 +232,7 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
-	n, _, _, err := s.nonBlockingRead(ctx, dst, false, false, false)
+	n, _, _, _, err := s.nonBlockingRead(ctx, dst, false, false, false)
 	if err == syserr.ErrWouldBlock {
 		return int64(n), syserror.ErrWouldBlock
 	}
@@ -552,6 +554,18 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 			}
 
 			return linux.NsecToTimeval(s.RecvTimeout()), nil
+
+		case linux.SO_TIMESTAMP:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+
+			var v tcpip.TimestampOption
+			if err := ep.GetSockOpt(&v); err != nil {
+				return nil, syserr.TranslateNetstackError(err)
+			}
+
+			return int32(v), nil
 		}
 
 	case syscall.SOL_TCP:
@@ -659,6 +673,14 @@ func SetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, level int, n
 			binary.Unmarshal(optVal[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
 			s.SetRecvTimeout(v.ToNsecCapped())
 			return nil
+
+		case linux.SO_TIMESTAMP:
+			if len(optVal) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+
+			v := usermem.ByteOrder.Uint32(optVal)
+			return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TimestampOption(v)))
 		}
 
 	case syscall.SOL_TCP:
@@ -823,7 +845,9 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 }
 
 // nonBlockingRead issues a non-blocking read.
-func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, interface{}, uint32, *syserr.Error) {
+//
+// TODO: Support timestamps for stream sockets.
+func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	isPacket := s.isPacketBased()
 
 	// Fast path for regular reads from stream (e.g., TCP) endpoints. Note
@@ -839,14 +863,14 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 		s.readMu.Lock()
 		n, err := s.coalescingRead(ctx, dst, trunc)
 		s.readMu.Unlock()
-		return n, nil, 0, err
+		return n, nil, 0, socket.ControlMessages{}, err
 	}
 
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
 	if err := s.fetchReadView(); err != nil {
-		return 0, nil, 0, err
+		return 0, nil, 0, socket.ControlMessages{}, err
 	}
 
 	if !isPacket && peek && trunc {
@@ -854,14 +878,14 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 		// amount that could be read.
 		var rql tcpip.ReceiveQueueSizeOption
 		if err := s.Endpoint.GetSockOpt(&rql); err != nil {
-			return 0, nil, 0, syserr.TranslateNetstackError(err)
+			return 0, nil, 0, socket.ControlMessages{}, syserr.TranslateNetstackError(err)
 		}
 		available := len(s.readView) + int(rql)
 		bufLen := int(dst.NumBytes())
 		if available < bufLen {
-			return available, nil, 0, nil
+			return available, nil, 0, socket.ControlMessages{}, nil
 		}
-		return bufLen, nil, 0, nil
+		return bufLen, nil, 0, socket.ControlMessages{}, nil
 	}
 
 	n, err := dst.CopyOut(ctx, s.readView)
@@ -874,17 +898,18 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	if peek {
 		if l := len(s.readView); trunc && l > n {
 			// isPacket must be true.
-			return l, addr, addrLen, syserr.FromError(err)
+			return l, addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
 		}
 
 		if isPacket || err != nil {
-			return int(n), addr, addrLen, syserr.FromError(err)
+			return int(n), addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
 		}
 
 		// We need to peek beyond the first message.
 		dst = dst.DropFirst(n)
 		num, err := dst.CopyOutFrom(ctx, safemem.FromVecReaderFunc{func(dsts [][]byte) (int64, error) {
-			n, err := s.Endpoint.Peek(dsts)
+			n, _, err := s.Endpoint.Peek(dsts)
+			// TODO: Handle peek timestamp.
 			if err != nil {
 				return int64(n), syserr.TranslateNetstackError(err).ToError()
 			}
@@ -895,7 +920,7 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 			// We got some data, so no need to return an error.
 			err = nil
 		}
-		return int(n), nil, 0, syserr.FromError(err)
+		return int(n), nil, 0, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
 	}
 
 	var msgLen int
@@ -908,15 +933,15 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	}
 
 	if trunc {
-		return msgLen, addr, addrLen, syserr.FromError(err)
+		return msgLen, addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
 	}
 
-	return int(n), addr, addrLen, syserr.FromError(err)
+	return int(n), addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
 }
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages unix.ControlMessages, err *syserr.Error) {
+func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	trunc := flags&linux.MSG_TRUNC != 0
 
 	peek := flags&linux.MSG_PEEK != 0
@@ -924,7 +949,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		// Stream sockets ignore the sender address.
 		senderRequested = false
 	}
-	n, senderAddr, senderAddrLen, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
+	n, senderAddr, senderAddrLen, controlMessages, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
 	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		return
 	}
@@ -936,25 +961,25 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	defer s.EventUnregister(&e)
 
 	for {
-		n, senderAddr, senderAddrLen, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
+		n, senderAddr, senderAddrLen, controlMessages, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
 		if err != syserr.ErrWouldBlock {
 			return
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, unix.ControlMessages{}, syserr.ErrTryAgain
+				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, unix.ControlMessages{}, syserr.FromError(err)
+			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }
 
 // SendMsg implements the linux syscall sendmsg(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
-	// Reject control messages.
-	if !controlMessages.Empty() {
+func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+	// Reject Unix control messages.
+	if !controlMessages.Unix.Empty() {
 		return 0, syserr.ErrInvalidArgument
 	}
 

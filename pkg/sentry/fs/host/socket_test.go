@@ -142,7 +142,7 @@ func TestSocketSendMsgLen0(t *testing.T) {
 	defer sfile.DecRef()
 
 	s := sfile.FileOperations.(socket.Socket)
-	n, terr := s.SendMsg(nil, usermem.BytesIOSequence(nil), []byte{}, 0, unix.ControlMessages{})
+	n, terr := s.SendMsg(nil, usermem.BytesIOSequence(nil), []byte{}, 0, socket.ControlMessages{})
 	if n != 0 {
 		t.Fatalf("socket sendmsg() failed: %v wrote: %d", terr, n)
 	}

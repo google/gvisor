@@ -104,7 +104,7 @@ func (s *Server) reader(ctx context.Context) {
 
 	for {
 		var addr tcpip.FullAddress
-		v, err := s.ep.Read(&addr)
+		v, _, err := s.ep.Read(&addr)
 		if err == tcpip.ErrWouldBlock {
 			select {
 			case <-ch:

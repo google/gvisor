@@ -56,7 +56,7 @@ type headers struct {
 }
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
-	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName})
 
 	id, linkEP := channel.New(256, mtu, "")
 	if testing.Verbose() {
@@ -260,12 +260,12 @@ func testV4Read(c *testContext) {
 	defer c.wq.EventUnregister(&we)
 
 	var addr tcpip.FullAddress
-	v, err := c.ep.Read(&addr)
+	v, _, err := c.ep.Read(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
-			v, err = c.ep.Read(&addr)
+			v, _, err = c.ep.Read(&addr)
 			if err != nil {
 				c.t.Fatalf("Read failed: %v", err)
 			}
@@ -355,12 +355,12 @@ func TestV6ReadOnV6(t *testing.T) {
 	defer c.wq.EventUnregister(&we)
 
 	var addr tcpip.FullAddress
-	v, err := c.ep.Read(&addr)
+	v, _, err := c.ep.Read(&addr)
 	if err == tcpip.ErrWouldBlock {
 		// Wait for data to become available.
 		select {
 		case <-ch:
-			v, err = c.ep.Read(&addr)
+			v, _, err = c.ep.Read(&addr)
 			if err != nil {
 				c.t.Fatalf("Read failed: %v", err)
 			}

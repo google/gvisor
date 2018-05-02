@@ -36,7 +36,7 @@ func TestDHCP(t *testing.T) {
 		}
 	}()
 
-	s := stack.New([]string{ipv4.ProtocolName}, []string{udp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{udp.ProtocolName})
 
 	const nicid tcpip.NICID = 1
 	if err := s.CreateNIC(nicid, id); err != nil {

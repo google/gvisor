@@ -113,7 +113,7 @@ func main() {
 
 	// Create the stack with ipv4 and tcp protocols, then add a tun-based
 	// NIC and ipv4 address.
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
 
 	mtu, err := rawfile.GetMTU(tunName)
 	if err != nil {
@@ -183,7 +183,7 @@ func main() {
 	// connection from its side.
 	wq.EventRegister(&waitEntry, waiter.EventIn)
 	for {
-		v, err := ep.Read(nil)
+		v, _, err := ep.Read(nil)
 		if err != nil {
 			if err == tcpip.ErrClosedForReceive {
 				break

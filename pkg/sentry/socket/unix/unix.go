@@ -358,10 +358,10 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 
 // SendMsg implements the linux syscall sendmsg(2) for unix sockets backed by
 // a unix.Endpoint.
-func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (int, *syserr.Error) {
+func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	w := EndpointWriter{
 		Endpoint: s.ep,
-		Control:  controlMessages,
+		Control:  controlMessages.Unix,
 		To:       nil,
 	}
 	if len(to) > 0 {
@@ -452,7 +452,7 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
 // a unix.Endpoint.
-func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages unix.ControlMessages, err *syserr.Error) {
+func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	trunc := flags&linux.MSG_TRUNC != 0
 	peek := flags&linux.MSG_PEEK != 0
 
@@ -490,7 +490,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		if trunc {
 			n = int64(r.MsgSize)
 		}
-		return int(n), from, fromLen, r.Control, syserr.FromError(err)
+		return int(n), from, fromLen, socket.ControlMessages{Unix: r.Control}, syserr.FromError(err)
 	}
 
 	// We'll have to block. Register for notification and keep trying to
@@ -509,14 +509,14 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			if trunc {
 				n = int64(r.MsgSize)
 			}
-			return int(n), from, fromLen, r.Control, syserr.FromError(err)
+			return int(n), from, fromLen, socket.ControlMessages{Unix: r.Control}, syserr.FromError(err)
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, unix.ControlMessages{}, syserr.ErrTryAgain
+				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, unix.ControlMessages{}, syserr.FromError(err)
+			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }

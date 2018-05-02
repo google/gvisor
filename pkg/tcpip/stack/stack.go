@@ -270,6 +270,9 @@ type Stack struct {
 	// If not nil, then any new endpoints will have this probe function
 	// invoked everytime they receive a TCP segment.
 	tcpProbeFunc TCPProbeFunc
+
+	// clock is used to generate user-visible times.
+	clock tcpip.Clock
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -279,7 +282,7 @@ type Stack struct {
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
-func New(network []string, transport []string) *Stack {
+func New(clock tcpip.Clock, network []string, transport []string) *Stack {
 	s := &Stack{
 		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
@@ -287,6 +290,7 @@ func New(network []string, transport []string) *Stack {
 		nics:               make(map[tcpip.NICID]*NIC),
 		linkAddrCache:      newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 		PortManager:        ports.NewPortManager(),
+		clock:              clock,
 	}
 
 	// Add specified network protocols.
@@ -388,6 +392,11 @@ func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h f
 	}
 }
 
+// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
+func (s *Stack) NowNanoseconds() int64 {
+	return s.clock.NowNanoseconds()
+}
+
 // Stats returns a snapshot of the current stats.
 //
 // NOTE: The underlying stats are updated using atomic instructions as a result
@@ -472,6 +481,12 @@ func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEnd
 // endpoint starts delivering packets to it.
 func (s *Stack) CreateDisabledNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
 	return s.createNIC(id, "", linkEP, false)
+}
+
+// CreateDisabledNamedNIC is a combination of CreateNamedNIC and
+// CreateDisabledNIC.
+func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
+	return s.createNIC(id, name, linkEP, false)
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start

@@ -887,6 +887,15 @@ func (k *Kernel) SetExitError(err error) {
 	}
 }
 
+// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
+func (k *Kernel) NowNanoseconds() int64 {
+	now, err := k.timekeeper.GetTime(sentrytime.Realtime)
+	if err != nil {
+		panic("Kernel.NowNanoseconds: " + err.Error())
+	}
+	return now
+}
+
 // SupervisorContext returns a Context with maximum privileges in k. It should
 // only be used by goroutines outside the control of the emulated kernel
 // defined by e.

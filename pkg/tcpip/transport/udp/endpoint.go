@@ -19,6 +19,8 @@ type udpPacket struct {
 	udpPacketEntry
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
+	timestamp     int64
+	hasTimestamp  bool
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View `state:"nosave"`
@@ -52,6 +54,7 @@ type endpoint struct {
 	rcvBufSizeMax int `state:".(int)"`
 	rcvBufSize    int
 	rcvClosed     bool
+	rcvTimestamp  bool
 
 	// The following fields are protected by the mu mutex.
 	mu         sync.RWMutex `state:"nosave"`
@@ -134,7 +137,7 @@ func (e *endpoint) Close() {
 
 // Read reads data from the endpoint. This method does not block if
 // there is no data pending.
-func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, *tcpip.Error) {
+func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.rcvMu.Lock()
 
 	if e.rcvList.Empty() {
@@ -143,12 +146,13 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, *tcpip.Error) {
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
-		return buffer.View{}, err
+		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
 	p := e.rcvList.Front()
 	e.rcvList.Remove(p)
 	e.rcvBufSize -= p.data.Size()
+	ts := e.rcvTimestamp
 
 	e.rcvMu.Unlock()
 
@@ -156,7 +160,12 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, *tcpip.Error) {
 		*addr = p.senderAddress
 	}
 
-	return p.data.ToView(), nil
+	if ts && !p.hasTimestamp {
+		// Linux uses the current time.
+		p.timestamp = e.stack.NowNanoseconds()
+	}
+
+	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: ts, Timestamp: p.timestamp}, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -299,8 +308,8 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 }
 
 // Peek only returns data from a single datagram, so do nothing here.
-func (e *endpoint) Peek([][]byte) (uintptr, *tcpip.Error) {
-	return 0, nil
+func (e *endpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
+	return 0, tcpip.ControlMessages{}, nil
 }
 
 // SetSockOpt sets a socket option. Currently not supported.
@@ -322,6 +331,11 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 
 		e.v6only = v != 0
+
+	case tcpip.TimestampOption:
+		e.rcvMu.Lock()
+		e.rcvTimestamp = v != 0
+		e.rcvMu.Unlock()
 	}
 	return nil
 }
@@ -370,6 +384,14 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		e.rcvMu.Unlock()
 		return nil
+
+	case *tcpip.TimestampOption:
+		e.rcvMu.Lock()
+		*o = 0
+		if e.rcvTimestamp {
+			*o = 1
+		}
+		e.rcvMu.Unlock()
 	}
 
 	return tcpip.ErrUnknownProtocolOption
@@ -732,6 +754,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	pkt.data = vv.Clone(pkt.views[:])
 	e.rcvList.PushBack(pkt)
 	e.rcvBufSize += vv.Size()
+
+	if e.rcvTimestamp {
+		pkt.timestamp = e.stack.NowNanoseconds()
+		pkt.hasTimestamp = true
+	}
 
 	e.rcvMu.Unlock()
 

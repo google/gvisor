@@ -374,7 +374,7 @@ func (e *endpoint) cleanup() {
 }
 
 // Read reads data from the endpoint.
-func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, *tcpip.Error) {
+func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.mu.RLock()
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
@@ -383,9 +383,9 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, *tcpip.Error) {
 	if s := e.state; s != stateConnected && s != stateClosed && e.rcvBufUsed == 0 {
 		e.mu.RUnlock()
 		if s == stateError {
-			return buffer.View{}, e.hardError
+			return buffer.View{}, tcpip.ControlMessages{}, e.hardError
 		}
-		return buffer.View{}, tcpip.ErrInvalidEndpointState
+		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
 
 	e.rcvListMu.Lock()
@@ -394,7 +394,7 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, *tcpip.Error) {
 
 	e.mu.RUnlock()
 
-	return v, err
+	return v, tcpip.ControlMessages{}, err
 }
 
 func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
@@ -498,7 +498,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 // Peek reads data without consuming it from the endpoint.
 //
 // This method does not block if there is no data pending.
-func (e *endpoint) Peek(vec [][]byte) (uintptr, *tcpip.Error) {
+func (e *endpoint) Peek(vec [][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -506,9 +506,9 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, *tcpip.Error) {
 	// but has some pending unread data.
 	if s := e.state; s != stateConnected && s != stateClosed {
 		if s == stateError {
-			return 0, e.hardError
+			return 0, tcpip.ControlMessages{}, e.hardError
 		}
-		return 0, tcpip.ErrInvalidEndpointState
+		return 0, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
 
 	e.rcvListMu.Lock()
@@ -516,9 +516,9 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, *tcpip.Error) {
 
 	if e.rcvBufUsed == 0 {
 		if e.rcvClosed || e.state != stateConnected {
-			return 0, tcpip.ErrClosedForReceive
+			return 0, tcpip.ControlMessages{}, tcpip.ErrClosedForReceive
 		}
-		return 0, tcpip.ErrWouldBlock
+		return 0, tcpip.ControlMessages{}, tcpip.ErrWouldBlock
 	}
 
 	// Make a copy of vec so we can modify the slide headers.
@@ -534,7 +534,7 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, *tcpip.Error) {
 
 			for len(v) > 0 {
 				if len(vec) == 0 {
-					return num, nil
+					return num, tcpip.ControlMessages{}, nil
 				}
 				if len(vec[0]) == 0 {
 					vec = vec[1:]
@@ -549,7 +549,7 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, *tcpip.Error) {
 		}
 	}
 
-	return num, nil
+	return num, tcpip.ControlMessages{}, nil
 }
 
 // zeroReceiveWindow checks if the receive window to be announced now would be

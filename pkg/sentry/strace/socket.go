@@ -440,6 +440,7 @@ var SocketProtocol = map[int32]abi.ValueSet{
 var controlMessageType = map[int32]string{
 	linux.SCM_RIGHTS:      "SCM_RIGHTS",
 	linux.SCM_CREDENTIALS: "SCM_CREDENTIALS",
+	linux.SO_TIMESTAMP:    "SO_TIMESTAMP",
 }
 
 func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) string {
@@ -477,7 +478,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			typ = fmt.Sprint(h.Type)
 		}
 
-		if h.Length > uint64(len(buf)-i) {
+		if h.Length > uint64(len(buf)-i+linux.SizeOfControlMessageHeader) {
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, content extends beyond buffer}",
 				level,
@@ -542,6 +543,32 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 				creds.PID,
 				creds.UID,
 				creds.GID,
+			))
+
+			i += control.AlignUp(length, width)
+
+		case linux.SO_TIMESTAMP:
+			if length < linux.SizeOfTimeval {
+				strs = append(strs, fmt.Sprintf(
+					"{level=%s, type=%s, length=%d, content too short}",
+					level,
+					typ,
+					h.Length,
+				))
+				i += control.AlignUp(length, width)
+				break
+			}
+
+			var tv linux.Timeval
+			binary.Unmarshal(buf[i:i+linux.SizeOfTimeval], usermem.ByteOrder, &tv)
+
+			strs = append(strs, fmt.Sprintf(
+				"{level=%s, type=%s, length=%d, Sec: %d, Usec: %d}",
+				level,
+				typ,
+				h.Length,
+				tv.Sec,
+				tv.Usec,
 			))
 
 			i += control.AlignUp(length, width)

@@ -31,8 +31,16 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
+
+// ControlMessages represents the union of unix control messages and tcpip
+// control messages.
+type ControlMessages struct {
+	Unix unix.ControlMessages
+	IP   tcpip.ControlMessages
+}
 
 // Socket is the interface containing socket syscalls used by the syscall layer
 // to redirect them to the appropriate implementation.
@@ -78,11 +86,11 @@ type Socket interface {
 	//
 	// senderAddrLen is the address length to be returned to the application,
 	// not necessarily the actual length of the address.
-	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages unix.ControlMessages, err *syserr.Error)
+	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
 
 	// SendMsg implements the sendmsg(2) linux syscall. SendMsg does not take
 	// ownership of the ControlMessage on error.
-	SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages unix.ControlMessages) (n int, err *syserr.Error)
+	SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages ControlMessages) (n int, err *syserr.Error)
 
 	// SetRecvTimeout sets the timeout (in ns) for recv operations. Zero means
 	// no timeout.
