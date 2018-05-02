@@ -86,8 +86,9 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 // NewWithFile creates a new sniffer link-layer endpoint. It wraps around
 // another endpoint and logs packets and they traverse the endpoint.
 //
-// Packets can be logged to file in the pcap format in addition to the standard
-// human-readable logs.
+// Packets can be logged to file in the pcap format. A sniffer created
+// with this function will not emit packets using the standard log
+// package.
 //
 // snapLen is the maximum amount of a packet to be saved. Packets with a length
 // less than or equal too snapLen will be saved in their entirety. Longer
@@ -107,7 +108,7 @@ func NewWithFile(lower tcpip.LinkEndpointID, file *os.File, snapLen uint32) (tcp
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
-	if atomic.LoadUint32(&LogPackets) == 1 {
+	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		LogPacket("recv", protocol, vv.First(), nil)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
@@ -168,7 +169,7 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // higher-level protocols to write packets; it just logs the packet and forwards
 // the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	if atomic.LoadUint32(&LogPackets) == 1 {
+	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		LogPacket("send", protocol, hdr.UsedBytes(), payload)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
