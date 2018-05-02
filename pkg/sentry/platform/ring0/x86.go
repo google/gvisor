@@ -46,6 +46,7 @@ const (
 
 	_EFER_SCE = 0x001
 	_EFER_LME = 0x100
+	_EFER_LMA = 0x400
 	_EFER_NX  = 0x800
 
 	_MSR_STAR         = 0xc0000081

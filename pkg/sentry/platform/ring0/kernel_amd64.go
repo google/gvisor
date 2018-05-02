@@ -149,7 +149,7 @@ func (c *CPU) CR4() uint64 {
 //
 //go:nosplit
 func (c *CPU) EFER() uint64 {
-	return _EFER_LME | _EFER_SCE | _EFER_NX
+	return _EFER_LME | _EFER_LMA | _EFER_SCE | _EFER_NX
 }
 
 // IsCanonical indicates whether addr is canonical per the amd64 spec.
