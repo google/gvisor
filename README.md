@@ -394,7 +394,7 @@ here when available.
 
 ## Community
 
-Join the [gvisor-discuss mailing list][gvisor-discuss-list] to discuss all things
+Join the [gvisor-users mailing list][gvisor-users-list] to discuss all things
 gVisor.
 
 Sensitive security-related questions and comments can be sent to the private
@@ -412,7 +412,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [docker]: https://www.docker.com
 [docker-storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
 [git]: https://git-scm.com
-[gvisor-discuss-list]: https://groups.google.com/forum/#!forum/gvisor-users
+[gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
 [kvm]: https://www.linux-kvm.org
 [netstack]: https://github.com/google/netstack
