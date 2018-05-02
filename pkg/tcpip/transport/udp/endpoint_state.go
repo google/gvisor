@@ -13,7 +13,7 @@ import (
 
 // saveData saves udpPacket.data field.
 func (u *udpPacket) saveData() buffer.VectorisedView {
-	// We canoot save u.data directly as u.data.views may alias to u.views,
+	// We cannot save u.data directly as u.data.views may alias to u.views,
 	// which is not allowed by state framework (in-struct pointer).
 	return u.data.Clone(nil)
 }

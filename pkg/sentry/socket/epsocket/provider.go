@@ -23,6 +23,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
@@ -37,8 +38,8 @@ type provider struct {
 	netProto tcpip.NetworkProtocolNumber
 }
 
-// GetTransportProtocol figures out transport protocol. Currently only TCP and
-// UDP are supported.
+// GetTransportProtocol figures out transport protocol. Currently only TCP,
+// UDP, and ICMP are supported.
 func GetTransportProtocol(stype unix.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
 	switch stype {
 	case linux.SOCK_STREAM:
@@ -48,14 +49,16 @@ func GetTransportProtocol(stype unix.SockType, protocol int) (tcpip.TransportPro
 		return tcp.ProtocolNumber, nil
 
 	case linux.SOCK_DGRAM:
-		if protocol != 0 && protocol != syscall.IPPROTO_UDP {
-			return 0, syserr.ErrInvalidArgument
+		switch protocol {
+		case 0, syscall.IPPROTO_UDP:
+			return udp.ProtocolNumber, nil
+		case syscall.IPPROTO_ICMP:
+			return header.ICMPv4ProtocolNumber, nil
+		case syscall.IPPROTO_ICMPV6:
+			return header.ICMPv6ProtocolNumber, nil
 		}
-		return udp.ProtocolNumber, nil
-
-	default:
-		return 0, syserr.ErrInvalidArgument
 	}
+	return 0, syserr.ErrInvalidArgument
 }
 
 // Socket creates a new socket object for the AF_INET or AF_INET6 family.

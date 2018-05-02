@@ -43,6 +43,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/ping"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.googlesource.com/gvisor/runsc/boot/filter"
@@ -346,7 +347,7 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) inet.Stack {
 	case NetworkNone, NetworkSandbox:
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
-		protoNames := []string{tcp.ProtocolName, udp.ProtocolName}
+		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, ping.ProtocolName4}
 		return &epsocket.Stack{stack.New(clock, netProtos, protoNames)}
 
 	default:
