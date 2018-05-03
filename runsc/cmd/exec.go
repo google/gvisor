@@ -99,7 +99,6 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if err != nil {
 		Fatalf("error parsing process spec: %v", err)
 	}
-	e.Detach = ex.detach
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
@@ -123,7 +122,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// executed. If detach was specified, starts a child in non-detach mode,
 	// write the child's PID to the pid file. So when the container returns, the
 	// child process will also return and signal containerd.
-	if e.Detach {
+	if ex.detach {
 		binPath, err := specutils.BinPath()
 		if err != nil {
 			Fatalf("error getting bin path: %v", err)

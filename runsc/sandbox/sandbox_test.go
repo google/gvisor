@@ -365,7 +365,6 @@ func TestExec(t *testing.T) {
 		Envv:             []string{"PATH=" + os.Getenv("PATH")},
 		WorkingDirectory: "/",
 		KUID:             uid,
-		Detach:           false,
 	}
 
 	// Verify that "sleep 100" and "sleep 5" are running after exec.
@@ -472,7 +471,6 @@ func TestCapabilities(t *testing.T) {
 		KUID:             uid,
 		KGID:             gid,
 		Capabilities:     &auth.TaskCapabilities{},
-		Detach:           true,
 	}
 
 	// "exe" should fail because we don't have the necessary permissions.
@@ -484,13 +482,9 @@ func TestCapabilities(t *testing.T) {
 	execArgs.Capabilities = &auth.TaskCapabilities{
 		EffectiveCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 	}
-	// First, start running exec.
+	// "exe" should not fail this time.
 	if _, err := s.Execute(&execArgs); err != nil {
 		t.Fatalf("sandbox failed to exec %v: %v", execArgs, err)
-	}
-
-	if err := waitForProcessList(s, expectedPL); err != nil {
-		t.Error(err)
 	}
 }
 

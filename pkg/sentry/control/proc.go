@@ -72,9 +72,6 @@ type ExecArgs struct {
 	// Capabilities is the list of capabilities to give to the process.
 	Capabilities *auth.TaskCapabilities
 
-	// Detach indicates whether Exec should detach once the process starts.
-	Detach bool
-
 	// FilePayload determines the files to give to the new process.
 	urpc.FilePayload
 }
@@ -133,12 +130,6 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 	newTG, err := proc.Kernel.CreateProcess(initArgs)
 	if err != nil {
 		return err
-	}
-
-	// If we're supposed to detach, don't wait for the process to exit.
-	if args.Detach {
-		*waitStatus = 0
-		return nil
 	}
 
 	// Wait for completion.
