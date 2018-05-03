@@ -44,7 +44,7 @@ Rules:
     * Go standard library.
       * Except (transitively) package "net" (this will result in a non-cgo
         binary). Use `//pkg/unet` instead.
-    * `@com_golang_x_sys//unix:go_default_library` (Go import `golang.org/x/sys/unix`).
+    * `@org_golang_x_sys//unix:go_default_library` (Go import `golang.org/x/sys/unix`).
     * Generated Go protobuf packages.
     * `@com_github_golang_protobuf//proto:go_default_library` (Go import `github.com/golang/protobuf/proto`).
     * `@com_github_golang_protobuf//ptypes:go_default_library` (Go import `github.com/golang/protobuf/ptypes`).
