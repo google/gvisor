@@ -166,10 +166,12 @@ and Docker.
 
 ### Requirements
 
+gVisor currently can only build and run on Linux. In addition, the following
+dependencies must be installed.
+
 * [git][git]
 * [Bazel][bazel]
-* [Python 2.7][python] (See [bug #8](https://github.com/google/gvisor/issues/8)
-  for Python 3 support updates)
+* [Python][python]
 * [Docker version 17.09.0 or greater][docker]
 * Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
