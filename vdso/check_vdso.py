@@ -65,7 +65,7 @@ def CheckSegments(vdso_path):
   Args:
     vdso_path: Path to VDSO binary.
   """
-  output = subprocess.check_output(["readelf", "-lW", vdso_path])
+  output = subprocess.check_output(["readelf", "-lW", vdso_path]).decode()
   lines = output.split("\n")
 
   segments = []
@@ -143,7 +143,7 @@ def CheckData(vdso_path):
   Args:
     vdso_path: Path to VDSO binary.
   """
-  output = subprocess.check_output(["readelf", "-SW", vdso_path])
+  output = subprocess.check_output(["readelf", "-SW", vdso_path]).decode()
   lines = output.split("\n")
 
   found_text = False
@@ -179,7 +179,7 @@ def CheckRelocs(vdso_path):
   Args:
     vdso_path: Path to VDSO binary.
   """
-  output = subprocess.check_output(["readelf", "-r", vdso_path])
+  output = subprocess.check_output(["readelf", "-r", vdso_path]).decode()
   if output.strip() != "There are no relocations in this file.":
     Fatal("VDSO contains relocations: %s", output)
 
