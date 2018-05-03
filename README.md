@@ -171,6 +171,7 @@ and Docker.
 * [Python 2.7][python] (See [bug #8](https://github.com/google/gvisor/issues/8)
   for Python 3 support updates)
 * [Docker version 17.09.0 or greater][docker]
+* Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
 ### Getting the source
 
