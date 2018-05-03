@@ -266,8 +266,8 @@ Docker configuration (`/etc/docker/daemon.json`):
 {
     "runtimes": {
         "runsc": {
-            "path": "/usr/local/bin/runsc"
-             "runtimeArgs": [
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
                 "--debug-log-dir=/tmp/runsc",
                 "--debug",
                 "--strace"
@@ -301,8 +301,8 @@ Add the following `runtimeArgs` to your Docker configuration
 {
     "runtimes": {
         "runsc": {
-            "path": "/usr/local/bin/runsc"
-             "runtimeArgs": [
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
                 "--network=host"
             ]
        }
@@ -321,8 +321,8 @@ configuration (`/etc/docker/daemon.json`):
 {
     "runtimes": {
         "runsc": {
-            "path": "/usr/local/bin/runsc"
-             "runtimeArgs": [
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
                 "--platform=kvm"
             ]
        }
