@@ -272,31 +272,8 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 			panic("cannot unmount initial dirent")
 		}
 
+		m := node.Inode.MountSource
 		if !detachOnly {
-			m := node.Inode.MountSource
-
-			// Lock the parent MountSource first, if it exists. We are
-			// holding mns.Lock, so the parent can not change out
-			// from under us.
-			parent := m.Parent()
-			if parent != nil {
-				parent.mu.Lock()
-				defer parent.mu.Unlock()
-			}
-
-			// Lock the mount that is being unmounted.
-			m.mu.Lock()
-			defer m.mu.Unlock()
-
-			if m.parent != nil {
-				// Sanity check.
-				if _, ok := m.parent.children[m]; !ok {
-					panic(fmt.Sprintf("mount %+v is not a child of parent %+v", m, m.parent))
-				}
-				delete(m.parent.children, m)
-				m.parent = nil
-			}
-
 			// Flush all references on the mounted node.
 			m.FlushDirentRefs()
 
@@ -313,6 +290,27 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 			} else if refs != 2 {
 				return syserror.EBUSY
 			}
+		}
+
+		// Lock the parent MountSource first, if it exists. We are
+		// holding mns.Lock, so the parent can not change out
+		// from under us.
+		parent := m.Parent()
+		if parent != nil {
+			parent.mu.Lock()
+			defer parent.mu.Unlock()
+		}
+
+		// Lock the mount that is being unmounted.
+		m.mu.Lock()
+		defer m.mu.Unlock()
+
+		if m.parent != nil {
+			// Sanity check.
+			if _, ok := m.parent.children[m]; !ok {
+				panic(fmt.Sprintf("mount %+v is not a child of parent %+v", m, m.parent))
+			}
+			delete(m.parent.children, m)
 		}
 
 		original := origs[len(origs)-1]
