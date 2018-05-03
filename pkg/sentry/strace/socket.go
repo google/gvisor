@@ -463,7 +463,6 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 
 		var h linux.ControlMessageHeader
 		binary.Unmarshal(buf[i:i+linux.SizeOfControlMessageHeader], usermem.ByteOrder, &h)
-		i += linux.SizeOfControlMessageHeader
 
 		var skipData bool
 		level := "SOL_SOCKET"
@@ -478,7 +477,7 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			typ = fmt.Sprint(h.Type)
 		}
 
-		if h.Length > uint64(len(buf)-i+linux.SizeOfControlMessageHeader) {
+		if h.Length > uint64(len(buf)-i) {
 			strs = append(strs, fmt.Sprintf(
 				"{level=%s, type=%s, length=%d, content extends beyond buffer}",
 				level,
@@ -488,12 +487,13 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 			break
 		}
 
+		i += linux.SizeOfControlMessageHeader
 		width := t.Arch().Width()
 		length := int(h.Length) - linux.SizeOfControlMessageHeader
 
 		if skipData {
 			strs = append(strs, fmt.Sprintf("{level=%s, type=%s, length=%d}", level, typ, h.Length))
-			i += control.AlignUp(i+length, width)
+			i += control.AlignUp(length, width)
 			continue
 		}
 
@@ -518,8 +518,6 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 				strings.Join(rights, ","),
 			))
 
-			i += control.AlignUp(length, width)
-
 		case linux.SCM_CREDENTIALS:
 			if length < linux.SizeOfControlMessageCredentials {
 				strs = append(strs, fmt.Sprintf(
@@ -528,7 +526,6 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 					typ,
 					h.Length,
 				))
-				i += control.AlignUp(length, width)
 				break
 			}
 
@@ -545,8 +542,6 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 				creds.GID,
 			))
 
-			i += control.AlignUp(length, width)
-
 		case linux.SO_TIMESTAMP:
 			if length < linux.SizeOfTimeval {
 				strs = append(strs, fmt.Sprintf(
@@ -555,7 +550,6 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 					typ,
 					h.Length,
 				))
-				i += control.AlignUp(length, width)
 				break
 			}
 
@@ -571,11 +565,10 @@ func cmsghdr(t *kernel.Task, addr usermem.Addr, length uint64, maxBytes uint64) 
 				tv.Usec,
 			))
 
-			i += control.AlignUp(length, width)
-
 		default:
 			panic("unreachable")
 		}
+		i += control.AlignUp(length, width)
 	}
 
 	return fmt.Sprintf("%#x %s", addr, strings.Join(strs, ", "))
