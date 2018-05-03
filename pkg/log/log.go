@@ -149,7 +149,7 @@ func (t TestEmitter) Emit(level Level, timestamp time.Time, format string, v ...
 // Logger is a high-level logging interface. It is in fact, not used within the
 // log package. Rather it is provided for others to provide contextual loggers
 // that may append some addition information to log statement. BasicLogger
-// satifies this interface, and may be passed around as a Logger.
+// satisfies this interface, and may be passed around as a Logger.
 type Logger interface {
 	// Debugf logs a debug statement.
 	Debugf(format string, v ...interface{})

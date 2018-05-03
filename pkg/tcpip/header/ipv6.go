@@ -60,7 +60,7 @@ const (
 	// IPv6ProtocolNumber is IPv6's network protocol number.
 	IPv6ProtocolNumber tcpip.NetworkProtocolNumber = 0x86dd
 
-	// IPv6Version is the version of the ipv6 procotol.
+	// IPv6Version is the version of the ipv6 protocol.
 	IPv6Version = 6
 
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,

@@ -376,7 +376,7 @@ func (r *FileReader) Read(buf []byte) (int, error) {
 	return int(n), err
 }
 
-// ReadAt implementes io.Reader.ReadAt.
+// ReadAt implements io.Reader.ReadAt.
 func (r *FileReader) ReadAt(buf []byte, offset int64) (int, error) {
 	n, err := r.File.Preadv(r.Ctx, usermem.BytesIOSequence(buf), offset)
 	return int(n), err

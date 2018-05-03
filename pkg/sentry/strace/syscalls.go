@@ -82,7 +82,7 @@ const (
 	// PipeFDs is an array of two FDs, formatted after syscall execution.
 	PipeFDs
 
-	// Uname is a pointer to a struct uname, formatted after syscall exection.
+	// Uname is a pointer to a struct uname, formatted after syscall execution.
 	Uname
 
 	// Stat is a pointer to a struct stat, formatted after syscall execution.

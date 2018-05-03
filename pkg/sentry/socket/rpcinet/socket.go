@@ -530,7 +530,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags unix.SockType, protoc
 	// Only accept TCP and UDP.
 	//
 	// Try to restrict the flags we will accept to minimize backwards
-	// incompatability with netstack.
+	// incompatibility with netstack.
 	stype := int(stypeflags) & linux.SOCK_TYPE_MASK
 	switch stype {
 	case syscall.SOCK_STREAM:

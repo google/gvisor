@@ -103,7 +103,7 @@ func (d *Dir) addChildLocked(name string, inode *fs.Inode) {
 	}
 
 	// Given we're now adding this inode to the directory we must also
-	// increase its link count. Similiarly we decremented it in removeChildLocked.
+	// increase its link count. Similarly we decremented it in removeChildLocked.
 	inode.AddLink()
 }
 
@@ -144,7 +144,7 @@ func (d *Dir) removeChildLocked(ctx context.Context, name string) (*fs.Inode, er
 	inode.NotifyStatusChange(ctx)
 
 	// Given we're now removing this inode to the directory we must also
-	// decrease its link count. Similiarly it is increased in addChildLocked.
+	// decrease its link count. Similarly it is increased in addChildLocked.
 	inode.DropLink()
 
 	return inode, nil

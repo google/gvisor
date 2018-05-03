@@ -298,7 +298,7 @@ func (s *Set) GetVal(num int32, creds *auth.Credentials) (int16, error) {
 }
 
 // ExecuteOps attempts to execute a list of operations to the set. It only
-// suceeds when all operations can be applied. No changes are made if it fails.
+// succeeds when all operations can be applied. No changes are made if it fails.
 //
 // On failure, it may return an error (retries are hopeless) or it may return
 // a channel that can be waited on before attempting again.

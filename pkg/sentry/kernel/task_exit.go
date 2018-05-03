@@ -125,7 +125,7 @@ func (t *Task) killLocked() {
 		Signo: int32(linux.SIGKILL),
 		// Linux just sets SIGKILL in the pending signal bitmask without
 		// enqueueing an actual siginfo, such that
-		// kernel/signal.c:collect_signal() initalizes si_code to SI_USER.
+		// kernel/signal.c:collect_signal() initializes si_code to SI_USER.
 		Code: arch.SignalInfoUser,
 	})
 	t.interrupt()

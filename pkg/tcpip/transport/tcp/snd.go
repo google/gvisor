@@ -152,7 +152,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 // updateMaxPayloadSize updates the maximum payload size based on the given
 // MTU. If this is in response to "packet too big" control packets (indicated
-// by the count argument), it also reduces the number of oustanding packets and
+// by the count argument), it also reduces the number of outstanding packets and
 // attempts to retransmit the first packet above the MTU size.
 func (s *sender) updateMaxPayloadSize(mtu, count int) {
 	m := mtu - header.TCPMinimumSize

@@ -244,8 +244,8 @@ func (l *lineDiscipline) queueWrite(ctx context.Context, src usermem.IOSequence,
 	return int64(n), err
 }
 
-// transformOutput does ouput processing for one end of the pty. See
-// drivers/tty/n_tty.c:do_output_char for an analagous kernel function.
+// transformOutput does output processing for one end of the pty. See
+// drivers/tty/n_tty.c:do_output_char for an analogous kernel function.
 //
 // Precondition: l.termiosMu must be held.
 func (l *lineDiscipline) transformOutput(buf []byte) *bytes.Buffer {

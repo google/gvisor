@@ -34,7 +34,7 @@ func (NoopRelease) Release() {}
 // SeekWithDirCursor is used to implement fs.FileOperations.Seek.  If dirCursor
 // is not nil and the seek was on a directory, the cursor will be updated.
 //
-// Currenly only seeking to 0 on a directory is supported.
+// Currently only seeking to 0 on a directory is supported.
 //
 // FIXME: Lift directory seeking limitations.
 func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence, offset int64, dirCursor *string) (int64, error) {

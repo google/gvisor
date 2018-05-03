@@ -165,7 +165,7 @@ type TCPSenderState struct {
 	// window size from a segment.
 	SndWndScale uint8
 
-	// MaxSentAck is the highest acknowledgemnt number sent till now.
+	// MaxSentAck is the highest acknowledgement number sent till now.
 	MaxSentAck seqnum.Value
 
 	// FastRecovery holds the fast recovery state for the endpoint.
