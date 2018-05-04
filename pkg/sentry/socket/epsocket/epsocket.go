@@ -1109,7 +1109,20 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 
 	case syscall.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
-		// TODO: Implement.
+		for _, addr := range s.stack.InterfaceAddrs()[index] {
+			// This ioctl is only compatible with AF_INET addresses.
+			if addr.Family != linux.AF_INET {
+				continue
+			}
+			// Populate ifr.ifr_netmask (type sockaddr).
+			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(linux.AF_INET))
+			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
+			var mask uint32 = 0xffffffff << (32 - addr.PrefixLen)
+			// Netmask is expected to be returned as a big endian
+			// value.
+			binary.BigEndian.PutUint32(ifr.Data[4:8], mask)
+			break
+		}
 
 	default:
 		// Not a valid call.
