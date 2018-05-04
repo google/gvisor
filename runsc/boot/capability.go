@@ -91,7 +91,7 @@ var capFromName = map[string]capability.Cap{
 	"CAP_SETPCAP":          capability.CAP_SETPCAP,
 	"CAP_LINUX_IMMUTABLE":  capability.CAP_LINUX_IMMUTABLE,
 	"CAP_NET_BIND_SERVICE": capability.CAP_NET_BIND_SERVICE,
-	"CAP_NET_BROAD_CAST":   capability.CAP_NET_BROADCAST,
+	"CAP_NET_BROADCAST":    capability.CAP_NET_BROADCAST,
 	"CAP_NET_ADMIN":        capability.CAP_NET_ADMIN,
 	"CAP_NET_RAW":          capability.CAP_NET_RAW,
 	"CAP_IPC_LOCK":         capability.CAP_IPC_LOCK,
@@ -117,4 +117,5 @@ var capFromName = map[string]capability.Cap{
 	"CAP_SYSLOG":           capability.CAP_SYSLOG,
 	"CAP_WAKE_ALARM":       capability.CAP_WAKE_ALARM,
 	"CAP_BLOCK_SUSPEND":    capability.CAP_BLOCK_SUSPEND,
+	"CAP_AUDIT_READ":       capability.CAP_AUDIT_READ,
 }

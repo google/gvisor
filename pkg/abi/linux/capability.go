@@ -32,7 +32,7 @@ const (
 	CAP_SETPCAP          = Capability(8)
 	CAP_LINUX_IMMUTABLE  = Capability(9)
 	CAP_NET_BIND_SERVICE = Capability(10)
-	CAP_NET_BROAD_CAST   = Capability(11)
+	CAP_NET_BROADCAST    = Capability(11)
 	CAP_NET_ADMIN        = Capability(12)
 	CAP_NET_RAW          = Capability(13)
 	CAP_IPC_LOCK         = Capability(14)
@@ -58,9 +58,10 @@ const (
 	CAP_SYSLOG           = Capability(34)
 	CAP_WAKE_ALARM       = Capability(35)
 	CAP_BLOCK_SUSPEND    = Capability(36)
+	CAP_AUDIT_READ       = Capability(37)
 
 	// MaxCapability is the highest-numbered capability.
-	MaxCapability = Capability(36) // CAP_BLOCK_SUSPEND as of 3.11
+	MaxCapability = CAP_AUDIT_READ
 )
 
 // Ok returns true if cp is a supported capability.

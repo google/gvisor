@@ -129,7 +129,7 @@ var capFromName = map[string]linux.Capability{
 	"CAP_SETPCAP":          linux.CAP_SETPCAP,
 	"CAP_LINUX_IMMUTABLE":  linux.CAP_LINUX_IMMUTABLE,
 	"CAP_NET_BIND_SERVICE": linux.CAP_NET_BIND_SERVICE,
-	"CAP_NET_BROAD_CAST":   linux.CAP_NET_BROAD_CAST,
+	"CAP_NET_BROADCAST":    linux.CAP_NET_BROADCAST,
 	"CAP_NET_ADMIN":        linux.CAP_NET_ADMIN,
 	"CAP_NET_RAW":          linux.CAP_NET_RAW,
 	"CAP_IPC_LOCK":         linux.CAP_IPC_LOCK,
@@ -155,6 +155,7 @@ var capFromName = map[string]linux.Capability{
 	"CAP_SYSLOG":           linux.CAP_SYSLOG,
 	"CAP_WAKE_ALARM":       linux.CAP_WAKE_ALARM,
 	"CAP_BLOCK_SUSPEND":    linux.CAP_BLOCK_SUSPEND,
+	"CAP_AUDIT_READ":       linux.CAP_AUDIT_READ,
 }
 
 func capsFromNames(names []string) (auth.CapabilitySet, error) {
