@@ -188,8 +188,8 @@ cd gvisor
 
 Build and install the `runsc` binary.
 
-It is important to copy this binary to some place that is accessible to all
-users, since `runsc` executes itself as user `nobody` to avoid unnecessary
+**It is important to copy this binary to some place that is accessible to all
+users**, since `runsc` executes itself as user `nobody` to avoid unnecessary
 privileges. The `/usr/local/bin` directory is a good choice.
 
 ```
@@ -376,6 +376,11 @@ features and bugs. The only real way to know if it will work is to try. If you
 find a container that doesn’t work and there is no known issue, please [file a
 bug][bug] indicating the full command you used to run the image. Providing the
 debug logs is also helpful.
+
+### When I run my container, docker fails with `flag provided but not defined: -console`
+
+You're using an old version of Docker. Refer to the
+[Requirements](#requirements) section for the minimum version supported.
 
 ### My container runs fine with *runc* but fails with *runsc*.
 
