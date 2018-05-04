@@ -39,12 +39,12 @@ var (
 	allConfs []Config
 
 	rwConfs = []Config{
-		Config{ROMount: false, LazyOpenForWrite: false},
-		Config{ROMount: false, LazyOpenForWrite: true},
+		{ROMount: false, LazyOpenForWrite: false},
+		{ROMount: false, LazyOpenForWrite: true},
 	}
 	roConfs = []Config{
-		Config{ROMount: true, LazyOpenForWrite: false},
-		Config{ROMount: true, LazyOpenForWrite: true},
+		{ROMount: true, LazyOpenForWrite: false},
+		{ROMount: true, LazyOpenForWrite: true},
 	}
 )
 

@@ -493,8 +493,8 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, binPath string, common
 	// namespace for these.
 	log.Infof("Sandbox will be started in empty IPC and UTS namespaces")
 	nss := []specs.LinuxNamespace{
-		specs.LinuxNamespace{Type: specs.IPCNamespace},
-		specs.LinuxNamespace{Type: specs.UTSNamespace},
+		{Type: specs.IPCNamespace},
+		{Type: specs.UTSNamespace},
 	}
 
 	if conf.Platform == boot.PlatformPtrace {

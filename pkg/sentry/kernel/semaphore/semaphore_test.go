@@ -57,7 +57,7 @@ func TestBasic(t *testing.T) {
 	ctx := contexttest.Context(t)
 	set := &Set{ID: 123, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
-		linux.Sembuf{SemOp: 1},
+		{SemOp: 1},
 	}
 	executeOps(ctx, t, set, ops, false)
 
@@ -78,7 +78,7 @@ func TestWaitForZero(t *testing.T) {
 	ctx := contexttest.Context(t)
 	set := &Set{ID: 123, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
-		linux.Sembuf{SemOp: 0},
+		{SemOp: 0},
 	}
 	executeOps(ctx, t, set, ops, false)
 
@@ -117,7 +117,7 @@ func TestNoWait(t *testing.T) {
 	ctx := contexttest.Context(t)
 	set := &Set{ID: 123, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
-		linux.Sembuf{SemOp: 1},
+		{SemOp: 1},
 	}
 	executeOps(ctx, t, set, ops, false)
 
@@ -146,7 +146,7 @@ func TestUnregister(t *testing.T) {
 	}
 
 	ops := []linux.Sembuf{
-		linux.Sembuf{SemOp: -1},
+		{SemOp: -1},
 	}
 	chs := make([]chan struct{}, 0, 5)
 	for i := 0; i < 5; i++ {

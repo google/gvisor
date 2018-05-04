@@ -614,8 +614,8 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 
 	if valid.ATime || valid.MTime {
 		utimes := [2]syscall.Timespec{
-			syscall.Timespec{Sec: 0, Nsec: linux.UTIME_OMIT},
-			syscall.Timespec{Sec: 0, Nsec: linux.UTIME_OMIT},
+			{Sec: 0, Nsec: linux.UTIME_OMIT},
+			{Sec: 0, Nsec: linux.UTIME_OMIT},
 		}
 		if valid.ATime {
 			if valid.ATimeNotSystemTime {

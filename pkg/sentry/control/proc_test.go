@@ -38,7 +38,7 @@ func TestProcessListTable(t *testing.T) {
 		},
 		{
 			pl: []*Process{
-				&Process{
+				{
 					UID:   0,
 					PID:   0,
 					PPID:  0,
@@ -47,7 +47,7 @@ func TestProcessListTable(t *testing.T) {
 					Time:  "0",
 					Cmd:   "zero",
 				},
-				&Process{
+				{
 					UID:   1,
 					PID:   1,
 					PPID:  1,
@@ -83,7 +83,7 @@ func TestProcessListJSON(t *testing.T) {
 		},
 		{
 			pl: []*Process{
-				&Process{
+				{
 					UID:   0,
 					PID:   0,
 					PPID:  0,
@@ -92,7 +92,7 @@ func TestProcessListJSON(t *testing.T) {
 					Time:  "0",
 					Cmd:   "zero",
 				},
-				&Process{
+				{
 					UID:   1,
 					PID:   1,
 					PPID:  1,
