@@ -26,6 +26,9 @@ genrule(
           "-O2 " +
           "-std=c++11 " +
           "-fPIC " +
+          # Some toolchains enable stack protector by default. Disable it, the
+          # VDSO has no hooks to handle failures.
+          "-fno-stack-protector " +
           "-fuse-ld=gold " +
           "-m64 " +
           "-shared " +
