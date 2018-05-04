@@ -16,30 +16,18 @@ package state
 
 import (
 	"fmt"
+	"syscall"
 	"time"
+	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 )
 
-// The save metadata keys for timestamp.
-const (
-	cpuUsage          = "cpu_usage"
-	metadataTimestamp = "timestamp"
-)
-
-func addSaveMetadata(m map[string]string) {
-	t, err := cpuTime()
-	if err != nil {
-		log.Warningf("Error getting cpu time: %v", err)
+func cpuTime() (time.Duration, error) {
+	var ts syscall.Timespec
+	_, _, errno := syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_PROCESS_CPUTIME_ID), uintptr(unsafe.Pointer(&ts)), 0)
+	if errno != 0 {
+		return 0, fmt.Errorf("failed calling clock_gettime(CLOCK_PROCESS_CPUTIME_ID): errno=%d", errno)
 	}
-	if previousMetadata != nil {
-		p, err := time.ParseDuration(previousMetadata[cpuUsage])
-		if err != nil {
-			log.Warningf("Error parsing previous runs' cpu time: %v", err)
-		}
-		t += p
-	}
-	m[cpuUsage] = t.String()
-
-	m[metadataTimestamp] = fmt.Sprintf("%v", time.Now())
+	return time.Duration(ts.Nano()), nil
 }

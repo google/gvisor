@@ -27,6 +27,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/state/statefile"
 )
 
+var previousMetadata map[string]string
+
 // ErrStateFile is returned when the state file cannot be opened.
 type ErrStateFile struct {
 	err error
@@ -103,10 +105,12 @@ type LoadOpts struct {
 // Load loads the given kernel, setting the provided platform and stack.
 func (opts LoadOpts) Load(k *kernel.Kernel, p platform.Platform, n inet.Stack) error {
 	// Open the file.
-	r, _, err := statefile.NewReader(opts.Source, opts.Key)
+	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
 		return ErrStateFile{err}
 	}
+
+	previousMetadata = m
 
 	// Restore the Kernel object graph.
 	return k.LoadFrom(r, p, n)
