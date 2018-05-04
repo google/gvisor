@@ -23,6 +23,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -180,4 +182,34 @@ func BinPath() (string, error) {
 		return "", fmt.Errorf(`error resolving "/proc/self/exe" symlink: %v`, err)
 	}
 	return binPath, nil
+}
+
+// WaitForReady waits for a process to become ready. The process is ready when
+// the 'ready' function returns true. It continues to wait if 'ready' returns
+// false. It returns error on timeout, if the process stops or if 'ready' fails.
+func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) error {
+	backoff := 1 * time.Millisecond
+	for start := time.Now(); time.Now().Sub(start) < timeout; {
+		if ok, err := ready(); err != nil {
+			return err
+		} else if ok {
+			return nil
+		}
+
+		// Check if the process is still running.
+		var ws syscall.WaitStatus
+		var ru syscall.Rusage
+		child, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, &ru)
+		if err != nil || child == pid {
+			return fmt.Errorf("process (%d) is not running, err: %v", pid, err)
+		}
+
+		// Process continues to run, backoff and retry.
+		time.Sleep(backoff)
+		backoff *= 2
+		if backoff > 1*time.Second {
+			backoff = 1 * time.Second
+		}
+	}
+	return fmt.Errorf("timed out waiting for process (%d)", pid)
 }

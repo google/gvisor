@@ -123,48 +123,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// write the child's PID to the pid file. So when the container returns, the
 	// child process will also return and signal containerd.
 	if ex.detach {
-		binPath, err := specutils.BinPath()
-		if err != nil {
-			Fatalf("error getting bin path: %v", err)
-		}
-		var args []string
-		for _, a := range os.Args[1:] {
-			if !strings.Contains(a, "detach") {
-				args = append(args, a)
-			}
-		}
-		cmd := exec.Command(binPath, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			Fatalf("failure to start child exec process, err: %v", err)
-		}
-
-		log.Infof("Started child (PID: %d) to exec and wait: %s %s", cmd.Process.Pid, binPath, args)
-
-		// Wait for PID file to ensure that child process has started. Otherwise,
-		// '--process' file is deleted as soon as this process returns and the child
-		// may fail to read it.
-		sleepTime := 10 * time.Millisecond
-		for start := time.Now(); time.Now().Sub(start) < 10*time.Second; {
-			_, err := os.Stat(ex.pidFile)
-			if err == nil {
-				break
-			}
-			if pe, ok := err.(*os.PathError); !ok || pe.Err != syscall.ENOENT {
-				Fatalf("unexpected error waiting for PID file, err: %v", err)
-			}
-
-			log.Infof("Waiting for PID file to be created...")
-			time.Sleep(sleepTime)
-			sleepTime *= sleepTime * 2
-			if sleepTime > 1*time.Second {
-				sleepTime = 1 * time.Second
-			}
-		}
-		*waitStatus = 0
-		return subcommands.ExitSuccess
+		return ex.execAndWait(waitStatus)
 	}
 
 	if ex.pidFile != "" {
@@ -188,6 +147,50 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("error getting processes for sandbox: %v", err)
 	}
 	*waitStatus = ws
+	return subcommands.ExitSuccess
+}
+
+func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
+	binPath, err := specutils.BinPath()
+	if err != nil {
+		Fatalf("error getting bin path: %v", err)
+	}
+	var args []string
+	for _, a := range os.Args[1:] {
+		if !strings.Contains(a, "detach") {
+			args = append(args, a)
+		}
+	}
+	cmd := exec.Command(binPath, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		Fatalf("failure to start child exec process, err: %v", err)
+	}
+
+	log.Infof("Started child (PID: %d) to exec and wait: %s %s", cmd.Process.Pid, binPath, args)
+
+	// Wait for PID file to ensure that child process has started. Otherwise,
+	// '--process' file is deleted as soon as this process returns and the child
+	// may fail to read it.
+	ready := func() (bool, error) {
+		_, err := os.Stat(ex.pidFile)
+		if err == nil {
+			// File appeared, we're done!
+			return true, nil
+		}
+		if pe, ok := err.(*os.PathError); !ok || pe.Err != syscall.ENOENT {
+			return false, err
+		}
+		// No file yet, continue to wait...
+		return false, nil
+	}
+	if err := specutils.WaitForReady(cmd.Process.Pid, 10*time.Second, ready); err != nil {
+		Fatalf("unexpected error waiting for PID file, err: %v", err)
+	}
+
+	*waitStatus = 0
 	return subcommands.ExitSuccess
 }
 

@@ -560,19 +560,20 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, binPath string, common
 // running, at which point the sandbox is in Created state.
 func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 	log.Debugf("Waiting for sandbox %q creation", s.ID)
-	tchan := time.After(timeout)
-	for {
-		select {
-		case <-tchan:
-			return fmt.Errorf("timed out waiting for sandbox control server")
-		default:
-			if c, err := client.ConnectTo(boot.ControlSocketAddr(s.ID)); err == nil {
-				// It's alive!
-				c.Close()
-				return nil
-			}
+
+	ready := func() (bool, error) {
+		c, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
+		if err != nil {
+			return false, nil
 		}
+		// It's alive!
+		c.Close()
+		return true, nil
 	}
+	if err := specutils.WaitForReady(s.Pid, timeout, ready); err != nil {
+		return fmt.Errorf("unexpected error waiting for sandbox %q, err: %v", s.ID, err)
+	}
+	return nil
 }
 
 // Wait waits for the containerized process to exit, and returns its WaitStatus.
