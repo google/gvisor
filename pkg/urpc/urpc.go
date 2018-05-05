@@ -332,9 +332,6 @@ func (s *Server) clientBeginRequest(client *unet.Socket) bool {
 		// Should not happen.
 		panic(fmt.Sprintf("expected idle or closed, got %d", state))
 	}
-
-	// Unreachable.
-	return false
 }
 
 // clientEndRequest ends a request.
