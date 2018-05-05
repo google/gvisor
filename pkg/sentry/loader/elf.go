@@ -408,11 +408,8 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 			path := make([]byte, phdr.Filesz)
 			_, err := readFull(ctx, f, usermem.BytesIOSequence(path), int64(phdr.Off))
 			if err != nil {
-				ctx.Infof("Error reading PT_INTERP path: %v", err)
 				// If an interpreter was specified, it should exist.
-				if err == io.EOF || err == io.ErrUnexpectedEOF {
-					err = syserror.ENOEXEC
-				}
+				ctx.Infof("Error reading PT_INTERP path: %v", err)
 				return loadedELF{}, syserror.ENOEXEC
 			}
 
