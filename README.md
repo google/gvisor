@@ -166,8 +166,11 @@ and Docker.
 
 ### Requirements
 
-gVisor currently can only build and run on Linux. In addition, the following
-dependencies must be installed.
+gVisor currently can only build and run on x86\_64 Linux 3.17+. In addition,
+gVisor only supports x86\_64 binaries inside the sandbox (i.e., it cannot run
+32-bit binaries).
+
+In addition, the following dependencies must be installed:
 
 * [git][git]
 * [Bazel][bazel]
