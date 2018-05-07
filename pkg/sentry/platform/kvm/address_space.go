@@ -178,7 +178,7 @@ func (as *addressSpace) MapFile(addr usermem.Addr, fd int, fr platform.FileRange
 	// we create distinct mappings for each address space. Unfortunately,
 	// there's not a better way to manage this here. The file underlying
 	// this fd can change at any time, so we can't actually index the file
-	// and share between address space. Oh well. It's all refering to the
+	// and share between address space. Oh well. It's all referring to the
 	// same physical pages, hopefully we don't run out of address space.
 	if fd != int(as.filemem.File().Fd()) {
 		// N.B. precommit is ignored for host files.

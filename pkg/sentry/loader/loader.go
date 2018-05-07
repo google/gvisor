@@ -118,7 +118,7 @@ func allocStack(ctx context.Context, m *mm.MemoryManager, a arch.Context) (*arch
 
 const (
 	// maxLoaderAttempts is the maximum number of attempts to try to load
-	// an interpreter scripts, to prevent loops. 6 (inital + 5 changes) is
+	// an interpreter scripts, to prevent loops. 6 (initial + 5 changes) is
 	// what the Linux kernel allows (fs/exec.c:search_binary_handler).
 	maxLoaderAttempts = 6
 )

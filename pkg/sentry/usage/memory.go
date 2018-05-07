@@ -95,7 +95,7 @@ type MemoryStats struct {
 // categories not backed by platform memory. For details about how this works,
 // see the memory accounting docs.
 //
-// N.B. Please keep the struct in sync with the API. Noteably, changes to this
+// N.B. Please keep the struct in sync with the API. Notably, changes to this
 // struct requires a version bump and addition of compatibility logic in the
 // control server. As a special-case, adding fields without re-ordering existing
 // ones do not require a version bump because the mapped page we use is

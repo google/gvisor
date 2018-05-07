@@ -316,7 +316,7 @@ func (i *Inotify) RmWatch(wd int32) error {
 
 	// The watch is now isolated and we can safely drop the instance lock. We
 	// need to do so because watch.destroy() acquires Watch.mu, which cannot be
-	// aquired with Inotify.mu held.
+	// acquired with Inotify.mu held.
 	i.mu.Unlock()
 
 	// Generate the event for the removal.

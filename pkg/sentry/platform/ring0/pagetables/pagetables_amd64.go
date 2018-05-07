@@ -301,7 +301,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					}
 
 					// This level has 2-MB huge pages. If this
-					// region is contined in a single PMD entry?
+					// region is contained in a single PMD entry?
 					// As above, we can skip allocating a new page.
 					if start&(pmdSize-1) == 0 && end-start >= pmdSize {
 						pmdEntry.SetSuper()

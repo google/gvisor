@@ -720,7 +720,7 @@ func HostID(axArg, cxArg uint32) (ax, bx, cx, dx uint32)
 
 // HostFeatureSet uses cpuid to get host values and construct a feature set
 // that matches that of the host machine. Note that there are several places
-// where there appear to be some unecessary assignments between register names
+// where there appear to be some unnecessary assignments between register names
 // (ax, bx, cx, or dx) and featureBlockN variables. This is to explicitly show
 // where the different feature blocks come from, to make the code easier to
 // inspect and read.

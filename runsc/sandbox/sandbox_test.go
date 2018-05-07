@@ -131,7 +131,7 @@ func waitForProcessList(s *sandbox.Sandbox, expected []*control.Process) error {
 	return fmt.Errorf("sandbox got process list: %s, want: %s", procListToString(got), procListToString(expected))
 }
 
-// TestLifecycle tests the basic Create/Start/Signal/Destory sandbox lifecycle.
+// TestLifecycle tests the basic Create/Start/Signal/Destroy sandbox lifecycle.
 // It verifies after each step that the sandbox can be loaded from disk, and
 // has the correct status.
 func TestLifecycle(t *testing.T) {

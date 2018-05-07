@@ -81,7 +81,7 @@ const (
 	// IPv4ProtocolNumber is IPv4's network protocol number.
 	IPv4ProtocolNumber tcpip.NetworkProtocolNumber = 0x0800
 
-	// IPv4Version is the version of the ipv4 procotol.
+	// IPv4Version is the version of the ipv4 protocol.
 	IPv4Version = 4
 )
 

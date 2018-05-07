@@ -94,7 +94,7 @@ func unwrapError(err error) error {
 // TryOpen uses a NonBlockingOpener to try to open a host pipe, respecting the fs.FileFlags.
 func (p *pipeOpenState) TryOpen(ctx context.Context, opener NonBlockingOpener, flags fs.FileFlags) (*pipeOperations, error) {
 	switch {
-	// Reject invalid configurations so they don't accidently succeed below.
+	// Reject invalid configurations so they don't accidentally succeed below.
 	case !flags.Read && !flags.Write:
 		return nil, syscall.EINVAL
 

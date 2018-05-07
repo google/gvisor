@@ -26,7 +26,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
-// Inode is a file system object that can be simulatenously referenced by different
+// Inode is a file system object that can be simultaneously referenced by different
 // components of the VFS (Dirent, fs.File, etc).
 type Inode struct {
 	// AtomicRefCount is our reference count.

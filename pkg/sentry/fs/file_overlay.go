@@ -151,7 +151,7 @@ func (f *overlayFileOperations) Seek(ctx context.Context, file *File, whence See
 
 	// If this was a seek on a directory, we must update the cursor.
 	if seekDir && whence == SeekSet && offset == 0 {
-		// Currenly only seeking to 0 on a directory is supported.
+		// Currently only seeking to 0 on a directory is supported.
 		// FIXME: Lift directory seeking limitations.
 		f.dirCursor = ""
 	}

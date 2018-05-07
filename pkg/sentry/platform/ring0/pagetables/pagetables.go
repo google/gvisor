@@ -44,18 +44,18 @@ type PageTables struct {
 	// root is the pagetable root.
 	root *Node
 
-	// translater is the translater passed at creation.
-	translater Translater
+	// translator is the translator passed at creation.
+	translator Translator
 
 	// archPageTables includes architecture-specific features.
 	archPageTables
 
-	// allNodes is a set of nodes indexed by translater address.
+	// allNodes is a set of nodes indexed by translator address.
 	allNodes map[uintptr]*Node
 }
 
-// Translater translates to guest physical addresses.
-type Translater interface {
+// Translator translates to guest physical addresses.
+type Translator interface {
 	// TranslateToPhysical translates the given pointer object into a
 	// "physical" address. We do not require that it translates back, the
 	// reverse mapping is maintained internally.
@@ -63,9 +63,9 @@ type Translater interface {
 }
 
 // New returns new PageTables.
-func New(t Translater, opts Opts) *PageTables {
+func New(t Translator, opts Opts) *PageTables {
 	p := &PageTables{
-		translater: t,
+		translator: t,
 		allNodes:   make(map[uintptr]*Node),
 	}
 	p.root = p.allocNode()
@@ -80,7 +80,7 @@ func New(t Translater, opts Opts) *PageTables {
 // managing multiple sets of pagetables.
 func (p *PageTables) New() *PageTables {
 	np := &PageTables{
-		translater: p.translater,
+		translator: p.translator,
 		allNodes:   make(map[uintptr]*Node),
 	}
 	np.root = np.allocNode()
@@ -90,7 +90,7 @@ func (p *PageTables) New() *PageTables {
 
 // setPageTable sets the given index as a page table.
 func (p *PageTables) setPageTable(n *Node, index int, child *Node) {
-	phys := p.translater.TranslateToPhysical(child.PTEs())
+	phys := p.translator.TranslateToPhysical(child.PTEs())
 	p.allNodes[phys] = child
 	pte := &n.PTEs()[index]
 	pte.setPageTable(phys)
@@ -188,6 +188,6 @@ func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, accessType use
 // allocNode allocates a new page.
 func (p *PageTables) allocNode() *Node {
 	n := new(Node)
-	n.physical = p.translater.TranslateToPhysical(n.PTEs())
+	n.physical = p.translator.TranslateToPhysical(n.PTEs())
 	return n
 }
