@@ -1,11 +1,12 @@
-Before filling an issue, please consult our [FAQ](https://github.com/google/gvisor#faq--known-issues)
-and check that the issue hasn't been [reported before](https://github.com/google/gvisor/issues).
+Before filling an issue, please consult our FAQ: https://github.com/google/gvisor#faq--known-issues
+Also check that the issue hasn't been reported before.
 
-If this is your first time compiling or running gVisor, please make sure that
-your system meets the [minimum requirements](https://github.com/google/gvisor#requirements).
+If you have a question, please send e-mail to gvisor-users@googlegroups.com rather than filing a bug.
 
 If you believe you've found a security issue, please email
 gvisor-security@googlegroups.com rather than filing a bug.
+
+If this is your first time compiling or running gVisor, please make sure that your system meets the minimum requirements: https://github.com/google/gvisor#requirements
 
 Enable [debug logs](https://github.com/google/gvisor#debugging), run your
 repro, and attach the logs to the bug. Other useful information to include is:
