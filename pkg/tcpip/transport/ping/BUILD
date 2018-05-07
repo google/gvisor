@@ -48,3 +48,11 @@ go_library(
         "//pkg/waiter",
     ],
 )
+
+filegroup(
+    name = "autogen",
+    srcs = [
+        "ping_packet_list.go",
+    ],
+    visibility = ["//:sandbox"],
+)
