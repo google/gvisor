@@ -23,7 +23,7 @@
 //
 //    would be renamed to:
 //
-//    fun f(arg *B)
+//    func f(arg *B)
 //
 // 2. Global type definitions and their method sets will be removed when they're
 //    being renamed with -t. For example, if -t=A=B is passed in, the following
