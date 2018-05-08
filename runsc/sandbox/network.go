@@ -31,6 +31,13 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 )
 
+const (
+	// Annotations used to indicate whether the container corresponds to a
+	// pod or a container within a pod.
+	crioContainerTypeAnnotation       = "io.kubernetes.cri-o.ContainerType"
+	containerdContainerTypeAnnotation = "io.kubernetes.cri.container-type"
+)
+
 // setupNetwork configures the network stack to mimic the local network
 // configuration. Docker uses network namespaces with vnets to configure the
 // network for the container. The untrusted app expects to see the same network
@@ -68,17 +75,10 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 	// For now the following HACK disables networking for the "pause"
 	// sandbox, allowing the second sandbox to start up successfully.
 	//
-	// Cri-o helpfully adds the "ContainerType" annotation that we can use
-	// to detect whether we are a pod or container.  Cri-containerd will
-	// support this eventually, but does not currently
-	// (https://github.com/kubernetes-incubator/cri-containerd/issues/512).
-	//
-	// Thus, to support cri-containerd, we check if the exec args is
-	// "/pause", which is pretty gross.
-	//
 	// TODO: Remove this once multiple containers per sandbox
 	// is properly supported.
-	if spec.Annotations["io.kubernetes.cri-o.ContainerType"] == "sandbox" || spec.Process.Args[0] == "/pause" {
+	if spec.Annotations[crioContainerTypeAnnotation] == "sandbox" ||
+		spec.Annotations[containerdContainerTypeAnnotation] == "sandbox" {
 		log.Warningf("HACK: Disabling network")
 		conf.Network = boot.NetworkNone
 	}
