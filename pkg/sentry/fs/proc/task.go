@@ -81,6 +81,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
 		"ns":        newNamespaceDir(t, msrc),
 		"stat":      newTaskStat(t, msrc, showSubtasks, pidns),
+		"statm":     newStatm(t, msrc),
 		"status":    newStatus(t, msrc, pidns),
 		"uid_map":   newUIDMap(t, msrc),
 	}, fs.RootOwner, fs.FilePermsFromMode(0555))
@@ -387,6 +388,40 @@ func (s *taskStatData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, 
 	fmt.Fprintf(&buf, "0\n" /* exit_code */)
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*taskStatData)(nil)}}, 0
+}
+
+// statmData implements seqfile.SeqSource for /proc/[pid]/statm.
+type statmData struct {
+	t *kernel.Task
+}
+
+func newStatm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newFile(seqfile.NewSeqFile(t, &statmData{t}), msrc, fs.SpecialFile, t)
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (s *statmData) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (s *statmData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return nil, 0
+	}
+
+	var vss, rss uint64
+	s.t.WithMuLocked(func(t *kernel.Task) {
+		if mm := t.MemoryManager(); mm != nil {
+			vss = mm.VirtualMemorySize()
+			rss = mm.ResidentSetSize()
+		}
+	})
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "%d %d 0 0 0 0 0\n", vss/usermem.PageSize, rss/usermem.PageSize)
+
+	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*statmData)(nil)}}, 0
 }
 
 // statusData implements seqfile.SeqSource for /proc/[pid]/status.
