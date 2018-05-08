@@ -119,16 +119,18 @@ func TestDescriptorFlags(t *testing.T) {
 	limitSet := limits.NewLimitSet()
 	limitSet.Set(limits.NumberOfFiles, limits.Limit{maxFD, maxFD})
 
-	if err := f.NewFDAt(2, file, FDFlags{CloseOnExec: true}, limitSet); err != nil {
+	origFlags := FDFlags{CloseOnExec: true}
+
+	if err := f.NewFDAt(2, file, origFlags, limitSet); err != nil {
 		t.Fatalf("f.NewFDAt(2, r, FDFlags{}): got %v, wanted nil", err)
 	}
 
-	newFile, flags := f.GetDescriptor(2)
+	newFile, newFlags := f.GetDescriptor(2)
 	if newFile == nil {
 		t.Fatalf("f.GetFile(2): got a %v, wanted nil", newFile)
 	}
 
-	if !flags.CloseOnExec {
-		t.Fatalf("new File flags %d don't match original %d\n", flags, 0)
+	if newFlags != origFlags {
+		t.Fatalf("new File flags %+v don't match original %+v", newFlags, origFlags)
 	}
 }
