@@ -55,11 +55,19 @@ package fs
 
 import (
 	"sync"
+
+	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
-// work is a sync.WaitGroup that can be used to queue asynchronous operations
-// via Do. Callers can use Barrier to ensure no operations are outstanding.
-var work sync.WaitGroup
+var (
+	// work is a sync.WaitGroup that can be used to queue asynchronous
+	// operations via Do. Callers can use Barrier to ensure no operations
+	// are outstanding.
+	work sync.WaitGroup
+
+	// asyncError is used to store up to one asynchronous execution error.
+	asyncError = make(chan error, 1)
+)
 
 // AsyncBarrier waits for all outstanding asynchronous work to complete.
 func AsyncBarrier() {
@@ -75,6 +83,43 @@ func Async(f func()) {
 	}()
 }
 
+// AsyncErrorBarrier waits for all outstanding asynchronous work to complete, or
+// the first async error to arrive. Other unfinished async executions will
+// continue in the background. Other past and future async errors are ignored.
+func AsyncErrorBarrier() error {
+	wait := make(chan struct{}, 1)
+	go func() { // S/R-SAFE: Does not touch persistent state.
+		work.Wait()
+		wait <- struct{}{}
+	}()
+	select {
+	case <-wait:
+		select {
+		case err := <-asyncError:
+			return err
+		default:
+			return nil
+		}
+	case err := <-asyncError:
+		return err
+	}
+}
+
+// CatchError tries to capture the potential async error returned by the
+// function. At most one async error will be captured globally so excessive
+// errors will be dropped.
+func CatchError(f func() error) func() {
+	return func() {
+		if err := f(); err != nil {
+			select {
+			case asyncError <- err:
+			default:
+				log.Warningf("excessive async error dropped: %v", err)
+			}
+		}
+	}
+}
+
 // ErrSaveRejection indicates a failed save due to unsupported file system state
 // such as dangling open fd, etc.
 type ErrSaveRejection struct {
@@ -85,4 +130,16 @@ type ErrSaveRejection struct {
 // Error returns a sensible description of the save rejection error.
 func (e ErrSaveRejection) Error() string {
 	return "save rejected due to unsupported file system state: " + e.Err.Error()
+}
+
+// ErrCorruption indicates a failed restore due to external file system state in
+// corruption.
+type ErrCorruption struct {
+	// Err is the wrapped error.
+	Err error
+}
+
+// Error returns a sensible description of the save rejection error.
+func (e ErrCorruption) Error() string {
+	return "restore failed due to external file system state in corruption: " + e.Err.Error()
 }

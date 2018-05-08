@@ -59,7 +59,7 @@ func (i *inodeFileState) afterLoad() {
 		// saved filesystem are no longer unique on this filesystem.
 		// Since this violates the contract that filesystems cannot
 		// change across save and restore, error out.
-		panic(fmt.Sprintf("host %s conflict in host device mappings: %s", key, hostFileDevice))
+		panic(fs.ErrCorruption{fmt.Errorf("host %s conflict in host device mappings: %s", key, hostFileDevice)})
 	}
 
 	if !i.descriptor.donated && i.sattr.Type == fs.RegularFile {
@@ -69,10 +69,10 @@ func (i *inodeFileState) afterLoad() {
 		}
 		uattr := unstableAttr(i.mops, &s)
 		if env.ValidateFileSize && uattr.Size != i.savedUAttr.Size {
-			panic(fmt.Errorf("file size has changed for %s: previously %d, now %d", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.Size, uattr.Size))
+			panic(fs.ErrCorruption{fmt.Errorf("file size has changed for %s: previously %d, now %d", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.Size, uattr.Size)})
 		}
 		if env.ValidateFileTimestamp && uattr.ModificationTime != i.savedUAttr.ModificationTime {
-			panic(fmt.Errorf("file modification time has changed for %s: previously %v, now %v", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.ModificationTime, uattr.ModificationTime))
+			panic(fs.ErrCorruption{fmt.Errorf("file modification time has changed for %s: previously %v, now %v", i.mops.inodeMappings[i.sattr.InodeID], i.savedUAttr.ModificationTime, uattr.ModificationTime)})
 		}
 		i.savedUAttr = nil
 	}

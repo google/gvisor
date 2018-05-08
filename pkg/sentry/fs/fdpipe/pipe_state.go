@@ -63,7 +63,7 @@ func (p *pipeOperations) loadFlags(flags fs.FileFlags) {
 
 // afterLoad is invoked by stateify.
 func (p *pipeOperations) afterLoad() {
-	load := func() {
+	load := func() error {
 		if !p.flags.Read {
 			readPipeOperationsLoading.Wait()
 		} else {
@@ -75,14 +75,15 @@ func (p *pipeOperations) afterLoad() {
 			Write: p.flags.Write,
 		})
 		if err != nil {
-			panic(fmt.Sprintf("unable to open pipe %v: %v", p, err))
+			return fmt.Errorf("unable to open pipe %v: %v", p, err)
 		}
 		if err := p.init(); err != nil {
-			panic(fmt.Sprintf("unable to initialize pipe %v: %v", p, err))
+			return fmt.Errorf("unable to initialize pipe %v: %v", p, err)
 		}
+		return nil
 	}
 
 	// Do background opening of pipe ends. Note for write-only pipe ends we
 	// have to do it asynchronously to avoid blocking the restore.
-	fs.Async(load)
+	fs.Async(fs.CatchError(load))
 }

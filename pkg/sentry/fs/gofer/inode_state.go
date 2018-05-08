@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -83,7 +84,7 @@ func (i *inodeFileState) loadLoading(_ struct{}) {
 
 // afterLoad is invoked by stateify.
 func (i *inodeFileState) afterLoad() {
-	load := func() {
+	load := func() error {
 		// See comment on i.loading().
 		defer i.loading.Unlock()
 
@@ -92,14 +93,14 @@ func (i *inodeFileState) afterLoad() {
 		if !ok {
 			// This should be impossible, see assertion in
 			// beforeSave.
-			panic(fmt.Sprintf("failed to find path for inode number %d. Device %s contains %s", i.sattr.InodeID, i.s.connID, fs.InodeMappings(i.s.inodeMappings)))
+			return fmt.Errorf("failed to find path for inode number %d. Device %s contains %s", i.sattr.InodeID, i.s.connID, fs.InodeMappings(i.s.inodeMappings))
 		}
 		// TODO: Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
 		var err error
 		_, i.file, err = i.s.attach.walk(ctx, strings.Split(name, "/"))
 		if err != nil {
-			panic(fmt.Sprintf("failed to walk to %q: %v", name, err))
+			return fmt.Errorf("failed to walk to %q: %v", name, err)
 		}
 
 		// Remap the saved inode number into the gofer device using the
@@ -107,10 +108,10 @@ func (i *inodeFileState) afterLoad() {
 		// environment.
 		qid, mask, attrs, err := i.file.getAttr(ctx, p9.AttrMaskAll())
 		if err != nil {
-			panic(fmt.Sprintf("failed to get file attributes of %s: %v", name, err))
+			return fmt.Errorf("failed to get file attributes of %s: %v", name, err)
 		}
 		if !mask.RDev {
-			panic(fmt.Sprintf("file %s lacks device", name))
+			return fs.ErrCorruption{fmt.Errorf("file %s lacks device", name)}
 		}
 		i.key = device.MultiDeviceKey{
 			Device:          attrs.RDev,
@@ -118,24 +119,26 @@ func (i *inodeFileState) afterLoad() {
 			Inode:           qid.Path,
 		}
 		if !goferDevice.Load(i.key, i.sattr.InodeID) {
-			panic(fmt.Sprintf("gofer device %s -> %d conflict in gofer device mappings: %s", i.key, i.sattr.InodeID, goferDevice))
+			return fs.ErrCorruption{fmt.Errorf("gofer device %s -> %d conflict in gofer device mappings: %s", i.key, i.sattr.InodeID, goferDevice)}
 		}
 
 		if i.sattr.Type == fs.RegularFile {
 			env, ok := fs.CurrentRestoreEnvironment()
 			if !ok {
-				panic("missing restore environment")
+				return errors.New("missing restore environment")
 			}
 			uattr := unstable(ctx, mask, attrs, i.s.mounter, i.s.client)
 			if env.ValidateFileSize && uattr.Size != i.savedUAttr.Size {
-				panic(fmt.Errorf("file size has changed for %s: previously %d, now %d", i.s.inodeMappings[i.sattr.InodeID], i.savedUAttr.Size, uattr.Size))
+				return fs.ErrCorruption{fmt.Errorf("file size has changed for %s: previously %d, now %d", i.s.inodeMappings[i.sattr.InodeID], i.savedUAttr.Size, uattr.Size)}
 			}
 			if env.ValidateFileTimestamp && uattr.ModificationTime != i.savedUAttr.ModificationTime {
-				panic(fmt.Errorf("file modification time has changed for %s: previously %v, now %v", i.s.inodeMappings[i.sattr.InodeID], i.savedUAttr.ModificationTime, uattr.ModificationTime))
+				return fs.ErrCorruption{fmt.Errorf("file modification time has changed for %s: previously %v, now %v", i.s.inodeMappings[i.sattr.InodeID], i.savedUAttr.ModificationTime, uattr.ModificationTime)}
 			}
 			i.savedUAttr = nil
 		}
+
+		return nil
 	}
 
-	fs.Async(load)
+	fs.Async(fs.CatchError(load))
 }

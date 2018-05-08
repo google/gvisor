@@ -15,13 +15,15 @@
 package gofer
 
 import (
+	"fmt"
+
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 )
 
 // afterLoad is invoked by stateify.
 func (f *fileOperations) afterLoad() {
-	load := func() {
+	load := func() error {
 		f.inodeOperations.fileState.waitForLoad()
 
 		// Manually load the open handles.
@@ -29,9 +31,10 @@ func (f *fileOperations) afterLoad() {
 		// TODO: Context is not plumbed to save/restore.
 		f.handles, err = newHandles(context.Background(), f.inodeOperations.fileState.file, f.flags)
 		if err != nil {
-			panic("failed to re-open handle: " + err.Error())
+			return fmt.Errorf("failed to re-open handle: %v", err)
 		}
 		f.inodeOperations.fileState.setHandlesForCachedIO(f.flags, f.handles)
+		return nil
 	}
-	fs.Async(load)
+	fs.Async(fs.CatchError(load))
 }

@@ -418,7 +418,9 @@ func (k *Kernel) LoadFrom(r io.Reader, p platform.Platform, net inet.Stack) erro
 	// Ensure that all pending asynchronous work is complete:
 	//   - namedpipe opening
 	//   - inode file opening
-	fs.AsyncBarrier()
+	if err := fs.AsyncErrorBarrier(); err != nil {
+		return err
+	}
 
 	log.Infof("Overall load took [%s]", time.Since(loadStart))
 
