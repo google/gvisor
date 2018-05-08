@@ -567,6 +567,28 @@ func TestConsoleSocket(t *testing.T) {
 	}
 }
 
+func TestSpecUnsupported(t *testing.T) {
+	spec := newSpecWithArgs("/bin/true")
+	spec.Process.SelinuxLabel = "somelabel"
+
+	// These are normally set by docker and will just cause warnings to be logged.
+	spec.Process.ApparmorProfile = "someprofile"
+	spec.Linux = &specs.Linux{Seccomp: &specs.LinuxSeccomp{}}
+
+	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	if err != nil {
+		t.Fatalf("error setting up sandbox: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	id := uniqueSandboxID()
+	_, err = sandbox.Create(id, spec, conf, bundleDir, "", "", nil)
+	if err == nil || !strings.Contains(err.Error(), "is not supported") {
+		t.Errorf("sandbox.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
+	}
+}
+
 // procListsEqual is used to check whether 2 Process lists are equal for all
 // implemented fields.
 func procListsEqual(got, want []*control.Process) bool {

@@ -53,6 +53,22 @@ func validateID(id string) error {
 	return nil
 }
 
+func validateSpec(spec *specs.Spec) error {
+	if spec.Process.SelinuxLabel != "" {
+		return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
+	}
+
+	// Docker uses AppArmor by default, so just log that it's being ignored.
+	if spec.Process.ApparmorProfile != "" {
+		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
+	}
+	// TODO: Apply seccomp to application inside sandbox.
+	if spec.Linux != nil && spec.Linux.Seccomp != nil {
+		log.Warningf("Seccomp spec is being ignored")
+	}
+	return nil
+}
+
 // Sandbox wraps a child sandbox process, and is responsible for saving and
 // loading sandbox metadata to disk.
 //
@@ -108,6 +124,9 @@ type Sandbox struct {
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string, args []string) (*Sandbox, error) {
 	log.Debugf("Create sandbox %q in root dir: %s", id, conf.RootDir)
 	if err := validateID(id); err != nil {
+		return nil, err
+	}
+	if err := validateSpec(spec); err != nil {
 		return nil, err
 	}
 
