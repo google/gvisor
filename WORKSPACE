@@ -1,14 +1,14 @@
 # Depend on the go bazel rules.
 http_archive(
     name = "io_bazel_rules_go",
-    url = "https://github.com/bazelbuild/rules_go/releases/download/0.11.0/rules_go-0.11.0.tar.gz",
-    sha256 = "f70c35a8c779bb92f7521ecb5a1c6604e9c3edd431e50b6376d7497abc8ad3c1",
+    url = "https://github.com/bazelbuild/rules_go/releases/download/0.12.0/rules_go-0.12.0.tar.gz",
+    sha256 = "c1f52b8789218bb1542ed362c4f7de7052abcf254d865d96fb7ba6d44bc15ee3",
 )
 
 # Load go bazel rules and toolchain.
 load("@io_bazel_rules_go//go:def.bzl", "go_repository", "go_rules_dependencies", "go_register_toolchains")
 go_rules_dependencies()
-go_register_toolchains(go_version="1.10.1")
+go_register_toolchains(go_version="1.10.2")
 
 # Add dependencies on external repositories.
 go_repository(
