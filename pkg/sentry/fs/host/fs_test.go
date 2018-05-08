@@ -141,11 +141,7 @@ func createTestDirs(ctx context.Context, t *testing.T, m *fs.MountNamespace) err
 		return err
 	}
 
-	if err := symlinks.CreateLink(ctx, r, "/symlinks", "recursive"); err != nil {
-		return err
-	}
-
-	return nil
+	return symlinks.CreateLink(ctx, r, "/symlinks", "recursive")
 }
 
 // allPaths returns a slice of all paths of entries visible in the rootfs.

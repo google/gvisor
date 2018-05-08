@@ -460,14 +460,11 @@ func accessAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, resolve bool, m
 			creds:   creds,
 		}
 
-		if err := d.Inode.CheckPermission(ctx, fs.PermMask{
+		return d.Inode.CheckPermission(ctx, fs.PermMask{
 			Read:    mode&rOK != 0,
 			Write:   mode&wOK != 0,
 			Execute: mode&xOK != 0,
-		}); err != nil {
-			return err
-		}
-		return nil
+		})
 	})
 }
 

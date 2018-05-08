@@ -69,10 +69,7 @@ func (e *endpoint) init() error {
 	}
 
 	e.stype = unix.SockType(stype)
-	if err := fdnotifier.AddFD(int32(e.fd), &e.queue); err != nil {
-		return err
-	}
-	return nil
+	return fdnotifier.AddFD(int32(e.fd), &e.queue)
 }
 
 // newEndpoint creates a new host endpoint.

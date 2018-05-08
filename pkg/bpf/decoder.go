@@ -161,10 +161,7 @@ func decodeAlu(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	default:
 		return fmt.Errorf("invalid BPF ALU instruction: %v", inst)
 	}
-	if err := decodeSource(inst, w); err != nil {
-		return err
-	}
-	return nil
+	return decodeSource(inst, w)
 }
 
 func decodeSource(inst linux.BPFInstruction, w *bytes.Buffer) error {

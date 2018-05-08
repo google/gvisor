@@ -184,10 +184,7 @@ func handleResult(r result, callback func(*chunk) error) error {
 	if r.err != nil {
 		return r.err
 	}
-	if err := callback(r.chunk); err != nil {
-		return err
-	}
-	return nil
+	return callback(r.chunk)
 }
 
 // schedule schedules the given buffers.

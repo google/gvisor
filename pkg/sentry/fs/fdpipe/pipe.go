@@ -90,10 +90,7 @@ func (p *pipeOperations) init() error {
 	if err := syscall.SetNonblock(p.file.FD(), true); err != nil {
 		return err
 	}
-	if err := fdnotifier.AddFD(int32(p.file.FD()), &p.Queue); err != nil {
-		return err
-	}
-	return nil
+	return fdnotifier.AddFD(int32(p.file.FD()), &p.Queue)
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.

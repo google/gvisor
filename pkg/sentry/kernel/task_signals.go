@@ -127,10 +127,7 @@ func (t *Task) dequeueSignalLocked() *arch.SignalInfo {
 	if info := t.pendingSignals.dequeue(t.tr.SignalMask); info != nil {
 		return info
 	}
-	if info := t.tg.pendingSignals.dequeue(t.tr.SignalMask); info != nil {
-		return info
-	}
-	return nil
+	return t.tg.pendingSignals.dequeue(t.tr.SignalMask)
 }
 
 // TakeSignal returns a pending signal not blocked by mask. Signal handlers are
@@ -144,10 +141,7 @@ func (t *Task) TakeSignal(mask linux.SignalSet) *arch.SignalInfo {
 	if info := t.pendingSignals.dequeue(mask); info != nil {
 		return info
 	}
-	if info := t.tg.pendingSignals.dequeue(mask); info != nil {
-		return info
-	}
-	return nil
+	return t.tg.pendingSignals.dequeue(mask)
 }
 
 // discardSpecificLocked removes all instances of the given signal from all

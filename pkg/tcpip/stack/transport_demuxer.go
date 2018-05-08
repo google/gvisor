@@ -158,9 +158,5 @@ func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv *buffe
 
 	// Try to find a match with only the local port.
 	nid.LocalAddress = ""
-	if ep := eps.endpoints[nid]; ep != nil {
-		return ep
-	}
-
-	return nil
+	return eps.endpoints[nid]
 }

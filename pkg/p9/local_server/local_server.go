@@ -246,11 +246,7 @@ func (l *local) Symlink(oldname string, newname string, _ p9.UID, _ p9.GID) (p9.
 //
 // Not properly implemented.
 func (l *local) Link(target p9.File, newname string) error {
-	if err := os.Link(target.(*local).path, path.Join(l.path, newname)); err != nil {
-		return err
-	}
-
-	return nil
+	return os.Link(target.(*local).path, path.Join(l.path, newname))
 }
 
 // Mknod implements p9.File.Mknod.
