@@ -14,7 +14,8 @@
 
 package linux
 
-// Control commands used with semctl. Source: //include/uapi/linux/ipc.h.
+// Control commands used with semctl, shmctl, and msgctl. Source:
+// include/uapi/linux/ipc.h.
 const (
 	IPC_RMID = 0
 	IPC_SET  = 1
@@ -22,7 +23,7 @@ const (
 	IPC_INFO = 3
 )
 
-// resource get request flags. Source: //include/uapi/linux/ipc.h
+// resource get request flags. Source: include/uapi/linux/ipc.h
 const (
 	IPC_CREAT  = 00001000
 	IPC_EXCL   = 00002000
@@ -31,17 +32,22 @@ const (
 
 const IPC_PRIVATE = 0
 
-// IPCPerm is equivalent to struct ipc_perm.
+// In Linux, amd64 does not enable CONFIG_ARCH_WANT_IPC_PARSE_VERSION, so SysV
+// IPC unconditionally uses the "new" 64-bit structures that are needed for
+// features like 32-bit UIDs.
+
+// IPCPerm is equivalent to struct ipc64_perm.
 type IPCPerm struct {
-	Key       uint32
-	UID       uint32
-	GID       uint32
-	CUID      uint32
-	CGID      uint32
-	Mode      uint16
-	pad1      uint16
-	Seq       uint16
-	pad2      uint16
-	reserved1 uint32
-	reserved2 uint32
+	Key     uint32
+	UID     uint32
+	GID     uint32
+	CUID    uint32
+	CGID    uint32
+	Mode    uint16
+	pad1    uint16
+	Seq     uint16
+	pad2    uint16
+	pad3    uint32
+	unused1 uint64
+	unused2 uint64
 }

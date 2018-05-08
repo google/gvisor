@@ -14,7 +14,7 @@
 
 package linux
 
-// semctl Command Definitions. Source: //include/uapi/linux/sem.h
+// semctl Command Definitions. Source: include/uapi/linux/sem.h
 const (
 	GETPID  = 11
 	GETVAL  = 12
@@ -25,7 +25,7 @@ const (
 	SETALL  = 17
 )
 
-// ipcs ctl cmds. Source: //include/uapi/linux/sem.h
+// ipcs ctl cmds. Source: include/uapi/linux/sem.h
 const (
 	SEM_STAT = 18
 	SEM_INFO = 19
@@ -33,16 +33,14 @@ const (
 
 const SEM_UNDO = 0x1000
 
-// SemidDS is equivalent to struct semid_ds.
+// SemidDS is equivalent to struct semid64_ds.
 type SemidDS struct {
-	SemPerm   IPCPerm
-	SemOTime  TimeT
-	reserved1 uint32
-	SemCTime  TimeT
-	reserved2 uint32
-	SemNSems  uint32
-	reserved3 uint32
-	reserved4 uint32
+	SemPerm  IPCPerm
+	SemOTime TimeT
+	SemCTime TimeT
+	SemNSems uint64
+	unused3  uint64
+	unused4  uint64
 }
 
 // Sembuf is equivalent to struct sembuf.
