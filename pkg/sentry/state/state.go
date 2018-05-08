@@ -50,11 +50,6 @@ type SaveOpts struct {
 	// Metadata is save metadata.
 	Metadata map[string]string
 
-	// CompressionLevel is the compression level to use.
-	//
-	// See statefile.NewWriter for details.
-	CompressionLevel int
-
 	// Callback is called prior to unpause, with any save error.
 	Callback func(err error)
 }
@@ -76,7 +71,7 @@ func (opts SaveOpts) Save(k *kernel.Kernel, w *watchdog.Watchdog) error {
 	addSaveMetadata(opts.Metadata)
 
 	// Open the statefile.
-	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata, opts.CompressionLevel)
+	wc, err := statefile.NewWriter(opts.Destination, opts.Key, opts.Metadata)
 	if err != nil {
 		err = ErrStateFile{err}
 	} else {

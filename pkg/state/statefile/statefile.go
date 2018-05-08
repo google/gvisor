@@ -45,6 +45,7 @@ package statefile
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/json"
@@ -86,7 +87,7 @@ var ErrMetadataInvalid = fmt.Errorf("metadata invalid, can't start with _")
 // NewWriter returns a state data writer for a statefile.
 //
 // Note that the returned WriteCloser must be closed.
-func NewWriter(w io.Writer, key []byte, metadata map[string]string, compressionLevel int) (io.WriteCloser, error) {
+func NewWriter(w io.Writer, key []byte, metadata map[string]string) (io.WriteCloser, error) {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
@@ -140,8 +141,11 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string, compressionL
 
 	w = hashio.NewWriter(w, h)
 
-	// Wrap in compression.
-	return compressio.NewWriter(w, compressionChunkSize, compressionLevel)
+	// Wrap in compression. We always use "best speed" mode here. When using
+	// "best compression" mode, there is usually only a little gain in file
+	// size reduction, which translate to even smaller gain in restore
+	// latency reduction, while inccuring much more CPU usage at save time.
+	return compressio.NewWriter(w, compressionChunkSize, flate.BestSpeed)
 }
 
 // MetadataUnsafe reads out the metadata from a state file without verifying any

@@ -16,7 +16,6 @@ package statefile
 
 import (
 	"bytes"
-	"compress/flate"
 	crand "crypto/rand"
 	"encoding/base64"
 	"io"
@@ -89,7 +88,7 @@ func TestStatefile(t *testing.T) {
 					var bufDecoded bytes.Buffer
 
 					// Do all the writing.
-					w, err := NewWriter(&bufEncoded, key, c.metadata, flate.BestSpeed)
+					w, err := NewWriter(&bufEncoded, key, c.metadata)
 					if err != nil {
 						t.Fatalf("error creating writer: got %v, expected nil", err)
 					}
@@ -195,7 +194,7 @@ func benchmark(b *testing.B, size int, write bool, compressible bool) {
 	var stateBuf bytes.Buffer
 	writeState := func() {
 		stateBuf.Reset()
-		w, err := NewWriter(&stateBuf, key, nil, flate.BestSpeed)
+		w, err := NewWriter(&stateBuf, key, nil)
 		if err != nil {
 			b.Fatalf("error creating writer: %v", err)
 		}
