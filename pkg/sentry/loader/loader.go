@@ -85,7 +85,7 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 
 	// No exec-ing directories, pipes, etc!
 	if !fs.IsRegular(d.Inode.StableAttr) {
-		ctx.Infof("Error regularing %s: %v", name, d.Inode.StableAttr)
+		ctx.Infof("%s is not regular: %v", name, d.Inode.StableAttr)
 		return nil, nil, syserror.EACCES
 	}
 
