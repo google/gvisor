@@ -264,7 +264,7 @@ bazel test ...
 
 ### Debugging
 
-To enable debug + system call logging, add the `runtimeArgs` below to your
+To enable debug and system call logging, add the `runtimeArgs` below to your
 Docker configuration (`/etc/docker/daemon.json`):
 
 ```
