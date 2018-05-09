@@ -126,9 +126,12 @@ func (s *session) Revalidate(*fs.Dirent) bool {
 
 // TakeRefs takes an extra reference on dirent if possible.
 func (s *session) Keep(dirent *fs.Dirent) bool {
-	// NOTE: Only cache files and directories.
 	sattr := dirent.Inode.StableAttr
-	return s.cachePolicy != cacheNone && (fs.IsFile(sattr) || fs.IsDir(sattr))
+	if s.cachePolicy == cacheNone {
+		return false
+	}
+	// NOTE: Only cache files, directories, and symlinks.
+	return fs.IsFile(sattr) || fs.IsDir(sattr) || fs.IsSymlink(sattr)
 }
 
 // ResetInodeMappings implements fs.MountSourceOperations.ResetInodeMappings.
