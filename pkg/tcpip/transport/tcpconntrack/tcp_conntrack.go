@@ -106,6 +106,11 @@ func (t *TCB) OutboundSendSequenceNumber() seqnum.Value {
 	return t.outbound.nxt
 }
 
+// InboundSendSequenceNumber returns the snd.NXT for the inbound stream.
+func (t *TCB) InboundSendSequenceNumber() seqnum.Value {
+	return t.inbound.nxt
+}
+
 // adapResult modifies the supplied "Result" according to the state of the TCB;
 // if r is anything other than "Alive", or if one of the streams isn't closed
 // yet, it is returned unmodified. Otherwise it's converted to either
