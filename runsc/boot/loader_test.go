@@ -16,6 +16,7 @@ package boot
 
 import (
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,9 +66,25 @@ func TestRun(t *testing.T) {
 	}
 	defer s.Destroy()
 
+	// Start a goroutine to read the start chan result, otherwise Run will
+	// block forever.
+	var resultChanErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		resultChanErr = <-s.ctrl.app.startResultChan
+		wg.Done()
+	}()
+
 	// Run the application.
 	if err := s.Run(); err != nil {
 		t.Errorf("error running application: %v", err)
+	}
+
+	// We should have not gotten an error on the startResultChan.
+	wg.Wait()
+	if resultChanErr != nil {
+		t.Errorf("error on startResultChan: %v", resultChanErr)
 	}
 
 	// Wait for the application to exit.  It should succeed.
@@ -94,7 +111,7 @@ func TestStartSignal(t *testing.T) {
 	waitFinished := make(chan struct{})
 	go func() {
 		s.WaitForStartSignal()
-		// Pretent that Run() executed and returned no error.
+		// Pretend that Run() executed and returned no error.
 		s.ctrl.app.startResultChan <- nil
 		waitFinished <- struct{}{}
 	}()

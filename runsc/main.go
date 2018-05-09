@@ -126,7 +126,10 @@ func main() {
 
 	var logFile io.Writer = os.Stderr
 	if *logFilename != "" {
-		f, err := os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		// We must set O_APPEND and not O_TRUNC because Docker passes
+		// the same log file for all commands (and also parses these
+		// log files), so we can't destroy them on each command.
+		f, err := os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
 		}

@@ -68,7 +68,7 @@ func newController(fd int, k *kernel.Kernel) (*controller, error) {
 
 	app := &application{
 		startChan:       make(chan struct{}),
-		startResultChan: make(chan error, 1),
+		startResultChan: make(chan error),
 		k:               k,
 	}
 	srv.Register(app)

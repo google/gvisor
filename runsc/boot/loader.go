@@ -287,7 +287,15 @@ func createPlatform(conf *Config) (platform.Platform, error) {
 func (l *Loader) Run() error {
 	err := l.run()
 	l.ctrl.app.startResultChan <- err
-	return err
+	if err != nil {
+		// Give the controller some time to send the error to the
+		// runtime. If we return too quickly here the process will exit
+		// and the control connection will be closed before the error
+		// is returned.
+		gtime.Sleep(2 * gtime.Second)
+		return err
+	}
+	return nil
 }
 
 func (l *Loader) run() error {

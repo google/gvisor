@@ -289,7 +289,7 @@ func (s *Sandbox) Start(conf *boot.Config) error {
 	// application.
 	if err := c.Call(boot.ApplicationStart, nil, nil); err != nil {
 		s.Destroy()
-		return fmt.Errorf("error starting sandbox: %v", err)
+		return fmt.Errorf("error starting application %v: %v", s.Spec.Process.Args, err)
 	}
 
 	// "If any poststart hook fails, the runtime MUST log a warning, but
