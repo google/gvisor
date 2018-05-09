@@ -308,7 +308,7 @@ func (es *encodeState) encodeObject(obj reflect.Value, mapAsValue bool, format s
 			}}}
 		}
 	case reflect.String:
-		object = &pb.Object{Value: &pb.Object_StringValue{obj.String()}}
+		object = &pb.Object{Value: &pb.Object_StringValue{[]byte(obj.String())}}
 	case reflect.Ptr:
 		if obj.IsNil() {
 			// Handled specially in decode; store as a nil value.

@@ -335,7 +335,7 @@ func (ds *decodeState) decodeObject(os *objectState, obj reflect.Value, object *
 	case *pb.Object_BoolValue:
 		obj.SetBool(x.BoolValue)
 	case *pb.Object_StringValue:
-		obj.SetString(x.StringValue)
+		obj.SetString(string(x.StringValue))
 	case *pb.Object_Int64Value:
 		obj.SetInt(x.Int64Value)
 		if obj.Int() != x.Int64Value {

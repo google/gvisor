@@ -114,7 +114,7 @@ message Float32s {
 message Object {
   oneof value {
     bool      bool_value          = 1;
-    string    string_value        = 2;
+    bytes     string_value        = 2;
     int64     int64_value         = 3;
     uint64    uint64_value        = 4;
     double    double_value        = 5;

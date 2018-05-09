@@ -30,7 +30,7 @@ func format(graph uint64, depth int, object *pb.Object, html bool) (string, bool
 	case *pb.Object_BoolValue:
 		return fmt.Sprintf("%t", x.BoolValue), x.BoolValue != false
 	case *pb.Object_StringValue:
-		return fmt.Sprintf("\"%s\"", x.StringValue), x.StringValue != ""
+		return fmt.Sprintf("\"%s\"", string(x.StringValue)), len(x.StringValue) != 0
 	case *pb.Object_Int64Value:
 		return fmt.Sprintf("%d", x.Int64Value), x.Int64Value != 0
 	case *pb.Object_Uint64Value:

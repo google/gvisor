@@ -430,6 +430,7 @@ func TestTypes(t *testing.T) {
 				"",
 				"foo",
 				"bar",
+				"\xa0",
 			},
 		},
 		{
