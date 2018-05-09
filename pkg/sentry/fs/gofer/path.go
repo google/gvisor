@@ -150,8 +150,10 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, _ *fs.Inode, targe
 	if err := i.fileState.file.link(ctx, &targetOpts.fileState.file, newName); err != nil {
 		return err
 	}
-	// TODO: Don't increase link count because we can't properly accounts for links
-	// with gofers.
+	if i.session().cachePolicy == cacheAll {
+		// Increase link count.
+		targetOpts.cachingInodeOps.IncLinks(ctx)
+	}
 	i.touchModificationTime(ctx)
 	return nil
 }
