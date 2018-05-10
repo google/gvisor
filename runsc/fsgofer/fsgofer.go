@@ -98,7 +98,17 @@ func (a *attachPoint) Attach(appPath string) (p9.File, error) {
 	}
 
 	root := filepath.Join(a.prefix, appPath)
-	f, err := os.OpenFile(root, openFlags|syscall.O_RDONLY, 0)
+	fi, err := os.Stat(root)
+	if err != nil {
+		return nil, err
+	}
+
+	mode := syscall.O_RDWR
+	if a.conf.ROMount || fi.IsDir() {
+		mode = syscall.O_RDONLY
+	}
+
+	f, err := os.OpenFile(root, mode|openFlags, 0)
 	if err != nil {
 		return nil, fmt.Errorf("unable to open file %q, err: %v", root, err)
 	}

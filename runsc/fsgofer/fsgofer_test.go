@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"syscall"
 	"testing"
 
@@ -102,7 +103,7 @@ func setup(ft fileType) (string, string, error) {
 		return "", "", fmt.Errorf("ioutil.TempDir() failed, err: %v", err)
 	}
 
-	// First attach with writable configuiration to setup tree.
+	// First attach with writable configuration to setup tree.
 	a := NewAttachPoint(path, Config{})
 	root, err := a.Attach("/")
 	if err != nil {
@@ -573,4 +574,51 @@ func TestReaddir(t *testing.T) {
 			t.Errorf("%v: Readdir(0, 10) wrong files returned, dir: %v, symlink: %v, file: %v", s, dir, symlink, file)
 		}
 	})
+}
+
+// Test that attach point can be written to when it points to a file, e.g.
+// /etc/hosts.
+func TestAttachFile(t *testing.T) {
+	conf := Config{ROMount: false}
+	dir, err := ioutil.TempDir("", "root-")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	path := path.Join(dir, "test")
+	if _, err := os.Create(path); err != nil {
+		t.Fatalf("os.Create(%q) failed, err: %v", path, err)
+	}
+
+	a := NewAttachPoint(path, conf)
+	root, err := a.Attach("/")
+	if err != nil {
+		t.Fatalf("Attach(%q) failed, err: %v", "/", err)
+	}
+
+	if _, _, _, err := root.Open(p9.ReadWrite); err != nil {
+		t.Fatalf("Open(ReadWrite) failed, err: %v", err)
+	}
+	defer root.Close()
+
+	b := []byte("foobar")
+	w, err := root.WriteAt(b, 0)
+	if err != nil {
+		t.Fatalf("Write() failed, err: %v", err)
+	}
+	if w != len(b) {
+		t.Fatalf("Write() was partial, got: %d, expected: %d", w, len(b))
+	}
+	rBuf := make([]byte, len(b))
+	r, err := root.ReadAt(rBuf, 0)
+	if err != nil {
+		t.Fatalf("ReadAt() failed, err: %v", err)
+	}
+	if r != len(rBuf) {
+		t.Fatalf("ReadAt() was partial, got: %d, expected: %d", r, len(rBuf))
+	}
+	if string(rBuf) != "foobar" {
+		t.Fatalf("ReadAt() wrong data, got: %s, expected: %s", string(rBuf), "foobar")
+	}
 }
