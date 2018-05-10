@@ -61,6 +61,8 @@ var (
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 )
 
+var gitRevision = ""
+
 func main() {
 	// Help and flags commands are generated automatically.
 	subcommands.Register(subcommands.HelpCommand(), "")
@@ -166,6 +168,7 @@ func main() {
 
 	log.Infof("***************************")
 	log.Infof("Args: %s", os.Args)
+	log.Infof("Git Revision: %s", gitRevision)
 	log.Infof("PID: %d", os.Getpid())
 	log.Infof("UID: %d, GID: %d", os.Getuid(), os.Getgid())
 	log.Infof("Configuration:")

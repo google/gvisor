@@ -8,6 +8,7 @@ go_binary(
         "main.go",
     ],
     pure = "on",
+    x_defs = {"main.gitRevision": "{GIT_REVISION}"},
     deps = [
         "//pkg/log",
         "//runsc/boot",
