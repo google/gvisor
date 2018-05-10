@@ -33,8 +33,8 @@ bazel build //runsc
 
 # Move the runsc binary into "latest" directory, and also a directory with the
 # current date.
-latest_dir="${KOKORO_ARTIFACTS_DIR}"/nightly/latest
-today_dir="${KOKORO_ARTIFACTS_DIR}"/nightly/"$(date -Idate)"
+latest_dir="${KOKORO_ARTIFACTS_DIR}"/latest
+today_dir="${KOKORO_ARTIFACTS_DIR}"/"$(date -Idate)"
 mkdir -p "${latest_dir}" "${today_dir}"
 cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${latest_dir}"
 cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${today_dir}"
