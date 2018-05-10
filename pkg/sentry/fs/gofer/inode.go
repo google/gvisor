@@ -206,7 +206,7 @@ func (i *inodeFileState) WriteFromBlocksAt(ctx context.Context, srcs safemem.Blo
 
 // SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
 func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error {
-	if mask.Empty() {
+	if i.skipSetAttr(mask) {
 		return nil
 	}
 	as, ans := attr.AccessTime.Unix()
@@ -235,6 +235,35 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 			MTimeSeconds:     uint64(ms),
 			MTimeNanoSeconds: uint64(mns),
 		})
+}
+
+// skipSetAttr checks if attribute change can be skipped. It can be skipped
+// when:
+//   - Mask is empty
+//   - Mask contains only atime and/or mtime, and host FD exists
+//
+// Updates to atime and mtime can be skipped because cached value will be
+// "close enough" to host value, given that operation went directly to host FD.
+// Skipping atime updates is particularly important to reduce the number of
+// operations sent to the Gofer for readonly files.
+func (i *inodeFileState) skipSetAttr(mask fs.AttrMask) bool {
+	if mask.Empty() {
+		return true
+	}
+
+	cpy := mask
+	cpy.AccessTime = false
+	cpy.ModificationTime = false
+	if !cpy.Empty() {
+		// More than just atime and mtime is being set.
+		return false
+	}
+
+	i.handlesMu.RLock()
+	defer i.handlesMu.RUnlock()
+	return (i.readonly != nil && i.readonly.Host != nil) ||
+		(i.readthrough != nil && i.readthrough.Host != nil) ||
+		(i.writeback != nil && i.writeback.Host != nil)
 }
 
 // Sync implements fsutil.CachedFileObject.Sync.

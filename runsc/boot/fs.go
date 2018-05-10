@@ -141,10 +141,7 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 // createRootMount creates the root filesystem.
 func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *fdDispenser) (*fs.Inode, error) {
 	// First construct the filesystem from the spec.Root.
-	mf := fs.MountSourceFlags{
-		ReadOnly: spec.Root.Readonly,
-		NoAtime:  true,
-	}
+	mf := fs.MountSourceFlags{ReadOnly: spec.Root.Readonly}
 
 	var (
 		rootInode *fs.Inode
@@ -261,7 +258,6 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 		// All writes go to upper, be paranoid and make lower readonly.
 		mf.ReadOnly = true
 	}
-	mf.NoAtime = true
 
 	inode, err := filesystem.Mount(ctx, m.Type, mf, strings.Join(data, ","))
 	if err != nil {
