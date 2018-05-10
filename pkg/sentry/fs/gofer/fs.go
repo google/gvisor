@@ -57,19 +57,25 @@ const (
 )
 
 // cachePolicy is a 9p cache policy.
-type cachePolicy string
+type cachePolicy int
 
 const (
-	// Use virtual file system cache.
-	cacheAll cachePolicy = "fscache"
-
 	// TODO: fully support cache=none.
-	cacheNone cachePolicy = "none"
+	cacheNone cachePolicy = iota
 
-	// defaultCache is cacheAll. Note this diverges from the 9p Linux
-	// client whose default is "none".  See TODO above.
-	defaultCache = cacheAll
+	// Use virtual file system cache.
+	cacheAll
 )
+
+func parseCachePolicy(policy string) (cachePolicy, error) {
+	switch policy {
+	case "fscache":
+		return cacheAll, nil
+	case "none":
+		return cacheNone, nil
+	}
+	return cacheNone, fmt.Errorf("unsupported cache mode: %s", policy)
+}
 
 // defaultAname is the default attach name.
 const defaultAname = "/"
@@ -206,11 +212,12 @@ func options(data string) (opts, error) {
 
 	// Parse the cache policy. Reject unsupported policies.
 	o.policy = cacheAll
-	if cp, ok := options[cacheKey]; ok {
-		if cachePolicy(cp) != cacheAll && cachePolicy(cp) != cacheNone {
-			return o, fmt.Errorf("unsupported cache mode: 'cache=%s'", cp)
+	if policy, ok := options[cacheKey]; ok {
+		cp, err := parseCachePolicy(policy)
+		if err != nil {
+			return o, err
 		}
-		o.policy = cachePolicy(cp)
+		o.policy = cp
 		delete(options, cacheKey)
 	}
 
