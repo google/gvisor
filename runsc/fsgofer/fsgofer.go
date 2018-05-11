@@ -708,7 +708,7 @@ func (l *localFile) Rename(directory p9.File, name string) error {
 	// TODO: change to renameat(2)
 	parent := directory.(*localFile)
 	newPath := path.Join(parent.hostPath, name)
-	if err := os.Rename(l.hostPath, newPath); err != nil {
+	if err := syscall.Rename(l.hostPath, newPath); err != nil {
 		return extractErrno(err)
 	}
 
