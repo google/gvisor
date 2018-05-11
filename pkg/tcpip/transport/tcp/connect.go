@@ -296,6 +296,21 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 	return nil
 }
 
+func (h *handshake) handleSegment(s *segment) *tcpip.Error {
+	h.sndWnd = s.window
+	if !s.flagIsSet(flagSyn) && h.sndWndScale > 0 {
+		h.sndWnd <<= uint8(h.sndWndScale)
+	}
+
+	switch h.state {
+	case handshakeSynRcvd:
+		return h.synRcvdState(s)
+	case handshakeSynSent:
+		return h.synSentState(s)
+	}
+	return nil
+}
+
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
 func (h *handshake) processSegments() *tcpip.Error {
@@ -305,18 +320,7 @@ func (h *handshake) processSegments() *tcpip.Error {
 			return nil
 		}
 
-		h.sndWnd = s.window
-		if !s.flagIsSet(flagSyn) && h.sndWndScale > 0 {
-			h.sndWnd <<= uint8(h.sndWndScale)
-		}
-
-		var err *tcpip.Error
-		switch h.state {
-		case handshakeSynRcvd:
-			err = h.synRcvdState(s)
-		case handshakeSynSent:
-			err = h.synSentState(s)
-		}
+		err := h.handleSegment(s)
 		s.decRef()
 		if err != nil {
 			return err
@@ -363,6 +367,10 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 			if n&notifyClose != 0 {
 				h.ep.route.RemoveWaker(resolutionWaker)
 				return tcpip.ErrAborted
+			}
+			if n&notifyDrain != 0 {
+				close(h.ep.drainDone)
+				<-h.ep.undrain
 			}
 		}
 
@@ -433,6 +441,20 @@ func (h *handshake) execute() *tcpip.Error {
 			n := h.ep.fetchNotifications()
 			if n&notifyClose != 0 {
 				return tcpip.ErrAborted
+			}
+			if n&notifyDrain != 0 {
+				for s := h.ep.segmentQueue.dequeue(); s != nil; s = h.ep.segmentQueue.dequeue() {
+					err := h.handleSegment(s)
+					s.decRef()
+					if err != nil {
+						return err
+					}
+					if h.state == handshakeCompleted {
+						return nil
+					}
+				}
+				close(h.ep.drainDone)
+				<-h.ep.undrain
 			}
 
 		case wakerForNewSegment:
@@ -833,7 +855,12 @@ func (e *endpoint) protocolMainLoop(passive bool) *tcpip.Error {
 			e.mu.Lock()
 			e.state = stateError
 			e.hardError = err
+			drained := e.drainDone != nil
 			e.mu.Unlock()
+			if drained {
+				close(e.drainDone)
+				<-e.undrain
+			}
 
 			return err
 		}
@@ -851,7 +878,12 @@ func (e *endpoint) protocolMainLoop(passive bool) *tcpip.Error {
 	// Tell waiters that the endpoint is connected and writable.
 	e.mu.Lock()
 	e.state = stateConnected
+	drained := e.drainDone != nil
 	e.mu.Unlock()
+	if drained {
+		close(e.drainDone)
+		<-e.undrain
+	}
 
 	e.waiterQueue.Notify(waiter.EventOut)
 

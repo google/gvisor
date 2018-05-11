@@ -31,6 +31,9 @@ import (
 
 // Error represents an error in the netstack error space. Using a special type
 // ensures that errors outside of this space are not accidentally introduced.
+//
+// Note: to support save / restore, it is important that all tcpip errors have
+// distinct error messages.
 type Error struct {
 	string
 }

@@ -73,8 +73,8 @@ type endpoint struct {
 
 	// lastError represents the last error that the endpoint reported;
 	// access to it is protected by the following mutex.
-	lastErrorMu sync.Mutex `state:"nosave"`
-	lastError   *tcpip.Error
+	lastErrorMu sync.Mutex   `state:"nosave"`
+	lastError   *tcpip.Error `state:".(string)"`
 
 	// The following fields are used to manage the receive queue. The
 	// protocol goroutine adds ready-for-delivery segments to rcvList,
@@ -92,7 +92,7 @@ type endpoint struct {
 	mu                sync.RWMutex `state:"nosave"`
 	id                stack.TransportEndpointID
 	state             endpointState
-	isPortReserved    bool
+	isPortReserved    bool `state:"manual"`
 	isRegistered      bool
 	boundNICID        tcpip.NICID
 	route             stack.Route `state:"manual"`
@@ -105,12 +105,12 @@ type endpoint struct {
 	// protocols (e.g., IPv6 and IPv4) or a single different protocol (e.g.,
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
-	effectiveNetProtos []tcpip.NetworkProtocolNumber
+	effectiveNetProtos []tcpip.NetworkProtocolNumber `state:"manual"`
 
 	// hardError is meaningful only when state is stateError, it stores the
 	// error to be returned when read/write syscalls are called and the
 	// endpoint is in this state.
-	hardError *tcpip.Error
+	hardError *tcpip.Error `state:".(string)"`
 
 	// workerRunning specifies if a worker goroutine is running.
 	workerRunning bool
@@ -203,9 +203,15 @@ type endpoint struct {
 	// The goroutine drain completion notification channel.
 	drainDone chan struct{} `state:"nosave"`
 
+	// The goroutine undrain notification channel.
+	undrain chan struct{} `state:"nosave"`
+
 	// probe if not nil is invoked on every received segment. It is passed
 	// a copy of the current state of the endpoint.
 	probe stack.TCPProbeFunc `state:"nosave"`
+
+	// The following are only used to assist the restore run to re-connect.
+	connectingAddress tcpip.Address
 }
 
 func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
@@ -786,6 +792,8 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	connectingAddr := addr.Addr
+
 	netProto, err := e.checkV4Mapped(&addr)
 	if err != nil {
 		return err
@@ -891,9 +899,10 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.route = r.Clone()
 	e.boundNICID = nicid
 	e.effectiveNetProtos = netProtos
+	e.connectingAddress = connectingAddr
 	e.workerRunning = true
 
-	go e.protocolMainLoop(false) // S/R-FIXME
+	go e.protocolMainLoop(false) // S/R-SAFE: will be drained before save.
 
 	return tcpip.ErrConnectStarted
 }

@@ -379,8 +379,8 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 					e.handleListenSegment(ctx, s)
 					s.decRef()
 				}
-				e.drainDone <- struct{}{}
-				return nil
+				close(e.drainDone)
+				<-e.undrain
 			}
 
 		case wakerForNewSegment:
