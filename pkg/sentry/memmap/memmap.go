@@ -266,6 +266,12 @@ type MMapOpts struct {
 	// be replaced. If Unmap is true, Fixed must be true.
 	Unmap bool
 
+	// If Map32Bit is true, all addresses in the created mapping must fit in a
+	// 32-bit integer. (Note that the "end address" of the mapping, i.e. the
+	// address of the first byte *after* the mapping, need not fit in a 32-bit
+	// integer.) Map32Bit is ignored if Fixed is true.
+	Map32Bit bool
+
 	// Perms is the set of permissions to the applied to this mapping.
 	Perms usermem.AccessType
 

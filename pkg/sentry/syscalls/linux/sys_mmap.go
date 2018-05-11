@@ -45,6 +45,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	private := flags&linux.MAP_PRIVATE != 0
 	shared := flags&linux.MAP_SHARED != 0
 	anon := flags&linux.MAP_ANONYMOUS != 0
+	map32bit := flags&linux.MAP_32BIT != 0
 
 	// Require exactly one of MAP_PRIVATE and MAP_SHARED.
 	if private == shared {
@@ -52,12 +53,13 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	}
 
 	opts := memmap.MMapOpts{
-		Length:  args[1].Uint64(),
-		Offset:  args[5].Uint64(),
-		Addr:    args[0].Pointer(),
-		Fixed:   fixed,
-		Unmap:   fixed,
-		Private: private,
+		Length:   args[1].Uint64(),
+		Offset:   args[5].Uint64(),
+		Addr:     args[0].Pointer(),
+		Fixed:    fixed,
+		Unmap:    fixed,
+		Map32Bit: map32bit,
+		Private:  private,
 		Perms: usermem.AccessType{
 			Read:    linux.PROT_READ&prot != 0,
 			Write:   linux.PROT_WRITE&prot != 0,

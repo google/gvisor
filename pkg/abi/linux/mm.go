@@ -31,6 +31,7 @@ const (
 	MAP_PRIVATE    = 1 << 1
 	MAP_FIXED      = 1 << 4
 	MAP_ANONYMOUS  = 1 << 5
+	MAP_32BIT      = 1 << 6 // arch/x86/include/uapi/asm/mman.h
 	MAP_GROWSDOWN  = 1 << 8
 	MAP_DENYWRITE  = 1 << 11
 	MAP_EXECUTABLE = 1 << 12

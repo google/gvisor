@@ -34,9 +34,10 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Find a useable range.
 	addr, err := mm.findAvailableLocked(opts.Length, findAvailableOpts{
-		Addr:  opts.Addr,
-		Fixed: opts.Fixed,
-		Unmap: opts.Unmap,
+		Addr:     opts.Addr,
+		Fixed:    opts.Fixed,
+		Unmap:    opts.Unmap,
+		Map32Bit: opts.Map32Bit,
 	})
 	if err != nil {
 		return vmaIterator{}, usermem.AddrRange{}, err
@@ -93,24 +94,40 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 }
 
 type findAvailableOpts struct {
-	// Addr is a suggested address. Addr must be page-aligned.
-	Addr usermem.Addr
+	// These fields are equivalent to those in memmap.MMapOpts, except that:
+	//
+	// - Addr must be page-aligned.
+	//
+	// - Unmap allows existing guard pages in the returned range.
 
-	// Fixed is true if only the suggested address is acceptable.
-	Fixed bool
-
-	// Unmap is true if existing vmas and guard pages may exist in the returned
-	// range.
-	Unmap bool
+	Addr     usermem.Addr
+	Fixed    bool
+	Unmap    bool
+	Map32Bit bool
 }
+
+// map32Start/End are the bounds to which MAP_32BIT mappings are constrained,
+// and are equivalent to Linux's MAP32_BASE and MAP32_MAX respectively.
+const (
+	map32Start = 0x40000000
+	map32End   = 0x80000000
+)
 
 // findAvailableLocked finds an allocatable range.
 //
 // Preconditions: mm.mappingMu must be locked.
 func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOpts) (usermem.Addr, error) {
+	if opts.Fixed {
+		opts.Map32Bit = false
+	}
+	allowedAR := mm.applicationAddrRange()
+	if opts.Map32Bit {
+		allowedAR = allowedAR.Intersect(usermem.AddrRange{map32Start, map32End})
+	}
+
 	// Does the provided suggestion work?
 	if ar, ok := opts.Addr.ToRange(length); ok {
-		if mm.applicationAddrRange().IsSupersetOf(ar) {
+		if allowedAR.IsSupersetOf(ar) {
 			if opts.Unmap {
 				return ar.Start, nil
 			}
@@ -132,6 +149,9 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		alignment = usermem.HugePageSize
 	}
 
+	if opts.Map32Bit {
+		return mm.findLowestAvailableLocked(length, alignment, allowedAR)
+	}
 	if mm.layout.DefaultDirection == arch.MmapBottomUp {
 		return mm.findLowestAvailableLocked(length, alignment, usermem.AddrRange{mm.layout.BottomUpBase, mm.layout.MaxAddr})
 	}
