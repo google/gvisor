@@ -164,40 +164,24 @@ cost of some isolation.
 These instructions will get you up-and-running sandboxed containers with gVisor
 and Docker.
 
-### Requirements
+Note that gVisor can only run on x86\_64 Linux 3.17+. In addition, gVisor only
+supports x86\_64 binaries inside the sandbox (i.e., it cannot run 32-bit
+binaries).
 
-gVisor currently can only build and run on x86\_64 Linux 3.17+. In addition,
-gVisor only supports x86\_64 binaries inside the sandbox (i.e., it cannot run
-32-bit binaries).
+### Download a Nightly Build
 
-In addition, the following dependencies must be installed:
-
-* [git][git]
-* [Bazel][bazel]
-* [Python][python]
-* [Docker version 17.09.0 or greater][docker]
-* Gold linker (e.g. `binutils-gold` package on Ubuntu)
-
-### Getting the source
-
-Clone the gVisor repo:
-
-```
-git clone https://gvisor.googlesource.com/gvisor gvisor
-cd gvisor
-```
-
-### Building
-
-Build and install the `runsc` binary.
+The easiest way to get `runsc` is from a the latest nightly build.
+[here][runsc-nightly].
 
 **It is important to copy this binary to some place that is accessible to all
 users**, since `runsc` executes itself as user `nobody` to avoid unnecessary
 privileges. The `/usr/local/bin` directory is a good choice.
 
+
 ```
-bazel build runsc
-sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
+wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
+chmod +x runsc
+sudo mv runsc /usr/local/bin
 ```
 
 ### Configuring Docker
@@ -253,6 +237,39 @@ ever-present pause container). Support for multiple containers within a single
 Pod is coming soon.
 
 ## Advanced Usage
+
+### Installing from Source
+
+gVisor currently requires x86\_64 Linux to build.
+
+#### Requirements
+
+Make sure the following dependencies are installed:
+
+* [git][git]
+* [Bazel][bazel]
+* [Python][python]
+* [Docker version 17.09.0 or greater][docker]
+* Gold linker (e.g. `binutils-gold` package on Ubuntu)
+
+#### Getting the source
+
+Clone the gVisor repo:
+
+```
+git clone https://gvisor.googlesource.com/gvisor gvisor
+cd gvisor
+```
+
+### Building
+
+Build and install the `runsc` binary.
+
+```
+bazel build runsc
+sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
+```
+
 
 ### Testing
 
@@ -431,6 +448,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [netstack]: https://github.com/google/netstack
 [oci]: https://www.opencontainers.org
 [python]: https://python.org
+[runsc-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [seccomp]: https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt
 [selinux]: https://selinuxproject.org
