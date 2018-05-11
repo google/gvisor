@@ -242,14 +242,13 @@ func (s *subprocess) unmap() {
 // Therefore we simply unmap everything in the subprocess and return it to the
 // globalPool. This has the added benefit of reducing creation time for new
 // subprocesses.
-func (s *subprocess) Release() error {
+func (s *subprocess) Release() {
 	go func() { // S/R-SAFE: Platform.
 		s.unmap()
 		globalPool.mu.Lock()
 		globalPool.available = append(globalPool.available, s)
 		globalPool.mu.Unlock()
 	}()
-	return nil
 }
 
 // newThread creates a new traced thread.

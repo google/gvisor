@@ -205,7 +205,7 @@ type AddressSpace interface {
 
 	// Release releases this address space. After releasing, a new AddressSpace
 	// must be acquired via platform.NewAddressSpace().
-	Release() error
+	Release()
 
 	// AddressSpaceIO methods are supported iff the associated platform's
 	// Platform.SupportsAddressSpaceIO() == true. AddressSpaces for which this

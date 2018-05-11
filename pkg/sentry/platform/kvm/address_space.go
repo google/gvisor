@@ -200,8 +200,7 @@ func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 }
 
 // Release releases the page tables.
-func (as *addressSpace) Release() error {
+func (as *addressSpace) Release() {
 	as.Unmap(0, ^uint64(0))
 	as.pageTables.Release()
-	return nil
 }

@@ -39,9 +39,7 @@ func (t *Task) Activate() {
 // Deactivate relinquishes the task's active address space.
 func (t *Task) Deactivate() {
 	if mm := t.MemoryManager(); mm != nil {
-		if err := mm.Deactivate(); err != nil {
-			panic("unable to deactivate mm: " + err.Error())
-		}
+		mm.Deactivate()
 	}
 }
 

@@ -114,12 +114,12 @@ func (mm *MemoryManager) Activate() error {
 	}
 }
 
-// Deactivate releases a release to the MemoryManager.
-func (mm *MemoryManager) Deactivate() error {
+// Deactivate releases a reference to the MemoryManager.
+func (mm *MemoryManager) Deactivate() {
 	// Fast path: this is not the last goroutine to deactivate the
 	// MemoryManager.
 	if atomicbitops.DecUnlessOneInt32(&mm.active) {
-		return nil
+		return
 	}
 
 	mm.activeMu.Lock()
@@ -128,26 +128,21 @@ func (mm *MemoryManager) Deactivate() error {
 	// Still active?
 	if atomic.AddInt32(&mm.active, -1) > 0 {
 		mm.activeMu.Unlock()
-		return nil
+		return
 	}
 
 	// Can we hold on to the address space?
 	if !mm.p.CooperativelySchedulesAddressSpace() {
 		mm.activeMu.Unlock()
-		return nil
+		return
 	}
 
 	// Release the address space.
-	if err := mm.as.Release(); err != nil {
-		atomic.StoreInt32(&mm.active, 1)
-		mm.activeMu.Unlock()
-		return err
-	}
+	mm.as.Release()
 
 	// Lost it.
 	mm.as = nil
 	mm.activeMu.Unlock()
-	return nil
 }
 
 // mapASLocked maps addresses in ar into mm.as. If precommit is true, mappings
