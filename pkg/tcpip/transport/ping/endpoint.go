@@ -52,7 +52,7 @@ type endpoint struct {
 	rcvMu         sync.Mutex `state:"nosave"`
 	rcvReady      bool
 	rcvList       pingPacketList
-	rcvBufSizeMax int
+	rcvBufSizeMax int `state:".(int)"`
 	rcvBufSize    int
 	rcvClosed     bool
 	rcvTimestamp  bool
