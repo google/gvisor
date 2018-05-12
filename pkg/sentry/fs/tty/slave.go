@@ -133,6 +133,9 @@ func (sf *slaveFileOperations) Write(ctx context.Context, _ *fs.File, src userme
 // Ioctl implements fs.FileOperations.Ioctl.
 func (sf *slaveFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch args[1].Uint() {
+	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
+		// Get the number of bytes in the input queue read buffer.
+		return 0, sf.si.t.ld.inputQueueReadSize(ctx, io, args)
 	case linux.TCGETS:
 		return sf.si.t.ld.getTermios(ctx, io, args)
 	case linux.TCSETS:

@@ -148,6 +148,9 @@ func (mf *masterFileOperations) Write(ctx context.Context, _ *fs.File, src userm
 // Ioctl implements fs.FileOperations.Ioctl.
 func (mf *masterFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch args[1].Uint() {
+	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
+		// Get the number of bytes in the output queue read buffer.
+		return 0, mf.t.ld.outputQueueReadSize(ctx, io, args)
 	case linux.TCGETS:
 		// N.B. TCGETS on the master actually returns the configuration
 		// of the slave end.

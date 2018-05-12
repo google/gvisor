@@ -14,9 +14,16 @@
 
 package linux
 
+import (
+	"unicode/utf8"
+)
+
 const (
 	// NumControlCharacters is the number of control characters in Termios.
 	NumControlCharacters = 19
+	// disabledChar is used to indicate that a control character is
+	// disabled.
+	disabledChar = 0
 )
 
 // Termios is struct termios, defined in uapi/asm-generic/termbits.h.
@@ -84,6 +91,27 @@ func (t *KernelTermios) FromTermios(term Termios) {
 	t.LocalFlags = term.LocalFlags
 	t.LineDiscipline = term.LineDiscipline
 	t.ControlCharacters = term.ControlCharacters
+}
+
+// IsTerminating returns whether c is a line terminating character.
+func (t *KernelTermios) IsTerminating(c rune) bool {
+	if t.IsEOF(c) {
+		return true
+	}
+	switch byte(c) {
+	case disabledChar:
+		return false
+	case '\n', t.ControlCharacters[VEOL]:
+		return true
+	case t.ControlCharacters[VEOL2]:
+		return t.LEnabled(IEXTEN)
+	}
+	return false
+}
+
+// IsEOF returns whether c is the EOF character.
+func (t *KernelTermios) IsEOF(c rune) bool {
+	return utf8.RuneLen(c) == 1 && byte(c) == t.ControlCharacters[VEOF] && t.ControlCharacters[VEOF] != disabledChar
 }
 
 // Input flags.
