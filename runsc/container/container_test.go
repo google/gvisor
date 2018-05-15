@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sandbox_test
+package container_test
 
 import (
 	"encoding/json"
@@ -40,7 +40,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/cmd"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 func init() {
@@ -60,7 +60,7 @@ func writeSpec(dir string, spec *specs.Spec) error {
 // in tests.
 func newSpecWithArgs(args ...string) *specs.Spec {
 	spec := &specs.Spec{
-		// The host filesystem root is the sandbox root.
+		// The host filesystem root is the container root.
 		Root: &specs.Root{
 			Path:     "/",
 			Readonly: true,
@@ -78,10 +78,10 @@ func newSpecWithArgs(args ...string) *specs.Spec {
 // shutdownSignal will be sent to the sandbox in order to shut down cleanly.
 const shutdownSignal = syscall.SIGUSR2
 
-// setupSandbox creates a bundle and root dir for the sandbox, generates a test
-// config, and writes the spec to config.json in the bundle dir.
-func setupSandbox(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Config, err error) {
-	rootDir, err = ioutil.TempDir("", "sandboxes")
+// setupContainer creates a bundle and root dir for the container, generates a
+// test config, and writes the spec to config.json in the bundle dir.
+func setupContainer(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Config, err error) {
+	rootDir, err = ioutil.TempDir("", "containers")
 	if err != nil {
 		return "", "", nil, fmt.Errorf("error creating root dir: %v", err)
 	}
@@ -98,29 +98,33 @@ func setupSandbox(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Confi
 	conf = &boot.Config{
 		RootDir: rootDir,
 		Network: boot.NetworkNone,
+		// Don't add flags when calling subprocesses, since the test
+		// runner does not know about all the flags. We control the
+		// Config in the subprocess anyways, so it does not matter.
+		TestModeNoFlags: true,
 	}
 
 	return rootDir, bundleDir, conf, nil
 }
 
-// uniqueSandboxID generates a unique sandbox id for each test.
+// uniqueContainerID generates a unique container id for each test.
 //
-// The sandbox id is used to create an abstract unix domain socket, which must
-// be unique.  While the sandbox forbids creating two sandboxes with the same
+// The container id is used to create an abstract unix domain socket, which must
+// be unique.  While the container forbids creating two containers with the same
 // name, sometimes between test runs the socket does not get cleaned up quickly
-// enough, causing sandbox creation to fail.
-func uniqueSandboxID() string {
-	return fmt.Sprintf("test-sandbox-%d", time.Now().UnixNano())
+// enough, causing container creation to fail.
+func uniqueContainerID() string {
+	return fmt.Sprintf("test-container-%d", time.Now().UnixNano())
 }
 
-// waitForProcessList waits for the given process list to show up in the sandbox.
-func waitForProcessList(s *sandbox.Sandbox, expected []*control.Process) error {
+// waitForProcessList waits for the given process list to show up in the container.
+func waitForProcessList(s *container.Container, expected []*control.Process) error {
 	var got []*control.Process
 	for start := time.Now(); time.Now().Sub(start) < 10*time.Second; {
 		var err error
 		got, err := s.Processes()
 		if err != nil {
-			return fmt.Errorf("error getting process data from sandbox: %v", err)
+			return fmt.Errorf("error getting process data from container: %v", err)
 		}
 		if procListsEqual(got, expected) {
 			return nil
@@ -128,25 +132,25 @@ func waitForProcessList(s *sandbox.Sandbox, expected []*control.Process) error {
 		// Process might not have started, try again...
 		time.Sleep(10 * time.Millisecond)
 	}
-	return fmt.Errorf("sandbox got process list: %s, want: %s", procListToString(got), procListToString(expected))
+	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expected))
 }
 
-// TestLifecycle tests the basic Create/Start/Signal/Destroy sandbox lifecycle.
-// It verifies after each step that the sandbox can be loaded from disk, and
+// TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
+// It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
 func TestLifecycle(t *testing.T) {
-	// The sandbox will just sleep for a long time.  We will kill it before
+	// The container will just sleep for a long time.  We will kill it before
 	// it finishes sleeping.
 	spec := newSpecWithArgs("sleep", "100")
 
-	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	// expectedPL lists the expected process state of the sandbox.
+	// expectedPL lists the expected process state of the container.
 	expectedPL := []*control.Process{
 		{
 			UID:  0,
@@ -156,40 +160,40 @@ func TestLifecycle(t *testing.T) {
 			Cmd:  "sleep",
 		},
 	}
-	// Create the sandbox.
-	id := uniqueSandboxID()
-	if _, err := sandbox.Create(id, spec, conf, bundleDir, "", "", nil); err != nil {
-		t.Fatalf("error creating sandbox: %v", err)
+	// Create the container.
+	id := uniqueContainerID()
+	if _, err := container.Create(id, spec, conf, bundleDir, "", ""); err != nil {
+		t.Fatalf("error creating container: %v", err)
 	}
-	// Load the sandbox from disk and check the status.
-	s, err := sandbox.Load(rootDir, id)
+	// Load the container from disk and check the status.
+	s, err := container.Load(rootDir, id)
 	if err != nil {
-		t.Fatalf("error loading sandbox: %v", err)
+		t.Fatalf("error loading container: %v", err)
 	}
-	if got, want := s.Status, sandbox.Created; got != want {
-		t.Errorf("sandbox status got %v, want %v", got, want)
+	if got, want := s.Status, container.Created; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
 	}
 
-	// List should return the sandbox id.
-	ids, err := sandbox.List(rootDir)
+	// List should return the container id.
+	ids, err := container.List(rootDir)
 	if err != nil {
-		t.Fatalf("error listing sandboxes: %v", err)
+		t.Fatalf("error listing containers: %v", err)
 	}
 	if got, want := ids, []string{id}; !reflect.DeepEqual(got, want) {
-		t.Errorf("sandbox list got %v, want %v", got, want)
+		t.Errorf("container list got %v, want %v", got, want)
 	}
 
-	// Start the sandbox.
+	// Start the container.
 	if err := s.Start(conf); err != nil {
-		t.Fatalf("error starting sandbox: %v", err)
+		t.Fatalf("error starting container: %v", err)
 	}
-	// Load the sandbox from disk and check the status.
-	s, err = sandbox.Load(rootDir, id)
+	// Load the container from disk and check the status.
+	s, err = container.Load(rootDir, id)
 	if err != nil {
-		t.Fatalf("error loading sandbox: %v", err)
+		t.Fatalf("error loading container: %v", err)
 	}
-	if got, want := s.Status, sandbox.Running; got != want {
-		t.Errorf("sandbox status got %v, want %v", got, want)
+	if got, want := s.Status, container.Running; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
 	}
 
 	// Verify that "sleep 100" is running.
@@ -197,41 +201,41 @@ func TestLifecycle(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Send the sandbox a signal, which we catch and use to cleanly
+	// Send the container a signal, which we catch and use to cleanly
 	// shutdown.
 	if err := s.Signal(shutdownSignal); err != nil {
-		t.Fatalf("error sending signal %v to sandbox: %v", shutdownSignal, err)
+		t.Fatalf("error sending signal %v to container: %v", shutdownSignal, err)
 	}
 	// Wait for it to die.
 	if _, err := s.Wait(); err != nil {
-		t.Fatalf("error waiting on sandbox: %v", err)
+		t.Fatalf("error waiting on container: %v", err)
 	}
-	// Load the sandbox from disk and check the status.
-	s, err = sandbox.Load(rootDir, id)
+	// Load the container from disk and check the status.
+	s, err = container.Load(rootDir, id)
 	if err != nil {
-		t.Fatalf("error loading sandbox: %v", err)
+		t.Fatalf("error loading container: %v", err)
 	}
-	if got, want := s.Status, sandbox.Stopped; got != want {
-		t.Errorf("sandbox status got %v, want %v", got, want)
+	if got, want := s.Status, container.Stopped; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
 	}
 
-	// Destroy the sandbox.
+	// Destroy the container.
 	if err := s.Destroy(); err != nil {
-		t.Fatalf("error destroying sandbox: %v", err)
+		t.Fatalf("error destroying container: %v", err)
 	}
 
-	// List should not return the sandbox id.
-	ids, err = sandbox.List(rootDir)
+	// List should not return the container id.
+	ids, err = container.List(rootDir)
 	if err != nil {
-		t.Fatalf("error listing sandboxes: %v", err)
+		t.Fatalf("error listing containers: %v", err)
 	}
 	if len(ids) != 0 {
-		t.Errorf("expected sandbox list to be empty, but got %v", ids)
+		t.Errorf("expected container list to be empty, but got %v", ids)
 	}
 
-	// Loading the sandbox by id should fail.
-	if _, err = sandbox.Load(rootDir, id); err == nil {
-		t.Errorf("expected loading destroyed sandbox to fail, but it did not")
+	// Loading the container by id should fail.
+	if _, err = container.Load(rootDir, id); err == nil {
+		t.Errorf("expected loading destroyed container to fail, but it did not")
 	}
 }
 
@@ -249,19 +253,19 @@ func TestExePath(t *testing.T) {
 		{path: "/bin/thisfiledoesntexit", success: false},
 	} {
 		spec := newSpecWithArgs(test.path)
-		rootDir, bundleDir, conf, err := setupSandbox(spec)
+		rootDir, bundleDir, conf, err := setupContainer(spec)
 		if err != nil {
-			t.Fatalf("exec: %s, error setting up sandbox: %v", test.path, err)
+			t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
 		}
 
-		ws, err := sandbox.Run(uniqueSandboxID(), spec, conf, bundleDir, "", "", nil)
+		ws, err := container.Run(uniqueContainerID(), spec, conf, bundleDir, "", "")
 
 		os.RemoveAll(rootDir)
 		os.RemoveAll(bundleDir)
 
 		if test.success {
 			if err != nil {
-				t.Errorf("exec: %s, error running sandbox: %v", test.path, err)
+				t.Errorf("exec: %s, error running container: %v", test.path, err)
 			}
 			if ws.ExitStatus() != 0 {
 				t.Errorf("exec: %s, got exit status %v want %v", test.path, ws.ExitStatus(), 0)
@@ -274,69 +278,69 @@ func TestExePath(t *testing.T) {
 	}
 }
 
-// Test the we can retrieve the application exit status from the sandbox.
+// Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
-	// First sandbox will succeed.
+	// First container will succeed.
 	succSpec := newSpecWithArgs("true")
 
-	rootDir, bundleDir, conf, err := setupSandbox(succSpec)
+	rootDir, bundleDir, conf, err := setupContainer(succSpec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	ws, err := sandbox.Run(uniqueSandboxID(), succSpec, conf, bundleDir, "", "", nil)
+	ws, err := container.Run(uniqueContainerID(), succSpec, conf, bundleDir, "", "")
 	if err != nil {
-		t.Fatalf("error running sandbox: %v", err)
+		t.Fatalf("error running container: %v", err)
 	}
 	if ws.ExitStatus() != 0 {
 		t.Errorf("got exit status %v want %v", ws.ExitStatus(), 0)
 	}
 
-	// Second sandbox exits with non-zero status.
+	// Second container exits with non-zero status.
 	wantStatus := 123
 	errSpec := newSpecWithArgs("bash", "-c", fmt.Sprintf("exit %d", wantStatus))
 
-	rootDir2, bundleDir2, conf, err := setupSandbox(errSpec)
+	rootDir2, bundleDir2, conf, err := setupContainer(errSpec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = sandbox.Run(uniqueSandboxID(), succSpec, conf, bundleDir2, "", "", nil)
+	ws, err = container.Run(uniqueContainerID(), succSpec, conf, bundleDir2, "", "")
 	if err != nil {
-		t.Fatalf("error running sandbox: %v", err)
+		t.Fatalf("error running container: %v", err)
 	}
 	if ws.ExitStatus() != wantStatus {
 		t.Errorf("got exit status %v want %v", ws.ExitStatus(), wantStatus)
 	}
 }
 
-// TestExec verifies that a sandbox can exec a new program.
+// TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
 	const uid = 343
 	spec := newSpecWithArgs("sleep", "100")
 
-	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	// Create and start the sandbox.
-	s, err := sandbox.Create(uniqueSandboxID(), spec, conf, bundleDir, "", "", nil)
+	// Create and start the container.
+	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
-		t.Fatalf("error creating sandbox: %v", err)
+		t.Fatalf("error creating container: %v", err)
 	}
 	defer s.Destroy()
 	if err := s.Start(conf); err != nil {
-		t.Fatalf("error starting sandbox: %v", err)
+		t.Fatalf("error starting container: %v", err)
 	}
 
-	// expectedPL lists the expected process state of the sandbox.
+	// expectedPL lists the expected process state of the container.
 	expectedPL := []*control.Process{
 		{
 			UID:  0,
@@ -388,10 +392,10 @@ func TestExec(t *testing.T) {
 	// Ensure that exec finished without error.
 	select {
 	case <-time.After(10 * time.Second):
-		t.Fatalf("sandbox timed out waiting for exec to finish.")
+		t.Fatalf("container timed out waiting for exec to finish.")
 	case st := <-status:
 		if st != nil {
-			t.Errorf("sandbox failed to exec %v: %v", execArgs, err)
+			t.Errorf("container failed to exec %v: %v", execArgs, err)
 		}
 	}
 }
@@ -413,24 +417,24 @@ func TestCapabilities(t *testing.T) {
 		Type:        "bind",
 	})
 
-	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	// Create and start the sandbox.
-	s, err := sandbox.Create(uniqueSandboxID(), spec, conf, bundleDir, "", "", nil)
+	// Create and start the container.
+	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
-		t.Fatalf("error creating sandbox: %v", err)
+		t.Fatalf("error creating container: %v", err)
 	}
 	defer s.Destroy()
 	if err := s.Start(conf); err != nil {
-		t.Fatalf("error starting sandbox: %v", err)
+		t.Fatalf("error starting container: %v", err)
 	}
 
-	// expectedPL lists the expected process state of the sandbox.
+	// expectedPL lists the expected process state of the container.
 	expectedPL := []*control.Process{
 		{
 			UID:  0,
@@ -452,7 +456,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Create an executable that can't be run with the specified UID:GID.
-	// This shouldn't be callable within the sandbox until we add the
+	// This shouldn't be callable within the container until we add the
 	// CAP_DAC_OVERRIDE capability to skip the access check.
 	exePath := filepath.Join(rootDir, "exe")
 	if err := ioutil.WriteFile(exePath, []byte("#!/bin/sh\necho hello"), 0770); err != nil {
@@ -475,7 +479,7 @@ func TestCapabilities(t *testing.T) {
 
 	// "exe" should fail because we don't have the necessary permissions.
 	if _, err := s.Execute(&execArgs); err == nil {
-		t.Fatalf("sandbox executed without error, but an error was expected")
+		t.Fatalf("container executed without error, but an error was expected")
 	}
 
 	// Now we run with the capability enabled and should succeed.
@@ -484,16 +488,16 @@ func TestCapabilities(t *testing.T) {
 	}
 	// "exe" should not fail this time.
 	if _, err := s.Execute(&execArgs); err != nil {
-		t.Fatalf("sandbox failed to exec %v: %v", execArgs, err)
+		t.Fatalf("container failed to exec %v: %v", execArgs, err)
 	}
 }
 
 // Test that an tty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
 	spec := newSpecWithArgs("true")
-	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
@@ -518,11 +522,11 @@ func TestConsoleSocket(t *testing.T) {
 	}
 	defer os.Remove(socketPath)
 
-	// Create the sandbox and pass the socket name.
-	id := uniqueSandboxID()
-	s, err := sandbox.Create(id, spec, conf, bundleDir, socketRelPath, "", nil)
+	// Create the container and pass the socket name.
+	id := uniqueContainerID()
+	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "")
 	if err != nil {
-		t.Fatalf("error creating sandbox: %v", err)
+		t.Fatalf("error creating container: %v", err)
 	}
 
 	// Open the othe end of the socket.
@@ -558,12 +562,12 @@ func TestConsoleSocket(t *testing.T) {
 
 	// Shut it down.
 	if err := s.Destroy(); err != nil {
-		t.Fatalf("error destroying sandbox: %v", err)
+		t.Fatalf("error destroying container: %v", err)
 	}
 
 	// Close socket.
 	if err := srv.Close(); err != nil {
-		t.Fatalf("error destroying sandbox: %v", err)
+		t.Fatalf("error destroying container: %v", err)
 	}
 }
 
@@ -575,17 +579,17 @@ func TestSpecUnsupported(t *testing.T) {
 	spec.Process.ApparmorProfile = "someprofile"
 	spec.Linux = &specs.Linux{Seccomp: &specs.LinuxSeccomp{}}
 
-	rootDir, bundleDir, conf, err := setupSandbox(spec)
+	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
-		t.Fatalf("error setting up sandbox: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	id := uniqueSandboxID()
-	_, err = sandbox.Create(id, spec, conf, bundleDir, "", "", nil)
+	id := uniqueContainerID()
+	_, err = container.Create(id, spec, conf, bundleDir, "", "")
 	if err == nil || !strings.Contains(err.Error(), "is not supported") {
-		t.Errorf("sandbox.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
+		t.Errorf("container.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
 	}
 }
 
@@ -618,7 +622,7 @@ func procListToString(pl []*control.Process) string {
 }
 
 // TestMain acts like runsc if it is called with the "boot" argument, otherwise
-// it just runs the tests.  This is required because creating a sandbox will
+// it just runs the tests.  This is required because creating a container will
 // call "/proc/self/exe boot".  Normally /proc/self/exe is the runsc binary,
 // but for tests we have to fake it.
 func TestMain(m *testing.M) {
@@ -648,7 +652,7 @@ func TestMain(m *testing.M) {
 			if subcmdCode != subcommands.ExitSuccess {
 				panic(fmt.Sprintf("command failed to execute, err: %v", subcmdCode))
 			}
-			// Sandbox exited normally. Shut down this process.
+			// Container exited normally. Shut down this process.
 			os.Exit(ws.ExitStatus())
 		}()
 

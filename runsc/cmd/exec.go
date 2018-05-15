@@ -34,7 +34,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -89,11 +89,11 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.Var(&ex.caps, "cap", "add a capability to the bounding set for the process")
 	f.BoolVar(&ex.detach, "detach", false, "detach from the container's process")
 	f.StringVar(&ex.processPath, "process", "", "path to the process.json")
-	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the sandbox pid will be written to")
+	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
-// already created sandbox.
+// already created container.
 func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	e, id, err := ex.parseArgs(f)
 	if err != nil {
@@ -102,17 +102,17 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
 		Fatalf("error loading sandox: %v", err)
 	}
 
 	if e.WorkingDirectory == "" {
-		e.WorkingDirectory = s.Spec.Process.Cwd
+		e.WorkingDirectory = c.Spec.Process.Cwd
 	}
 
 	if e.Envv == nil {
-		e.Envv, err = resolveEnvs(s.Spec.Process.Env, ex.env)
+		e.Envv, err = resolveEnvs(c.Spec.Process.Env, ex.env)
 		if err != nil {
 			Fatalf("error getting environment variables: %v", err)
 		}
@@ -136,15 +136,15 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// inspect the environment PATH which is relative to the root path.
 	// If the user is overriding environment variables, PATH may have been
 	// overwritten.
-	rootPath := s.Spec.Root.Path
+	rootPath := c.Spec.Root.Path
 	e.Filename, err = specutils.GetExecutablePath(e.Argv[0], rootPath, e.Envv)
 	if err != nil {
 		Fatalf("error getting executable path: %v", err)
 	}
 
-	ws, err := s.Execute(e)
+	ws, err := c.Execute(e)
 	if err != nil {
-		Fatalf("error getting processes for sandbox: %v", err)
+		Fatalf("error getting processes for container: %v", err)
 	}
 	*waitStatus = ws
 	return subcommands.ExitSuccess
@@ -196,7 +196,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 
 // parseArgs parses exec information from the command line or a JSON file
 // depending on whether the --process flag was used. Returns an ExecArgs and
-// the ID of the sandbox to be used.
+// the ID of the container to be used.
 func (ex *Exec) parseArgs(f *flag.FlagSet) (*control.ExecArgs, string, error) {
 	if ex.processPath == "" {
 		// Requires at least a container ID and command.

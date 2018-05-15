@@ -24,7 +24,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // Events implements subcommands.Command for the "events" command.
@@ -74,7 +74,7 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
 		Fatalf("error loading sandox: %v", err)
 	}
@@ -82,9 +82,9 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 	// Repeatedly get stats from the container.
 	for {
 		// Get the event and print it as JSON.
-		ev, err := s.Event()
+		ev, err := c.Event()
 		if err != nil {
-			log.Warningf("error getting events for sandbox: %v", err)
+			log.Warningf("error getting events for container: %v", err)
 		}
 		// err must be preserved because it is used below when breaking
 		// out of the loop.

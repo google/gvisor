@@ -25,7 +25,7 @@ import (
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // Kill implements subcommands.Command for the "kill" command.
@@ -38,7 +38,7 @@ func (*Kill) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Kill) Synopsis() string {
-	return "sends a signal to the sandbox"
+	return "sends a signal to the container"
 }
 
 // Usage implements subcommands.Command.Usage.
@@ -64,9 +64,9 @@ func (*Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandbox: %v", err)
+		Fatalf("error loading container: %v", err)
 	}
 
 	// The OCI command-line spec says that the signal should be specified
@@ -81,7 +81,7 @@ func (*Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	if err != nil {
 		Fatalf("%v", err)
 	}
-	if err := s.Signal(sig); err != nil {
+	if err := c.Signal(sig); err != nil {
 		Fatalf("%v", err)
 	}
 	return subcommands.ExitSuccess

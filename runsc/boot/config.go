@@ -14,7 +14,11 @@
 
 package boot
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // PlatformType tells which platform to use.
 type PlatformType int
@@ -131,6 +135,19 @@ type Config struct {
 	// RootDir is the runtime root directory.
 	RootDir string
 
+	// Debug indicates that debug logging should be enabled.
+	Debug bool
+
+	// LogFilename is the filename to log to, if not empty.
+	LogFilename string
+
+	// LogFormat is the log format, "text" or "json".
+	LogFormat string
+
+	// DebugLogDir is the directory to log debug information to, if not
+	// empty.
+	DebugLogDir string
+
 	// FileAccess indicates how the filesystem is accessed.
 	FileAccess FileAccessType
 
@@ -159,4 +176,31 @@ type Config struct {
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
+
+	// TestModeNoFlags indicates that the ToFlags method should return
+	// empty. This should only be used in tests, since the test runner does
+	// not know about all the flags.
+	TestModeNoFlags bool
+}
+
+// ToFlags returns a slice of flags that correspond to the given Config.
+func (c *Config) ToFlags() []string {
+	if c.TestModeNoFlags {
+		return nil
+	}
+	return []string{
+		"--root=" + c.RootDir,
+		"--debug=" + strconv.FormatBool(c.Debug),
+		"--log=" + c.LogFilename,
+		"--log-format=" + c.LogFormat,
+		"--debug-log-dir=" + c.DebugLogDir,
+		"--file-access=" + c.FileAccess.String(),
+		"--overlay=" + strconv.FormatBool(c.Overlay),
+		"--network=" + c.Network.String(),
+		"--log-packets=" + strconv.FormatBool(c.LogPackets),
+		"--platform=" + c.Platform.String(),
+		"--strace=" + strconv.FormatBool(c.Strace),
+		"--strace-syscalls=" + strings.Join(c.StraceSyscalls, ","),
+		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),
+	}
 }

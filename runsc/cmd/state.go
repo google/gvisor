@@ -23,7 +23,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // State implements subcommands.Command for the "state" command.
@@ -36,12 +36,12 @@ func (*State) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*State) Synopsis() string {
-	return "get the state of a sandbox"
+	return "get the state of a container"
 }
 
 // Usage implements subcommands.Command.Usage.
 func (*State) Usage() string {
-	return `state [flags] <container id> - get the state of a sandbox`
+	return `state [flags] <container id> - get the state of a container`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
@@ -57,16 +57,16 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandbox: %v", err)
+		Fatalf("error loading container: %v", err)
 	}
-	log.Debugf("Returning state %+v", s)
+	log.Debugf("Returning state for container %+v", c)
 
 	// Write json-encoded state directly to stdout.
-	b, err := json.MarshalIndent(s.State(), "", "  ")
+	b, err := json.MarshalIndent(c.State(), "", "  ")
 	if err != nil {
-		Fatalf("error marshaling sandbox state: %v", err)
+		Fatalf("error marshaling container state: %v", err)
 	}
 	os.Stdout.Write(b)
 	return subcommands.ExitSuccess

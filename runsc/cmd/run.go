@@ -21,7 +21,7 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -72,9 +72,9 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 		Fatalf("error reading spec: %v", err)
 	}
 
-	ws, err := sandbox.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, commandLineFlags())
+	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile)
 	if err != nil {
-		Fatalf("error running sandbox: %v", err)
+		Fatalf("error running container: %v", err)
 	}
 
 	*waitStatus = ws
