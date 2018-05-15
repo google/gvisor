@@ -1929,8 +1929,16 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// If we don't have a provided offset.
 	} else {
 		// Send data using readv.
+		inOff := inFile.Offset()
 		r := &io.LimitedReader{R: &fs.FileReader{t, inFile}, N: count}
 		n, err = io.Copy(w, r)
+		inOff += n
+		if inFile.Offset() != inOff {
+			// Adjust file position in case more bytes were read than written.
+			if _, err := inFile.Seek(t, fs.SeekSet, inOff); err != nil {
+				return 0, nil, syserror.EIO
+			}
+		}
 	}
 
 	// We can only pass a single file to handleIOError, so pick inFile
