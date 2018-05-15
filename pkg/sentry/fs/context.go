@@ -20,7 +20,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 )
 
-// contextID is the kernel package's type for context.Context.Value keys.
+// contextID is the fs package's type for context.Context.Value keys.
 type contextID int
 
 const (

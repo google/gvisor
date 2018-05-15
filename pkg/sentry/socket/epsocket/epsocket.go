@@ -33,6 +33,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -102,7 +103,6 @@ type SocketOperations struct {
 	*waiter.Queue
 
 	family   int
-	stack    inet.Stack
 	Endpoint tcpip.Endpoint
 	skType   unix.SockType
 
@@ -119,7 +119,6 @@ func New(t *kernel.Task, family int, skType unix.SockType, queue *waiter.Queue, 
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
 		Queue:    queue,
 		family:   family,
-		stack:    t.NetworkContext(),
 		Endpoint: endpoint,
 		skType:   skType,
 	})
@@ -1042,7 +1041,12 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 	)
 
 	// Find the relevant device.
-	for index, iface = range s.stack.Interfaces() {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		log.Warningf("Couldn't find a network stack.")
+		return syserr.ErrInvalidArgument
+	}
+	for index, iface = range stack.Interfaces() {
 		if iface.Name == ifr.Name() {
 			found = true
 			break
@@ -1074,7 +1078,7 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 
 	case syscall.SIOCGIFADDR:
 		// Copy the IPv4 address out.
-		for _, addr := range s.stack.InterfaceAddrs()[index] {
+		for _, addr := range stack.InterfaceAddrs()[index] {
 			// This ioctl is only compatible with AF_INET addresses.
 			if addr.Family != linux.AF_INET {
 				continue
@@ -1109,7 +1113,7 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 
 	case syscall.SIOCGIFNETMASK:
 		// Gets the network mask of a device.
-		for _, addr := range s.stack.InterfaceAddrs()[index] {
+		for _, addr := range stack.InterfaceAddrs()[index] {
 			// This ioctl is only compatible with AF_INET addresses.
 			if addr.Family != linux.AF_INET {
 				continue
@@ -1189,15 +1193,20 @@ func (s *SocketOperations) ifconfIoctl(ctx context.Context, io usermem.IO, ifc *
 	// If Ptr is NULL, return the necessary buffer size via Len.
 	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
 	// structs.
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		log.Warningf("Couldn't find a network stack.")
+		return syserr.ErrInvalidArgument.ToError()
+	}
 	if ifc.Ptr == 0 {
-		ifc.Len = int32(len(s.stack.Interfaces())) * int32(linux.SizeOfIFReq)
+		ifc.Len = int32(len(stack.Interfaces())) * int32(linux.SizeOfIFReq)
 		return nil
 	}
 
 	max := ifc.Len
 	ifc.Len = 0
-	for key, ifaceAddrs := range s.stack.InterfaceAddrs() {
-		iface := s.stack.Interfaces()[key]
+	for key, ifaceAddrs := range stack.InterfaceAddrs() {
+		iface := stack.Interfaces()[key]
 		for _, ifaceAddr := range ifaceAddrs {
 			// Don't write past the end of the buffer.
 			if ifc.Len+int32(linux.SizeOfIFReq) > max {
