@@ -111,8 +111,11 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 	vector = c.CPU.SwitchToUser(regs, fpState, pt, flags)
 	exitsyscall()
 
-	// Free and clear.
 	switch vector {
+	case ring0.Syscall, ring0.SyscallInt80:
+		// Fast path: system call executed.
+		return nil, usermem.NoAccess, nil
+
 	case ring0.Debug, ring0.Breakpoint:
 		info := &arch.SignalInfo{Signo: int32(syscall.SIGTRAP)}
 		return info, usermem.AccessType{}, platform.ErrContextSignal
@@ -157,10 +160,6 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 	case ring0.Vector(bounce):
 		redpill() // Bail and reacqire.
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
-
-	case ring0.Syscall, ring0.SyscallInt80:
-		// System call executed.
-		return nil, usermem.NoAccess, nil
 
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
