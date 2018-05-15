@@ -35,28 +35,48 @@ type hostMapEntry struct {
 	length uintptr
 }
 
-func (hm *hostMap) forEachEntry(r usermem.AddrRange, fn func(offset uint64, m hostMapEntry)) {
-	for seg := hm.set.FindSegment(r.Start); seg.Ok() && seg.Start() < r.End; seg = seg.NextSegment() {
-		length := uintptr(seg.Range().Length())
-		segOffset := uint64(0) // Adjusted below.
-		if seg.End() > r.End {
-			length -= uintptr(seg.End() - r.End)
-		}
-		if seg.Start() < r.Start {
-			length -= uintptr(r.Start - seg.Start())
+// forEach iterates over all mappings in the given range.
+//
+// Precondition: segFn and gapFn must be non-nil.
+func (hm *hostMap) forEach(
+	r usermem.AddrRange,
+	segFn func(offset uint64, m hostMapEntry),
+	gapFn func(offset uint64, length uintptr) (uintptr, bool)) {
+
+	seg, gap := hm.set.Find(r.Start)
+	for {
+		if seg.Ok() && seg.Start() < r.End {
+			// A valid segment: pass information.
+			overlap := seg.Range().Intersect(r)
+			segOffset := uintptr(overlap.Start - seg.Start())
+			mapOffset := uint64(overlap.Start - r.Start)
+			segFn(mapOffset, hostMapEntry{
+				addr:   seg.Value() + segOffset,
+				length: uintptr(overlap.Length()),
+			})
+			seg, gap = seg.NextNonEmpty()
+		} else if gap.Ok() && gap.Start() < r.End {
+			// A gap: pass gap information.
+			overlap := gap.Range().Intersect(r)
+			mapOffset := uint64(overlap.Start - r.Start)
+			addr, ok := gapFn(mapOffset, uintptr(overlap.Length()))
+			if ok {
+				seg = hm.set.Insert(gap, overlap, addr)
+				seg, gap = seg.NextNonEmpty()
+			} else {
+				seg = gap.NextSegment()
+				gap = hostMapGapIterator{} // Invalid.
+			}
 		} else {
-			segOffset = uint64(seg.Start() - r.Start)
+			// Terminal.
+			break
 		}
-		fn(segOffset, hostMapEntry{
-			addr:   seg.Value(),
-			length: length,
-		})
 	}
 }
 
 func (hm *hostMap) createMappings(r usermem.AddrRange, at usermem.AccessType, fd int, offset uint64) (ms []hostMapEntry, err error) {
-	// Replace any existing mappings.
-	hm.forEachEntry(r, func(segOffset uint64, m hostMapEntry) {
+	hm.forEach(r, func(mapOffset uint64, m hostMapEntry) {
+		// Replace any existing mappings.
 		_, _, errno := syscall.RawSyscall6(
 			syscall.SYS_MMAP,
 			m.addr,
@@ -64,48 +84,40 @@ func (hm *hostMap) createMappings(r usermem.AddrRange, at usermem.AccessType, fd
 			uintptr(at.Prot()),
 			syscall.MAP_FIXED|syscall.MAP_SHARED,
 			uintptr(fd),
-			uintptr(offset+segOffset))
+			uintptr(offset+mapOffset))
 		if errno != 0 && err == nil {
 			err = errno
 		}
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Add in necessary new mappings.
-	for gap := hm.set.FindGap(r.Start); gap.Ok() && gap.Start() < r.End; {
-		length := uintptr(gap.Range().Length())
-		gapOffset := uint64(0) // Adjusted below.
-		if gap.End() > r.End {
-			length -= uintptr(gap.End() - r.End)
-		}
-		if gap.Start() < r.Start {
-			length -= uintptr(r.Start - gap.Start())
-		} else {
-			gapOffset = uint64(gap.Start() - r.Start)
-		}
-
-		// Map the host file memory.
-		hostAddr, _, errno := syscall.RawSyscall6(
+	}, func(mapOffset uint64, length uintptr) (uintptr, bool) {
+		// Create a new mapping.
+		addr, _, errno := syscall.RawSyscall6(
 			syscall.SYS_MMAP,
 			0,
 			length,
 			uintptr(at.Prot()),
 			syscall.MAP_SHARED,
 			uintptr(fd),
-			uintptr(offset+gapOffset))
+			uintptr(offset+mapOffset))
 		if errno != 0 {
-			return nil, errno
+			err = errno
+			return 0, false
 		}
-
-		// Insert into the host set and move to the next gap.
-		gap = hm.set.Insert(gap, gap.Range().Intersect(r), hostAddr).NextGap()
+		return addr, true
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	// Collect all slices.
-	hm.forEachEntry(r, func(_ uint64, m hostMapEntry) {
+	// Collect all entries.
+	//
+	// We do this after the first iteration because some segments may have
+	// been merged in the above, and we'll return the simplest form. This
+	// also provides a basic sanity check in the form of no gaps.
+	hm.forEach(r, func(_ uint64, m hostMapEntry) {
 		ms = append(ms, m)
+	}, func(uint64, uintptr) (uintptr, bool) {
+		// Should not happen: we just mapped this above.
+		panic("unexpected gap")
 	})
 
 	return ms, nil
@@ -121,7 +133,7 @@ func (hm *hostMap) CreateMappings(r usermem.AddrRange, at usermem.AccessType, fd
 
 func (hm *hostMap) deleteMapping(r usermem.AddrRange) {
 	// Remove all the existing mappings.
-	hm.forEachEntry(r, func(_ uint64, m hostMapEntry) {
+	hm.forEach(r, func(_ uint64, m hostMapEntry) {
 		_, _, errno := syscall.RawSyscall(
 			syscall.SYS_MUNMAP,
 			m.addr,
@@ -131,9 +143,13 @@ func (hm *hostMap) deleteMapping(r usermem.AddrRange) {
 			// Should never happen.
 			panic(fmt.Sprintf("unmap error: %v", errno))
 		}
+	}, func(uint64, uintptr) (uintptr, bool) {
+		// Sometimes deleteMapping will be called on a larger range
+		// than physical mappings are defined. That's okay.
+		return 0, false
 	})
 
-	// Knock the range out.
+	// Knock the entire range out.
 	hm.set.RemoveRange(r)
 }
 

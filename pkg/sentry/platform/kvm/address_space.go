@@ -46,6 +46,8 @@ type addressSpace struct {
 	dirtySet sync.Map
 
 	// files contains files mapped in the host address space.
+	//
+	// See host_map.go for more information.
 	files hostMap
 }
 
@@ -112,7 +114,8 @@ func (as *addressSpace) mapHostFile(addr usermem.Addr, fd int, fr platform.FileR
 	inv := false
 	for _, m := range ms {
 		// The host mapped slices are guaranteed to be aligned.
-		inv = inv || as.mapHost(addr, m, at)
+		prev := as.mapHost(addr, m, at)
+		inv = inv || prev
 		addr += usermem.Addr(m.length)
 	}
 	if inv {
@@ -157,10 +160,11 @@ func (as *addressSpace) mapFilemem(addr usermem.Addr, fr platform.FileRange, at 
 				_ = s[i] // Touch to commit.
 			}
 		}
-		inv = inv || as.mapHost(addr, hostMapEntry{
+		prev := as.mapHost(addr, hostMapEntry{
 			addr:   reflect.ValueOf(&s[0]).Pointer(),
 			length: uintptr(len(s)),
 		}, at)
+		inv = inv || prev
 		addr += usermem.Addr(len(s))
 	}
 	if inv {
