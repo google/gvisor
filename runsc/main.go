@@ -109,6 +109,10 @@ func main() {
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:       *rootDir,
+		Debug:         *debug,
+		LogFilename:   *logFilename,
+		LogFormat:     *logFormat,
+		DebugLogDir:   *debugLogDir,
 		FileAccess:    fsAccess,
 		Overlay:       *overlay,
 		Network:       netType,

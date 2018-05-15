@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sandbox
+package container
 
-// Status enumerates sandbox statuses.  The statuses and their semantics are
+// Status enumerates container statuses. The statuses and their semantics are
 // part of the runtime CLI spec.
-//
-// TODO: Get precise about the transitions between statuses.
 type Status int
 
 const (
@@ -37,7 +35,7 @@ const (
 	Stopped
 )
 
-// String converts a Status to a string.  These strings are part of the runtime
+// String converts a Status to a string. These strings are part of the runtime
 // CLI spec and should not be changed.
 func (s Status) String() string {
 	switch s {

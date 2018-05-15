@@ -41,9 +41,28 @@ func LogSpec(spec *specs.Spec) {
 	log.Debugf("Spec.Root: %+v", spec.Root)
 }
 
+// ValidateSpec validates that the spec is compatible with runsc.
+func ValidateSpec(spec *specs.Spec) error {
+	if spec.Process == nil {
+		return fmt.Errorf("Process must be defined")
+	}
+	if spec.Process.SelinuxLabel != "" {
+		return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
+	}
+
+	// Docker uses AppArmor by default, so just log that it's being ignored.
+	if spec.Process.ApparmorProfile != "" {
+		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
+	}
+
+	// TODO: Apply seccomp to application inside sandbox.
+	if spec.Linux != nil && spec.Linux.Seccomp != nil {
+		log.Warningf("Seccomp spec is being ignored")
+	}
+	return nil
+}
+
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
-//
-// TODO: This should validate the spec.
 func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	// The spec file must be in "config.json" inside the bundle directory.
 	specFile := filepath.Join(bundleDir, "config.json")

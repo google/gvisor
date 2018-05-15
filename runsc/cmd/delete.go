@@ -19,12 +19,12 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // Delete implements subcommands.Command for the "delete" command.
 type Delete struct {
-	// force indicates that the sandbox should be terminated if running.
+	// force indicates that the container should be terminated if running.
 	force bool
 }
 
@@ -45,7 +45,7 @@ func (*Delete) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (d *Delete) SetFlags(f *flag.FlagSet) {
-	f.BoolVar(&d.force, "force", false, "terminate sandbox if running")
+	f.BoolVar(&d.force, "force", false, "terminate container if running")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -59,15 +59,15 @@ func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 
 	for i := 0; i < f.NArg(); i++ {
 		id := f.Arg(i)
-		s, err := sandbox.Load(conf.RootDir, id)
+		c, err := container.Load(conf.RootDir, id)
 		if err != nil {
-			Fatalf("error loading sandbox %q: %v", id, err)
+			Fatalf("error loading container %q: %v", id, err)
 		}
-		if !d.force && (s.Status == sandbox.Running) {
-			Fatalf("cannot stop running sandbox without --force flag")
+		if !d.force && (c.Status == container.Running) {
+			Fatalf("cannot stop running container without --force flag")
 		}
-		if err := s.Destroy(); err != nil {
-			Fatalf("error destroying sandbox: %v", err)
+		if err := c.Destroy(); err != nil {
+			Fatalf("error destroying container: %v", err)
 		}
 	}
 	return subcommands.ExitSuccess

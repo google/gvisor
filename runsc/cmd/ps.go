@@ -22,7 +22,7 @@ import (
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // PS implements subcommands.Command for the "ps" command.
@@ -60,13 +60,13 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
 		Fatalf("error loading sandox: %v", err)
 	}
-	pList, err := s.Processes()
+	pList, err := c.Processes()
 	if err != nil {
-		Fatalf("error getting processes for sandbox: %v", err)
+		Fatalf("error getting processes for container: %v", err)
 	}
 
 	switch ps.format {

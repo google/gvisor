@@ -19,7 +19,7 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/sandbox"
+	"gvisor.googlesource.com/gvisor/runsc/container"
 )
 
 // Start implements subcommands.Command for the "start" command.
@@ -53,12 +53,12 @@ func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
-	s, err := sandbox.Load(conf.RootDir, id)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandbox: %v", err)
+		Fatalf("error loading container: %v", err)
 	}
-	if err := s.Start(conf); err != nil {
-		Fatalf("error starting sandbox: %v", err)
+	if err := c.Start(conf); err != nil {
+		Fatalf("error starting container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

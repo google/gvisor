@@ -20,7 +20,6 @@ import (
 	"os"
 	"strconv"
 
-	"flag"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
@@ -33,16 +32,6 @@ func Fatalf(s string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, s+"\n", args...)
 	// Return an error that is unlikely to be used by the application.
 	os.Exit(128)
-}
-
-// commandLineFlags returns a slice of all top-level command line flags that
-// have been set.
-func commandLineFlags() []string {
-	var args []string
-	flag.CommandLine.Visit(func(f *flag.Flag) {
-		args = append(args, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))
-	})
-	return args
 }
 
 // intFlags can be used with int flags that appear multiple times.
