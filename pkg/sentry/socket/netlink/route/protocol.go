@@ -43,20 +43,13 @@ func typeKind(typ uint16) commandKind {
 }
 
 // Protocol implements netlink.Protocol.
-type Protocol struct {
-	// stack is the network stack that this provider describes.
-	//
-	// May be nil.
-	stack inet.Stack
-}
+type Protocol struct{}
 
 var _ netlink.Protocol = (*Protocol)(nil)
 
 // NewProtocol creates a NETLINK_ROUTE netlink.Protocol.
 func NewProtocol(t *kernel.Task) (netlink.Protocol, *syserr.Error) {
-	return &Protocol{
-		stack: t.NetworkContext(),
-	}, nil
+	return &Protocol{}, nil
 }
 
 // Protocol implements netlink.Protocol.Protocol.
@@ -83,12 +76,13 @@ func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader
 	// We always send back an NLMSG_DONE.
 	ms.Multi = true
 
-	if p.stack == nil {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
 		// No network devices.
 		return nil
 	}
 
-	for id, i := range p.stack.Interfaces() {
+	for id, i := range stack.Interfaces() {
 		m := ms.AddMessage(linux.NetlinkMessageHeader{
 			Type: linux.RTM_NEWLINK,
 		})
@@ -124,12 +118,13 @@ func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader
 	// We always send back an NLMSG_DONE.
 	ms.Multi = true
 
-	if p.stack == nil {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
 		// No network devices.
 		return nil
 	}
 
-	for id, as := range p.stack.InterfaceAddrs() {
+	for id, as := range stack.InterfaceAddrs() {
 		for _, a := range as {
 			m := ms.AddMessage(linux.NetlinkMessageHeader{
 				Type: linux.RTM_NEWADDR,

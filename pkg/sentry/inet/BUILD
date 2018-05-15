@@ -17,12 +17,14 @@ go_stateify(
 go_library(
     name = "inet",
     srcs = [
+        "context.go",
         "inet.go",
         "inet_state.go",
         "test_stack.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/inet",
     deps = [
+        "//pkg/sentry/context",
         "//pkg/state",
     ],
 )

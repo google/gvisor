@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/bpf"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/sched"
@@ -560,6 +561,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return t.creds
 	case fs.CtxRoot:
 		return t.FSContext().RootDirectory()
+	case inet.CtxStack:
+		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:
 		return t.k.RealtimeClock()
 	case limits.CtxLimits:
