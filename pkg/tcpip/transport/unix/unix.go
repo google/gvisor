@@ -677,8 +677,8 @@ type baseEndpoint struct {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (e *baseEndpoint) EventRegister(we *waiter.Entry, mask waiter.EventMask) {
-	e.Lock()
 	e.Queue.EventRegister(we, mask)
+	e.Lock()
 	if e.connected != nil {
 		e.connected.EventUpdate()
 	}
@@ -687,8 +687,8 @@ func (e *baseEndpoint) EventRegister(we *waiter.Entry, mask waiter.EventMask) {
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (e *baseEndpoint) EventUnregister(we *waiter.Entry) {
-	e.Lock()
 	e.Queue.EventUnregister(we)
+	e.Lock()
 	if e.connected != nil {
 		e.connected.EventUpdate()
 	}

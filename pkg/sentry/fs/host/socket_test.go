@@ -31,11 +31,11 @@ import (
 )
 
 var (
-	// Make sure that connectedEndpoint implements unix.ConnectedEndpoint.
-	_ = unix.ConnectedEndpoint(new(connectedEndpoint))
+	// Make sure that ConnectedEndpoint implements unix.ConnectedEndpoint.
+	_ = unix.ConnectedEndpoint(new(ConnectedEndpoint))
 
-	// Make sure that connectedEndpoint implements unix.Receiver.
-	_ = unix.Receiver(new(connectedEndpoint))
+	// Make sure that ConnectedEndpoint implements unix.Receiver.
+	_ = unix.Receiver(new(ConnectedEndpoint))
 )
 
 func getFl(fd int) (uint32, error) {
@@ -198,28 +198,28 @@ func TestListen(t *testing.T) {
 }
 
 func TestSend(t *testing.T) {
-	e := connectedEndpoint{writeClosed: true}
+	e := ConnectedEndpoint{writeClosed: true}
 	if _, _, err := e.Send(nil, unix.ControlMessages{}, tcpip.FullAddress{}); err != tcpip.ErrClosedForSend {
 		t.Errorf("Got %#v.Send() = %v, want = %v", e, err, tcpip.ErrClosedForSend)
 	}
 }
 
 func TestRecv(t *testing.T) {
-	e := connectedEndpoint{readClosed: true}
+	e := ConnectedEndpoint{readClosed: true}
 	if _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != tcpip.ErrClosedForReceive {
 		t.Errorf("Got %#v.Recv() = %v, want = %v", e, err, tcpip.ErrClosedForReceive)
 	}
 }
 
 func TestPasscred(t *testing.T) {
-	e := connectedEndpoint{}
+	e := ConnectedEndpoint{}
 	if got, want := e.Passcred(), false; got != want {
 		t.Errorf("Got %#v.Passcred() = %t, want = %t", e, got, want)
 	}
 }
 
 func TestGetLocalAddress(t *testing.T) {
-	e := connectedEndpoint{path: "foo"}
+	e := ConnectedEndpoint{path: "foo"}
 	want := tcpip.FullAddress{Addr: tcpip.Address("foo")}
 	if got, err := e.GetLocalAddress(); err != nil || got != want {
 		t.Errorf("Got %#v.GetLocalAddress() = %#v, %v, want = %#v, %v", e, got, err, want, nil)
@@ -227,7 +227,7 @@ func TestGetLocalAddress(t *testing.T) {
 }
 
 func TestQueuedSize(t *testing.T) {
-	e := connectedEndpoint{}
+	e := ConnectedEndpoint{}
 	tests := []struct {
 		name string
 		f    func() int64
@@ -244,14 +244,14 @@ func TestQueuedSize(t *testing.T) {
 }
 
 func TestReadable(t *testing.T) {
-	e := connectedEndpoint{readClosed: true}
+	e := ConnectedEndpoint{readClosed: true}
 	if got, want := e.Readable(), true; got != want {
 		t.Errorf("Got %#v.Readable() = %t, want = %t", e, got, want)
 	}
 }
 
 func TestWritable(t *testing.T) {
-	e := connectedEndpoint{writeClosed: true}
+	e := ConnectedEndpoint{writeClosed: true}
 	if got, want := e.Writable(), true; got != want {
 		t.Errorf("Got %#v.Writable() = %t, want = %t", e, got, want)
 	}
@@ -262,8 +262,8 @@ func TestRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c := &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
-	want := &connectedEndpoint{queue: c.queue}
+	c := &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
+	want := &ConnectedEndpoint{queue: c.queue}
 	want.ref.DecRef()
 	fdnotifier.AddFD(int32(c.file.FD()), nil)
 	c.Release()
@@ -275,119 +275,119 @@ func TestRelease(t *testing.T) {
 func TestClose(t *testing.T) {
 	type testCase struct {
 		name  string
-		cep   *connectedEndpoint
+		cep   *ConnectedEndpoint
 		addFD bool
 		f     func()
-		want  *connectedEndpoint
+		want  *ConnectedEndpoint
 	}
 
 	var tests []testCase
 
-	// nil is the value used by connectedEndpoint to indicate a closed file.
+	// nil is the value used by ConnectedEndpoint to indicate a closed file.
 	// Non-nil files are used to check if the file gets closed.
 
 	f, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c := &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
+	c := &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
 	tests = append(tests, testCase{
 		name:  "First CloseRecv",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseRecv,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
 	tests = append(tests, testCase{
 		name:  "Second CloseRecv",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseRecv,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
 	tests = append(tests, testCase{
 		name:  "First CloseSend",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseSend,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
 	tests = append(tests, testCase{
 		name:  "Second CloseSend",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseSend,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
 	tests = append(tests, testCase{
 		name:  "CloseSend then CloseRecv",
 		cep:   c,
 		addFD: true,
 		f:     c.CloseRecv,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
 	tests = append(tests, testCase{
 		name:  "CloseRecv then CloseSend",
 		cep:   c,
 		addFD: true,
 		f:     c.CloseSend,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
 	tests = append(tests, testCase{
 		name:  "Full close then CloseRecv",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseRecv,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
 	})
 
 	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		t.Fatal("Creating socket:", err)
 	}
-	c = &connectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
+	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
 	tests = append(tests, testCase{
 		name:  "Full close then CloseSend",
 		cep:   c,
 		addFD: false,
 		f:     c.CloseSend,
-		want:  &connectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
+		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
 	})
 
 	for _, test := range tests {

@@ -286,26 +286,33 @@ func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.Fu
 	return rl, ml, control.New(nil, nil, newSCMRights(fds)), nil
 }
 
-// NewConnectedEndpoint creates a new unix.Receiver and unix.ConnectedEndpoint
-// backed by a host FD that will pretend to be bound at a given sentry path.
-func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (unix.Receiver, unix.ConnectedEndpoint, *tcpip.Error) {
-	if err := fdnotifier.AddFD(int32(file.FD()), queue); err != nil {
-		return nil, nil, translateError(err)
-	}
-
-	e := &connectedEndpoint{path: path, queue: queue, file: file}
+// NewConnectedEndpoint creates a new ConnectedEndpoint backed by
+// a host FD that will pretend to be bound at a given sentry path.
+//
+// The caller is responsible for calling Init(). Additionaly, Release needs
+// to be called twice because host.ConnectedEndpoint is both a
+// unix.Receiver and unix.ConnectedEndpoint.
+func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *tcpip.Error) {
+	e := &ConnectedEndpoint{path: path, queue: queue, file: file}
 
 	// AtomicRefCounters start off with a single reference. We need two.
 	e.ref.IncRef()
 
-	return e, e, nil
+	return e, nil
 }
 
-// connectedEndpoint is a host FD backed implementation of
+// Init will do initialization required without holding other locks.
+func (c *ConnectedEndpoint) Init() {
+	if err := fdnotifier.AddFD(int32(c.file.FD()), c.queue); err != nil {
+		panic(err)
+	}
+}
+
+// ConnectedEndpoint is a host FD backed implementation of
 // unix.ConnectedEndpoint and unix.Receiver.
 //
-// connectedEndpoint does not support save/restore for now.
-type connectedEndpoint struct {
+// ConnectedEndpoint does not support save/restore for now.
+type ConnectedEndpoint struct {
 	queue *waiter.Queue
 	path  string
 
@@ -328,7 +335,7 @@ type connectedEndpoint struct {
 }
 
 // Send implements unix.ConnectedEndpoint.Send.
-func (c *connectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
+func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.writeClosed {
@@ -341,20 +348,20 @@ func (c *connectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMess
 }
 
 // SendNotify implements unix.ConnectedEndpoint.SendNotify.
-func (c *connectedEndpoint) SendNotify() {}
+func (c *ConnectedEndpoint) SendNotify() {}
 
 // CloseSend implements unix.ConnectedEndpoint.CloseSend.
-func (c *connectedEndpoint) CloseSend() {
+func (c *ConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	c.writeClosed = true
 	c.mu.Unlock()
 }
 
 // CloseNotify implements unix.ConnectedEndpoint.CloseNotify.
-func (c *connectedEndpoint) CloseNotify() {}
+func (c *ConnectedEndpoint) CloseNotify() {}
 
 // Writable implements unix.ConnectedEndpoint.Writable.
-func (c *connectedEndpoint) Writable() bool {
+func (c *ConnectedEndpoint) Writable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.writeClosed {
@@ -364,18 +371,18 @@ func (c *connectedEndpoint) Writable() bool {
 }
 
 // Passcred implements unix.ConnectedEndpoint.Passcred.
-func (c *connectedEndpoint) Passcred() bool {
+func (c *ConnectedEndpoint) Passcred() bool {
 	// We don't support credential passing for host sockets.
 	return false
 }
 
 // GetLocalAddress implements unix.ConnectedEndpoint.GetLocalAddress.
-func (c *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
+func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	return tcpip.FullAddress{Addr: tcpip.Address(c.path)}, nil
 }
 
 // EventUpdate implements unix.ConnectedEndpoint.EventUpdate.
-func (c *connectedEndpoint) EventUpdate() {
+func (c *ConnectedEndpoint) EventUpdate() {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.file.FD() != -1 {
@@ -384,7 +391,7 @@ func (c *connectedEndpoint) EventUpdate() {
 }
 
 // Recv implements unix.Receiver.Recv.
-func (c *connectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, unix.ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
+func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, unix.ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.readClosed {
@@ -397,24 +404,24 @@ func (c *connectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 }
 
 // close releases all resources related to the endpoint.
-func (c *connectedEndpoint) close() {
+func (c *ConnectedEndpoint) close() {
 	fdnotifier.RemoveFD(int32(c.file.FD()))
 	c.file.Close()
 	c.file = nil
 }
 
 // RecvNotify implements unix.Receiver.RecvNotify.
-func (c *connectedEndpoint) RecvNotify() {}
+func (c *ConnectedEndpoint) RecvNotify() {}
 
 // CloseRecv implements unix.Receiver.CloseRecv.
-func (c *connectedEndpoint) CloseRecv() {
+func (c *ConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	c.readClosed = true
 	c.mu.Unlock()
 }
 
 // Readable implements unix.Receiver.Readable.
-func (c *connectedEndpoint) Readable() bool {
+func (c *ConnectedEndpoint) Readable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.readClosed {
@@ -424,21 +431,21 @@ func (c *connectedEndpoint) Readable() bool {
 }
 
 // SendQueuedSize implements unix.Receiver.SendQueuedSize.
-func (c *connectedEndpoint) SendQueuedSize() int64 {
+func (c *ConnectedEndpoint) SendQueuedSize() int64 {
 	// SendQueuedSize isn't supported for host sockets because we don't allow the
 	// sentry to call ioctl(2).
 	return -1
 }
 
 // RecvQueuedSize implements unix.Receiver.RecvQueuedSize.
-func (c *connectedEndpoint) RecvQueuedSize() int64 {
+func (c *ConnectedEndpoint) RecvQueuedSize() int64 {
 	// RecvQueuedSize isn't supported for host sockets because we don't allow the
 	// sentry to call ioctl(2).
 	return -1
 }
 
 // SendMaxQueueSize implements unix.Receiver.SendMaxQueueSize.
-func (c *connectedEndpoint) SendMaxQueueSize() int64 {
+func (c *ConnectedEndpoint) SendMaxQueueSize() int64 {
 	v, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
 	if err != nil {
 		return -1
@@ -447,7 +454,7 @@ func (c *connectedEndpoint) SendMaxQueueSize() int64 {
 }
 
 // RecvMaxQueueSize implements unix.Receiver.RecvMaxQueueSize.
-func (c *connectedEndpoint) RecvMaxQueueSize() int64 {
+func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 	v, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
 	if err != nil {
 		return -1
@@ -456,7 +463,7 @@ func (c *connectedEndpoint) RecvMaxQueueSize() int64 {
 }
 
 // Release implements unix.ConnectedEndpoint.Release and unix.Receiver.Release.
-func (c *connectedEndpoint) Release() {
+func (c *ConnectedEndpoint) Release() {
 	c.ref.DecRefWithDestructor(c.close)
 }
 
