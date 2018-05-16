@@ -17,6 +17,7 @@ package kvm
 import (
 	"math/rand"
 	"reflect"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -84,7 +85,7 @@ func bluepillTest(t testHarness, fn func(*vCPU)) {
 func TestKernelSyscall(t *testing.T) {
 	bluepillTest(t, func(c *vCPU) {
 		redpill() // Leave guest mode.
-		if got := c.State(); got != vCPUReady {
+		if got := atomic.LoadUint32(&c.state); got != vCPUUser {
 			t.Errorf("vCPU not in ready state: got %v", got)
 		}
 	})
@@ -102,7 +103,7 @@ func TestKernelFault(t *testing.T) {
 	hostFault() // Ensure recovery works.
 	bluepillTest(t, func(c *vCPU) {
 		hostFault()
-		if got := c.State(); got != vCPUReady {
+		if got := atomic.LoadUint32(&c.state); got != vCPUUser {
 			t.Errorf("vCPU not in ready state: got %v", got)
 		}
 	})
@@ -229,7 +230,7 @@ func TestBounce(t *testing.T) {
 	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
-			c.Bounce()
+			c.BounceToKernel()
 		}()
 		if _, _, err := c.SwitchToUser(regs, dummyFPState, pt, 0); err != platform.ErrContextInterrupt {
 			t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
@@ -239,7 +240,7 @@ func TestBounce(t *testing.T) {
 	applicationTest(t, true, testutil.SpinLoop, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		go func() {
 			time.Sleep(time.Millisecond)
-			c.Bounce()
+			c.BounceToKernel()
 		}()
 		if _, _, err := c.SwitchToUser(regs, dummyFPState, pt, ring0.FlagFull); err != platform.ErrContextInterrupt {
 			t.Errorf("application full restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
@@ -264,17 +265,15 @@ func TestBounceStress(t *testing.T) {
 			// kernel is in various stages of the switch.
 			go func() {
 				randomSleep()
-				c.Bounce()
+				c.BounceToKernel()
 			}()
 			randomSleep()
-			// Execute the switch.
 			if _, _, err := c.SwitchToUser(regs, dummyFPState, pt, 0); err != platform.ErrContextInterrupt {
 				t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextInterrupt)
 			}
-			// Simulate work.
-			c.Unlock()
+			c.unlock()
 			randomSleep()
-			c.Lock()
+			c.lock()
 		}
 		return false
 	})
@@ -289,8 +288,7 @@ func TestInvalidate(t *testing.T) {
 		}
 		// Unmap the page containing data & invalidate.
 		pt.Unmap(usermem.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(usermem.PageSize-1)), usermem.PageSize)
-		c.Invalidate() // Ensure invalidation.
-		if _, _, err := c.SwitchToUser(regs, dummyFPState, pt, 0); err != platform.ErrContextSignal {
+		if _, _, err := c.SwitchToUser(regs, dummyFPState, pt, ring0.FlagFlush); err != platform.ErrContextSignal {
 			t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextSignal)
 		}
 		return false

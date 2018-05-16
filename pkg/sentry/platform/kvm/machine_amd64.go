@@ -158,7 +158,6 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Vector(bounce):
-		redpill() // Bail and reacqire.
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
 
 	default:
