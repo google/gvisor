@@ -71,6 +71,7 @@ func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, pr
 	stack.notifier.AddFD(fd, &wq)
 
 	dirent := socket.NewDirent(ctx, socketDevice)
+	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &socketOperations{
 		wq:       &wq,
 		fd:       fd,
@@ -274,6 +275,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	s.notifier.AddFD(payload.Fd, &wq)
 
 	dirent := socket.NewDirent(t, socketDevice)
+	defer dirent.DecRef()
 	file := fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonBlocking: flags&linux.SOCK_NONBLOCK != 0}, &socketOperations{
 		wq:       &wq,
 		fd:       payload.Fd,
