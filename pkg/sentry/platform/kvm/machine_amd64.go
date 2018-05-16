@@ -97,6 +97,29 @@ func (c *vCPU) initArchState() error {
 	return c.setSystemTime()
 }
 
+// fault generates an appropriate fault return.
+//
+//go:nosplit
+func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error) {
+	bluepill(c) // Probably no-op, but may not be.
+	faultAddr := ring0.ReadCR2()
+	code, user := c.ErrorCode()
+	if !user {
+		// The last fault serviced by this CPU was not a user
+		// fault, so we can't reliably trust the faultAddr or
+		// the code provided here. We need to re-execute.
+		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+	}
+	info := &arch.SignalInfo{Signo: signal}
+	info.SetAddr(uint64(faultAddr))
+	accessType := usermem.AccessType{
+		Read:    code&(1<<1) == 0,
+		Write:   code&(1<<1) != 0,
+		Execute: code&(1<<4) != 0,
+	}
+	return info, accessType, platform.ErrContextSignal
+}
+
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetables.PageTables, flags ring0.Flags) (*arch.SignalInfo, usermem.AccessType, error) {
 	// See below.
@@ -116,28 +139,12 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 		// Fast path: system call executed.
 		return nil, usermem.NoAccess, nil
 
+	case ring0.PageFault:
+		return c.fault(int32(syscall.SIGSEGV))
+
 	case ring0.Debug, ring0.Breakpoint:
 		info := &arch.SignalInfo{Signo: int32(syscall.SIGTRAP)}
 		return info, usermem.AccessType{}, platform.ErrContextSignal
-
-	case ring0.PageFault:
-		bluepill(c) // Probably no-op, but may not be.
-		faultAddr := ring0.ReadCR2()
-		code, user := c.ErrorCode()
-		if !user {
-			// The last fault serviced by this CPU was not a user
-			// fault, so we can't reliably trust the faultAddr or
-			// the code provided here. We need to re-execute.
-			return nil, usermem.NoAccess, platform.ErrContextInterrupt
-		}
-		info := &arch.SignalInfo{Signo: int32(syscall.SIGSEGV)}
-		info.SetAddr(uint64(faultAddr))
-		accessType := usermem.AccessType{
-			Read:    code&(1<<1) == 0,
-			Write:   code&(1<<1) != 0,
-			Execute: code&(1<<4) != 0,
-		}
-		return info, accessType, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault:
 		if !ring0.IsCanonical(regs.Rip) {
@@ -159,6 +166,14 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 
 	case ring0.Vector(bounce):
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+
+	case ring0.NMI:
+		// An NMI is generated only when a fault is not servicable by
+		// KVM itself, so we think some mapping is writeable but it's
+		// really not. This could happen, e.g. if some file is
+		// truncated (and would generate a SIGBUS) and we map it
+		// directly into the instance.
+		return c.fault(int32(syscall.SIGBUS))
 
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))

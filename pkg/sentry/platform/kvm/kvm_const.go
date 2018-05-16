@@ -24,6 +24,7 @@ const (
 	_KVM_CREATE_VCPU            = 0xae41
 	_KVM_SET_TSS_ADDR           = 0xae47
 	_KVM_RUN                    = 0xae80
+	_KVM_NMI                    = 0xae9a
 	_KVM_INTERRUPT              = 0x4004ae86
 	_KVM_SET_MSRS               = 0x4008ae89
 	_KVM_SET_USER_MEMORY_REGION = 0x4020ae46
