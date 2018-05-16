@@ -1915,6 +1915,10 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	hasOffset := offsetAddr != 0
 	// If we have a provided offset.
 	if hasOffset {
+		// Verify that when offset address is not null, infile must be seekable
+		if !inFile.Flags().Pread {
+			return 0, nil, syserror.ESPIPE
+		}
 		// Copy in the offset.
 		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
 			return 0, nil, err
