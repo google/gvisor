@@ -79,26 +79,33 @@ func (e *endpoint) BidirectionalConnect(ce unix.ConnectingEndpoint, returnConnec
 
 	// No lock ordering required as only the ConnectingEndpoint has a mutex.
 	ce.Lock()
-	defer ce.Unlock()
 
 	// Check connecting state.
 	if ce.Connected() {
+		ce.Unlock()
 		return tcpip.ErrAlreadyConnected
 	}
 	if ce.Listening() {
+		ce.Unlock()
 		return tcpip.ErrInvalidEndpointState
 	}
 
 	hostFile, err := e.file.Connect(cf)
 	if err != nil {
+		ce.Unlock()
 		return tcpip.ErrConnectionRefused
 	}
 
-	r, c, terr := host.NewConnectedEndpoint(hostFile, ce.WaiterQueue(), e.path)
+	c, terr := host.NewConnectedEndpoint(hostFile, ce.WaiterQueue(), e.path)
 	if terr != nil {
+		ce.Unlock()
 		return terr
 	}
-	returnConnect(r, c)
+
+	returnConnect(c, c)
+	ce.Unlock()
+	c.Init()
+
 	return nil
 }
 
@@ -109,14 +116,15 @@ func (e *endpoint) UnidirectionalConnect() (unix.ConnectedEndpoint, *tcpip.Error
 		return nil, tcpip.ErrConnectionRefused
 	}
 
-	r, c, terr := host.NewConnectedEndpoint(hostFile, &waiter.Queue{}, e.path)
+	c, terr := host.NewConnectedEndpoint(hostFile, &waiter.Queue{}, e.path)
 	if terr != nil {
 		return nil, terr
 	}
+	c.Init()
 
 	// We don't need the receiver.
-	r.CloseRecv()
-	r.Release()
+	c.CloseRecv()
+	c.Release()
 
 	return c, nil
 }
