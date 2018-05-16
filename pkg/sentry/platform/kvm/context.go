@@ -15,8 +15,6 @@
 package kvm
 
 import (
-	"sync/atomic"
-
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/interrupt"
@@ -54,10 +52,18 @@ func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*a
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
 	}
 
+	// Set the active address space.
+	//
+	// This must be done prior to the call to Touch below. If the address
+	// space is invalidated between this line and the call below, we will
+	// flag on entry anyways. When the active address space below is
+	// cleared, it indicates that we don't need an explicit interrupt and
+	// that the flush can occur naturally on the next user entry.
+	cpu.active.set(localAS)
+
 	// Mark the address space as dirty.
 	flags := ring0.Flags(0)
-	dirty := localAS.Touch(cpu)
-	if v := atomic.SwapUint32(dirty, 1); v == 0 {
+	if localAS.Touch(cpu) {
 		flags |= ring0.FlagFlush
 	}
 	if ac.FullRestore() {
@@ -66,6 +72,9 @@ func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*a
 
 	// Take the blue pill.
 	si, at, err := cpu.SwitchToUser(regs, fp, localAS.pageTables, flags)
+
+	// Clear the address space.
+	cpu.active.set(nil)
 
 	// Release resources.
 	c.machine.Put(cpu)

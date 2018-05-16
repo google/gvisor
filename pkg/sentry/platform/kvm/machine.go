@@ -80,6 +80,9 @@ type vCPU struct {
 	// by the bluepill code (see bluepill_amd64.s).
 	ring0.CPU
 
+	// id is the vCPU id.
+	id int
+
 	// fd is the vCPU fd.
 	fd int
 
@@ -102,6 +105,10 @@ type vCPU struct {
 
 	// machine associated with this vCPU.
 	machine *machine
+
+	// active is the current addressSpace: this is set and read atomically,
+	// it is used to elide unnecessary interrupts due to invalidations.
+	active atomicAddressSpace
 }
 
 // newMachine returns a new VM context.
@@ -140,6 +147,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 			return nil, fmt.Errorf("error creating VCPU: %v", errno)
 		}
 		c := &vCPU{
+			id:      id,
 			fd:      int(fd),
 			machine: m,
 		}
