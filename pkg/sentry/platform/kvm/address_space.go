@@ -16,8 +16,6 @@ package kvm
 
 import (
 	"reflect"
-	"sync"
-	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
@@ -40,10 +38,10 @@ type addressSpace struct {
 
 	// dirtySet is the set of dirty vCPUs.
 	//
-	// The key is the vCPU, the value is a shared uint32 pointer that
-	// indicates whether or not the context is clean. A zero here indicates
-	// that the context should be cleaned prior to re-entry.
-	dirtySet sync.Map
+	// These are actually vCPU pointers that are stored iff the vCPU is
+	// dirty. If the vCPU is not dirty and requires invalidation, then a
+	// nil value is stored here instead.
+	dirtySet dirtySet
 
 	// files contains files mapped in the host address space.
 	//
@@ -53,22 +51,22 @@ type addressSpace struct {
 
 // Invalidate interrupts all dirty contexts.
 func (as *addressSpace) Invalidate() {
-	as.dirtySet.Range(func(key, value interface{}) bool {
-		c := key.(*vCPU)
-		v := value.(*uint32)
-		atomic.StoreUint32(v, 0) // Invalidation required.
-		c.BounceToKernel()       // Force a kernel transition.
-		return true              // Keep iterating.
-	})
+	for i := 0; i < as.dirtySet.size(); i++ {
+		if c := as.dirtySet.swap(i, nil); c != nil && c.active.get() == as {
+			c.BounceToKernel() // Force a kernel transition.
+		}
+	}
 }
 
 // Touch adds the given vCPU to the dirty list.
-func (as *addressSpace) Touch(c *vCPU) *uint32 {
-	value, ok := as.dirtySet.Load(c)
-	if !ok {
-		value, _ = as.dirtySet.LoadOrStore(c, new(uint32))
+//
+// The return value indicates whether a flush is required.
+func (as *addressSpace) Touch(c *vCPU) bool {
+	if old := as.dirtySet.swap(c.id, c); old == nil {
+		return true // Flush is required.
 	}
-	return value.(*uint32)
+	// Already dirty: no flush required.
+	return false
 }
 
 func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {

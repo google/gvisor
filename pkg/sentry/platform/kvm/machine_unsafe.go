@@ -16,6 +16,7 @@ package kvm
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -66,6 +67,28 @@ func unmapRunData(r *runData) error {
 		return fmt.Errorf("error unmapping runData: %v", errno)
 	}
 	return nil
+}
+
+// atomicAddressSpace is an atomic address space pointer.
+type atomicAddressSpace struct {
+	pointer unsafe.Pointer
+}
+
+// set sets the address space value.
+//
+//go:nosplit
+func (a *atomicAddressSpace) set(as *addressSpace) {
+	atomic.StorePointer(&a.pointer, unsafe.Pointer(as))
+}
+
+// get gets the address space value.
+//
+// Note that this should be considered best-effort, and may have changed by the
+// time this function returns.
+//
+//go:nosplit
+func (a *atomicAddressSpace) get() *addressSpace {
+	return (*addressSpace)(atomic.LoadPointer(&a.pointer))
 }
 
 // notify notifies that the vCPU has transitioned modes.
