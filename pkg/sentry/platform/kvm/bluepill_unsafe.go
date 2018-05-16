@@ -61,8 +61,9 @@ func bluepillHandler(context unsafe.Pointer) {
 	}
 
 	for {
-		_, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0)
-		if errno == syscall.EINTR {
+		switch _, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0); errno {
+		case 0: // Expected case.
+		case syscall.EINTR:
 			// First, we process whatever pending signal
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal
@@ -93,7 +94,20 @@ func bluepillHandler(context unsafe.Pointer) {
 				// Force injection below; the vCPU is ready.
 				c.runData.exitReason = _KVM_EXIT_IRQ_WINDOW_OPEN
 			}
-		} else if errno != 0 {
+		case syscall.EFAULT:
+			// If a fault is not serviceable due to the host
+			// backing pages having page permissions, instead of an
+			// MMIO exit we receive EFAULT from the run ioctl. We
+			// always inject an NMI here since we may be in kernel
+			// mode and have interrupts disabled.
+			if _, _, errno := syscall.RawSyscall(
+				syscall.SYS_IOCTL,
+				uintptr(c.fd),
+				_KVM_NMI, 0); errno != 0 {
+				throw("NMI injection failed")
+			}
+			continue // Rerun vCPU.
+		default:
 			throw("run failed")
 		}
 
