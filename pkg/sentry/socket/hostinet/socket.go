@@ -65,6 +65,7 @@ func newSocketFile(ctx context.Context, fd int, nonblock bool) (*fs.File, *syser
 		return nil, syserr.FromError(err)
 	}
 	dirent := socket.NewDirent(ctx, socketDevice)
+	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true}, s), nil
 }
 
