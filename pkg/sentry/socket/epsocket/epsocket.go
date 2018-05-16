@@ -116,6 +116,7 @@ type SocketOperations struct {
 // New creates a new endpoint socket.
 func New(t *kernel.Task, family int, skType unix.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) *fs.File {
 	dirent := socket.NewDirent(t, epsocketDevice)
+	defer dirent.DecRef()
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
 		Queue:    queue,
 		family:   family,
