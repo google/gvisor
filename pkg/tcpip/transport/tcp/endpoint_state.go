@@ -12,17 +12,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-// ErrSaveRejection indicates a failed save due to unsupported tcp endpoint
-// state.
-type ErrSaveRejection struct {
-	Err error
-}
-
-// Error returns a sensible description of the save rejection error.
-func (e ErrSaveRejection) Error() string {
-	return "save rejected due to unsupported endpoint state: " + e.Err.Error()
-}
-
 func (e *endpoint) drainSegmentLocked() {
 	// Drain only up to once.
 	if e.drainDone != nil {
@@ -48,8 +37,7 @@ func (e *endpoint) beforeSave() {
 	defer e.mu.Unlock()
 
 	switch e.state {
-	case stateInitial:
-	case stateBound:
+	case stateInitial, stateBound:
 	case stateListen:
 		if !e.segmentQueue.empty() {
 			e.drainSegmentLocked()
@@ -62,9 +50,11 @@ func (e *endpoint) beforeSave() {
 		fallthrough
 	case stateConnected:
 		// FIXME
-		panic(ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%v, remote %v:%v", e.id.LocalAddress, e.id.LocalPort, e.id.RemoteAddress, e.id.RemotePort)})
-	case stateClosed:
-	case stateError:
+		panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%v, remote %v:%v", e.id.LocalAddress, e.id.LocalPort, e.id.RemoteAddress, e.id.RemotePort)})
+	case stateClosed, stateError:
+		if e.workerRunning {
+			panic(fmt.Sprintf("endpoint still has worker running in closed or error state"))
+		}
 	default:
 		panic(fmt.Sprintf("endpoint in unknown state %v", e.state))
 	}
