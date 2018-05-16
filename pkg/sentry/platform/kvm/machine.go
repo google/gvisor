@@ -21,11 +21,11 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/tmutex"
 )
 
 // machine contains state associated with the VM as a whole.
@@ -57,20 +57,19 @@ type machine struct {
 }
 
 const (
-	// vCPUReady is the lock value for an available vCPU.
-	//
-	// Legal transitions: vCPUGuest (bluepill).
-	vCPUReady uintptr = iota
+	// vCPUReady is an alias for all the below clear.
+	vCPUReady uint32 = 0
+
+	// vCPUser indicates that the vCPU is in or about to enter user mode.
+	vCPUUser uint32 = 1 << 0
 
 	// vCPUGuest indicates the vCPU is in guest mode.
-	//
-	// Legal transition: vCPUReady (bluepill), vCPUWaiter (wait).
-	vCPUGuest
+	vCPUGuest uint32 = 1 << 1
 
-	// vCPUWaiter indicates that the vCPU should be released.
+	// vCPUWaiter indicates that there is a waiter.
 	//
-	// Legal transition: vCPUReady (bluepill).
-	vCPUWaiter
+	// If this is set, then notify must be called on any state transitions.
+	vCPUWaiter uint32 = 1 << 2
 )
 
 // vCPU is a single KVM vCPU.
@@ -93,17 +92,16 @@ type vCPU struct {
 	// faults is a count of world faults (informational only).
 	faults uint32
 
-	// state is the vCPU state; all are described above.
-	state uintptr
+	// state is the vCPU state.
+	//
+	// This is a bitmask of the three fields (vCPU*) described above.
+	state uint32
 
 	// runData for this vCPU.
 	runData *runData
 
 	// machine associated with this vCPU.
 	machine *machine
-
-	// mu applies across get/put; it does not protect the above.
-	mu tmutex.Mutex
 }
 
 // newMachine returns a new VM context.
@@ -145,7 +143,6 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 			fd:      int(fd),
 			machine: m,
 		}
-		c.mu.Init()
 		c.CPU.Init(m.kernel)
 		c.CPU.KernelSyscall = bluepillSyscall
 		c.CPU.KernelException = bluepillException
@@ -253,27 +250,17 @@ func (m *machine) Destroy() {
 		// Ensure the vCPU is not still running in guest mode. This is
 		// possible iff teardown has been done by other threads, and
 		// somehow a single thread has not executed any system calls.
-		c.wait()
+		c.BounceToHost()
 
-		// Teardown the vCPU itself.
-		switch state := c.State(); state {
-		case vCPUReady:
-			// Note that the runData may not be mapped if an error
-			// occurs during the middle of initialization.
-			if c.runData != nil {
-				if err := unmapRunData(c.runData); err != nil {
-					panic(fmt.Sprintf("error unmapping rundata: %v", err))
-				}
+		// Note that the runData may not be mapped if an error occurs
+		// during the middle of initialization.
+		if c.runData != nil {
+			if err := unmapRunData(c.runData); err != nil {
+				panic(fmt.Sprintf("error unmapping rundata: %v", err))
 			}
-			if err := syscall.Close(int(c.fd)); err != nil {
-				panic(fmt.Sprintf("error closing vCPU fd: %v", err))
-			}
-		case vCPUGuest, vCPUWaiter:
-			// Should never happen; waited above.
-			panic("vCPU disposed in guest state")
-		default:
-			// Should never happen; not a valid state.
-			panic(fmt.Sprintf("vCPU in invalid state: %v", state))
+		}
+		if err := syscall.Close(int(c.fd)); err != nil {
+			panic(fmt.Sprintf("error closing vCPU fd: %v", err))
 		}
 	}
 
@@ -296,14 +283,19 @@ func (m *machine) Get() (*vCPU, error) {
 
 	for {
 		// Check for an exact match.
-		if c := m.vCPUs[tid]; c != nil && c.mu.TryLock() {
+		if c := m.vCPUs[tid]; c != nil {
+			c.lock()
 			m.mu.Unlock()
 			return c, nil
 		}
 
 		// Scan for an available vCPU.
 		for origTID, c := range m.vCPUs {
-			if c.LockInState(vCPUReady) {
+			// We can only steal a vCPU that is the vCPUReady
+			// state. That is, it must not be heading to user mode
+			// with some other thread, have a waiter registered, or
+			// be in guest mode already.
+			if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
 				delete(m.vCPUs, origTID)
 				m.vCPUs[tid] = c
 				m.mu.Unlock()
@@ -317,96 +309,151 @@ func (m *machine) Get() (*vCPU, error) {
 			}
 		}
 
-		// Everything is busy executing user code (locked).
+		// Everything is already in guest mode.
 		//
-		// We hold the pool lock here, so we should be able to kick something
-		// out of kernel mode and have it bounce into host mode when it tries
-		// to grab the vCPU again.
+		// We hold the pool lock here, so we should be able to kick
+		// something out of kernel mode and have it bounce into host
+		// mode when it tries to grab the vCPU again.
 		for _, c := range m.vCPUs {
-			if c.State() != vCPUWaiter {
-				c.Bounce()
-			}
+			c.BounceToHost()
 		}
 
-		// Give other threads an opportunity to run.
+		// Give other threads an opportunity to run. We don't yield the
+		// pool lock above, so if they try to regrab the lock we will
+		// serialize at this point. This is extreme, but we don't
+		// expect to exhaust all vCPUs frequently.
 		yield()
 	}
 }
 
 // Put puts the current vCPU.
 func (m *machine) Put(c *vCPU) {
-	c.Unlock()
+	c.unlock()
 	runtime.UnlockOSThread()
 }
 
-// State returns the current state.
-func (c *vCPU) State() uintptr {
-	return atomic.LoadUintptr(&c.state)
+// lock marks the vCPU as in user mode.
+//
+// This should only be called directly when known to be safe, i.e. when
+// the vCPU is owned by the current TID with no chance of theft.
+//
+//go:nosplit
+func (c *vCPU) lock() {
+	atomicbitops.OrUint32(&c.state, vCPUUser)
 }
 
-// Lock locks the vCPU.
-func (c *vCPU) Lock() {
-	c.mu.Lock()
-}
-
-// Invalidate invalidates caches.
-func (c *vCPU) Invalidate() {
-}
-
-// LockInState locks the vCPU if it is in the given state and TryLock succeeds.
-func (c *vCPU) LockInState(state uintptr) bool {
-	if c.State() == state && c.mu.TryLock() {
-		if c.State() != state {
-			c.mu.Unlock()
-			return false
-		}
-		return true
+// unlock clears the vCPUUser bit.
+//
+//go:nosplit
+func (c *vCPU) unlock() {
+	if atomic.CompareAndSwapUint32(&c.state, vCPUUser|vCPUGuest, vCPUGuest) {
+		// Happy path: no exits are forced, and we can continue
+		// executing on our merry way with a single atomic access.
+		return
 	}
-	return false
-}
 
-// Unlock unlocks the given vCPU.
-func (c *vCPU) Unlock() {
-	// Ensure we're out of guest mode, if necessary.
-	if c.State() == vCPUWaiter {
-		redpill() // Force guest mode exit.
+	// Clear the lock.
+	origState := atomic.LoadUint32(&c.state)
+	atomicbitops.AndUint32(&c.state, ^vCPUUser)
+	switch origState {
+	case vCPUUser:
+		// Normal state.
+	case vCPUUser | vCPUGuest | vCPUWaiter:
+		// Force a transition: this must trigger a notification when we
+		// return from guest mode.
+		redpill()
+	case vCPUUser | vCPUWaiter:
+		// Waiting for the lock to be released; the responsibility is
+		// on us to notify the waiter and clear the associated bit.
+		atomicbitops.AndUint32(&c.state, ^vCPUWaiter)
+		c.notify()
+	default:
+		panic("invalid state")
 	}
-	c.mu.Unlock()
 }
 
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+//
+//go:nosplit
 func (c *vCPU) NotifyInterrupt() {
-	c.Bounce()
+	c.BounceToKernel()
 }
 
 // pid is used below in bounce.
 var pid = syscall.Getpid()
 
-// Bounce ensures that the vCPU bounces back to the kernel.
+// bounce forces a return to the kernel or to host mode.
 //
-// In practice, this means returning EAGAIN from running user code. The vCPU
-// will be unlocked and relock, and the kernel is guaranteed to check for
-// interrupt notifications (e.g. injected via Notify) and invalidations.
-func (c *vCPU) Bounce() {
+// This effectively unwinds the state machine.
+func (c *vCPU) bounce(forceGuestExit bool) {
 	for {
-		if c.mu.TryLock() {
-			// We know that the vCPU must be in the kernel already,
-			// because the lock was not acquired. We specifically
-			// don't want to call bounce in this case, because it's
-			// not necessary to knock the vCPU out of guest mode.
-			c.mu.Unlock()
+		switch state := atomic.LoadUint32(&c.state); state {
+		case vCPUReady, vCPUWaiter:
+			// There is nothing to be done, we're already in the
+			// kernel pre-acquisition. The Bounce criteria have
+			// been satisfied.
 			return
+		case vCPUUser:
+			// We need to register a waiter for the actual guest
+			// transition. When the transition takes place, then we
+			// can inject an interrupt to ensure a return to host
+			// mode.
+			atomic.CompareAndSwapUint32(&c.state, state, state|vCPUWaiter)
+		case vCPUUser | vCPUWaiter:
+			// Wait for the transition to guest mode. This should
+			// come from the bluepill handler.
+			c.waitUntilNot(state)
+		case vCPUGuest, vCPUUser | vCPUGuest:
+			if state == vCPUGuest && !forceGuestExit {
+				// The vCPU is already not acquired, so there's
+				// no need to do a fresh injection here.
+				return
+			}
+			// The vCPU is in user or kernel mode. Attempt to
+			// register a notification on change.
+			if !atomic.CompareAndSwapUint32(&c.state, state, state|vCPUWaiter) {
+				break // Retry.
+			}
+			for {
+				// We need to spin here until the signal is
+				// delivered, because Tgkill can return EAGAIN
+				// under memory pressure. Since we already
+				// marked ourselves as a waiter, we need to
+				// ensure that a signal is actually delivered.
+				if err := syscall.Tgkill(pid, int(atomic.LoadUint64(&c.tid)), bounceSignal); err == nil {
+					break
+				} else if err.(syscall.Errno) == syscall.EAGAIN {
+					continue
+				} else {
+					// Nothing else should be returned by tgkill.
+					panic(fmt.Sprintf("unexpected tgkill error: %v", err))
+				}
+			}
+		case vCPUGuest | vCPUWaiter, vCPUUser | vCPUGuest | vCPUWaiter:
+			if state == vCPUGuest|vCPUWaiter && !forceGuestExit {
+				// See above.
+				return
+			}
+			// Wait for the transition. This again should happen
+			// from the bluepill handler, but on the way out.
+			c.waitUntilNot(state)
+		default:
+			// Should not happen: the above is exhaustive.
+			panic("invalid state")
 		}
-
-		if state := c.State(); state == vCPUGuest || state == vCPUWaiter {
-			// We know that the vCPU was in guest mode, so a single signal
-			// interruption will guarantee that a transition takes place.
-			syscall.Tgkill(pid, int(atomic.LoadUint64(&c.tid)), bounceSignal)
-			return
-		}
-
-		// Someone holds the lock, but the vCPU is not yet transitioned
-		// into guest mode. It's in the critical section; give it time.
-		yield()
 	}
+}
+
+// BounceToKernel ensures that the vCPU bounces back to the kernel.
+//
+//go:nosplit
+func (c *vCPU) BounceToKernel() {
+	c.bounce(false)
+}
+
+// BounceToHost ensures that the vCPU is in host mode.
+//
+//go:nosplit
+func (c *vCPU) BounceToHost() {
+	c.bounce(true)
 }

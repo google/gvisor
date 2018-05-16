@@ -51,6 +51,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/sentry/arch",
@@ -63,7 +64,6 @@ go_library(
         "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/time",
         "//pkg/sentry/usermem",
-        "//pkg/tmutex",
     ],
 )
 

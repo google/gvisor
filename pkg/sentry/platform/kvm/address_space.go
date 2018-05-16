@@ -57,7 +57,7 @@ func (as *addressSpace) Invalidate() {
 		c := key.(*vCPU)
 		v := value.(*uint32)
 		atomic.StoreUint32(v, 0) // Invalidation required.
-		c.Bounce()               // Force a kernel transition.
+		c.BounceToKernel()       // Force a kernel transition.
 		return true              // Keep iterating.
 	})
 }

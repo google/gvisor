@@ -51,15 +51,13 @@ func bluepillHandler(context unsafe.Pointer) {
 	// Increment the number of switches.
 	atomic.AddUint32(&c.switches, 1)
 
-	// Store vCPUGuest.
-	//
-	// This is fine even if we're not in guest mode yet.  In this signal
-	// handler, we'll already have all the relevant signals blocked, so an
-	// interrupt is only deliverable when we actually execute the KVM_RUN.
-	//
-	// The state will be returned to vCPUReady by Phase2.
-	if state := atomic.SwapUintptr(&c.state, vCPUGuest); state != vCPUReady {
-		throw("vCPU not in ready state")
+	// Mark this as guest mode.
+	switch atomic.SwapUint32(&c.state, vCPUGuest|vCPUUser) {
+	case vCPUUser: // Expected case.
+	case vCPUUser | vCPUWaiter:
+		c.notify()
+	default:
+		throw("invalid state")
 	}
 
 	for {
@@ -118,11 +116,12 @@ func bluepillHandler(context unsafe.Pointer) {
 			// Copy out registers.
 			bluepillArchExit(c, bluepillArchContext(context))
 
-			// Notify any waiters.
-			switch state := atomic.SwapUintptr(&c.state, vCPUReady); state {
-			case vCPUGuest:
-			case vCPUWaiter:
-				c.notify() // Safe from handler.
+			// Return to the vCPUReady state; notify any waiters.
+			user := atomic.LoadUint32(&c.state) & vCPUUser
+			switch atomic.SwapUint32(&c.state, user) {
+			case user | vCPUGuest: // Expected case.
+			case user | vCPUGuest | vCPUWaiter:
+				c.notify()
 			default:
 				throw("invalid state")
 			}

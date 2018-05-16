@@ -16,7 +16,6 @@ package kvm
 
 import (
 	"fmt"
-	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -69,7 +68,7 @@ func unmapRunData(r *runData) error {
 	return nil
 }
 
-// notify notifies that the vCPU has returned to host mode.
+// notify notifies that the vCPU has transitioned modes.
 //
 // This may be called by a signal handler and therefore throws on error.
 //
@@ -86,27 +85,20 @@ func (c *vCPU) notify() {
 	}
 }
 
-// wait waits for the vCPU to return to host mode.
+// waitUntilNot waits for the vCPU to transition modes.
+//
+// The state should have been previously set to vCPUWaiter after performing an
+// appropriate action to cause a transition (e.g. interrupt injection).
 //
 // This panics on error.
-func (c *vCPU) wait() {
-	if !atomic.CompareAndSwapUintptr(&c.state, vCPUGuest, vCPUWaiter) {
-		return // Nothing to wait for.
-	}
-	for {
-		_, _, errno := syscall.Syscall6(
-			syscall.SYS_FUTEX,
-			uintptr(unsafe.Pointer(&c.state)),
-			linux.FUTEX_WAIT,
-			uintptr(vCPUWaiter), // Expected value.
-			0, 0, 0)
-		if errno == syscall.EINTR {
-			continue
-		} else if errno == syscall.EAGAIN {
-			break
-		} else if errno != 0 {
-			panic("futex wait error")
-		}
-		break
+func (c *vCPU) waitUntilNot(state uint32) {
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_FUTEX,
+		uintptr(unsafe.Pointer(&c.state)),
+		linux.FUTEX_WAIT,
+		uintptr(state),
+		0, 0, 0)
+	if errno != 0 && errno != syscall.EINTR && errno != syscall.EAGAIN {
+		panic("futex wait error")
 	}
 }
