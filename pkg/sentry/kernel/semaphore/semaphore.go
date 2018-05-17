@@ -43,6 +43,8 @@ const (
 
 // Registry maintains a set of semaphores that can be found by key or ID.
 type Registry struct {
+	// userNS owning the ipc name this registry belongs to. Immutable.
+	userNS *auth.UserNamespace
 	// mu protects all fields below.
 	mu         sync.Mutex `state:"nosave"`
 	semaphores map[int32]*Set
@@ -51,6 +53,9 @@ type Registry struct {
 
 // Set represents a set of semaphores that can be operated atomically.
 type Set struct {
+	// registry owning this sem set. Immutable.
+	registry *Registry
+
 	// Id is a handle that identifies the set.
 	ID int32
 
@@ -90,8 +95,11 @@ type waiter struct {
 }
 
 // NewRegistry creates a new semaphore set registry.
-func NewRegistry() *Registry {
-	return &Registry{semaphores: make(map[int32]*Set)}
+func NewRegistry(userNS *auth.UserNamespace) *Registry {
+	return &Registry{
+		userNS:     userNS,
+		semaphores: make(map[int32]*Set),
+	}
 }
 
 // FindOrCreate searches for a semaphore set that matches 'key'. If not found,
@@ -175,6 +183,7 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 
 func (r *Registry) newSet(ctx context.Context, key int32, owner, creator fs.FileOwner, perms fs.FilePermissions, nsems int32) (*Set, error) {
 	set := &Set{
+		registry:   r,
 		key:        key,
 		owner:      owner,
 		creator:    owner,
@@ -415,7 +424,7 @@ func (s *Set) checkCredentials(creds *auth.Credentials) bool {
 }
 
 func (s *Set) checkCapability(creds *auth.Credentials) bool {
-	return creds.HasCapability(linux.CAP_IPC_OWNER) && creds.UserNamespace.MapFromKUID(s.owner.UID).Ok()
+	return creds.HasCapabilityIn(linux.CAP_IPC_OWNER, s.registry.userNS) && creds.UserNamespace.MapFromKUID(s.owner.UID).Ok()
 }
 
 func (s *Set) checkPerms(creds *auth.Credentials, reqPerms fs.PermMask) bool {
