@@ -13,8 +13,6 @@
 // limitations under the License.
 
 // Package linux provides syscall tables for amd64 Linux.
-//
-// NOTE: Linux i386 support has been removed.
 package linux
 
 import (
