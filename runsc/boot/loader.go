@@ -146,7 +146,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// not configurable from runtime spec.
 	utsns := kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace)
 
-	ipcns := kernel.NewIPCNamespace()
+	ipcns := kernel.NewIPCNamespace(creds.UserNamespace)
 
 	if err := enableStrace(conf); err != nil {
 		return nil, fmt.Errorf("failed to enable strace: %v", err)

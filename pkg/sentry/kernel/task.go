@@ -21,6 +21,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bpf"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
@@ -559,6 +560,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return t
 	case auth.CtxCredentials:
 		return t.creds
+	case context.CtxThreadGroupID:
+		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
 		return t.FSContext().RootDirectory()
 	case inet.CtxStack:

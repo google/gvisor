@@ -51,6 +51,7 @@ go_library(
         "sched.go",
         "seccomp.go",
         "sem.go",
+        "shm.go",
         "signal.go",
         "socket.go",
         "time.go",

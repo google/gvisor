@@ -75,9 +75,9 @@ var AMD64 = &kernel.SyscallTable{
 		26: Msync,
 		27: Mincore,
 		28: Madvise,
-		//     29: Shmget, TODO
-		//     30: Shmat, TODO
-		//     31: Shmctl, TODO
+		29: Shmget,
+		30: Shmat,
+		31: Shmctl,
 		32: Dup,
 		33: Dup2,
 		34: Pause,
@@ -113,7 +113,7 @@ var AMD64 = &kernel.SyscallTable{
 		64: Semget,
 		65: Semop,
 		66: Semctl,
-		//     67: Shmdt, TODO
+		67: Shmdt,
 		//     68: Msgget, TODO
 		//     69: Msgsnd, TODO
 		//     70: Msgrcv, TODO

@@ -194,9 +194,11 @@ type AtomicRefCount struct {
 	weakRefs ilist.List `state:"nosave"`
 }
 
-// TestReadRefs returns the current reference count of r. Use only for tests.
-func (r *AtomicRefCount) TestReadRefs() int64 {
-	return atomic.LoadInt64(&r.refCount)
+// ReadRefs returns the current number of references. The returned count is
+// inherently racy and is unsafe to use without external synchronization.
+func (r *AtomicRefCount) ReadRefs() int64 {
+	// Account for the internal -1 offset on refcounts.
+	return atomic.LoadInt64(&r.refCount) + 1
 }
 
 // IncRef increments this object's reference count. While the count is kept

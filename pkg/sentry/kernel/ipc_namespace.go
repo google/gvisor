@@ -15,24 +15,37 @@
 package kernel
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/semaphore"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/shm"
 )
 
 // IPCNamespace represents an IPC namespace.
 type IPCNamespace struct {
+	// User namespace which owns this IPC namespace. Immutable.
+	userNS *auth.UserNamespace
+
 	semaphores *semaphore.Registry
+	shms       *shm.Registry
 }
 
 // NewIPCNamespace creates a new IPC namespace.
-func NewIPCNamespace() *IPCNamespace {
+func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 	return &IPCNamespace{
+		userNS:     userNS,
 		semaphores: semaphore.NewRegistry(),
+		shms:       shm.NewRegistry(userNS),
 	}
 }
 
 // SemaphoreRegistry returns the semanphore set registry for this namespace.
 func (i *IPCNamespace) SemaphoreRegistry() *semaphore.Registry {
 	return i.semaphores
+}
+
+// ShmRegistry returns the shm segment registry for this namespace.
+func (i *IPCNamespace) ShmRegistry() *shm.Registry {
+	return i.shms
 }
 
 // IPCNamespace returns the task's IPC namespace.
