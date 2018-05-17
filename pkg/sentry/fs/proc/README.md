@@ -10,17 +10,16 @@ inconsistency, please file a bug.
 
 The following files are implemented:
 
-| File /proc/               | Content                                          |
-| :------------------------ | :----------------------------------------------- |
-| [cpuinfo](#cpuinfo)       | Info about the CPU                               |
-| [filesystem](#filesystem) | Supported filesystems                            |
-| [loadavg](#loadavg)       | Load average of last 1, 5 & 15 minutes           |
-| [meminfo](#meminfo)       | Overall memory info                              |
-| [stat](#stat)             | Overall kernel statistics                        |
-| [sys](#sys)               | Change parameters within the kernel              |
-| [uptime](#uptime)         | Wall clock since boot, combined idle time of all |
-:                           : cpus                                             :
-| [version](#version)       | Kernel version                                   |
+| File /proc/                 | Content                                               |
+| :------------------------   | :---------------------------------------------------- |
+| [cpuinfo](#cpuinfo)         | Info about the CPU                                    |
+| [filesystems](#filesystems) | Supported filesystems                                 |
+| [loadavg](#loadavg)         | Load average of last 1, 5 & 15 minutes                |
+| [meminfo](#meminfo)         | Overall memory info                                   |
+| [stat](#stat)               | Overall kernel statistics                             |
+| [sys](#sys)                 | Change parameters within the kernel                   |
+| [uptime](#uptime)           | Wall clock since boot, combined idle time of all cpus |
+| [version](#version)         | Kernel version                                        |
 
 ### cpuinfo
 
@@ -62,25 +61,19 @@ cache_alignment  | Always 64
 address sizes    | Always 46 bits physical, 48 bits virtual
 power management | Always blank
 
-Otherwise fields are derived from the SentryCPUIDSpec proto config.
+Otherwise fields are derived from the sentry configuration.
 
-### filesystem
+### filesystems
 
 ```bash
-$ cat /proc/filesystem
+$ cat /proc/filesystems
 nodev   9p
+nodev   devpts
 nodev   devtmpfs
 nodev   proc
-nodev   ramdiskfs
 nodev   sysfs
 nodev   tmpfs
 ```
-
-Notable divergences:
-
-Filesystem | Notes
-:--------- | :--------------------------------------------------------
-ramdiskfs  | No Linux equivalent, see the SentryRamdiskFS proto config
 
 ### loadavg
 
@@ -166,10 +159,6 @@ DirectMap4k       | Missing
 DirectMap2M       | Missing
 DirectMap1G       | Missing
 
-See [Memory
-Accounting](pkg/sentry/usage/g3doc/memory-accounting.md)
-for general caveats.
-
 ### stat
 
 ```bash
@@ -236,22 +225,26 @@ Linux version 3.11.10 #1 SMP Fri Nov 29 10:47:50 PST 2013
 
 The following files are implemented:
 
-File /proc/PID      | Content
-:------------------ | :---------------------------------------------------
-[auxv](#auxv)       | Copy of auxiliary vector for the process
-[cmdline](#cmdline) | Command line arguments
-[comm](#comm)       | Command name associated with the process
-[exe](#exe)         | Symlink to the process's executable
-[fd](#fd)           | Directory containing links to open file descriptors
-[fdinfo](#fdinfo)   | Information associated with open file descriptors
-[gid_map](#gid_map) | Mappings for group IDs inside the user namespace
-[io](#io)           | IO statistics
-[maps](#maps)       | Memory mappings (anon, executables, library files)
-[ns](#ns)           | Directory containing info about supported namespaces
-[stat](#stat)       | Process statistics
-[status](#status)   | Process status in human readable format
-[task](#task)       | Directory containing info about running threads
-[uid_map](#uid_map) | Mappings for user IDs inside the user namespace
+File /proc/PID          | Content
+:---------------------- | :---------------------------------------------------
+[auxv](#auxv)           | Copy of auxiliary vector for the process
+[cmdline](#cmdline)     | Command line arguments
+[comm](#comm)           | Command name associated with the process
+[environ](#environ)     | Process environment
+[exe](#exe)             | Symlink to the process's executable
+[fd](#fd)               | Directory containing links to open file descriptors
+[fdinfo](#fdinfo)       | Information associated with open file descriptors
+[gid_map](#gid_map)     | Mappings for group IDs inside the user namespace
+[io](#io)               | IO statistics
+[maps](#maps)           | Memory mappings (anon, executables, library files)
+[mounts](#mounts)       | Mounted filesystems
+[mountinfo](#mountinfo) | Information about mounts
+[ns](#ns)               | Directory containing info about supported namespaces
+[stat](#stat)           | Process statistics
+[statm](#statm)         | Process memory statistics
+[status](#status)       | Process status in human readable format
+[task](#task)           | Directory containing info about running threads
+[uid_map](#uid_map)     | Mappings for user IDs inside the user namespace
 
 ### auxv
 
@@ -262,6 +255,10 @@ TODO
 TODO
 
 ### comm
+
+TODO
+
+### environment
 
 TODO
 
@@ -291,6 +288,14 @@ TODO: add more detail.
 
 TODO
 
+### mounts
+
+TODO
+
+### mountinfo
+
+TODO
+
 ### ns
 
 TODO
@@ -302,9 +307,16 @@ num_threads, and exit_signal.
 
 TODO: add more detail.
 
+### statm
+
+Only has data for vss and rss.
+
+TODO: add more detail.
+
 ### status
 
-Statically created, most of the fields have no data.
+Contains data for Name, State, Tgid, Pid, Ppid, TracerPid, FDSize, VmSize,
+VmRSS, Threads, CapInh, CapPrm, CapEff, CapBnd, Seccomp.
 
 TODO: add more detail.
 
