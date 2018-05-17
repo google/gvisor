@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package boot loads the kernel and runs the application.
+// Package boot loads the kernel and runs a container..
 package boot
 
 import (
@@ -57,7 +57,7 @@ import (
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
 )
 
-// Loader keeps state needed to start the kernel and run the application.
+// Loader keeps state needed to start the kernel and run the container..
 type Loader struct {
 	// k is the kernel.
 	k *kernel.Kernel
@@ -73,10 +73,10 @@ type Loader struct {
 	watchdog *watchdog.Watchdog
 
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
-	// app. It should be called when a sandbox is destroyed.
+	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
 
-	// procArgs refers to the initial application task.
+	// procArgs refers to the root container task.
 	procArgs kernel.CreateProcessArgs
 }
 
@@ -283,10 +283,10 @@ func createPlatform(conf *Config) (platform.Platform, error) {
 	}
 }
 
-// Run runs the application.
+// Run runs the root container..
 func (l *Loader) Run() error {
 	err := l.run()
-	l.ctrl.app.startResultChan <- err
+	l.ctrl.manager.startResultChan <- err
 	if err != nil {
 		// Give the controller some time to send the error to the
 		// runtime. If we return too quickly here the process will exit
@@ -321,7 +321,7 @@ func (l *Loader) run() error {
 		}
 	}
 
-	// Create the initial application task.
+	// Create the root container init task.
 	if _, err := l.k.CreateProcess(l.procArgs); err != nil {
 		return fmt.Errorf("failed to create init process: %v", err)
 	}
@@ -335,13 +335,12 @@ func (l *Loader) run() error {
 
 // WaitForStartSignal waits for a start signal from the control server.
 func (l *Loader) WaitForStartSignal() {
-	<-l.ctrl.app.startChan
+	<-l.ctrl.manager.startChan
 }
 
-// WaitExit waits for the application to exit, and returns the application's
-// exit status.
+// WaitExit waits for the root container to exit, and returns its exit status.
 func (l *Loader) WaitExit() kernel.ExitStatus {
-	// Wait for application.
+	// Wait for container.
 	l.k.WaitExited()
 
 	return l.k.GlobalInit().ExitStatus()

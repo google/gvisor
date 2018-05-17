@@ -72,13 +72,13 @@ func TestRun(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		resultChanErr = <-s.ctrl.app.startResultChan
+		resultChanErr = <-s.ctrl.manager.startResultChan
 		wg.Done()
 	}()
 
-	// Run the application.
+	// Run the container..
 	if err := s.Run(); err != nil {
-		t.Errorf("error running application: %v", err)
+		t.Errorf("error running container: %v", err)
 	}
 
 	// We should have not gotten an error on the startResultChan.
@@ -112,7 +112,7 @@ func TestStartSignal(t *testing.T) {
 	go func() {
 		s.WaitForStartSignal()
 		// Pretend that Run() executed and returned no error.
-		s.ctrl.app.startResultChan <- nil
+		s.ctrl.manager.startResultChan <- nil
 		waitFinished <- struct{}{}
 	}()
 
@@ -126,9 +126,9 @@ func TestStartSignal(t *testing.T) {
 		// OK.
 	}
 
-	// Trigger the control server Start method.
-	if err := s.ctrl.app.Start(nil, nil); err != nil {
-		t.Errorf("error calling Start: %v", err)
+	// Trigger the control server StartRoot method.
+	if err := s.ctrl.manager.StartRoot(nil, nil); err != nil {
+		t.Errorf("error calling StartRoot: %v", err)
 	}
 
 	// Now WaitForStartSignal should return (within a short amount of

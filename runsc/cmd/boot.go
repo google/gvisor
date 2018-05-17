@@ -111,21 +111,21 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	s, err := boot.New(spec, conf, b.controllerFD, b.ioFDs.GetArray(), b.console)
+	l, err := boot.New(spec, conf, b.controllerFD, b.ioFDs.GetArray(), b.console)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}
-	defer s.Destroy()
+	defer l.Destroy()
 
 	// Wait for the start signal from runsc.
-	s.WaitForStartSignal()
+	l.WaitForStartSignal()
 
 	// Run the application and wait for it to finish.
-	if err := s.Run(); err != nil {
+	if err := l.Run(); err != nil {
 		Fatalf("error running sandbox: %v", err)
 	}
 
-	ws := s.WaitExit()
+	ws := l.WaitExit()
 	log.Infof("application exiting with %+v", ws)
 	*waitStatus = syscall.WaitStatus(ws.Status())
 	return subcommands.ExitSuccess
