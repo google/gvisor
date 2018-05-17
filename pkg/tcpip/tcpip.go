@@ -76,6 +76,7 @@ var (
 	ErrInvalidOptionValue    = &Error{"invalid option value specified"}
 	ErrNoLinkAddress         = &Error{"no remote link address"}
 	ErrBadAddress            = &Error{"bad address"}
+	ErrNetworkUnreachable    = &Error{"network is unreachable"}
 )
 
 // Errors related to Subnet

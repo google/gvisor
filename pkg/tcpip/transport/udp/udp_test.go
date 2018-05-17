@@ -401,7 +401,7 @@ func TestV4ReadOnV4(t *testing.T) {
 	testV4Read(c)
 }
 
-func testDualWrite(c *testContext) uint16 {
+func testV4Write(c *testContext) uint16 {
 	// Write to V4 mapped address.
 	payload := buffer.View(newPayload())
 	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
@@ -423,16 +423,18 @@ func testDualWrite(c *testContext) uint16 {
 		),
 	)
 
-	port := udp.SourcePort()
-
 	// Check the payload.
 	if !bytes.Equal(payload, udp.Payload()) {
 		c.t.Fatalf("Bad payload: got %x, want %x", udp.Payload(), payload)
 	}
 
+	return udp.SourcePort()
+}
+
+func testV6Write(c *testContext) uint16 {
 	// Write to v6 address.
-	payload = buffer.View(newPayload())
-	n, err = c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	payload := buffer.View(newPayload())
+	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
 	})
 	if err != nil {
@@ -442,14 +444,12 @@ func testDualWrite(c *testContext) uint16 {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 
-	// Check that we received the packet, and that the source port is the
-	// same as the one used in ipv4.
-	b = c.getV6Packet()
-	udp = header.UDP(header.IPv6(b).Payload())
+	// Check that we received the packet.
+	b := c.getV6Packet()
+	udp := header.UDP(header.IPv6(b).Payload())
 	checker.IPv6(c.t, b,
 		checker.UDP(
 			checker.DstPort(testPort),
-			checker.SrcPort(port),
 		),
 	)
 
@@ -458,7 +458,17 @@ func testDualWrite(c *testContext) uint16 {
 		c.t.Fatalf("Bad payload: got %x, want %x", udp.Payload(), payload)
 	}
 
-	return port
+	return udp.SourcePort()
+}
+
+func testDualWrite(c *testContext) uint16 {
+	v4Port := testV4Write(c)
+	v6Port := testV6Write(c)
+	if v4Port != v6Port {
+		c.t.Fatalf("expected v4 and v6 ports to be equal: got v4Port = %d, v6Port = %d", v4Port, v6Port)
+	}
+
+	return v4Port
 }
 
 func TestDualWriteUnbound(t *testing.T) {
@@ -498,7 +508,16 @@ func TestDualWriteConnectedToV6(t *testing.T) {
 		c.t.Fatalf("Bind failed: %v", err)
 	}
 
-	testDualWrite(c)
+	testV6Write(c)
+
+	// Write to V4 mapped address.
+	payload := buffer.View(newPayload())
+	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+		To: &tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort},
+	})
+	if err != tcpip.ErrNetworkUnreachable {
+		c.t.Fatalf("Write returned unexpected error: got %v, want %v", err, tcpip.ErrNetworkUnreachable)
+	}
 }
 
 func TestDualWriteConnectedToV4Mapped(t *testing.T) {
@@ -512,7 +531,16 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 		c.t.Fatalf("Bind failed: %v", err)
 	}
 
-	testDualWrite(c)
+	testV4Write(c)
+
+	// Write to v6 address.
+	payload := buffer.View(newPayload())
+	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
+	})
+	if err != tcpip.ErrInvalidEndpointState {
+		c.t.Fatalf("Write returned unexpected error: got %v, want %v", err, tcpip.ErrInvalidEndpointState)
+	}
 }
 
 func TestV4WriteOnV6Only(t *testing.T) {
@@ -547,8 +575,8 @@ func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
 	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
 	})
-	if err != tcpip.ErrNoRoute {
-		c.t.Fatalf("Write returned unexpected error: got %v, want %v", err, tcpip.ErrNoRoute)
+	if err != tcpip.ErrInvalidEndpointState {
+		c.t.Fatalf("Write returned unexpected error: got %v, want %v", err, tcpip.ErrInvalidEndpointState)
 	}
 }
 
