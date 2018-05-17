@@ -33,7 +33,7 @@ type IPCNamespace struct {
 func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 	return &IPCNamespace{
 		userNS:     userNS,
-		semaphores: semaphore.NewRegistry(),
+		semaphores: semaphore.NewRegistry(userNS),
 		shms:       shm.NewRegistry(userNS),
 	}
 }

@@ -136,7 +136,7 @@ func TestNoWait(t *testing.T) {
 
 func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
-	r := NewRegistry()
+	r := NewRegistry(auth.NewRootUserNamespace())
 	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0x600), true, true, true)
 	if err != nil {
 		t.Fatalf("FindOrCreate() failed, err: %v", err)
