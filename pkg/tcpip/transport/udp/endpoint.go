@@ -62,7 +62,6 @@ type endpoint struct {
 	id         stack.TransportEndpointID
 	state      endpointState
 	bindNICID  tcpip.NICID
-	bindAddr   tcpip.Address
 	regNICID   tcpip.NICID
 	route      stack.Route `state:"manual"`
 	dstPort    uint16
@@ -267,13 +266,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 		toCopy := *to
 		to = &toCopy
-		netProto, err := e.checkV4Mapped(to, true)
+		netProto, err := e.checkV4Mapped(to, false)
 		if err != nil {
 			return 0, err
 		}
 
 		// Find the enpoint.
-		r, err := e.stack.FindRoute(nicid, e.bindAddr, to.Addr, netProto)
+		r, err := e.stack.FindRoute(nicid, e.id.LocalAddress, to.Addr, netProto)
 		if err != nil {
 			return 0, err
 		}
@@ -439,11 +438,16 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 		if addr.Addr == "\x00\x00\x00\x00" {
 			addr.Addr = ""
 		}
+
+		// Fail if we are bound to an IPv6 address.
+		if !allowMismatch && len(e.id.LocalAddress) == 16 {
+			return 0, tcpip.ErrNetworkUnreachable
+		}
 	}
 
 	// Fail if we're bound to an address length different from the one we're
 	// checking.
-	if l := len(e.id.LocalAddress); !allowMismatch && l != 0 && l != len(addr.Addr) {
+	if l := len(e.id.LocalAddress); l != 0 && l != len(addr.Addr) {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
@@ -485,7 +489,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, e.bindAddr, addr.Addr, netProto)
+	r, err := e.stack.FindRoute(nicid, e.id.LocalAddress, addr.Addr, netProto)
 	if err != nil {
 		return err
 	}
@@ -605,7 +609,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	netProto, err := e.checkV4Mapped(&addr, false)
+	netProto, err := e.checkV4Mapped(&addr, true)
 	if err != nil {
 		return err
 	}
@@ -670,7 +674,6 @@ func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) *tcp
 	}
 
 	e.bindNICID = addr.NIC
-	e.bindAddr = addr.Addr
 
 	return nil
 }

@@ -213,6 +213,7 @@ func loadError(s string) *tcpip.Error {
 			tcpip.ErrInvalidOptionValue,
 			tcpip.ErrNoLinkAddress,
 			tcpip.ErrBadAddress,
+			tcpip.ErrNetworkUnreachable,
 		}
 
 		messageToError = make(map[string]*tcpip.Error)

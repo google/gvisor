@@ -72,7 +72,7 @@ func (e *endpoint) afterLoad() {
 
 	var err *tcpip.Error
 	if e.state == stateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, netProto)
+		e.route, err = e.stack.FindRoute(e.regNICID, e.id.LocalAddress, e.id.RemoteAddress, netProto)
 		if err != nil {
 			panic(*err)
 		}
