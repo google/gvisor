@@ -120,9 +120,13 @@ func Load(rootDir, id string) (*Container, error) {
 	//
 	// This is inherently racey.
 	if c.Status == Running || c.Status == Created {
-		// Send signal 0 to check if container still exists.
-		if err := c.Signal(0); err != nil {
-			// Container no longer exists.
+		// Check if the sandbox process is still running.
+		if c.Sandbox.IsRunning() {
+			// TODO: Send a message into the sandbox to
+			// see if this particular container is still running.
+		} else {
+			// Sandbox no longer exists, so this container
+			// definitly does not exist.
 			c.Status = Stopped
 			c.Sandbox = nil
 		}

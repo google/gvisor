@@ -95,13 +95,12 @@ func (s *Sandbox) Start(cid string, spec *specs.Spec, conf *boot.Config) error {
 		return fmt.Errorf("error setting up network: %v", err)
 	}
 
-	// Send a message to the sandbox control server to start the
-	// application.
+	// Send a message to the sandbox control server to start the root
+	// container..
 	//
-	// TODO: Pass in the container id (cid) here. The sandbox
-	// should start only that container.
-	if err := conn.Call(boot.ApplicationStart, nil, nil); err != nil {
-		return fmt.Errorf("error starting application %v: %v", spec.Process.Args, err)
+	// TODO: We need a way to start non-root containers.
+	if err := conn.Call(boot.RootContainerStart, nil, nil); err != nil {
+		return fmt.Errorf("error starting root container %v: %v", spec.Process.Args, err)
 	}
 
 	return nil
@@ -110,6 +109,7 @@ func (s *Sandbox) Start(cid string, spec *specs.Spec, conf *boot.Config) error {
 // Processes retrieves the list of processes and associated metadata for a
 // given container in this sandbox.
 func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
+	log.Debugf("Getting processes for container %q in sandbox %q", cid, s.ID)
 	conn, err := s.connect()
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	var pl []*control.Process
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should return process info for only that container.
-	if err := conn.Call(boot.ApplicationProcesses, nil, &pl); err != nil {
+	if err := conn.Call(boot.ContainerProcesses, nil, &pl); err != nil {
 		return nil, fmt.Errorf("error retrieving process data from sandbox: %v", err)
 	}
 	return pl, nil
@@ -127,17 +127,18 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 
 // Execute runs the specified command in the container.
 func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, error) {
+	log.Debugf("Executing new process in container %q in sandbox %q", cid, s.ID)
 	conn, err := s.connect()
 	if err != nil {
 		return 0, fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
 	}
 	defer conn.Close()
 
-	// Send a message to the sandbox control server to start the application.
+	// Send a message to the sandbox control server to start the container..
 	var waitStatus uint32
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should execute in the context of that container.
-	if err := conn.Call(boot.ApplicationExecute, e, &waitStatus); err != nil {
+	if err := conn.Call(boot.ContainerExecute, e, &waitStatus); err != nil {
 		return 0, fmt.Errorf("error executing in sandbox: %v", err)
 	}
 
@@ -146,6 +147,7 @@ func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, 
 
 // Event retrieves stats about the sandbox such as memory and CPU utilization.
 func (s *Sandbox) Event(cid string) (*boot.Event, error) {
+	log.Debugf("Getting events for container %q in sandbox %q", cid, s.ID)
 	conn, err := s.connect()
 	if err != nil {
 		return nil, err
@@ -155,7 +157,7 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	var e boot.Event
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should return events only for that container.
-	if err := conn.Call(boot.ApplicationEvent, nil, &e); err != nil {
+	if err := conn.Call(boot.ContainerEvent, nil, &e); err != nil {
 		return nil, fmt.Errorf("error retrieving event data from sandbox: %v", err)
 	}
 	e.ID = cid
@@ -163,7 +165,7 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 }
 
 func (s *Sandbox) connect() (*urpc.Client, error) {
-	log.Debugf("Connecting to sandbox...")
+	log.Debugf("Connecting to sandbox %q", s.ID)
 	conn, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
@@ -380,20 +382,18 @@ func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 
 // Wait waits for the containerized process to exit, and returns its WaitStatus.
 func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
-	// TODO: This waits on the sandbox process. We need a way
-	// to wait on an individual container in the sandbox.
+	log.Debugf("Waiting for container %q in sandbox %q", cid, s.ID)
+	var ws syscall.WaitStatus
+	conn, err := s.connect()
+	if err != nil {
+		return ws, err
+	}
+	defer conn.Close()
 
-	p, err := os.FindProcess(s.Pid)
-	if err != nil {
-		// "On Unix systems, FindProcess always succeeds and returns a
-		// Process for the given pid."
-		panic(err)
+	if err := conn.Call(boot.ContainerWait, &cid, &ws); err != nil {
+		return ws, fmt.Errorf("err waiting on container %q: %v", cid, err)
 	}
-	ps, err := p.Wait()
-	if err != nil {
-		return 0, err
-	}
-	return ps.Sys().(syscall.WaitStatus), nil
+	return ws, nil
 }
 
 // Stop stops the container in the sandbox.
@@ -409,12 +409,12 @@ func (s *Sandbox) Destroy() error {
 	if s.Pid != 0 {
 		// TODO: Too harsh?
 		log.Debugf("Killing sandbox %q", s.ID)
-		sendSignal(s.Pid, unix.SIGKILL)
+		killProcess(s.Pid, unix.SIGKILL)
 		s.Pid = 0
 	}
 	if s.GoferPid != 0 {
 		log.Debugf("Killing gofer for sandbox %q", s.ID)
-		sendSignal(s.GoferPid, unix.SIGKILL)
+		killProcess(s.GoferPid, unix.SIGKILL)
 		s.GoferPid = 0
 	}
 
@@ -424,17 +424,35 @@ func (s *Sandbox) Destroy() error {
 // Signal sends the signal to a container in the sandbox.
 func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 	log.Debugf("Signal sandbox %q", s.ID)
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 
-	// TODO: This sends a signal to the sandbox process, which
-	// will be forwarded to the first process in the sandbox. We need a way
-	// to send a signal to any container in the sandbox.
-	// to wait on an individual container in the sandbox.
-
-	return sendSignal(s.Pid, sig)
+	args := boot.SignalArgs{
+		CID:   cid,
+		Signo: int32(sig),
+	}
+	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
+		return fmt.Errorf("err signaling container %q: %v", cid, err)
+	}
+	return nil
 }
 
-// sendSignal sends a signal to the sandbox process.
-func sendSignal(pid int, sig syscall.Signal) error {
+// IsRunning returns true iff the sandbox process is running.
+func (s *Sandbox) IsRunning() bool {
+	// Send a signal 0 to the sandbox process.
+	if err := killProcess(s.Pid, 0); err != nil {
+		return false
+	}
+	return true
+}
+
+// killProcess sends a signal to the host process (i.e. a sandbox or gofer
+// process). Sandbox.Signal should be used to send a signal to a process
+// running inside the sandbox.
+func killProcess(pid int, sig syscall.Signal) error {
 	if err := syscall.Kill(pid, sig); err != nil {
 		return fmt.Errorf("error sending signal %d to pid %d: %v", sig, pid, err)
 	}

@@ -25,6 +25,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/cpuid",
         "//pkg/log",
+        "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/control",
         "//pkg/sentry/fs",

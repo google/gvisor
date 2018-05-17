@@ -20,10 +20,10 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -74,9 +74,6 @@ func newSpecWithArgs(args ...string) *specs.Spec {
 	}
 	return spec
 }
-
-// shutdownSignal will be sent to the sandbox in order to shut down cleanly.
-const shutdownSignal = syscall.SIGUSR2
 
 // setupContainer creates a bundle and root dir for the container, generates a
 // test config, and writes the spec to config.json in the bundle dir.
@@ -201,15 +198,35 @@ func TestLifecycle(t *testing.T) {
 		t.Error(err)
 	}
 
-	// Send the container a signal, which we catch and use to cleanly
-	// shutdown.
-	if err := s.Signal(shutdownSignal); err != nil {
-		t.Fatalf("error sending signal %v to container: %v", shutdownSignal, err)
+	// Wait on the container.
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		ws, err := s.Wait()
+		if err != nil {
+			t.Errorf("error waiting on container: %v", err)
+		}
+		if got, want := ws.Signal(), syscall.SIGTERM; got != want {
+			t.Errorf("got signal %v, want %v", got, want)
+		}
+		wg.Done()
+	}()
+
+	// Send the container a SIGTERM which will cause it to stop.
+	if err := s.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
 	}
 	// Wait for it to die.
-	if _, err := s.Wait(); err != nil {
-		t.Fatalf("error waiting on container: %v", err)
-	}
+	wg.Wait()
+
+	// The sandbox process should have exited by now, but it is a zombie.
+	// In normal runsc usage, it will be parented to init, and init will
+	// reap the sandbox. However, in this case the test runner is the
+	// parent and will not reap the sandbox process, so we must do it
+	// ourselves.
+	p, _ := os.FindProcess(s.Sandbox.Pid)
+	p.Wait()
+
 	// Load the container from disk and check the status.
 	s, err = container.Load(rootDir, id)
 	if err != nil {
@@ -640,28 +657,17 @@ func TestMain(m *testing.M) {
 	subcommands.Register(new(cmd.Gofer), "gofer")
 	switch flag.Arg(0) {
 	case "boot", "gofer":
-		// Run the command in a goroutine so we can block the main
-		// thread waiting for shutdownSignal.
-		go func() {
-			conf := &boot.Config{
-				RootDir: "unused-root-dir",
-				Network: boot.NetworkNone,
-			}
-			var ws syscall.WaitStatus
-			subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
-			if subcmdCode != subcommands.ExitSuccess {
-				panic(fmt.Sprintf("command failed to execute, err: %v", subcmdCode))
-			}
-			// Container exited normally. Shut down this process.
-			os.Exit(ws.ExitStatus())
-		}()
-
-		// Shutdown cleanly when the shutdownSignal is received.  This
-		// allows us to write coverage data before exiting.
-		sigc := make(chan os.Signal, 1)
-		signal.Notify(sigc, shutdownSignal)
-		<-sigc
-		exit(0)
+		conf := &boot.Config{
+			RootDir: "unused-root-dir",
+			Network: boot.NetworkNone,
+		}
+		var ws syscall.WaitStatus
+		subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
+		if subcmdCode != subcommands.ExitSuccess {
+			panic(fmt.Sprintf("command failed to execute, err: %v", subcmdCode))
+		}
+		// Container exited. Shut down this process.
+		exit(ws.ExitStatus())
 	default:
 		// Otherwise run the tests.
 		exit(m.Run())

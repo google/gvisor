@@ -59,10 +59,11 @@ type Memory struct {
 	Raw       map[string]uint64 `json:"raw,omitempty"`
 }
 
-func (a *application) Event(_ *struct{}, out *Event) error {
+// Event gets the events from the container.
+func (cm *containerManager) Event(_ *struct{}, out *Event) error {
 	stats := &Stats{}
-	stats.populateMemory(a.k)
-	stats.populatePIDs(a.k)
+	stats.populateMemory(cm.k)
+	stats.populatePIDs(cm.k)
 	*out = Event{Type: "stats", Data: stats}
 	return nil
 }
