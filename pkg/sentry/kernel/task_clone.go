@@ -197,7 +197,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	if opts.NewIPCNamespace {
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"
-		ipcns = NewIPCNamespace()
+		ipcns = NewIPCNamespace(userns)
 	}
 
 	tc, err := t.tc.Fork(t, !opts.NewAddressSpace)
@@ -449,7 +449,7 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		}
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"
-		t.ipcns = NewIPCNamespace()
+		t.ipcns = NewIPCNamespace(t.creds.UserNamespace)
 	}
 	if opts.NewFiles {
 		oldFDMap := t.tr.FDMap

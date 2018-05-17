@@ -33,8 +33,8 @@ func TestWalkPositive(t *testing.T) {
 	ctx := contexttest.Context(t)
 	root := NewDirent(newMockDirInode(ctx, nil), "root")
 
-	if got := root.TestReadRefs(); got != 0 {
-		t.Fatalf("root has a ref count of %d, want %d", got, 0)
+	if got := root.ReadRefs(); got != 1 {
+		t.Fatalf("root has a ref count of %d, want %d", got, 1)
 	}
 
 	name := "d"
@@ -43,22 +43,22 @@ func TestWalkPositive(t *testing.T) {
 		t.Fatalf("root.walk(root, %q) got %v, want nil", name, err)
 	}
 
-	if got := root.TestReadRefs(); got != 1 {
-		t.Fatalf("root has a ref count of %d, want %d", got, 1)
+	if got := root.ReadRefs(); got != 2 {
+		t.Fatalf("root has a ref count of %d, want %d", got, 2)
 	}
 
-	if got := d.TestReadRefs(); got != 0 {
-		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, 0)
+	if got := d.ReadRefs(); got != 1 {
+		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, 1)
 	}
 
 	d.DecRef()
 
-	if got := root.TestReadRefs(); got != 0 {
-		t.Fatalf("root has a ref count of %d, want %d", got, 0)
+	if got := root.ReadRefs(); got != 1 {
+		t.Fatalf("root has a ref count of %d, want %d", got, 1)
 	}
 
-	if got := d.TestReadRefs(); got != -1 {
-		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, -1)
+	if got := d.ReadRefs(); got != 0 {
+		t.Fatalf("child name = %q has a ref count of %d, want %d", d.name, got, 0)
 	}
 
 	root.flush()
@@ -76,8 +76,8 @@ func TestWalkNegative(t *testing.T) {
 	root := NewDirent(NewEmptyDir(ctx, nil), "root")
 	mn := root.Inode.InodeOperations.(*mockInodeOperationsLookupNegative)
 
-	if got := root.TestReadRefs(); got != 0 {
-		t.Fatalf("root has a ref count of %d, want %d", got, 0)
+	if got := root.ReadRefs(); got != 1 {
+		t.Fatalf("root has a ref count of %d, want %d", got, 1)
 	}
 
 	name := "d"
@@ -88,7 +88,7 @@ func TestWalkNegative(t *testing.T) {
 		}
 	}
 
-	if got := root.TestReadRefs(); got != 0 {
+	if got := root.ReadRefs(); got != 1 {
 		t.Fatalf("root has a ref count of %d, want %d", got, 1)
 	}
 
@@ -110,14 +110,14 @@ func TestWalkNegative(t *testing.T) {
 		t.Fatalf("root found positive child at %q, want negative", name)
 	}
 
-	if got := child.(*Dirent).TestReadRefs(); got != 1 {
-		t.Fatalf("child has a ref count of %d, want %d", got, 1)
+	if got := child.(*Dirent).ReadRefs(); got != 2 {
+		t.Fatalf("child has a ref count of %d, want %d", got, 2)
 	}
 
 	child.DecRef()
 
-	if got := child.(*Dirent).TestReadRefs(); got != 0 {
-		t.Fatalf("child has a ref count of %d, want %d", got, 0)
+	if got := child.(*Dirent).ReadRefs(); got != 1 {
+		t.Fatalf("child has a ref count of %d, want %d", got, 1)
 	}
 
 	if got := len(root.children); got != 1 {
@@ -126,7 +126,7 @@ func TestWalkNegative(t *testing.T) {
 
 	root.DecRef()
 
-	if got := root.TestReadRefs(); got != -1 {
+	if got := root.ReadRefs(); got != 0 {
 		t.Fatalf("root has a ref count of %d, want %d", got, 0)
 	}
 
@@ -184,12 +184,12 @@ func TestHashNegativeToPositive(t *testing.T) {
 		t.Fatalf("got negative Dirent, want positive")
 	}
 
-	if got := d.TestReadRefs(); got != 0 {
-		t.Fatalf("child %q has a ref count of %d, want %d", name, got, 0)
+	if got := d.ReadRefs(); got != 1 {
+		t.Fatalf("child %q has a ref count of %d, want %d", name, got, 1)
 	}
 
-	if got := root.TestReadRefs(); got != 1 {
-		t.Fatalf("root has a ref count of %d, want %d", got, 1)
+	if got := root.ReadRefs(); got != 2 {
+		t.Fatalf("root has a ref count of %d, want %d", got, 2)
 	}
 
 	if got := len(root.children); got != 1 {
@@ -291,12 +291,12 @@ func TestCreateExtraRefs(t *testing.T) {
 		{
 			desc: "Create caching",
 			root: NewDirent(NewEmptyDir(ctx, NewDirentCache(1)), "root"),
-			refs: 1,
+			refs: 2,
 		},
 		{
 			desc: "Create not caching",
 			root: NewDirent(NewEmptyDir(ctx, nil), "root"),
-			refs: 0,
+			refs: 1,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -307,7 +307,7 @@ func TestCreateExtraRefs(t *testing.T) {
 			}
 			d := f.Dirent
 
-			if got := d.TestReadRefs(); got != test.refs {
+			if got := d.ReadRefs(); got != test.refs {
 				t.Errorf("dirent has a ref count of %d, want %d", got, test.refs)
 			}
 		})
@@ -347,8 +347,8 @@ func TestRemoveExtraRefs(t *testing.T) {
 				t.Fatalf("root.Remove(root, %q) failed: %v", name, err)
 			}
 
-			if got := d.TestReadRefs(); got != 0 {
-				t.Fatalf("dirent has a ref count of %d, want %d", got, 0)
+			if got := d.ReadRefs(); got != 1 {
+				t.Fatalf("dirent has a ref count of %d, want %d", got, 1)
 			}
 
 			d.DecRef()
@@ -406,11 +406,11 @@ func TestRenameExtraRefs(t *testing.T) {
 			newParent.flush()
 
 			// Expect to have only active references.
-			if got := renamed.TestReadRefs(); got != 0 {
-				t.Errorf("renamed has ref count %d, want only active references %d", got, 0)
+			if got := renamed.ReadRefs(); got != 1 {
+				t.Errorf("renamed has ref count %d, want only active references %d", got, 1)
 			}
-			if got := replaced.TestReadRefs(); got != 0 {
-				t.Errorf("replaced has ref count %d, want only active references %d", got, 0)
+			if got := replaced.ReadRefs(); got != 1 {
+				t.Errorf("replaced has ref count %d, want only active references %d", got, 1)
 			}
 		})
 	}

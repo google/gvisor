@@ -184,6 +184,7 @@ go_library(
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/semaphore",
+        "//pkg/sentry/kernel/shm",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",
