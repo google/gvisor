@@ -33,7 +33,6 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -703,18 +702,18 @@ func SetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, level int, n
 			v := usermem.ByteOrder.Uint32(optVal)
 			return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.V6OnlyOption(v)))
 		}
-	}
-
-	// FIXME: Disallow IP-level multicast group options by
-	// default. These will need to be supported by appropriately plumbing
-	// the level through to the network stack (if at all). However, we
-	// still allow setting TTL, and multicast-enable/disable type options.
-	if level == 0 {
+	case syscall.SOL_IP:
 		const (
+			_IP_MULTICAST_IF   = 32
 			_IP_ADD_MEMBERSHIP = 35
 			_MCAST_JOIN_GROUP  = 42
 		)
-		if name == _IP_ADD_MEMBERSHIP || name == _MCAST_JOIN_GROUP {
+		switch name {
+		case _IP_ADD_MEMBERSHIP, _MCAST_JOIN_GROUP, _IP_MULTICAST_IF:
+			// FIXME: Disallow IP-level multicast group options by
+			// default. These will need to be supported by appropriately plumbing
+			// the level through to the network stack (if at all). However, we
+			// still allow setting TTL, and multicast-enable/disable type options.
 			return syserr.ErrInvalidArgument
 		}
 	}
@@ -1033,8 +1032,99 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	}
 }
 
+// Ioctl implements fs.FileOperations.Ioctl.
+func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	return Ioctl(ctx, s.Endpoint, io, args)
+}
+
+// Ioctl performs a socket ioctl.
+func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	switch arg := int(args[1].Int()); arg {
+	case syscall.SIOCGIFFLAGS,
+		syscall.SIOCGIFADDR,
+		syscall.SIOCGIFBRDADDR,
+		syscall.SIOCGIFDSTADDR,
+		syscall.SIOCGIFHWADDR,
+		syscall.SIOCGIFINDEX,
+		syscall.SIOCGIFMAP,
+		syscall.SIOCGIFMETRIC,
+		syscall.SIOCGIFMTU,
+		syscall.SIOCGIFNAME,
+		syscall.SIOCGIFNETMASK,
+		syscall.SIOCGIFTXQLEN:
+
+		var ifr linux.IFReq
+		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
+			AddressSpaceActive: true,
+		}); err != nil {
+			return 0, err
+		}
+		if err := interfaceIoctl(ctx, io, arg, &ifr); err != nil {
+			return 0, err.ToError()
+		}
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+		return 0, err
+
+	case syscall.SIOCGIFCONF:
+		// Return a list of interface addresses or the buffer size
+		// necessary to hold the list.
+		var ifc linux.IFConf
+		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifc, usermem.IOOpts{
+			AddressSpaceActive: true,
+		}); err != nil {
+			return 0, err
+		}
+
+		if err := ifconfIoctl(ctx, io, &ifc); err != nil {
+			return 0, err
+		}
+
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), ifc, usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+
+		return 0, err
+
+	case linux.TIOCINQ:
+		var v tcpip.ReceiveQueueSizeOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return 0, syserr.TranslateNetstackError(err).ToError()
+		}
+
+		if v > math.MaxInt32 {
+			v = math.MaxInt32
+		}
+		// Copy result to user-space.
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+		return 0, err
+
+	case linux.TIOCOUTQ:
+		var v tcpip.SendQueueSizeOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return 0, syserr.TranslateNetstackError(err).ToError()
+		}
+
+		if v > math.MaxInt32 {
+			v = math.MaxInt32
+		}
+
+		// Copy result to user-space.
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+		return 0, err
+
+	}
+
+	return 0, syserror.ENOTTY
+}
+
 // interfaceIoctl implements interface requests.
-func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFReq) *syserr.Error {
+func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFReq) *syserr.Error {
 	var (
 		iface inet.Interface
 		index int32
@@ -1044,9 +1134,23 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 	// Find the relevant device.
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
-		log.Warningf("Couldn't find a network stack.")
-		return syserr.ErrInvalidArgument
+		return syserr.ErrNoDevice
 	}
+
+	// SIOCGIFNAME uses ifr.ifr_ifindex rather than ifr.ifr_name to
+	// identify a device.
+	if arg == syscall.SIOCGIFNAME {
+		// Gets the name of the interface given the interface index
+		// stored in ifr_ifindex.
+		index = int32(usermem.ByteOrder.Uint32(ifr.Data[:4]))
+		if iface, ok := stack.Interfaces()[index]; ok {
+			ifr.SetName(iface.Name)
+			return nil
+		}
+		return syserr.ErrNoDevice
+	}
+
+	// Find the relevant device.
 	for index, iface = range stack.Interfaces() {
 		if iface.Name == ifr.Name() {
 			found = true
@@ -1137,68 +1241,16 @@ func (s *SocketOperations) interfaceIoctl(ctx context.Context, io usermem.IO, ar
 	return nil
 }
 
-// Ioctl implements fs.FileOperations.Ioctl.
-func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	switch arg := int(args[1].Int()); arg {
-	case syscall.SIOCGIFFLAGS,
-		syscall.SIOCGIFADDR,
-		syscall.SIOCGIFBRDADDR,
-		syscall.SIOCGIFDSTADDR,
-		syscall.SIOCGIFHWADDR,
-		syscall.SIOCGIFINDEX,
-		syscall.SIOCGIFMAP,
-		syscall.SIOCGIFMETRIC,
-		syscall.SIOCGIFMTU,
-		syscall.SIOCGIFNETMASK,
-		syscall.SIOCGIFTXQLEN:
-
-		var ifr linux.IFReq
-		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
-			return 0, err
-		}
-		if err := s.interfaceIoctl(ctx, io, arg, &ifr); err != nil {
-			return 0, err.ToError()
-		}
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &ifr, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-		return 0, err
-	case syscall.SIOCGIFCONF:
-		// Return a list of interface addresses or the buffer size
-		// necessary to hold the list.
-		var ifc linux.IFConf
-		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifc, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
-			return 0, err
-		}
-
-		if err := s.ifconfIoctl(ctx, io, &ifc); err != nil {
-			return 0, err
-		}
-
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), ifc, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-
-		return 0, err
-	}
-
-	return Ioctl(ctx, s.Endpoint, io, args)
-}
-
 // ifconfIoctl populates a struct ifconf for the SIOCGIFCONF ioctl.
-func (s *SocketOperations) ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
+func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
 	// If Ptr is NULL, return the necessary buffer size via Len.
 	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
 	// structs.
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
-		log.Warningf("Couldn't find a network stack.")
-		return syserr.ErrInvalidArgument.ToError()
+		return syserr.ErrNoDevice.ToError()
 	}
+
 	if ifc.Ptr == 0 {
 		ifc.Len = int32(len(stack.Interfaces())) * int32(linux.SizeOfIFReq)
 		return nil
@@ -1235,44 +1287,4 @@ func (s *SocketOperations) ifconfIoctl(ctx context.Context, io usermem.IO, ifc *
 		}
 	}
 	return nil
-}
-
-// Ioctl implements fs.FileOperations.Ioctl for sockets backed by a
-// commonEndpoint.
-func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	// Switch on ioctl request.
-	switch int(args[1].Int()) {
-	case linux.TIOCINQ:
-		var v tcpip.ReceiveQueueSizeOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return 0, syserr.TranslateNetstackError(err).ToError()
-		}
-
-		if v > math.MaxInt32 {
-			v = math.MaxInt32
-		}
-		// Copy result to user-space.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-		return 0, err
-
-	case linux.TIOCOUTQ:
-		var v tcpip.SendQueueSizeOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return 0, syserr.TranslateNetstackError(err).ToError()
-		}
-
-		if v > math.MaxInt32 {
-			v = math.MaxInt32
-		}
-
-		// Copy result to user-space.
-		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-		return 0, err
-	}
-
-	return 0, syserror.ENOTTY
 }
