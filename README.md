@@ -370,6 +370,7 @@ The following applications/images have been tested:
 * mysql
 * node
 * php
+* postgres
 * prometheus
 * python
 * redis
@@ -385,8 +386,6 @@ The following applications have been tested and may not yet work:
   #2](https://github.com/google/gvisor/issues/2).
 * nginx: Requires `ioctl(FIOASYNC)`, but see workaround in [bug
   #1](https://github.com/google/gvisor/issues/1).
-* postgres: Requires SysV shared memory support. See [bug
-  #3](https://github.com/google/gvisor/issues/3).
 
 ### Will my container work with gVisor?
 
