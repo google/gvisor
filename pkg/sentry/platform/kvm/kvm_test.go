@@ -59,10 +59,7 @@ func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 		}
 	}()
 	for {
-		c, err = k.machine.Get()
-		if err != nil {
-			t.Fatalf("error getting vCPU: %v", err)
-		}
+		c = k.machine.Get()
 		if !fn(c) {
 			break
 		}

@@ -48,6 +48,9 @@ type machine struct {
 	// mu protects vCPUs.
 	mu sync.Mutex
 
+	// available is notified when vCPUs are available.
+	available sync.Cond
+
 	// vCPUs are the machine vCPUs.
 	//
 	// This is eventually keyed by system TID, but is initially indexed by
@@ -118,6 +121,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 		fd:    vm,
 		vCPUs: make(map[uint64]*vCPU),
 	}
+	m.available.L = &m.mu
 	if vCPUs > _KVM_NR_VCPUS {
 		// Hard cap at KVM's limit.
 		vCPUs = _KVM_NR_VCPUS
@@ -284,25 +288,21 @@ func (m *machine) Destroy() {
 }
 
 // Get gets an available vCPU.
-func (m *machine) Get() (*vCPU, error) {
+func (m *machine) Get() *vCPU {
 	runtime.LockOSThread()
 	tid := procid.Current()
 	m.mu.Lock()
 
-	for {
-		// Check for an exact match.
-		if c := m.vCPUs[tid]; c != nil {
-			c.lock()
-			m.mu.Unlock()
-			return c, nil
-		}
+	// Check for an exact match.
+	if c := m.vCPUs[tid]; c != nil {
+		c.lock()
+		m.mu.Unlock()
+		return c
+	}
 
+	for {
 		// Scan for an available vCPU.
 		for origTID, c := range m.vCPUs {
-			// We can only steal a vCPU that is the vCPUReady
-			// state. That is, it must not be heading to user mode
-			// with some other thread, have a waiter registered, or
-			// be in guest mode already.
 			if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
 				delete(m.vCPUs, origTID)
 				m.vCPUs[tid] = c
@@ -313,24 +313,44 @@ func (m *machine) Get() (*vCPU, error) {
 				// may be stale.
 				c.loadSegments()
 				atomic.StoreUint64(&c.tid, tid)
-				return c, nil
+				return c
 			}
 		}
 
-		// Everything is already in guest mode.
-		//
-		// We hold the pool lock here, so we should be able to kick
-		// something out of kernel mode and have it bounce into host
-		// mode when it tries to grab the vCPU again.
-		for _, c := range m.vCPUs {
-			c.BounceToHost()
+		// Scan for something not in user mode.
+		for origTID, c := range m.vCPUs {
+			if !atomic.CompareAndSwapUint32(&c.state, vCPUGuest, vCPUGuest|vCPUWaiter) {
+				continue
+			}
+
+			// The vCPU is not be able to transition to
+			// vCPUGuest|vCPUUser or to vCPUUser because that
+			// transition requires holding the machine mutex, as we
+			// do now. There is no path to register a waiter on
+			// just the vCPUReady state.
+			for {
+				c.waitUntilNot(vCPUGuest | vCPUWaiter)
+				if atomic.CompareAndSwapUint32(&c.state, vCPUReady, vCPUUser) {
+					break
+				}
+			}
+
+			// Steal the vCPU.
+			delete(m.vCPUs, origTID)
+			m.vCPUs[tid] = c
+			m.mu.Unlock()
+
+			// See above.
+			c.loadSegments()
+			atomic.StoreUint64(&c.tid, tid)
+			return c
 		}
 
-		// Give other threads an opportunity to run. We don't yield the
-		// pool lock above, so if they try to regrab the lock we will
-		// serialize at this point. This is extreme, but we don't
-		// expect to exhaust all vCPUs frequently.
-		yield()
+		// Everything is executing in user mode. Wait until something
+		// is available.  Note that signaling the condition variable
+		// will have the extra effect of kicking the vCPUs out of guest
+		// mode if that's where they were.
+		m.available.Wait()
 	}
 }
 
@@ -338,6 +358,7 @@ func (m *machine) Get() (*vCPU, error) {
 func (m *machine) Put(c *vCPU) {
 	c.unlock()
 	runtime.UnlockOSThread()
+	m.available.Signal()
 }
 
 // lock marks the vCPU as in user mode.

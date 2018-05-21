@@ -41,10 +41,7 @@ func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*a
 	fp := (*byte)(ac.FloatingPointData())
 
 	// Grab a vCPU.
-	cpu, err := c.machine.Get()
-	if err != nil {
-		return nil, usermem.NoAccess, err
-	}
+	cpu := c.machine.Get()
 
 	// Enable interrupts (i.e. calls to vCPU.Notify).
 	if !c.interrupt.Enable(cpu) {
