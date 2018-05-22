@@ -31,6 +31,8 @@ type Error struct {
 }
 
 // New creates a new Error and adds a translation for it.
+//
+// New must only be called at init.
 func New(message string, linuxTranslation *linux.Errno) *Error {
 	err := &Error{message}
 	linuxABITranslations[err] = linuxTranslation
