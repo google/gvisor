@@ -434,6 +434,17 @@ func TestCapabilities(t *testing.T) {
 		Type:        "bind",
 	})
 
+	// Capability below is needed to mount TempDir above in case the user doesn't
+	// have access to all parents that lead to TempDir.
+	caps := []string{"CAP_DAC_OVERRIDE"}
+	spec.Process.Capabilities = &specs.LinuxCapabilities{
+		Bounding:    caps,
+		Effective:   caps,
+		Inheritable: caps,
+		Permitted:   caps,
+		Ambient:     caps,
+	}
+
 	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
