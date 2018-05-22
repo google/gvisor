@@ -870,11 +870,11 @@ const (
 // This implementation currently ignores the provided advice.
 func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := kdefs.FD(args[0].Int())
-	offset := args[1].Int64()
 	length := args[2].Int64()
 	advice := args[3].Int()
 
-	if offset < 0 || length < 0 {
+	// Note: offset is allowed to be negative.
+	if length < 0 {
 		return 0, nil, syserror.EINVAL
 	}
 
