@@ -48,11 +48,14 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	nstack "gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 const sizeOfInt32 int = 4
+
+var errStackType = syserr.New("expected but did not receive an epsocket.Stack", linux.EINVAL)
 
 // ntohs converts a 16-bit number from network byte order to host byte order. It
 // assumes that the host is little endian.
@@ -1177,9 +1180,11 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(n))
 
 	case syscall.SIOCGIFFLAGS:
-		// TODO: Implement. For now, return only that the
-		// device is up so that ifconfig prints it.
-		usermem.ByteOrder.PutUint16(ifr.Data[:2], linux.IFF_UP)
+		f, err := interfaceStatusFlags(stack, iface.Name)
+		if err != nil {
+			return err
+		}
+		usermem.ByteOrder.PutUint16(ifr.Data[:2], f)
 
 	case syscall.SIOCGIFADDR:
 		// Copy the IPv4 address out.
@@ -1287,4 +1292,50 @@ func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
 		}
 	}
 	return nil
+}
+
+// interfaceStatusFlags returns status flags for an interface in the stack.
+// Flag values and meanings are described in greater detail in netdevice(7) in
+// the SIOCGIFFLAGS section.
+func interfaceStatusFlags(stack inet.Stack, name string) (uint16, *syserr.Error) {
+	// epsocket should only ever be passed an epsocket.Stack.
+	epstack, ok := stack.(*Stack)
+	if !ok {
+		return 0, errStackType
+	}
+
+	// Find the NIC corresponding to this interface.
+	var (
+		nicid tcpip.NICID
+		info  nstack.NICInfo
+		found bool
+	)
+	ns := epstack.Stack
+	for nicid, info = range ns.NICInfo() {
+		if info.Name == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0, syserr.ErrNoDevice
+	}
+
+	// Set flags based on NIC state.
+	nicFlags, err := ns.NICFlags(nicid)
+	if err != nil {
+		return 0, syserr.TranslateNetstackError(err)
+	}
+
+	var retFlags uint16
+	if nicFlags.Up {
+		retFlags |= linux.IFF_UP
+	}
+	if nicFlags.Running {
+		retFlags |= linux.IFF_RUNNING
+	}
+	if nicFlags.Promiscuous {
+		retFlags |= linux.IFF_PROMISC
+	}
+	return retFlags, nil
 }

@@ -45,9 +45,10 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(*tcpip.Error)
 
-	vv     *buffer.VectorisedView
-	iovecs []syscall.Iovec
-	views  []buffer.View
+	vv       *buffer.VectorisedView
+	iovecs   []syscall.Iovec
+	views    []buffer.View
+	attached bool
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -96,7 +97,13 @@ func New(opts *Options) tcpip.LinkEndpointID {
 // Attach launches the goroutine that reads packets from the file descriptor and
 // dispatches them via the provided dispatcher.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.attached = true
 	go e.dispatchLoop(dispatcher) // S/R-FIXME
+}
+
+// IsAttached implements stack.LinkEndpoint.IsAttached.
+func (e *endpoint) IsAttached() bool {
+	return e.attached
 }
 
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
