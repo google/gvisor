@@ -342,15 +342,17 @@ func (s *sender) sendData() {
 			s.ep.mu.Lock()
 			// We're sending a FIN by default
 			fl := flagFin
+			segEnd = seg.sequenceNumber
 			if (s.ep.shutdownFlags&tcpip.ShutdownRead) != 0 && rcvBufUsed > 0 {
 				// If there is unread data we must send a RST.
 				// For more information see RFC 2525 section 2.17.
 				fl = flagRst
+			} else {
+				segEnd = seg.sequenceNumber.Add(1)
 			}
+
 			s.ep.mu.Unlock()
 			seg.flags |= uint8(fl)
-
-			segEnd = seg.sequenceNumber.Add(1)
 		} else {
 			// We're sending a non-FIN segment.
 			if !seg.sequenceNumber.LessThan(end) {
