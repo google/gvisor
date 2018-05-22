@@ -871,7 +871,7 @@ const (
 func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := kdefs.FD(args[0].Int())
 	offset := args[1].Int64()
-	length := args[2].Uint()
+	length := args[2].Int64()
 	advice := args[3].Int()
 
 	if offset < 0 || length < 0 {
@@ -883,6 +883,11 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EBADF
 	}
 	defer file.DecRef()
+
+	// If the FD refers to a pipe or FIFO, return error.
+	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
+		return 0, nil, syserror.ESPIPE
+	}
 
 	switch advice {
 	case _FADV_NORMAL:
