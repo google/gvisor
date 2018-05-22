@@ -67,6 +67,11 @@ func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 }
 
+// IsAttached implements stack.LinkEndpoint.IsAttached.
+func (e *Endpoint) IsAttached() bool {
+	return e.dispatcher != nil
+}
+
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
 // during construction.
 func (e *Endpoint) MTU() uint32 {

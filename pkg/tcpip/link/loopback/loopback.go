@@ -32,6 +32,11 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 }
 
+// IsAttached implements stack.LinkEndpoint.IsAttached.
+func (e *endpoint) IsAttached() bool {
+	return e.dispatcher != nil
+}
+
 // MTU implements stack.LinkEndpoint.MTU. It returns a constant that matches the
 // linux loopback interface.
 func (*endpoint) MTU() uint32 {

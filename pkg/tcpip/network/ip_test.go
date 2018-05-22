@@ -90,6 +90,11 @@ func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, 
 // Attach is only implemented to satisfy the LinkEndpoint interface.
 func (*testObject) Attach(stack.NetworkDispatcher) {}
 
+// IsAttached implements stack.LinkEndpoint.IsAttached.
+func (*testObject) IsAttached() bool {
+	return true
+}
+
 // MTU implements stack.LinkEndpoint.MTU. It just returns a constant that
 // matches the linux loopback MTU.
 func (*testObject) MTU() uint32 {

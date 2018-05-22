@@ -224,6 +224,10 @@ type LinkEndpoint interface {
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
 	Attach(dispatcher NetworkDispatcher)
+
+	// IsAttached returns whether a NetworkDispatcher is attached to the
+	// endpoint.
+	IsAttached() bool
 }
 
 // A LinkAddressResolver is an extension to a NetworkProtocol that
