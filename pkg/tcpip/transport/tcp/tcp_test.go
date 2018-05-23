@@ -400,7 +400,20 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 		checker.TCP(
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+			// We shouldn't consume a sequence number on RST.
+			checker.SeqNum(uint32(c.IRS)+1),
 		))
+
+	// This final should be ignored because an ACK on a reset doesn't
+	// mean anything.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seqnum.Value(790 + len(data)),
+		AckNum:  c.IRS.Add(seqnum.Size(2)),
+		RcvWnd:  30000,
+	})
 }
 
 func TestFullWindowReceive(t *testing.T) {
