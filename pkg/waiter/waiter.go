@@ -174,7 +174,7 @@ func (q *Queue) Notify(mask EventMask) {
 	q.mu.RLock()
 	for it := q.list.Front(); it != nil; it = it.Next() {
 		e := it.(*Entry)
-		if (mask & e.mask) != 0 {
+		if mask&e.mask != 0 {
 			e.Callback.Callback(e)
 		}
 	}
