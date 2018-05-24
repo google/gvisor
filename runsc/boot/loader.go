@@ -137,9 +137,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		extraKGIDs,
 		caps,
 		auth.NewRootUserNamespace())
-	if err != nil {
-		return nil, fmt.Errorf("error creating credentials: %v", err)
-	}
 
 	// Create user namespace.
 	// TODO: Not clear what domain name should be here.  It is
@@ -157,22 +154,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	exec, err := specutils.GetExecutablePath(spec.Process.Args[0], spec.Root.Path, spec.Process.Env)
 	if err != nil {
 		return nil, fmt.Errorf("error getting executable path: %v", err)
-	}
-
-	// Create the process arguments.
-	procArgs := kernel.CreateProcessArgs{
-		Filename:         exec,
-		Argv:             spec.Process.Args,
-		Envv:             spec.Process.Env,
-		WorkingDirectory: spec.Process.Cwd,
-		Credentials:      creds,
-		// Creating the FDMap requires that we have kernel.Kernel.fdMapUids, so
-		// it must wait until we have a Kernel.
-		Umask:                uint(syscall.Umask(0)),
-		Limits:               ls,
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		UTSNamespace:         utsns,
-		IPCNamespace:         ipcns,
 	}
 
 	// Create an empty network stack because the network namespace may be empty at
@@ -219,14 +200,39 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		return nil, fmt.Errorf("error creating control server: %v", err)
 	}
 
+	// Create the process arguments.
+	procArgs := kernel.CreateProcessArgs{
+		Filename:         exec,
+		Argv:             spec.Process.Args,
+		Envv:             spec.Process.Env,
+		WorkingDirectory: spec.Process.Cwd,
+		Credentials:      creds,
+		// Creating the FDMap requires that we have kernel.Kernel.fdMapUids, so
+		// it must wait until we have a Kernel.
+		Umask:                uint(syscall.Umask(0)),
+		Limits:               ls,
+		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		UTSNamespace:         utsns,
+		IPCNamespace:         ipcns,
+	}
 	ctx := procArgs.NewContext(k)
 
+	// Use root user to configure mounts. The current user might not have
+	// permission to do so.
+	rootProcArgs := kernel.CreateProcessArgs{
+		WorkingDirectory:     "/",
+		Credentials:          auth.NewRootCredentials(creds.UserNamespace),
+		Umask:                uint(syscall.Umask(0022)),
+		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+	}
+	rootCtx := rootProcArgs.NewContext(k)
+
 	// Create the virtual filesystem.
-	mm, err := createMountNamespace(ctx, spec, conf, ioFDs)
+	mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
 	if err != nil {
 		return nil, fmt.Errorf("error creating mounts: %v", err)
 	}
-	k.SetRootMountNamespace(mm)
+	k.SetRootMountNamespace(mns)
 
 	// Create the FD map, which will set stdin, stdout, and stderr.  If console
 	// is true, then ioctl calls will be passed through to the host fd.
