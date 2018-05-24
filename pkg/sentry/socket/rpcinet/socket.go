@@ -213,21 +213,19 @@ func (s *socketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 	// Register for notification when the endpoint becomes writable, then
 	// initiate the connection.
 	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventOut)
+	s.EventRegister(&e, waiter.EventOut|waiter.EventIn|waiter.EventHUp)
 	defer s.EventUnregister(&e)
+	for {
+		if err := rpcConnect(t, s.fd, sockaddr); err == nil || err != syserr.ErrInProgress && err != syserr.ErrAlreadyInProgress {
+			return err
+		}
 
-	if err := rpcConnect(t, s.fd, sockaddr); err != syserr.ErrConnectStarted && err != syserr.ErrAlreadyConnecting {
-		return err
+		// It's pending, so we have to wait for a notification, and fetch the
+		// result once the wait completes.
+		if err := t.Block(ch); err != nil {
+			return syserr.FromError(err)
+		}
 	}
-
-	// It's pending, so we have to wait for a notification, and fetch the
-	// result once the wait completes.
-	if err := t.Block(ch); err != nil {
-		return syserr.FromError(err)
-	}
-
-	// Call Connect() again after blocking to find connect's result.
-	return rpcConnect(t, s.fd, sockaddr)
 }
 
 func rpcAccept(t *kernel.Task, fd uint32, peer bool) (*pb.AcceptResponse_ResultPayload, *syserr.Error) {
