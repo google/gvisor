@@ -239,7 +239,7 @@ func TestCreateMountNamespace(t *testing.T) {
 
 	for _, tc := range testCases {
 		ctx := contexttest.Context(t)
-		mm, err := createMountNamespace(ctx, &tc.spec, conf, nil)
+		mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, nil)
 		if err != nil {
 			t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 		}

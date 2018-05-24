@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -130,6 +131,34 @@ func waitForProcessList(s *container.Container, expected []*control.Process) err
 		time.Sleep(10 * time.Millisecond)
 	}
 	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expected))
+}
+
+// procListsEqual is used to check whether 2 Process lists are equal for all
+// implemented fields.
+func procListsEqual(got, want []*control.Process) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		pd1 := got[i]
+		pd2 := want[i]
+		// Zero out unimplemented and timing dependant fields.
+		pd1.Time, pd2.Time = "", ""
+		pd1.STime, pd2.STime = "", ""
+		pd1.C, pd2.C = 0, 0
+		if *pd1 != *pd2 {
+			return false
+		}
+	}
+	return true
+}
+
+func procListToString(pl []*control.Process) string {
+	strs := make([]string, 0, len(pl))
+	for _, p := range pl {
+		strs = append(strs, fmt.Sprintf("%+v", p))
+	}
+	return fmt.Sprintf("[%s]", strings.Join(strs, ","))
 }
 
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
@@ -434,17 +463,6 @@ func TestCapabilities(t *testing.T) {
 		Type:        "bind",
 	})
 
-	// Capability below is needed to mount TempDir above in case the user doesn't
-	// have access to all parents that lead to TempDir.
-	caps := []string{"CAP_DAC_OVERRIDE"}
-	spec.Process.Capabilities = &specs.LinuxCapabilities{
-		Bounding:    caps,
-		Effective:   caps,
-		Inheritable: caps,
-		Permitted:   caps,
-		Ambient:     caps,
-	}
-
 	rootDir, bundleDir, conf, err := setupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -621,32 +639,54 @@ func TestSpecUnsupported(t *testing.T) {
 	}
 }
 
-// procListsEqual is used to check whether 2 Process lists are equal for all
-// implemented fields.
-func procListsEqual(got, want []*control.Process) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range got {
-		pd1 := got[i]
-		pd2 := want[i]
-		// Zero out unimplemented and timing dependant fields.
-		pd1.Time, pd2.Time = "", ""
-		pd1.STime, pd2.STime = "", ""
-		pd1.C, pd2.C = 0, 0
-		if *pd1 != *pd2 {
-			return false
-		}
-	}
-	return true
-}
+// TestRunNonRoot checks that sandbox can be configured when running as
+// non-priviledged user.
+func TestRunNonRoot(t *testing.T) {
+	spec := newSpecWithArgs("/bin/true")
+	spec.Process.User.UID = 343
+	spec.Process.User.GID = 2401
 
-func procListToString(pl []*control.Process) string {
-	strs := make([]string, 0, len(pl))
-	for _, p := range pl {
-		strs = append(strs, fmt.Sprintf("%+v", p))
+	// User that container runs as can't list '$TMP/blocked' and would fail to
+	// mount it.
+	dir := path.Join(os.TempDir(), "blocked")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 	}
-	return fmt.Sprintf("[%s]", strings.Join(strs, ","))
+	dir = path.Join(dir, "test")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
+	}
+
+	// We generate files in the host temporary directory.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: dir,
+		Source:      dir,
+		Type:        "bind",
+	})
+
+	rootDir, bundleDir, conf, err := setupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create, start and wait for the container.
+	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer s.Destroy()
+	if err := s.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	ws, err := s.Wait()
+	if err != nil {
+		t.Errorf("error waiting on container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Errorf("container failed, waitStatus: %v", ws)
+	}
 }
 
 // TestMain acts like runsc if it is called with the "boot" argument, otherwise

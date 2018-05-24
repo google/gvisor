@@ -51,21 +51,30 @@ func (f *fdDispenser) empty() bool {
 	return len(f.fds) == 0
 }
 
-// createMountNamespace creates a mount manager containing the root filesystem
-// and all mounts.
-func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, ioFDs []int) (*fs.MountNamespace, error) {
+// createMountNamespace creates a mount namespace containing the root filesystem
+// and all mounts. 'rootCtx' is used to walk directories to find mount points.
+func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec *specs.Spec, conf *Config, ioFDs []int) (*fs.MountNamespace, error) {
 	fds := &fdDispenser{fds: ioFDs}
-
-	// Create the MountNamespace from the root.
-	rootInode, err := createRootMount(ctx, spec, conf, fds)
+	rootInode, err := createRootMount(rootCtx, spec, conf, fds)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create root overlay: %v", err)
+		return nil, fmt.Errorf("failed to create root mount: %v", err)
 	}
-	mns, err := fs.NewMountNamespace(ctx, rootInode)
+	mns, err := fs.NewMountNamespace(userCtx, rootInode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct MountNamespace: %v", err)
+		return nil, fmt.Errorf("failed to create root mount namespace: %v", err)
 	}
+	if err := configureMounts(rootCtx, spec, conf, mns, fds); err != nil {
+		return nil, fmt.Errorf("failed to configure mounts: %v", err)
+	}
+	if !fds.empty() {
+		return nil, fmt.Errorf("not all mount points were consumed, remaining: %v", fds)
+	}
+	return mns, nil
+}
 
+// configureMounts iterates over Spec.Mounts and mounts them in the specified
+// mount namespace.
+func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.MountNamespace, fds *fdDispenser) error {
 	// Keep track of whether proc, sys, and tmp were mounted.
 	var procMounted, sysMounted, tmpMounted bool
 
@@ -88,7 +97,7 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 		}
 
 		if err := mountSubmount(ctx, spec, conf, mns, fds, m); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -97,7 +106,7 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 		Type:        "devtmpfs",
 		Destination: "/dev",
 	}); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
@@ -107,7 +116,7 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 			Type:        "proc",
 			Destination: "/proc",
 		}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	if !sysMounted {
@@ -115,7 +124,7 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 			Type:        "sysfs",
 			Destination: "/sys",
 		}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -127,15 +136,11 @@ func createMountNamespace(ctx context.Context, spec *specs.Spec, conf *Config, i
 			Type:        "tmpfs",
 			Destination: "/tmp",
 		}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	if !fds.empty() {
-		return nil, fmt.Errorf("not all mount points were consumed, remaining: %v", fds)
-	}
-
-	return mns, nil
+	return nil
 }
 
 // createRootMount creates the root filesystem.
