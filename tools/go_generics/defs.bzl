@@ -64,22 +64,22 @@ def _go_template_instance_impl(ctx):
         if t not in ctx.attr.types:
             fail("Missing value for type %s in %s" % (t, ctx.attr.template.label))
 
-            # Check that all defined types are expected by the template.
+    # Check that all defined types are expected by the template.
     for t in ctx.attr.types:
         if (t not in template.types) and (t not in template.opt_types):
             fail("Type %s it not a parameter to %s" % (t, ctx.attr.template.label))
 
-            # Check that all required consts are defined.
+    # Check that all required consts are defined.
     for t in template.consts:
         if t not in ctx.attr.consts:
             fail("Missing value for constant %s in %s" % (t, ctx.attr.template.label))
 
-            # Check that all defined consts are expected by the template.
+    # Check that all defined consts are expected by the template.
     for t in ctx.attr.consts:
         if (t not in template.consts) and (t not in template.opt_consts):
             fail("Const %s it not a parameter to %s" % (t, ctx.attr.template.label))
 
-            # Build the argument list.
+    # Build the argument list.
     args = ["-i=%s" % template.file.path, "-o=%s" % output.path]
     args += ["-p=%s" % ctx.attr.package]
 
