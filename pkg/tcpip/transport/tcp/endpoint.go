@@ -94,7 +94,7 @@ type endpoint struct {
 	state             endpointState
 	isPortReserved    bool `state:"manual"`
 	isRegistered      bool
-	boundNICID        tcpip.NICID `state:"manual"`
+	boundNICID        tcpip.NICID
 	route             stack.Route `state:"manual"`
 	v6only            bool
 	isConnectNotified bool
@@ -118,7 +118,7 @@ type endpoint struct {
 	// workerCleanup specifies if the worker goroutine must perform cleanup
 	// before exitting. This can only be set to true when workerRunning is
 	// also true, and they're both protected by the mutex.
-	workerCleanup bool `state:"zerovalue"`
+	workerCleanup bool
 
 	// sendTSOk is used to indicate when the TS Option has been negotiated.
 	// When sendTSOk is true every non-RST segment should carry a TS as per
@@ -326,7 +326,13 @@ func (e *endpoint) Close() {
 	// if we're connected, or stop accepting if we're listening.
 	e.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
 
+	// While we hold the lock, determine if the cleanup should happen
+	// inline or if we should tell the worker (if any) to do the cleanup.
 	e.mu.Lock()
+	worker := e.workerRunning
+	if worker {
+		e.workerCleanup = true
+	}
 
 	// We always release ports inline so that they are immediately available
 	// for reuse after Close() is called. If also registered, it means this
@@ -342,32 +348,29 @@ func (e *endpoint) Close() {
 		}
 	}
 
-	// Either perform the local cleanup or kick the worker to make sure it
-	// knows it needs to cleanup.
-	if !e.workerRunning {
-		e.cleanupLocked()
+	e.mu.Unlock()
+
+	// Now that we don't hold the lock anymore, either perform the local
+	// cleanup or kick the worker to make sure it knows it needs to cleanup.
+	if !worker {
+		e.cleanup()
 	} else {
-		e.workerCleanup = true
 		e.notifyProtocolGoroutine(notifyClose)
 	}
-
-	e.mu.Unlock()
 }
 
-// cleanupLocked frees all resources associated with the endpoint. It is called
-// after Close() is called and the worker goroutine (if any) is done with its
-// work.
-func (e *endpoint) cleanupLocked() {
+// cleanup frees all resources associated with the endpoint. It is called after
+// Close() is called and the worker goroutine (if any) is done with its work.
+func (e *endpoint) cleanup() {
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
 	if e.acceptedChan != nil {
 		close(e.acceptedChan)
 		for n := range e.acceptedChan {
-			n.resetConnectionLocked(tcpip.ErrConnectionAborted)
+			n.resetConnection(tcpip.ErrConnectionAborted)
 			n.Close()
 		}
 	}
-	e.workerCleanup = false
 
 	if e.isRegistered {
 		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id)

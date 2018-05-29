@@ -85,17 +85,6 @@ var (
 	errSubnetAddressMasked  = errors.New("subnet address has bits set outside the mask")
 )
 
-// ErrSaveRejection indicates a failed save due to unsupported networking state.
-// This type of errors is only used for save logic.
-type ErrSaveRejection struct {
-	Err error
-}
-
-// Error returns a sensible description of the save rejection error.
-func (e ErrSaveRejection) Error() string {
-	return "save rejected due to unsupported networking state: " + e.Err.Error()
-}
-
 // A Clock provides the current time.
 //
 // Times returned by a Clock should always be used for application-visible
