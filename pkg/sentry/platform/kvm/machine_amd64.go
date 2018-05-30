@@ -24,7 +24,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -121,7 +120,7 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetables.PageTables, flags ring0.Flags) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, usermem.AccessType, error) {
 	// See below.
 	var vector ring0.Vector
 
@@ -131,7 +130,7 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 	// allocations occur.
 	entersyscall()
 	bluepill(c)
-	vector = c.CPU.SwitchToUser(regs, fpState, pt, flags)
+	vector = c.CPU.SwitchToUser(switchOpts)
 	exitsyscall()
 
 	switch vector {
@@ -147,7 +146,7 @@ func (c *vCPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetab
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault:
-		if !ring0.IsCanonical(regs.Rip) {
+		if !ring0.IsCanonical(switchOpts.Registers.Rip) {
 			// If the RIP is non-canonical, it's a SEGV.
 			info := &arch.SignalInfo{Signo: int32(syscall.SIGSEGV)}
 			return info, usermem.AccessType{}, platform.ErrContextSignal

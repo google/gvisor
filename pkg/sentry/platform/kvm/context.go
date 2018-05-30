@@ -35,10 +35,7 @@ type context struct {
 
 // Switch runs the provided context in the given address space.
 func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*arch.SignalInfo, usermem.AccessType, error) {
-	// Extract data.
 	localAS := as.(*addressSpace)
-	regs := &ac.StateData().Regs
-	fp := (*byte)(ac.FloatingPointData())
 
 	// Grab a vCPU.
 	cpu := c.machine.Get()
@@ -58,17 +55,17 @@ func (c *context) Switch(as platform.AddressSpace, ac arch.Context, _ int32) (*a
 	// that the flush can occur naturally on the next user entry.
 	cpu.active.set(localAS)
 
-	// Mark the address space as dirty.
-	flags := ring0.Flags(0)
-	if localAS.Touch(cpu) {
-		flags |= ring0.FlagFlush
-	}
-	if ac.FullRestore() {
-		flags |= ring0.FlagFull
+	// Prepare switch options.
+	switchOpts := ring0.SwitchOpts{
+		Registers:          &ac.StateData().Regs,
+		FloatingPointState: (*byte)(ac.FloatingPointData()),
+		PageTables:         localAS.pageTables,
+		Flush:              localAS.Touch(cpu),
+		FullRestore:        ac.FullRestore(),
 	}
 
 	// Take the blue pill.
-	si, at, err := cpu.SwitchToUser(regs, fp, localAS.pageTables, flags)
+	si, at, err := cpu.SwitchToUser(switchOpts)
 
 	// Clear the address space.
 	cpu.active.set(nil)

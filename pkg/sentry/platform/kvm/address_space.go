@@ -89,7 +89,10 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 		// important; if the pagetable mappings were installed before
 		// ensuring the physical pages were available, then some other
 		// thread could theoretically access them.
-		prev := as.pageTables.Map(addr, length, true /* user */, at, physical)
+		prev := as.pageTables.Map(addr, length, pagetables.MapOpts{
+			AccessType: at,
+			User:       true,
+		}, physical)
 		inv = inv || prev
 		m.addr += length
 		m.length -= length

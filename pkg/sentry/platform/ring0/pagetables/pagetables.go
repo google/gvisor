@@ -117,8 +117,8 @@ func (p *PageTables) getPageTable(n *Node, index int) *Node {
 // True is returned iff there was a previous mapping in the range.
 //
 // Precondition: addr & length must be aligned, their sum must not overflow.
-func (p *PageTables) Map(addr usermem.Addr, length uintptr, user bool, at usermem.AccessType, physical uintptr) bool {
-	if at == usermem.NoAccess {
+func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
+	if !opts.AccessType.Any() {
 		return p.Unmap(addr, length)
 	}
 	prev := false
@@ -129,7 +129,7 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, user bool, at userme
 	}
 	p.iterateRange(uintptr(addr), uintptr(end), true, func(s, e uintptr, pte *PTE, align uintptr) {
 		p := physical + (s - uintptr(addr))
-		prev = prev || (pte.Valid() && (p != pte.Address() || at.Write != pte.Writeable() || at.Execute != pte.Executable()))
+		prev = prev || (pte.Valid() && (p != pte.Address() || opts != pte.Opts()))
 		if p&align != 0 {
 			// We will install entries at a smaller granulaity if
 			// we don't install a valid entry here, however we must
@@ -137,7 +137,7 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, user bool, at userme
 			pte.Clear()
 			return
 		}
-		pte.Set(p, at.Write, at.Execute, user)
+		pte.Set(p, opts)
 	})
 	p.mu.Unlock()
 	return prev
@@ -167,7 +167,7 @@ func (p *PageTables) Release() {
 }
 
 // Lookup returns the physical address for the given virtual address.
-func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, accessType usermem.AccessType) {
+func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) {
 	mask := uintptr(usermem.PageSize - 1)
 	off := uintptr(addr) & mask
 	addr = addr &^ usermem.Addr(mask)
@@ -176,13 +176,9 @@ func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, accessType use
 			return
 		}
 		physical = pte.Address() + (s - uintptr(addr)) + off
-		accessType = usermem.AccessType{
-			Read:    true,
-			Write:   pte.Writeable(),
-			Execute: pte.Executable(),
-		}
+		opts = pte.Opts()
 	})
-	return physical, accessType
+	return
 }
 
 // allocNode allocates a new page.

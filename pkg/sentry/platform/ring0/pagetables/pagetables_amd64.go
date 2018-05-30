@@ -18,7 +18,6 @@ package pagetables
 
 import (
 	"fmt"
-	"sync/atomic"
 )
 
 // Address constraints.
@@ -43,97 +42,10 @@ const (
 	pmdSize = 1 << pmdShift
 	pudSize = 1 << pudShift
 	pgdSize = 1 << pgdShift
-)
 
-// Bits in page table entries.
-const (
-	present        = 0x001
-	writable       = 0x002
-	user           = 0x004
-	writeThrough   = 0x008
-	cacheDisable   = 0x010
-	accessed       = 0x020
-	dirty          = 0x040
-	super          = 0x080
 	executeDisable = 1 << 63
+	entriesPerPage = 512
 )
-
-// PTE is a page table entry.
-type PTE uint64
-
-// Clear clears this PTE, including super page information.
-func (p *PTE) Clear() {
-	atomic.StoreUint64((*uint64)(p), 0)
-}
-
-// Valid returns true iff this entry is valid.
-func (p *PTE) Valid() bool {
-	return atomic.LoadUint64((*uint64)(p))&present != 0
-}
-
-// Writeable returns true iff the page is writable.
-func (p *PTE) Writeable() bool {
-	return atomic.LoadUint64((*uint64)(p))&writable != 0
-}
-
-// User returns true iff the page is user-accessible.
-func (p *PTE) User() bool {
-	return atomic.LoadUint64((*uint64)(p))&user != 0
-}
-
-// Executable returns true iff the page is executable.
-func (p *PTE) Executable() bool {
-	return atomic.LoadUint64((*uint64)(p))&executeDisable == 0
-}
-
-// SetSuper sets this page as a super page.
-//
-// The page must not be valid or a panic will result.
-func (p *PTE) SetSuper() {
-	if p.Valid() {
-		// This is not allowed.
-		panic("SetSuper called on valid page!")
-	}
-	atomic.StoreUint64((*uint64)(p), super)
-}
-
-// IsSuper returns true iff this page is a super page.
-func (p *PTE) IsSuper() bool {
-	return atomic.LoadUint64((*uint64)(p))&super != 0
-}
-
-// Set sets this PTE value.
-func (p *PTE) Set(addr uintptr, write, execute bool, userAccessible bool) {
-	v := uint64(addr)&^uint64(0xfff) | present | accessed
-	if userAccessible {
-		v |= user
-	}
-	if !execute {
-		v |= executeDisable
-	}
-	if write {
-		v |= writable | dirty
-	}
-	if p.IsSuper() {
-		v |= super
-	}
-	atomic.StoreUint64((*uint64)(p), v)
-}
-
-// setPageTable sets this PTE value and forces the write bit and super bit to
-// be cleared. This is used explicitly for breaking super pages.
-func (p *PTE) setPageTable(addr uintptr) {
-	v := uint64(addr)&^uint64(0xfff) | present | user | writable | accessed | dirty
-	atomic.StoreUint64((*uint64)(p), v)
-}
-
-// Address extracts the address. This should only be used if Valid returns true.
-func (p *PTE) Address() uintptr {
-	return uintptr(atomic.LoadUint64((*uint64)(p)) & ^uint64(executeDisable|0xfff))
-}
-
-// entriesPerPage is the number of PTEs per page.
-const entriesPerPage = 512
 
 // PTEs is a collection of entries.
 type PTEs [entriesPerPage]PTE
@@ -255,9 +167,6 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 				// Does this page need to be split?
 				if start&(pudSize-1) != 0 || end < next(start, pudSize) {
 					currentAddr := uint64(pudEntry.Address())
-					writeable := pudEntry.Writeable()
-					executable := pudEntry.Executable()
-					user := pudEntry.User()
 
 					// Install the relevant entries.
 					pmdNode := p.allocNode()
@@ -265,7 +174,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					for index := 0; index < entriesPerPage; index++ {
 						pmdEntry := &pmdEntries[index]
 						pmdEntry.SetSuper()
-						pmdEntry.Set(uintptr(currentAddr), writeable, executable, user)
+						pmdEntry.Set(uintptr(currentAddr), pudEntry.Opts())
 						currentAddr += pmdSize
 					}
 
@@ -319,16 +228,13 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					// Does this page need to be split?
 					if start&(pmdSize-1) != 0 || end < next(start, pmdSize) {
 						currentAddr := uint64(pmdEntry.Address())
-						writeable := pmdEntry.Writeable()
-						executable := pmdEntry.Executable()
-						user := pmdEntry.User()
 
 						// Install the relevant entries.
 						pteNode := p.allocNode()
 						pteEntries := pteNode.PTEs()
 						for index := 0; index < entriesPerPage; index++ {
 							pteEntry := &pteEntries[index]
-							pteEntry.Set(uintptr(currentAddr), writeable, executable, user)
+							pteEntry.Set(uintptr(currentAddr), pmdEntry.Opts())
 							currentAddr += pteSize
 						}
 

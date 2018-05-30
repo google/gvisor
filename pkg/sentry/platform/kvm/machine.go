@@ -186,10 +186,19 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 	// physical pages are mapped on demand, see kernel_unsafe.go.
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		// Map everything in the lower half.
-		m.kernel.PageTables.Map(usermem.Addr(pr.virtual), pr.length, false /* kernel */, usermem.AnyAccess, pr.physical)
+		m.kernel.PageTables.Map(
+			usermem.Addr(pr.virtual),
+			pr.length,
+			pagetables.MapOpts{AccessType: usermem.AnyAccess},
+			pr.physical)
+
 		// And keep everything in the upper half.
-		kernelAddr := usermem.Addr(ring0.KernelStartAddress | pr.virtual)
-		m.kernel.PageTables.Map(kernelAddr, pr.length, false /* kernel */, usermem.AnyAccess, pr.physical)
+		m.kernel.PageTables.Map(
+			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
+			pr.length,
+			pagetables.MapOpts{AccessType: usermem.AnyAccess},
+			pr.physical)
+
 		return true // Keep iterating.
 	})
 

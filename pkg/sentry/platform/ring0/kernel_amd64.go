@@ -18,9 +18,6 @@ package ring0
 
 import (
 	"encoding/binary"
-	"syscall"
-
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 const (
@@ -159,18 +156,6 @@ func IsCanonical(addr uint64) bool {
 	return addr <= 0x00007fffffffffff || addr > 0xffff800000000000
 }
 
-// Flags contains flags related to switch.
-type Flags uintptr
-
-const (
-	// FlagFull indicates that a full restore should be not, not a fast
-	// restore (on the syscall return path.)
-	FlagFull = 1 << iota
-
-	// FlagFlush indicates that a full TLB flush is required.
-	FlagFlush
-)
-
 // SwitchToUser performs either a sysret or an iret.
 //
 // The return value is the vector that interrupted execution.
@@ -189,8 +174,9 @@ const (
 // the case for amd64, but may not be the case for other architectures.
 //
 //go:nosplit
-func (c *CPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetables.PageTables, flags Flags) (vector Vector) {
+func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	// Check for canonical addresses.
+	regs := switchOpts.Registers
 	if !IsCanonical(regs.Rip) || !IsCanonical(regs.Rsp) || !IsCanonical(regs.Fs_base) || !IsCanonical(regs.Gs_base) {
 		return GeneralProtectionFault
 	}
@@ -201,10 +187,10 @@ func (c *CPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetabl
 	)
 
 	// Sanitize registers.
-	if flags&FlagFlush != 0 {
-		userCR3 = pt.FlushCR3()
+	if switchOpts.Flush {
+		userCR3 = switchOpts.PageTables.FlushCR3()
 	} else {
-		userCR3 = pt.CR3()
+		userCR3 = switchOpts.PageTables.CR3()
 	}
 	regs.Eflags &= ^uint64(UserFlagsClear)
 	regs.Eflags |= UserFlagsSet
@@ -213,21 +199,21 @@ func (c *CPU) SwitchToUser(regs *syscall.PtraceRegs, fpState *byte, pt *pagetabl
 	kernelCR3 = c.kernel.PageTables.CR3()
 
 	// Perform the switch.
-	swapgs()                    // GS will be swapped on return.
-	wrfs(uintptr(regs.Fs_base)) // Set application FS.
-	wrgs(uintptr(regs.Gs_base)) // Set application GS.
-	LoadFloatingPoint(fpState)  // Copy in floating point.
-	jumpToKernel()              // Switch to upper half.
-	writeCR3(uintptr(userCR3))  // Change to user address space.
-	if flags&FlagFull != 0 {
+	swapgs()                                         // GS will be swapped on return.
+	wrfs(uintptr(regs.Fs_base))                      // Set application FS.
+	wrgs(uintptr(regs.Gs_base))                      // Set application GS.
+	LoadFloatingPoint(switchOpts.FloatingPointState) // Copy in floating point.
+	jumpToKernel()                                   // Switch to upper half.
+	writeCR3(uintptr(userCR3))                       // Change to user address space.
+	if switchOpts.FullRestore {
 		vector = iret(c, regs)
 	} else {
 		vector = sysret(c, regs)
 	}
-	writeCR3(uintptr(kernelCR3))       // Return to kernel address space.
-	jumpToUser()                       // Return to lower half.
-	SaveFloatingPoint(fpState)         // Copy out floating point.
-	wrfs(uintptr(c.registers.Fs_base)) // Restore kernel FS.
+	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
+	jumpToUser()                                     // Return to lower half.
+	SaveFloatingPoint(switchOpts.FloatingPointState) // Copy out floating point.
+	wrfs(uintptr(c.registers.Fs_base))               // Restore kernel FS.
 	return
 }
 
