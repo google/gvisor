@@ -15,9 +15,13 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+
 	"context"
 	"flag"
 	"github.com/google/subcommands"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/container"
 )
@@ -56,19 +60,28 @@ func (d *Delete) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	}
 
 	conf := args[0].(*boot.Config)
-
-	for i := 0; i < f.NArg(); i++ {
-		id := f.Arg(i)
-		c, err := container.Load(conf.RootDir, id)
-		if err != nil {
-			Fatalf("error loading container %q: %v", id, err)
-		}
-		if !d.force && (c.Status == container.Running) {
-			Fatalf("cannot stop running container without --force flag")
-		}
-		if err := c.Destroy(); err != nil {
-			Fatalf("error destroying container: %v", err)
-		}
+	if err := d.execute(f.Args(), conf); err != nil {
+		Fatalf("%v", err)
 	}
 	return subcommands.ExitSuccess
+}
+
+func (d *Delete) execute(ids []string, conf *boot.Config) error {
+	for _, id := range ids {
+		c, err := container.Load(conf.RootDir, id)
+		if err != nil {
+			if os.IsNotExist(err) && d.force {
+				log.Warningf("couldn't find container %q: %v", id, err)
+				return nil
+			}
+			return fmt.Errorf("error loading container %q: %v", id, err)
+		}
+		if !d.force && (c.Status == container.Running) {
+			return fmt.Errorf("cannot stop running container without --force flag")
+		}
+		if err := c.Destroy(); err != nil {
+			return fmt.Errorf("error destroying container: %v", err)
+		}
+	}
+	return nil
 }

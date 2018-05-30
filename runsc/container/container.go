@@ -93,21 +93,19 @@ type Container struct {
 }
 
 // Load loads a container with the given id from a metadata file.
+// Returns ErrNotExist if container doesn't exits.
 func Load(rootDir, id string) (*Container, error) {
 	log.Debugf("Load container %q %q", rootDir, id)
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
-	cRoot := filepath.Join(rootDir, id)
-	if !exists(cRoot) {
-		return nil, fmt.Errorf("container with id %q does not exist", id)
-	}
-	metaFile := filepath.Join(cRoot, metadataFilename)
-	if !exists(metaFile) {
-		return nil, fmt.Errorf("container with id %q does not have metadata file %q", id, metaFile)
-	}
+	metaFile := filepath.Join(rootDir, id, metadataFilename)
 	metaBytes, err := ioutil.ReadFile(metaFile)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Preserve error so that callers can distinguish 'not found' errors.
+			return nil, err
+		}
 		return nil, fmt.Errorf("error reading container metadata file %q: %v", metaFile, err)
 	}
 	var c Container
@@ -161,8 +159,10 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	}
 
 	containerRoot := filepath.Join(conf.RootDir, id)
-	if exists(containerRoot) {
-		return nil, fmt.Errorf("container with id %q already exists: %q ", id, containerRoot)
+	if _, err := os.Stat(containerRoot); err == nil {
+		return nil, fmt.Errorf("container with id %q already exists: %q", id, containerRoot)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("error looking for existing container in %q: %v", containerRoot, err)
 	}
 
 	c := &Container{
@@ -328,11 +328,6 @@ func (c *Container) Destroy() error {
 		return err
 	}
 
-	// Then destroy all the metadata.
-	if err := os.RemoveAll(c.Root); err != nil {
-		log.Warningf("Failed to delete container root directory %q, err: %v", c.Root, err)
-	}
-
 	// "If any poststop hook fails, the runtime MUST log a warning, but the
 	// remaining hooks and lifecycle continue as if the hook had succeeded".
 	if c.Spec.Hooks != nil && (c.Status == Created || c.Status == Running) {
@@ -371,14 +366,4 @@ func (c *Container) save() error {
 		return fmt.Errorf("error writing container metadata: %v", err)
 	}
 	return nil
-}
-
-// exists returns true if the given file exists.
-func exists(f string) bool {
-	if _, err := os.Stat(f); err == nil {
-		return true
-	} else if !os.IsNotExist(err) {
-		log.Warningf("error checking for file %q: %v", f, err)
-	}
-	return false
 }
