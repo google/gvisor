@@ -44,13 +44,17 @@ go_library(
 go_test(
     name = "cmd_test",
     size = "small",
-    srcs = ["exec_test.go"],
+    srcs = [
+        "delete_test.go",
+        "exec_test.go",
+    ],
     embed = [":cmd"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
         "//pkg/urpc",
+        "//runsc/boot",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
