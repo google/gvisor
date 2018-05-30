@@ -25,6 +25,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -123,8 +124,11 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 	pageTables := k.machine.kernel.PageTables.New()
 	applyPhysicalRegions(func(pr physicalRegion) bool {
 		// Map the kernel in the upper half.
-		kernelVirtual := usermem.Addr(ring0.KernelStartAddress | pr.virtual)
-		pageTables.Map(kernelVirtual, pr.length, false /* kernel */, usermem.AnyAccess, pr.physical)
+		pageTables.Map(
+			usermem.Addr(ring0.KernelStartAddress|pr.virtual),
+			pr.length,
+			pagetables.MapOpts{AccessType: usermem.AnyAccess},
+			pr.physical)
 		return true // Keep iterating.
 	})
 

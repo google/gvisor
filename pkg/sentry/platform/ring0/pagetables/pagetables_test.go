@@ -28,10 +28,10 @@ func (r reflectTranslater) TranslateToPhysical(ptes *PTEs) uintptr {
 }
 
 type mapping struct {
-	start     uintptr
-	length    uintptr
-	addr      uintptr
-	writeable bool
+	start  uintptr
+	length uintptr
+	addr   uintptr
+	opts   MapOpts
 }
 
 func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
@@ -44,10 +44,10 @@ func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
 	// Iterate over all the mappings.
 	pt.iterateRange(0, ^uintptr(0), false, func(s, e uintptr, pte *PTE, align uintptr) {
 		found = append(found, mapping{
-			start:     s,
-			length:    e - s,
-			addr:      pte.Address(),
-			writeable: pte.Writeable(),
+			start:  s,
+			length: e - s,
+			addr:   pte.Address(),
+			opts:   pte.Opts(),
 		})
 		if failed != "" {
 			// Don't keep looking for errors.
@@ -62,8 +62,8 @@ func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
 			failed = "end didn't match expected"
 		} else if m[current].addr != pte.Address() {
 			failed = "address didn't match expected"
-		} else if m[current].writeable != pte.Writeable() {
-			failed = "writeable didn't match"
+		} else if m[current].opts != pte.Opts() {
+			failed = "opts didn't match"
 		}
 		current++
 	})
@@ -88,7 +88,7 @@ func TestUnmap(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Map and unmap one entry.
-	pt.Map(0x400000, pteSize, true, usermem.ReadWrite, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
 	pt.Unmap(0x400000, pteSize)
 
 	checkMappings(t, pt, nil)
@@ -99,10 +99,10 @@ func TestReadOnly(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Map one entry.
-	pt.Map(0x400000, pteSize, true, usermem.Read, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, false},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
 	})
 	pt.Release()
 }
@@ -111,10 +111,10 @@ func TestReadWrite(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Map one entry.
-	pt.Map(0x400000, pteSize, true, usermem.ReadWrite, pteSize*42)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, true},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 	})
 	pt.Release()
 }
@@ -123,12 +123,12 @@ func TestSerialEntries(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Map two sequential entries.
-	pt.Map(0x400000, pteSize, true, usermem.ReadWrite, pteSize*42)
-	pt.Map(0x401000, pteSize, true, usermem.ReadWrite, pteSize*47)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
+	pt.Map(0x401000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*47)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, true},
-		{0x401000, pteSize, pteSize * 47, true},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
+		{0x401000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.ReadWrite}},
 	})
 	pt.Release()
 }
@@ -137,11 +137,11 @@ func TestSpanningEntries(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Span a pgd with two pages.
-	pt.Map(0x00007efffffff000, 2*pteSize, true, usermem.Read, pteSize*42)
+	pt.Map(0x00007efffffff000, 2*pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
 
 	checkMappings(t, pt, []mapping{
-		{0x00007efffffff000, pteSize, pteSize * 42, false},
-		{0x00007f0000000000, pteSize, pteSize * 43, false},
+		{0x00007efffffff000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
+		{0x00007f0000000000, pteSize, pteSize * 43, MapOpts{AccessType: usermem.Read}},
 	})
 	pt.Release()
 }
@@ -150,12 +150,12 @@ func TestSparseEntries(t *testing.T) {
 	pt := New(reflectTranslater{}, Opts{})
 
 	// Map two entries in different pgds.
-	pt.Map(0x400000, pteSize, true, usermem.ReadWrite, pteSize*42)
-	pt.Map(0x00007f0000000000, pteSize, true, usermem.Read, pteSize*47)
+	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
+	pt.Map(0x00007f0000000000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*47)
 
 	checkMappings(t, pt, []mapping{
-		{0x400000, pteSize, pteSize * 42, true},
-		{0x00007f0000000000, pteSize, pteSize * 47, false},
+		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
+		{0x00007f0000000000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.Read}},
 	})
 	pt.Release()
 }
