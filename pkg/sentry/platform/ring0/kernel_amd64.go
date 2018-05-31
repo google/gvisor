@@ -200,8 +200,8 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 
 	// Perform the switch.
 	swapgs()                                         // GS will be swapped on return.
-	wrfs(uintptr(regs.Fs_base))                      // Set application FS.
-	wrgs(uintptr(regs.Gs_base))                      // Set application GS.
+	WriteFS(uintptr(regs.Fs_base))                   // Set application FS.
+	WriteGS(uintptr(regs.Gs_base))                   // Set application GS.
 	LoadFloatingPoint(switchOpts.FloatingPointState) // Copy in floating point.
 	jumpToKernel()                                   // Switch to upper half.
 	writeCR3(uintptr(userCR3))                       // Change to user address space.
@@ -213,7 +213,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	writeCR3(uintptr(kernelCR3))                     // Return to kernel address space.
 	jumpToUser()                                     // Return to lower half.
 	SaveFloatingPoint(switchOpts.FloatingPointState) // Copy out floating point.
-	wrfs(uintptr(c.registers.Fs_base))               // Restore kernel FS.
+	WriteFS(uintptr(c.registers.Fs_base))            // Restore kernel FS.
 	return
 }
 
@@ -225,8 +225,8 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 //go:nosplit
 func start(c *CPU) {
 	// Save per-cpu & FS segment.
-	wrgs(kernelAddr(c))
-	wrfs(uintptr(c.Registers().Fs_base))
+	WriteGS(kernelAddr(c))
+	WriteFS(uintptr(c.Registers().Fs_base))
 
 	// Initialize floating point.
 	//
