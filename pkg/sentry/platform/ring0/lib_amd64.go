@@ -43,8 +43,8 @@ func xsave(*byte)
 // xsaveopt uses xsaveopt to save floating point state.
 func xsaveopt(*byte)
 
-// wrfs sets the GS address (set by init).
-var wrfs func(addr uintptr)
+// WriteFS sets the GS address (set by init).
+var WriteFS func(addr uintptr)
 
 // wrfsbase writes to the GS base address.
 func wrfsbase(addr uintptr)
@@ -52,8 +52,8 @@ func wrfsbase(addr uintptr)
 // wrfsmsr writes to the GS_BASE MSR.
 func wrfsmsr(addr uintptr)
 
-// wrgs sets the GS address (set by init).
-var wrgs func(addr uintptr)
+// WriteGS sets the GS address (set by init).
+var WriteGS func(addr uintptr)
 
 // wrgsbase writes to the GS base address.
 func wrgsbase(addr uintptr)
@@ -119,10 +119,10 @@ func Init(featureSet *cpuid.FeatureSet) {
 		LoadFloatingPoint = fxrstor
 	}
 	if hasFSGSBASE {
-		wrfs = wrfsbase
-		wrgs = wrgsbase
+		WriteFS = wrfsbase
+		WriteGS = wrgsbase
 	} else {
-		wrfs = wrfsmsr
-		wrgs = wrgsmsr
+		WriteFS = wrfsmsr
+		WriteGS = wrgsmsr
 	}
 }

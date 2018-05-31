@@ -98,6 +98,7 @@ func bluepillSyscall() {
 	}
 	ring0.SaveFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 	ring0.Halt()
+	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
 	ring0.LoadFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 }
 
@@ -114,6 +115,7 @@ func bluepillException(vector ring0.Vector) {
 	}
 	ring0.SaveFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 	ring0.Halt()
+	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
 	ring0.LoadFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 }
 
