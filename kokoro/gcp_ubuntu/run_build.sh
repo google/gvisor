@@ -37,4 +37,6 @@ latest_dir="${KOKORO_ARTIFACTS_DIR}"/latest
 today_dir="${KOKORO_ARTIFACTS_DIR}"/"$(date -Idate)"
 mkdir -p "${latest_dir}" "${today_dir}"
 cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${latest_dir}"
+sha512sum "${latest_dir}"/runsc | awk '{print $1 "  runsc"}' > "${latest_dir}"/runsc.sha512
 cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${today_dir}"
+sha512sum "${today_dir}"/runsc | awk '{print $1} "  runsc"' > "${today_dir}"/runsc.sha512
