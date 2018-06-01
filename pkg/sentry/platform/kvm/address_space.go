@@ -16,6 +16,7 @@ package kvm
 
 import (
 	"reflect"
+	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
@@ -26,6 +27,11 @@ import (
 // addressSpace is a wrapper for PageTables.
 type addressSpace struct {
 	platform.NoAddressSpaceIO
+
+	// mu is the lock for modifications to the address space.
+	//
+	// Note that the page tables themselves are not locked.
+	mu sync.Mutex
 
 	// filemem is the memory instance.
 	filemem *filemem.FileMem
@@ -49,13 +55,20 @@ type addressSpace struct {
 	files hostMap
 }
 
-// Invalidate interrupts all dirty contexts.
-func (as *addressSpace) Invalidate() {
+// invalidate is the implementation for Invalidate.
+func (as *addressSpace) invalidate() {
 	for i := 0; i < as.dirtySet.size(); i++ {
 		if c := as.dirtySet.swap(i, nil); c != nil && c.active.get() == as {
 			c.BounceToKernel() // Force a kernel transition.
 		}
 	}
+}
+
+// Invalidate interrupts all dirty contexts.
+func (as *addressSpace) Invalidate() {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	as.invalidate()
 }
 
 // Touch adds the given vCPU to the dirty list.
@@ -120,7 +133,7 @@ func (as *addressSpace) mapHostFile(addr usermem.Addr, fd int, fr platform.FileR
 		addr += usermem.Addr(m.length)
 	}
 	if inv {
-		as.Invalidate()
+		as.invalidate()
 	}
 
 	return nil
@@ -169,7 +182,7 @@ func (as *addressSpace) mapFilemem(addr usermem.Addr, fr platform.FileRange, at 
 		addr += usermem.Addr(len(s))
 	}
 	if inv {
-		as.Invalidate()
+		as.invalidate()
 		as.files.DeleteMapping(orig)
 	}
 
@@ -178,6 +191,9 @@ func (as *addressSpace) mapFilemem(addr usermem.Addr, fr platform.FileRange, at 
 
 // MapFile implements platform.AddressSpace.MapFile.
 func (as *addressSpace) MapFile(addr usermem.Addr, fd int, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
 	// Create an appropriate mapping. If this is filemem, we don't create
 	// custom mappings for each in-application mapping. For files however,
 	// we create distinct mappings for each address space. Unfortunately,
@@ -195,8 +211,11 @@ func (as *addressSpace) MapFile(addr usermem.Addr, fd int, fr platform.FileRange
 
 // Unmap unmaps the given range by calling pagetables.PageTables.Unmap.
 func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+
 	if prev := as.pageTables.Unmap(addr, uintptr(length)); prev {
-		as.Invalidate()
+		as.invalidate()
 		as.files.DeleteMapping(usermem.AddrRange{
 			Start: addr,
 			End:   addr + usermem.Addr(length),

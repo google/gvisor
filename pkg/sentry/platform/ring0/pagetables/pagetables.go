@@ -16,8 +16,6 @@
 package pagetables
 
 import (
-	"sync"
-
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -39,8 +37,6 @@ type Node struct {
 
 // PageTables is a set of page tables.
 type PageTables struct {
-	mu sync.Mutex
-
 	// root is the pagetable root.
 	root *Node
 
@@ -122,7 +118,6 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physic
 		return p.Unmap(addr, length)
 	}
 	prev := false
-	p.mu.Lock()
 	end, ok := addr.AddLength(uint64(length))
 	if !ok {
 		panic("pagetables.Map: overflow")
@@ -139,7 +134,6 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physic
 		}
 		pte.Set(p, opts)
 	})
-	p.mu.Unlock()
 	return prev
 }
 
@@ -147,13 +141,11 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physic
 //
 // True is returned iff there was a previous mapping in the range.
 func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
-	p.mu.Lock()
 	count := 0
 	p.iterateRange(uintptr(addr), uintptr(addr)+length, false, func(s, e uintptr, pte *PTE, align uintptr) {
 		pte.Clear()
 		count++
 	})
-	p.mu.Unlock()
 	return count > 0
 }
 
