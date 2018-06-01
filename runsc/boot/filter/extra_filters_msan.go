@@ -18,13 +18,15 @@ package filter
 
 import (
 	"syscall"
+
+	"gvisor.googlesource.com/gvisor/pkg/seccomp"
 )
 
 // instrumentationFilters returns additional filters for syscalls used by MSAN.
-func instrumentationFilters() []uintptr {
+func instrumentationFilters() seccomp.SyscallRules {
 	Report("MSAN is enabled: syscall filters less restrictive!")
-	return []uintptr{
-		syscall.SYS_SCHED_GETAFFINITY,
-		syscall.SYS_SET_ROBUST_LIST,
+	return seccomp.SyscallRules{
+		syscall.SYS_SCHED_GETAFFINITY: {},
+		syscall.SYS_SET_ROBUST_LIST:   {},
 	}
 }

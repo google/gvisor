@@ -18,16 +18,21 @@ package filter
 
 import (
 	"syscall"
+
+	"gvisor.googlesource.com/gvisor/pkg/seccomp"
 )
 
 // instrumentationFilters returns additional filters for syscalls used by TSAN.
-func instrumentationFilters() []uintptr {
+func instrumentationFilters() seccomp.SyscallRules {
 	Report("TSAN is enabled: syscall filters less restrictive!")
-	return []uintptr{
-		syscall.SYS_BRK,
-		syscall.SYS_MUNLOCK,
-		syscall.SYS_NANOSLEEP,
-		syscall.SYS_OPEN,
-		syscall.SYS_SET_ROBUST_LIST,
+	return seccomp.SyscallRules{
+		syscall.SYS_BRK:             {},
+		syscall.SYS_CLONE:           {},
+		syscall.SYS_FUTEX:           {},
+		syscall.SYS_MMAP:            {},
+		syscall.SYS_MUNLOCK:         {},
+		syscall.SYS_NANOSLEEP:       {},
+		syscall.SYS_OPEN:            {},
+		syscall.SYS_SET_ROBUST_LIST: {},
 	}
 }
