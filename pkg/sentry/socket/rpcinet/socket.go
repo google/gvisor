@@ -277,8 +277,10 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	file := fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonBlocking: flags&linux.SOCK_NONBLOCK != 0}, &socketOperations{
 		wq:       &wq,
 		fd:       payload.Fd,
+		rpcConn:  s.rpcConn,
 		notifier: s.notifier,
 	})
+	defer file.DecRef()
 
 	fdFlags := kernel.FDFlags{
 		CloseOnExec: flags&linux.SOCK_CLOEXEC != 0,
