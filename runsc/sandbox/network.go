@@ -188,18 +188,36 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 			continue
 		}
 
-		ifaddrs, err := iface.Addrs()
+		allAddrs, err := iface.Addrs()
 		if err != nil {
 			return fmt.Errorf("error fetching interface addresses for %q: %v", iface.Name, err)
 		}
 
 		// We build our own loopback devices.
 		if iface.Flags&net.FlagLoopback != 0 {
-			links, err := loopbackLinks(iface, ifaddrs)
+			links, err := loopbackLinks(iface, allAddrs)
 			if err != nil {
 				return fmt.Errorf("error getting loopback routes and links for iface %q: %v", iface.Name, err)
 			}
 			args.LoopbackLinks = append(args.LoopbackLinks, links...)
+			continue
+		}
+
+		// Keep only IPv4 addresses.
+		var ip4addrs []*net.IPNet
+		for _, ifaddr := range allAddrs {
+			ipNet, ok := ifaddr.(*net.IPNet)
+			if !ok {
+				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
+			}
+			if ipNet.IP.To4() == nil {
+				log.Warningf("IPv6 is not supported, skipping: %v", ipNet)
+				continue
+			}
+			ip4addrs = append(ip4addrs, ipNet)
+		}
+		if len(ip4addrs) == 0 {
+			log.Warningf("No IPv4 address found for interface %q, skipping", iface.Name)
 			continue
 		}
 
@@ -250,16 +268,12 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
-		for _, ifaddr := range ifaddrs {
-			ipNet, ok := ifaddr.(*net.IPNet)
-			if !ok {
-				return fmt.Errorf("address is not IPNet: %t %+v", ifaddr, ifaddr)
-			}
-			link.Addresses = append(link.Addresses, ipNet.IP)
+		for _, addr := range ip4addrs {
+			link.Addresses = append(link.Addresses, addr.IP)
 
 			// Steal IP address from NIC.
-			if err := removeAddress(ifaceLink, ipNet.String()); err != nil {
-				return fmt.Errorf("error removing address %v from device %q: %v", iface.Name, ipNet, err)
+			if err := removeAddress(ifaceLink, addr.String()); err != nil {
+				return fmt.Errorf("error removing address %v from device %q: %v", iface.Name, addr, err)
 			}
 		}
 
@@ -280,7 +294,7 @@ func loopbackLinks(iface net.Interface, addrs []net.Addr) ([]boot.LoopbackLink, 
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
 		if !ok {
-			return nil, fmt.Errorf("address is not IPNet: %t %+v", addr, addr)
+			return nil, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
 		links = append(links, boot.LoopbackLink{
 			Name:      iface.Name,
@@ -314,19 +328,23 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 			if r.Gw == nil {
 				return nil, nil, fmt.Errorf("default route with no gateway %q: %+v", iface.Name, r)
 			}
+			if r.Gw.To4() == nil {
+				log.Warningf("IPv6 is not supported, skipping default route: %v", r)
+				continue
+			}
 			if def != nil {
 				return nil, nil, fmt.Errorf("more than one default route found %q, def: %+v, route: %+v", iface.Name, def, r)
 			}
-			emptyAddr := net.IPv6zero
-			if r.Gw.To4() != nil {
-				emptyAddr = net.IPv4zero
-			}
 			// Create a catch all route to the gateway.
 			def = &boot.Route{
-				Destination: emptyAddr,
-				Mask:        net.IPMask(emptyAddr),
+				Destination: net.IPv4zero,
+				Mask:        net.IPMask(net.IPv4zero),
 				Gateway:     r.Gw,
 			}
+			continue
+		}
+		if r.Dst.IP.To4() == nil {
+			log.Warningf("IPv6 is not supported, skipping route: %v", r)
 			continue
 		}
 		routes = append(routes, boot.Route{
