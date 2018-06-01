@@ -21,14 +21,18 @@ go_library(
     name = "seccomp",
     srcs = [
         "seccomp.go",
+        "seccomp_rules.go",
         "seccomp_unsafe.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/seccomp",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/log",
+        "//pkg/sentry/arch",
+        "//pkg/sentry/strace",
     ],
 )
 

@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -77,12 +77,12 @@ func TestBasic(t *testing.T) {
 
 	for _, test := range []struct {
 		// filters are the set of syscall that are allowed.
-		filters []uintptr
+		filters SyscallRules
 		kill    bool
 		specs   []spec
 	}{
 		{
-			filters: []uintptr{1},
+			filters: SyscallRules{1: {}},
 			kill:    false,
 			specs: []spec{
 				{
@@ -98,8 +98,12 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: []uintptr{1, 3, 5},
-			kill:    false,
+			filters: SyscallRules{
+				1: {},
+				3: {},
+				5: {},
+			},
+			kill: false,
 			specs: []spec{
 				{
 					desc: "Multiple syscalls allowed (1)",
@@ -144,7 +148,7 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: []uintptr{1},
+			filters: SyscallRules{1: {}},
 			kill:    false,
 			specs: []spec{
 				{
@@ -155,7 +159,7 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: []uintptr{1},
+			filters: SyscallRules{1: {}},
 			kill:    true,
 			specs: []spec{
 				{
@@ -165,8 +169,96 @@ func TestBasic(t *testing.T) {
 				},
 			},
 		},
+		{
+			filters: SyscallRules{
+				1: []Rule{
+					{
+						AllowAny{},
+						AllowValue(0xf),
+					},
+				},
+			},
+			kill: false,
+			specs: []spec{
+				{
+					desc: "Syscall argument allowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xf}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "Syscall argument disallowed",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf, 0xe}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
+			filters: SyscallRules{
+				1: []Rule{
+					{
+						AllowValue(0xf),
+					},
+					{
+						AllowValue(0xe),
+					},
+				},
+			},
+			kill: false,
+			specs: []spec{
+				{
+					desc: "Syscall argument allowed, two rules",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xf}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "Syscall argument allowed, two rules",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0xe}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+		},
+		{
+			filters: SyscallRules{
+				1: []Rule{
+					{
+						AllowValue(0),
+						AllowValue(math.MaxUint64 - 1),
+						AllowValue(math.MaxUint32),
+					},
+				},
+			},
+			kill: false,
+			specs: []spec{
+				{
+					desc: "64bit syscall argument allowed",
+					data: seccompData{
+						nr:   1,
+						arch: linux.AUDIT_ARCH_X86_64,
+						args: [6]uint64{0, math.MaxUint64 - 1, math.MaxUint32},
+					},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "64bit syscall argument disallowed",
+					data: seccompData{
+						nr:   1,
+						arch: linux.AUDIT_ARCH_X86_64,
+						args: [6]uint64{0, math.MaxUint64, math.MaxUint32},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "64bit syscall argument disallowed",
+					data: seccompData{
+						nr:   1,
+						arch: linux.AUDIT_ARCH_X86_64,
+						args: [6]uint64{0, math.MaxUint64, math.MaxUint32 - 1},
+					},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
 	} {
-		sort.Slice(test.filters, func(i, j int) bool { return test.filters[i] < test.filters[j] })
 		instrs, err := buildProgram(test.filters, test.kill)
 		if err != nil {
 			t.Errorf("%s: buildProgram() got error: %v", test.specs[0].desc, err)
@@ -193,19 +285,16 @@ func TestBasic(t *testing.T) {
 func TestRandom(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	size := rand.Intn(50) + 1
-	syscalls := make([]uintptr, 0, size)
-	syscallMap := make(map[uintptr]struct{})
-	for len(syscalls) < size {
+	syscallRules := make(map[uintptr][]Rule)
+	for len(syscallRules) < size {
 		n := uintptr(rand.Intn(200))
-		if _, ok := syscallMap[n]; !ok {
-			syscalls = append(syscalls, n)
-			syscallMap[n] = struct{}{}
+		if _, ok := syscallRules[n]; !ok {
+			syscallRules[n] = []Rule{}
 		}
 	}
 
-	sort.Slice(syscalls, func(i, j int) bool { return syscalls[i] < syscalls[j] })
-	fmt.Printf("Testing filters: %v", syscalls)
-	instrs, err := buildProgram(syscalls, false)
+	fmt.Printf("Testing filters: %v", syscallRules)
+	instrs, err := buildProgram(syscallRules, false)
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
@@ -221,7 +310,7 @@ func TestRandom(t *testing.T) {
 			continue
 		}
 		want := uint32(linux.SECCOMP_RET_TRAP)
-		if _, ok := syscallMap[uintptr(i)]; ok {
+		if _, ok := syscallRules[uintptr(i)]; ok {
 			want = linux.SECCOMP_RET_ALLOW
 		}
 		if got != want {

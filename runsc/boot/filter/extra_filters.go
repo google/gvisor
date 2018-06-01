@@ -16,9 +16,13 @@
 
 package filter
 
+import (
+	"gvisor.googlesource.com/gvisor/pkg/seccomp"
+)
+
 // instrumentationFilters returns additional filters for syscalls used by
 // Go intrumentation tools, e.g. -race, -msan.
 // Returns empty when disabled.
-func instrumentationFilters() []uintptr {
+func instrumentationFilters() seccomp.SyscallRules {
 	return nil
 }

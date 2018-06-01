@@ -33,26 +33,26 @@ func Install(p platform.Platform, whitelistFS, console, hostNetwork bool) error 
 
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
-	s = append(s, instrumentationFilters()...)
+	s.Merge(instrumentationFilters())
 
 	if whitelistFS {
 		Report("direct file access allows unrestricted file access!")
-		s = append(s, whitelistFSFilters()...)
+		s.Merge(whitelistFSFilters())
 	}
 	if console {
 		Report("console is enabled: syscall filters less restrictive!")
-		s = append(s, consoleFilters()...)
+		s.Merge(consoleFilters())
 	}
 	if hostNetwork {
 		Report("host networking enabled: syscall filters less restrictive!")
-		s = append(s, hostInetFilters()...)
+		s.Merge(hostInetFilters())
 	}
 
 	switch p := p.(type) {
 	case *ptrace.PTrace:
-		s = append(s, ptraceFilters()...)
+		s.Merge(ptraceFilters())
 	case *kvm.KVM:
-		s = append(s, kvmFilters()...)
+		s.Merge(kvmFilters())
 	default:
 		return fmt.Errorf("unknown platform type %T", p)
 	}
