@@ -170,8 +170,9 @@ binaries).
 
 ### Download a Nightly Build
 
-The easiest way to get `runsc` is from a the latest nightly build.
-[here][runsc-nightly].
+The easiest way to get `runsc` is from the
+[latest nightly build][runsc-nightly]. After you download the binary, check it
+against the SHA512 [checksum file][runsc-nightly-sha].
 
 **It is important to copy this binary to some place that is accessible to all
 users**, since `runsc` executes itself as user `nobody` to avoid unnecessary
@@ -180,6 +181,8 @@ privileges. The `/usr/local/bin` directory is a good choice.
 
 ```
 wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
+wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
+sha512sum -c runsc.sha512
 chmod +x runsc
 sudo mv runsc /usr/local/bin
 ```
@@ -436,17 +439,18 @@ See [Contributing.md](CONTRIBUTING.md).
 [apparmor]: https://wiki.ubuntu.com/AppArmor
 [bazel]: https://bazel.build
 [bug]: https://github.com/google/gvisor/issues
-[cri-o]: https://github.com/kubernetes-incubator/cri-o
 [cri-o-k8s]: https://github.com/kubernetes-incubator/cri-o/blob/master/kubernetes.md
-[docker]: https://www.docker.com
+[cri-o]: https://github.com/kubernetes-incubator/cri-o
 [docker-storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
+[docker]: https://www.docker.com
 [git]: https://git-scm.com
-[gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
+[gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [kvm]: https://www.linux-kvm.org
 [netstack]: https://github.com/google/netstack
 [oci]: https://www.opencontainers.org
 [python]: https://python.org
+[runsc-nightly-sha]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
 [runsc-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [seccomp]: https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt
