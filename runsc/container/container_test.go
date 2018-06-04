@@ -186,6 +186,8 @@ func TestLifecycle(t *testing.T) {
 	// ourselves.
 	p, _ := os.FindProcess(s.Sandbox.Pid)
 	p.Wait()
+	g, _ := os.FindProcess(s.Sandbox.GoferPid)
+	g.Wait()
 
 	// Load the container from disk and check the status.
 	s, err = container.Load(rootDir, id)

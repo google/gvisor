@@ -440,13 +440,27 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 	return nil
 }
 
-// IsRunning returns true iff the sandbox process is running.
+// IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
-	// Send a signal 0 to the sandbox process.
-	if err := killProcess(s.Pid, 0); err != nil {
-		return false
+	if s.Pid != 0 {
+		// Send a signal 0 to the sandbox process.
+		if err := killProcess(s.Pid, 0); err == nil {
+			return true
+		}
 	}
-	return true
+	if s.GoferPid != 0 {
+		// Send a signal 0 to the gofer process.
+		if err := killProcess(s.GoferPid, 0); err == nil {
+			log.Warningf("Found orphan gofer process, pid: %d", s.GoferPid)
+			// Attempt to kill gofer if it's orphan.
+			killProcess(s.GoferPid, unix.SIGKILL)
+
+			// Don't wait for gofer to die. Return 'running' and hope gofer is dead
+			// next time around.
+			return true
+		}
+	}
+	return false
 }
 
 // killProcess sends a signal to the host process (i.e. a sandbox or gofer
