@@ -8,6 +8,9 @@ go_binary(
         "main.go",
     ],
     pure = "on",
+    visibility = [
+        "//runsc:__subpackages__",
+    ],
     x_defs = {"main.gitRevision": "{GIT_REVISION}"},
     deps = [
         "//pkg/log",
