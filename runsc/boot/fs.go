@@ -288,9 +288,19 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 
 	if useOverlay {
 		log.Debugf("Adding overlay on top of mount %q", m.Destination)
-		if inode, err = addOverlay(ctx, conf, inode, m.Type, mf); err != nil {
+		inode, err = addOverlay(ctx, conf, inode, m.Type, mf)
+		if err != nil {
 			return err
 		}
+	}
+
+	// Create destination in case it doesn't exist. This is required, in addition
+	// to 'addSubmountOverlay', in case there are symlinks to create directories
+	// in the right location, e.g.
+	//   mount: /var/run/secrets, may be created in '/run/secrets' if
+	//   '/var/run' => '/var'.
+	if err := mkdirAll(ctx, mns, m.Destination); err != nil {
+		return err
 	}
 
 	root := mns.Root()
