@@ -32,6 +32,10 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 )
 
+// ExePath must point to runsc binary, which is normally the same binary. It's
+// changed in tests that aren't linked in the same binary.
+var ExePath = "/proc/self/exe"
+
 // LogSpec logs the spec in a human-friendly way.
 func LogSpec(spec *specs.Spec) {
 	log.Debugf("Spec: %+v", spec)
@@ -197,9 +201,9 @@ func Is9PMount(m specs.Mount) bool {
 // BinPath returns the real path to self, resolving symbolink links. This is done
 // to make the process name appears as 'runsc', instead of 'exe'.
 func BinPath() (string, error) {
-	binPath, err := filepath.EvalSymlinks("/proc/self/exe")
+	binPath, err := filepath.EvalSymlinks(ExePath)
 	if err != nil {
-		return "", fmt.Errorf(`error resolving "/proc/self/exe" symlink: %v`, err)
+		return "", fmt.Errorf(`error resolving %q symlink: %v`, ExePath, err)
 	}
 	return binPath, nil
 }

@@ -15,7 +15,6 @@
 package container_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,9 +28,6 @@ import (
 	"testing"
 	"time"
 
-	"context"
-	"flag"
-	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -39,80 +35,15 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/cmd"
 	"gvisor.googlesource.com/gvisor/runsc/container"
+	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
 func init() {
 	log.SetLevel(log.Debug)
-}
-
-// writeSpec writes the spec to disk in the given directory.
-func writeSpec(dir string, spec *specs.Spec) error {
-	b, err := json.Marshal(spec)
-	if err != nil {
-		return err
+	if err := testutil.ConfigureExePath(); err != nil {
+		panic(err.Error())
 	}
-	return ioutil.WriteFile(filepath.Join(dir, "config.json"), b, 0755)
-}
-
-// newSpecWithArgs creates a simple spec with the given args suitable for use
-// in tests.
-func newSpecWithArgs(args ...string) *specs.Spec {
-	spec := &specs.Spec{
-		// The host filesystem root is the container root.
-		Root: &specs.Root{
-			Path:     "/",
-			Readonly: true,
-		},
-		Process: &specs.Process{
-			Args: args,
-			Env: []string{
-				"PATH=" + os.Getenv("PATH"),
-			},
-		},
-	}
-	return spec
-}
-
-// setupContainer creates a bundle and root dir for the container, generates a
-// test config, and writes the spec to config.json in the bundle dir.
-func setupContainer(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Config, err error) {
-	rootDir, err = ioutil.TempDir("", "containers")
-	if err != nil {
-		return "", "", nil, fmt.Errorf("error creating root dir: %v", err)
-	}
-
-	bundleDir, err = ioutil.TempDir("", "bundle")
-	if err != nil {
-		return "", "", nil, fmt.Errorf("error creating bundle dir: %v", err)
-	}
-
-	if err = writeSpec(bundleDir, spec); err != nil {
-		return "", "", nil, fmt.Errorf("error writing spec: %v", err)
-	}
-
-	conf = &boot.Config{
-		RootDir: rootDir,
-		Network: boot.NetworkNone,
-		// Don't add flags when calling subprocesses, since the test
-		// runner does not know about all the flags. We control the
-		// Config in the subprocess anyways, so it does not matter.
-		TestModeNoFlags: true,
-	}
-
-	return rootDir, bundleDir, conf, nil
-}
-
-// uniqueContainerID generates a unique container id for each test.
-//
-// The container id is used to create an abstract unix domain socket, which must
-// be unique.  While the container forbids creating two containers with the same
-// name, sometimes between test runs the socket does not get cleaned up quickly
-// enough, causing container creation to fail.
-func uniqueContainerID() string {
-	return fmt.Sprintf("test-container-%d", time.Now().UnixNano())
 }
 
 // waitForProcessList waits for the given process list to show up in the container.
@@ -167,9 +98,9 @@ func procListToString(pl []*control.Process) string {
 func TestLifecycle(t *testing.T) {
 	// The container will just sleep for a long time.  We will kill it before
 	// it finishes sleeping.
-	spec := newSpecWithArgs("sleep", "100")
+	spec := testutil.NewSpecWithArgs("sleep", "100")
 
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -187,7 +118,7 @@ func TestLifecycle(t *testing.T) {
 		},
 	}
 	// Create the container.
-	id := uniqueContainerID()
+	id := testutil.UniqueContainerID()
 	if _, err := container.Create(id, spec, conf, bundleDir, "", ""); err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -298,13 +229,13 @@ func TestExePath(t *testing.T) {
 		{path: "bin/thisfiledoesntexit", success: false},
 		{path: "/bin/thisfiledoesntexit", success: false},
 	} {
-		spec := newSpecWithArgs(test.path)
-		rootDir, bundleDir, conf, err := setupContainer(spec)
+		spec := testutil.NewSpecWithArgs(test.path)
+		rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 		if err != nil {
 			t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
 		}
 
-		ws, err := container.Run(uniqueContainerID(), spec, conf, bundleDir, "", "")
+		ws, err := container.Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 
 		os.RemoveAll(rootDir)
 		os.RemoveAll(bundleDir)
@@ -327,16 +258,16 @@ func TestExePath(t *testing.T) {
 // Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
 	// First container will succeed.
-	succSpec := newSpecWithArgs("true")
+	succSpec := testutil.NewSpecWithArgs("true")
 
-	rootDir, bundleDir, conf, err := setupContainer(succSpec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(succSpec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	ws, err := container.Run(uniqueContainerID(), succSpec, conf, bundleDir, "", "")
+	ws, err := container.Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -346,16 +277,16 @@ func TestAppExitStatus(t *testing.T) {
 
 	// Second container exits with non-zero status.
 	wantStatus := 123
-	errSpec := newSpecWithArgs("bash", "-c", fmt.Sprintf("exit %d", wantStatus))
+	errSpec := testutil.NewSpecWithArgs("bash", "-c", fmt.Sprintf("exit %d", wantStatus))
 
-	rootDir2, bundleDir2, conf, err := setupContainer(errSpec)
+	rootDir2, bundleDir2, conf, err := testutil.SetupContainer(errSpec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = container.Run(uniqueContainerID(), succSpec, conf, bundleDir2, "", "")
+	ws, err = container.Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir2, "", "")
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -367,9 +298,9 @@ func TestAppExitStatus(t *testing.T) {
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
 	const uid = 343
-	spec := newSpecWithArgs("sleep", "100")
+	spec := testutil.NewSpecWithArgs("sleep", "100")
 
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -377,7 +308,7 @@ func TestExec(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -454,7 +385,7 @@ func TestExec(t *testing.T) {
 func TestCapabilities(t *testing.T) {
 	const uid = 343
 	const gid = 2401
-	spec := newSpecWithArgs("sleep", "100")
+	spec := testutil.NewSpecWithArgs("sleep", "100")
 
 	// We generate files in the host temporary directory.
 	spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -463,7 +394,7 @@ func TestCapabilities(t *testing.T) {
 		Type:        "bind",
 	})
 
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -471,7 +402,7 @@ func TestCapabilities(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -540,8 +471,8 @@ func TestCapabilities(t *testing.T) {
 
 // Test that an tty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	spec := newSpecWithArgs("true")
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	spec := testutil.NewSpecWithArgs("true")
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -569,7 +500,7 @@ func TestConsoleSocket(t *testing.T) {
 	defer os.Remove(socketPath)
 
 	// Create the container and pass the socket name.
-	id := uniqueContainerID()
+	id := testutil.UniqueContainerID()
 	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
@@ -618,21 +549,21 @@ func TestConsoleSocket(t *testing.T) {
 }
 
 func TestSpecUnsupported(t *testing.T) {
-	spec := newSpecWithArgs("/bin/true")
+	spec := testutil.NewSpecWithArgs("/bin/true")
 	spec.Process.SelinuxLabel = "somelabel"
 
 	// These are normally set by docker and will just cause warnings to be logged.
 	spec.Process.ApparmorProfile = "someprofile"
 	spec.Linux = &specs.Linux{Seccomp: &specs.LinuxSeccomp{}}
 
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	id := uniqueContainerID()
+	id := testutil.UniqueContainerID()
 	_, err = container.Create(id, spec, conf, bundleDir, "", "")
 	if err == nil || !strings.Contains(err.Error(), "is not supported") {
 		t.Errorf("container.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
@@ -642,14 +573,17 @@ func TestSpecUnsupported(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-priviledged user.
 func TestRunNonRoot(t *testing.T) {
-	spec := newSpecWithArgs("/bin/true")
+	spec := testutil.NewSpecWithArgs("/bin/true")
 	spec.Process.User.UID = 343
 	spec.Process.User.GID = 2401
 
 	// User that container runs as can't list '$TMP/blocked' and would fail to
 	// mount it.
-	dir := path.Join(os.TempDir(), "blocked")
-	if err := os.Mkdir(dir, 0700); err != nil {
+	dir, err := ioutil.TempDir("", "blocked")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
 		t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 	}
 	dir = path.Join(dir, "test")
@@ -664,7 +598,7 @@ func TestRunNonRoot(t *testing.T) {
 		Type:        "bind",
 	})
 
-	rootDir, bundleDir, conf, err := setupContainer(spec)
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -672,7 +606,7 @@ func TestRunNonRoot(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	s, err := container.Create(uniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -686,41 +620,5 @@ func TestRunNonRoot(t *testing.T) {
 	}
 	if !ws.Exited() || ws.ExitStatus() != 0 {
 		t.Errorf("container failed, waitStatus: %v", ws)
-	}
-}
-
-// TestMain acts like runsc if it is called with the "boot" argument, otherwise
-// it just runs the tests.  This is required because creating a container will
-// call "/proc/self/exe boot".  Normally /proc/self/exe is the runsc binary,
-// but for tests we have to fake it.
-func TestMain(m *testing.M) {
-	// exit writes coverage data before exiting.
-	exit := func(status int) {
-		os.Exit(status)
-	}
-
-	if !flag.Parsed() {
-		flag.Parse()
-	}
-
-	// If we are passed one of the commands then run it.
-	subcommands.Register(new(cmd.Boot), "boot")
-	subcommands.Register(new(cmd.Gofer), "gofer")
-	switch flag.Arg(0) {
-	case "boot", "gofer":
-		conf := &boot.Config{
-			RootDir: "unused-root-dir",
-			Network: boot.NetworkNone,
-		}
-		var ws syscall.WaitStatus
-		subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
-		if subcmdCode != subcommands.ExitSuccess {
-			panic(fmt.Sprintf("command failed to execute, err: %v", subcmdCode))
-		}
-		// Container exited. Shut down this process.
-		exit(ws.ExitStatus())
-	default:
-		// Otherwise run the tests.
-		exit(m.Run())
 	}
 }
