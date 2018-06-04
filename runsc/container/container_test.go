@@ -92,6 +92,35 @@ func procListToString(pl []*control.Process) string {
 	return fmt.Sprintf("[%s]", strings.Join(strs, ","))
 }
 
+// run starts the sandbox and waits for it to exit, checking that the
+// application succeeded.
+func run(spec *specs.Spec) error {
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		return fmt.Errorf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create, start and wait for the container.
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		return fmt.Errorf("error creating container: %v", err)
+	}
+	defer s.Destroy()
+	if err := s.Start(conf); err != nil {
+		return fmt.Errorf("error starting container: %v", err)
+	}
+	ws, err := s.Wait()
+	if err != nil {
+		return fmt.Errorf("error waiting on container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		return fmt.Errorf("container failed, waitStatus: %v", ws)
+	}
+	return nil
+}
+
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
@@ -600,27 +629,34 @@ func TestRunNonRoot(t *testing.T) {
 		Type:        "bind",
 	})
 
-	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
+	if err := run(spec); err != nil {
+		t.Fatalf("error running sadbox: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
+}
 
-	// Create, start and wait for the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
+// TestMountNewDir check that runsc will create destination directory if it
+// doesn't exit.
+func TestMountNewDir(t *testing.T) {
+	srcDir := path.Join(os.TempDir(), "src", "newdir", "anotherdir")
+	if err := os.MkdirAll(srcDir, 0755); err != nil {
+		t.Fatalf("os.MkDir(%q) failed: %v", srcDir, err)
 	}
-	defer s.Destroy()
-	if err := s.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
+
+	// Attempt to remove dir to ensure it doesn't exist.
+	mountDir := path.Join(os.TempDir(), "newdir")
+	if err := os.RemoveAll(mountDir); err != nil {
+		t.Fatalf("os.RemoveAll(%q) failed: %v", mountDir, err)
 	}
-	ws, err := s.Wait()
-	if err != nil {
-		t.Errorf("error waiting on container: %v", err)
-	}
-	if !ws.Exited() || ws.ExitStatus() != 0 {
-		t.Errorf("container failed, waitStatus: %v", ws)
+	mountDir = path.Join(mountDir, "anotherdir")
+
+	spec := testutil.NewSpecWithArgs("/bin/ls", mountDir)
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: mountDir,
+		Source:      srcDir,
+		Type:        "bind",
+	})
+
+	if err := run(spec); err != nil {
+		t.Fatalf("error running sadbox: %v", err)
 	}
 }
