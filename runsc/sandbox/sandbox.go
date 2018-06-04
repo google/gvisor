@@ -195,7 +195,7 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	goferEnds := make([]*os.File, 0, mountCount)
 	for i := 0; i < mountCount; i++ {
 		// Create socket that connects the sandbox and gofer.
-		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
 		if err != nil {
 			return nil, err
 		}
