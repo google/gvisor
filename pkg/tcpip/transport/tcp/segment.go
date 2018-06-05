@@ -30,7 +30,7 @@ type segment struct {
 	segmentEntry
 	refCnt int32
 	id     stack.TransportEndpointID
-	route  stack.Route
+	route  stack.Route `state:"manual"`
 	data   buffer.VectorisedView
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
