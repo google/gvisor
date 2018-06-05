@@ -17,6 +17,7 @@ package proc
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 
@@ -26,6 +27,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
 // proc is a root proc node.
@@ -38,6 +42,30 @@ type proc struct {
 	// pidns is the PID namespace of the task that mounted the proc filesystem
 	// that this node represents.
 	pidns *kernel.PIDNamespace
+}
+
+// stubProcFSFile is a file type that can be used to return file contents
+// which are constant. This file is not writable and will always have mode
+// 0444.
+type stubProcFSFile struct {
+	ramfs.Entry
+
+	// contents are the immutable file contents that will always be returned.
+	contents []byte
+}
+
+// DeprecatedPreadv implements fs.InodeOperations.DeprecatedPreadv.
+func (s *stubProcFSFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset < 0 {
+		return 0, syserror.EINVAL
+	}
+
+	if offset >= int64(len(s.contents)) {
+		return 0, io.EOF
+	}
+
+	n, err := dst.CopyOut(ctx, s.contents[offset:])
+	return int64(n), err
 }
 
 // New returns the root node of a partial simple procfs.
@@ -83,6 +111,15 @@ func (p *proc) newSelf(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	return newFile(s, msrc, fs.Symlink, nil)
 }
 
+// newStubProcFsFile returns a procfs file with constant contents.
+func (p *proc) newStubProcFSFile(ctx context.Context, msrc *fs.MountSource, c []byte) *fs.Inode {
+	u := &stubProcFSFile{
+		contents: c,
+	}
+	u.InitEntry(ctx, fs.RootOwner, fs.FilePermsFromMode(0444))
+	return newFile(u, msrc, fs.SpecialFile, nil)
+}
+
 // Readlink implements fs.InodeOperations.Readlink.
 func (s *self) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	if t := kernel.TaskFromContext(ctx); t != nil {
@@ -107,7 +144,13 @@ func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dire
 
 	// Is it a dynamic element?
 	nfs := map[string]func() *fs.Inode{
-		"net":  func() *fs.Inode { return p.newNetDir(ctx, dir.MountSource) },
+		"net": func() *fs.Inode {
+			// If we're using rpcinet we will let it manage /proc/net.
+			if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
+				return newRPCInetProcNet(ctx, dir.MountSource)
+			}
+			return p.newNetDir(ctx, dir.MountSource)
+		},
 		"self": func() *fs.Inode { return p.newSelf(ctx, dir.MountSource) },
 		"sys":  func() *fs.Inode { return p.newSysDir(ctx, dir.MountSource) },
 	}
