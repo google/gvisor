@@ -32,6 +32,23 @@ func (p *proc) newNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	if s := p.k.NetworkStack(); s != nil && s.SupportsIPv6() {
 		d.AddChild(ctx, "dev", seqfile.NewSeqFileInode(ctx, &netDev{s: s}, msrc))
 		d.AddChild(ctx, "if_inet6", seqfile.NewSeqFileInode(ctx, &ifinet6{s: s}, msrc))
+
+		// The following files are simple stubs until they are implemented in
+		// netstack, if the file contains a header the stub is just the header
+		// otherwise it is an empty file.
+		d.AddChild(ctx, "arp", p.newStubProcFSFile(ctx, msrc, []byte("IP address       HW type     Flags       HW address            Mask     Device")))
+		d.AddChild(ctx, "ipv6_route", p.newStubProcFSFile(ctx, msrc, []byte("")))
+		d.AddChild(ctx, "netlink", p.newStubProcFSFile(ctx, msrc, []byte("sk       Eth Pid    Groups   Rmem     Wmem     Dump     Locks     Drops     Inode")))
+		d.AddChild(ctx, "netstat", p.newStubProcFSFile(ctx, msrc, []byte("TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSPassive PAWSActive PAWSEstab DelayedACKs DelayedACKLocked DelayedACKLost ListenOverflows ListenDrops TCPPrequeued TCPDirectCopyFromBacklog TCPDirectCopyFromPrequeue TCPPrequeueDropped TCPHPHits TCPHPHitsToUser TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging TCPFACKReorder TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans TCPForwardRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail TCPSchedulerFailed TCPRcvCollapsed TCPDSACKOldSent TCPDSACKOfoSent TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed TCPMemoryPressures TCPSACKDiscard TCPDSACKIgnoredOld TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback TCPBacklogDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow TCPFastOpenCookieReqd TCPSpuriousRtxHostQueues BusyPollRxPackets TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess")))
+		d.AddChild(ctx, "packet", p.newStubProcFSFile(ctx, msrc, []byte("sk       RefCnt Type Proto  Iface R Rmem   User   Inode")))
+		d.AddChild(ctx, "protocols", p.newStubProcFSFile(ctx, msrc, []byte("protocol  size sockets  memory press maxhdr  slab module     cl co di ac io in de sh ss gs se re sp bi br ha uh gp em")))
+		d.AddChild(ctx, "psched", p.newStubProcFSFile(ctx, msrc, []byte("")))
+		d.AddChild(ctx, "ptype", p.newStubProcFSFile(ctx, msrc, []byte("Type Device      Function")))
+		d.AddChild(ctx, "route", p.newStubProcFSFile(ctx, msrc, []byte("Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT")))
+		d.AddChild(ctx, "tcp", p.newStubProcFSFile(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")))
+		d.AddChild(ctx, "tcp6", p.newStubProcFSFile(ctx, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")))
+		d.AddChild(ctx, "udp", p.newStubProcFSFile(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops")))
+		d.AddChild(ctx, "udp6", p.newStubProcFSFile(ctx, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")))
 	}
 	return newFile(d, msrc, fs.SpecialDirectory, nil)
 }

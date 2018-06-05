@@ -23,6 +23,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -112,6 +113,13 @@ func (p *proc) newSysDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	d.InitDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0555))
 	d.AddChild(ctx, "kernel", p.newKernelDir(ctx, msrc))
 	d.AddChild(ctx, "vm", p.newVMDir(ctx, msrc))
-	d.AddChild(ctx, "net", p.newSysNetDir(ctx, msrc))
+
+	// If we're using rpcinet we will let it manage /proc/sys/net.
+	if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
+		d.AddChild(ctx, "net", newRPCInetProcSysNet(ctx, msrc))
+	} else {
+		d.AddChild(ctx, "net", p.newSysNetDir(ctx, msrc))
+	}
+
 	return newFile(d, msrc, fs.SpecialDirectory, nil)
 }

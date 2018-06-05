@@ -147,6 +147,26 @@ func (c *RPCConnection) RPCReadFile(path string) ([]byte, *syserr.Error) {
 	return res.(*pb.ReadFileResponse_Data).Data, nil
 }
 
+// RPCWriteFile will execute the WriteFile helper RPC method which avoids the
+// common pattern of open(2), write(2), write(2), close(2) by doing all
+// operations as a single RPC.
+func (c *RPCConnection) RPCWriteFile(path string, data []byte) (int64, *syserr.Error) {
+	req := &pb.SyscallRequest_WriteFile{&pb.WriteFileRequest{
+		Path:    path,
+		Content: data,
+	}}
+
+	id, ch := c.NewRequest(pb.SyscallRequest{Args: req}, false /* ignoreResult */)
+	<-ch
+
+	res := c.Request(id).Result.(*pb.SyscallResponse_WriteFile).WriteFile
+	if e := res.ErrorNumber; e != 0 {
+		return int64(res.Written), syserr.FromHost(syscall.Errno(e))
+	}
+
+	return int64(res.Written), nil
+}
+
 // Request retrieves the request corresponding to the given request ID.
 //
 // The channel returned by NewRequest must have been closed before Request can
