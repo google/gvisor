@@ -26,7 +26,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -83,6 +82,9 @@ type Config struct {
 type attachPoint struct {
 	prefix string
 	conf   Config
+
+	mu       sync.Mutex
+	attached bool
 }
 
 // NewAttachPoint creates a new attacher that gives local file
@@ -93,19 +95,22 @@ func NewAttachPoint(prefix string, c Config) p9.Attacher {
 
 // Attach implements p9.Attacher.
 func (a *attachPoint) Attach(appPath string) (p9.File, error) {
+	// Only proceed if 'appPath' is valid.
 	if !path.IsAbs(appPath) {
 		return nil, fmt.Errorf("invalid path %q", appPath)
 	}
+	if path.Clean(appPath) != appPath {
+		return nil, fmt.Errorf("invalid path %q", appPath)
+	}
 
-	root := filepath.Join(a.prefix, appPath)
+	root := path.Join(a.prefix, appPath)
 	fi, err := os.Stat(root)
 	if err != nil {
 		return nil, err
 	}
-
-	mode := syscall.O_RDWR
+	mode := os.O_RDWR
 	if a.conf.ROMount || fi.IsDir() {
-		mode = syscall.O_RDONLY
+		mode = os.O_RDONLY
 	}
 
 	f, err := os.OpenFile(root, mode|openFlags, 0)
@@ -114,8 +119,18 @@ func (a *attachPoint) Attach(appPath string) (p9.File, error) {
 	}
 	stat, err := stat(int(f.Fd()))
 	if err != nil {
+		f.Close()
 		return nil, fmt.Errorf("failed to stat file %q, err: %v", root, err)
 	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.attached {
+		f.Close()
+		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
+	}
+	a.attached = true
+
 	return newLocalFile(a.conf, f, root, stat)
 }
 
