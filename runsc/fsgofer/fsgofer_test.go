@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -620,5 +621,47 @@ func TestAttachFile(t *testing.T) {
 	}
 	if string(rBuf) != "foobar" {
 		t.Fatalf("ReadAt() wrong data, got: %s, expected: %s", string(rBuf), "foobar")
+	}
+}
+
+func TestAttachError(t *testing.T) {
+	conf := Config{ROMount: false}
+	root, err := ioutil.TempDir("", "root-")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
+	}
+	defer os.RemoveAll(root)
+	a := NewAttachPoint(root, conf)
+
+	c := path.Join(root, "test")
+	if err := os.Mkdir(c, 0700); err != nil {
+		t.Fatalf("os.Create(%q) failed, err: %v", c, err)
+	}
+
+	for _, p := range []string{"test", "/test/../", "/test/./", "/test//"} {
+		_, err := a.Attach(p)
+		if err == nil {
+			t.Fatalf("Attach(%q) should have failed", p)
+		}
+		if want := "invalid path"; !strings.Contains(err.Error(), want) {
+			t.Fatalf("Attach(%q) wrong error, got: %v, wanted: %v", p, err, want)
+		}
+	}
+}
+
+func TestDoubleAttachError(t *testing.T) {
+	conf := Config{ROMount: false}
+	root, err := ioutil.TempDir("", "root-")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
+	}
+	defer os.RemoveAll(root)
+	a := NewAttachPoint(root, conf)
+
+	if _, err := a.Attach("/"); err != nil {
+		t.Fatalf("Attach(%q) failed: %v", "/", err)
+	}
+	if _, err := a.Attach("/"); err == nil {
+		t.Fatalf("Attach(%q) should have failed", "test")
 	}
 }
