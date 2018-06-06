@@ -186,6 +186,9 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		atomic.StoreUint32(&sniffer.LogPackets, 0)
 	}
 
+	// Create a watchdog.
+	watchdog := watchdog.New(k, watchdog.DefaultTimeout, watchdog.LogWarning)
+
 	// Create the control server using the provided FD.
 	//
 	// This must be done *after* we have initialized the kernel since the
@@ -195,7 +198,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// misconfigured process will cause an error, and we want the control
 	// server up before that so that we don't time out trying to connect to
 	// it.
-	ctrl, err := newController(controllerFD, k)
+	ctrl, err := newController(controllerFD, k, watchdog)
 	if err != nil {
 		return nil, fmt.Errorf("error creating control server: %v", err)
 	}
@@ -254,7 +257,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// the emulated kernel.
 	stopSignalForwarding := sighandling.StartForwarding(k)
 
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, watchdog.LogWarning)
 	return &Loader{
 		k:                    k,
 		ctrl:                 ctrl,

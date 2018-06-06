@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "control.go",
         "proc.go",
+        "state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/control",
     visibility = [
@@ -14,6 +15,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/log",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/host",
         "//pkg/sentry/kernel",
@@ -21,7 +23,9 @@ go_library(
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
+        "//pkg/sentry/state",
         "//pkg/sentry/usage",
+        "//pkg/sentry/watchdog",
         "//pkg/urpc",
     ],
 )
