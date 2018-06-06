@@ -440,6 +440,21 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 	return nil
 }
 
+// Checkpoint sends the checkpoint call for a container in the sandbox.
+func (s *Sandbox) Checkpoint(cid string) error {
+	log.Debugf("Checkpoint sandbox %q", s.ID)
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContainerCheckpoint, nil, nil); err != nil {
+		return fmt.Errorf("err checkpointing container %q: %v", cid, err)
+	}
+	return nil
+}
+
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {

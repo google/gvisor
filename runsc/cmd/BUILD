@@ -6,6 +6,7 @@ go_library(
     name = "cmd",
     srcs = [
         "boot.go",
+        "checkpoint.go",
         "cmd.go",
         "create.go",
         "delete.go",
@@ -16,6 +17,7 @@ go_library(
         "list.go",
         "path.go",
         "ps.go",
+        "restore.go",
         "run.go",
         "start.go",
         "state.go",
