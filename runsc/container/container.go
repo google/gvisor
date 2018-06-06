@@ -299,6 +299,16 @@ func (c *Container) Signal(sig syscall.Signal) error {
 	return c.Sandbox.Signal(c.ID, sig)
 }
 
+// Checkpoint sends the checkpoint call to the container.
+func (c *Container) Checkpoint() error {
+	log.Debugf("Checkpoint container %q", c.ID)
+	if c.Status == Stopped {
+		log.Warningf("container %q not running, not checkpointing", c.ID)
+		return nil
+	}
+	return c.Sandbox.Checkpoint(c.ID)
+}
+
 // State returns the metadata of the container.
 func (c *Container) State() specs.State {
 	return specs.State{
