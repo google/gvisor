@@ -84,21 +84,36 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 	return spec
 }
 
+// SetupRootDir creates a root directory for containers.
+func SetupRootDir() (string, error) {
+	rootDir, err := ioutil.TempDir("", "containers")
+	if err != nil {
+		return "", fmt.Errorf("error creating root dir: %v", err)
+	}
+	return rootDir, nil
+}
+
 // SetupContainer creates a bundle and root dir for the container, generates a
 // test config, and writes the spec to config.json in the bundle dir.
 func SetupContainer(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Config, err error) {
-	rootDir, err = ioutil.TempDir("", "containers")
+	rootDir, err = SetupRootDir()
 	if err != nil {
-		return "", "", nil, fmt.Errorf("error creating root dir: %v", err)
+		return "", "", nil, err
 	}
+	bundleDir, conf, err = SetupContainerInRoot(rootDir, spec)
+	return rootDir, bundleDir, conf, err
+}
 
+// SetupContainerInRoot creates a bundle for the container, generates a test
+// config, and writes the spec to config.json in the bundle dir.
+func SetupContainerInRoot(rootDir string, spec *specs.Spec) (bundleDir string, conf *boot.Config, err error) {
 	bundleDir, err = ioutil.TempDir("", "bundle")
 	if err != nil {
-		return "", "", nil, fmt.Errorf("error creating bundle dir: %v", err)
+		return "", nil, fmt.Errorf("error creating bundle dir: %v", err)
 	}
 
 	if err = writeSpec(bundleDir, spec); err != nil {
-		return "", "", nil, fmt.Errorf("error writing spec: %v", err)
+		return "", nil, fmt.Errorf("error writing spec: %v", err)
 	}
 
 	conf = &boot.Config{
@@ -110,7 +125,7 @@ func SetupContainer(spec *specs.Spec) (rootDir, bundleDir string, conf *boot.Con
 		TestModeNoFlags: true,
 	}
 
-	return rootDir, bundleDir, conf, nil
+	return bundleDir, conf, nil
 }
 
 // writeSpec writes the spec to disk in the given directory.

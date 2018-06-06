@@ -634,7 +634,7 @@ func TestRunNonRoot(t *testing.T) {
 	}
 }
 
-// TestMountNewDir check that runsc will create destination directory if it
+// TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
 	srcDir := path.Join(os.TempDir(), "src", "newdir", "anotherdir")
@@ -658,5 +658,62 @@ func TestMountNewDir(t *testing.T) {
 
 	if err := run(spec); err != nil {
 		t.Fatalf("error running sadbox: %v", err)
+	}
+}
+
+// TestAbbreviatedIDs checks that runsc supports using abbreviated container
+// IDs in place of full IDs.
+func TestAbbreviatedIDs(t *testing.T) {
+	cids := []string{
+		"foo-" + testutil.UniqueContainerID(),
+		"bar-" + testutil.UniqueContainerID(),
+		"baz-" + testutil.UniqueContainerID(),
+	}
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	for _, cid := range cids {
+		spec := testutil.NewSpecWithArgs("sleep", "100")
+		bundleDir, conf, err := testutil.SetupContainerInRoot(rootDir, spec)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create and start the container.
+		cont, err := container.Create(cid, spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+	}
+
+	// These should all be unambigious.
+	unambiguous := map[string]string{
+		"f":     cids[0],
+		cids[0]: cids[0],
+		"bar":   cids[1],
+		cids[1]: cids[1],
+		"baz":   cids[2],
+		cids[2]: cids[2],
+	}
+	for shortid, longid := range unambiguous {
+		if _, err := container.Load(rootDir, shortid); err != nil {
+			t.Errorf("%q should resolve to %q: %v", shortid, longid, err)
+		}
+	}
+
+	// These should be ambiguous.
+	ambiguous := []string{
+		"b",
+		"ba",
+	}
+	for _, shortid := range ambiguous {
+		if s, err := container.Load(rootDir, shortid); err == nil {
+			t.Errorf("%q should be ambiguous, but resolved to %q", shortid, s.ID)
+		}
 	}
 }

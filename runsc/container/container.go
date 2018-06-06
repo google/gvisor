@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -92,14 +93,22 @@ type Container struct {
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
 }
 
-// Load loads a container with the given id from a metadata file.
+// Load loads a container with the given id from a metadata file. id may be an
+// abbreviation of the full container id, in which case Load loads the
+// container to which id unambiguously refers to.
 // Returns ErrNotExist if container doesn't exits.
 func Load(rootDir, id string) (*Container, error) {
 	log.Debugf("Load container %q %q", rootDir, id)
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
-	metaFile := filepath.Join(rootDir, id, metadataFilename)
+
+	cRoot, err := findContainerRoot(rootDir, id)
+	if err != nil {
+		return nil, err
+	}
+
+	metaFile := filepath.Join(cRoot, metadataFilename)
 	metaBytes, err := ioutil.ReadFile(metaFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -131,6 +140,36 @@ func Load(rootDir, id string) (*Container, error) {
 	}
 
 	return &c, nil
+}
+
+func findContainerRoot(rootDir, partialID string) (string, error) {
+	// Check whether the id fully specifies an existing container.
+	cRoot := filepath.Join(rootDir, partialID)
+	if _, err := os.Stat(cRoot); err == nil {
+		return cRoot, nil
+	}
+
+	// Now see whether id could be an abbreviation of exactly 1 of the
+	// container ids. If id is ambigious (it could match more than 1
+	// container), it is an error.
+	cRoot = ""
+	ids, err := List(rootDir)
+	if err != nil {
+		return "", err
+	}
+	for _, id := range ids {
+		if strings.HasPrefix(id, partialID) {
+			if cRoot != "" {
+				return "", fmt.Errorf("id %q is ambiguous and could refer to multiple containers: %q, %q", partialID, cRoot, id)
+			}
+			cRoot = id
+		}
+	}
+	if cRoot == "" {
+		return "", os.ErrNotExist
+	}
+	log.Debugf("abbreviated id %q resolves to full id %q", partialID, cRoot)
+	return filepath.Join(rootDir, cRoot), nil
 }
 
 // List returns all container ids in the given root directory.
