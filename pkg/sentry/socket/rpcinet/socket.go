@@ -56,6 +56,10 @@ type socketOperations struct {
 // Verify that we actually implement socket.Socket.
 var _ = socket.Socket(&socketOperations{})
 
+const (
+	sizeOfIfReq = 40
+)
+
 // New creates a new RPC socket.
 func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, protocol int) (*fs.File, *syserr.Error) {
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Socket{&pb.SocketRequest{Family: int64(family), Type: int64(skType | syscall.SOCK_NONBLOCK), Protocol: int64(protocol)}}}, false /* ignoreResult */)
@@ -290,7 +294,11 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		return 0, nil, 0, syserr.FromError(err)
 	}
 
-	return fd, payload.Address.Address, payload.Address.Length, nil
+	if peerRequested {
+		return fd, payload.Address.Address, payload.Address.Length, nil
+	}
+
+	return fd, nil, 0, nil
 }
 
 // Bind implements socket.Socket.Bind.
@@ -385,9 +393,60 @@ func (s *socketOperations) GetSockName(t *kernel.Task) (interface{}, uint32, *sy
 	return addr.Address, addr.Length, nil
 }
 
+func rpcIoctl(t *kernel.Task, fd, cmd uint32, arg []byte) ([]byte, error) {
+	stack := t.NetworkContext().(*Stack)
+
+	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Ioctl{&pb.IOCtlRequest{Fd: fd, Cmd: cmd, Arg: arg}}}, false /* ignoreResult */)
+	<-c
+
+	res := stack.rpcConn.Request(id).Result.(*pb.SyscallResponse_Ioctl).Ioctl.Result
+	if e, ok := res.(*pb.IOCtlResponse_ErrorNumber); ok {
+		return nil, syscall.Errno(e.ErrorNumber)
+	}
+
+	return res.(*pb.IOCtlResponse_Value).Value, nil
+}
+
 // Ioctl implements fs.FileOperations.Ioctl.
 func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.ENOTTY
+	t := ctx.(*kernel.Task)
+
+	cmd := uint32(args[1].Int())
+	arg := args[2].Pointer()
+
+	var buf []byte
+	switch cmd {
+	// The following ioctls take 4 byte argument parameters.
+	case syscall.TIOCINQ, syscall.TIOCOUTQ:
+		buf = make([]byte, 4)
+	// The following ioctls have args which are sizeof(struct ifreq).
+	case syscall.SIOCGIFINDEX, syscall.SIOCGIFNETMASK, syscall.SIOCGIFHWADDR, syscall.SIOCGIFNAME, syscall.SIOCGIFFLAGS:
+		buf = make([]byte, sizeOfIfReq)
+	default:
+		return 0, syserror.ENOTTY
+	}
+
+	_, err := io.CopyIn(ctx, arg, buf, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	v, err := rpcIoctl(t, s.fd, cmd, buf)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(v) != len(buf) {
+		return 0, syserror.EINVAL
+	}
+
+	_, err = io.CopyOut(ctx, arg, v, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	return 0, err
 }
 
 func rpcRecvMsg(t *kernel.Task, req *pb.SyscallRequest_Recvmsg) (*pb.RecvmsgResponse_ResultPayload, *syserr.Error) {

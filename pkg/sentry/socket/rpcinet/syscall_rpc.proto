@@ -8,7 +8,7 @@ package syscall_rpc;
 
 message SendmsgRequest {
   uint32 fd = 1;
-  bytes data = 2;
+  bytes data = 2 [ctype = CORD];
   bytes address = 3;
   bool more = 4;
   bool end_of_record = 5;
@@ -24,13 +24,13 @@ message SendmsgResponse {
 message IOCtlRequest {
   uint32 fd = 1;
   uint32 cmd = 2;
-  uint64 arg = 3;
+  bytes arg = 3;
 }
 
 message IOCtlResponse {
   oneof result {
     uint32 error_number = 1;
-    uint64 value = 2;
+    bytes value = 2;
   }
 }
 
@@ -63,7 +63,7 @@ message ReadRequest {
 message ReadResponse {
   oneof result {
     uint32 error_number = 1;
-    bytes data = 2;
+    bytes data = 2 [ctype = CORD];
   }
 }
 
@@ -74,13 +74,13 @@ message ReadFileRequest {
 message ReadFileResponse {
   oneof result {
     uint32 error_number = 1;
-    bytes data = 2;
+    bytes data = 2 [ctype = CORD];
   }
 }
 
 message WriteRequest {
   uint32 fd = 1;
-  bytes data = 2;
+  bytes data = 2 [ctype = CORD];
 }
 
 message WriteResponse {
@@ -107,7 +107,7 @@ message AddressResponse {
 
 message RecvmsgResponse {
   message ResultPayload {
-    bytes data = 1;
+    bytes data = 1 [ctype = CORD];
     AddressResponse address = 2;
     uint32 length = 3;
   }
