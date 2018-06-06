@@ -22,9 +22,13 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
 )
 
 const (
+	// ContainerCheckpoint checkpoints a container.
+	ContainerCheckpoint = "containerManager.Checkpoint"
+
 	// ContainerEvent is the URPC endpoint for getting stats about the
 	// container used by "runsc events".
 	ContainerEvent = "containerManager.Event"
@@ -69,7 +73,7 @@ type controller struct {
 }
 
 // newController creates a new controller and starts it listening.
-func newController(fd int, k *kernel.Kernel) (*controller, error) {
+func newController(fd int, k *kernel.Kernel, w *watchdog.Watchdog) (*controller, error) {
 	srv, err := server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
@@ -79,6 +83,7 @@ func newController(fd int, k *kernel.Kernel) (*controller, error) {
 		startChan:       make(chan struct{}),
 		startResultChan: make(chan error),
 		k:               k,
+		watchdog:        w,
 	}
 	srv.Register(manager)
 
@@ -113,6 +118,9 @@ type containerManager struct {
 	// k is the emulated linux kernel on which the sandboxed
 	// containers run.
 	k *kernel.Kernel
+
+	// watchdog is the kernel watchdog.
+	watchdog *watchdog.Watchdog
 }
 
 // StartRoot will start the root container process.
@@ -134,6 +142,15 @@ func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) err
 		return fmt.Errorf("error executing: %+v: %v", e, err)
 	}
 	return nil
+}
+
+// Checkpoint pauses a sandbox and saves its state.
+func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
+	state := control.State{
+		Kernel:   cm.k,
+		Watchdog: cm.watchdog,
+	}
+	return state.Save(o, nil)
 }
 
 // Wait waits for the init process in the given container.
