@@ -72,24 +72,18 @@ func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
 	}
 }
 
-func TestAllocFree(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
-	pt.Release()
-}
-
 func TestUnmap(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map and unmap one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
 	pt.Unmap(0x400000, pteSize)
 
 	checkMappings(t, pt, nil)
-	pt.Release()
 }
 
 func TestReadOnly(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
@@ -97,11 +91,10 @@ func TestReadOnly(t *testing.T) {
 	checkMappings(t, pt, []mapping{
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }
 
 func TestReadWrite(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -109,11 +102,10 @@ func TestReadWrite(t *testing.T) {
 	checkMappings(t, pt, []mapping{
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 	})
-	pt.Release()
 }
 
 func TestSerialEntries(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map two sequential entries.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -123,11 +115,10 @@ func TestSerialEntries(t *testing.T) {
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 		{0x401000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.ReadWrite}},
 	})
-	pt.Release()
 }
 
 func TestSpanningEntries(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Span a pgd with two pages.
 	pt.Map(0x00007efffffff000, 2*pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
@@ -136,11 +127,10 @@ func TestSpanningEntries(t *testing.T) {
 		{0x00007efffffff000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.Read}},
 		{0x00007f0000000000, pteSize, pteSize * 43, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }
 
 func TestSparseEntries(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map two entries in different pgds.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -150,5 +140,4 @@ func TestSparseEntries(t *testing.T) {
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 		{0x00007f0000000000, pteSize, pteSize * 47, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }

@@ -112,6 +112,9 @@ type vCPU struct {
 	// active is the current addressSpace: this is set and read atomically,
 	// it is used to elide unnecessary interrupts due to invalidations.
 	active atomicAddressSpace
+
+	// vCPUArchState is the architecture-specific state.
+	vCPUArchState
 }
 
 // newMachine returns a new VM context.
@@ -133,7 +136,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 		vCPUs = n
 	}
 	m.kernel = ring0.New(ring0.KernelOpts{
-		PageTables: pagetables.New(newAllocator(), pagetablesOpts),
+		PageTables: pagetables.New(newAllocator()),
 	})
 
 	// Initialize architecture state.
@@ -283,11 +286,6 @@ func (m *machine) Destroy() {
 		if err := syscall.Close(int(c.fd)); err != nil {
 			panic(fmt.Sprintf("error closing vCPU fd: %v", err))
 		}
-	}
-
-	// Release host mappings.
-	if m.kernel.PageTables != nil {
-		m.kernel.PageTables.Release()
 	}
 
 	// vCPUs are gone: teardown machine state.

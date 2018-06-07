@@ -20,14 +20,11 @@ import (
 	"fmt"
 	"syscall"
 	"unsafe"
-
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 var (
 	runDataSize    int
 	hasGuestPCID   bool
-	pagetablesOpts pagetables.Opts
 	cpuidSupported = cpuidEntries{nr: _KVM_NR_CPUID_ENTRIES}
 )
 
@@ -74,9 +71,6 @@ func updateSystemValues(fd int) error {
 			hasGuestPCID = true // Found matching PCID in guest feature set.
 		}
 	}
-
-	// Set the pagetables to use PCID if it's available.
-	pagetablesOpts.EnablePCID = hasGuestPCID
 
 	// Success.
 	return nil

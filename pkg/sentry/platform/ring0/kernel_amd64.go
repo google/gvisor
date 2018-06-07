@@ -180,23 +180,14 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	if !IsCanonical(regs.Rip) || !IsCanonical(regs.Rsp) || !IsCanonical(regs.Fs_base) || !IsCanonical(regs.Gs_base) {
 		return GeneralProtectionFault
 	}
-
-	var (
-		userCR3   uint64
-		kernelCR3 uint64
-	)
+	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
+	kernelCR3 := c.kernel.PageTables.CR3(true, switchOpts.KernelPCID)
 
 	// Sanitize registers.
-	if switchOpts.Flush {
-		userCR3 = switchOpts.PageTables.FlushCR3()
-	} else {
-		userCR3 = switchOpts.PageTables.CR3()
-	}
 	regs.Eflags &= ^uint64(UserFlagsClear)
 	regs.Eflags |= UserFlagsSet
 	regs.Cs = uint64(Ucode64) // Required for iret.
 	regs.Ss = uint64(Udata)   // Ditto.
-	kernelCR3 = c.kernel.PageTables.CR3()
 
 	// Perform the switch.
 	swapgs()                                         // GS will be swapped on return.

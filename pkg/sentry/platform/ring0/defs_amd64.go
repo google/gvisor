@@ -104,6 +104,21 @@ func (c *CPU) ErrorCode() (value uintptr, user bool) {
 	return c.errorCode, c.errorType != 0
 }
 
+// SwitchArchOpts are embedded in SwitchOpts.
+type SwitchArchOpts struct {
+	// UserPCID indicates that the application PCID to be used on switch,
+	// assuming that PCIDs are supported.
+	//
+	// Per pagetables_x86.go, a zero PCID implies a flush.
+	UserPCID uint16
+
+	// KernelPCID indicates that the kernel PCID to be used on return,
+	// assuming that PCIDs are supported.
+	//
+	// Per pagetables_x86.go, a zero PCID implies a flush.
+	KernelPCID uint16
+}
+
 func init() {
 	KernelCodeSegment.setCode64(0, 0, 0)
 	KernelDataSegment.setData(0, 0xffffffff, 0)

@@ -37,25 +37,11 @@ type PageTables struct {
 }
 
 // New returns new PageTables.
-func New(a Allocator, opts Opts) *PageTables {
+func New(a Allocator) *PageTables {
 	p := &PageTables{Allocator: a}
 	p.root = p.Allocator.NewPTEs()
 	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
-	p.init(opts)
 	return p
-}
-
-// New returns a new set of PageTables derived from the given one.
-//
-// This function should always be preferred to New if there are existing
-// pagetables, as this function preserves architectural constraints relevant to
-// managing multiple sets of pagetables.
-func (p *PageTables) New(a Allocator) *PageTables {
-	np := &PageTables{Allocator: a}
-	np.root = np.Allocator.NewPTEs()
-	np.rootPhysical = p.Allocator.PhysicalFor(np.root)
-	np.initFrom(&p.archPageTables)
-	return np
 }
 
 // Map installs a mapping with the given physical address.
@@ -97,15 +83,6 @@ func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 		count++
 	})
 	return count > 0
-}
-
-// Release releases this address space.
-//
-// This must be called to release the PCID.
-func (p *PageTables) Release() {
-	// Clear all pages.
-	p.Unmap(0, ^uintptr(0))
-	p.release()
 }
 
 // Lookup returns the physical address for the given virtual address.

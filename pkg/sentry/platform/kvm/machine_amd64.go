@@ -24,6 +24,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -39,6 +40,38 @@ func (m *machine) initArchState(vCPUs int) error {
 		return errno
 	}
 	return nil
+}
+
+type vCPUArchState struct {
+	// PCIDs is the set of PCIDs for this vCPU.
+	//
+	// This starts above fixedKernelPCID.
+	PCIDs *pagetables.PCIDs
+}
+
+const (
+	// fixedKernelPCID is a fixed kernel PCID used for the kernel page
+	// tables. We must start allocating user PCIDs above this in order to
+	// avoid any conflict (see below).
+	fixedKernelPCID = 1
+
+	// poolPCIDs is the number of PCIDs to record in the database. As this
+	// grows, assignment can take longer, since it is a simple linear scan.
+	// Beyond a relatively small number, there are likely few perform
+	// benefits, since the TLB has likely long since lost any translations
+	// from more than a few PCIDs past.
+	poolPCIDs = 8
+)
+
+// dropPageTables drops cached page table entries.
+func (m *machine) dropPageTables(pt *pagetables.PageTables) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Clear from all PCIDs.
+	for _, c := range m.vCPUs {
+		c.PCIDs.Drop(pt)
+	}
 }
 
 // initArchState initializes architecture-specific state.
@@ -67,8 +100,16 @@ func (c *vCPU) initArchState() error {
 	kernelSystemRegs.TR.base = tssBase
 	kernelSystemRegs.TR.limit = uint32(tssLimit)
 
-	// Point to kernel page tables.
-	kernelSystemRegs.CR3 = c.machine.kernel.PageTables.FlushCR3()
+	// Point to kernel page tables, with no initial PCID.
+	kernelSystemRegs.CR3 = c.machine.kernel.PageTables.CR3(false, 0)
+
+	// Initialize the PCID database.
+	if hasGuestPCID {
+		// Note that NewPCIDs may return a nil table here, in which
+		// case we simply don't use PCID support (see below). In
+		// practice, this should not happen, however.
+		c.PCIDs = pagetables.NewPCIDs(fixedKernelPCID+1, poolPCIDs)
+	}
 
 	// Set the CPUID; this is required before setting system registers,
 	// since KVM will reject several CR4 bits if the CPUID does not
@@ -121,6 +162,14 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, usermem.AccessType, error) {
+	// Assign PCIDs.
+	if c.PCIDs != nil {
+		var requireFlushPCID bool // Force a flush?
+		switchOpts.UserPCID, requireFlushPCID = c.PCIDs.Assign(switchOpts.PageTables)
+		switchOpts.KernelPCID = fixedKernelPCID
+		switchOpts.Flush = switchOpts.Flush || requireFlushPCID
+	}
+
 	// See below.
 	var vector ring0.Vector
 

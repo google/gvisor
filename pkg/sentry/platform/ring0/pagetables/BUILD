@@ -26,7 +26,6 @@ go_test(
     srcs = [
         "pagetables_amd64_test.go",
         "pagetables_test.go",
-        "pcids_x86_test.go",
     ],
     embed = [":pagetables"],
     deps = ["//pkg/sentry/usermem"],
