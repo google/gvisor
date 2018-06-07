@@ -23,7 +23,7 @@ import (
 )
 
 func Test2MAnd4K(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map a small page and a huge page.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -33,11 +33,10 @@ func Test2MAnd4K(t *testing.T) {
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 		{0x00007f0000000000, pmdSize, pmdSize * 47, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }
 
 func Test1GAnd4K(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map a small page and a super page.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -47,11 +46,10 @@ func Test1GAnd4K(t *testing.T) {
 		{0x400000, pteSize, pteSize * 42, MapOpts{AccessType: usermem.ReadWrite}},
 		{0x00007f0000000000, pudSize, pudSize * 47, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }
 
 func TestSplit1GPage(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map a super page and knock out the middle.
 	pt.Map(0x00007f0000000000, pudSize, MapOpts{AccessType: usermem.Read}, pudSize*42)
@@ -61,11 +59,10 @@ func TestSplit1GPage(t *testing.T) {
 		{0x00007f0000000000, pteSize, pudSize * 42, MapOpts{AccessType: usermem.Read}},
 		{0x00007f0000000000 + pudSize - pteSize, pteSize, pudSize*42 + pudSize - pteSize, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }
 
 func TestSplit2MPage(t *testing.T) {
-	pt := New(NewRuntimeAllocator(), Opts{})
+	pt := New(NewRuntimeAllocator())
 
 	// Map a huge page and knock out the middle.
 	pt.Map(0x00007f0000000000, pmdSize, MapOpts{AccessType: usermem.Read}, pmdSize*42)
@@ -75,5 +72,4 @@ func TestSplit2MPage(t *testing.T) {
 		{0x00007f0000000000, pteSize, pmdSize * 42, MapOpts{AccessType: usermem.Read}},
 		{0x00007f0000000000 + pmdSize - pteSize, pteSize, pmdSize*42 + pmdSize - pteSize, MapOpts{AccessType: usermem.Read}},
 	})
-	pt.Release()
 }

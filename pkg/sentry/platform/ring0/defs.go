@@ -109,4 +109,7 @@ type SwitchOpts struct {
 
 	// FullRestore indicates that an iret-based restore should be used.
 	FullRestore bool
+
+	// SwitchArchOpts are architecture-specific options.
+	SwitchArchOpts
 }

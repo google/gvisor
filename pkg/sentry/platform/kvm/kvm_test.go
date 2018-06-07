@@ -121,11 +121,6 @@ func applicationTest(t testHarness, useHostMappings bool, target func(), fn func
 		pt   *pagetables.PageTables
 	)
 	testutil.SetTestTarget(&regs, target)
-	defer func() {
-		if pt != nil {
-			pt.Release()
-		}
-	}()
 
 	kvmTest(t, func(k *KVM) {
 		// Create new page tables.
