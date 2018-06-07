@@ -23,7 +23,7 @@ import (
 )
 
 func TestSimpleMasterToSlave(t *testing.T) {
-	ld := lineDiscipline{termios: linux.DefaultSlaveTermios}
+	ld := newLineDiscipline(linux.DefaultSlaveTermios)
 	ctx := contexttest.Context(t)
 	inBytes := []byte("hello, tty\n")
 	src := usermem.BytesIOSequence(inBytes)
