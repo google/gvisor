@@ -417,10 +417,22 @@ func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.S
 	var buf []byte
 	switch cmd {
 	// The following ioctls take 4 byte argument parameters.
-	case syscall.TIOCINQ, syscall.TIOCOUTQ:
+	case syscall.TIOCINQ,
+		syscall.TIOCOUTQ:
 		buf = make([]byte, 4)
 	// The following ioctls have args which are sizeof(struct ifreq).
-	case syscall.SIOCGIFINDEX, syscall.SIOCGIFNETMASK, syscall.SIOCGIFHWADDR, syscall.SIOCGIFNAME, syscall.SIOCGIFFLAGS:
+	case syscall.SIOCGIFADDR,
+		syscall.SIOCGIFBRDADDR,
+		syscall.SIOCGIFDSTADDR,
+		syscall.SIOCGIFFLAGS,
+		syscall.SIOCGIFHWADDR,
+		syscall.SIOCGIFINDEX,
+		syscall.SIOCGIFMAP,
+		syscall.SIOCGIFMETRIC,
+		syscall.SIOCGIFMTU,
+		syscall.SIOCGIFNAME,
+		syscall.SIOCGIFNETMASK,
+		syscall.SIOCGIFTXQLEN:
 		buf = make([]byte, sizeOfIfReq)
 	default:
 		return 0, syserror.ENOTTY
