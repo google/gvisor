@@ -145,29 +145,8 @@ func (s *socketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		n, e := dst.CopyOut(ctx, res.Data)
 		return int64(n), e
 	}
-	if se != syserr.ErrWouldBlock {
-		return 0, se.ToError()
-	}
 
-	// We'll have to block. Register for notifications and read again when ready.
-	e, ch := waiter.NewChannelEntry(nil)
-	s.EventRegister(&e, waiter.EventIn)
-	defer s.EventUnregister(&e)
-
-	for {
-		res, se := rpcRead(ctx.(*kernel.Task), req)
-		if se == nil {
-			n, e := dst.CopyOut(ctx, res.Data)
-			return int64(n), e
-		}
-		if se != syserr.ErrWouldBlock {
-			return 0, se.ToError()
-		}
-
-		if err := ctx.(*kernel.Task).Block(ch); err != nil {
-			return 0, err
-		}
-	}
+	return 0, se.ToError()
 }
 
 func rpcWrite(t *kernel.Task, req *pb.SyscallRequest_Write) (uint32, *syserr.Error) {
