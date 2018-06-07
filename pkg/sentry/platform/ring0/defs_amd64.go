@@ -104,6 +104,14 @@ func (c *CPU) ErrorCode() (value uintptr, user bool) {
 	return c.errorCode, c.errorType != 0
 }
 
+// ClearErrorCode resets the error code.
+//
+//go:nosplit
+func (c *CPU) ClearErrorCode() {
+	c.errorCode = 0 // No code.
+	c.errorType = 1 // User mode.
+}
+
 // SwitchArchOpts are embedded in SwitchOpts.
 type SwitchArchOpts struct {
 	// UserPCID indicates that the application PCID to be used on switch,

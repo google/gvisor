@@ -227,3 +227,26 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}
 }
+
+// retryInGuest runs the given function in guest mode.
+//
+// If the function does not complete in guest mode (due to execution of a
+// system call due to a GC stall, for example), then it will be retried. The
+// given function must be idempotent as a result of the retry mechanism.
+func (m *machine) retryInGuest(fn func()) {
+	c := m.Get()
+	defer m.Put(c)
+	for {
+		c.ClearErrorCode() // See below.
+		bluepill(c)        // Force guest mode.
+		fn()               // Execute the given function.
+		_, user := c.ErrorCode()
+		if user {
+			// If user is set, then we haven't bailed back to host
+			// mode via a kernel exception or system call. We
+			// consider the full function to have executed in guest
+			// mode and we can return.
+			break
+		}
+	}
+}

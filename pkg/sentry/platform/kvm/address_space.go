@@ -102,11 +102,18 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 		// important; if the pagetable mappings were installed before
 		// ensuring the physical pages were available, then some other
 		// thread could theoretically access them.
-		prev := as.pageTables.Map(addr, length, pagetables.MapOpts{
-			AccessType: at,
-			User:       true,
-		}, physical)
-		inv = inv || prev
+		//
+		// Due to the way KVM's shadow paging implementation works,
+		// modifications to the page tables while in host mode may not
+		// be trapped, leading to the shadow pages being out of sync.
+		// Therefore, we need to ensure that we are in guest mode for
+		// page table modifications. See the call to bluepill, below.
+		as.machine.retryInGuest(func() {
+			inv = as.pageTables.Map(addr, length, pagetables.MapOpts{
+				AccessType: at,
+				User:       true,
+			}, physical) || inv
+		})
 		m.addr += length
 		m.length -= length
 		addr += usermem.Addr(length)
@@ -214,7 +221,12 @@ func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 	as.mu.Lock()
 	defer as.mu.Unlock()
 
-	if prev := as.pageTables.Unmap(addr, uintptr(length)); prev {
+	// See above re: retryInGuest.
+	var prev bool
+	as.machine.retryInGuest(func() {
+		prev = as.pageTables.Unmap(addr, uintptr(length)) || prev
+	})
+	if prev {
 		as.invalidate()
 		as.files.DeleteMapping(usermem.AddrRange{
 			Start: addr,
