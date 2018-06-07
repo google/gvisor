@@ -31,7 +31,7 @@ type Terminal struct {
 	d *dirInodeOperations
 
 	// ld is the line discipline of the terminal.
-	ld lineDiscipline
+	ld *lineDiscipline
 }
 
 func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal {
@@ -39,6 +39,6 @@ func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal
 	return &Terminal{
 		d:  d,
 		n:  n,
-		ld: lineDiscipline{termios: termios},
+		ld: newLineDiscipline(termios),
 	}
 }
