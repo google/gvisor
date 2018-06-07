@@ -84,7 +84,7 @@ func (as *addressSpace) Touch(c *vCPU) bool {
 
 func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
 	for m.length > 0 {
-		physical, length, ok := TranslateToPhysical(m.addr)
+		physical, length, ok := translateToPhysical(m.addr)
 		if !ok {
 			panic("unable to translate segment")
 		}
@@ -227,4 +227,7 @@ func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 func (as *addressSpace) Release() {
 	as.Unmap(0, ^uint64(0))
 	as.pageTables.Release()
+
+	// Free all pages from the allocator.
+	as.pageTables.Allocator.(allocator).base.Drain()
 }

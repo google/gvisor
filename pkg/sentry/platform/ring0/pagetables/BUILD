@@ -5,9 +5,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "pagetables",
     srcs = [
+        "allocator.go",
+        "allocator_unsafe.go",
         "pagetables.go",
         "pagetables_amd64.go",
-        "pagetables_unsafe.go",
         "pagetables_x86.go",
         "pcids_x86.go",
     ],

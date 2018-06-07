@@ -46,7 +46,7 @@ func yield() {
 // calculateBluepillFault calculates the fault address range.
 //
 //go:nosplit
-func calculateBluepillFault(m *machine, physical uintptr) (virtualStart, physicalStart, length uintptr, ok bool) {
+func calculateBluepillFault(physical uintptr) (virtualStart, physicalStart, length uintptr, ok bool) {
 	alignedPhysical := physical &^ uintptr(usermem.PageSize-1)
 	for _, pr := range physicalRegions {
 		end := pr.physical + pr.length
@@ -82,7 +82,7 @@ func handleBluepillFault(m *machine, physical uintptr) (uintptr, bool) {
 	// fault. This all has to be done in this function because we're in a
 	// signal handler context. (We can't call any functions that might
 	// split the stack.)
-	virtualStart, physicalStart, length, ok := calculateBluepillFault(m, physical)
+	virtualStart, physicalStart, length, ok := calculateBluepillFault(physical)
 	if !ok {
 		return 0, false
 	}

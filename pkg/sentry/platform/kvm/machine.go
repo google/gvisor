@@ -133,7 +133,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 		vCPUs = n
 	}
 	m.kernel = ring0.New(ring0.KernelOpts{
-		PageTables: pagetables.New(m, pagetablesOpts),
+		PageTables: pagetables.New(newAllocator(), pagetablesOpts),
 	})
 
 	// Initialize architecture state.
@@ -211,7 +211,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 			return // skip region.
 		}
 		for virtual := vr.virtual; virtual < vr.virtual+vr.length; {
-			physical, length, ok := TranslateToPhysical(virtual)
+			physical, length, ok := translateToPhysical(virtual)
 			if !ok {
 				// This must be an invalid region that was
 				// knocked out by creation of the physical map.
@@ -239,7 +239,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 // This panics on error.
 func (m *machine) mapPhysical(physical, length uintptr) {
 	for end := physical + length; physical < end; {
-		_, physicalStart, length, ok := calculateBluepillFault(m, physical)
+		_, physicalStart, length, ok := calculateBluepillFault(physical)
 		if !ok {
 			// Should never happen.
 			panic("mapPhysical on unknown physical address")

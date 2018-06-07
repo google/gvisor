@@ -15,17 +15,10 @@
 package pagetables
 
 import (
-	"reflect"
 	"testing"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
-
-type reflectTranslater struct{}
-
-func (r reflectTranslater) TranslateToPhysical(ptes *PTEs) uintptr {
-	return reflect.ValueOf(ptes).Pointer()
-}
 
 type mapping struct {
 	start  uintptr
@@ -80,12 +73,12 @@ func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
 }
 
 func TestAllocFree(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 	pt.Release()
 }
 
 func TestUnmap(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Map and unmap one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -96,7 +89,7 @@ func TestUnmap(t *testing.T) {
 }
 
 func TestReadOnly(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Map one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
@@ -108,7 +101,7 @@ func TestReadOnly(t *testing.T) {
 }
 
 func TestReadWrite(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Map one entry.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -120,7 +113,7 @@ func TestReadWrite(t *testing.T) {
 }
 
 func TestSerialEntries(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Map two sequential entries.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
@@ -134,7 +127,7 @@ func TestSerialEntries(t *testing.T) {
 }
 
 func TestSpanningEntries(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Span a pgd with two pages.
 	pt.Map(0x00007efffffff000, 2*pteSize, MapOpts{AccessType: usermem.Read}, pteSize*42)
@@ -147,7 +140,7 @@ func TestSpanningEntries(t *testing.T) {
 }
 
 func TestSparseEntries(t *testing.T) {
-	pt := New(reflectTranslater{}, Opts{})
+	pt := New(NewRuntimeAllocator(), Opts{})
 
 	// Map two entries in different pgds.
 	pt.Map(0x400000, pteSize, MapOpts{AccessType: usermem.ReadWrite}, pteSize*42)
