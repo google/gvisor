@@ -70,9 +70,9 @@ func (p *PageTables) CR3() uint64 {
 	// Bit 63 is set to avoid flushing the PCID (per SDM 4.10.4.1).
 	const noFlushBit uint64 = 0x8000000000000000
 	if p.pcid != 0 {
-		return noFlushBit | uint64(p.root.physical) | uint64(p.pcid)
+		return noFlushBit | uint64(p.rootPhysical) | uint64(p.pcid)
 	}
-	return uint64(p.root.physical)
+	return uint64(p.rootPhysical)
 }
 
 // FlushCR3 returns the CR3 value that flushes the TLB.
@@ -81,7 +81,7 @@ func (p *PageTables) CR3() uint64 {
 //
 //go:nosplit
 func (p *PageTables) FlushCR3() uint64 {
-	return uint64(p.root.physical) | uint64(p.pcid)
+	return uint64(p.rootPhysical) | uint64(p.pcid)
 }
 
 // Bits in page table entries.
@@ -200,8 +200,13 @@ func (p *PTE) Set(addr uintptr, opts MapOpts) {
 // be cleared. This is used explicitly for breaking super pages.
 //
 //go:nosplit
-func (p *PTE) setPageTable(addr uintptr) {
-	v := (addr &^ optionMask) | present | user | writable | accessed | dirty
+func (p *PTE) setPageTable(pt *PageTables, ptes *PTEs) {
+	addr := pt.Allocator.PhysicalFor(ptes)
+	if addr&^optionMask != addr {
+		// This should never happen.
+		panic("unaligned physical address!")
+	}
+	v := addr | present | user | writable | accessed | dirty
 	atomic.StoreUintptr((*uintptr)(p), v)
 }
 

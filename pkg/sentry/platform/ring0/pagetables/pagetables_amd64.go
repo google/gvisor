@@ -121,7 +121,10 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 	}
 
 	for pgdIndex := int((start & pgdMask) >> pgdShift); start < end && pgdIndex < entriesPerPage; pgdIndex++ {
-		pgdEntry := &p.root.PTEs()[pgdIndex]
+		var (
+			pgdEntry   = &p.root[pgdIndex]
+			pudEntries *PTEs
+		)
 		if !pgdEntry.Valid() {
 			if !alloc {
 				// Skip over this entry.
@@ -130,15 +133,20 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 			}
 
 			// Allocate a new pgd.
-			p.setPageTable(p.root, pgdIndex, p.allocNode())
+			pudEntries = p.Allocator.NewPTEs()
+			pgdEntry.setPageTable(p, pudEntries)
+		} else {
+			pudEntries = p.Allocator.LookupPTEs(pgdEntry.Address())
 		}
 
 		// Map the next level.
-		pudNode := p.getPageTable(p.root, pgdIndex)
 		clearPUDEntries := 0
 
 		for pudIndex := int((start & pudMask) >> pudShift); start < end && pudIndex < entriesPerPage; pudIndex++ {
-			pudEntry := &(pudNode.PTEs()[pudIndex])
+			var (
+				pudEntry   = &pudEntries[pudIndex]
+				pmdEntries *PTEs
+			)
 			if !pudEntry.Valid() {
 				if !alloc {
 					// Skip over this entry.
@@ -161,7 +169,8 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 				}
 
 				// Allocate a new pud.
-				p.setPageTable(pudNode, pudIndex, p.allocNode())
+				pmdEntries = p.Allocator.NewPTEs()
+				pudEntry.setPageTable(p, pmdEntries)
 
 			} else if pudEntry.IsSuper() {
 				// Does this page need to be split?
@@ -169,8 +178,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					currentAddr := uint64(pudEntry.Address())
 
 					// Install the relevant entries.
-					pmdNode := p.allocNode()
-					pmdEntries := pmdNode.PTEs()
+					pmdEntries = p.Allocator.NewPTEs()
 					for index := 0; index < entriesPerPage; index++ {
 						pmdEntry := &pmdEntries[index]
 						pmdEntry.SetSuper()
@@ -179,7 +187,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					}
 
 					// Reset to point to the new page.
-					p.setPageTable(pudNode, pudIndex, pmdNode)
+					pudEntry.setPageTable(p, pmdEntries)
 				} else {
 					// A super page to be checked directly.
 					fn(uintptr(start), uintptr(start+pudSize), pudEntry, pudSize-1)
@@ -193,14 +201,18 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					start = next(start, pudSize)
 					continue
 				}
+			} else {
+				pmdEntries = p.Allocator.LookupPTEs(pudEntry.Address())
 			}
 
 			// Map the next level, since this is valid.
-			pmdNode := p.getPageTable(pudNode, pudIndex)
 			clearPMDEntries := 0
 
 			for pmdIndex := int((start & pmdMask) >> pmdShift); start < end && pmdIndex < entriesPerPage; pmdIndex++ {
-				pmdEntry := &pmdNode.PTEs()[pmdIndex]
+				var (
+					pmdEntry   = &pmdEntries[pmdIndex]
+					pteEntries *PTEs
+				)
 				if !pmdEntry.Valid() {
 					if !alloc {
 						// Skip over this entry.
@@ -222,7 +234,8 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 					}
 
 					// Allocate a new pmd.
-					p.setPageTable(pmdNode, pmdIndex, p.allocNode())
+					pteEntries = p.Allocator.NewPTEs()
+					pmdEntry.setPageTable(p, pteEntries)
 
 				} else if pmdEntry.IsSuper() {
 					// Does this page need to be split?
@@ -230,8 +243,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 						currentAddr := uint64(pmdEntry.Address())
 
 						// Install the relevant entries.
-						pteNode := p.allocNode()
-						pteEntries := pteNode.PTEs()
+						pteEntries = p.Allocator.NewPTEs()
 						for index := 0; index < entriesPerPage; index++ {
 							pteEntry := &pteEntries[index]
 							pteEntry.Set(uintptr(currentAddr), pmdEntry.Opts())
@@ -239,7 +251,7 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 						}
 
 						// Reset to point to the new page.
-						p.setPageTable(pmdNode, pmdIndex, pteNode)
+						pmdEntry.setPageTable(p, pteEntries)
 					} else {
 						// A huge page to be checked directly.
 						fn(uintptr(start), uintptr(start+pmdSize), pmdEntry, pmdSize-1)
@@ -253,14 +265,17 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 						start = next(start, pmdSize)
 						continue
 					}
+				} else {
+					pteEntries = p.Allocator.LookupPTEs(pmdEntry.Address())
 				}
 
 				// Map the next level, since this is valid.
-				pteNode := p.getPageTable(pmdNode, pmdIndex)
 				clearPTEEntries := 0
 
 				for pteIndex := int((start & pteMask) >> pteShift); start < end && pteIndex < entriesPerPage; pteIndex++ {
-					pteEntry := &pteNode.PTEs()[pteIndex]
+					var (
+						pteEntry = &pteEntries[pteIndex]
+					)
 					if !pteEntry.Valid() && !alloc {
 						clearPTEEntries++
 						start += pteSize
@@ -283,21 +298,24 @@ func (p *PageTables) iterateRange(startAddr, endAddr uintptr, alloc bool, fn fun
 
 				// Check if we no longer need this page.
 				if clearPTEEntries == entriesPerPage {
-					p.clearPageTable(pmdNode, pmdIndex)
+					pmdEntry.Clear()
+					p.Allocator.FreePTEs(pteEntries)
 					clearPMDEntries++
 				}
 			}
 
 			// Check if we no longer need this page.
 			if clearPMDEntries == entriesPerPage {
-				p.clearPageTable(pudNode, pudIndex)
+				pudEntry.Clear()
+				p.Allocator.FreePTEs(pmdEntries)
 				clearPUDEntries++
 			}
 		}
 
 		// Check if we no longer need this page.
 		if clearPUDEntries == entriesPerPage {
-			p.clearPageTable(p.root, pgdIndex)
+			pgdEntry.Clear()
+			p.Allocator.FreePTEs(pudEntries)
 		}
 	}
 }

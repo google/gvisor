@@ -28,6 +28,7 @@ go_library(
     srcs = [
         "address_space.go",
         "address_space_unsafe.go",
+        "allocator.go",
         "bluepill.go",
         "bluepill_amd64.go",
         "bluepill_amd64.s",

@@ -205,17 +205,19 @@ func applyPhysicalRegions(fn func(pr physicalRegion) bool) bool {
 	return true
 }
 
-// TranslateToPhysical translates the given virtual address.
+// translateToPhysical translates the given virtual address.
 //
 // Precondition: physicalInit must have been called.
-func TranslateToPhysical(virtual uintptr) (physical uintptr, length uintptr, ok bool) {
-	ok = !applyPhysicalRegions(func(pr physicalRegion) bool {
+//
+//go:nosplit
+func translateToPhysical(virtual uintptr) (physical uintptr, length uintptr, ok bool) {
+	for _, pr := range physicalRegions {
 		if pr.virtual <= virtual && virtual < pr.virtual+pr.length {
 			physical = pr.physical + (virtual - pr.virtual)
 			length = pr.length - (virtual - pr.virtual)
-			return false
+			ok = true
+			return
 		}
-		return true
-	})
+	}
 	return
 }

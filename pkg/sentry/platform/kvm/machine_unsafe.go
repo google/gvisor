@@ -21,7 +21,6 @@ import (
 	"unsafe"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 //go:linkname entersyscall runtime.entersyscall
@@ -29,17 +28,6 @@ func entersyscall()
 
 //go:linkname exitsyscall runtime.exitsyscall
 func exitsyscall()
-
-// TranslateToVirtual implements pagetables.Translater.TranslateToPhysical.
-func (m *machine) TranslateToPhysical(ptes *pagetables.PTEs) uintptr {
-	// The length doesn't matter because all these translations require
-	// only a single page, which is guaranteed to be satisfied.
-	physical, _, ok := TranslateToPhysical(uintptr(unsafe.Pointer(ptes)))
-	if !ok {
-		panic("unable to translate pagetables.Node to physical address")
-	}
-	return physical
-}
 
 // mapRunData maps the vCPU run data.
 func mapRunData(fd int) (*runData, error) {

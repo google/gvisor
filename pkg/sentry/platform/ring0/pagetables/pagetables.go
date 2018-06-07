@@ -19,52 +19,28 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// Node is a single node within a set of page tables.
-type Node struct {
-	// unalignedData has unaligned data. Unfortunately, we can't really
-	// rely on the allocator to give us what we want here. So we just throw
-	// it at the wall and use the portion that matches. Gross. This may be
-	// changed in the future to use a different allocation mechanism.
-	//
-	// Access must happen via functions found in pagetables_unsafe.go.
-	unalignedData [(2 * usermem.PageSize) - 1]byte
-
-	// physical is the translated address of these entries.
-	//
-	// This is filled in at creation time.
-	physical uintptr
-}
-
 // PageTables is a set of page tables.
 type PageTables struct {
-	// root is the pagetable root.
-	root *Node
+	// Allocator is used to allocate nodes.
+	Allocator Allocator
 
-	// translator is the translator passed at creation.
-	translator Translator
+	// root is the pagetable root.
+	root *PTEs
+
+	// rootPhysical is the cached physical address of the root.
+	//
+	// This is saved only to prevent constant translation.
+	rootPhysical uintptr
 
 	// archPageTables includes architecture-specific features.
 	archPageTables
-
-	// allNodes is a set of nodes indexed by translator address.
-	allNodes map[uintptr]*Node
-}
-
-// Translator translates to guest physical addresses.
-type Translator interface {
-	// TranslateToPhysical translates the given pointer object into a
-	// "physical" address. We do not require that it translates back, the
-	// reverse mapping is maintained internally.
-	TranslateToPhysical(*PTEs) uintptr
 }
 
 // New returns new PageTables.
-func New(t Translator, opts Opts) *PageTables {
-	p := &PageTables{
-		translator: t,
-		allNodes:   make(map[uintptr]*Node),
-	}
-	p.root = p.allocNode()
+func New(a Allocator, opts Opts) *PageTables {
+	p := &PageTables{Allocator: a}
+	p.root = p.Allocator.NewPTEs()
+	p.rootPhysical = p.Allocator.PhysicalFor(p.root)
 	p.init(opts)
 	return p
 }
@@ -74,38 +50,12 @@ func New(t Translator, opts Opts) *PageTables {
 // This function should always be preferred to New if there are existing
 // pagetables, as this function preserves architectural constraints relevant to
 // managing multiple sets of pagetables.
-func (p *PageTables) New() *PageTables {
-	np := &PageTables{
-		translator: p.translator,
-		allNodes:   make(map[uintptr]*Node),
-	}
-	np.root = np.allocNode()
+func (p *PageTables) New(a Allocator) *PageTables {
+	np := &PageTables{Allocator: a}
+	np.root = np.Allocator.NewPTEs()
+	np.rootPhysical = p.Allocator.PhysicalFor(np.root)
 	np.initFrom(&p.archPageTables)
 	return np
-}
-
-// setPageTable sets the given index as a page table.
-func (p *PageTables) setPageTable(n *Node, index int, child *Node) {
-	phys := p.translator.TranslateToPhysical(child.PTEs())
-	p.allNodes[phys] = child
-	pte := &n.PTEs()[index]
-	pte.setPageTable(phys)
-}
-
-// clearPageTable clears the given entry.
-func (p *PageTables) clearPageTable(n *Node, index int) {
-	pte := &n.PTEs()[index]
-	physical := pte.Address()
-	pte.Clear()
-	delete(p.allNodes, physical)
-}
-
-// getPageTable returns the page table entry.
-func (p *PageTables) getPageTable(n *Node, index int) *Node {
-	pte := &n.PTEs()[index]
-	physical := pte.Address()
-	child := p.allNodes[physical]
-	return child
 }
 
 // Map installs a mapping with the given physical address.
@@ -171,11 +121,4 @@ func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) 
 		opts = pte.Opts()
 	})
 	return
-}
-
-// allocNode allocates a new page.
-func (p *PageTables) allocNode() *Node {
-	n := new(Node)
-	n.physical = p.translator.TranslateToPhysical(n.PTEs())
-	return n
 }
