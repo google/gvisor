@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package boot
+package cmd
 
 import (
 	"fmt"
@@ -20,51 +20,72 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
-// ApplyCaps applies the capabilities in the spec to the current thread.
+// applyCaps applies the capabilities in the spec to the current thread.
 //
 // Note that it must be called with current thread locked.
-func ApplyCaps(conf *Config, caps *specs.LinuxCapabilities) error {
+func applyCaps(caps *specs.LinuxCapabilities) error {
 	setter, err := capability.NewPid2(os.Getpid())
 	if err != nil {
 		return err
 	}
-
-	bounding, err := capsFromNames(caps.Bounding)
-	if err != nil {
-		return err
-	}
-	effective, err := capsFromNames(caps.Effective)
-	if err != nil {
-		return err
-	}
-	permitted, err := capsFromNames(caps.Permitted)
-	if err != nil {
-		return err
-	}
-	inheritable, err := capsFromNames(caps.Inheritable)
-	if err != nil {
-		return err
-	}
-	ambient, err := capsFromNames(caps.Ambient)
-	if err != nil {
+	if err := setter.Load(); err != nil {
 		return err
 	}
 
-	// Ptrace platform requires extra capabilities.
-	if conf.Platform == PlatformPtrace {
-		bounding = append(bounding, capability.CAP_SYS_PTRACE)
-		effective = append(effective, capability.CAP_SYS_PTRACE)
-		permitted = append(permitted, capability.CAP_SYS_PTRACE)
+	bounding, err := trimCaps(caps.Bounding, setter)
+	if err != nil {
+		return err
 	}
-
 	setter.Set(capability.BOUNDS, bounding...)
-	setter.Set(capability.PERMITTED, permitted...)
-	setter.Set(capability.INHERITABLE, inheritable...)
+
+	effective, err := trimCaps(caps.Effective, setter)
+	if err != nil {
+		return err
+	}
 	setter.Set(capability.EFFECTIVE, effective...)
+
+	permitted, err := trimCaps(caps.Permitted, setter)
+	if err != nil {
+		return err
+	}
+	setter.Set(capability.PERMITTED, permitted...)
+
+	inheritable, err := trimCaps(caps.Inheritable, setter)
+	if err != nil {
+		return err
+	}
+	setter.Set(capability.INHERITABLE, inheritable...)
+
+	ambient, err := trimCaps(caps.Ambient, setter)
+	if err != nil {
+		return err
+	}
 	setter.Set(capability.AMBIENT, ambient...)
+
 	return setter.Apply(capability.CAPS | capability.BOUNDS | capability.AMBS)
+}
+
+func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap, error) {
+	wantedCaps, err := capsFromNames(names)
+	if err != nil {
+		return nil, err
+	}
+
+	// Trim down capabilities that aren't possible to acquire.
+	var caps []capability.Cap
+	for _, c := range wantedCaps {
+		// Capability rules are more complicated than this, but this catches most
+		// problems with tests running with non-priviledged user.
+		if setter.Get(capability.PERMITTED, c) {
+			caps = append(caps, c)
+		} else {
+			log.Warningf("Capability %q is not permitted, dropping it.", c)
+		}
+	}
+	return caps, nil
 }
 
 func capsFromNames(names []string) ([]capability.Cap, error) {

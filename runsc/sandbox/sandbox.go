@@ -295,23 +295,23 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// process. IPC and UTS namespaces from the host are not used as they
 	// are virtualized inside the sandbox. Be paranoid and run inside an empty
 	// namespace for these.
-	log.Infof("Sandbox will be started in empty IPC and UTS namespaces")
+	log.Infof("Sandbox will be started in new IPC and UTS namespaces")
 	nss := []specs.LinuxNamespace{
 		{Type: specs.IPCNamespace},
 		{Type: specs.UTSNamespace},
 	}
 
 	if conf.Platform == boot.PlatformPtrace {
-		// TODO: Also set an empty PID namespace so that we limit
+		// TODO: Also set a new PID namespace so that we limit
 		// access to other host processes.
 		log.Infof("Sandbox will be started in the current PID namespace")
 	} else {
-		log.Infof("Sandbox will be started in empty PID namespace")
+		log.Infof("Sandbox will be started in a new PID namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
 	}
 
 	if conf.FileAccess == boot.FileAccessProxy {
-		log.Infof("Sandbox will be started in empty mount namespace")
+		log.Infof("Sandbox will be started in new mount namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.MountNamespace})
 	} else {
 		log.Infof("Sandbox will be started in the current mount namespace")
@@ -324,7 +324,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		log.Infof("Sandbox will be started in the container's network namespace: %+v", ns)
 		nss = append(nss, ns)
 	} else {
-		log.Infof("Sandbox will be started in empty network namespace")
+		log.Infof("Sandbox will be started in new network namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 
@@ -347,7 +347,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		cmd.Args = append(cmd.Args, "--apply-caps=true")
 
 	} else {
-		log.Infof("Sandbox will be started in empty user namespace")
+		log.Infof("Sandbox will be started in new user namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
 

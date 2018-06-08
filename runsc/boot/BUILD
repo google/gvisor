@@ -5,7 +5,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "boot",
     srcs = [
-        "capability.go",
         "config.go",
         "controller.go",
         "events.go",
@@ -72,7 +71,6 @@ go_library(
         "//runsc/boot/filter",
         "//runsc/specutils",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
-        "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
 )
 

@@ -18,9 +18,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
+	"syscall"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
 // Fatalf logs to stderr and exits with a failure status code.
@@ -63,4 +67,26 @@ func (i *intFlags) Set(s string) error {
 	}
 	*i = append(*i, fd)
 	return nil
+}
+
+// setCapsAndCallSelf sets capabilities to the current thread and then execve's
+// itself again with the arguments specified in 'args' to restart the process
+// with the desired capabilities.
+func setCapsAndCallSelf(spec *specs.Spec, args []string, caps *specs.LinuxCapabilities) error {
+	// Keep thread locked while capabilities are changed.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	if err := applyCaps(caps); err != nil {
+		return fmt.Errorf("applyCaps() failed: %v", err)
+	}
+	binPath, err := specutils.BinPath()
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Capabilities applied: %+v", caps)
+	log.Infof("Execve %q again, bye!", binPath)
+	syscall.Exec(binPath, args, []string{})
+	panic("unreachable")
 }

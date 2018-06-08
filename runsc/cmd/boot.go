@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"os"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -24,7 +23,6 @@ import (
 	"context"
 	"flag"
 	"github.com/google/subcommands"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -106,8 +104,26 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	waitStatus := args[1].(*syscall.WaitStatus)
 
 	if b.applyCaps {
-		setCapsAndCallSelf(conf, spec)
-		Fatalf("setCapsAndCallSelf must never return")
+		caps := spec.Process.Capabilities
+		if conf.Platform == boot.PlatformPtrace {
+			// Ptrace platform requires extra capabilities.
+			const c = "CAP_SYS_PTRACE"
+			caps.Bounding = append(caps.Bounding, c)
+			caps.Effective = append(caps.Effective, c)
+			caps.Permitted = append(caps.Permitted, c)
+		}
+
+		// Remove --apply-caps arg to call myself.
+		var args []string
+		for _, arg := range os.Args {
+			if !strings.Contains(arg, "apply-caps") {
+				args = append(args, arg)
+			}
+		}
+		if err := setCapsAndCallSelf(spec, args, caps); err != nil {
+			Fatalf("%v", err)
+		}
+		panic("setCapsAndCallSelf must never return success")
 	}
 
 	// Create the loader.
@@ -129,33 +145,4 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	log.Infof("application exiting with %+v", ws)
 	*waitStatus = syscall.WaitStatus(ws.Status())
 	return subcommands.ExitSuccess
-}
-
-// setCapsAndCallSelf sets capabilities to the current thread and then execve's
-// itself again with the same arguments except '--apply-caps' to restart the
-// whole process with the desired capabilities.
-func setCapsAndCallSelf(conf *boot.Config, spec *specs.Spec) {
-	// Keep thread locked while capabilities are changed.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	if err := boot.ApplyCaps(conf, spec.Process.Capabilities); err != nil {
-		Fatalf("ApplyCaps, err: %v", err)
-	}
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		Fatalf("%v", err)
-	}
-
-	// Remove --apply-caps arg to call myself.
-	var args []string
-	for _, arg := range os.Args {
-		if !strings.Contains(arg, "apply-caps") {
-			args = append(args, arg)
-		}
-	}
-
-	log.Infof("Execve 'boot' again, bye!")
-	log.Infof("%s %v", binPath, args)
-	syscall.Exec(binPath, args, []string{})
 }
