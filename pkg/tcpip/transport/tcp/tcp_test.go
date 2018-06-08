@@ -2770,3 +2770,71 @@ func TestTCPEndpointProbe(t *testing.T) {
 		t.Fatalf("TCP Probe function was not called")
 	}
 }
+
+func TestSetCongestionControl(t *testing.T) {
+	testCases := []struct {
+		cc       tcp.CongestionControlOption
+		mustPass bool
+	}{
+		{"reno", true},
+		{"cubic", false},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("SetTransportProtocolOption(.., %v)", tc.cc), func(t *testing.T) {
+			c := context.New(t, 1500)
+			defer c.Cleanup()
+
+			s := c.Stack()
+
+			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != nil && tc.mustPass {
+				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want not-nil", tcp.ProtocolNumber, tc.cc, err)
+			}
+
+			var cc tcp.CongestionControlOption
+			if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+				t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
+			}
+			if got, want := cc, tcp.CongestionControlOption("reno"); got != want {
+				t.Fatalf("unexpected value for congestion control got: %v, want: %v", got, want)
+			}
+		})
+	}
+}
+
+func TestAvailableCongestionControl(t *testing.T) {
+	c := context.New(t, 1500)
+	defer c.Cleanup()
+
+	s := c.Stack()
+
+	// Query permitted congestion control algorithms.
+	var aCC tcp.AvailableCongestionControlOption
+	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &aCC); err != nil {
+		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &aCC, err)
+	}
+	if got, want := aCC, tcp.AvailableCongestionControlOption("reno"); got != want {
+		t.Fatalf("unexpected value for AvailableCongestionControlOption: got: %v, want: %v", got, want)
+	}
+}
+
+func TestSetAvailableCongestionControl(t *testing.T) {
+	c := context.New(t, 1500)
+	defer c.Cleanup()
+
+	s := c.Stack()
+
+	// Setting AvailableCongestionControlOption should fail.
+	aCC := tcp.AvailableCongestionControlOption("xyz")
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &aCC); err == nil {
+		t.Fatalf("s.TransportProtocolOption(%v, %v) = nil, want non-nil", tcp.ProtocolNumber, &aCC)
+	}
+
+	// Verify that we still get the expected list of congestion control options.
+	var cc tcp.CongestionControlOption
+	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
+		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
+	}
+	if got, want := cc, tcp.CongestionControlOption("reno"); got != want {
+		t.Fatalf("unexpected value for congestion control got: %v, want: %v", got, want)
+	}
+}

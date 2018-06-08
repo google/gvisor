@@ -11,6 +11,7 @@
 package tcp
 
 import (
+	"strings"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
@@ -58,11 +59,21 @@ type ReceiveBufferSizeOption struct {
 	Max     int
 }
 
+// CongestionControlOption sets the current congestion control algorithm.
+type CongestionControlOption string
+
+// AvailableCongestionControlOption returns the supported congestion control
+// algorithms.
+type AvailableCongestionControlOption string
+
 type protocol struct {
-	mu             sync.Mutex
-	sackEnabled    bool
-	sendBufferSize SendBufferSizeOption
-	recvBufferSize ReceiveBufferSizeOption
+	mu                         sync.Mutex
+	sackEnabled                bool
+	sendBufferSize             SendBufferSizeOption
+	recvBufferSize             ReceiveBufferSizeOption
+	congestionControl          string
+	availableCongestionControl []string
+	allowedCongestionControl   []string
 }
 
 // Number returns the tcp protocol number.
@@ -151,6 +162,16 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case CongestionControlOption:
+		for _, c := range p.availableCongestionControl {
+			if string(v) == c {
+				p.mu.Lock()
+				p.congestionControl = string(v)
+				p.mu.Unlock()
+				return nil
+			}
+		}
+		return tcpip.ErrInvalidOptionValue
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -176,7 +197,16 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		*v = p.recvBufferSize
 		p.mu.Unlock()
 		return nil
-
+	case *CongestionControlOption:
+		p.mu.Lock()
+		*v = CongestionControlOption(p.congestionControl)
+		p.mu.Unlock()
+		return nil
+	case *AvailableCongestionControlOption:
+		p.mu.Lock()
+		*v = AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
+		p.mu.Unlock()
+		return nil
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -185,8 +215,10 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 func init() {
 	stack.RegisterTransportProtocolFactory(ProtocolName, func() stack.TransportProtocol {
 		return &protocol{
-			sendBufferSize: SendBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
-			recvBufferSize: ReceiveBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
+			sendBufferSize:             SendBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
+			recvBufferSize:             ReceiveBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
+			congestionControl:          "reno",
+			availableCongestionControl: []string{"reno"},
 		}
 	})
 }
