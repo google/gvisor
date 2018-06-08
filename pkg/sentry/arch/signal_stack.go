@@ -39,10 +39,17 @@ func (s SignalStack) Top() usermem.Addr {
 	return usermem.Addr(s.Addr + s.Size)
 }
 
-// SetOnStack marks this signal stack as in use. (This is only called on copies
-// sent to user applications, so there's no corresponding ClearOnStack.)
+// SetOnStack marks this signal stack as in use.
+//
+// Note that there is no corresponding ClearOnStack, and that this should only
+// be called on copies that are serialized to userspace.
 func (s *SignalStack) SetOnStack() {
 	s.Flags |= SignalStackFlagOnStack
+}
+
+// Contains checks if the stack pointer is within this stack.
+func (s *SignalStack) Contains(sp usermem.Addr) bool {
+	return usermem.Addr(s.Addr) < sp && sp <= usermem.Addr(s.Addr+s.Size)
 }
 
 // NativeSignalStack is a type that is equivalent to stack_t in the guest
