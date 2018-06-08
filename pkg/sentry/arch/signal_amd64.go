@@ -377,6 +377,14 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 	sp = frameBottom + usermem.Addr(frameSize)
 	st.Bottom = sp
 
+	// Prior to proceeding, figure out if the frame will exhaust the range
+	// for the signal stack. This is not allowed, and should immediately
+	// force signal delivery (reverting to the default handler).
+	if act.IsOnStack() && alt.IsEnabled() && !alt.Contains(frameBottom) {
+		return syscall.EFAULT
+	}
+
+	// Adjust the code.
 	info.FixSignalCodeForUser()
 
 	// Set up the stack frame.
@@ -422,15 +430,15 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 
 // SignalRestore implements Context.SignalRestore. (Compare to Linux's
 // arch/x86/kernel/signal.c:sys_rt_sigreturn().)
-func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, error) {
+func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error) {
 	// Copy out the stack frame.
 	var uc UContext64
 	if _, err := st.Pop(&uc); err != nil {
-		return 0, err
+		return 0, SignalStack{}, err
 	}
 	var info SignalInfo
 	if _, err := st.Pop(&info); err != nil {
-		return 0, err
+		return 0, SignalStack{}, err
 	}
 
 	// Restore registers.
@@ -472,5 +480,5 @@ func (c *context64) SignalRestore(st *Stack, rt bool) (linux.SignalSet, error) {
 		log.Infof("sigreturn unable to restore application fpstate")
 	}
 
-	return uc.Sigset, nil
+	return uc.Sigset, uc.Stack, nil
 }

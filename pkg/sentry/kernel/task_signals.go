@@ -212,7 +212,9 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 		// Try to deliver the signal to the user-configured handler.
 		t.Debugf("Signal %d: delivering to handler", info.Signo)
 		if err := t.deliverSignalToHandler(info, act); err != nil {
-			t.Warningf("Failed to deliver signal %+v to user handler: %v", info, err)
+			// This is not a warning, it can occur during normal operation.
+			t.Debugf("Failed to deliver signal %+v to user handler: %v", info, err)
+
 			// Send a forced SIGSEGV. If the signal that couldn't be delivered
 			// was a SIGSEGV, force the handler to SIG_DFL.
 			t.forceSignal(linux.SIGSEGV, linux.Signal(info.Signo) == linux.SIGSEGV /* unconditional */)
@@ -241,7 +243,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	alt := t.signalStack
 	if act.IsOnStack() && alt.IsEnabled() {
 		alt.SetOnStack()
-		if !t.OnSignalStack(alt) {
+		if !alt.Contains(sp) {
 			sp = usermem.Addr(alt.Top())
 		}
 	}
@@ -275,17 +277,19 @@ var ctrlResume = &SyscallControl{ignoreReturn: true}
 // rt is true).
 func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 	st := t.Stack()
-	sigset, err := t.Arch().SignalRestore(st, rt)
+	sigset, alt, err := t.Arch().SignalRestore(st, rt)
 	if err != nil {
 		return nil, err
 	}
 
+	// Attempt to record the given signal stack. Note that we silently
+	// ignore failures here, as does Linux. Only an EFAULT may be
+	// generated, but SignalRestore has already deserialized the entire
+	// frame successfully.
+	t.SetSignalStack(alt)
+
 	// Restore our signal mask. SIGKILL and SIGSTOP should not be blocked.
 	t.SetSignalMask(sigset &^ UnblockableSignals)
-
-	// TODO: sys_rt_sigreturn also calls restore_altstack from
-	// uc.stack, allowing the signal handler to implicitly mutate the signal
-	// stack.
 
 	return ctrlResume, nil
 }
@@ -624,23 +628,41 @@ func (t *Task) SetSavedSignalMask(mask linux.SignalSet) {
 
 // SignalStack returns the task-private signal stack.
 func (t *Task) SignalStack() arch.SignalStack {
-	return t.signalStack
+	alt := t.signalStack
+	if t.onSignalStack(alt) {
+		alt.Flags |= arch.SignalStackFlagOnStack
+	}
+	return alt
 }
 
-// OnSignalStack returns true if, when the task resumes running, it will run on
-// the task-private signal stack.
-func (t *Task) OnSignalStack(s arch.SignalStack) bool {
+// onSignalStack returns true if the task is executing on the given signal stack.
+func (t *Task) onSignalStack(alt arch.SignalStack) bool {
 	sp := usermem.Addr(t.Arch().Stack())
-	return usermem.Addr(s.Addr) <= sp && sp < usermem.Addr(s.Addr+s.Size)
+	return alt.Contains(sp)
 }
 
-// SetSignalStack sets the task-private signal stack and clears the
-// SignalStackFlagDisable, since we have a signal stack.
-func (t *Task) SetSignalStack(alt arch.SignalStack) error {
-	// Mask out irrelevant parts: only disable matters.
-	alt.Flags &= arch.SignalStackFlagDisable
-	t.signalStack = alt
-	return nil
+// SetSignalStack sets the task-private signal stack.
+//
+// This value may not be changed if the task is currently executing on the
+// signal stack, i.e. if t.onSignalStack returns true. In this case, this
+// function will return false. Otherwise, true is returned.
+func (t *Task) SetSignalStack(alt arch.SignalStack) bool {
+	// Check that we're not executing on the stack.
+	if t.onSignalStack(t.signalStack) {
+		return false
+	}
+
+	if alt.Flags&arch.SignalStackFlagDisable != 0 {
+		// Don't record anything beyond the flags.
+		t.signalStack = arch.SignalStack{
+			Flags: arch.SignalStackFlagDisable,
+		}
+	} else {
+		// Mask out irrelevant parts: only disable matters.
+		alt.Flags &= arch.SignalStackFlagDisable
+		t.signalStack = alt
+	}
+	return true
 }
 
 // SetSignalAct atomically sets the thread group's signal action for signal sig

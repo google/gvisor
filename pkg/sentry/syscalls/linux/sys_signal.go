@@ -315,25 +315,23 @@ func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	setaddr := args[0].Pointer()
 	oldaddr := args[1].Pointer()
 
+	alt := t.SignalStack()
 	if oldaddr != 0 {
-		alt := t.SignalStack()
-		if t.OnSignalStack(alt) {
-			alt.Flags |= arch.SignalStackFlagOnStack
-		}
 		if err := t.CopyOutSignalStack(oldaddr, &alt); err != nil {
 			return 0, nil, err
 		}
 	}
 	if setaddr != 0 {
-		if t.OnSignalStack(t.SignalStack()) {
-			return 0, nil, syserror.EPERM
-		}
 		alt, err := t.CopyInSignalStack(setaddr)
 		if err != nil {
 			return 0, nil, err
 		}
-		if err := t.SetSignalStack(alt); err != nil {
-			return 0, nil, err
+		// The signal stack cannot be changed if the task is currently
+		// on the stack. This is enforced at the lowest level because
+		// these semantics apply to changing the signal stack via a
+		// ucontext during a signal handler.
+		if !t.SetSignalStack(alt) {
+			return 0, nil, syserror.EPERM
 		}
 	}
 
