@@ -15,11 +15,13 @@
 package cmd
 
 import (
+	"os"
 	"sync"
 
 	"context"
 	"flag"
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
@@ -32,6 +34,7 @@ import (
 type Gofer struct {
 	bundleDir string
 	ioFDs     intFlags
+	applyCaps bool
 }
 
 // Name implements subcommands.Command.
@@ -53,6 +56,7 @@ func (*Gofer) Usage() string {
 func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
+	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
 }
 
 // Execute implements subcommands.Command.
@@ -66,6 +70,32 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if err != nil {
 		Fatalf("error reading spec: %v", err)
 	}
+
+	if g.applyCaps {
+		// Minimal set of capabilities needed by the Gofer to operate on files.
+		caps := []string{
+			"CAP_CHOWN",
+			"CAP_DAC_OVERRIDE",
+			"CAP_DAC_READ_SEARCH",
+			"CAP_FOWNER",
+			"CAP_FSETID",
+		}
+		lc := &specs.LinuxCapabilities{
+			Bounding:  caps,
+			Effective: caps,
+			Permitted: caps,
+		}
+
+		// Disable caps when calling myself again.
+		// Note: minimal argument handling for the default case to keep it simple.
+		args := os.Args
+		args = append(args, "--apply-caps=false")
+		if err := setCapsAndCallSelf(spec, args, lc); err != nil {
+			Fatalf("Unable to apply caps: %v", err)
+		}
+		panic("unreachable")
+	}
+
 	specutils.LogSpec(spec)
 
 	// Start with root mount, then add any other addition mount as needed.

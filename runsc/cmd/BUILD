@@ -6,6 +6,7 @@ go_library(
     name = "cmd",
     srcs = [
         "boot.go",
+        "capability.go",
         "checkpoint.go",
         "cmd.go",
         "create.go",
@@ -39,6 +40,7 @@ go_library(
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
