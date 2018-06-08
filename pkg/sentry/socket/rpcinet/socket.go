@@ -465,7 +465,10 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 
 	res, err := rpcRecvMsg(t, req)
 	if err == nil {
-		_, e := dst.CopyOut(t, res.Data)
+		n, e := dst.CopyOut(t, res.Data)
+		if e == nil && n != len(res.Data) {
+			panic("CopyOut failed to copy full buffer")
+		}
 		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 	}
 	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
@@ -481,7 +484,10 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	for {
 		res, err := rpcRecvMsg(t, req)
 		if err == nil {
-			_, e := dst.CopyOut(t, res.Data)
+			n, e := dst.CopyOut(t, res.Data)
+			if e == nil && n != len(res.Data) {
+				panic("CopyOut failed to copy full buffer")
+			}
 			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 		}
 		if err != syserr.ErrWouldBlock {
