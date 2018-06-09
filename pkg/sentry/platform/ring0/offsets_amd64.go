@@ -38,7 +38,8 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_KERNEL_SYSCALL   0x%02x\n", reflect.ValueOf(&c.KernelSyscall).Pointer()-reflect.ValueOf(c).Pointer())
 
 	fmt.Fprintf(w, "\n// Bits.\n")
-	fmt.Fprintf(w, "#define _RFLAGS_IF 0x%02x\n", _RFLAGS_IF)
+	fmt.Fprintf(w, "#define _RFLAGS_IF           0x%02x\n", _RFLAGS_IF)
+	fmt.Fprintf(w, "#define _KERNEL_FLAGS        0x%02x\n", KernelFlagsSet)
 
 	fmt.Fprintf(w, "\n// Vectors.\n")
 	fmt.Fprintf(w, "#define DivideByZero               0x%02x\n", DivideByZero)
