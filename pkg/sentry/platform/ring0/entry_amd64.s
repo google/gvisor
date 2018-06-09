@@ -248,10 +248,12 @@ TEXT ·exception(SB),NOSPLIT,$0
 
 user:
 	SWAP_GS()
-	XCHGQ CPU_REGISTERS+PTRACE_RAX(GS), AX // Swap for AX (regs).
-	REGISTERS_SAVE(AX, 0)                  // Save all except IP, FLAGS, SP, AX.
-	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), BX  // Load saved AX value.
-	MOVQ BX, PTRACE_RAX(AX)                // Save everything else.
+	ADDQ $-8, SP                            // Adjust for flags.
+	MOVQ $_KERNEL_FLAGS, 0(SP); BYTE $0x9d; // Reset flags (POPFQ).
+	XCHGQ CPU_REGISTERS+PTRACE_RAX(GS), AX  // Swap for user regs.
+	REGISTERS_SAVE(AX, 0)                   // Save all except IP, FLAGS, SP, AX.
+	MOVQ CPU_REGISTERS+PTRACE_RAX(GS), BX   // Restore original AX.
+	MOVQ BX, PTRACE_RAX(AX)                 // Save it.
 	MOVQ BX, PTRACE_ORIGRAX(AX)
 	MOVQ 16(SP), BX; MOVQ BX, PTRACE_RIP(AX)
 	MOVQ 24(SP), CX; MOVQ CX, PTRACE_CS(AX)

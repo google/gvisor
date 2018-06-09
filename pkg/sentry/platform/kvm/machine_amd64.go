@@ -150,12 +150,19 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 		// the code provided here. We need to re-execute.
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
 	}
-	info := &arch.SignalInfo{Signo: signal}
+	info := &arch.SignalInfo{
+		Signo: signal,
+	}
 	info.SetAddr(uint64(faultAddr))
 	accessType := usermem.AccessType{
 		Read:    code&(1<<1) == 0,
 		Write:   code&(1<<1) != 0,
 		Execute: code&(1<<4) != 0,
+	}
+	if !accessType.Write && !accessType.Execute {
+		info.Code = 1 // SEGV_MAPERR.
+	} else {
+		info.Code = 2 // SEGV_ACCERR.
 	}
 	return info, accessType, platform.ErrContextSignal
 }
@@ -191,29 +198,54 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		return c.fault(int32(syscall.SIGSEGV))
 
 	case ring0.Debug, ring0.Breakpoint:
-		info := &arch.SignalInfo{Signo: int32(syscall.SIGTRAP)}
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGTRAP),
+			Code:  1, // TRAP_BRKPT (breakpoint).
+		}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault:
-		if !ring0.IsCanonical(switchOpts.Registers.Rip) {
-			// If the RIP is non-canonical, it's a SEGV.
-			info := &arch.SignalInfo{Signo: int32(syscall.SIGSEGV)}
-			return info, usermem.AccessType{}, platform.ErrContextSignal
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGSEGV),
+			Code:  arch.SignalInfoKernel,
 		}
-		// Otherwise, we deliver a SIGBUS.
-		info := &arch.SignalInfo{Signo: int32(syscall.SIGBUS)}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.InvalidOpcode:
-		info := &arch.SignalInfo{Signo: int32(syscall.SIGILL)}
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGILL),
+			Code:  1, // ILL_ILLOPC (illegal opcode).
+		}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		return info, usermem.AccessType{}, platform.ErrContextSignal
+
+	case ring0.DivideByZero:
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGFPE),
+			Code:  1, // FPE_INTDIV (divide by zero).
+		}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.X87FloatingPointException:
-		info := &arch.SignalInfo{Signo: int32(syscall.SIGFPE)}
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGFPE),
+			Code:  7, // FPE_FLTINV (invalid operation).
+		}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Vector(bounce):
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+
+	case ring0.AlignmentCheck:
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGBUS),
+			Code:  2, // BUS_ADRERR (physical address does not exist).
+		}
+		return info, usermem.NoAccess, platform.ErrContextSignal
 
 	case ring0.NMI:
 		// An NMI is generated only when a fault is not servicable by

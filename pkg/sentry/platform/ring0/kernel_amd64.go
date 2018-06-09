@@ -20,20 +20,6 @@ import (
 	"encoding/binary"
 )
 
-const (
-	// KernelFlagsSet should always be set in the kernel.
-	KernelFlagsSet = _RFLAGS_RESERVED
-
-	// UserFlagsSet are always set in userspace.
-	UserFlagsSet = _RFLAGS_RESERVED | _RFLAGS_IF
-
-	// KernelFlagsClear should always be clear in the kernel.
-	KernelFlagsClear = _RFLAGS_IF | _RFLAGS_NT | _RFLAGS_IOPL
-
-	// UserFlagsClear are always cleared in userspace.
-	UserFlagsClear = _RFLAGS_NT | _RFLAGS_IOPL
-)
-
 // init initializes architecture-specific state.
 func (k *Kernel) init(opts KernelOpts) {
 	// Save the root page tables.
@@ -85,6 +71,9 @@ func (c *CPU) init() {
 	c.registers.Ss = uint64(Kdata)
 	c.registers.Fs = uint64(Kdata)
 	c.registers.Gs = uint64(Kdata)
+
+	// Set mandatory flags.
+	c.registers.Eflags = KernelFlagsSet
 }
 
 // StackTop returns the kernel's stack address.
@@ -119,7 +108,7 @@ func (c *CPU) TSS() (uint64, uint16, *SegmentDescriptor) {
 //
 //go:nosplit
 func (c *CPU) CR0() uint64 {
-	return _CR0_PE | _CR0_PG | _CR0_ET
+	return _CR0_PE | _CR0_PG | _CR0_AM | _CR0_ET
 }
 
 // CR4 returns the CPU's CR4 value.
@@ -240,7 +229,7 @@ func start(c *CPU) {
 
 	// Set the syscall target.
 	wrmsr(_MSR_LSTAR, kernelFunc(sysenter))
-	wrmsr(_MSR_SYSCALL_MASK, _RFLAGS_STEP|_RFLAGS_IF|_RFLAGS_DF|_RFLAGS_IOPL|_RFLAGS_AC|_RFLAGS_NT)
+	wrmsr(_MSR_SYSCALL_MASK, KernelFlagsClear|_RFLAGS_DF)
 
 	// NOTE: This depends on having the 64-bit segments immediately
 	// following the 32-bit user segments. This is simply the way the

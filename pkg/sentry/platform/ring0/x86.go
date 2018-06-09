@@ -24,6 +24,7 @@ import (
 const (
 	_CR0_PE = 1 << 0
 	_CR0_ET = 1 << 4
+	_CR0_AM = 1 << 18
 	_CR0_PG = 1 << 31
 
 	_CR4_PSE        = 1 << 4
@@ -53,6 +54,20 @@ const (
 	_MSR_LSTAR        = 0xc0000082
 	_MSR_CSTAR        = 0xc0000083
 	_MSR_SYSCALL_MASK = 0xc0000084
+)
+
+const (
+	// KernelFlagsSet should always be set in the kernel.
+	KernelFlagsSet = _RFLAGS_RESERVED
+
+	// UserFlagsSet are always set in userspace.
+	UserFlagsSet = _RFLAGS_RESERVED | _RFLAGS_IF
+
+	// KernelFlagsClear should always be clear in the kernel.
+	KernelFlagsClear = _RFLAGS_STEP | _RFLAGS_IF | _RFLAGS_IOPL | _RFLAGS_AC | _RFLAGS_NT
+
+	// UserFlagsClear are always cleared in userspace.
+	UserFlagsClear = _RFLAGS_NT | _RFLAGS_IOPL
 )
 
 // Vector is an exception vector.
