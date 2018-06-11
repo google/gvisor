@@ -465,9 +465,13 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 
 	res, err := rpcRecvMsg(t, req)
 	if err == nil {
-		n, e := dst.CopyOut(t, res.Data)
-		if e == nil && n != len(res.Data) {
-			panic("CopyOut failed to copy full buffer")
+		var e error
+		var n int
+		if len(res.Data) > 0 {
+			n, e = dst.CopyOut(t, res.Data)
+			if e == nil && n != len(res.Data) {
+				panic("CopyOut failed to copy full buffer")
+			}
 		}
 		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 	}
@@ -484,9 +488,13 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	for {
 		res, err := rpcRecvMsg(t, req)
 		if err == nil {
-			n, e := dst.CopyOut(t, res.Data)
-			if e == nil && n != len(res.Data) {
-				panic("CopyOut failed to copy full buffer")
+			var e error
+			var n int
+			if len(res.Data) > 0 {
+				n, e = dst.CopyOut(t, res.Data)
+				if e == nil && n != len(res.Data) {
+					panic("CopyOut failed to copy full buffer")
+				}
 			}
 			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 		}
