@@ -228,7 +228,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	payload, se := rpcAccept(t, s.fd, peerRequested)
 
 	// Check if we need to block.
-	if blocking && se == syserr.ErrWouldBlock {
+	if blocking && se == syserr.ErrTryAgain {
 		// Register for notifications.
 		e, ch := waiter.NewChannelEntry(nil)
 		s.EventRegister(&e, waiter.EventIn)
@@ -237,7 +237,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		// Try to accept the connection again; if it fails, then wait until we
 		// get a notification.
 		for {
-			if payload, se = rpcAccept(t, s.fd, peerRequested); se != syserr.ErrWouldBlock {
+			if payload, se = rpcAccept(t, s.fd, peerRequested); se != syserr.ErrTryAgain {
 				break
 			}
 
@@ -471,7 +471,7 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		}
 		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 	}
-	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain || flags&linux.MSG_DONTWAIT != 0 {
 		return 0, nil, 0, socket.ControlMessages{}, err
 	}
 
@@ -490,7 +490,7 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			}
 			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
 		}
-		if err != syserr.ErrWouldBlock {
+		if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain {
 			return 0, nil, 0, socket.ControlMessages{}, err
 		}
 
@@ -546,7 +546,7 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	}}
 
 	n, err := rpcSendMsg(t, req)
-	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain || flags&linux.MSG_DONTWAIT != 0 {
 		return int(n), err
 	}
 
@@ -558,7 +558,7 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 
 	for {
 		n, err := rpcSendMsg(t, req)
-		if err != syserr.ErrWouldBlock {
+		if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain {
 			return int(n), err
 		}
 
