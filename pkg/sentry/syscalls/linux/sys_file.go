@@ -147,21 +147,25 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 		}
 
 		fileFlags := linuxToFlags(flags)
-		isDir := fs.IsDir(d.Inode.StableAttr)
-
-		// If O_DIRECTORY is set, but the file is not a directory, then fail.
-		if fileFlags.Directory && !isDir {
-			return syserror.ENOTDIR
-		}
-
-		// If it's a directory, then make sure.
-		if dirPath && !isDir {
-			return syserror.ENOTDIR
-		}
-
-		// Don't allow directories to be opened writable.
-		if isDir && fileFlags.Write {
-			return syserror.EISDIR
+		if fs.IsDir(d.Inode.StableAttr) {
+			// Don't allow directories to be opened writable.
+			if fileFlags.Write {
+				return syserror.EISDIR
+			}
+		} else {
+			// If O_DIRECTORY is set, but the file is not a directory, then fail.
+			if fileFlags.Directory {
+				return syserror.ENOTDIR
+			}
+			// If it's a directory, then make sure.
+			if dirPath {
+				return syserror.ENOTDIR
+			}
+			if fileFlags.Write && flags&syscall.O_TRUNC != 0 {
+				if err := d.Inode.Truncate(t, d, 0); err != nil {
+					return err
+				}
+			}
 		}
 
 		file, err := d.Inode.GetFile(t, d, fileFlags)
