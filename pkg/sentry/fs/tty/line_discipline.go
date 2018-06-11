@@ -23,7 +23,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -38,96 +37,7 @@ const (
 	nonCanonMaxBytes = canonMaxBytes - 1
 
 	spacesPerTab = 8
-
-	// transformInputStateifyKey is used to save and restore queues.
-	transformInputStateifyKey = "transformInput"
-
-	// transformOutputStateifyKey is used to save and restore queues.
-	transformOutputStateifyKey = "transformOutput"
 )
-
-// transformer is a helper interface to make it easier to stateify queue.
-type transformer interface {
-	// transform functions require queue's mutex to be held.
-	transform(*lineDiscipline, *queue, []byte) int
-}
-
-// queue represents one of the input or output queues between a pty master and
-// slave. Bytes written to a queue are added to the read buffer until it is
-// full, at which point they are written to the wait buffer. Bytes are
-// processed (i.e. undergo termios transformations) as they are added to the
-// read buffer. The read buffer is readable when its length is nonzero and
-// readable is true.
-type queue struct {
-	waiter.Queue `state:"nosave"`
-
-	// readBuf is buffer of data ready to be read when readable is true.
-	// This data has been processed.
-	readBuf bytes.Buffer `state:".([]byte)"`
-
-	// waitBuf contains data that can't fit into readBuf. It is put here
-	// until it can be loaded into the read buffer. waitBuf contains data
-	// that hasn't been processed.
-	waitBuf bytes.Buffer `state:".([]byte)"`
-
-	// readable indicates whether the read buffer can be read from.  In
-	// canonical mode, there can be an unterminated line in the read buffer,
-	// so readable must be checked.
-	readable bool
-
-	// transform is the the queue's function for transforming bytes
-	// entering the queue. For example, transform might convert all '\r's
-	// entering the queue to '\n's.
-	transformer
-}
-
-// saveReadBuf is invoked by stateify.
-func (q *queue) saveReadBuf() []byte {
-	return append([]byte(nil), q.readBuf.Bytes()...)
-}
-
-// loadReadBuf is invoked by stateify.
-func (q *queue) loadReadBuf(b []byte) {
-	q.readBuf.Write(b)
-}
-
-// saveWaitBuf is invoked by stateify.
-func (q *queue) saveWaitBuf() []byte {
-	return append([]byte(nil), q.waitBuf.Bytes()...)
-}
-
-// loadWaitBuf is invoked by stateify.
-func (q *queue) loadWaitBuf(b []byte) {
-	q.waitBuf.Write(b)
-}
-
-// readReadiness returns whether q is ready to be read from.
-func (q *queue) readReadiness(t *linux.KernelTermios) waiter.EventMask {
-	if q.readBuf.Len() > 0 && q.readable {
-		return waiter.EventIn
-	}
-	return waiter.EventMask(0)
-}
-
-// writeReadiness returns whether q is ready to be written to.
-func (q *queue) writeReadiness(t *linux.KernelTermios) waiter.EventMask {
-	// Like Linux, we don't impose a maximum size on what can be enqueued.
-	return waiter.EventOut
-}
-
-// readableSize writes the number of readable bytes to userspace.
-func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
-	var size int32
-	if q.readable {
-		size = int32(q.readBuf.Len())
-	}
-
-	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), size, usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
-	return err
-
-}
 
 // lineDiscipline dictates how input and output are handled between the
 // pseudoterminal (pty) master and slave. It can be configured to alter I/O,
@@ -160,17 +70,11 @@ func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.Sysca
 //
 // Lock order:
 //  termiosMu
-//    inMu
-//      outMu
+//    inQueue.mu
+//      outQueue.mu
 type lineDiscipline struct {
-	// inMu protects inQueue.
-	inMu sync.Mutex `state:"nosave"`
-
 	// inQueue is the input queue of the terminal.
 	inQueue queue
-
-	// outMu protects outQueue.
-	outMu sync.Mutex `state:"nosave"`
 
 	// outQueue is the output queue of the terminal.
 	outQueue queue
@@ -209,8 +113,6 @@ func (l *lineDiscipline) getTermios(ctx context.Context, io usermem.IO, args arc
 func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	l.termiosMu.Lock()
 	defer l.termiosMu.Unlock()
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
 	oldCanonEnabled := l.termios.LEnabled(linux.ICANON)
 	// We must copy a Termios struct, not KernelTermios.
 	var t linux.Termios
@@ -223,17 +125,13 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	// buffer to its read buffer. Anything already in the read buffer is
 	// now readable.
 	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
-		l.pushWaitBuf(&l.inQueue)
+		l.inQueue.pushWaitBuf(l)
 	}
 
 	return 0, err
 }
 
 func (l *lineDiscipline) masterReadiness() waiter.EventMask {
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
-	l.outMu.Lock()
-	defer l.outMu.Unlock()
 	// We don't have to lock a termios because the default master termios
 	// is immutable.
 	return l.inQueue.writeReadiness(&linux.MasterTermios) | l.outQueue.readReadiness(&linux.MasterTermios)
@@ -242,156 +140,49 @@ func (l *lineDiscipline) masterReadiness() waiter.EventMask {
 func (l *lineDiscipline) slaveReadiness() waiter.EventMask {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
-	l.outMu.Lock()
-	defer l.outMu.Unlock()
 	return l.outQueue.writeReadiness(&l.termios) | l.inQueue.readReadiness(&l.termios)
 }
 
 func (l *lineDiscipline) inputQueueReadSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
 	return l.inQueue.readableSize(ctx, io, args)
 }
 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
-	return l.queueRead(ctx, dst, &l.inQueue)
+	return l.inQueue.read(ctx, dst, l)
 }
 
 func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	l.inMu.Lock()
-	defer l.inMu.Unlock()
-	return l.queueWrite(ctx, src, &l.inQueue)
+	return l.inQueue.write(ctx, src, l)
 }
 
 func (l *lineDiscipline) outputQueueReadSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
-	l.outMu.Lock()
-	defer l.outMu.Unlock()
 	return l.outQueue.readableSize(ctx, io, args)
 }
 
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	l.outMu.Lock()
-	defer l.outMu.Unlock()
-	return l.queueRead(ctx, dst, &l.outQueue)
+	return l.outQueue.read(ctx, dst, l)
 }
 
 func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	l.outMu.Lock()
-	defer l.outMu.Unlock()
-	return l.queueWrite(ctx, src, &l.outQueue)
+	return l.outQueue.write(ctx, src, l)
 }
 
-// queueRead reads from q to userspace.
-//
-// Preconditions:
-// * l.termiosMu must be held for reading.
-// * q's lock must be held.
-func (l *lineDiscipline) queueRead(ctx context.Context, dst usermem.IOSequence, q *queue) (int64, error) {
-	if !q.readable {
-		return 0, syserror.ErrWouldBlock
-	}
-
-	// Read out from the read buffer.
-	n := canonMaxBytes
-	if n > int(dst.NumBytes()) {
-		n = int(dst.NumBytes())
-	}
-	if n > q.readBuf.Len() {
-		n = q.readBuf.Len()
-	}
-	n, err := dst.Writer(ctx).Write(q.readBuf.Bytes()[:n])
-	if err != nil {
-		return 0, err
-	}
-	// Discard bytes read out.
-	q.readBuf.Next(n)
-
-	// If we read everything, this queue is no longer readable.
-	if q.readBuf.Len() == 0 {
-		q.readable = false
-	}
-
-	// Move data from the queue's wait buffer to its read buffer.
-	l.pushWaitBuf(q)
-
-	// If state changed, notify any waiters. If nothing was available to
-	// read, let the caller know we could block.
-	if n > 0 {
-		q.Notify(waiter.EventOut)
-	} else {
-		return 0, syserror.ErrWouldBlock
-	}
-	return int64(n), nil
+// transformer is a helper interface to make it easier to stateify queue.
+type transformer interface {
+	// transform functions require queue's mutex to be held.
+	transform(*lineDiscipline, *queue, []byte) int
 }
 
-// queueWrite writes to q from userspace.
-//
-// Preconditions:
-// * l.termiosMu must be held for reading.
-// * q's lock must be held.
-func (l *lineDiscipline) queueWrite(ctx context.Context, src usermem.IOSequence, q *queue) (int64, error) {
-	// TODO: Use CopyInTo/safemem to avoid extra copying.
-	// Copy in the bytes to write from user-space.
-	b := make([]byte, src.NumBytes())
-	n, err := src.CopyIn(ctx, b)
-	if err != nil {
-		return 0, err
-	}
-	b = b[:n]
-	return l.queueWriteBytes(b, q)
-}
-
-// queueWriteBytes writes to q from b.
-//
-// Precondition:
-// * l.termiosMu must be held for reading.
-// * q's lock must be held.
-func (l *lineDiscipline) queueWriteBytes(b []byte, q *queue) (int64, error) {
-	// Write as much as possible to the read buffer.
-	n := q.transform(l, q, b)
-
-	// Write remaining data to the wait buffer.
-	nWaiting, _ := q.waitBuf.Write(b[n:])
-
-	// If state changed, notify any waiters. If we were unable to write
-	// anything, let the caller know we could block.
-	if n > 0 {
-		q.Notify(waiter.EventIn)
-	} else if nWaiting == 0 {
-		return 0, syserror.ErrWouldBlock
-	}
-	return int64(n + nWaiting), nil
-}
-
-// pushWaitBuf fills the queue's read buffer with data from the wait buffer.
-//
-// Precondition:
-// * l.termiosMu must be held for reading.
-// * l.inMu must be held.
-func (l *lineDiscipline) pushWaitBuf(q *queue) {
-	// Remove bytes from the wait buffer and move them to the read buffer.
-	n := q.transform(l, q, q.waitBuf.Bytes())
-	q.waitBuf.Next(n)
-
-	// If state changed, notify any waiters.
-	if n > 0 {
-		q.Notify(waiter.EventIn)
-	}
-}
-
-// outputQueueTransformer implements transformer.
+// outputQueueTransformer implements transformer. It performs line discipline
+// transformations on the output queue.
 type outputQueueTransformer struct{}
 
 // transform does output processing for one end of the pty. See
@@ -399,7 +190,7 @@ type outputQueueTransformer struct{}
 //
 // Precondition:
 // * l.termiosMu must be held for reading.
-// * q's mutex must be held.
+// * q.mu must be held.
 func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) int {
 	// transformOutput is effectively always in noncanonical mode, as the
 	// master termios never has ICANON set.
@@ -461,7 +252,8 @@ func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte
 	return ret
 }
 
-// inputQueueTransformer implements transformer.
+// inputQueueTransformer implements transformer. It performs line discipline
+// transformations on the input queue.
 type inputQueueTransformer struct{}
 
 // transform does input processing for one end of the pty. Characters read are
@@ -471,7 +263,7 @@ type inputQueueTransformer struct{}
 //
 // Precondition:
 // * l.termiosMu must be held for reading.
-// * q's mutex must be held.
+// * q.mu must be held.
 func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) int {
 	// If there's a line waiting to be read in canonical mode, don't write
 	// anything else to the read buffer.
@@ -528,11 +320,7 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 		q.readBuf.WriteRune(c)
 		// Anything written to the readBuf will have to be echoed.
 		if l.termios.LEnabled(linux.ECHO) {
-			// We can't defer Unlock here because we may
-			// Lock/Unlock l.outMu multiple times in this loop.
-			l.outMu.Lock()
-			l.queueWriteBytes(cBytes, &l.outQueue)
-			l.outMu.Unlock()
+			l.outQueue.writeBytes(cBytes, l)
 		}
 
 		// If we finish a line, make it available for reading.
@@ -553,6 +341,10 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 // shouldDiscard returns whether c should be discarded. In canonical mode, if
 // too many bytes are enqueued, we keep reading input and discarding it until
 // we find a terminating character. Signal/echo processing still occurs.
+//
+// Precondition:
+// * l.termiosMu must be held for reading.
+// * q.mu must be held.
 func (l *lineDiscipline) shouldDiscard(q *queue, c rune) bool {
 	return l.termios.LEnabled(linux.ICANON) && q.readBuf.Len()+utf8.RuneLen(c) >= canonMaxBytes && !l.termios.IsTerminating(c)
 }
