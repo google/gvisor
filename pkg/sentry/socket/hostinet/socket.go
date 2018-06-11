@@ -193,7 +193,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 
 	// Conservatively ignore all flags specified by the application and add
 	// SOCK_NONBLOCK since socketOperations requires it.
-	fd, syscallErr := accept4(s.fd, peerAddrPtr, peerAddrlenPtr, syscall.SOCK_NONBLOCK)
+	fd, syscallErr := accept4(s.fd, peerAddrPtr, peerAddrlenPtr, syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC)
 	if blocking {
 		var ch chan struct{}
 		for syscallErr == syserror.ErrWouldBlock {
@@ -207,7 +207,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 				s.EventRegister(&e, waiter.EventIn)
 				defer s.EventUnregister(&e)
 			}
-			fd, syscallErr = accept4(s.fd, peerAddrPtr, peerAddrlenPtr, syscall.SOCK_NONBLOCK)
+			fd, syscallErr = accept4(s.fd, peerAddrPtr, peerAddrlenPtr, syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC)
 		}
 	}
 
@@ -545,7 +545,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags unix.SockType, protoc
 	// Conservatively ignore all flags specified by the application and add
 	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
 	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
-	fd, err := syscall.Socket(p.family, stype|syscall.SOCK_NONBLOCK, 0)
+	fd, err := syscall.Socket(p.family, stype|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
