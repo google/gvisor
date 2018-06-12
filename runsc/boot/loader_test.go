@@ -15,6 +15,7 @@
 package boot
 
 import (
+	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
@@ -150,6 +151,12 @@ func TestCreateMountNamespace(t *testing.T) {
 		DisableSeccomp: true,
 	}
 
+	testFile, err := ioutil.TempFile(os.TempDir(), "create-mount-namespace-")
+	if err != nil {
+		t.Fatalf("ioutil.TempFile() failed, err: %v", err)
+	}
+	defer os.RemoveAll(testFile.Name())
+
 	testCases := []struct {
 		name string
 		// Spec that will be used to create the mount manager.  Note
@@ -202,7 +209,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			expectedPaths: []string{"/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
 		{
-			// Mounts are nested inside eachother.
+			// Mounts are nested inside each other.
 			name: "nested mounts",
 			spec: specs.Spec{
 				Root: &specs.Root{
@@ -216,6 +223,16 @@ func TestCreateMountNamespace(t *testing.T) {
 					},
 					{
 						Destination: "/foo",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/foo/qux",
+						Source:      testFile.Name(),
+						Type:        "bind",
+					},
+					{
+						// File mounts with the same prefix.
+						Destination: "/foo/qux-quz",
 						Type:        "tmpfs",
 					},
 					{
@@ -233,7 +250,8 @@ func TestCreateMountNamespace(t *testing.T) {
 					},
 				},
 			},
-			expectedPaths: []string{"/foo", "/foo/bar", "/foo/bar/baz", "/foo/some/very/very/deep/path", "/proc", "/dev", "/sys"},
+			expectedPaths: []string{"/foo", "/foo/bar", "/foo/bar/baz", "/foo/qux",
+				"/foo/qux-quz", "/foo/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
 	}
 
