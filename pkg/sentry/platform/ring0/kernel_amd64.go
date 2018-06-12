@@ -162,17 +162,16 @@ func IsCanonical(addr uint64) bool {
 // code that uses IP-relative addressing inside of absolute addresses. That's
 // the case for amd64, but may not be the case for other architectures.
 //
+// Precondition: the Rip, Rsp, Fs and Gs registers must be canonical.
+
+//
 //go:nosplit
 func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
-	// Check for canonical addresses.
-	regs := switchOpts.Registers
-	if !IsCanonical(regs.Rip) || !IsCanonical(regs.Rsp) || !IsCanonical(regs.Fs_base) || !IsCanonical(regs.Gs_base) {
-		return GeneralProtectionFault
-	}
 	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
 	kernelCR3 := c.kernel.PageTables.CR3(true, switchOpts.KernelPCID)
 
 	// Sanitize registers.
+	regs := switchOpts.Registers
 	regs.Eflags &= ^uint64(UserFlagsClear)
 	regs.Eflags |= UserFlagsSet
 	regs.Cs = uint64(Ucode64) // Required for iret.

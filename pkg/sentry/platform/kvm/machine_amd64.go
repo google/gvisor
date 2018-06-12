@@ -137,6 +137,18 @@ func (c *vCPU) initArchState() error {
 	return c.setSystemTime()
 }
 
+// nonCanonical generates a canonical address return.
+//
+//go:nosplit
+func nonCanonical(addr uint64, signal int32) (*arch.SignalInfo, usermem.AccessType, error) {
+	info := &arch.SignalInfo{
+		Signo: signal,
+		Code:  arch.SignalInfoKernel,
+	}
+	info.SetAddr(addr) // Include address.
+	return info, usermem.NoAccess, platform.ErrContextSignal
+}
+
 // fault generates an appropriate fault return.
 //
 //go:nosplit
@@ -169,6 +181,17 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 
 // SwitchToUser unpacks architectural-details.
 func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, usermem.AccessType, error) {
+	// Check for canonical addresses.
+	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
+		return nonCanonical(regs.Rip, int32(syscall.SIGSEGV))
+	} else if !ring0.IsCanonical(regs.Rsp) {
+		return nonCanonical(regs.Rsp, int32(syscall.SIGBUS))
+	} else if !ring0.IsCanonical(regs.Fs_base) {
+		return nonCanonical(regs.Fs_base, int32(syscall.SIGBUS))
+	} else if !ring0.IsCanonical(regs.Gs_base) {
+		return nonCanonical(regs.Gs_base, int32(syscall.SIGBUS))
+	}
+
 	// Assign PCIDs.
 	if c.PCIDs != nil {
 		var requireFlushPCID bool // Force a flush?
@@ -205,7 +228,11 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
-	case ring0.GeneralProtectionFault:
+	case ring0.GeneralProtectionFault,
+		ring0.SegmentNotPresent,
+		ring0.BoundRangeExceeded,
+		ring0.InvalidTSS,
+		ring0.StackSegmentFault:
 		info := &arch.SignalInfo{
 			Signo: int32(syscall.SIGSEGV),
 			Code:  arch.SignalInfoKernel,
@@ -229,7 +256,16 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
-	case ring0.X87FloatingPointException:
+	case ring0.Overflow:
+		info := &arch.SignalInfo{
+			Signo: int32(syscall.SIGFPE),
+			Code:  1, // FPE_INTOVF (integer overflow).
+		}
+		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		return info, usermem.AccessType{}, platform.ErrContextSignal
+
+	case ring0.X87FloatingPointException,
+		ring0.SIMDFloatingPointException:
 		info := &arch.SignalInfo{
 			Signo: int32(syscall.SIGFPE),
 			Code:  7, // FPE_FLTINV (invalid operation).
@@ -237,7 +273,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
-	case ring0.Vector(bounce):
+	case ring0.Vector(bounce): // ring0.VirtualizationException
 		return nil, usermem.NoAccess, platform.ErrContextInterrupt
 
 	case ring0.AlignmentCheck:
@@ -255,6 +291,12 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		// directly into the instance.
 		return c.fault(int32(syscall.SIGBUS))
 
+	case ring0.DeviceNotAvailable,
+		ring0.DoubleFault,
+		ring0.CoprocessorSegmentOverrun,
+		ring0.MachineCheck,
+		ring0.SecurityException:
+		fallthrough
 	default:
 		panic(fmt.Sprintf("unexpected vector: 0x%x", vector))
 	}
