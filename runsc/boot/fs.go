@@ -27,6 +27,7 @@ import (
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
+	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tty"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -105,6 +106,14 @@ func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *f
 	if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
 		Type:        "devtmpfs",
 		Destination: "/dev",
+	}); err != nil {
+		return err
+	}
+
+	// Always mount /dev/pts.
+	if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+		Type:        "devpts",
+		Destination: "/dev/pts",
 	}); err != nil {
 		return err
 	}
@@ -214,7 +223,7 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 	var fsName string
 	var useOverlay bool
 	switch m.Type {
-	case "proc", "sysfs", "devtmpfs":
+	case "devpts", "devtmpfs", "proc", "sysfs":
 		fsName = m.Type
 	case "none":
 		fsName = "sysfs"
