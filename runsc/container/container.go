@@ -339,13 +339,14 @@ func (c *Container) Signal(sig syscall.Signal) error {
 }
 
 // Checkpoint sends the checkpoint call to the container.
-func (c *Container) Checkpoint() error {
+// The statefile will be written to f, the file at the specified image-path.
+func (c *Container) Checkpoint(f *os.File) error {
 	log.Debugf("Checkpoint container %q", c.ID)
 	if c.Status == Stopped {
 		log.Warningf("container %q not running, not checkpointing", c.ID)
 		return nil
 	}
-	return c.Sandbox.Checkpoint(c.ID)
+	return c.Sandbox.Checkpoint(c.ID, f)
 }
 
 // State returns the metadata of the container.

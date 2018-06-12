@@ -441,7 +441,8 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 }
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
-func (s *Sandbox) Checkpoint(cid string) error {
+// The statefile will be written to f.
+func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
 	log.Debugf("Checkpoint sandbox %q", s.ID)
 	conn, err := s.connect()
 	if err != nil {
@@ -449,7 +450,13 @@ func (s *Sandbox) Checkpoint(cid string) error {
 	}
 	defer conn.Close()
 
-	if err := conn.Call(boot.ContainerCheckpoint, nil, nil); err != nil {
+	opt := control.SaveOpts{
+		FilePayload: urpc.FilePayload{
+			Files: []*os.File{f},
+		},
+	}
+
+	if err := conn.Call(boot.ContainerCheckpoint, &opt, nil); err != nil {
 		return fmt.Errorf("err checkpointing container %q: %v", cid, err)
 	}
 	return nil

@@ -28,8 +28,9 @@ import (
 )
 
 type endpointMap struct {
-	mu sync.RWMutex
-	m  map[device.MultiDeviceKey]unix.BoundEndpoint
+	mu sync.RWMutex `state:"nosave"`
+	// TODO: Make map with private unix sockets savable.
+	m map[device.MultiDeviceKey]unix.BoundEndpoint
 }
 
 // add adds the endpoint to the map.

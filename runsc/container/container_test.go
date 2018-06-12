@@ -408,6 +408,57 @@ func TestExec(t *testing.T) {
 	}
 }
 
+// TestCheckpoint verifies that calling checkpoint with an image-path flag succeeds.
+// Since there is no current default image path, confirming that calling
+// checkpoint without an image path fails.
+// Checks that there is a file with the name and location given by image path.
+func TestCheckpoint(t *testing.T) {
+	// Container will succeed.
+	spec := testutil.NewSpecWithArgs("sleep", "100")
+
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create and start the container.
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Set the image path, which is where the checkpoint image will be saved.
+	imagePath := filepath.Join(os.TempDir(), "test-image-file")
+
+	// Create the image file and open for writing.
+	file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("error opening new file at imagePath: %v", err)
+	}
+	defer file.Close()
+
+	// Checkpoint running container; save state into new file.
+	if err := cont.Checkpoint(file); err != nil {
+		t.Fatalf("error checkpointing container to empty file: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+
+	// Check to see if file exists and contains data.
+	fileInfo, err := os.Stat(imagePath)
+	if err != nil {
+		t.Fatalf("error checkpointing container: %v", err)
+	}
+	if size := fileInfo.Size(); size == 0 {
+		t.Fatalf("failed checkpoint, file still appears empty: %v", err)
+	}
+}
+
 // TestCapabilities verifies that:
 // - Running exec as non-root UID and GID will result in an error (because the
 //   executable file can't be read).
@@ -602,7 +653,7 @@ func TestSpecUnsupported(t *testing.T) {
 }
 
 // TestRunNonRoot checks that sandbox can be configured when running as
-// non-priviledged user.
+// non-privileged user.
 func TestRunNonRoot(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/true")
 	spec.Process.User.UID = 343
