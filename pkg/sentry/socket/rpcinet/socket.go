@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/binary"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -318,6 +319,15 @@ func (s *socketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
 func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (interface{}, *syserr.Error) {
+	// SO_RCVTIMEO is special because blocking is performed within the sentry.
+	if level == linux.SOL_SOCKET && name == linux.SO_RCVTIMEO {
+		if outLen < linux.SizeOfTimeval {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		return linux.NsecToTimeval(s.RecvTimeout()), nil
+	}
+
 	stack := t.NetworkContext().(*Stack)
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_GetSockOpt{&pb.GetSockOptRequest{Fd: s.fd, Level: int64(level), Name: int64(name), Length: uint32(outLen)}}}, false /* ignoreResult */)
 	<-c
@@ -332,6 +342,20 @@ func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outLe
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
+	// Because blocking actually happens within the sentry we need to inspect
+	// this socket option to determine if it's a SO_RCVTIMEO, and if so, we will
+	// save it and use it as the deadline for recv(2) related syscalls.
+	if level == linux.SOL_SOCKET && name == linux.SO_RCVTIMEO {
+		if len(opt) < linux.SizeOfTimeval {
+			return syserr.ErrInvalidArgument
+		}
+
+		var v linux.Timeval
+		binary.Unmarshal(opt[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+		s.SetRecvTimeout(v.ToNsecCapped())
+		return nil
+	}
+
 	stack := t.NetworkContext().(*Stack)
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_SetSockOpt{&pb.SetSockOptRequest{Fd: s.fd, Level: int64(level), Name: int64(name), Opt: opt}}}, false /* ignoreResult */)
 	<-c
