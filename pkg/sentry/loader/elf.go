@@ -271,6 +271,11 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 		Perms:    prot,
 		MaxPerms: usermem.AnyAccess,
 	}
+	defer func() {
+		if mopts.MappingIdentity != nil {
+			mopts.MappingIdentity.DecRef()
+		}
+	}()
 	if err := f.ConfigureMMap(ctx, &mopts); err != nil {
 		ctx.Infof("File is not memory-mappable: %v", err)
 		return err
