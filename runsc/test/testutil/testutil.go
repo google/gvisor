@@ -117,12 +117,12 @@ func SetupContainerInRoot(rootDir string, spec *specs.Spec) (bundleDir string, c
 	}
 
 	conf = &boot.Config{
-		RootDir: rootDir,
-		Network: boot.NetworkNone,
-		// Don't add flags when calling subprocesses, since the test
-		// runner does not know about all the flags. We control the
-		// Config in the subprocess anyways, so it does not matter.
-		TestModeNoFlags: true,
+		Debug:      true,
+		LogFormat:  "text",
+		LogPackets: true,
+		Network:    boot.NetworkNone,
+		RootDir:    rootDir,
+		Strace:     true,
 	}
 
 	return bundleDir, conf, nil

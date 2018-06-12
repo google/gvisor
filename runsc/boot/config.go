@@ -176,18 +176,10 @@ type Config struct {
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
-
-	// TestModeNoFlags indicates that the ToFlags method should return
-	// empty. This should only be used in tests, since the test runner does
-	// not know about all the flags.
-	TestModeNoFlags bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
 func (c *Config) ToFlags() []string {
-	if c.TestModeNoFlags {
-		return nil
-	}
 	return []string{
 		"--root=" + c.RootDir,
 		"--debug=" + strconv.FormatBool(c.Debug),
