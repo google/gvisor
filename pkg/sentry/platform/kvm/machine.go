@@ -40,7 +40,7 @@ type machine struct {
 	nextSlot uint32
 
 	// kernel is the set of global structures.
-	kernel *ring0.Kernel
+	kernel ring0.Kernel
 
 	// mappingCache is used for mapPhysical.
 	mappingCache sync.Map
@@ -135,7 +135,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 		// issues when you've got > n active threads.)
 		vCPUs = n
 	}
-	m.kernel = ring0.New(ring0.KernelOpts{
+	m.kernel.Init(ring0.KernelOpts{
 		PageTables: pagetables.New(newAllocator()),
 	})
 
@@ -158,7 +158,7 @@ func newMachine(vm int, vCPUs int) (*machine, error) {
 			fd:      int(fd),
 			machine: m,
 		}
-		c.CPU.Init(m.kernel)
+		c.CPU.Init(&m.kernel)
 		c.CPU.KernelSyscall = bluepillSyscall
 		c.CPU.KernelException = bluepillException
 		m.vCPUs[uint64(-id)] = c // See above.
