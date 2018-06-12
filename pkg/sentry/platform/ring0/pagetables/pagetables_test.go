@@ -27,48 +27,61 @@ type mapping struct {
 	opts   MapOpts
 }
 
-func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
-	var (
-		current int
-		found   []mapping
-		failed  string
-	)
+type checkVisitor struct {
+	expected []mapping // Input.
+	current  int       // Temporary.
+	found    []mapping // Output.
+	failed   string    // Output.
+}
 
-	// Iterate over all the mappings.
-	pt.iterateRange(0, ^uintptr(0), false, func(s, e uintptr, pte *PTE, align uintptr) {
-		found = append(found, mapping{
-			start:  s,
-			length: e - s,
-			addr:   pte.Address(),
-			opts:   pte.Opts(),
-		})
-		if failed != "" {
-			// Don't keep looking for errors.
-			return
-		}
-
-		if current >= len(m) {
-			failed = "more mappings than expected"
-		} else if m[current].start != s {
-			failed = "start didn't match expected"
-		} else if m[current].length != (e - s) {
-			failed = "end didn't match expected"
-		} else if m[current].addr != pte.Address() {
-			failed = "address didn't match expected"
-		} else if m[current].opts != pte.Opts() {
-			failed = "opts didn't match"
-		}
-		current++
+func (v *checkVisitor) visit(start uintptr, pte *PTE, align uintptr) {
+	v.found = append(v.found, mapping{
+		start:  start,
+		length: align + 1,
+		addr:   pte.Address(),
+		opts:   pte.Opts(),
 	})
+	if v.failed != "" {
+		// Don't keep looking for errors.
+		return
+	}
+
+	if v.current >= len(v.expected) {
+		v.failed = "more mappings than expected"
+	} else if v.expected[v.current].start != start {
+		v.failed = "start didn't match expected"
+	} else if v.expected[v.current].length != (align + 1) {
+		v.failed = "end didn't match expected"
+	} else if v.expected[v.current].addr != pte.Address() {
+		v.failed = "address didn't match expected"
+	} else if v.expected[v.current].opts != pte.Opts() {
+		v.failed = "opts didn't match"
+	}
+	v.current++
+}
+
+func (*checkVisitor) requiresAlloc() bool { return false }
+
+func (*checkVisitor) requiresSplit() bool { return false }
+
+func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
+	// Iterate over all the mappings.
+	w := checkWalker{
+		pageTables: pt,
+		visitor: checkVisitor{
+			expected: m,
+		},
+	}
+	w.iterateRange(0, ^uintptr(0))
 
 	// Were we expected additional mappings?
-	if failed == "" && current != len(m) {
-		failed = "insufficient mappings found"
+	if w.visitor.failed == "" && w.visitor.current != len(w.visitor.expected) {
+		w.visitor.failed = "insufficient mappings found"
 	}
 
 	// Emit a meaningful error message on failure.
-	if failed != "" {
-		t.Errorf("%s; got %#v, wanted %#v", failed, found, m)
+	if w.visitor.failed != "" {
+		t.Errorf("%s; got %#v, wanted %#v", w.visitor.failed, w.visitor.found, w.visitor.expected)
 	}
 }
 
