@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"os"
+
 	"context"
 	"flag"
 	"github.com/google/subcommands"
@@ -24,6 +26,7 @@ import (
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
 type Checkpoint struct {
+	imagePath string
 }
 
 // Name implements subcommands.Command.Name.
@@ -44,6 +47,7 @@ func (*Checkpoint) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&c.imagePath, "image-path", "", "path to saved container image")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -62,7 +66,18 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("error loading container: %v", err)
 	}
 
-	if err := cont.Checkpoint(); err != nil {
+	if c.imagePath == "" {
+		Fatalf("image-path flag must be provided")
+	}
+
+	// Create the image file and open for writing.
+	file, err := os.OpenFile(c.imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		Fatalf("os.OpenFile(%q) failed: %v", c.imagePath, err)
+	}
+	defer file.Close()
+
+	if err := cont.Checkpoint(file); err != nil {
 		Fatalf("checkpoint failed: %v", err)
 	}
 

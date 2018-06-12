@@ -22,6 +22,15 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
 
+// beforeSave is invoked by stateify.
+//
+// TODO: Make map with private unix sockets savable.
+func (e *endpointMap) beforeSave() {
+	if len(e.m) != 0 {
+		panic("EndpointMap with existing private unix sockets cannot be saved")
+	}
+}
+
 // afterLoad is invoked by stateify.
 func (s *session) afterLoad() {
 	// The restore environment contains the 9p connection of this mount.

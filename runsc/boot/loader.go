@@ -100,7 +100,9 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	}
 
 	// Create VDSO.
-	vdso, err := loader.PrepareVDSO(p)
+	//
+	// Pass k as the platform since it is savable, unlike the actual platform.
+	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
 		return nil, fmt.Errorf("error creating vdso: %v", err)
 	}
