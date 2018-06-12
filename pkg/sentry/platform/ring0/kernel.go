@@ -14,27 +14,13 @@
 
 package ring0
 
-// New creates a new kernel.
+// Init initializes a new kernel.
 //
 // N.B. that constraints on KernelOpts must be satisfied.
 //
-// Init must have been called.
-func New(opts KernelOpts) *Kernel {
-	k := new(Kernel)
+//go:nosplit
+func (k *Kernel) Init(opts KernelOpts) {
 	k.init(opts)
-	return k
-}
-
-// NewCPU creates a new CPU associated with this Kernel.
-//
-// Note that execution of the new CPU must begin at Start, with constraints as
-// documented. Initialization is not completed by this method alone.
-//
-// See also Init.
-func (k *Kernel) NewCPU() *CPU {
-	c := new(CPU)
-	c.Init(k)
-	return c
 }
 
 // Halt halts execution.
@@ -56,8 +42,7 @@ func defaultSyscall() { Halt() }
 //go:nosplit
 func defaultException(Vector) { Halt() }
 
-// Init allows the initialization of a CPU from a kernel without allocation.
-// The same constraints as NewCPU apply.
+// Init initializes a new CPU.
 //
 // Init allows embedding in other objects.
 func (c *CPU) Init(k *Kernel) {
