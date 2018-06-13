@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -209,6 +208,13 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	lowerFlags.ReadOnly = false
 
 	tmpFS := mustFindFilesystem("tmpfs")
+	if !fs.IsDir(lower.StableAttr) {
+		// Create overlay on top of mount file, e.g. /etc/hostname.
+		msrc := fs.NewCachingMountSource(tmpFS, lowerFlags)
+		return fs.NewOverlayRootFile(ctx, msrc, lower, lowerFlags)
+	}
+
+	// Create overlay on top of mount dir.
 	upper, err := tmpFS.Mount(ctx, name+"-upper", lowerFlags, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tmpfs overlay: %v", err)
@@ -248,13 +254,9 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 		default:
 			return fmt.Errorf("invalid file access type: %v", conf.FileAccess)
 		}
+		// If configured, add overlay to all writable mounts.
+		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
-		fi, err := os.Stat(m.Source)
-		if err != nil {
-			return err
-		}
-		// Add overlay to all writable mounts, except when mapping an individual file.
-		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly && fi.Mode().IsDir()
 	default:
 		// TODO: Support all the mount types and make this a
 		// fatal error.  Most applications will "just work" without

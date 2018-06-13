@@ -103,6 +103,28 @@ func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags Mount
 	return newOverlayInode(ctx, overlay, msrc), nil
 }
 
+// NewOverlayRootFile produces the root of an overlay that points to a file.
+//
+// Preconditions:
+//
+// - lower must be non-nil.
+// - lower should not expose character devices, pipes, or sockets, because
+//   copying up these types of files is not supported. Neither it can be a dir.
+// - lower must not require that file objects be revalidated.
+// - lower must not have dynamic file/directory content.
+func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode, flags MountSourceFlags) (*Inode, error) {
+	if IsRegular(lower.StableAttr) {
+		return nil, fmt.Errorf("lower Inode is not a regular file")
+	}
+	msrc := newOverlayMountSource(upperMS, lower.MountSource, flags)
+	overlay, err := newOverlayEntry(ctx, nil, lower, true)
+	if err != nil {
+		msrc.DecRef()
+		return nil, err
+	}
+	return newOverlayInode(ctx, overlay, msrc), nil
+}
+
 // newOverlayInode creates a new Inode for an overlay.
 func newOverlayInode(ctx context.Context, o *overlayEntry, msrc *MountSource) *Inode {
 	var inode *Inode
