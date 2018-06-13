@@ -157,7 +157,9 @@ func TestApplicationSyscall(t *testing.T) {
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
-		}); err != nil {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if err != nil {
 			t.Errorf("application syscall with full restore failed: %v", err)
 		}
 		return false
@@ -167,7 +169,9 @@ func TestApplicationSyscall(t *testing.T) {
 			Registers:          regs,
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
-		}); err != nil {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if err != nil {
 			t.Errorf("application syscall with partial restore failed: %v", err)
 		}
 		return false
@@ -182,7 +186,9 @@ func TestApplicationFault(t *testing.T) {
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
-		}); err != platform.ErrContextSignal || (si != nil && si.Signo != int32(syscall.SIGSEGV)) {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if err != platform.ErrContextSignal || (si != nil && si.Signo != int32(syscall.SIGSEGV)) {
 			t.Errorf("application fault with full restore got (%v, %v), expected (%v, SIGSEGV)", err, si, platform.ErrContextSignal)
 		}
 		return false
@@ -193,7 +199,9 @@ func TestApplicationFault(t *testing.T) {
 			Registers:          regs,
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
-		}); err != platform.ErrContextSignal || (si != nil && si.Signo != int32(syscall.SIGSEGV)) {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if err != platform.ErrContextSignal || (si != nil && si.Signo != int32(syscall.SIGSEGV)) {
 			t.Errorf("application fault with partial restore got (%v, %v), expected (%v, SIGSEGV)", err, si, platform.ErrContextSignal)
 		}
 		return false
@@ -203,15 +211,20 @@ func TestApplicationFault(t *testing.T) {
 func TestRegistersSyscall(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleRegsSyscall, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
-		if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
-			Registers:          regs,
-			FloatingPointState: dummyFPState,
-			PageTables:         pt,
-		}); err != nil {
-			t.Errorf("application register check with partial restore got unexpected error: %v", err)
-		}
-		if err := testutil.CheckTestRegs(regs, false); err != nil {
-			t.Errorf("application register check with partial restore failed: %v", err)
+		for {
+			if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+			}); err == platform.ErrContextInterrupt {
+				continue // Retry.
+			} else if err != nil {
+				t.Errorf("application register check with partial restore got unexpected error: %v", err)
+			}
+			if err := testutil.CheckTestRegs(regs, false); err != nil {
+				t.Errorf("application register check with partial restore failed: %v", err)
+			}
+			break // Done.
 		}
 		return false
 	})
@@ -220,16 +233,21 @@ func TestRegistersSyscall(t *testing.T) {
 func TestRegistersFault(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleRegsFault, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		testutil.SetTestRegs(regs) // Fill values for all registers.
-		if si, _, err := c.SwitchToUser(ring0.SwitchOpts{
-			Registers:          regs,
-			FloatingPointState: dummyFPState,
-			PageTables:         pt,
-			FullRestore:        true,
-		}); err != platform.ErrContextSignal || si.Signo != int32(syscall.SIGSEGV) {
-			t.Errorf("application register check with full restore got unexpected error: %v", err)
-		}
-		if err := testutil.CheckTestRegs(regs, true); err != nil {
-			t.Errorf("application register check with full restore failed: %v", err)
+		for {
+			if si, _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+				FullRestore:        true,
+			}); err == platform.ErrContextInterrupt {
+				continue // Retry.
+			} else if err != platform.ErrContextSignal || si.Signo != int32(syscall.SIGSEGV) {
+				t.Errorf("application register check with full restore got unexpected error: %v", err)
+			}
+			if err := testutil.CheckTestRegs(regs, true); err != nil {
+				t.Errorf("application register check with full restore failed: %v", err)
+			}
+			break // Done.
 		}
 		return false
 	})
@@ -238,16 +256,21 @@ func TestRegistersFault(t *testing.T) {
 func TestSegments(t *testing.T) {
 	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		testutil.SetTestSegments(regs)
-		if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
-			Registers:          regs,
-			FloatingPointState: dummyFPState,
-			PageTables:         pt,
-			FullRestore:        true,
-		}); err != nil {
-			t.Errorf("application segment check with full restore got unexpected error: %v", err)
-		}
-		if err := testutil.CheckTestSegments(regs); err != nil {
-			t.Errorf("application segment check with full restore failed: %v", err)
+		for {
+			if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+				FullRestore:        true,
+			}); err == platform.ErrContextInterrupt {
+				continue // Retry.
+			} else if err != nil {
+				t.Errorf("application segment check with full restore got unexpected error: %v", err)
+			}
+			if err := testutil.CheckTestSegments(regs); err != nil {
+				t.Errorf("application segment check with full restore failed: %v", err)
+			}
+			break // Done.
 		}
 		return false
 	})
@@ -323,22 +346,32 @@ func TestInvalidate(t *testing.T) {
 	var data uintptr // Used below.
 	applicationTest(t, true, testutil.Touch, func(c *vCPU, regs *syscall.PtraceRegs, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, &data) // Read legitimate value.
-		if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
-			Registers:          regs,
-			FloatingPointState: dummyFPState,
-			PageTables:         pt,
-		}); err != nil {
-			t.Errorf("application partial restore: got %v, wanted nil", err)
+		for {
+			if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+			}); err == platform.ErrContextInterrupt {
+				continue // Retry.
+			} else if err != nil {
+				t.Errorf("application partial restore: got %v, wanted nil", err)
+			}
+			break // Done.
 		}
 		// Unmap the page containing data & invalidate.
 		pt.Unmap(usermem.Addr(reflect.ValueOf(&data).Pointer() & ^uintptr(usermem.PageSize-1)), usermem.PageSize)
-		if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
-			Registers:          regs,
-			FloatingPointState: dummyFPState,
-			PageTables:         pt,
-			Flush:              true,
-		}); err != platform.ErrContextSignal {
-			t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextSignal)
+		for {
+			if _, _, err := c.SwitchToUser(ring0.SwitchOpts{
+				Registers:          regs,
+				FloatingPointState: dummyFPState,
+				PageTables:         pt,
+				Flush:              true,
+			}); err == platform.ErrContextInterrupt {
+				continue // Retry.
+			} else if err != platform.ErrContextSignal {
+				t.Errorf("application partial restore: got %v, wanted %v", err, platform.ErrContextSignal)
+			}
+			break // Success.
 		}
 		return false
 	})
@@ -355,7 +388,9 @@ func TestEmptyAddressSpace(t *testing.T) {
 			Registers:          regs,
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
-		}); !IsFault(err, si) {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if !IsFault(err, si) {
 			t.Errorf("first fault with partial restore failed got %v", err)
 			t.Logf("registers: %#v", &regs)
 		}
@@ -367,7 +402,9 @@ func TestEmptyAddressSpace(t *testing.T) {
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
 			FullRestore:        true,
-		}); !IsFault(err, si) {
+		}); err == platform.ErrContextInterrupt {
+			return true // Retry.
+		} else if !IsFault(err, si) {
 			t.Errorf("first fault with full restore failed got %v", err)
 			t.Logf("registers: %#v", &regs)
 		}
@@ -422,11 +459,10 @@ func BenchmarkApplicationSyscall(b *testing.B) {
 			Registers:          regs,
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
-		}); err != nil {
-			if err == platform.ErrContextInterrupt {
-				a++
-				return true // Ignore.
-			}
+		}); err == platform.ErrContextInterrupt {
+			a++
+			return true // Ignore.
+		} else if err != nil {
 			b.Fatalf("benchmark failed: %v", err)
 		}
 		i++
@@ -459,11 +495,10 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 			Registers:          regs,
 			FloatingPointState: dummyFPState,
 			PageTables:         pt,
-		}); err != nil {
-			if err == platform.ErrContextInterrupt {
-				a++
-				return true // Ignore.
-			}
+		}); err == platform.ErrContextInterrupt {
+			a++
+			return true // Ignore.
+		} else if err != nil {
 			b.Fatalf("benchmark failed: %v", err)
 		}
 		// This will intentionally cause the world switch. By executing
@@ -474,6 +509,6 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 		return i < b.N
 	})
 	if a != 0 {
-		b.Logf("EAGAIN occurred %d times (in %d iterations).", a, a+i)
+		b.Logf("ErrContextInterrupt occurred %d times (in %d iterations).", a, a+i)
 	}
 }
