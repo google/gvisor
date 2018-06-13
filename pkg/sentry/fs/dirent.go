@@ -1257,6 +1257,15 @@ func (d *Dirent) destroy() {
 
 	// Drop all weak references.
 	for _, w := range d.children {
+		if c := w.Get(); c != nil {
+			if c.(*Dirent).IsNegative() {
+				// The parent holds both weak and strong refs in the case of
+				// negative dirents.
+				c.DecRef()
+			}
+			// Drop the reference we just acquired in WeakRef.Get.
+			c.DecRef()
+		}
 		w.Drop()
 	}
 	d.children = nil
