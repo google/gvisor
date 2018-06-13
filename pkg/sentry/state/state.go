@@ -78,10 +78,7 @@ func (opts SaveOpts) Save(k *kernel.Kernel, w *watchdog.Watchdog) error {
 		// Save the kernel.
 		err = k.SaveTo(wc)
 		if closeErr := wc.Close(); err == nil && closeErr != nil {
-			err = closeErr
-		}
-		if err != nil {
-			err = ErrStateFile{err}
+			err = ErrStateFile{closeErr}
 		}
 	}
 	opts.Callback(err)
