@@ -71,7 +71,6 @@ go_library(
 
 go_test(
     name = "kvm_test",
-    size = "small",
     srcs = [
         "kvm_test.go",
         "virtual_map_test.go",
