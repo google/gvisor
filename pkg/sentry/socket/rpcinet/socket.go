@@ -288,7 +288,7 @@ func (s *socketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	<-c
 
 	if e := stack.rpcConn.Request(id).Result.(*pb.SyscallResponse_Bind).Bind.ErrorNumber; e != 0 {
-		syserr.FromHost(syscall.Errno(e))
+		return syserr.FromHost(syscall.Errno(e))
 	}
 	return nil
 }
@@ -300,7 +300,7 @@ func (s *socketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
 	<-c
 
 	if e := stack.rpcConn.Request(id).Result.(*pb.SyscallResponse_Listen).Listen.ErrorNumber; e != 0 {
-		syserr.FromHost(syscall.Errno(e))
+		return syserr.FromHost(syscall.Errno(e))
 	}
 	return nil
 }
@@ -361,7 +361,7 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 	<-c
 
 	if e := stack.rpcConn.Request(id).Result.(*pb.SyscallResponse_SetSockOpt).SetSockOpt.ErrorNumber; e != 0 {
-		syserr.FromHost(syscall.Errno(e))
+		return syserr.FromHost(syscall.Errno(e))
 	}
 	return nil
 }
