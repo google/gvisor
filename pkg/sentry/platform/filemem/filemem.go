@@ -156,17 +156,6 @@ type usageInfo struct {
 	refs uint64
 }
 
-func (u *usageInfo) incRef() {
-	u.refs++
-}
-
-func (u *usageInfo) decRef() {
-	if u.refs == 0 {
-		panic("DecRef at 0 refs!")
-	}
-	u.refs--
-}
-
 const (
 	chunkShift = 24
 	chunkSize  = 1 << chunkShift // 16 MB
@@ -506,7 +495,7 @@ func (f *FileMem) IncRef(fr platform.FileRange) {
 	defer f.mu.Unlock()
 
 	gap := f.usage.ApplyContiguous(fr, func(seg usageIterator) {
-		seg.ValuePtr().incRef()
+		seg.ValuePtr().refs++
 	})
 	if gap.Ok() {
 		panic(fmt.Sprintf("IncRef(%v): attempted to IncRef on unallocated pages %v:\n%v", fr, gap.Range(), &f.usage))
@@ -527,7 +516,10 @@ func (f *FileMem) DecRef(fr platform.FileRange) {
 	for seg := f.usage.FindSegment(fr.Start); seg.Ok() && seg.Start() < fr.End; seg = seg.NextSegment() {
 		seg = f.usage.Isolate(seg, fr)
 		val := seg.ValuePtr()
-		val.decRef()
+		if val.refs == 0 {
+			panic(fmt.Sprintf("DecRef(%v): 0 existing references on %v:\n%v", fr, seg.Range(), &f.usage))
+		}
+		val.refs--
 		if val.refs == 0 {
 			freed = true
 			// Reclassify memory as System, until it's freed by the reclaim
