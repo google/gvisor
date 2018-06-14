@@ -213,7 +213,12 @@ func NewDirent(inode *Inode, name string) *Dirent {
 
 // NewTransientDirent creates a transient Dirent that shouldn't actually be
 // visible to users.
+//
+// An Inode is required.
 func NewTransientDirent(inode *Inode) *Dirent {
+	if inode == nil {
+		panic("an inode is required")
+	}
 	return newDirent(inode, "transient")
 }
 
