@@ -960,7 +960,13 @@ type kernelCPUClockListener struct {
 
 // Notify implements ktime.TimerListener.Notify.
 func (l kernelCPUClockListener) Notify(exp uint64) {
-	atomic.AddUint64(&l.k.cpuClock, exp)
+	// Only increment cpuClock by 1 regardless of the number of expirations.
+	// This approximately compensates for cases where thread throttling or bad
+	// Go runtime scheduling prevents the cpuClockTicker goroutine, and
+	// presumably task goroutines as well, from executing for a long period of
+	// time. It's also necessary to prevent CPU clocks from seeing large
+	// discontinuous jumps.
+	atomic.AddUint64(&l.k.cpuClock, 1)
 }
 
 // Destroy implements ktime.TimerListener.Destroy.
