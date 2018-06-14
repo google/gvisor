@@ -54,12 +54,12 @@ func validateID(id string) error {
 //
 // Container metadata can be saved and loaded to disk. Within a root directory,
 // we maintain subdirectories for each container named with the container id.
-// The container metadata is is stored as json within the container directory
-// in a file named "meta.json". This metadata format is defined by us, and is
+// The container metadata is stored as a json within the container directory
+// in a file named "meta.json". This metadata format is defined by us and is
 // not part of the OCI spec.
 //
-// Containers must write their metadata file after any change to their internal
-// state. The entire container directory is deleted when the container is
+// Containers must write their metadata files after any change to their internal
+// states. The entire container directory is deleted when the container is
 // destroyed.
 type Container struct {
 	// ID is the container ID.
@@ -96,7 +96,7 @@ type Container struct {
 // Load loads a container with the given id from a metadata file. id may be an
 // abbreviation of the full container id, in which case Load loads the
 // container to which id unambiguously refers to.
-// Returns ErrNotExist if container doesn't exits.
+// Returns ErrNotExist if container doesn't exist.
 func Load(rootDir, id string) (*Container, error) {
 	log.Debugf("Load container %q %q", rootDir, id)
 	if err := validateID(id); err != nil {
@@ -214,7 +214,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		Owner:         os.Getenv("USER"),
 	}
 
-	// TODO: If the metadata annotations indicates that this
+	// TODO: If the metadata annotations indicate that this
 	// container should be started in another sandbox, we must do so. The
 	// metadata will indicate the ID of the sandbox, which is the same as
 	// the ID of the init container in the sandbox. We can look up that
@@ -258,7 +258,7 @@ func (c *Container) Start(conf *boot.Config) error {
 	}
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
-	// stop and destroy the container".
+	// stop and destroy the container" -OCI spec.
 	if c.Spec.Hooks != nil {
 		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
 			c.Destroy()
@@ -273,7 +273,7 @@ func (c *Container) Start(conf *boot.Config) error {
 
 	// "If any poststart hook fails, the runtime MUST log a warning, but
 	// the remaining hooks and lifecycle continue as if the hook had
-	// succeeded".
+	// succeeded" -OCI spec.
 	if c.Spec.Hooks != nil {
 		executeHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
 	}
@@ -379,7 +379,7 @@ func (c *Container) Destroy() error {
 	}
 
 	// "If any poststop hook fails, the runtime MUST log a warning, but the
-	// remaining hooks and lifecycle continue as if the hook had succeeded".
+	// remaining hooks and lifecycle continue as if the hook had succeeded" -OCI spec.
 	if c.Spec.Hooks != nil && (c.Status == Created || c.Status == Running) {
 		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
