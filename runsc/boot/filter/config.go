@@ -61,7 +61,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_NEWFSTATAT:      {},
 	syscall.SYS_POLL:            {},
 	syscall.SYS_PREAD64:         {},
-	syscall.SYS_PSELECT6:        {},
 	syscall.SYS_PWRITE64:        {},
 	syscall.SYS_READ:            {},
 	syscall.SYS_READLINKAT:      {},
