@@ -20,10 +20,12 @@ import (
 	"io"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi"
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
@@ -63,8 +65,23 @@ func (f *fileContext) Value(key interface{}) interface{} {
 	}
 }
 
+// newByteReaderFile creates a fake file to read data from.
 func newByteReaderFile(data []byte) *fs.File {
-	dirent := fs.NewTransientDirent(nil)
+	// Create a fake inode.
+	inode := fs.NewInode(fsutil.NewSimpleInodeOperations(fsutil.InodeSimpleAttributes{
+		FSType: linux.ANON_INODE_FS_MAGIC,
+	}), fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+		Type:      fs.Anonymous,
+		DeviceID:  anon.PseudoDevice.DeviceID(),
+		InodeID:   anon.PseudoDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+	})
+
+	// Use the fake inode to create a fake dirent.
+	dirent := fs.NewTransientDirent(inode)
+	defer dirent.DecRef()
+
+	// Use the fake dirent to make a fake file.
 	flags := fs.FileFlags{Read: true, Pread: true}
 	return fs.NewFile(&fileContext{Context: context.Background()}, dirent, flags, &byteReader{
 		data: data,
@@ -202,6 +219,7 @@ func PrepareVDSO(p platform.Platform) (*VDSO, error) {
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.
 	info, err := validateVDSO(nil, vdsoFile, uint64(len(vdsoBin)))
+	vdsoFile.DecRef()
 	if err != nil {
 		return nil, err
 	}

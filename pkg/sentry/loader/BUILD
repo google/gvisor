@@ -43,6 +43,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
+        "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
