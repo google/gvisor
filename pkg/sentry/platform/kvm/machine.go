@@ -397,7 +397,7 @@ func (c *vCPU) unlock() {
 	case vCPUUser | vCPUGuest | vCPUWaiter:
 		// Force a transition: this must trigger a notification when we
 		// return from guest mode.
-		redpill()
+		c.notify()
 	case vCPUUser | vCPUWaiter:
 		// Waiting for the lock to be released; the responsibility is
 		// on us to notify the waiter and clear the associated bit.
