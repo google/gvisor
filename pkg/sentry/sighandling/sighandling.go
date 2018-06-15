@@ -29,23 +29,31 @@ import (
 // numSignals is the number of normal (non-realtime) signals on Linux.
 const numSignals = 32
 
-// forwardSignals listens for incoming signals and delivers them to k. It stops
-// when the stop channel is closed.
-func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, stop chan struct{}) {
+// forwardSignals listens for incoming signals and delivers them to k. It starts
+// when the start channel is closed and stops when the stop channel is closed.
+func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, start, stop chan struct{}) {
 	// Build a select case.
-	sc := []reflect.SelectCase{{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(stop)}}
+	sc := []reflect.SelectCase{{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(start)}}
 	for _, sigchan := range sigchans {
 		sc = append(sc, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(sigchan)})
 	}
 
+	started := false
 	for {
 		// Wait for a notification.
 		index, _, ok := reflect.Select(sc)
 
-		// Was it the stop channel?
+		// Was it the start / stop channel?
 		if index == 0 {
 			if !ok {
-				break
+				if started {
+					// stop channel
+					break
+				} else {
+					// start channel
+					started = true
+					sc[0] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(stop)}
+				}
 			}
 			continue
 		}
@@ -57,18 +65,18 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, stop chan struc
 
 		// Otherwise, it was a signal on channel N. Index 0 represents the stop
 		// channel, so index N represents the channel for signal N.
-		if !k.SendExternalSignal(&arch.SignalInfo{Signo: int32(index)}, "sentry") {
+		if !started || !k.SendExternalSignal(&arch.SignalInfo{Signo: int32(index)}, "sentry") {
 			// Kernel is not ready to receive signals.
 			//
 			// Kill ourselves if this signal would have killed the
-			// process before StartForwarding was called. i.e., all
+			// process before PrepareForwarding was called. i.e., all
 			// _SigKill signals; see Go
 			// src/runtime/sigtab_linux_generic.go.
 			//
 			// Otherwise ignore the signal.
 			//
 			// TODO: Convert Go's runtime.raise from
-			// tkill to tgkill so StartForwarding doesn't need to
+			// tkill to tgkill so PrepareForwarding doesn't need to
 			// be called until after filter installation.
 			switch linux.Signal(index) {
 			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:
@@ -84,9 +92,11 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, stop chan struc
 	}
 }
 
-// StartForwarding ensures that synchronous signals are forwarded to k and
-// returns a callback that stops signal forwarding.
-func StartForwarding(k *kernel.Kernel) func() {
+// PrepareForwarding ensures that synchronous signals are forwarded to k and
+// returns a callback that starts signal delivery, which itself returns a
+// callback that stops signal forwarding.
+func PrepareForwarding(k *kernel.Kernel) func() func() {
+	start := make(chan struct{})
 	stop := make(chan struct{})
 
 	// Register individual channels. One channel per standard signal is
@@ -109,8 +119,18 @@ func StartForwarding(k *kernel.Kernel) func() {
 		signal.Notify(sigchan, syscall.Signal(sig))
 	}
 	// Start up our listener.
-	go forwardSignals(k, sigchans, stop) // S/R-SAFE: synchronized by Kernel.extMu
+	go forwardSignals(k, sigchans, start, stop) // S/R-SAFE: synchronized by Kernel.extMu
 
-	// ... shouldn't this wait until the forwardSignals goroutine returns?
-	return func() { close(stop) }
+	return func() func() {
+		close(start)
+		return func() {
+			close(stop)
+		}
+	}
+}
+
+// StartForwarding ensures that synchronous signals are forwarded to k and
+// returns a callback that stops signal forwarding.
+func StartForwarding(k *kernel.Kernel) func() {
+	return PrepareForwarding(k)()
 }
