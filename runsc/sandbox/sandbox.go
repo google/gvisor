@@ -464,6 +464,21 @@ func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
 	return nil
 }
 
+// Pause sends the pause call for a container in the sandbox.
+func (s *Sandbox) Pause(cid string) error {
+	log.Debugf("Pause sandbox %q", s.ID)
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContainerPause, nil, nil); err != nil {
+		return fmt.Errorf("err pausing container %q: %v", cid, err)
+	}
+	return nil
+}
+
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {

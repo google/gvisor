@@ -316,7 +316,7 @@ func (c *Container) Event() (*boot.Event, error) {
 // Pid returns the Pid of the sandbox the container is running in, or -1 if the
 // container is not running.
 func (c *Container) Pid() int {
-	if c.Status != Running && c.Status != Created {
+	if c.Status != Running && c.Status != Created && c.Status != Paused {
 		return -1
 	}
 	return c.Sandbox.Pid
@@ -347,6 +347,23 @@ func (c *Container) Checkpoint(f *os.File) error {
 		return nil
 	}
 	return c.Sandbox.Checkpoint(c.ID, f)
+}
+
+// Pause suspends the container and its kernel.
+// The call only succeeds if the container's status is created or running.
+func (c *Container) Pause() error {
+	log.Debugf("Pausing container %q", c.ID)
+	switch c.Status {
+	case Created, Running:
+		if err := c.Sandbox.Pause(c.ID); err != nil {
+			return fmt.Errorf("error pausing container: %v", err)
+		}
+		c.Status = Paused
+		return c.save()
+	default:
+		log.Warningf("container %q not created or running, not pausing", c.ID)
+		return nil
+	}
 }
 
 // State returns the metadata of the container.

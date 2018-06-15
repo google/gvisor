@@ -17,6 +17,7 @@ go_library(
         "kill.go",
         "list.go",
         "path.go",
+        "pause.go",
         "ps.go",
         "restore.go",
         "run.go",
