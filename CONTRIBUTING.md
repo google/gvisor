@@ -56,17 +56,55 @@ Rules:
 
 ### Code reviews
 
-All changes must be submitted via [Gerrit](https://gvisor-review.googlesource.com).
+All changes must be submitted via [Gerrit][gerrit].
 
 All submissions, including submissions by project members, require review.
-Please see these [instructions](https://gvisor-review.googlesource.com/Documentation/).
+
+To submit a patch, first clone the canonical repository.
+
+```
+git clone https://gvisor.googlesource.com/gvisor
+```
+
+From within the cloned directory, install the commit hooks (optional, but if
+you don't you will need to generate Change-Ids manually in your commits).
+
+```
+curl -Lo `git rev-parse --git-dir`/hooks/commit-msg https://gerrit-review.googlesource.com/tools/hooks/commit-msg
+chmod +x `git rev-parse --git-dir`/hooks/commit-msg
+```
+
+Edit the source and generate commits as you normally would. While making
+changes, remember to organize commits logically. Changes are not reviewed per
+branch (as with a pull request), they are reviewed per commit.
+
+Before posting a new patch, you will need to generate an appropriate
+authentication cookie. Visit the [repository][repo] and click the
+"Generate Password" link at the top of the page for instructions.
+
+To post a patch for review, push to a special "for" reference.
+
+```
+git push origin HEAD:refs/for/master
+```
+
+A change link will be generated for the commit, and a team member will review
+your change request, provide feedback (and submit when appropriate). To address
+feedback, you may be required to amend your commit and repush (don't change
+the Commit-Id in the commit message). This will generate a new version of
+the change.
+
+When approved, the change will be submitted by a team member and automatically
+merged into the repository.
 
 ### The small print
 
 Contributions made by corporations are covered by a different agreement than
 the one above, the
-[Software Grant and Corporate Contributor License Agreement]
-(https://cla.developers.google.com/about/google-corporate).
+[Software Grant and Corporate Contributor License Agreement][gccla].
 
 [gcla]: https://cla.developers.google.com/about/google-individual
+[gccla]: https://cla.developers.google.com/about/google-corporate
+[gerrit]: https://gvisor-review.googlesource.com
 [gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
+[repo]: https://gvisor.googlesource.com
