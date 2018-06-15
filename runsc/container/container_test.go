@@ -459,6 +459,40 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+// TestPause tests that calling pause successfully pauses the container.
+// It checks that no errors are returned and that the state of the container
+// is in fact 'Paused.'
+func TestPause(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("sleep", "100")
+
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create and start the container.
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Pause the running container.
+	if err := cont.Pause(); err != nil {
+		t.Errorf("error pausing container: %v", err)
+	}
+
+	// Confirm the status of the container is paused.
+	if got, want := cont.Status, container.Paused; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+}
+
 // TestCapabilities verifies that:
 // - Running exec as non-root UID and GID will result in an error (because the
 //   executable file can't be read).

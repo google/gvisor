@@ -37,6 +37,9 @@ const (
 	// container..
 	ContainerExecute = "containerManager.Execute"
 
+	// ContainerPause pauses the container.
+	ContainerPause = "containerManager.Pause"
+
 	// ContainerProcesses is the URPC endpoint for getting the list of
 	// processes running in a container.
 	ContainerProcesses = "containerManager.Processes"
@@ -151,6 +154,12 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 		Watchdog: cm.watchdog,
 	}
 	return state.Save(o, nil)
+}
+
+// Pause suspends the process in a container.
+func (cm *containerManager) Pause(_, _ *struct{}) error {
+	cm.k.Pause()
+	return nil
 }
 
 // Wait waits for the init process in the given container.

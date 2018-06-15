@@ -19,13 +19,17 @@ package container
 type Status int
 
 const (
-	// Creating indicates "the container is being created".
-	Creating Status = iota
-
 	// Created indicates "the runtime has finished the create operation and
 	// the container process has neither exited nor executed the
 	// user-specified program".
-	Created
+	Created Status = iota
+
+	// Creating indicates "the container is being created".
+	Creating
+
+	// Paused indicates that the process within the container has been
+	// suspended.
+	Paused
 
 	// Running indicates "the container process has executed the
 	// user-specified program but has not exited".
@@ -39,10 +43,12 @@ const (
 // CLI spec and should not be changed.
 func (s Status) String() string {
 	switch s {
-	case Creating:
-		return "creating"
 	case Created:
 		return "created"
+	case Creating:
+		return "creating"
+	case Paused:
+		return "paused"
 	case Running:
 		return "running"
 	case Stopped:
