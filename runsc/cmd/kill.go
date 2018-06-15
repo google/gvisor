@@ -72,7 +72,7 @@ func (*Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	// The OCI command-line spec says that the signal should be specified
 	// via a flag, but runc (and things that call runc) pass it as an
 	// argument.
-	signal := f.Arg(2)
+	signal := f.Arg(1)
 	if signal == "" {
 		signal = "TERM"
 	}
