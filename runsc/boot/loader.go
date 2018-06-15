@@ -18,6 +18,7 @@ package boot
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"sync/atomic"
 	"syscall"
 	gtime "time"
@@ -171,10 +172,11 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		Timekeeper:        tk,
 		RootUserNamespace: creds.UserNamespace,
 		NetworkStack:      networkStack,
-		ApplicationCores:  8,
-		Vdso:              vdso,
-		RootUTSNamespace:  utsns,
-		RootIPCNamespace:  ipcns,
+		// TODO: use number of logical processors from cgroups.
+		ApplicationCores: uint(runtime.NumCPU()),
+		Vdso:             vdso,
+		RootUTSNamespace: utsns,
+		RootIPCNamespace: ipcns,
 	}); err != nil {
 		return nil, fmt.Errorf("error initializing kernel: %v", err)
 	}

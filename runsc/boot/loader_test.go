@@ -15,7 +15,9 @@
 package boot
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"sync"
 	"testing"
@@ -29,6 +31,7 @@ import (
 
 func init() {
 	log.SetLevel(log.Debug)
+	rand.Seed(time.Now().UnixNano())
 }
 
 // testSpec returns a simple spec that can be used in tests.
@@ -46,7 +49,7 @@ func testSpec() *specs.Spec {
 }
 
 func createLoader() (*Loader, error) {
-	fd, err := server.CreateSocket(ControlSocketAddr("123"))
+	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
 	if err != nil {
 		return nil, err
 	}
