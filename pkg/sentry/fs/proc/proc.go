@@ -111,6 +111,13 @@ func (p *proc) newSelf(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	return newFile(s, msrc, fs.Symlink, nil)
 }
 
+// newThreadSelf returns a new "threadSelf" node.
+func (p *proc) newThreadSelf(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	s := &threadSelf{pidns: p.pidns}
+	s.InitSymlink(ctx, fs.RootOwner, "")
+	return newFile(s, msrc, fs.Symlink, nil)
+}
+
 // newStubProcFsFile returns a procfs file with constant contents.
 func (p *proc) newStubProcFSFile(ctx context.Context, msrc *fs.MountSource, c []byte) *fs.Inode {
 	u := &stubProcFSFile{
@@ -134,6 +141,28 @@ func (s *self) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	return "", ramfs.ErrInvalidOp
 }
 
+// threadSelf is more magical than "self" link.
+type threadSelf struct {
+	ramfs.Symlink
+
+	pidns *kernel.PIDNamespace
+}
+
+// Readlink implements fs.InodeOperations.Readlink.
+func (s *threadSelf) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
+	if t := kernel.TaskFromContext(ctx); t != nil {
+		tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
+		tid := s.pidns.IDOfTask(t)
+		if tid == 0 || tgid == 0 {
+			return "", ramfs.ErrNotFound
+		}
+		return fmt.Sprintf("%d/task/%d", tgid, tid), nil
+	}
+
+	// Who is reading this link?
+	return "", ramfs.ErrInvalidOp
+}
+
 // Lookup loads an Inode at name into a Dirent.
 func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
 	// Is it one of the static ones?
@@ -151,8 +180,9 @@ func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dire
 			}
 			return p.newNetDir(ctx, dir.MountSource)
 		},
-		"self": func() *fs.Inode { return p.newSelf(ctx, dir.MountSource) },
-		"sys":  func() *fs.Inode { return p.newSysDir(ctx, dir.MountSource) },
+		"self":        func() *fs.Inode { return p.newSelf(ctx, dir.MountSource) },
+		"sys":         func() *fs.Inode { return p.newSysDir(ctx, dir.MountSource) },
+		"thread-self": func() *fs.Inode { return p.newThreadSelf(ctx, dir.MountSource) },
 	}
 	if nf, ok := nfs[name]; ok {
 		return fs.NewDirent(nf(), name), nil
