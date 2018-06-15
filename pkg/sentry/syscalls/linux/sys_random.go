@@ -15,10 +15,10 @@
 package linux
 
 import (
-	"crypto/rand"
 	"io"
 	"math"
 
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"

@@ -5,7 +5,6 @@
 package tcp
 
 import (
-	"crypto/rand"
 	"crypto/sha1"
 	"encoding/binary"
 	"hash"
@@ -13,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"

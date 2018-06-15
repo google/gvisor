@@ -11,6 +11,7 @@ go_library(
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/dhcp",
     deps = [
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",

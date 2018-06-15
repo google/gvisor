@@ -17,13 +17,13 @@ package loader
 
 import (
 	"bytes"
-	"crypto/rand"
 	"io"
 	"path"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"

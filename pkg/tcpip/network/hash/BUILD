@@ -7,5 +7,8 @@ go_library(
     srcs = ["hash.go"],
     importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/hash",
     visibility = ["//visibility:public"],
-    deps = ["//pkg/tcpip/header"],
+    deps = [
+        "//pkg/rand",
+        "//pkg/tcpip/header",
+    ],
 )

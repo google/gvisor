@@ -5,11 +5,11 @@
 package tcp
 
 import (
-	"crypto/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
