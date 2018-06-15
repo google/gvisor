@@ -195,7 +195,43 @@ func capsFromNames(names []string) (auth.CapabilitySet, error) {
 
 // Is9PMount returns true if the given mount can be mounted as an external gofer.
 func Is9PMount(m specs.Mount) bool {
-	return m.Type == "bind" && m.Source != "" && !strings.HasPrefix(m.Destination, "/dev")
+	return m.Type == "bind" && m.Source != "" && IsSupportedDevMount(m)
+}
+
+// IsSupportedDevMount returns true if the mount is a supported /dev mount.
+// Only mount that does not conflict with runsc default /dev mount is
+// supported.
+func IsSupportedDevMount(m specs.Mount) bool {
+	// These are devices exist inside sentry. See pkg/sentry/fs/dev/dev.go
+	var existingDevices = []string{
+		"/dev/fd", "/dev/stdin", "/dev/stdout", "/dev/stderr",
+		"/dev/null", "/dev/zero", "/dev/full", "/dev/random",
+		"/dev/urandom", "/dev/shm", "/dev/pts", "/dev/ptmx",
+	}
+	dst := filepath.Clean(m.Destination)
+	if dst == "/dev" {
+		// OCI spec uses many different mounts for the things inside of '/dev'. We
+		// have a single mount at '/dev' that is always mounted, regardless of
+		// whether it was asked for, as the spec says we SHOULD.
+		return false
+	}
+	for _, dev := range existingDevices {
+		if dst == dev || strings.HasPrefix(dst, dev+"/") {
+			return false
+		}
+	}
+	return true
+}
+
+// SupportedMounts filters out unsupported mounts.
+func SupportedMounts(mounts []specs.Mount) []specs.Mount {
+	var newMounts []specs.Mount
+	for _, m := range mounts {
+		if IsSupportedDevMount(m) {
+			newMounts = append(newMounts, m)
+		}
+	}
+	return newMounts
 }
 
 // BinPath returns the real path to self, resolving symbolink links. This is done
