@@ -33,6 +33,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/log",
+        "//pkg/rand",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",

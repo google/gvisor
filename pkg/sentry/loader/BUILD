@@ -39,6 +39,7 @@ go_library(
         "//pkg/binary",
         "//pkg/cpuid",
         "//pkg/log",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",

@@ -7,12 +7,12 @@ package dhcp
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"

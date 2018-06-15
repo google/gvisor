@@ -70,6 +70,7 @@ go_library(
         "//pkg/eventchannel",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/rand",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",

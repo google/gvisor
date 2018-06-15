@@ -6,9 +6,9 @@
 package hash
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 )
 
