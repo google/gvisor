@@ -162,6 +162,18 @@ func (i *inodeOperations) waitFor(wakeupChan *chan struct{}, sleeper amutex.Slee
 	}
 }
 
+// Truncate implements fs.InodeOperations.Truncate
+//
+// This method is required to override the default i.InodeOperations.Truncate
+// which may return ErrInvalidOperation, this allows open related
+// syscalls to set the O_TRUNC flag without returning an error by
+// calling Truncate directly during openat. The ftruncate and truncate
+// system calls will check that the file is an actual file and return
+// EINVAL because it's a PIPE, making this behavior consistent with linux.
+func (i *inodeOperations) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
 // newHandleLocked signals a new pipe reader or writer depending on where
 // 'wakeupChan' points. This unblocks any corresponding reader or writer
 // waiting for the other end of the channel to be opened, see Fifo.waitFor.
