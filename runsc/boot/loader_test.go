@@ -256,6 +256,51 @@ func TestCreateMountNamespace(t *testing.T) {
 			expectedPaths: []string{"/foo", "/foo/bar", "/foo/bar/baz", "/foo/qux",
 				"/foo/qux-quz", "/foo/some/very/very/deep/path", "/proc", "/dev", "/sys"},
 		},
+		{
+			name: "mount inside /dev",
+			spec: specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/proc",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/dev",
+						Type:        "tmpfs",
+					},
+					{
+						// Mounted by runsc by default.
+						Destination: "/dev/fd",
+						Type:        "tmpfs",
+					},
+					{
+						// Mount with the same prefix.
+						Destination: "/dev/fd-foo",
+						Source:      testFile.Name(),
+						Type:        "bind",
+					},
+					{
+						// Unsupported fs type.
+						Destination: "/dev/mqueue",
+						Type:        "mqueue",
+					},
+					{
+						Destination: "/dev/foo",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/dev/bar",
+						Source:      testFile.Name(),
+						Type:        "bind",
+					},
+				},
+			},
+			expectedPaths: []string{"/proc", "/dev", "/dev/fd-foo", "/dev/foo", "/dev/bar", "/sys"},
+		},
 	}
 
 	for _, tc := range testCases {

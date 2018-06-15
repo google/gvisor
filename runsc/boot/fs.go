@@ -35,6 +35,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
 type fdDispenser struct {
@@ -78,29 +79,6 @@ func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *f
 	// Keep track of whether proc, sys, and tmp were mounted.
 	var procMounted, sysMounted, tmpMounted bool
 
-	// Mount all submounts from the spec.
-	for _, m := range spec.Mounts {
-		// OCI spec uses many different mounts for the things inside of '/dev'. We
-		// have a single mount at '/dev' that is always mounted, regardless of
-		// whether it was asked for, as the spec says we SHOULD.
-		if strings.HasPrefix(m.Destination, "/dev") {
-			log.Warningf("ignoring dev mount at %q", m.Destination)
-			continue
-		}
-		switch m.Destination {
-		case "/proc":
-			procMounted = true
-		case "/sys":
-			sysMounted = true
-		case "/tmp":
-			tmpMounted = true
-		}
-
-		if err := mountSubmount(ctx, spec, conf, mns, fds, m); err != nil {
-			return err
-		}
-	}
-
 	// Always mount /dev.
 	if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
 		Type:        "devtmpfs",
@@ -115,6 +93,26 @@ func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *f
 		Destination: "/dev/pts",
 	}); err != nil {
 		return err
+	}
+
+	// Mount all submounts from the spec.
+	for _, m := range spec.Mounts {
+		if !specutils.IsSupportedDevMount(m) {
+			log.Warningf("ignoring dev mount at %q", m.Destination)
+			continue
+		}
+		switch filepath.Clean(m.Destination) {
+		case "/proc":
+			procMounted = true
+		case "/sys":
+			sysMounted = true
+		case "/tmp":
+			tmpMounted = true
+		}
+
+		if err := mountSubmount(ctx, spec, conf, mns, fds, m); err != nil {
+			return err
+		}
 	}
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
@@ -282,18 +280,13 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 
 	// If there are submounts, we need to overlay the mount on top of a
 	// ramfs with stub directories for submount paths.
-	//
-	// We do not do this for /dev, since there will usually be submounts in
-	// the spec, but our devfs implementation contains all the necessary
-	// directories and files (well, most of them anyways).
-	if m.Destination != "/dev" {
-		submounts := subtargets(m.Destination, spec.Mounts)
-		if len(submounts) > 0 {
-			log.Infof("Adding submount overlay over %q", m.Destination)
-			inode, err = addSubmountOverlay(ctx, inode, submounts)
-			if err != nil {
-				return fmt.Errorf("error adding submount overlay: %v", err)
-			}
+	mounts := specutils.SupportedMounts(spec.Mounts)
+	submounts := subtargets(m.Destination, mounts)
+	if len(submounts) > 0 {
+		log.Infof("Adding submount overlay over %q", m.Destination)
+		inode, err = addSubmountOverlay(ctx, inode, submounts)
+		if err != nil {
+			return fmt.Errorf("error adding submount overlay: %v", err)
 		}
 	}
 
