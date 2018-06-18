@@ -168,16 +168,18 @@ Note that gVisor can only run on x86\_64 Linux 3.17+. In addition, gVisor only
 supports x86\_64 binaries inside the sandbox (i.e., it cannot run 32-bit
 binaries).
 
-### Download a Nightly Build
+### Download a Build
 
 The easiest way to get `runsc` is from the
 [latest nightly build][runsc-nightly]. After you download the binary, check it
-against the SHA512 [checksum file][runsc-nightly-sha].
+against the SHA512 [checksum file][runsc-nightly-sha]. Older builds can be
+found here:
+`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc` and
+`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc.sha512`
 
 **It is important to copy this binary to some place that is accessible to all
 users**, since `runsc` executes itself as user `nobody` to avoid unnecessary
 privileges. The `/usr/local/bin` directory is a good choice.
-
 
 ```
 wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
