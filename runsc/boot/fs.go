@@ -392,12 +392,14 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 	mf := fs.MountSourceFlags{}
 	for _, o := range opts {
 		switch o {
+		case "rw":
+			mf.ReadOnly = false
 		case "ro":
 			mf.ReadOnly = true
 		case "noatime":
 			mf.NoAtime = true
 		default:
-			log.Warningf("ignorning unknown mount option %q", o)
+			log.Warningf("ignoring unknown mount option %q", o)
 		}
 	}
 	return mf
