@@ -477,6 +477,37 @@ func rpcRecvMsg(t *kernel.Task, req *pb.SyscallRequest_Recvmsg) (*pb.RecvmsgResp
 	return res.(*pb.RecvmsgResponse_Payload).Payload, nil
 }
 
+// Because we only support SO_TIMESTAMP we will search control messages for
+// that value and set it if so, all other control messages will be ignored.
+func (s *socketOperations) extractControlMessages(payload *pb.RecvmsgResponse_ResultPayload) socket.ControlMessages {
+	c := socket.ControlMessages{}
+	if len(payload.GetCmsgData()) > 0 {
+		// Parse the control messages looking for SO_TIMESTAMP.
+		msgs, e := syscall.ParseSocketControlMessage(payload.GetCmsgData())
+		if e != nil {
+			return socket.ControlMessages{}
+		}
+		for _, m := range msgs {
+			if m.Header.Level != linux.SOL_SOCKET || m.Header.Type != linux.SO_TIMESTAMP {
+				continue
+			}
+
+			// Let's parse the time stamp and set it.
+			if len(m.Data) < linux.SizeOfTimeval {
+				// Give up on locating the SO_TIMESTAMP option.
+				return socket.ControlMessages{}
+			}
+
+			var v linux.Timeval
+			binary.Unmarshal(m.Data[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+			c.IP.HasTimestamp = true
+			c.IP.Timestamp = v.ToNsecCapped()
+			break
+		}
+	}
+	return c
+}
+
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	req := &pb.SyscallRequest_Recvmsg{&pb.RecvmsgRequest{
@@ -497,7 +528,8 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 				panic("CopyOut failed to copy full buffer")
 			}
 		}
-		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
+		c := s.extractControlMessages(res)
+		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
 	}
 	if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain || flags&linux.MSG_DONTWAIT != 0 {
 		return 0, nil, 0, socket.ControlMessages{}, err
@@ -520,7 +552,8 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 					panic("CopyOut failed to copy full buffer")
 				}
 			}
-			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), socket.ControlMessages{}, syserr.FromError(e)
+			c := s.extractControlMessages(res)
+			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
 		}
 		if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain {
 			return 0, nil, 0, socket.ControlMessages{}, err

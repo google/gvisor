@@ -40,6 +40,7 @@ message RecvmsgRequest {
   bool sender = 3;
   bool peek = 4;
   bool trunc = 5;
+  uint32 cmsg_length = 6;
 }
 
 message OpenRequest {
@@ -110,6 +111,7 @@ message RecvmsgResponse {
     bytes data = 1 [ctype = CORD];
     AddressResponse address = 2;
     uint32 length = 3;
+    bytes cmsg_data = 4;
   }
   oneof result {
     uint32 error_number = 1;
