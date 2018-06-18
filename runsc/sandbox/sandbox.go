@@ -209,8 +209,6 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	}
 
 	cmd := exec.Command(binPath, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.ExtraFiles = goferEnds
 
 	// Setup any uid/gid mappings, and create or join the configured user
