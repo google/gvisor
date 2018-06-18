@@ -106,7 +106,9 @@ func GetExecutablePath(exec, root string, env []string) (string, error) {
 	// for.
 	for _, p := range path {
 		abs := filepath.Join(root, p, exec)
-		if _, err := os.Stat(abs); err == nil {
+		// Do not follow symlink link because the target is in the container
+		// root filesystem.
+		if _, err := os.Lstat(abs); err == nil {
 			// We found it!  Return the path relative to the root.
 			return filepath.Join("/", p, exec), nil
 		}
