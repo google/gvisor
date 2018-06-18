@@ -59,7 +59,7 @@ func createLoader() (*Loader, error) {
 		FileAccess:     FileAccessDirect,
 		DisableSeccomp: true,
 	}
-	return New(testSpec(), conf, fd, nil, false)
+	return New(testSpec(), conf, fd, -1, nil, false)
 }
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
