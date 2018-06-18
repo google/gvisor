@@ -18,6 +18,7 @@ package boot
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -35,6 +36,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/sighandling"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
 	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
@@ -90,7 +92,7 @@ func init() {
 }
 
 // New initializes a new kernel loader configured by spec.
-func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console bool) (*Loader, error) {
+func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []int, console bool) (*Loader, error) {
 	// Create kernel and platform.
 	p, err := createPlatform(conf)
 	if err != nil {
@@ -165,20 +167,34 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// Run().
 	networkStack := newEmptyNetworkStack(conf, k)
 
-	// Initiate the Kernel object, which is required by the Context passed
-	// to createVFS in order to mount (among other things) procfs.
-	if err = k.Init(kernel.InitKernelArgs{
-		FeatureSet:        cpuid.HostFeatureSet(),
-		Timekeeper:        tk,
-		RootUserNamespace: creds.UserNamespace,
-		NetworkStack:      networkStack,
-		// TODO: use number of logical processors from cgroups.
-		ApplicationCores: uint(runtime.NumCPU()),
-		Vdso:             vdso,
-		RootUTSNamespace: utsns,
-		RootIPCNamespace: ipcns,
-	}); err != nil {
-		return nil, fmt.Errorf("error initializing kernel: %v", err)
+	// Check if we need to restore the kernel
+	if restoreFD != -1 {
+		restoreFile := os.NewFile(uintptr(restoreFD), "restore_file")
+		defer restoreFile.Close()
+
+		// Load the state.
+		loadOpts := state.LoadOpts{
+			Source: restoreFile,
+		}
+		if err := loadOpts.Load(k, p, networkStack); err != nil {
+			return nil, err
+		}
+	} else {
+		// Initiate the Kernel object, which is required by the Context passed
+		// to createVFS in order to mount (among other things) procfs.
+		if err = k.Init(kernel.InitKernelArgs{
+			FeatureSet:        cpuid.HostFeatureSet(),
+			Timekeeper:        tk,
+			RootUserNamespace: creds.UserNamespace,
+			NetworkStack:      networkStack,
+			// TODO: use number of logical processors from cgroups.
+			ApplicationCores: uint(runtime.NumCPU()),
+			Vdso:             vdso,
+			RootUTSNamespace: utsns,
+			RootIPCNamespace: ipcns,
+		}); err != nil {
+			return nil, fmt.Errorf("error initializing kernel: %v", err)
+		}
 	}
 
 	// Turn on packet logging if enabled.

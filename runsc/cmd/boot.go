@@ -48,6 +48,9 @@ type Boot struct {
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
+
+	// restoreFD is the file descriptor to the state file to be restored.
+	restoreFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -72,6 +75,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
+	f.IntVar(&b.restoreFD, "restore-fd", -1, "FD of the state file to be restored")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -127,7 +131,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	l, err := boot.New(spec, conf, b.controllerFD, b.ioFDs.GetArray(), b.console)
+	l, err := boot.New(spec, conf, b.controllerFD, b.restoreFD, b.ioFDs.GetArray(), b.console)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}
