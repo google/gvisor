@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -245,6 +246,7 @@ func Processes(k *kernel.Kernel, out *[]*Process) error {
 			Cmd:   tg.Leader().Name(),
 		})
 	}
+	sort.Slice(*out, func(i, j int) bool { return (*out)[i].PID < (*out)[j].PID })
 	return nil
 }
 

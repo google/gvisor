@@ -20,6 +20,7 @@ go_library(
         "pause.go",
         "ps.go",
         "restore.go",
+        "resume.go",
         "run.go",
         "start.go",
         "state.go",

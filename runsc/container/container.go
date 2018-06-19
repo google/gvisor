@@ -361,8 +361,23 @@ func (c *Container) Pause() error {
 		c.Status = Paused
 		return c.save()
 	default:
-		log.Warningf("container %q not created or running, not pausing", c.ID)
-		return nil
+		return fmt.Errorf("container %q not created or running, not pausing", c.ID)
+	}
+}
+
+// Resume unpauses the container and its kernel.
+// The call only succeeds if the container's status is paused.
+func (c *Container) Resume() error {
+	log.Debugf("Resuming container %q", c.ID)
+	switch c.Status {
+	case Paused:
+		if err := c.Sandbox.Resume(c.ID); err != nil {
+			return fmt.Errorf("error resuming container: %v", err)
+		}
+		c.Status = Running
+		return c.save()
+	default:
+		return fmt.Errorf("container %q not paused, not resuming", c.ID)
 	}
 }
 
@@ -380,7 +395,7 @@ func (c *Container) State() specs.State {
 // Processes retrieves the list of processes and associated metadata inside a
 // container.
 func (c *Container) Processes() ([]*control.Process, error) {
-	if c.Status != Running {
+	if c.Status != Running && c.Status != Paused {
 		return nil, fmt.Errorf("cannot get processes of container %q because it isn't running. It is in state %v", c.ID, c.Status)
 	}
 	return c.Sandbox.Processes(c.ID)

@@ -84,6 +84,19 @@ func procListsEqual(got, want []*control.Process) bool {
 	return true
 }
 
+// getAndCheckProcLists is similar to waitForProcessList, but does not wait and retry the
+// test for equality. This is because we already confirmed that exec occurred.
+func getAndCheckProcLists(cont *container.Container, want []*control.Process) error {
+	got, err := cont.Processes()
+	if err != nil {
+		return fmt.Errorf("error getting process data from container: %v", err)
+	}
+	if procListsEqual(got, want) {
+		return nil
+	}
+	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
+}
+
 func procListToString(pl []*control.Process) string {
 	strs := make([]string, 0, len(pl))
 	for _, p := range pl {
@@ -459,11 +472,116 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
-// TestPause tests that calling pause successfully pauses the container.
-// It checks that no errors are returned and that the state of the container
-// is in fact 'Paused.'
-func TestPause(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("sleep", "100")
+// TestPauseResume tests that we can successfully pause and resume a container.
+// It checks starts running sleep and executes another sleep. It pauses and checks
+// that both processes are still running: sleep will be paused and still exist.
+// It will then unpause and confirm that both processes are running. Then it will
+// wait until one sleep completes and check to make sure the other is running.
+func TestPauseResume(t *testing.T) {
+	const uid = 343
+	spec := testutil.NewSpecWithArgs("sleep", "20")
+
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create and start the container.
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// expectedPL lists the expected process state of the container.
+	expectedPL := []*control.Process{
+		{
+			UID:  0,
+			PID:  1,
+			PPID: 0,
+			C:    0,
+			Cmd:  "sleep",
+		},
+		{
+			UID:  uid,
+			PID:  2,
+			PPID: 0,
+			C:    0,
+			Cmd:  "sleep",
+		},
+	}
+
+	execArgs := control.ExecArgs{
+		Filename:         "/bin/sleep",
+		Argv:             []string{"sleep", "5"},
+		Envv:             []string{"PATH=" + os.Getenv("PATH")},
+		WorkingDirectory: "/",
+		KUID:             uid,
+	}
+
+	// First, start running exec (whick blocks).
+	go cont.Execute(&execArgs)
+
+	// Verify that "sleep 5" is running.
+	if err := waitForProcessList(cont, expectedPL); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pause the running container.
+	if err := cont.Pause(); err != nil {
+		t.Errorf("error pausing container: %v", err)
+	}
+	if got, want := cont.Status, container.Paused; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+
+	time.Sleep(10 * time.Second)
+
+	// Verify that the two processes still exist. Sleep 5 is paused so
+	// it should still be in the process list after 10 seconds.
+	if err := getAndCheckProcLists(cont, expectedPL); err != nil {
+		t.Fatal(err)
+	}
+
+	// Resume the running container.
+	if err := cont.Resume(); err != nil {
+		t.Errorf("error pausing container: %v", err)
+	}
+	if got, want := cont.Status, container.Running; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+
+	if err := getAndCheckProcLists(cont, expectedPL); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedPL2 := []*control.Process{
+		{
+			UID:  0,
+			PID:  1,
+			PPID: 0,
+			C:    0,
+			Cmd:  "sleep",
+		},
+	}
+
+	// Verify there is only one process left since we waited 10 at most seconds for
+	// sleep 5 to end.
+	if err := waitForProcessList(cont, expectedPL2); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestPauseResumeStatus makes sure that the statuses are set correctly
+// with calls to pause and resume and that pausing and resuming only
+// occurs given the correct state.
+func TestPauseResumeStatus(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("sleep", "20")
 
 	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
@@ -486,9 +604,31 @@ func TestPause(t *testing.T) {
 	if err := cont.Pause(); err != nil {
 		t.Errorf("error pausing container: %v", err)
 	}
-
-	// Confirm the status of the container is paused.
 	if got, want := cont.Status, container.Paused; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+
+	// Try to Pause again. Should cause error.
+	if err := cont.Pause(); err == nil {
+		t.Errorf("error pausing container that was already paused: %v", err)
+	}
+	if got, want := cont.Status, container.Paused; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+
+	// Resume the running container.
+	if err := cont.Resume(); err != nil {
+		t.Errorf("error resuming container: %v", err)
+	}
+	if got, want := cont.Status, container.Running; got != want {
+		t.Errorf("container status got %v, want %v", got, want)
+	}
+
+	// Try to resume again. Should cause error.
+	if err := cont.Resume(); err == nil {
+		t.Errorf("error resuming container already running: %v", err)
+	}
+	if got, want := cont.Status, container.Running; got != want {
 		t.Errorf("container status got %v, want %v", got, want)
 	}
 }
