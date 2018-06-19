@@ -34,6 +34,7 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
+        "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/transport/unix",
         "//pkg/unet",
