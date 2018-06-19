@@ -46,16 +46,14 @@ type machine struct {
 	mappingCache sync.Map
 
 	// mu protects vCPUs.
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// available is notified when vCPUs are available.
 	available sync.Cond
 
 	// vCPUs are the machine vCPUs.
 	//
-	// This is eventually keyed by system TID, but is initially indexed by
-	// the negative vCPU id. This is merely an optimization, so while
-	// collisions here are not possible, it wouldn't matter anyways.
+	// These are populated dynamically.
 	vCPUs map[uint64]*vCPU
 }
 
@@ -117,71 +115,63 @@ type vCPU struct {
 	vCPUArchState
 }
 
+// newVCPU creates a returns a new vCPU.
+//
+// Precondtion: mu must be held.
+func (m *machine) newVCPU() *vCPU {
+	id := len(m.vCPUs)
+
+	// Create the vCPU.
+	fd, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
+	if errno != 0 {
+		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
+	}
+
+	c := &vCPU{
+		id:      id,
+		fd:      int(fd),
+		machine: m,
+	}
+	c.CPU.Init(&m.kernel)
+	c.CPU.KernelSyscall = bluepillSyscall
+	c.CPU.KernelException = bluepillException
+
+	// Ensure the signal mask is correct.
+	if err := c.setSignalMask(); err != nil {
+		panic(fmt.Sprintf("error setting signal mask: %v", err))
+	}
+
+	// Initialize architecture state.
+	if err := c.initArchState(); err != nil {
+		panic(fmt.Sprintf("error initialization vCPU state: %v", err))
+	}
+
+	// Map the run data.
+	runData, err := mapRunData(int(fd))
+	if err != nil {
+		panic(fmt.Sprintf("error mapping run data: %v", err))
+	}
+	c.runData = runData
+
+	return c // Done.
+}
+
 // newMachine returns a new VM context.
-func newMachine(vm int, vCPUs int) (*machine, error) {
+func newMachine(vm int) (*machine, error) {
 	// Create the machine.
 	m := &machine{
 		fd:    vm,
 		vCPUs: make(map[uint64]*vCPU),
 	}
 	m.available.L = &m.mu
-	if vCPUs > _KVM_NR_VCPUS {
-		// Hard cap at KVM's limit.
-		vCPUs = _KVM_NR_VCPUS
-	}
-	if n := 2 * runtime.NumCPU(); vCPUs > n {
-		// Cap at twice the number of physical cores. Otherwise we're
-		// just wasting memory and thrashing. (There may be scheduling
-		// issues when you've got > n active threads.)
-		vCPUs = n
-	}
 	m.kernel.Init(ring0.KernelOpts{
 		PageTables: pagetables.New(newAllocator()),
 	})
 
 	// Initialize architecture state.
-	if err := m.initArchState(vCPUs); err != nil {
+	if err := m.initArchState(); err != nil {
 		m.Destroy()
 		return nil, err
-	}
-
-	// Create all the vCPUs.
-	for id := 0; id < vCPUs; id++ {
-		// Create the vCPU.
-		fd, _, errno := syscall.RawSyscall(syscall.SYS_IOCTL, uintptr(vm), _KVM_CREATE_VCPU, uintptr(id))
-		if errno != 0 {
-			m.Destroy()
-			return nil, fmt.Errorf("error creating VCPU: %v", errno)
-		}
-		c := &vCPU{
-			id:      id,
-			fd:      int(fd),
-			machine: m,
-		}
-		c.CPU.Init(&m.kernel)
-		c.CPU.KernelSyscall = bluepillSyscall
-		c.CPU.KernelException = bluepillException
-		m.vCPUs[uint64(-id)] = c // See above.
-
-		// Ensure the signal mask is correct.
-		if err := c.setSignalMask(); err != nil {
-			m.Destroy()
-			return nil, err
-		}
-
-		// Initialize architecture state.
-		if err := c.initArchState(); err != nil {
-			m.Destroy()
-			return nil, err
-		}
-
-		// Map the run data.
-		runData, err := mapRunData(int(fd))
-		if err != nil {
-			m.Destroy()
-			return nil, err
-		}
-		c.runData = runData
 	}
 
 	// Apply the physical mappings. Note that these mappings may point to
@@ -298,14 +288,19 @@ func (m *machine) Destroy() {
 func (m *machine) Get() *vCPU {
 	runtime.LockOSThread()
 	tid := procid.Current()
-	m.mu.Lock()
+	m.mu.RLock()
 
 	// Check for an exact match.
 	if c := m.vCPUs[tid]; c != nil {
 		c.lock()
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return c
 	}
+
+	// The happy path failed. We now proceed to acquire an exclusive lock
+	// (because the vCPU map may change), and scan all available vCPUs.
+	m.mu.RUnlock()
+	m.mu.Lock()
 
 	for {
 		// Scan for an available vCPU.
@@ -314,14 +309,19 @@ func (m *machine) Get() *vCPU {
 				delete(m.vCPUs, origTID)
 				m.vCPUs[tid] = c
 				m.mu.Unlock()
-
-				// We need to reload thread-local segments as
-				// we have origTID != tid and the vCPU state
-				// may be stale.
-				c.loadSegments()
-				atomic.StoreUint64(&c.tid, tid)
+				c.loadSegments(tid)
 				return c
 			}
+		}
+
+		// Create a new vCPU (maybe).
+		if len(m.vCPUs) < _KVM_NR_VCPUS {
+			c := m.newVCPU()
+			c.lock()
+			m.vCPUs[tid] = c
+			m.mu.Unlock()
+			c.loadSegments(tid)
+			return c
 		}
 
 		// Scan for something not in user mode.
@@ -346,10 +346,7 @@ func (m *machine) Get() *vCPU {
 			delete(m.vCPUs, origTID)
 			m.vCPUs[tid] = c
 			m.mu.Unlock()
-
-			// See above.
-			c.loadSegments()
-			atomic.StoreUint64(&c.tid, tid)
+			c.loadSegments(tid)
 			return c
 		}
 

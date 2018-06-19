@@ -17,7 +17,6 @@ package kvm
 
 import (
 	"fmt"
-	"runtime"
 	"sync"
 	"syscall"
 
@@ -77,7 +76,7 @@ func New() (*KVM, error) {
 	}
 
 	// Create a VM context.
-	machine, err := newMachine(int(vm), runtime.NumCPU())
+	machine, err := newMachine(int(vm))
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +136,6 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 		filemem:    k.FileMem,
 		machine:    k.machine,
 		pageTables: pageTables,
-		dirtySet:   makeDirtySet(len(k.machine.vCPUs)),
 	}, nil, nil
 }
 

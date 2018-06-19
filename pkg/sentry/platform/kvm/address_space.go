@@ -17,12 +17,61 @@ package kvm
 import (
 	"reflect"
 	"sync"
+	"sync/atomic"
 
+	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
+
+type vCPUBitArray [(_KVM_NR_VCPUS + 63) / 64]uint64
+
+// dirtySet tracks vCPUs for invalidation.
+type dirtySet struct {
+	vCPUs vCPUBitArray
+}
+
+// forEach iterates over all CPUs in the dirty set.
+func (ds *dirtySet) forEach(m *machine, fn func(c *vCPU)) {
+	var localSet vCPUBitArray
+	for index := 0; index < len(ds.vCPUs); index++ {
+		// Clear the dirty set, copy to the local one.
+		localSet[index] = atomic.SwapUint64(&ds.vCPUs[index], 0)
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, c := range m.vCPUs {
+		index := uint64(c.id) / 64
+		bit := uint64(1) << uint(c.id%64)
+
+		// Call the function if it was set.
+		if localSet[index]&bit != 0 {
+			fn(c)
+		}
+	}
+}
+
+// mark marks the given vCPU as dirty and returns whether it was previously
+// clean. Being previously clean implies that a flush is needed on entry.
+func (ds *dirtySet) mark(c *vCPU) bool {
+	index := uint64(c.id) / 64
+	bit := uint64(1) << uint(c.id%64)
+
+	oldValue := atomic.LoadUint64(&ds.vCPUs[index])
+	if oldValue&bit != 0 {
+		return false // Not clean.
+	}
+
+	// Set the bit unilaterally, and ensure that a flush takes place. Note
+	// that it's possible for races to occur here, but since the flush is
+	// taking place long after these lines there's no race in practice.
+	atomicbitops.OrUint64(&ds.vCPUs[index], bit)
+	return true // Previously clean.
+}
 
 // addressSpace is a wrapper for PageTables.
 type addressSpace struct {
@@ -43,10 +92,6 @@ type addressSpace struct {
 	pageTables *pagetables.PageTables
 
 	// dirtySet is the set of dirty vCPUs.
-	//
-	// These are actually vCPU pointers that are stored iff the vCPU is
-	// dirty. If the vCPU is not dirty and requires invalidation, then a
-	// nil value is stored here instead.
 	dirtySet dirtySet
 
 	// files contains files mapped in the host address space.
@@ -57,11 +102,11 @@ type addressSpace struct {
 
 // invalidate is the implementation for Invalidate.
 func (as *addressSpace) invalidate() {
-	for i := 0; i < as.dirtySet.size(); i++ {
-		if c := as.dirtySet.swap(i, nil); c != nil && c.active.get() == as {
-			c.BounceToKernel() // Force a kernel transition.
+	as.dirtySet.forEach(as.machine, func(c *vCPU) {
+		if c.active.get() == as { // If this happens to be active,
+			c.BounceToKernel() // ... force a kernel transition.
 		}
-	}
+	})
 }
 
 // Invalidate interrupts all dirty contexts.
@@ -75,11 +120,7 @@ func (as *addressSpace) Invalidate() {
 //
 // The return value indicates whether a flush is required.
 func (as *addressSpace) Touch(c *vCPU) bool {
-	if old := as.dirtySet.swap(c.id, c); old == nil {
-		return true // Flush is required.
-	}
-	// Already dirty: no flush required.
-	return false
+	return as.dirtySet.mark(c)
 }
 
 func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
