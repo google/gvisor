@@ -78,12 +78,11 @@ func (os *objectState) checkComplete(stats *Stats) {
 	if os.blockedBy > 0 {
 		return
 	}
+	stats.Start(os.obj)
 
 	// Fire all callbacks.
 	for _, fn := range os.callbacks {
-		stats.Start(os.obj)
 		fn()
-		stats.Done()
 	}
 	os.callbacks = nil
 
@@ -93,6 +92,7 @@ func (os *objectState) checkComplete(stats *Stats) {
 		other.checkComplete(stats)
 	}
 	os.blocking = nil
+	stats.Done()
 }
 
 // waitFor queues a dependency on the given object.
@@ -329,6 +329,7 @@ func (ds *decodeState) decodeInterface(os *objectState, obj reflect.Value, i *pb
 // decodeObject decodes a object value.
 func (ds *decodeState) decodeObject(os *objectState, obj reflect.Value, object *pb.Object, format string, param interface{}) {
 	ds.push(false, format, param)
+	ds.stats.Add(obj)
 	ds.stats.Start(obj)
 
 	switch x := object.GetValue().(type) {
@@ -466,12 +467,14 @@ func (ds *decodeState) Deserialize(obj reflect.Value) {
 	// See above, we never process objects while we have no outstanding
 	// interests (other than the very first object).
 	for id := uint64(1); ds.outstanding > 0; id++ {
+		os := ds.lookup(id)
+		ds.stats.Start(os.obj)
+
 		o, err := ds.readObject()
 		if err != nil {
 			panic(err)
 		}
 
-		os := ds.lookup(id)
 		if os != nil {
 			// Decode the object.
 			ds.from = &os.path
@@ -483,6 +486,8 @@ func (ds *decodeState) Deserialize(obj reflect.Value) {
 			// registered.
 			ds.deferred[id] = o
 		}
+
+		ds.stats.Done()
 	}
 
 	// Check the zero-length header at the end.

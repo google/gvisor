@@ -44,20 +44,28 @@ type Stats struct {
 	last time.Time
 }
 
-// sample adds the given number of samples to the given object.
-func (s *Stats) sample(typ reflect.Type, count uint) {
+// sample adds the samples to the given object.
+func (s *Stats) sample(typ reflect.Type) {
+	now := time.Now()
+	s.byType[typ].total += now.Sub(s.last)
+	s.last = now
+}
+
+// Add adds a sample count.
+func (s *Stats) Add(obj reflect.Value) {
+	if s == nil {
+		return
+	}
 	if s.byType == nil {
 		s.byType = make(map[reflect.Type]*statEntry)
 	}
+	typ := obj.Type()
 	entry, ok := s.byType[typ]
 	if !ok {
 		entry = new(statEntry)
 		s.byType[typ] = entry
 	}
-	now := time.Now()
-	entry.count += count
-	entry.total += now.Sub(s.last)
-	s.last = now
+	entry.count++
 }
 
 // Start starts a sample.
@@ -67,7 +75,7 @@ func (s *Stats) Start(obj reflect.Value) {
 	}
 	if len(s.stack) > 0 {
 		last := s.stack[len(s.stack)-1]
-		s.sample(last, 0)
+		s.sample(last)
 	} else {
 		// First time sample.
 		s.last = time.Now()
@@ -81,7 +89,7 @@ func (s *Stats) Done() {
 		return
 	}
 	last := s.stack[len(s.stack)-1]
-	s.sample(last, 1)
+	s.sample(last)
 	s.stack = s.stack[:len(s.stack)-1]
 }
 
