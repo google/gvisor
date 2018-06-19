@@ -18,6 +18,7 @@ package kvm
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 
@@ -54,7 +55,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr) s
 // This may be called from within the signal context and throws on error.
 //
 //go:nosplit
-func (c *vCPU) loadSegments() {
+func (c *vCPU) loadSegments(tid uint64) {
 	if _, _, errno := syscall.RawSyscall(
 		syscall.SYS_ARCH_PRCTL,
 		linux.ARCH_GET_FS,
@@ -69,6 +70,7 @@ func (c *vCPU) loadSegments() {
 		0); errno != 0 {
 		throw("getting GS segment")
 	}
+	atomic.StoreUint64(&c.tid, tid)
 }
 
 // setUserRegisters sets user registers in the vCPU.

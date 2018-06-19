@@ -29,7 +29,7 @@ import (
 )
 
 // initArchState initializes architecture-specific state.
-func (m *machine) initArchState(vCPUs int) error {
+func (m *machine) initArchState() error {
 	// Set the legacy TSS address. This address is covered by the reserved
 	// range (up to 4GB). In fact, this is a main reason it exists.
 	if _, _, errno := syscall.RawSyscall(
