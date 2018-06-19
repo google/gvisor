@@ -56,27 +56,6 @@ const (
 	privateUnixSocketKey = "privateunixsocket"
 )
 
-// cachePolicy is a 9p cache policy.
-type cachePolicy int
-
-const (
-	// TODO: fully support cache=none.
-	cacheNone cachePolicy = iota
-
-	// Use virtual file system cache.
-	cacheAll
-)
-
-func parseCachePolicy(policy string) (cachePolicy, error) {
-	switch policy {
-	case "fscache":
-		return cacheAll, nil
-	case "none":
-		return cacheNone, nil
-	}
-	return cacheNone, fmt.Errorf("unsupported cache mode: %s", policy)
-}
-
 // defaultAname is the default attach name.
 const defaultAname = "/"
 

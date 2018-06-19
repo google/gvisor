@@ -122,17 +122,12 @@ func (s *session) Destroy() {
 
 // Revalidate returns true if the cache policy is does not allow for VFS caching.
 func (s *session) Revalidate(*fs.Dirent) bool {
-	return s.cachePolicy == cacheNone
+	return s.cachePolicy.revalidateDirent()
 }
 
 // TakeRefs takes an extra reference on dirent if possible.
-func (s *session) Keep(dirent *fs.Dirent) bool {
-	sattr := dirent.Inode.StableAttr
-	if s.cachePolicy == cacheNone {
-		return false
-	}
-	// NOTE: Only cache files, directories, and symlinks.
-	return fs.IsFile(sattr) || fs.IsDir(sattr) || fs.IsSymlink(sattr)
+func (s *session) Keep(d *fs.Dirent) bool {
+	return s.cachePolicy.keepDirent(d.Inode)
 }
 
 // ResetInodeMappings implements fs.MountSourceOperations.ResetInodeMappings.

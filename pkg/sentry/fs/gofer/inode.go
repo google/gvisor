@@ -335,23 +335,15 @@ func (i *inodeOperations) Release(ctx context.Context) {
 
 // Mappable implements fs.InodeOperations.Mappable.
 func (i *inodeOperations) Mappable(inode *fs.Inode) memmap.Mappable {
-	if i.session().cachePolicy == cacheNone || !fs.IsFile(inode.StableAttr) {
-		return nil
+	if i.session().cachePolicy.usePageCache(inode) {
+		return i.cachingInodeOps
 	}
-	return i.cachingInodeOps
-}
-
-func isCachable(session *session, inode *fs.Inode) bool {
-	return session.cachePolicy != cacheNone && (fs.IsFile(inode.StableAttr) || fs.IsDir(inode.StableAttr))
-}
-
-func isFileCachable(session *session, inode *fs.Inode) bool {
-	return session.cachePolicy != cacheNone && fs.IsFile(inode.StableAttr)
+	return nil
 }
 
 // UnstableAttr implements fs.InodeOperations.UnstableAttr.
 func (i *inodeOperations) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
-	if isCachable(i.session(), inode) {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		return i.cachingInodeOps.UnstableAttr(ctx, inode)
 	}
 	return i.fileState.unstableAttr(ctx)
@@ -433,7 +425,7 @@ func (i *inodeOperations) NonBlockingOpen(ctx context.Context, p fs.PermMask) (*
 }
 
 func (i *inodeOperations) getFileDefault(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	if !isFileCachable(i.session(), d.Inode) {
+	if !i.session().cachePolicy.usePageCache(d.Inode) {
 		h, err := newHandles(ctx, i.fileState.file, flags)
 		if err != nil {
 			return nil, err
@@ -456,7 +448,7 @@ func (i *inodeOperations) getFileDefault(ctx context.Context, d *fs.Dirent, flag
 
 // SetPermissions implements fs.InodeOperations.SetPermissions.
 func (i *inodeOperations) SetPermissions(ctx context.Context, inode *fs.Inode, p fs.FilePermissions) bool {
-	if isCachable(i.session(), inode) {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		return i.cachingInodeOps.SetPermissions(ctx, inode, p)
 	}
 
@@ -473,7 +465,7 @@ func (i *inodeOperations) SetOwner(ctx context.Context, inode *fs.Inode, owner f
 		return nil
 	}
 
-	if isCachable(i.session(), inode) {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		return i.cachingInodeOps.SetOwner(ctx, inode, owner)
 	}
 
@@ -492,7 +484,7 @@ func (i *inodeOperations) SetOwner(ctx context.Context, inode *fs.Inode, owner f
 
 // SetTimestamps implements fs.InodeOperations.SetTimestamps.
 func (i *inodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSpec) error {
-	if isCachable(i.session(), inode) {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		return i.cachingInodeOps.SetTimestamps(ctx, inode, ts)
 	}
 
@@ -502,7 +494,7 @@ func (i *inodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts
 // Truncate implements fs.InodeOperations.Truncate.
 func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length int64) error {
 	// This can only be called for files anyway.
-	if isFileCachable(i.session(), inode) {
+	if i.session().cachePolicy.usePageCache(inode) {
 		return i.cachingInodeOps.Truncate(ctx, inode, length)
 	}
 
@@ -511,7 +503,7 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (i *inodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) error {
-	if !isCachable(i.session(), inode) {
+	if !i.session().cachePolicy.cacheUAttrs(inode) {
 		return nil
 	}
 
