@@ -241,6 +241,7 @@ func (es *encodeState) encodeInterface(obj reflect.Value) *pb.Interface {
 // If mapAsValue is true, then a map will be encoded directly.
 func (es *encodeState) encodeObject(obj reflect.Value, mapAsValue bool, format string, param interface{}) (object *pb.Object) {
 	es.push(false, format, param)
+	es.stats.Add(obj)
 	es.stats.Start(obj)
 
 	switch obj.Kind() {
@@ -354,10 +355,13 @@ func (es *encodeState) Serialize(obj reflect.Value) {
 	// Pop off the list until we're done.
 	for es.pending.Len() > 0 {
 		e := es.pending.Front()
-		es.pending.Remove(e)
 
 		// Extract the queued object.
 		qo := e.Value.(queuedObject)
+		es.stats.Start(qo.obj)
+
+		es.pending.Remove(e)
+
 		es.from = &qo.path
 		o := es.encodeObject(qo.obj, true, "", nil)
 
@@ -368,6 +372,7 @@ func (es *encodeState) Serialize(obj reflect.Value) {
 
 		// Mark as done.
 		es.done.PushBack(e)
+		es.stats.Done()
 	}
 
 	// Write a zero-length terminal at the end; this is a sanity check
