@@ -44,6 +44,9 @@ const (
 	// processes running in a container.
 	ContainerProcesses = "containerManager.Processes"
 
+	// ContainerResume unpauses the paused container.
+	ContainerResume = "containerManager.Resume"
+
 	// ContainerSignal is used to send a signal to a container.
 	ContainerSignal = "containerManager.Signal"
 
@@ -156,9 +159,15 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	return state.Save(o, nil)
 }
 
-// Pause suspends the process in a container.
+// Pause suspends a container.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
 	cm.k.Pause()
+	return nil
+}
+
+// Resume unpauses a container.
+func (cm *containerManager) Resume(_, _ *struct{}) error {
+	cm.k.Unpause()
 	return nil
 }
 

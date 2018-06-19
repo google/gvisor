@@ -477,6 +477,21 @@ func (s *Sandbox) Pause(cid string) error {
 	return nil
 }
 
+// Resume sends the resume call for a container in the sandbox.
+func (s *Sandbox) Resume(cid string) error {
+	log.Debugf("Resume sandbox %q", s.ID)
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContainerResume, nil, nil); err != nil {
+		return fmt.Errorf("err resuming container %q: %v", cid, err)
+	}
+	return nil
+}
+
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {
