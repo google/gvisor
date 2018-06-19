@@ -93,7 +93,7 @@ func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer 
 		DirCursor:  &f.dirCursor,
 	}
 	n, err := fs.DirentReaddir(ctx, file.Dirent, f, root, dirCtx, file.Offset())
-	if f.inodeOperations.session().cachePolicy != cacheNone {
+	if f.inodeOperations.session().cachePolicy.cacheUAttrs(file.Dirent.Inode) {
 		f.inodeOperations.cachingInodeOps.TouchAccessTime(ctx, file.Dirent.Inode)
 	}
 	return n, err
@@ -105,7 +105,7 @@ func (f *fileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx, offs
 	defer f.inodeOperations.readdirMu.Unlock()
 
 	// Fetch directory entries if needed.
-	if f.inodeOperations.readdirCache == nil || f.inodeOperations.session().cachePolicy == cacheNone {
+	if !f.inodeOperations.session().cachePolicy.cacheReaddir() || f.inodeOperations.readdirCache == nil {
 		entries, err := f.readdirAll(ctx)
 		if err != nil {
 			return offset, err
@@ -183,13 +183,20 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		// Not all remote file systems enforce this so this client does.
 		return 0, syserror.EISDIR
 	}
+	cp := f.inodeOperations.session().cachePolicy
+	if cp.usePageCache(file.Dirent.Inode) {
+		n, err := f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
+		if err != nil {
+			return n, err
+		}
+		if cp.writeThrough(file.Dirent.Inode) {
+			// Write out the file.
+			err = f.inodeOperations.cachingInodeOps.WriteOut(ctx, file.Dirent.Inode)
+		}
+		return n, err
 
-	// Do cached IO for regular files only. Some character devices expect no caching.
-	isFile := fs.IsFile(file.Dirent.Inode.StableAttr)
-	if f.inodeOperations.session().cachePolicy == cacheNone || !isFile {
-		return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 	}
-	return f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
+	return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 }
 
 // Read implements fs.FileOperations.Read.
@@ -199,12 +206,10 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 		return 0, syserror.EISDIR
 	}
 
-	// Do cached IO for regular files only. Some character devices expect no caching.
-	isFile := fs.IsFile(file.Dirent.Inode.StableAttr)
-	if f.inodeOperations.session().cachePolicy == cacheNone || !isFile {
-		return dst.CopyOutFrom(ctx, f.handles.readWriterAt(ctx, offset))
+	if f.inodeOperations.session().cachePolicy.usePageCache(file.Dirent.Inode) {
+		return f.inodeOperations.cachingInodeOps.Read(ctx, file, dst, offset)
 	}
-	return f.inodeOperations.cachingInodeOps.Read(ctx, file, dst, offset)
+	return dst.CopyOutFrom(ctx, f.handles.readWriterAt(ctx, offset))
 }
 
 // Fsync implements fs.FileOperations.Fsync.
@@ -243,7 +248,7 @@ func (f *fileOperations) Flush(ctx context.Context, file *fs.File) error {
 
 // ConfigureMMap implements fs.FileOperations.ConfigureMMap.
 func (f *fileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MMapOpts) error {
-	if !isFileCachable(f.inodeOperations.session(), file.Dirent.Inode) {
+	if !f.inodeOperations.session().cachePolicy.usePageCache(file.Dirent.Inode) {
 		return syserror.ENODEV
 	}
 	return fsutil.GenericConfigureMMap(file, f.inodeOperations.cachingInodeOps, opts)

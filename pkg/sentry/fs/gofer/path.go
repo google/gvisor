@@ -29,7 +29,7 @@ import (
 // Lookup loads an Inode at name into a Dirent based on the session's cache
 // policy.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	if i.session().cachePolicy != cacheNone {
+	if i.session().cachePolicy.cacheReaddir() {
 		// Check to see if we have readdirCache that indicates the
 		// child does not exist.  Avoid holding readdirMu longer than
 		// we need to.
@@ -46,7 +46,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	qids, newFile, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		if err == syscall.ENOENT {
-			if i.session().cachePolicy != cacheNone {
+			if i.session().cachePolicy.cacheNegativeDirents() {
 				// Return a negative Dirent. It will stay cached until something
 				// is created over it.
 				return fs.NewNegativeDirent(name), nil
@@ -95,7 +95,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		return nil, err
 	}
 
-	i.touchModificationTime(ctx)
+	i.touchModificationTime(ctx, dir)
 
 	// Get the attributes of the file.
 	qid, mask, p9attr, err := getattr(ctx, newFile)
@@ -124,7 +124,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		File: newFile,
 		Host: hostFile,
 	}
-	if isFileCachable(iops.session(), d.Inode) {
+	if iops.session().cachePolicy.usePageCache(d.Inode) {
 		iops.fileState.setHandlesForCachedIO(flags, h)
 	}
 	return NewFile(ctx, d, flags, iops, h), nil
@@ -136,12 +136,12 @@ func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname
 	if _, err := i.fileState.file.symlink(ctx, oldname, newname, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
 	}
-	i.touchModificationTime(ctx)
+	i.touchModificationTime(ctx, dir)
 	return nil
 }
 
 // CreateHardLink implements InodeOperations.CreateHardLink.
-func (i *inodeOperations) CreateHardLink(ctx context.Context, _ *fs.Inode, target *fs.Inode, newName string) error {
+func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, target *fs.Inode, newName string) error {
 	targetOpts, ok := target.InodeOperations.(*inodeOperations)
 	if !ok {
 		return syscall.EXDEV
@@ -150,11 +150,11 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, _ *fs.Inode, targe
 	if err := i.fileState.file.link(ctx, &targetOpts.fileState.file, newName); err != nil {
 		return err
 	}
-	if i.session().cachePolicy == cacheAll {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		// Increase link count.
 		targetOpts.cachingInodeOps.IncLinks(ctx)
 	}
-	i.touchModificationTime(ctx)
+	i.touchModificationTime(ctx, inode)
 	return nil
 }
 
@@ -164,10 +164,11 @@ func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s 
 	if _, err := i.fileState.file.mkdir(ctx, s, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
 	}
-	if i.session().cachePolicy == cacheAll {
+	if i.session().cachePolicy.cacheUAttrs(dir) {
 		// Increase link count.
 		i.cachingInodeOps.IncLinks(ctx)
-
+	}
+	if i.session().cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}
@@ -202,7 +203,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	// We're not going to use this file.
 	hostFile.Close()
 
-	i.touchModificationTime(ctx)
+	i.touchModificationTime(ctx, dir)
 
 	// Get the attributes of the file to create inode key.
 	qid, _, attr, err := getattr(ctx, newFile)
@@ -254,7 +255,7 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 	if removeSocket {
 		i.session().endpoints.remove(key)
 	}
-	i.touchModificationTime(ctx)
+	i.touchModificationTime(ctx, dir)
 
 	return nil
 }
@@ -265,10 +266,11 @@ func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, na
 	if err := i.fileState.file.unlinkAt(ctx, name, 0x200); err != nil {
 		return err
 	}
-	if i.session().cachePolicy == cacheAll {
+	if i.session().cachePolicy.cacheUAttrs(dir) {
 		// Decrease link count and updates atime.
 		i.cachingInodeOps.DecLinks(ctx)
-
+	}
+	if i.session().cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}
@@ -294,14 +296,17 @@ func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldNa
 		return err
 	}
 
-	// Update cached state.
-	if i.session().cachePolicy == cacheAll {
-		// Is the renamed entity a directory? Fix link counts.
-		if fs.IsDir(i.fileState.sattr) {
+	// Is the renamed entity a directory? Fix link counts.
+	if fs.IsDir(i.fileState.sattr) {
+		// Update cached state.
+		if i.session().cachePolicy.cacheUAttrs(oldParent) {
 			oldParentInodeOperations.cachingInodeOps.DecLinks(ctx)
+		}
+		if i.session().cachePolicy.cacheUAttrs(newParent) {
 			newParentInodeOperations.cachingInodeOps.IncLinks(ctx)
 		}
-
+	}
+	if i.session().cachePolicy.cacheReaddir() {
 		// Mark old directory dirty.
 		oldParentInodeOperations.markDirectoryDirty()
 		if oldParent != newParent {
@@ -312,10 +317,11 @@ func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldNa
 	return nil
 }
 
-func (i *inodeOperations) touchModificationTime(ctx context.Context) {
-	if i.session().cachePolicy == cacheAll {
+func (i *inodeOperations) touchModificationTime(ctx context.Context, inode *fs.Inode) {
+	if i.session().cachePolicy.cacheUAttrs(inode) {
 		i.cachingInodeOps.TouchModificationTime(ctx)
-
+	}
+	if i.session().cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.
 		i.markDirectoryDirty()
 	}

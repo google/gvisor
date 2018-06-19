@@ -22,6 +22,7 @@ go_library(
     name = "gofer",
     srcs = [
         "attr.go",
+        "cache_policy.go",
         "context_file.go",
         "device.go",
         "file.go",
