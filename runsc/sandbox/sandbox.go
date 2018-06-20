@@ -537,6 +537,22 @@ func (s *Sandbox) IsRunning() bool {
 	return false
 }
 
+// Stacks collects and returns all stacks for the sandbox.
+func (s *Sandbox) Stacks() (string, error) {
+	log.Debugf("Stacks sandbox %q", s.ID)
+	conn, err := s.connect()
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	var stacks string
+	if err := conn.Call(boot.SandboxStacks, nil, &stacks); err != nil {
+		return "", fmt.Errorf("err getting sandbox %q stacks: %v", s.ID, err)
+	}
+	return stacks, nil
+}
+
 // killProcess sends a signal to the host process (i.e. a sandbox or gofer
 // process). Sandbox.Signal should be used to send a signal to a process
 // running inside the sandbox.

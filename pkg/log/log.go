@@ -251,8 +251,8 @@ const defaultStackSize = 1 << 16 // 64KB
 // maxStackSize is the maximum buffer size to allocate for stack traces.
 const maxStackSize = 1 << 26 // 64MB
 
-// stacks returns goroutine stacks, like panic.
-func stacks(all bool) []byte {
+// Stacks returns goroutine stacks, like panic.
+func Stacks(all bool) []byte {
 	var trace []byte
 	for s := defaultStackSize; s <= maxStackSize; s *= 4 {
 		trace = make([]byte, s)
@@ -271,7 +271,7 @@ func stacks(all bool) []byte {
 //
 // This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
 func Traceback(format string, v ...interface{}) {
-	v = append(v, stacks(false))
+	v = append(v, Stacks(false))
 	Warningf(format+":\n%s", v...)
 }
 
@@ -279,7 +279,7 @@ func Traceback(format string, v ...interface{}) {
 //
 // This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
 func TracebackAll(format string, v ...interface{}) {
-	v = append(v, stacks(true))
+	v = append(v, Stacks(true))
 	Warningf(format+":\n%s", v...)
 }
 
