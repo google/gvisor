@@ -18,6 +18,7 @@ package testutil
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -145,4 +146,22 @@ func writeSpec(dir string, spec *specs.Spec) error {
 // enough, causing container creation to fail.
 func UniqueContainerID() string {
 	return fmt.Sprintf("test-container-%d", time.Now().UnixNano())
+}
+
+// Copy copies file from src to dst.
+func Copy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
