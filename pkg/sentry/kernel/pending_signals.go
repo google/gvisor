@@ -44,11 +44,11 @@ type pendingSignals struct {
 	// Note that signals is zero-indexed, but signal 1 is the first valid
 	// signal, so signals[0] contains signals with signo 1 etc. This offset is
 	// usually handled by using Signal.index().
-	signals [linux.SignalMaximum]pendingSignalQueue
+	signals [linux.SignalMaximum]pendingSignalQueue `state:".([]*arch.SignalInfo)"`
 
 	// Bit i of pendingSet is set iff there is at least one signal with signo
 	// i+1 pending.
-	pendingSet linux.SignalSet
+	pendingSet linux.SignalSet `state:"manual"`
 }
 
 // pendingSignalQueue holds a pendingSignalList for a single signal number.
