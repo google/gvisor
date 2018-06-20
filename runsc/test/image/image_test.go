@@ -13,7 +13,9 @@
 // limitations under the License.
 
 // Package image provides end-to-end image tests for runsc. These tests require
-// docker and runsc to be installed on the machine.
+// docker and runsc to be installed on the machine. To set it up, run:
+//
+//     ./runsc/test/image/install.sh [--runtime <name>]
 //
 // The tests expect the runtime name to be provided in the RUNSC_RUNTIME
 // environment variable (default: runsc-test).

@@ -31,6 +31,10 @@ cd git/repo
 # Build everything.
 bazel build //...
 
+# Test use this variable to determine what runtime to use.
+runtime=runsc_test_$((RANDOM))
+sudo -n ./runsc/test/image/install.sh --runtime ${runtime}
+
 # Run the tests and upload results.
 #
 # We turn off "-e" flag because we must move the log files even if the test
@@ -38,6 +42,15 @@ bazel build //...
 set +e
 bazel test --test_output=errors //...
 exit_code=${?}
+
+if [[ ${exit_code} -eq 0 ]]; then
+  # image_test is tagged manual
+  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime} //runsc/test/image:image_test
+  exit_code=${?}
+fi
+
+# Best effort to uninstall
+sudo -n ./runsc/test/image/install.sh -u --runtime ${runtime}
 set -e
 
 # Find and rename all test xml and log files so that Sponge can pick them up.
