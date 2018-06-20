@@ -164,6 +164,7 @@ func TestLifecycle(t *testing.T) {
 	if _, err := container.Create(id, spec, conf, bundleDir, "", ""); err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
+
 	// Load the container from disk and check the status.
 	s, err := container.Load(rootDir, id)
 	if err != nil {
@@ -206,14 +207,17 @@ func TestLifecycle(t *testing.T) {
 	go func() {
 		ws, err := s.Wait()
 		if err != nil {
-			t.Errorf("error waiting on container: %v", err)
+			t.Fatalf("error waiting on container: %v", err)
 		}
 		if got, want := ws.Signal(), syscall.SIGTERM; got != want {
-			t.Errorf("got signal %v, want %v", got, want)
+			t.Fatalf("got signal %v, want %v", got, want)
 		}
 		wg.Done()
 	}()
 
+	// Wait a bit to ensure that we've started waiting on the container
+	// before we signal.
+	time.Sleep(5 * time.Second)
 	// Send the container a SIGTERM which will cause it to stop.
 	if err := s.Signal(syscall.SIGTERM); err != nil {
 		t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
