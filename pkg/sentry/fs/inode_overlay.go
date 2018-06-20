@@ -34,20 +34,23 @@ func overlayCreateWhiteout(parent *Inode, name string) error {
 }
 
 func overlayWriteOut(ctx context.Context, o *overlayEntry) error {
+	// Hot path. Avoid defers.
+	var err error
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
-	if o.upper == nil {
-		return nil
+	if o.upper != nil {
+		err = o.upper.InodeOperations.WriteOut(ctx, o.upper)
 	}
-	return o.upper.InodeOperations.WriteOut(ctx, o.upper)
+	o.copyMu.RUnlock()
+	return err
 }
 
 func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name string) (*Dirent, error) {
+	// Hot path. Avoid defers.
 	parent.copyMu.RLock()
-	defer parent.copyMu.RUnlock()
 
 	// Assert that there is at least one upper or lower entry.
 	if parent.upper == nil && parent.lower == nil {
+		parent.copyMu.RUnlock()
 		panic("invalid overlayEntry, needs at least one Inode")
 	}
 
@@ -63,30 +66,33 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		if err != nil && err != syserror.ENOENT {
 			// We encountered an error that an overlay cannot handle,
 			// we must propagate it to the caller.
+			parent.copyMu.RUnlock()
 			return nil, err
 		}
 		if child != nil {
-			defer child.DecRef()
-
-			// Is the child non-negative?
 			if !child.IsNegative() {
 				upperInode = child.Inode
 				upperInode.IncRef()
 			}
+			child.DecRef()
 		}
 
 		// Are we done?
 		if overlayHasWhiteout(parent.upper, name) {
 			if upperInode == nil {
+				parent.copyMu.RUnlock()
 				return NewNegativeDirent(name), nil
 			}
 			entry, err := newOverlayEntry(ctx, upperInode, nil, false)
 			if err != nil {
 				// Don't leak resources.
 				upperInode.DecRef()
+				parent.copyMu.RUnlock()
 				return nil, err
 			}
-			return NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+			d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+			parent.copyMu.RUnlock()
+			return d, err
 		}
 	}
 
@@ -103,12 +109,10 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 			if upperInode != nil {
 				upperInode.DecRef()
 			}
+			parent.copyMu.RUnlock()
 			return nil, err
 		}
 		if child != nil {
-			defer child.DecRef()
-
-			// Is the child negative?
 			if !child.IsNegative() {
 				// Did we find something in the upper filesystem? We can
 				// only use it if the types match.
@@ -117,12 +121,14 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 					lowerInode.IncRef()
 				}
 			}
+			child.DecRef()
 		}
 	}
 
 	// Was all of this for naught?
 	if upperInode == nil && lowerInode == nil {
 		// Return a negative Dirent indicating that nothing was found.
+		parent.copyMu.RUnlock()
 		return NewNegativeDirent(name), nil
 	}
 
@@ -157,9 +163,12 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		if lowerInode != nil {
 			lowerInode.DecRef()
 		}
+		parent.copyMu.RUnlock()
 		return nil, err
 	}
-	return NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+	d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+	parent.copyMu.RUnlock()
+	return d, err
 }
 
 func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name string, flags FileFlags, perm FilePermissions) (*File, error) {
@@ -349,6 +358,7 @@ func overlayBoundEndpoint(o *overlayEntry, path string) unix.BoundEndpoint {
 }
 
 func overlayGetFile(ctx context.Context, o *overlayEntry, d *Dirent, flags FileFlags) (*File, error) {
+	// Hot path. Avoid defers.
 	if flags.Write {
 		if err := copyUp(ctx, d); err != nil {
 			return nil, err
@@ -356,48 +366,69 @@ func overlayGetFile(ctx context.Context, o *overlayEntry, d *Dirent, flags FileF
 	}
 
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
 
 	if o.upper != nil {
 		upper, err := overlayFile(ctx, o.upper, flags)
 		if err != nil {
+			o.copyMu.RUnlock()
 			return nil, err
 		}
 		flags.Pread = upper.Flags().Pread
 		flags.Pwrite = upper.Flags().Pwrite
-		return NewFile(ctx, d, flags, &overlayFileOperations{upper: upper}), nil
+		f, err := NewFile(ctx, d, flags, &overlayFileOperations{upper: upper}), nil
+		o.copyMu.RUnlock()
+		return f, err
 	}
 
 	lower, err := overlayFile(ctx, o.lower, flags)
 	if err != nil {
+		o.copyMu.RUnlock()
 		return nil, err
 	}
 	flags.Pread = lower.Flags().Pread
 	flags.Pwrite = lower.Flags().Pwrite
+	o.copyMu.RUnlock()
 	return NewFile(ctx, d, flags, &overlayFileOperations{lower: lower}), nil
 }
 
 func overlayUnstableAttr(ctx context.Context, o *overlayEntry) (UnstableAttr, error) {
+	// Hot path. Avoid defers.
+	var (
+		attr UnstableAttr
+		err  error
+	)
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
 	if o.upper != nil {
-		return o.upper.UnstableAttr(ctx)
+		attr, err = o.upper.UnstableAttr(ctx)
+	} else {
+		attr, err = o.lower.UnstableAttr(ctx)
 	}
-	return o.lower.UnstableAttr(ctx)
+	o.copyMu.RUnlock()
+	return attr, err
 }
 
 func overlayGetxattr(o *overlayEntry, name string) ([]byte, error) {
+	// Hot path. This is how the overlay checks for whiteout files.
+	// Avoid defers.
+	var (
+		b   []byte
+		err error
+	)
+
 	// Don't forward the value of the extended attribute if it would
 	// unexpectedly change the behavior of a wrapping overlay layer.
 	if strings.HasPrefix(XattrOverlayPrefix, name) {
 		return nil, syserror.ENODATA
 	}
+
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
 	if o.upper != nil {
-		return o.upper.Getxattr(name)
+		b, err = o.upper.Getxattr(name)
+	} else {
+		b, err = o.lower.Getxattr(name)
 	}
-	return o.lower.Getxattr(name)
+	o.copyMu.RUnlock()
+	return b, err
 }
 
 func overlayListxattr(o *overlayEntry) (map[string]struct{}, error) {
@@ -422,17 +453,21 @@ func overlayListxattr(o *overlayEntry) (map[string]struct{}, error) {
 
 func overlayCheck(ctx context.Context, o *overlayEntry, p PermMask) error {
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
+	// Hot path. Avoid defers.
+	var err error
 	if o.upper != nil {
-		return o.upper.check(ctx, p)
+		err = o.upper.check(ctx, p)
+	} else {
+		if p.Write {
+			// Since writes will be redirected to the upper filesystem, the lower
+			// filesystem need not be writable, but must be readable for copy-up.
+			p.Write = false
+			p.Read = true
+		}
+		err = o.lower.check(ctx, p)
 	}
-	if p.Write {
-		// Since writes will be redirected to the upper filesystem, the lower
-		// filesystem need not be writable, but must be readable for copy-up.
-		p.Write = false
-		p.Read = true
-	}
-	return o.lower.check(ctx, p)
+	o.copyMu.RUnlock()
+	return err
 }
 
 func overlaySetPermissions(ctx context.Context, o *overlayEntry, d *Dirent, f FilePermissions) bool {
@@ -520,12 +555,16 @@ func overlayStatFS(ctx context.Context, o *overlayEntry) (Info, error) {
 }
 
 func overlayHandleOps(o *overlayEntry) HandleOperations {
+	// Hot path. Avoid defers.
+	var hops HandleOperations
 	o.copyMu.RLock()
-	defer o.copyMu.RUnlock()
 	if o.upper != nil {
-		return o.upper.HandleOps()
+		hops = o.upper.HandleOps()
+	} else {
+		hops = o.lower.HandleOps()
 	}
-	return o.lower.HandleOps()
+	o.copyMu.RUnlock()
+	return hops
 }
 
 // NewTestOverlayDir returns an overlay Inode for tests.

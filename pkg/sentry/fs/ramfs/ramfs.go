@@ -95,8 +95,9 @@ func (e *Entry) InitEntryWithAttr(ctx context.Context, uattr fs.UnstableAttr) {
 // UnstableAttr implements fs.InodeOperations.UnstableAttr.
 func (e *Entry) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.unstable, nil
+	attr := e.unstable
+	e.mu.Unlock()
+	return attr, nil
 }
 
 // Check implements fs.InodeOperations.Check.
@@ -106,9 +107,11 @@ func (*Entry) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
 
 // Getxattr implements fs.InodeOperations.Getxattr.
 func (e *Entry) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
+	// Hot path. Avoid defers.
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if value, ok := e.xattrs[name]; ok {
+	value, ok := e.xattrs[name]
+	e.mu.Unlock()
+	if ok {
 		return value, nil
 	}
 	return nil, syserror.ENOATTR
@@ -117,19 +120,19 @@ func (e *Entry) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
 // Setxattr implements fs.InodeOperations.Setxattr.
 func (e *Entry) Setxattr(inode *fs.Inode, name string, value []byte) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.xattrs[name] = value
+	e.mu.Unlock()
 	return nil
 }
 
 // Listxattr implements fs.InodeOperations.Listxattr.
 func (e *Entry) Listxattr(inode *fs.Inode) (map[string]struct{}, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	names := make(map[string]struct{}, len(e.xattrs))
 	for name := range e.xattrs {
 		names[name] = struct{}{}
 	}
+	e.mu.Unlock()
 	return names, nil
 }
 
@@ -141,22 +144,22 @@ func (*Entry) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*f
 // SetPermissions always sets the permissions.
 func (e *Entry) SetPermissions(ctx context.Context, inode *fs.Inode, p fs.FilePermissions) bool {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.unstable.Perms = p
 	e.unstable.StatusChangeTime = ktime.NowFromContext(ctx)
+	e.mu.Unlock()
 	return true
 }
 
 // SetOwner always sets ownership.
 func (e *Entry) SetOwner(ctx context.Context, inode *fs.Inode, owner fs.FileOwner) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if owner.UID.Ok() {
 		e.unstable.Owner.UID = owner.UID
 	}
 	if owner.GID.Ok() {
 		e.unstable.Owner.GID = owner.GID
 	}
+	e.mu.Unlock()
 	return nil
 }
 
@@ -167,8 +170,6 @@ func (e *Entry) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSp
 	}
 
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	now := ktime.NowFromContext(ctx)
 	if !ts.ATimeOmit {
 		if ts.ATimeSetSystemTime {
@@ -185,59 +186,64 @@ func (e *Entry) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSp
 		}
 	}
 	e.unstable.StatusChangeTime = now
+	e.mu.Unlock()
 	return nil
 }
 
 // NotifyStatusChange updates the status change time (ctime).
 func (e *Entry) NotifyStatusChange(ctx context.Context) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.unstable.StatusChangeTime = ktime.NowFromContext(ctx)
+	e.mu.Unlock()
 }
 
 // StatusChangeTime returns the last status change time for this node.
 func (e *Entry) StatusChangeTime() ktime.Time {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.unstable.StatusChangeTime
+	t := e.unstable.StatusChangeTime
+	e.mu.Unlock()
+	return t
 }
 
 // NotifyModification updates the modification time and the status change time.
 func (e *Entry) NotifyModification(ctx context.Context) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	now := ktime.NowFromContext(ctx)
 	e.unstable.ModificationTime = now
 	e.unstable.StatusChangeTime = now
+	e.mu.Unlock()
 }
 
 // ModificationTime returns the last modification time for this node.
 func (e *Entry) ModificationTime() ktime.Time {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.unstable.ModificationTime
+	t := e.unstable.ModificationTime
+	e.mu.Unlock()
+	return t
 }
 
 // NotifyAccess updates the access time.
 func (e *Entry) NotifyAccess(ctx context.Context) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	now := ktime.NowFromContext(ctx)
 	e.unstable.AccessTime = now
+	e.mu.Unlock()
 }
 
 // AccessTime returns the last access time for this node.
 func (e *Entry) AccessTime() ktime.Time {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.unstable.AccessTime
+	t := e.unstable.AccessTime
+	e.mu.Unlock()
+	return t
 }
 
 // Permissions returns permissions on this entry.
 func (e *Entry) Permissions() fs.FilePermissions {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.unstable.Perms
+	p := e.unstable.Perms
+	e.mu.Unlock()
+	return p
 }
 
 // Lookup is not supported by default.
@@ -379,15 +385,15 @@ func (e *Entry) Release(context.Context) {}
 // AddLink implements InodeOperationss.AddLink.
 func (e *Entry) AddLink() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.unstable.Links++
+	e.mu.Unlock()
 }
 
 // DropLink implements InodeOperationss.DropLink.
 func (e *Entry) DropLink() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.unstable.Links--
+	e.mu.Unlock()
 }
 
 // DeprecatedReaddir is not supported by default.
