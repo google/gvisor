@@ -205,7 +205,9 @@ func TestLifecycle(t *testing.T) {
 	// Wait on the container.
 	var wg sync.WaitGroup
 	wg.Add(1)
+	ch := make(chan struct{})
 	go func() {
+		ch <- struct{}{}
 		ws, err := s.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
@@ -218,7 +220,8 @@ func TestLifecycle(t *testing.T) {
 
 	// Wait a bit to ensure that we've started waiting on the container
 	// before we signal.
-	time.Sleep(5 * time.Second)
+	<-ch
+	time.Sleep(100 * time.Millisecond)
 	// Send the container a SIGTERM which will cause it to stop.
 	if err := s.Signal(syscall.SIGTERM); err != nil {
 		t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
