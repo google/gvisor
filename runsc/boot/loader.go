@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package boot loads the kernel and runs a container..
+// Package boot loads the kernel and runs a container.
 package boot
 
 import (
@@ -79,8 +79,8 @@ type Loader struct {
 	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
 
-	// procArgs refers to the root container task.
-	procArgs kernel.CreateProcessArgs
+	// rootProcArgs refers to the root sandbox init task.
+	rootProcArgs kernel.CreateProcessArgs
 }
 
 func init() {
@@ -117,12 +117,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
 
-	// Create initial limits.
-	ls, err := createLimitSet(spec)
-	if err != nil {
-		return nil, fmt.Errorf("error creating limits: %v", err)
-	}
-
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
@@ -152,13 +146,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 
 	if err := enableStrace(conf); err != nil {
 		return nil, fmt.Errorf("failed to enable strace: %v", err)
-	}
-
-	// Get the executable path, which is a bit tricky because we have to
-	// inspect the environment PATH which is relative to the root path.
-	exec, err := specutils.GetExecutablePath(spec.Process.Args[0], spec.Root.Path, spec.Process.Env)
-	if err != nil {
-		return nil, fmt.Errorf("error getting executable path: %v", err)
 	}
 
 	// Create an empty network stack because the network namespace may be empty at
@@ -223,51 +210,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 		return nil, fmt.Errorf("error creating control server: %v", err)
 	}
 
-	// Create the process arguments.
-	procArgs := kernel.CreateProcessArgs{
-		Filename:         exec,
-		Argv:             spec.Process.Args,
-		Envv:             spec.Process.Env,
-		WorkingDirectory: spec.Process.Cwd,
-		Credentials:      creds,
-		// Creating the FDMap requires that we have kernel.Kernel.fdMapUids, so
-		// it must wait until we have a Kernel.
-		Umask:                uint(syscall.Umask(0)),
-		Limits:               ls,
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		UTSNamespace:         utsns,
-		IPCNamespace:         ipcns,
-	}
-	ctx := procArgs.NewContext(k)
-
-	// Use root user to configure mounts. The current user might not have
-	// permission to do so.
-	rootProcArgs := kernel.CreateProcessArgs{
-		WorkingDirectory:     "/",
-		Credentials:          auth.NewRootCredentials(creds.UserNamespace),
-		Umask:                uint(syscall.Umask(0022)),
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-	}
-	rootCtx := rootProcArgs.NewContext(k)
-
-	// Create the virtual filesystem.
-	mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
-	if err != nil {
-		return nil, fmt.Errorf("error creating mounts: %v", err)
-	}
-	k.SetRootMountNamespace(mns)
-
-	// Create the FD map, which will set stdin, stdout, and stderr.  If console
-	// is true, then ioctl calls will be passed through to the host fd.
-	fdm, err := createFDMap(ctx, k, ls, console)
-	if err != nil {
-		return nil, fmt.Errorf("error importing fds: %v", err)
-	}
-
-	// CreateProcess takes a reference on FDMap if successful. We
-	// won't need ours either way.
-	procArgs.FDMap = fdm
-
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
 	if err := sighandling.IgnoreChildStop(); err != nil {
@@ -277,15 +219,90 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	// the emulated kernel.
 	stopSignalForwarding := sighandling.StartForwarding(k)
 
-	return &Loader{
+	procArgs, err := newProcess(spec, conf, ioFDs, console, creds, utsns, ipcns, k)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create root process: %v", err)
+	}
+
+	l := &Loader{
 		k:                    k,
 		ctrl:                 ctrl,
 		conf:                 conf,
 		console:              console,
 		watchdog:             watchdog,
 		stopSignalForwarding: stopSignalForwarding,
-		procArgs:             procArgs,
-	}, nil
+		rootProcArgs:         procArgs,
+	}
+	ctrl.manager.l = l
+	return l, nil
+}
+
+// newProcess creates a process that can be run with kernel.CreateProcess.
+func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds *auth.Credentials, utsns *kernel.UTSNamespace, ipcns *kernel.IPCNamespace, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
+	// Create initial limits.
+	ls, err := createLimitSet(spec)
+	if err != nil {
+		return kernel.CreateProcessArgs{}, fmt.Errorf("error creating limits: %v", err)
+	}
+
+	// Get the executable path, which is a bit tricky because we have to
+	// inspect the environment PATH which is relative to the root path.
+	exec, err := specutils.GetExecutablePath(spec.Process.Args[0], spec.Root.Path, spec.Process.Env)
+	if err != nil {
+		return kernel.CreateProcessArgs{}, fmt.Errorf("error getting executable path: %v", err)
+	}
+
+	// Create the process arguments.
+	procArgs := kernel.CreateProcessArgs{
+		Filename:             exec,
+		Argv:                 spec.Process.Args,
+		Envv:                 spec.Process.Env,
+		WorkingDirectory:     spec.Process.Cwd,
+		Credentials:          creds,
+		Umask:                uint(0022),
+		Limits:               ls,
+		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		UTSNamespace:         utsns,
+		IPCNamespace:         ipcns,
+	}
+	ctx := procArgs.NewContext(k)
+
+	// Create the FD map, which will set stdin, stdout, and stderr.  If
+	// console is true, then ioctl calls will be passed through to the host
+	// fd.
+	fdm, err := createFDMap(ctx, k, ls, console)
+	if err != nil {
+		return kernel.CreateProcessArgs{}, fmt.Errorf("error importing fds: %v", err)
+	}
+
+	// CreateProcess takes a reference on FDMap if successful. We
+	// won't need ours either way.
+	procArgs.FDMap = fdm
+
+	// If this is the root container, we also need to setup the root mount
+	// namespace.
+	if k.RootMountNamespace() == nil {
+		// Use root user to configure mounts. The current user might not have
+		// permission to do so.
+		rootProcArgs := kernel.CreateProcessArgs{
+			WorkingDirectory: "/",
+			Credentials:      auth.NewRootCredentials(creds.UserNamespace),
+			// The sentry should run with a umask of 0.
+			Umask:                uint(syscall.Umask(0)),
+			MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		}
+		rootCtx := rootProcArgs.NewContext(k)
+
+		// Create the virtual filesystem.
+		mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
+		if err != nil {
+			return kernel.CreateProcessArgs{}, fmt.Errorf("error creating mounts: %v", err)
+		}
+
+		k.SetRootMountNamespace(mns)
+	}
+
+	return procArgs, nil
 }
 
 // Destroy cleans up all resources used by the loader.
@@ -350,15 +367,67 @@ func (l *Loader) run() error {
 	}
 
 	// Create the root container init task.
-	if _, err := l.k.CreateProcess(l.procArgs); err != nil {
+	if _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
 		return fmt.Errorf("failed to create init process: %v", err)
 	}
 
 	// CreateProcess takes a reference on FDMap if successful.
-	l.procArgs.FDMap.DecRef()
+	l.rootProcArgs.FDMap.DecRef()
 
 	l.watchdog.Start()
 	return l.k.Start()
+}
+
+func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) error {
+	spec := args.Spec
+	// Create capabilities.
+	caps, err := specutils.Capabilities(spec.Process.Capabilities)
+	if err != nil {
+		return fmt.Errorf("error creating capabilities: %v", err)
+	}
+
+	// Convert the spec's additional GIDs to KGIDs.
+	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
+	for _, GID := range spec.Process.User.AdditionalGids {
+		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
+	}
+
+	// Create credentials. We reuse the root user namespace because the
+	// sentry currently supports only 1 mount namespace, which is tied to a
+	// single user namespace. Thus we must run in the same user namespace
+	// to access mounts.
+	// TODO: Create a new mount namespace for the container.
+	creds := auth.NewUserCredentials(
+		auth.KUID(spec.Process.User.UID),
+		auth.KGID(spec.Process.User.GID),
+		extraKGIDs,
+		caps,
+		l.k.RootUserNamespace())
+
+	// TODO New containers should be started in new PID namespaces
+	// when indicated by the spec.
+
+	procArgs, err := newProcess(
+		args.Spec,
+		args.Conf,
+		nil,   // ioFDs
+		false, // console
+		creds,
+		k.RootUTSNamespace(),
+		k.RootIPCNamespace(),
+		k)
+	if err != nil {
+		return fmt.Errorf("failed to create new process: %v", err)
+	}
+
+	if _, err := l.k.CreateProcess(procArgs); err != nil {
+		return fmt.Errorf("failed to create process in sentry: %v", err)
+	}
+
+	// CreateProcess takes a reference on FDMap if successful.
+	procArgs.FDMap.DecRef()
+
+	return nil
 }
 
 // WaitForStartSignal waits for a start signal from the control server.

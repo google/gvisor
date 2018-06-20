@@ -76,7 +76,7 @@ func (evs *Events) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandox: %v", err)
+		Fatalf("error loading sandbox: %v", err)
 	}
 
 	// Repeatedly get stats from the container.

@@ -104,7 +104,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandox: %v", err)
+		Fatalf("error loading sandbox: %v", err)
 	}
 
 	if e.WorkingDirectory == "" {

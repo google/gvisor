@@ -62,7 +62,7 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandox: %v", err)
+		Fatalf("error loading sandbox: %v", err)
 	}
 	pList, err := c.Processes()
 	if err != nil {

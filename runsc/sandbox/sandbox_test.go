@@ -44,7 +44,7 @@ func TestGoferExits(t *testing.T) {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer s.Destroy()
-	if err := s.Start("123", spec, conf); err != nil {
+	if err := s.StartRoot(spec, conf); err != nil {
 		t.Fatalf("error starting container: %v", err)
 	}
 

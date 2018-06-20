@@ -15,9 +15,12 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -49,6 +52,10 @@ const (
 
 	// ContainerSignal is used to send a signal to a container.
 	ContainerSignal = "containerManager.Signal"
+
+	// ContainerStart is the URPC endpoint for running a non-root container
+	// within a sandbox.
+	ContainerStart = "containerManager.Start"
 
 	// ContainerWait is used to wait on the init process of the container
 	// and return its ExitStatus.
@@ -127,10 +134,14 @@ type containerManager struct {
 
 	// watchdog is the kernel watchdog.
 	watchdog *watchdog.Watchdog
+
+	// l is the loader that creates containers and sandboxes.
+	l *Loader
 }
 
 // StartRoot will start the root container process.
 func (cm *containerManager) StartRoot(_, _ *struct{}) error {
+	log.Debugf("containerManager.StartRoot")
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	return <-cm.startResultChan
@@ -138,11 +149,42 @@ func (cm *containerManager) StartRoot(_, _ *struct{}) error {
 
 // Processes retrieves information about processes running in the sandbox.
 func (cm *containerManager) Processes(_, out *[]*control.Process) error {
+	log.Debugf("containerManager.Processes")
 	return control.Processes(cm.k, out)
+}
+
+// StartArgs contains arguments to the Start method.
+type StartArgs struct {
+	// Spec is the spec of the container to start.
+	Spec *specs.Spec
+
+	// TODO: Separate sandbox and container configs.
+	// Config is the runsc-specific configuration for the sandbox.
+	Conf *Config
+}
+
+// Start runs a created container within a sandbox.
+func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
+	log.Debugf("containerManager.Start")
+
+	// Validate arguments.
+	if args == nil {
+		return errors.New("start missing arguments")
+	}
+	if args.Spec == nil {
+		return errors.New("start arguments missing spec")
+	}
+	if args.Conf == nil {
+		return errors.New("start arguments missing config")
+	}
+
+	cm.l.startContainer(args, cm.k)
+	return nil
 }
 
 // Execute runs a command on a created or running sandbox.
 func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) error {
+	log.Debugf("containerManager.Execute")
 	proc := control.Proc{Kernel: cm.k}
 	if err := proc.Exec(e, waitStatus); err != nil {
 		return fmt.Errorf("error executing: %+v: %v", e, err)
@@ -152,6 +194,7 @@ func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) err
 
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
+	log.Debugf("containerManager.Checkpoint")
 	state := control.State{
 		Kernel:   cm.k,
 		Watchdog: cm.watchdog,
@@ -173,6 +216,7 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
+	log.Debugf("containerManager.Wait")
 	// TODO: Use the cid and wait on the init process in that
 	// container. Currently we just wait on PID 1 in the sandbox.
 	tg := cm.k.TaskSet().Root.ThreadGroupWithID(1)
@@ -195,6 +239,7 @@ type SignalArgs struct {
 
 // Signal sends a signal to the init process of the container.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
+	log.Debugf("containerManager.Signal")
 	// TODO: Use the cid and send the signal to the init
 	// process in theat container. Currently we just signal PID 1 in the
 	// sandbox.
