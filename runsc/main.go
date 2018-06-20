@@ -88,6 +88,7 @@ func main() {
 	// The string below will be printed above the commands.
 	const internalGroup = "internal use only"
 	subcommands.Register(new(cmd.Boot), internalGroup)
+	subcommands.Register(new(cmd.Debug), internalGroup)
 	subcommands.Register(new(cmd.Gofer), internalGroup)
 
 	// All subcommands must be registered before flag parsing.

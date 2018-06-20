@@ -10,6 +10,7 @@ go_library(
         "checkpoint.go",
         "cmd.go",
         "create.go",
+        "debug.go",
         "delete.go",
         "events.go",
         "exec.go",

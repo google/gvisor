@@ -68,6 +68,9 @@ const (
 	// RootContainerStart is the URPC endpoint for starting a new sandbox
 	// with root container.
 	RootContainerStart = "containerManager.StartRoot"
+
+	// SandboxStacks collects sandbox stacks for debugging.
+	SandboxStacks = "debug.Stacks"
 )
 
 // ControlSocketAddr generates an abstract unix socket name for the given id.
@@ -106,6 +109,8 @@ func newController(fd int, k *kernel.Kernel, w *watchdog.Watchdog) (*controller,
 		}
 		srv.Register(net)
 	}
+
+	srv.Register(&debug{})
 
 	if err := srv.StartServing(); err != nil {
 		return nil, err

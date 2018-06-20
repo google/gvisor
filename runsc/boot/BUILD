@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "config.go",
         "controller.go",
+        "debug.go",
         "events.go",
         "fds.go",
         "fs.go",
