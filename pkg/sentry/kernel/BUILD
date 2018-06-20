@@ -13,7 +13,7 @@ go_stateify(
         "ipc_namespace.go",
         "kernel.go",
         "pending_signals.go",
-        "pending_signals_list.go",
+        "pending_signals_state.go",
         "process_group_list.go",
         "ptrace.go",
         "rseq.go",
@@ -46,7 +46,10 @@ go_stateify(
         "version.go",
     ],
     out = "kernel_state.go",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"],
+    imports = [
+        "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
+        "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
+    ],
     package = "kernel",
 )
 
@@ -117,6 +120,7 @@ go_library(
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
+        "pending_signals_state.go",
         "process_group_list.go",
         "ptrace.go",
         "rseq.go",
