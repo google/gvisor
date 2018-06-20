@@ -40,15 +40,14 @@ bazel test --test_output=errors //...
 exit_code=${?}
 set -e
 
-# Find and rename all test logs so that Sponge can pick them up.
-for file in $(find -L "bazel-testlogs" -name "test.xml"); do
+# Find and rename all test xml and log files so that Sponge can pick them up.
+# XML files must be named sponge_log.xml, and log files must be named
+# sponge_log.log. We move all such files into KOKORO_ARTIFACTS_DIR, in a
+# subdirectory named with the test name.
+for file in $(find -L "bazel-testlogs" -name "test.xml" -o -name "test.log"); do
     newpath=${KOKORO_ARTIFACTS_DIR}/$(dirname ${file})
-    # XML logs must be named sponge_log.xml for sponge to process them.
-    mkdir -p "${newpath}" && cp "${file}" "${newpath}/sponge_log.xml"
-done
-for file in $(find -L "bazel-testlogs" -name "test.log"); do
-    newpath=${KOKORO_ARTIFACTS_DIR}/$(dirname ${file})
-    mkdir -p "${newpath}" && cp "${file}" "${newpath}"
+    extension="${file##*.}"
+    mkdir -p "${newpath}" && cp "${file}" "${newpath}/sponge_log.${extension}"
 done
 
 exit ${exit_code}
