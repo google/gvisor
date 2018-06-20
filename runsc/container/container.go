@@ -214,22 +214,43 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		Owner:         os.Getenv("USER"),
 	}
 
-	// TODO: If the metadata annotations indicate that this
-	// container should be started in another sandbox, we must do so. The
-	// metadata will indicate the ID of the sandbox, which is the same as
-	// the ID of the init container in the sandbox. We can look up that
-	// init container by ID to get the sandbox, then we need to expose a
-	// way to run a new container in the sandbox.
+	// If the metadata annotations indicate that this container should be
+	// started in an existing sandbox, we must do so. The metadata will
+	// indicate the ID of the sandbox, which is the same as the ID of the
+	// init container in the sandbox.
+	if specutils.ShouldCreateSandbox(spec) {
+		log.Debugf("Creating new sandbox for container %q", id)
+		// Start a new sandbox for this container. Any errors after this point
+		// must destroy the container.
+		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
+		if err != nil {
+			c.Destroy()
+			return nil, err
+		}
+		c.Sandbox = s
+	} else {
+		// This is sort of confusing. For a sandbox with a root
+		// container and a child container in it, runsc sees:
+		// * A container struct whose sandbox ID is equal to the
+		//   container ID. This is the root container that is tied to
+		//   the creation of the sandbox.
+		// * A container struct whose sandbox ID is equal to the above
+		//   container/sandbox ID, but that has a different container
+		//   ID. This is the child container.
+		sbid, ok := specutils.SandboxID(spec)
+		if !ok {
+			return nil, fmt.Errorf("no sandbox ID found when creating container")
+		}
+		log.Debugf("Creating new container %q in sandbox %q", c.ID, sbid)
 
-	// Start a new sandbox for this container. Any errors after this point
-	// must destroy the container.
-	s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
-	if err != nil {
-		c.Destroy()
-		return nil, err
+		// Find the sandbox associated with this ID.
+		sb, err := Load(conf.RootDir, sbid)
+		if err != nil {
+			c.Destroy()
+			return nil, err
+		}
+		c.Sandbox = sb.Sandbox
 	}
-
-	c.Sandbox = s
 	c.Status = Created
 
 	// Save the metadata file.
@@ -242,7 +263,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// this file is created, so it must be the last thing we do.
 	if pidFile != "" {
 		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.Pid())), 0644); err != nil {
-			s.Destroy()
+			c.Destroy()
 			return nil, fmt.Errorf("error writing pid file: %v", err)
 		}
 	}
@@ -266,9 +287,16 @@ func (c *Container) Start(conf *boot.Config) error {
 		}
 	}
 
-	if err := c.Sandbox.Start(c.ID, c.Spec, conf); err != nil {
-		c.Destroy()
-		return err
+	if specutils.ShouldCreateSandbox(c.Spec) {
+		if err := c.Sandbox.StartRoot(c.Spec, conf); err != nil {
+			c.Destroy()
+			return err
+		}
+	} else {
+		if err := c.Sandbox.Start(c.Spec, conf); err != nil {
+			c.Destroy()
+			return err
+		}
 	}
 
 	// "If any poststart hook fails, the runtime MUST log a warning, but

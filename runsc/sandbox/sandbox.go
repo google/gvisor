@@ -81,9 +81,9 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	return s, nil
 }
 
-// Start starts running the containerized process inside the sandbox.
-func (s *Sandbox) Start(cid string, spec *specs.Spec, conf *boot.Config) error {
-	log.Debugf("Start sandbox %q, pid: %d", s.ID, s.Pid)
+// StartRoot starts running the root container process inside the sandbox.
+func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
+	log.Debugf("Start root sandbox %q, pid: %d", s.ID, s.Pid)
 	conn, err := s.connect()
 	if err != nil {
 		return err
@@ -96,11 +96,29 @@ func (s *Sandbox) Start(cid string, spec *specs.Spec, conf *boot.Config) error {
 	}
 
 	// Send a message to the sandbox control server to start the root
-	// container..
-	//
-	// TODO: We need a way to start non-root containers.
+	// container.
 	if err := conn.Call(boot.RootContainerStart, nil, nil); err != nil {
 		return fmt.Errorf("error starting root container %v: %v", spec.Process.Args, err)
+	}
+
+	return nil
+}
+
+// Start starts running a non-root container inside the sandbox.
+func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config) error {
+	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	args := boot.StartArgs{
+		Spec: spec,
+		Conf: conf,
+	}
+	if err := conn.Call(boot.ContainerStart, args, nil); err != nil {
+		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)
 	}
 
 	return nil
@@ -130,11 +148,11 @@ func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, 
 	log.Debugf("Executing new process in container %q in sandbox %q", cid, s.ID)
 	conn, err := s.connect()
 	if err != nil {
-		return 0, fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
+		return 0, s.connError(err)
 	}
 	defer conn.Close()
 
-	// Send a message to the sandbox control server to start the container..
+	// Send a message to the sandbox control server to start the container.
 	var waitStatus uint32
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should execute in the context of that container.
@@ -168,9 +186,13 @@ func (s *Sandbox) connect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
 	conn, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
 	if err != nil {
-		return nil, fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
+		return nil, s.connError(err)
 	}
 	return conn, nil
+}
+
+func (s *Sandbox) connError(err error) error {
+	return fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
 }
 
 func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir, binPath string) ([]*os.File, error) {
@@ -266,7 +288,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the tty on the sandox process.
+	// pty master/slave pair and set the tty on the sandbox process.
 	if consoleEnabled {
 		// setupConsole will send the master on the socket, and return
 		// the slave.

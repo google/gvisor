@@ -36,6 +36,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/runsc/container"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
@@ -51,7 +52,7 @@ func waitForProcessList(s *container.Container, expected []*control.Process) err
 	var got []*control.Process
 	for start := time.Now(); time.Now().Sub(start) < 10*time.Second; {
 		var err error
-		got, err := s.Processes()
+		got, err = s.Processes()
 		if err != nil {
 			return fmt.Errorf("error getting process data from container: %v", err)
 		}
@@ -944,5 +945,75 @@ func TestAbbreviatedIDs(t *testing.T) {
 		if s, err := container.Load(rootDir, shortid); err == nil {
 			t.Errorf("%q should be ambiguous, but resolved to %q", shortid, s.ID)
 		}
+	}
+}
+
+// TestMultiContainerSanity checks that it is possible to run 2 dead-simple
+// containers in the same sandbox.
+func TestMultiContainerSanity(t *testing.T) {
+	containerIDs := []string{
+		testutil.UniqueContainerID(),
+		testutil.UniqueContainerID(),
+	}
+	containerAnnotations := []map[string]string{
+		// The first container creates a sandbox.
+		map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+		},
+		// The second container creates a container within the first
+		// container's sandbox.
+		map[string]string{
+			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+			specutils.ContainerdSandboxIDAnnotation:     containerIDs[0],
+		},
+	}
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Setup the containers.
+	containers := make([]*container.Container, 0, len(containerIDs))
+	for i, annotations := range containerAnnotations {
+		spec := testutil.NewSpecWithArgs("sleep", "100")
+		spec.Annotations = annotations
+		bundleDir, conf, err := testutil.SetupContainerInRoot(rootDir, spec)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		containers = append(containers, cont)
+	}
+
+	expectedPL := []*control.Process{
+		{
+			UID:  0,
+			PID:  1,
+			PPID: 0,
+			C:    0,
+			Cmd:  "sleep",
+		},
+		{
+			UID:  0,
+			PID:  2,
+			PPID: 0,
+			C:    0,
+			Cmd:  "sleep",
+		},
+	}
+
+	// Check via ps that multiple processes are running.
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
 }
