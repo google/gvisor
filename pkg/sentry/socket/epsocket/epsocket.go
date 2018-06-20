@@ -952,6 +952,12 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		senderRequested = false
 	}
 	n, senderAddr, senderAddrLen, controlMessages, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
+
+	if err == syserr.ErrClosedForReceive && flags&linux.MSG_DONTWAIT != 0 {
+		// In this situation we should return EAGAIN.
+		return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
+	}
+
 	if err != syserr.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		return
 	}
