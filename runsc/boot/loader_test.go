@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 )
 
 func init() {
@@ -315,6 +317,210 @@ func TestCreateMountNamespace(t *testing.T) {
 		for _, p := range tc.expectedPaths {
 			if _, err := mm.FindInode(ctx, root, root, p, 0); err != nil {
 				t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
+			}
+		}
+	}
+}
+
+// TestRestoreEnvironment tests that the correct mounts are collected from the spec and config
+// in order to build the environment for restoring.
+func TestRestoreEnvironment(t *testing.T) {
+	testCases := []struct {
+		name          string
+		spec          *specs.Spec
+		conf          *Config
+		ioFDs         []int
+		errorExpected bool
+		expectedRenv  fs.RestoreEnvironment
+	}{
+		{
+			name: "basic spec test",
+			spec: &specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/some/very/very/deep/path",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/proc",
+						Type:        "tmpfs",
+					},
+				},
+			},
+			conf: &Config{
+				RootDir:        "unused_root_dir",
+				Network:        NetworkNone,
+				FileAccess:     FileAccessProxy,
+				DisableSeccomp: true,
+			},
+			ioFDs:         []int{0},
+			errorExpected: false,
+			expectedRenv: fs.RestoreEnvironment{
+				MountSources: map[string][]fs.MountArgs{
+					"9p": {
+						{
+							Dev:   "p9fs-/",
+							Flags: fs.MountSourceFlags{ReadOnly: true},
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+						},
+					},
+					"tmpfs": {
+						{
+							Dev: "none",
+						},
+						{
+							Dev: "none",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "bind type test",
+			spec: &specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/fd-foo",
+						Type:        "bind",
+					},
+				},
+			},
+			conf: &Config{
+				RootDir:        "unused_root_dir",
+				Network:        NetworkNone,
+				FileAccess:     FileAccessProxy,
+				DisableSeccomp: true,
+			},
+			ioFDs:         []int{0, 1},
+			errorExpected: false,
+			expectedRenv: fs.RestoreEnvironment{
+				MountSources: map[string][]fs.MountArgs{
+					"9p": {
+						{
+							Dev:   "p9fs-/",
+							Flags: fs.MountSourceFlags{ReadOnly: true},
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+						},
+						{
+							Dev:  "p9fs-/dev/fd-foo",
+							Data: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "options test",
+			spec: &specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/fd-foo",
+						Type:        "tmpfs",
+						Options:     []string{"uid=1022", "noatime"},
+					},
+				},
+			},
+			conf: &Config{
+				RootDir:        "unused_root_dir",
+				Network:        NetworkNone,
+				FileAccess:     FileAccessProxy,
+				DisableSeccomp: true,
+			},
+			ioFDs:         []int{0},
+			errorExpected: false,
+			expectedRenv: fs.RestoreEnvironment{
+				MountSources: map[string][]fs.MountArgs{
+					"9p": {
+						{
+							Dev:   "p9fs-/",
+							Flags: fs.MountSourceFlags{ReadOnly: true},
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+						},
+					},
+					"tmpfs": {
+						{
+							Dev:   "none",
+							Flags: fs.MountSourceFlags{NoAtime: true},
+							Data:  "uid=1022",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "whitelist error test",
+			spec: &specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/fd-foo",
+						Type:        "bind",
+					},
+				},
+			},
+			conf: &Config{
+				RootDir:        "unused_root_dir",
+				Network:        NetworkNone,
+				FileAccess:     FileAccessDirect,
+				DisableSeccomp: true,
+			},
+			ioFDs:         []int{0, 1},
+			errorExpected: true,
+		},
+		{
+			name: "bad options test",
+			spec: &specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/dev/fd-foo",
+						Type:        "tmpfs",
+						Options:     []string{"invalid_option=true"},
+					},
+				},
+			},
+			conf: &Config{
+				RootDir:        "unused_root_dir",
+				Network:        NetworkNone,
+				FileAccess:     FileAccessDirect,
+				DisableSeccomp: true,
+			},
+			ioFDs:         []int{0},
+			errorExpected: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		fds := &fdDispenser{fds: tc.ioFDs}
+
+		actualRenv, err := createRestoreEnvironment(tc.spec, tc.conf, fds)
+		if !tc.errorExpected && err != nil {
+			t.Fatalf("could not create restore environment for test:%s", tc.name)
+		} else if tc.errorExpected {
+			if err == nil {
+				t.Fatalf("expected an error, but no error occurred.")
+			}
+		} else {
+			if !reflect.DeepEqual(*actualRenv, tc.expectedRenv) {
+				t.Fatalf("restore environments did not match for test:%s", tc.name)
 			}
 		}
 	}

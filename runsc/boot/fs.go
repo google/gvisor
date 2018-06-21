@@ -220,12 +220,13 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	return fs.NewOverlayRoot(ctx, upper, lower, lowerFlags)
 }
 
-func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.MountNamespace, fds *fdDispenser, m specs.Mount) error {
-	// Map mount type to filesystem name, and parse out the options that we are
-	// capable of dealing with.
-	var data []string
+// getMountNameAndOptions retrieves the fsName, data, and useOverlay values
+// used for mounts.
+func getMountNameAndOptions(conf *Config, m specs.Mount, fds *fdDispenser) (string, []string, bool, error) {
 	var fsName string
+	var data []string
 	var useOverlay bool
+	var err error
 	switch m.Type {
 	case "devpts", "devtmpfs", "proc", "sysfs":
 		fsName = m.Type
@@ -235,11 +236,8 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 		fsName = m.Type
 
 		// tmpfs has some extra supported options that we must pass through.
-		var err error
 		data, err = parseAndFilterOptions(m.Options, "mode", "uid", "gid")
-		if err != nil {
-			return err
-		}
+
 	case "bind":
 		switch conf.FileAccess {
 		case FileAccessProxy:
@@ -250,7 +248,7 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 			fsName = "whitelistfs"
 			data = []string{"root=" + m.Source, "dont_translate_ownership=true"}
 		default:
-			return fmt.Errorf("invalid file access type: %v", conf.FileAccess)
+			err = fmt.Errorf("invalid file access type: %v", conf.FileAccess)
 		}
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
@@ -261,6 +259,20 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 		// them, so this is a warning for now.
 		// we do not support.
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
+	}
+	return fsName, data, useOverlay, err
+}
+
+func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.MountNamespace, fds *fdDispenser, m specs.Mount) error {
+	// Map mount type to filesystem name, and parse out the options that we are
+	// capable of dealing with.
+	fsName, data, useOverlay, err := getMountNameAndOptions(conf, m, fds)
+
+	// Return the error or nil that corresponds to the default case in getMountNameAndOptions.
+	if err != nil {
+		return err
+	}
+	if fsName == "" {
 		return nil
 	}
 
@@ -386,6 +398,67 @@ func destinations(mounts []specs.Mount, extra ...string) []string {
 		ds = append(ds, m.Destination)
 	}
 	return append(ds, extra...)
+}
+
+// mountDevice returns a device string based on the fs type and target
+// of the mount.
+func mountDevice(m specs.Mount) string {
+	if m.Type == "bind" {
+		// Make a device string that includes the target, which is consistent across
+		// S/R and uniquely identifies the connection.
+		return "p9fs-" + m.Destination
+	}
+	// All other fs types use device "none".
+	return "none"
+}
+
+// addRestoreMount adds a mount to the MountSources map used for restoring a
+// checkpointed container.
+func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, fds *fdDispenser) error {
+	fsName, data, _, err := getMountNameAndOptions(conf, m, fds)
+	dataString := strings.Join(data, ",")
+	if err != nil {
+		return err
+	}
+	renv.MountSources[fsName] = append(renv.MountSources[fsName], fs.MountArgs{
+		Dev:   mountDevice(m),
+		Flags: mountFlags(m.Options),
+		Data:  dataString,
+	})
+	return nil
+}
+
+// createRestoreEnviroment builds a fs.RestoreEnvironment called renv by adding the mounts
+// to the environment.
+func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) (*fs.RestoreEnvironment, error) {
+	if conf.FileAccess == FileAccessDirect {
+		return nil, fmt.Errorf("host filesystem with whitelist not supported with S/R")
+	}
+	renv := &fs.RestoreEnvironment{
+		MountSources: make(map[string][]fs.MountArgs),
+	}
+
+	// Add root mount.
+	fd := fds.remove()
+	dataString := strings.Join([]string{"trans=fd", fmt.Sprintf("rfdno=%d", fd), fmt.Sprintf("wfdno=%d", fd), "privateunixsocket=true"}, ",")
+	mf := fs.MountSourceFlags{}
+	if spec.Root.Readonly {
+		mf.ReadOnly = true
+	}
+	const rootFSName = "9p"
+	renv.MountSources[rootFSName] = append(renv.MountSources[rootFSName], fs.MountArgs{
+		Dev:   "p9fs-/",
+		Flags: mf,
+		Data:  dataString,
+	})
+
+	// Add submounts
+	for _, m := range spec.Mounts {
+		if err := addRestoreMount(conf, renv, m, fds); err != nil {
+			return nil, err
+		}
+	}
+	return renv, nil
 }
 
 func mountFlags(opts []string) fs.MountSourceFlags {
