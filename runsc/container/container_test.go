@@ -117,7 +117,7 @@ func run(spec *specs.Spec) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		return fmt.Errorf("error creating container: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestLifecycle(t *testing.T) {
 	}
 	// Create the container.
 	id := testutil.UniqueContainerID()
-	if _, err := container.Create(id, spec, conf, bundleDir, "", ""); err != nil {
+	if _, err := container.Create(id, spec, conf, bundleDir, "", "", ""); err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
 
@@ -360,7 +360,7 @@ func TestExec(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestCheckpoint(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestPauseResume(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestPauseResumeStatus(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -666,7 +666,7 @@ func TestCapabilities(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -765,7 +765,7 @@ func TestConsoleSocket(t *testing.T) {
 
 	// Create the container and pass the socket name.
 	id := testutil.UniqueContainerID()
-	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "")
+	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -828,7 +828,7 @@ func TestSpecUnsupported(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	id := testutil.UniqueContainerID()
-	_, err = container.Create(id, spec, conf, bundleDir, "", "")
+	_, err = container.Create(id, spec, conf, bundleDir, "", "", "")
 	if err == nil || !strings.Contains(err.Error(), "is not supported") {
 		t.Errorf("container.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
 	}
@@ -917,7 +917,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := container.Create(cid, spec, conf, bundleDir, "", "")
+		cont, err := container.Create(cid, spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -987,7 +987,7 @@ func TestMultiContainerSanity(t *testing.T) {
 			t.Fatalf("error setting up container: %v", err)
 		}
 		defer os.RemoveAll(bundleDir)
-		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "")
+		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
