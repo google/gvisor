@@ -259,7 +259,7 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		Envv:                 spec.Process.Env,
 		WorkingDirectory:     spec.Process.Cwd,
 		Credentials:          creds,
-		Umask:                uint(0022),
+		Umask:                0,
 		Limits:               ls,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		UTSNamespace:         utsns,
