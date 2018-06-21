@@ -760,12 +760,11 @@ func (k *Kernel) Unpause() {
 //
 // context is used only for debugging to describe how the signal was received.
 //
-// Returns false if signal could not be sent because the Kernel is not fully
-// initialized yet.
-func (k *Kernel) SendExternalSignal(info *arch.SignalInfo, context string) bool {
+// Preconditions: Kernel must have an init process.
+func (k *Kernel) SendExternalSignal(info *arch.SignalInfo, context string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	return k.sendExternalSignal(info, context)
+	k.sendExternalSignal(info, context)
 }
 
 // FeatureSet returns the FeatureSet.

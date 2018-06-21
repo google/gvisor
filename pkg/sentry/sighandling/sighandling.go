@@ -16,6 +16,7 @@
 package sighandling
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"reflect"
@@ -65,7 +66,9 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, start, stop cha
 
 		// Otherwise, it was a signal on channel N. Index 0 represents the stop
 		// channel, so index N represents the channel for signal N.
-		if !started || !k.SendExternalSignal(&arch.SignalInfo{Signo: int32(index)}, "sentry") {
+		signal := linux.Signal(index)
+
+		if !started {
 			// Kernel is not ready to receive signals.
 			//
 			// Kill ourselves if this signal would have killed the
@@ -78,11 +81,16 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, start, stop cha
 			// TODO: Convert Go's runtime.raise from
 			// tkill to tgkill so PrepareForwarding doesn't need to
 			// be called until after filter installation.
-			switch linux.Signal(index) {
+			switch signal {
 			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:
-				dieFromSignal(linux.Signal(index))
+				dieFromSignal(signal)
+				panic(fmt.Sprintf("Failed to die from signal %d", signal))
+			default:
+				continue
 			}
 		}
+
+		k.SendExternalSignal(&arch.SignalInfo{Signo: int32(signal)}, "sentry")
 	}
 
 	// Close all individual channels.
