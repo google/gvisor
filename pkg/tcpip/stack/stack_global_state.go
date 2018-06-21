@@ -5,5 +5,5 @@
 package stack
 
 // StackFromEnv is the global stack created in restore run.
-// FIXME: remove this variable once tcpip S/R is fully supported.
+// FIXME
 var StackFromEnv *Stack
