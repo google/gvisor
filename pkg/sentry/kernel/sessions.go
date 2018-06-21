@@ -110,6 +110,11 @@ type ProcessGroup struct {
 	processGroupEntry
 }
 
+// Originator retuns the originator of the process group.
+func (pg *ProcessGroup) Originator() *ThreadGroup {
+	return pg.originator
+}
+
 // incRefWithParent grabs a reference.
 //
 // This function is called when this ProcessGroup is being associated with some

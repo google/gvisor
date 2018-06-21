@@ -25,6 +25,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/fasync"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
@@ -528,6 +529,33 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		file.SetFlags(flags.Settable())
 		return 0, nil, nil
 
+	case linux.FIOASYNC:
+		var set int32
+		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+			return 0, nil, err
+		}
+		flags := file.Flags()
+		if set != 0 {
+			flags.Async = true
+		} else {
+			flags.Async = false
+		}
+		file.SetFlags(flags.Settable())
+		return 0, nil, nil
+
+	case linux.FIOSETOWN, linux.SIOCSPGRP:
+		var set int32
+		if _, err := t.CopyIn(args[2].Pointer(), &set); err != nil {
+			return 0, nil, err
+		}
+		fSetOwn(t, file, set)
+		return 0, nil, nil
+
+	case linux.FIOGETOWN, linux.SIOCGPGRP:
+		who := fGetOwn(t, file)
+		_, err := t.CopyOut(args[2].Pointer(), &who)
+		return 0, nil, err
+
 	default:
 		ret, err := file.FileOperations.Ioctl(t, t.MemoryManager(), args)
 		if err != nil {
@@ -725,6 +753,39 @@ func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	return uintptr(newfd), nil, nil
 }
 
+func fGetOwn(t *kernel.Task, file *fs.File) int32 {
+	ma := file.Async(nil)
+	if ma == nil {
+		return 0
+	}
+	a := ma.(*fasync.FileAsync)
+	ot, otg, opg := a.Owner()
+	switch {
+	case ot != nil:
+		return int32(t.PIDNamespace().IDOfTask(ot))
+	case otg != nil:
+		return int32(t.PIDNamespace().IDOfThreadGroup(otg))
+	case opg != nil:
+		return int32(-t.PIDNamespace().IDOfProcessGroup(opg))
+	default:
+		return 0
+	}
+}
+
+// fSetOwn sets the file's owner with the semantics of F_SETOWN in Linux.
+//
+// If who is positive, it represents a PID. If negative, it represents a PGID.
+// If the PID or PGID is invalid, the owner is silently unset.
+func fSetOwn(t *kernel.Task, file *fs.File, who int32) {
+	a := file.Async(fasync.New).(*fasync.FileAsync)
+	if who < 0 {
+		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(-who))
+		a.SetOwnerProcessGroup(t, pg)
+	}
+	tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(who))
+	a.SetOwnerThreadGroup(t, tg)
+}
+
 // Fcntl implements linux syscall fcntl(2).
 func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := kdefs.FD(args[0].Int())
@@ -737,7 +798,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	defer file.DecRef()
 
 	switch cmd {
-	case syscall.F_DUPFD, syscall.F_DUPFD_CLOEXEC:
+	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC:
 		from := kdefs.FD(args[2].Int())
 		fdFlags := kernel.FDFlags{CloseOnExec: cmd == syscall.F_DUPFD_CLOEXEC}
 		fd, err := t.FDMap().NewFDFrom(from, file, fdFlags, t.ThreadGroup().Limits())
@@ -745,19 +806,19 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, err
 		}
 		return uintptr(fd), nil, nil
-	case syscall.F_GETFD:
+	case linux.F_GETFD:
 		return uintptr(fdFlagsToLinux(flags)), nil, nil
-	case syscall.F_SETFD:
+	case linux.F_SETFD:
 		flags := args[2].Uint()
 		t.FDMap().SetFlags(fd, kernel.FDFlags{
 			CloseOnExec: flags&syscall.FD_CLOEXEC != 0,
 		})
-	case syscall.F_GETFL:
+	case linux.F_GETFL:
 		return uintptr(flagsToLinux(file.Flags())), nil, nil
-	case syscall.F_SETFL:
+	case linux.F_SETFL:
 		flags := uint(args[2].Uint())
 		file.SetFlags(linuxToSettableFlags(flags))
-	case syscall.F_SETLK, syscall.F_SETLKW:
+	case linux.F_SETLK, linux.F_SETLKW:
 		// In Linux the file system can choose to provide lock operations for an inode.
 		// Normally pipe and socket types lack lock operations. We diverge and use a heavy
 		// hammer by only allowing locks on files and directories.
@@ -854,6 +915,11 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		default:
 			return 0, nil, syserror.EINVAL
 		}
+	case linux.F_GETOWN:
+		return uintptr(fGetOwn(t, file)), nil, nil
+	case linux.F_SETOWN:
+		fSetOwn(t, file, args[2].Int())
+		return 0, nil, nil
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL

@@ -82,6 +82,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/eventfd",
+        "//pkg/sentry/kernel/fasync",
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/sched",

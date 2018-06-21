@@ -12,9 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fs
+package linux
 
-// afterLoad is invoked by stateify.
-func (f *File) afterLoad() {
-	f.mu.Init()
-}
+// Comands from linux/fcntl.h.
+const (
+	F_DUPFD         = 0
+	F_DUPFD_CLOEXEC = 1030
+	F_GETFD         = 1
+	F_GETFL         = 3
+	F_GETOWN        = 9
+	F_SETFD         = 2
+	F_SETFL         = 4
+	F_SETLK         = 6
+	F_SETLKW        = 7
+	F_SETOWN        = 8
+)
