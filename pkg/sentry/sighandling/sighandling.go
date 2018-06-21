@@ -95,7 +95,7 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, start, stop cha
 // PrepareForwarding ensures that synchronous signals are forwarded to k and
 // returns a callback that starts signal delivery, which itself returns a
 // callback that stops signal forwarding.
-func PrepareForwarding(k *kernel.Kernel) func() func() {
+func PrepareForwarding(k *kernel.Kernel, enablePanicSignal bool) func() func() {
 	start := make(chan struct{})
 	stop := make(chan struct{})
 
@@ -112,7 +112,7 @@ func PrepareForwarding(k *kernel.Kernel) func() func() {
 		sigchans = append(sigchans, sigchan)
 
 		// SignalPanic is handled by Run.
-		if linux.Signal(sig) == kernel.SignalPanic {
+		if enablePanicSignal && linux.Signal(sig) == kernel.SignalPanic {
 			continue
 		}
 
@@ -127,10 +127,4 @@ func PrepareForwarding(k *kernel.Kernel) func() func() {
 			close(stop)
 		}
 	}
-}
-
-// StartForwarding ensures that synchronous signals are forwarded to k and
-// returns a callback that stops signal forwarding.
-func StartForwarding(k *kernel.Kernel) func() {
-	return PrepareForwarding(k)()
 }

@@ -215,9 +215,8 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	if err := sighandling.IgnoreChildStop(); err != nil {
 		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
 	}
-	// Ensure that most signals received in sentry context are forwarded to
-	// the emulated kernel.
-	stopSignalForwarding := sighandling.StartForwarding(k)
+	// Ensure that signals received are forwarded to the emulated kernel.
+	stopSignalForwarding := sighandling.PrepareForwarding(k, false)()
 
 	procArgs, err := newProcess(spec, conf, ioFDs, console, creds, utsns, ipcns, k)
 	if err != nil {
