@@ -44,7 +44,7 @@ func (*Gofer) Name() string {
 
 // Synopsis implements subcommands.Command.
 func (*Gofer) Synopsis() string {
-	return "launch a gofer process that server files over 9P protocol (internal use only)"
+	return "launch a gofer process that serves files over 9P protocol (internal use only)"
 }
 
 // Usage implements subcommands.Command.
