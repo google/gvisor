@@ -86,6 +86,7 @@ go_test(
         "//pkg/control/server",
         "//pkg/log",
         "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/fs",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
     ],
 )
