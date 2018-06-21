@@ -31,6 +31,7 @@ go_library(
         "elf.go",
         "errors.go",
         "exec.go",
+        "fcntl.go",
         "file.go",
         "fs.go",
         "futex.go",

@@ -42,6 +42,9 @@ type FileFlags struct {
 
 	// Directory indicates that this file must be a directory.
 	Directory bool
+
+	// Async indicates that this file sends signals on IO events.
+	Async bool
 }
 
 // SettableFileFlags is a subset of FileFlags above that can be changed
@@ -55,6 +58,9 @@ type SettableFileFlags struct {
 
 	// Append indicates this file is append only.
 	Append bool
+
+	// Async indicates that this file sends signals on IO events.
+	Async bool
 }
 
 // Settable returns the subset of f that are settable.
@@ -63,5 +69,6 @@ func (f FileFlags) Settable() SettableFileFlags {
 		Direct:      f.Direct,
 		NonBlocking: f.NonBlocking,
 		Append:      f.Append,
+		Async:       f.Async,
 	}
 }

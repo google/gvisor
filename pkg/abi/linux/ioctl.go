@@ -29,6 +29,11 @@ const (
 	TIOCSPTLCK = 0x40045431
 	FIONCLEX   = 0x00005450
 	FIOCLEX    = 0x00005451
+	FIOASYNC   = 0x00005452
+	FIOSETOWN  = 0x00008901
+	SIOCSPGRP  = 0x00008902
+	FIOGETOWN  = 0x00008903
+	SIOCGPGRP  = 0x00008904
 )
 
 // ioctl(2) requests provided by uapi/linux/android/binder.h

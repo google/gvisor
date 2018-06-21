@@ -175,3 +175,37 @@ const (
 	SA_NOMASK      = SA_NODEFER
 	SA_ONESHOT     = SA_RESTARTHAND
 )
+
+// Signal info types.
+const (
+	SI_MASK  = 0xffff0000
+	SI_KILL  = 0 << 16
+	SI_TIMER = 1 << 16
+	SI_POLL  = 2 << 16
+	SI_FAULT = 3 << 16
+	SI_CHLD  = 4 << 16
+	SI_RT    = 5 << 16
+	SI_MESGQ = 6 << 16
+	SI_SYS   = 7 << 16
+)
+
+// SIGPOLL si_codes.
+const (
+	// POLL_IN indicates that data input available.
+	POLL_IN = SI_POLL | 1
+
+	// POLL_OUT indicates that output buffers available.
+	POLL_OUT = SI_POLL | 2
+
+	// POLL_MSG indicates that an input message available.
+	POLL_MSG = SI_POLL | 3
+
+	// POLL_ERR indicates that there was an i/o error.
+	POLL_ERR = SI_POLL | 4
+
+	// POLL_PRI indicates that a high priority input available.
+	POLL_PRI = SI_POLL | 5
+
+	// POLL_HUP indicates that a device disconnected.
+	POLL_HUP = SI_POLL | 6
+)

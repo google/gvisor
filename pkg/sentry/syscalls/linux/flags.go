@@ -61,6 +61,9 @@ func flagsToLinux(flags fs.FileFlags) (mask uint) {
 	if flags.Directory {
 		mask |= syscall.O_DIRECTORY
 	}
+	if flags.Async {
+		mask |= syscall.O_ASYNC
+	}
 	switch {
 	case flags.Read && flags.Write:
 		mask |= syscall.O_RDWR
@@ -82,6 +85,7 @@ func linuxToFlags(mask uint) (flags fs.FileFlags) {
 		Write:       (mask & syscall.O_ACCMODE) != syscall.O_RDONLY,
 		Append:      mask&syscall.O_APPEND != 0,
 		Directory:   mask&syscall.O_DIRECTORY != 0,
+		Async:       mask&syscall.O_ASYNC != 0,
 	}
 }
 
@@ -91,5 +95,6 @@ func linuxToSettableFlags(mask uint) fs.SettableFileFlags {
 		Direct:      mask&syscall.O_DIRECT != 0,
 		NonBlocking: mask&syscall.O_NONBLOCK != 0,
 		Append:      mask&syscall.O_APPEND != 0,
+		Async:       mask&syscall.O_ASYNC != 0,
 	}
 }
