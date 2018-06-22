@@ -320,8 +320,21 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		return 0, syserror.EFAULT
 	}
 
+	// Behavior matrix:
+	//
+	// Move     | oldSize = 0 | oldSize < newSize | oldSize = newSize | oldSize > newSize
+	// ---------+-------------+-------------------+-------------------+------------------
+	//   NoMove | ENOMEM [1]  | Grow in-place     | No-op             | Shrink in-place
+	//  MayMove | Copy [1]    | Grow in-place or  | No-op             | Shrink in-place
+	//          |             |   move            |                   |
+	// MustMove | Copy        | Move and grow     | Move              | Shrink and move
+	//
+	// [1] In-place growth is impossible because the vma at oldAddr already
+	// occupies at least part of the destination. Thus the NoMove case always
+	// fails and the MayMove case always falls back to copying.
+
 	if opts.Move != MRemapMustMove {
-		// Handle noops and in-place shrinking. These cases don't care if
+		// Handle no-ops and in-place shrinking. These cases don't care if
 		// [oldAddr, oldEnd) maps to a single vma, or is even mapped at all
 		// (aside from oldAddr).
 		if newSize <= oldSize {
@@ -363,15 +376,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			return oldAddr, nil
 		}
 		// In-place growth failed. In the MRemapMayMove case, fall through to
-		// moving below.
+		// copying/moving below.
 		if opts.Move == MRemapNoMove {
 			return 0, err
 		}
 	}
 
-	// Handle moving, which is the only remaining case.
-
-	// Find a destination for the move.
+	// Find a location for the new mapping.
 	var newAR usermem.AddrRange
 	switch opts.Move {
 	case MRemapMayMove:
@@ -399,7 +410,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		mm.unmapLocked(ctx, newAR)
 
 		// If the sizes specify shrinking, unmap everything between the new and
-		// old sizes at the source.
+		// old sizes at the source. Unmapping before the following checks is
+		// correct: compare Linux's mm/mremap.c:mremap_to() => do_munmap(),
+		// vma_to_resize().
 		if newSize < oldSize {
 			oldNewEnd := oldAddr + usermem.Addr(newSize)
 			mm.unmapLocked(ctx, usermem.AddrRange{oldNewEnd, oldEnd})
@@ -411,9 +424,6 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	}
 
 	oldAR := usermem.AddrRange{oldAddr, oldEnd}
-
-	// In the MRemapMustMove case, these checks happen after unmapping:
-	// mm/mremap.c:mremap_to() => do_munmap(), vma_to_resize().
 
 	// Check that oldEnd maps to the same vma as oldAddr.
 	if vseg.End() < oldEnd {
@@ -431,12 +441,32 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		if vma.off+uint64(newAR.Length()) < vma.off {
 			return 0, syserror.EINVAL
 		}
-		// Inform the Mappable, if any, of the copied mapping.
+		// Inform the Mappable, if any, of the new mapping.
 		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start)); err != nil {
 			return 0, err
 		}
 	}
 
+	if oldSize == 0 {
+		// Handle copying.
+		//
+		// We can't use createVMALocked because it calls Mappable.AddMapping,
+		// whereas we've already called Mappable.CopyMapping (which is
+		// consistent with Linux). Call vseg.Value() (rather than
+		// vseg.ValuePtr()) to make a copy of the vma.
+		vma := vseg.Value()
+		if vma.mappable != nil {
+			vma.off = vseg.mappableOffsetAt(oldAR.Start)
+		}
+		if vma.id != nil {
+			vma.id.IncRef()
+		}
+		mm.vmas.Add(newAR, vma)
+		return newAR.Start, nil
+	}
+
+	// Handle moving.
+	//
 	// Remove the existing vma before inserting the new one to minimize
 	// iterator invalidation. We do this directly (instead of calling
 	// removeVMAsLocked) because:
