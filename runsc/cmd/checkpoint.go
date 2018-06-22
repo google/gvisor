@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 
 	"context"
 	"flag"
@@ -23,6 +24,9 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/container"
 )
+
+// File containing the container's saved image/state within the given image-path's directory.
+const checkpointFileName = "checkpoint.img"
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
 type Checkpoint struct {
@@ -48,6 +52,13 @@ func (*Checkpoint) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "path to saved container image")
+
+	// Unimplemented flags necessary for compatibility with docker.
+	var wp string
+	f.StringVar(&wp, "work-path", "", "ignored")
+
+	var lr bool
+	f.BoolVar(&lr, "leave-running", false, "ignored")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -70,10 +81,12 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("image-path flag must be provided")
 	}
 
+	fullImagePath := filepath.Join(c.imagePath, checkpointFileName)
+
 	// Create the image file and open for writing.
-	file, err := os.OpenFile(c.imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	file, err := os.OpenFile(fullImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
 	if err != nil {
-		Fatalf("os.OpenFile(%q) failed: %v", c.imagePath, err)
+		Fatalf("os.OpenFile(%q) failed: %v", fullImagePath, err)
 	}
 	defer file.Close()
 

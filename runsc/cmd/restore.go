@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"syscall"
 
 	"context"
@@ -53,7 +54,17 @@ func (*Restore) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Restore) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
-	f.StringVar(&r.imagePath, "image-path", "", "path to saved container image")
+	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
+
+	// Unimplemented flags necessary for compatibility with docker.
+	var d bool
+	f.BoolVar(&d, "detach", false, "ignored")
+
+	var nsr bool
+	f.BoolVar(&nsr, "no-subreaper", false, "ignored")
+
+	var wp string
+	f.StringVar(&wp, "work-path", "", "ignored")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -81,7 +92,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 		Fatalf("image-path flag must be provided")
 	}
 
-	cont, err := container.Create(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.imagePath)
+	restoreFile := filepath.Join(r.imagePath, checkpointFileName)
+
+	cont, err := container.Create(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, restoreFile)
 	if err != nil {
 		Fatalf("error restoring container: %v", err)
 	}
