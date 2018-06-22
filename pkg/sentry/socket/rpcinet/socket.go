@@ -64,10 +64,6 @@ type socketOperations struct {
 // Verify that we actually implement socket.Socket.
 var _ = socket.Socket(&socketOperations{})
 
-const (
-	sizeOfIfReq = 40
-)
-
 // New creates a new RPC socket.
 func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, protocol int) (*fs.File, *syserr.Error) {
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Socket{&pb.SocketRequest{Family: int64(family), Type: int64(skType | syscall.SOCK_NONBLOCK), Protocol: int64(protocol)}}}, false /* ignoreResult */)
@@ -465,6 +461,55 @@ func rpcIoctl(t *kernel.Task, fd, cmd uint32, arg []byte) ([]byte, error) {
 	return res.(*pb.IOCtlResponse_Value).Value, nil
 }
 
+// ifconfIoctlFromStack populates a struct ifconf for the SIOCGIFCONF ioctl.
+func ifconfIoctlFromStack(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
+	// If Ptr is NULL, return the necessary buffer size via Len.
+	// Otherwise, write up to Len bytes starting at Ptr containing ifreq
+	// structs.
+	t := ctx.(*kernel.Task)
+	s := t.NetworkContext().(*Stack)
+	if s == nil {
+		return syserr.ErrNoDevice.ToError()
+	}
+
+	if ifc.Ptr == 0 {
+		ifc.Len = int32(len(s.Interfaces())) * int32(linux.SizeOfIFReq)
+		return nil
+	}
+
+	max := ifc.Len
+	ifc.Len = 0
+	for key, ifaceAddrs := range s.InterfaceAddrs() {
+		iface := s.Interfaces()[key]
+		for _, ifaceAddr := range ifaceAddrs {
+			// Don't write past the end of the buffer.
+			if ifc.Len+int32(linux.SizeOfIFReq) > max {
+				break
+			}
+			if ifaceAddr.Family != linux.AF_INET {
+				continue
+			}
+
+			// Populate ifr.ifr_addr.
+			ifr := linux.IFReq{}
+			ifr.SetName(iface.Name)
+			usermem.ByteOrder.PutUint16(ifr.Data[0:2], uint16(ifaceAddr.Family))
+			usermem.ByteOrder.PutUint16(ifr.Data[2:4], 0)
+			copy(ifr.Data[4:8], ifaceAddr.Addr[:4])
+
+			// Copy the ifr to userspace.
+			dst := uintptr(ifc.Ptr) + uintptr(ifc.Len)
+			ifc.Len += int32(linux.SizeOfIFReq)
+			if _, err := usermem.CopyObjectOut(ctx, io, usermem.Addr(dst), ifr, usermem.IOOpts{
+				AddressSpaceActive: true,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Ioctl implements fs.FileOperations.Ioctl.
 func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	t := ctx.(*kernel.Task)
@@ -491,7 +536,25 @@ func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.S
 		syscall.SIOCGIFNAME,
 		syscall.SIOCGIFNETMASK,
 		syscall.SIOCGIFTXQLEN:
-		buf = make([]byte, sizeOfIfReq)
+		buf = make([]byte, linux.SizeOfIFReq)
+	case syscall.SIOCGIFCONF:
+		// SIOCGIFCONF has slightly different behavior than the others, in that it
+		// will need to populate the array of ifreqs.
+		var ifc linux.IFConf
+		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &ifc, usermem.IOOpts{
+			AddressSpaceActive: true,
+		}); err != nil {
+			return 0, err
+		}
+
+		if err := ifconfIoctlFromStack(ctx, io, &ifc); err != nil {
+			return 0, err
+		}
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), ifc, usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+
+		return 0, err
 	default:
 		return 0, syserror.ENOTTY
 	}
