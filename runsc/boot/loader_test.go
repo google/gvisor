@@ -133,7 +133,8 @@ func TestStartSignal(t *testing.T) {
 	}
 
 	// Trigger the control server StartRoot method.
-	if err := s.ctrl.manager.StartRoot(nil, nil); err != nil {
+	cid := "foo"
+	if err := s.ctrl.manager.StartRoot(&cid, nil); err != nil {
 		t.Errorf("error calling StartRoot: %v", err)
 	}
 

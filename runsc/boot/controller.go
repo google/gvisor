@@ -145,10 +145,11 @@ type containerManager struct {
 }
 
 // StartRoot will start the root container process.
-func (cm *containerManager) StartRoot(_, _ *struct{}) error {
+func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot")
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
+	cm.l.setRootContainerID(*cid)
 	return <-cm.startResultChan
 }
 
@@ -166,6 +167,9 @@ type StartArgs struct {
 	// TODO: Separate sandbox and container configs.
 	// Config is the runsc-specific configuration for the sandbox.
 	Conf *Config
+
+	// CID is the ID of the container to start.
+	CID string
 }
 
 // Start runs a created container within a sandbox.
@@ -182,8 +186,16 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if args.Conf == nil {
 		return errors.New("start arguments missing config")
 	}
+	if args.CID == "" {
+		return errors.New("start argument missing container ID")
+	}
 
-	cm.l.startContainer(args, cm.k)
+	tgid, err := cm.l.startContainer(args, cm.k)
+	if err != nil {
+		return err
+	}
+	log.Debugf("Container %q started with root PID of %d", args.CID, tgid)
+
 	return nil
 }
 
@@ -222,15 +234,7 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait")
-	// TODO: Use the cid and wait on the init process in that
-	// container. Currently we just wait on PID 1 in the sandbox.
-	tg := cm.k.TaskSet().Root.ThreadGroupWithID(1)
-	if tg == nil {
-		return fmt.Errorf("cannot wait: no thread group with id 1")
-	}
-	tg.WaitExited()
-	*waitStatus = tg.ExitStatus().Status()
-	return nil
+	return cm.l.wait(cid, waitStatus)
 }
 
 // SignalArgs are arguments to the Signal method.
