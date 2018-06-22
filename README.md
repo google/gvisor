@@ -373,6 +373,7 @@ The following applications/images have been tested:
 * memcached
 * mongo
 * mysql
+* nginx
 * node
 * php
 * postgres
@@ -389,8 +390,6 @@ The following applications have been tested and may not yet work:
 
 * elasticsearch: Requires unimplemented socket ioctls. See [bug
   #2](https://github.com/google/gvisor/issues/2).
-* nginx: Requires `ioctl(FIOASYNC)`, but see workaround in [bug
-  #1](https://github.com/google/gvisor/issues/1).
 
 ### Will my container work with gVisor?
 
