@@ -16,10 +16,12 @@
 package boot
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	gtime "time"
@@ -81,6 +83,16 @@ type Loader struct {
 
 	// rootProcArgs refers to the root sandbox init task.
 	rootProcArgs kernel.CreateProcessArgs
+
+	// mu guards containerRootTGIDs.
+	mu sync.Mutex
+
+	// containerRootTGIDs maps container IDs to their root processes. It
+	// can be used to determine which process to manipulate when clients
+	// call methods on particular containers.
+	//
+	// containerRootTGIDs is guarded by mu.
+	containerRootTGIDs map[string]kernel.ThreadID
 }
 
 func init() {
@@ -377,12 +389,14 @@ func (l *Loader) run() error {
 	return l.k.Start()
 }
 
-func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) error {
+// startContainer starts a child container. It returns the thread group ID of
+// the newly created process.
+func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.ThreadID, error) {
 	spec := args.Spec
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
-		return fmt.Errorf("error creating capabilities: %v", err)
+		return 0, fmt.Errorf("error creating capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -416,17 +430,60 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) error {
 		k.RootIPCNamespace(),
 		k)
 	if err != nil {
-		return fmt.Errorf("failed to create new process: %v", err)
+		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
 
-	if _, err := l.k.CreateProcess(procArgs); err != nil {
-		return fmt.Errorf("failed to create process in sentry: %v", err)
+	tg, err := l.k.CreateProcess(procArgs)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create process in sentry: %v", err)
+	}
+
+	ts := k.TaskSet()
+	tgid := ts.Root.IDOfThreadGroup(tg)
+	if tgid == 0 {
+		return 0, errors.New("failed to get thread group ID of new process")
 	}
 
 	// CreateProcess takes a reference on FDMap if successful.
 	procArgs.FDMap.DecRef()
 
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.containerRootTGIDs[args.CID] = tgid
+
+	return tgid, nil
+}
+
+// wait waits for the init process in the given container.
+func (l *Loader) wait(cid *string, waitStatus *uint32) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	tgid, ok := l.containerRootTGIDs[*cid]
+	if !ok {
+		return fmt.Errorf("can't find process for container %q in %v", *cid, l.containerRootTGIDs)
+	}
+
+	// TODO: Containers don't map 1:1 with their root
+	// processes. Container exits should be managed explicitly
+	// rather than via PID.
+	// If the thread either has already exited or exits during waiting,
+	// consider the container exited.
+	defer delete(l.containerRootTGIDs, *cid)
+
+	tg := l.k.TaskSet().Root.ThreadGroupWithID(tgid)
+	if tg == nil {
+		return fmt.Errorf("no thread group with ID %d", tgid)
+	}
+	tg.WaitExited()
+	*waitStatus = tg.ExitStatus().Status()
 	return nil
+}
+
+func (l *Loader) setRootContainerID(cid string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	// The root container has PID 1.
+	l.containerRootTGIDs = map[string]kernel.ThreadID{cid: 1}
 }
 
 // WaitForStartSignal waits for a start signal from the control server.

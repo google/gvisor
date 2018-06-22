@@ -99,7 +99,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 
 	// Send a message to the sandbox control server to start the root
 	// container.
-	if err := conn.Call(boot.RootContainerStart, nil, nil); err != nil {
+	if err := conn.Call(boot.RootContainerStart, &s.ID, nil); err != nil {
 		return fmt.Errorf("error starting root container %v: %v", spec.Process.Args, err)
 	}
 
@@ -107,7 +107,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 }
 
 // Start starts running a non-root container inside the sandbox.
-func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config) error {
+func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string) error {
 	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
 	conn, err := s.connect()
 	if err != nil {
@@ -118,6 +118,7 @@ func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config) error {
 	args := boot.StartArgs{
 		Spec: spec,
 		Conf: conf,
+		CID:  cid,
 	}
 	if err := conn.Call(boot.ContainerStart, args, nil); err != nil {
 		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)

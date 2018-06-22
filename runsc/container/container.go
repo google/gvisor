@@ -293,7 +293,7 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 	} else {
-		if err := c.Sandbox.Start(c.Spec, conf); err != nil {
+		if err := c.Sandbox.Start(c.Spec, conf, c.ID); err != nil {
 			c.Destroy()
 			return err
 		}
