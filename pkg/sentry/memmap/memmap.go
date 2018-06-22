@@ -49,13 +49,14 @@ type Mappable interface {
 
 	// CopyMapping notifies the Mappable of an attempt to copy a mapping in ms
 	// from srcAR to dstAR. For most Mappables, this is equivalent to
-	// AddMapping.
+	// AddMapping. Note that it is possible that srcAR.Length() != dstAR.Length(),
+	// and also that srcAR.Length() == 0.
 	//
 	// CopyMapping is only called when a mapping is copied within a given
 	// MappingSpace; it is analogous to Linux's vm_operations_struct::mremap.
 	//
-	// Preconditions: offset+dstAR.Length() does not overflow. The mapping at
-	// srcAR must exist.
+	// Preconditions: offset+srcAR.Length() and offset+dstAR.Length() do not
+	// overflow. The mapping at srcAR must exist.
 	CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error
 
 	// Translate returns the Mappable's current mappings for at least the range
