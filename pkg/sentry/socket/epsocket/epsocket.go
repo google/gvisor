@@ -945,7 +945,6 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 // tcpip.Endpoint.
 func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	trunc := flags&linux.MSG_TRUNC != 0
-
 	peek := flags&linux.MSG_PEEK != 0
 	if senderRequested && !s.isPacketBased() {
 		// Stream sockets ignore the sender address.
@@ -953,7 +952,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	}
 	n, senderAddr, senderAddrLen, controlMessages, err = s.nonBlockingRead(t, dst, peek, trunc, senderRequested)
 
-	if err == syserr.ErrClosedForReceive && flags&linux.MSG_DONTWAIT != 0 {
+	if s.isPacketBased() && err == syserr.ErrClosedForReceive && flags&linux.MSG_DONTWAIT != 0 {
 		// In this situation we should return EAGAIN.
 		return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 	}
