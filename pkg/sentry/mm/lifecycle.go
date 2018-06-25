@@ -214,5 +214,9 @@ func (mm *MemoryManager) DecUsers(ctx context.Context) {
 
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
-	mm.unmapLocked(ctx, mm.applicationAddrRange())
+	// If mm is being dropped before mm.SetMmapLayout was called,
+	// mm.applicationAddrRange() will be empty.
+	if ar := mm.applicationAddrRange(); ar.Length() != 0 {
+		mm.unmapLocked(ctx, ar)
+	}
 }
