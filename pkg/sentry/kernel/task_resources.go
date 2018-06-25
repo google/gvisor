@@ -122,5 +122,7 @@ func (t *Task) AbstractSockets() *AbstractSocketNamespace {
 func (t *Task) IsChrooted() bool {
 	realRoot := t.k.mounts.Root()
 	defer realRoot.DecRef()
-	return t.tr.FSContext.root != realRoot
+	root := t.tr.FSContext.RootDirectory()
+	defer root.DecRef()
+	return root != realRoot
 }
