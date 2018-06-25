@@ -78,7 +78,7 @@ func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap,
 	var caps []capability.Cap
 	for _, c := range wantedCaps {
 		// Capability rules are more complicated than this, but this catches most
-		// problems with tests running with non-priviledged user.
+		// problems with tests running with non-privileged user.
 		if setter.Get(capability.PERMITTED, c) {
 			caps = append(caps, c)
 		} else {

@@ -24,10 +24,10 @@ import (
 type PlatformType int
 
 const (
-	// Ptrace runs the sandbox with the ptrace platform.
+	// PlatformPtrace runs the sandbox with the ptrace platform.
 	PlatformPtrace PlatformType = iota
 
-	// KVM runs the sandbox with the KVM platform.
+	// PlatformKVM runs the sandbox with the KVM platform.
 	PlatformKVM
 )
 
