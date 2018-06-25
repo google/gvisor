@@ -176,6 +176,10 @@ type Config struct {
 	// DisableSeccomp indicates whether seccomp syscall filters should be
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
+
+	// MultiContainer enables multiple containers support inside one sandbox.
+	// TODO: Remove this when multiple container is fully supported.
+	MultiContainer bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -188,6 +192,7 @@ func (c *Config) ToFlags() []string {
 		"--debug-log-dir=" + c.DebugLogDir,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
+		"--multi-container=" + strconv.FormatBool(c.MultiContainer),
 		"--network=" + c.Network.String(),
 		"--log-packets=" + strconv.FormatBool(c.LogPackets),
 		"--platform=" + c.Platform.String(),

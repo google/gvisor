@@ -218,7 +218,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// started in an existing sandbox, we must do so. The metadata will
 	// indicate the ID of the sandbox, which is the same as the ID of the
 	// init container in the sandbox.
-	if specutils.ShouldCreateSandbox(spec) {
+	if specutils.ShouldCreateSandbox(spec) || !conf.MultiContainer {
 		log.Debugf("Creating new sandbox for container %q", id)
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
@@ -287,7 +287,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		}
 	}
 
-	if specutils.ShouldCreateSandbox(c.Spec) {
+	if specutils.ShouldCreateSandbox(c.Spec) || !conf.MultiContainer {
 		if err := c.Sandbox.StartRoot(c.Spec, conf); err != nil {
 			c.Destroy()
 			return err

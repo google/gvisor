@@ -118,12 +118,13 @@ func SetupContainerInRoot(rootDir string, spec *specs.Spec) (bundleDir string, c
 	}
 
 	conf = &boot.Config{
-		Debug:      true,
-		LogFormat:  "text",
-		LogPackets: true,
-		Network:    boot.NetworkNone,
-		RootDir:    rootDir,
-		Strace:     true,
+		Debug:          true,
+		LogFormat:      "text",
+		LogPackets:     true,
+		Network:        boot.NetworkNone,
+		RootDir:        rootDir,
+		Strace:         true,
+		MultiContainer: true,
 	}
 
 	return bundleDir, conf, nil
