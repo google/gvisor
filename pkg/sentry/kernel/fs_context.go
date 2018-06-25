@@ -114,11 +114,14 @@ func (f *FSContext) SetWorkingDirectory(d *fs.Dirent) {
 	if d == nil {
 		panic("FSContext.SetWorkingDirectory called with nil dirent")
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.cwd == nil {
 		panic(fmt.Sprintf("FSContext.SetWorkingDirectory(%v)) called after destroy", d))
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
+
 	old := f.cwd
 	f.cwd = d
 	d.IncRef()
@@ -144,11 +147,14 @@ func (f *FSContext) SetRootDirectory(d *fs.Dirent) {
 	if d == nil {
 		panic("FSContext.SetRootDirectory called with nil dirent")
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.root == nil {
 		panic(fmt.Sprintf("FSContext.SetRootDirectory(%v)) called after destroy", d))
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
+
 	old := f.root
 	f.root = d
 	d.IncRef()
