@@ -204,7 +204,9 @@ func mountPathsAre(root *Dirent, got []*MountSource, want ...string) error {
 	}
 	gotPaths := make(map[string]struct{}, len(got))
 	for _, g := range got {
-		n, _ := g.Root().FullName(root)
+		groot := g.Root()
+		n, _ := groot.FullName(root)
+		groot.DecRef()
 		gotPaths[n] = struct{}{}
 	}
 	for _, w := range want {

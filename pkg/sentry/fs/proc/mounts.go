@@ -44,7 +44,9 @@ func forEachMountSource(t *kernel.Task, fn func(string, *fs.MountSource)) {
 		return ms[i].ID() < ms[j].ID()
 	})
 	for _, m := range ms {
-		mountPath, desc := m.Root().FullName(rootDir)
+		mroot := m.Root()
+		mountPath, desc := mroot.FullName(rootDir)
+		mroot.DecRef()
 		if !desc {
 			// MountSources that are not descendants of the chroot jail are ignored.
 			continue
@@ -88,7 +90,9 @@ func (mif *mountInfoFile) ReadSeqFileData(handle seqfile.SeqHandle) ([]seqfile.S
 
 		// (3) Major:Minor device ID. We don't have a superblock, so we
 		// just use the root inode device number.
-		sa := m.Root().Inode.StableAttr
+		mroot := m.Root()
+		sa := mroot.Inode.StableAttr
+		mroot.DecRef()
 		fmt.Fprintf(&buf, "%d:%d ", sa.DeviceFileMajor, sa.DeviceFileMinor)
 
 		// (4) Root: the pathname of the directory in the filesystem
