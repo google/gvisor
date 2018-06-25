@@ -428,7 +428,7 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 	return nil
 }
 
-// createRestoreEnviroment builds a fs.RestoreEnvironment called renv by adding the mounts
+// createRestoreEnvironment builds a fs.RestoreEnvironment called renv by adding the mounts
 // to the environment.
 func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) (*fs.RestoreEnvironment, error) {
 	if conf.FileAccess == FileAccessDirect {
