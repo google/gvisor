@@ -198,10 +198,12 @@ func (msrc *MountSource) Submounts() []*MountSource {
 	return ms
 }
 
-// Root returns the root dirent of this mount.
+// Root returns the root dirent of this mount. Callers must call DecRef on the
+// returned dirent.
 func (msrc *MountSource) Root() *Dirent {
 	msrc.mu.Lock()
 	defer msrc.mu.Unlock()
+	msrc.root.IncRef()
 	return msrc.root
 }
 
