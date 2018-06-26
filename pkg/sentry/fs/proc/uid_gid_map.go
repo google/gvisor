@@ -40,7 +40,7 @@ func (imss *idMapSeqSource) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (imss *idMapSeqSource) ReadSeqFileData(handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (imss *idMapSeqSource) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	var start int
 	if handle != nil {
 		start = handle.(*idMapSeqHandle).value

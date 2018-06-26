@@ -55,7 +55,7 @@ func (s *seqTest) NeedsUpdate(int64) bool {
 
 // ReadSeqFiledata returns a slice of SeqData which contains elements
 // greater than the handle.
-func (s *seqTest) ReadSeqFileData(handle SeqHandle) ([]SeqData, int64) {
+func (s *seqTest) ReadSeqFileData(ctx context.Context, handle SeqHandle) ([]SeqData, int64) {
 	if handle == nil {
 		return s.actual, 0
 	}

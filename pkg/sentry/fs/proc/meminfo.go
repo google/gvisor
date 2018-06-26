@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
@@ -36,7 +37,7 @@ func (*meminfoData) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (d *meminfoData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}

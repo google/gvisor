@@ -62,7 +62,7 @@ func (*mmapMinAddrData) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (d *mmapMinAddrData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (d *mmapMinAddrData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}
@@ -81,7 +81,7 @@ func (*overcommitMemory) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.
-func (*overcommitMemory) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (*overcommitMemory) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}

@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 )
@@ -33,7 +34,7 @@ func (*filesystemsData) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData returns data for the SeqFile reader.
 // SeqData, the current generation and where in the file the handle corresponds to.
-func (*filesystemsData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (*filesystemsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	// We don't ever expect to see a non-nil SeqHandle.
 	if h != nil {
 		return nil, 0

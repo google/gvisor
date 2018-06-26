@@ -304,7 +304,7 @@ func (md *mapsData) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (md *mapsData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (md *mapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if mm := md.mm(); mm != nil {
 		return mm.ReadSeqFileData(md.t.AsyncContext(), h)
 	}
@@ -334,7 +334,7 @@ func (s *taskStatData) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData returns data for the SeqFile reader.
 // SeqData, the current generation and where in the file the handle corresponds to.
-func (s *taskStatData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}
@@ -405,7 +405,7 @@ func (s *statmData) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (s *statmData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (s *statmData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}
@@ -440,7 +440,7 @@ func (s *statusData) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (s *statusData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}
@@ -505,7 +505,7 @@ func (i *ioData) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData returns data for the SeqFile reader.
 // SeqData, the current generation and where in the file the handle corresponds to.
-func (i *ioData) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (i *ioData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}

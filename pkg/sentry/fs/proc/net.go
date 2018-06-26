@@ -94,7 +94,7 @@ func (*ifinet6) NeedsUpdate(generation int64) bool {
 }
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (n *ifinet6) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (n *ifinet6) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}
@@ -119,7 +119,7 @@ func (n *netDev) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData. See Linux's
 // net/core/net-procfs.c:dev_seq_show.
-func (n *netDev) ReadSeqFileData(h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (n *netDev) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if h != nil {
 		return nil, 0
 	}

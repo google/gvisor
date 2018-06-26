@@ -49,7 +49,7 @@ type SeqSource interface {
 	// generation. The first entry in the slice is greater than the handle.
 	// If handle is nil then all known records are returned. Generation
 	// must always be greater than 0.
-	ReadSeqFileData(handle SeqHandle) ([]SeqData, int64)
+	ReadSeqFileData(ctx context.Context, handle SeqHandle) ([]SeqData, int64)
 }
 
 // SeqGenerationCounter is a counter to keep track if the SeqSource should be
@@ -155,7 +155,7 @@ func (s *SeqFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, 
 			return 0, io.EOF
 		}
 		oldLen := len(s.source)
-		s.updateSourceLocked(len(s.source))
+		s.updateSourceLocked(ctx, len(s.source))
 		updated = true
 		// We know that we had consumed everything up until this point
 		// so we search in the new slice instead of starting over.
@@ -187,7 +187,7 @@ func (s *SeqFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, 
 	// check to see if we've seeked backwards and if so always update our
 	// data source.
 	if !updated && (s.SeqSource.NeedsUpdate(s.generation) || s.lastRead > offset) {
-		s.updateSourceLocked(i)
+		s.updateSourceLocked(ctx, i)
 		// recordOffset is 0 here and we won't update records behind the
 		// current one so recordOffset is still 0 even though source
 		// just got updated. Just read the next record.
@@ -212,7 +212,7 @@ func (s *SeqFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, 
 }
 
 // updateSourceLocked requires that s.mu is held.
-func (s *SeqFile) updateSourceLocked(record int) {
+func (s *SeqFile) updateSourceLocked(ctx context.Context, record int) {
 	var h SeqHandle
 	if record == 0 {
 		h = nil
@@ -222,7 +222,7 @@ func (s *SeqFile) updateSourceLocked(record int) {
 	// Save what we have previously read.
 	s.source = s.source[:record]
 	var newSource []SeqData
-	newSource, s.generation = s.SeqSource.ReadSeqFileData(h)
+	newSource, s.generation = s.SeqSource.ReadSeqFileData(ctx, h)
 	s.source = append(s.source, newSource...)
 }
 
