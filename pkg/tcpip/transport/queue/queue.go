@@ -157,6 +157,8 @@ func (q *Queue) Peek() (Entry, *tcpip.Error) {
 // QueuedSize returns the number of bytes currently in the queue, that is, the
 // number of readable bytes.
 func (q *Queue) QueuedSize() int64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.used
 }
 
