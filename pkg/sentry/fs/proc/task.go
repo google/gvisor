@@ -306,7 +306,7 @@ func (md *mapsData) NeedsUpdate(generation int64) bool {
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
 func (md *mapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if mm := md.mm(); mm != nil {
-		return mm.ReadSeqFileData(md.t.AsyncContext(), h)
+		return mm.ReadSeqFileData(ctx, h)
 	}
 	return []seqfile.SeqData{}, 0
 }
