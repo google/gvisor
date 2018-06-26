@@ -41,7 +41,15 @@ func createStub() (*thread, error) {
 
 	// Among other things, beforeFork masks all signals.
 	beforeFork()
-	pid, _, errno = syscall.RawSyscall6(syscall.SYS_CLONE, uintptr(syscall.SIGCHLD)|syscall.CLONE_FILES, 0, 0, 0, 0, 0)
+
+	// When creating the new child process, we specify SIGKILL as the
+	// signal to deliver when the child exits. We never expect a subprocess
+	// to exit; they are pooled and reused. This is done to ensure that if
+	// a subprocess is OOM-killed, this process (and all other stubs,
+	// transitively) will be killed as well. It's simply not possible to
+	// safely handle a single stub getting killed: the exact state of
+	// execution is unknown and not recoverable.
+	pid, _, errno = syscall.RawSyscall6(syscall.SYS_CLONE, uintptr(syscall.SIGKILL)|syscall.CLONE_FILES, 0, 0, 0, 0, 0)
 	if errno != 0 {
 		afterFork()
 		return nil, errno
@@ -103,10 +111,12 @@ func (s *subprocess) createStub() (*thread, error) {
 	//
 	// Instead, we create the child untraced, which will do the PDEATHSIG
 	// setup and then SIGSTOP itself for our attach below.
+	//
+	// See above re: SIGKILL.
 	pid, err := t.syscallIgnoreInterrupt(
 		&regs,
 		syscall.SYS_CLONE,
-		arch.SyscallArgument{Value: uintptr(syscall.SIGCHLD | syscall.CLONE_FILES)},
+		arch.SyscallArgument{Value: uintptr(syscall.SIGKILL | syscall.CLONE_FILES)},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
@@ -127,7 +137,7 @@ func (s *subprocess) createStub() (*thread, error) {
 		syscall.SYS_WAIT4,
 		arch.SyscallArgument{Value: uintptr(pid)},
 		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: syscall.WUNTRACED},
+		arch.SyscallArgument{Value: syscall.WALL | syscall.WUNTRACED},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})
