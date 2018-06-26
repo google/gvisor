@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -67,7 +68,7 @@ func (mif *mountInfoFile) NeedsUpdate(_ int64) bool {
 }
 
 // ReadSeqFileData implements SeqSource.ReadSeqFileData.
-func (mif *mountInfoFile) ReadSeqFileData(handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if handle != nil {
 		return nil, 0
 	}
@@ -148,7 +149,7 @@ func (mf *mountsFile) NeedsUpdate(_ int64) bool {
 }
 
 // ReadSeqFileData implements SeqSource.ReadSeqFileData.
-func (mf *mountsFile) ReadSeqFileData(handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if handle != nil {
 		return nil, 0
 	}
