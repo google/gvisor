@@ -28,7 +28,7 @@ type sender struct {
 	ep *endpoint
 
 	// lastSendTime is the timestamp when the last packet was sent.
-	lastSendTime time.Time `state:".(unixTime)"`
+	lastSendTime time.Time
 
 	// dupAckCount is the number of duplicated acks received. It is used for
 	// fast retransmit.
@@ -71,7 +71,7 @@ type sender struct {
 	rttMeasureSeqNum seqnum.Value
 
 	// rttMeasureTime is the time when the rttMeasureSeqNum was sent.
-	rttMeasureTime time.Time `state:".(unixTime)"`
+	rttMeasureTime time.Time
 
 	closed      bool
 	writeNext   *segment

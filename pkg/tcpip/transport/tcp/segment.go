@@ -29,9 +29,9 @@ const (
 type segment struct {
 	segmentEntry
 	refCnt int32
-	id     stack.TransportEndpointID `state:"manual"`
-	route  stack.Route               `state:"manual"`
-	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
+	id     stack.TransportEndpointID
+	route  stack.Route `state:"manual"`
+	data   buffer.VectorisedView
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View
@@ -45,7 +45,7 @@ type segment struct {
 
 	// parsedOptions stores the parsed values from the options in the segment.
 	parsedOptions header.TCPOptions
-	options       []byte `state:".([]byte)"`
+	options       []byte
 }
 
 func newSegment(r *stack.Route, id stack.TransportEndpointID, vv *buffer.VectorisedView) *segment {
