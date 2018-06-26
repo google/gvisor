@@ -964,7 +964,7 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	offset -= 2
 	newOffset, err := it.IterateDir(ctx, dirCtx, int(offset))
 	if int64(newOffset) < offset {
-		panic(fmt.Sprintf("node.Readdir returned offset %v less that input offset %v", offset, newOffset))
+		panic(fmt.Sprintf("node.Readdir returned offset %v less than input offset %v", newOffset, offset))
 	}
 	// Add the initial nodes back to the offset count.
 	newOffset += 2
