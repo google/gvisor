@@ -384,14 +384,22 @@ func vecCopy(data [][]byte, buf []byte) (uintptr, [][]byte, []byte) {
 
 // Readable implements Receiver.Readable.
 func (q *streamQueueReceiver) Readable() bool {
+	q.mu.Lock()
+	bl := len(q.buffer)
+	r := q.readQueue.IsReadable()
+	q.mu.Unlock()
 	// We're readable if we have data in our buffer or if the queue receiver is
 	// readable.
-	return len(q.buffer) > 0 || q.readQueue.IsReadable()
+	return bl > 0 || r
 }
 
 // RecvQueuedSize implements Receiver.RecvQueuedSize.
 func (q *streamQueueReceiver) RecvQueuedSize() int64 {
-	return int64(len(q.buffer)) + q.readQueue.QueuedSize()
+	q.mu.Lock()
+	bl := len(q.buffer)
+	qs := q.readQueue.QueuedSize()
+	q.mu.Unlock()
+	return int64(bl) + qs
 }
 
 // RecvMaxQueueSize implements Receiver.RecvMaxQueueSize.
