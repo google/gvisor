@@ -107,6 +107,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
+	// sentry should run with a umask of 0 when --file-access=direct, because we want
+	// to preserve file modes exactly as set by the sentry, which will have applied
+	// its own umask.
+	if conf.FileAccess == boot.FileAccessDirect {
+		syscall.Umask(0)
+	}
+
 	if b.applyCaps {
 		caps := spec.Process.Capabilities
 		if conf.Platform == boot.PlatformPtrace {

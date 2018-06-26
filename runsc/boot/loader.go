@@ -23,7 +23,6 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -270,7 +269,7 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		Envv:                 spec.Process.Env,
 		WorkingDirectory:     spec.Process.Cwd,
 		Credentials:          creds,
-		Umask:                0,
+		Umask:                0022,
 		Limits:               ls,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		UTSNamespace:         utsns,
@@ -296,10 +295,9 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		// Use root user to configure mounts. The current user might not have
 		// permission to do so.
 		rootProcArgs := kernel.CreateProcessArgs{
-			WorkingDirectory: "/",
-			Credentials:      auth.NewRootCredentials(creds.UserNamespace),
-			// The sentry should run with a umask of 0.
-			Umask:                uint(syscall.Umask(0)),
+			WorkingDirectory:     "/",
+			Credentials:          auth.NewRootCredentials(creds.UserNamespace),
+			Umask:                0022,
 			MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		}
 		rootCtx := rootProcArgs.NewContext(k)
