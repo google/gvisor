@@ -57,7 +57,6 @@ import (
 	sentrytime "gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
 	"gvisor.googlesource.com/gvisor/pkg/state"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 )
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
@@ -159,9 +158,6 @@ type Kernel struct {
 	// exitErr is the error causing the sandbox to exit, if any. It is
 	// protected by extMu.
 	exitErr error
-
-	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
-	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -425,8 +421,6 @@ func (k *Kernel) LoadFrom(r io.Reader, p platform.Platform, net inet.Stack) erro
 	if err := fs.AsyncErrorBarrier(); err != nil {
 		return err
 	}
-
-	tcpip.AsyncLoading.Wait()
 
 	log.Infof("Overall load took [%s]", time.Since(loadStart))
 

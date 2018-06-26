@@ -12,7 +12,6 @@ go_stateify(
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
-        "kernel_state.go",
         "pending_signals.go",
         "pending_signals_state.go",
         "process_group_list.go",
@@ -46,11 +45,10 @@ go_stateify(
         "vdso.go",
         "version.go",
     ],
-    out = "kernel_autogen_state.go",
+    out = "kernel_state.go",
     imports = [
         "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
         "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
-        "gvisor.googlesource.com/gvisor/pkg/tcpip",
     ],
     package = "kernel",
 )
@@ -119,7 +117,6 @@ go_library(
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
-        "kernel_autogen_state.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
