@@ -17,6 +17,7 @@ package cmd
 import (
 	"os"
 	"sync"
+	"syscall"
 
 	"context"
 	"flag"
@@ -65,6 +66,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
+
+	// fsgofer should run with a umask of 0, because we want to preserve file
+	// modes exactly as sent by the sandbox, which will have applied its own umask.
+	syscall.Umask(0)
 
 	spec, err := specutils.ReadSpec(g.bundleDir)
 	if err != nil {
