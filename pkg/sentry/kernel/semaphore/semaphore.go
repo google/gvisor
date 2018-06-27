@@ -118,6 +118,9 @@ func (r *Registry) FindOrCreate(ctx context.Context, key, nsems int32, mode linu
 	if !private {
 		// Look up an existing semaphore.
 		if set := r.findByKey(key); set != nil {
+			set.mu.Lock()
+			defer set.mu.Unlock()
+
 			// Check that caller can access semaphore set.
 			creds := auth.CredentialsFromContext(ctx)
 			if !set.checkPerms(creds, fs.PermsFromMode(mode)) {
@@ -169,6 +172,9 @@ func (r *Registry) RemoveID(id int32, creds *auth.Credentials) error {
 	if set == nil {
 		return syserror.EINVAL
 	}
+
+	set.mu.Lock()
+	defer set.mu.Unlock()
 
 	// "The effective user ID of the calling process must match the creator or
 	// owner of the semaphore set, or the caller must be privileged."
@@ -444,11 +450,9 @@ func (s *Set) checkPerms(creds *auth.Credentials, reqPerms fs.PermMask) bool {
 	return s.checkCapability(creds)
 }
 
+// destroy destroys the set. Caller must hold 's.mu'.
 func (s *Set) destroy() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Notify all waiters. Tney will fail on the next attempt to execute
+	// Notify all waiters. They will fail on the next attempt to execute
 	// operations and return error.
 	s.dead = true
 	for _, s := range s.sems {
