@@ -181,6 +181,10 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		fallthrough
 	case linux.MADV_MERGEABLE, linux.MADV_UNMERGEABLE:
 		fallthrough
+	case linux.MADV_DONTDUMP, linux.MADV_DODUMP:
+		// TODO: Core dumping isn't implemented, so these are
+		// no-ops.
+		fallthrough
 	case linux.MADV_NORMAL, linux.MADV_RANDOM, linux.MADV_SEQUENTIAL, linux.MADV_WILLNEED:
 		// Do nothing, we totally ignore the suggestions above.
 		return 0, nil, nil
