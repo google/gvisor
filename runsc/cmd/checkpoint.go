@@ -81,6 +81,10 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("image-path flag must be provided")
 	}
 
+	if err := os.MkdirAll(c.imagePath, 0755); err != nil {
+		Fatalf("error making directories at path provided: %v", err)
+	}
+
 	fullImagePath := filepath.Join(c.imagePath, checkpointFileName)
 
 	// Create the image file and open for writing.
