@@ -46,6 +46,9 @@ exit_code=${?}
 if [[ ${exit_code} -eq 0 ]]; then
   # image_test is tagged manual
   bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime} //runsc/test/image:image_test
+  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-kvm //runsc/test/image:image_test
+  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-nethost //runsc/test/image:image_test
+  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-overlay //runsc/test/image:image_test
   exit_code=${?}
 fi
 

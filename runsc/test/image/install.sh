@@ -75,10 +75,17 @@ if [[ ${uninstall} == 0 ]]; then
   mkdir -p "${logdir}"
   sudo -n chmod a+wx "${logdir}"
 
-  sudo -n "${dockercfg}" runtime-add "${runtime}" "${runsc}" --debug-log-dir "${logdir}" --debug --strace --log-packets
+  declare -r args="--debug-log-dir "${logdir}" --debug --strace --log-packets"
+  sudo -n "${dockercfg}" runtime-add "${runtime}" "${runsc}" ${args}
+  sudo -n "${dockercfg}" runtime-add "${runtime}"-kvm "${runsc}" --platform=kvm ${args}
+  sudo -n "${dockercfg}" runtime-add "${runtime}"-hostnet "${runsc}" --network=host ${args}
+  sudo -n "${dockercfg}" runtime-add "${runtime}"-overlay "${runsc}" --overlay ${args}
 
 else
   sudo -n "${dockercfg}" runtime-rm "${runtime}"
+  sudo -n "${dockercfg}" runtime-rm "${runtime}"-kvm
+  sudo -n "${dockercfg}" runtime-rm "${runtime}"-hostnet
+  sudo -n "${dockercfg}" runtime-rm "${runtime}"-overlay
 fi
 
 echo "Restarting docker service..."

@@ -113,7 +113,7 @@ func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags Mount
 // - lower must not require that file objects be revalidated.
 // - lower must not have dynamic file/directory content.
 func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode, flags MountSourceFlags) (*Inode, error) {
-	if IsRegular(lower.StableAttr) {
+	if !IsRegular(lower.StableAttr) {
 		return nil, fmt.Errorf("lower Inode is not a regular file")
 	}
 	msrc := newOverlayMountSource(upperMS, lower.MountSource, flags)
