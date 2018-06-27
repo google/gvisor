@@ -184,6 +184,9 @@ func (t *Task) CopyOutIovecs(addr usermem.Addr, src usermem.AddrRangeSeq) error 
 // - If the length of any AddrRange would cause its end to overflow,
 // CopyInIovecs returns EFAULT.
 //
+// - If any AddrRange would include addresses outside the application address
+// range, CopyInIovecs returns EFAULT.
+//
 // - The combined length of all AddrRanges is limited to _MAX_RW_COUNT. If the
 // combined length of all AddrRanges would otherwise exceed this amount, ranges
 // beyond _MAX_RW_COUNT are silently truncated.
@@ -218,7 +221,7 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 			if length > math.MaxInt64 {
 				return usermem.AddrRangeSeq{}, syserror.EINVAL
 			}
-			ar, ok := base.ToRange(length)
+			ar, ok := t.MemoryManager().CheckIORange(base, int64(length))
 			if !ok {
 				return usermem.AddrRangeSeq{}, syserror.EFAULT
 			}
@@ -251,18 +254,20 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 }
 
 // SingleIOSequence returns a usermem.IOSequence representing [addr,
-// addr+length) in t's address space. If length exceeds _MAX_RW_COUNT, it is
-// silently truncated.
+// addr+length) in t's address space. If this contains addresses outside the
+// application address range, it returns EFAULT. If length exceeds
+// _MAX_RW_COUNT, the range is silently truncated.
 //
 // SingleIOSequence is analogous to Linux's
 // lib/iov_iter.c:import_single_range(). (Note that the non-vectorized read and
-// write syscalls in Linux do not use import_single_range(), but are still
-// truncated to _MAX_RW_COUNT by fs/read_write.c:rw_verify_area().)
+// write syscalls in Linux do not use import_single_range(). However they check
+// access_ok() in fs/read_write.c:vfs_read/vfs_write, and overflowing address
+// ranges are truncated to _MAX_RW_COUNT by fs/read_write.c:rw_verify_area().)
 func (t *Task) SingleIOSequence(addr usermem.Addr, length int, opts usermem.IOOpts) (usermem.IOSequence, error) {
 	if length > _MAX_RW_COUNT {
 		length = _MAX_RW_COUNT
 	}
-	ar, ok := addr.ToRange(uint64(length))
+	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {
 		return usermem.IOSequence{}, syserror.EFAULT
 	}

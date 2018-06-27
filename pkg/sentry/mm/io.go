@@ -60,11 +60,11 @@ const (
 	rwMapMinBytes = 512
 )
 
-// checkIORange is similar to usermem.Addr.ToRange, but applies bounds checks
+// CheckIORange is similar to usermem.Addr.ToRange, but applies bounds checks
 // consistent with Linux's arch/x86/include/asm/uaccess.h:access_ok().
 //
 // Preconditions: length >= 0.
-func (mm *MemoryManager) checkIORange(addr usermem.Addr, length int64) (usermem.AddrRange, bool) {
+func (mm *MemoryManager) CheckIORange(addr usermem.Addr, length int64) (usermem.AddrRange, bool) {
 	// Note that access_ok() constrains end even if length == 0.
 	ar, ok := addr.ToRange(uint64(length))
 	return ar, (ok && ar.End <= mm.layout.MaxAddr)
@@ -75,7 +75,7 @@ func (mm *MemoryManager) checkIORange(addr usermem.Addr, length int64) (usermem.
 func (mm *MemoryManager) checkIOVec(ars usermem.AddrRangeSeq) bool {
 	for !ars.IsEmpty() {
 		ar := ars.Head()
-		if _, ok := mm.checkIORange(ar.Start, int64(ar.Length())); !ok {
+		if _, ok := mm.CheckIORange(ar.Start, int64(ar.Length())); !ok {
 			return false
 		}
 		ars = ars.Tail()
@@ -101,7 +101,7 @@ func translateIOError(ctx context.Context, err error) error {
 
 // CopyOut implements usermem.IO.CopyOut.
 func (mm *MemoryManager) CopyOut(ctx context.Context, addr usermem.Addr, src []byte, opts usermem.IOOpts) (int, error) {
-	ar, ok := mm.checkIORange(addr, int64(len(src)))
+	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
 		return 0, syserror.EFAULT
 	}
@@ -144,7 +144,7 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, addr usermem.Addr, src [
 
 // CopyIn implements usermem.IO.CopyIn.
 func (mm *MemoryManager) CopyIn(ctx context.Context, addr usermem.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
-	ar, ok := mm.checkIORange(addr, int64(len(dst)))
+	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
 		return 0, syserror.EFAULT
 	}
@@ -187,7 +187,7 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, addr usermem.Addr, dst []
 
 // ZeroOut implements usermem.IO.ZeroOut.
 func (mm *MemoryManager) ZeroOut(ctx context.Context, addr usermem.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
-	ar, ok := mm.checkIORange(addr, toZero)
+	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
 		return 0, syserror.EFAULT
 	}
@@ -311,7 +311,7 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars usermem.AddrRangeSeq,
 
 // SwapUint32 implements usermem.IO.SwapUint32.
 func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
-	ar, ok := mm.checkIORange(addr, 4)
+	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
 	}
@@ -353,7 +353,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 
 // CompareAndSwapUint32 implements usermem.IO.CompareAndSwapUint32.
 func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
-	ar, ok := mm.checkIORange(addr, 4)
+	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
 		return 0, syserror.EFAULT
 	}
@@ -399,7 +399,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 // Preconditions: mm.as != nil. ioar.Length() != 0. ioar.Contains(addr).
 func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr, ioar usermem.AddrRange, at usermem.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
-	// overflow because otherwise it would have been caught by checkIORange.
+	// overflow because otherwise it would have been caught by CheckIORange.
 	end, _ := ioar.End.RoundUp()
 	ar := usermem.AddrRange{addr.RoundDown(), end}
 
