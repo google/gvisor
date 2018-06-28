@@ -812,28 +812,6 @@ func TestConsoleSocket(t *testing.T) {
 	}
 }
 
-func TestSpecUnsupported(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/true")
-	spec.Process.SelinuxLabel = "somelabel"
-
-	// These are normally set by docker and will just cause warnings to be logged.
-	spec.Process.ApparmorProfile = "someprofile"
-	spec.Linux = &specs.Linux{Seccomp: &specs.LinuxSeccomp{}}
-
-	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
-
-	id := testutil.UniqueContainerID()
-	_, err = container.Create(id, spec, conf, bundleDir, "", "", "")
-	if err == nil || !strings.Contains(err.Error(), "is not supported") {
-		t.Errorf("container.Create() wrong error, got: %v, want: *is not supported, spec.Process: %+v", err, spec.Process)
-	}
-}
-
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {

@@ -95,7 +95,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
 		args = append(args, "--apply-caps=false")
-		if err := setCapsAndCallSelf(spec, args, lc); err != nil {
+		if err := setCapsAndCallSelf(args, lc); err != nil {
 			Fatalf("Unable to apply caps: %v", err)
 		}
 		panic("unreachable")

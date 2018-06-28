@@ -267,7 +267,7 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		Filename:             exec,
 		Argv:                 spec.Process.Args,
 		Envv:                 spec.Process.Env,
-		WorkingDirectory:     spec.Process.Cwd,
+		WorkingDirectory:     spec.Process.Cwd, // Defaults to '/' if empty.
 		Credentials:          creds,
 		Umask:                0022,
 		Limits:               ls,

@@ -72,7 +72,7 @@ func (i *intFlags) Set(s string) error {
 // setCapsAndCallSelf sets capabilities to the current thread and then execve's
 // itself again with the arguments specified in 'args' to restart the process
 // with the desired capabilities.
-func setCapsAndCallSelf(spec *specs.Spec, args []string, caps *specs.LinuxCapabilities) error {
+func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	// Keep thread locked while capabilities are changed.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

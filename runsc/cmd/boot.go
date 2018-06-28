@@ -23,6 +23,7 @@ import (
 	"context"
 	"flag"
 	"github.com/google/subcommands"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -116,6 +117,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	if b.applyCaps {
 		caps := spec.Process.Capabilities
+		if caps == nil {
+			caps = &specs.LinuxCapabilities{}
+		}
 		if conf.Platform == boot.PlatformPtrace {
 			// Ptrace platform requires extra capabilities.
 			const c = "CAP_SYS_PTRACE"
@@ -131,7 +135,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 				args = append(args, arg)
 			}
 		}
-		if err := setCapsAndCallSelf(spec, args, caps); err != nil {
+		if err := setCapsAndCallSelf(args, caps); err != nil {
 			Fatalf("%v", err)
 		}
 		panic("setCapsAndCallSelf must never return success")
