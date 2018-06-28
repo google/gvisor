@@ -319,6 +319,14 @@ func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Ad
 		return err
 	}
 
+	// Check offset for reads/writes.
+	switch cb.OpCode {
+	case _IOCB_CMD_PREAD, _IOCB_CMD_PREADV, _IOCB_CMD_PWRITE, _IOCB_CMD_PWRITEV:
+		if cb.Offset < 0 {
+			return syserror.EINVAL
+		}
+	}
+
 	// Prepare the request.
 	ctx, ok := t.MemoryManager().LookupAIOContext(t, id)
 	if !ok {
