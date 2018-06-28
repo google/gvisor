@@ -123,6 +123,8 @@ func (t *Task) IsChrooted() bool {
 	realRoot := t.k.mounts.Root()
 	defer realRoot.DecRef()
 	root := t.tr.FSContext.RootDirectory()
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	return root != realRoot
 }

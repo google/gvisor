@@ -28,9 +28,22 @@ import (
 // forEachMountSource runs f for the process root mount and  each mount that is a
 // descendant of the root.
 func forEachMountSource(t *kernel.Task, fn func(string, *fs.MountSource)) {
+	var fsctx *kernel.FSContext
+	t.WithMuLocked(func(t *kernel.Task) {
+		fsctx = t.FSContext()
+	})
+	if fsctx == nil {
+		// The task has been destroyed. Nothing to show here.
+		return
+	}
+
 	// All mount points must be relative to the rootDir, and mounts outside
 	// will be excluded.
-	rootDir := t.FSContext().RootDirectory()
+	rootDir := fsctx.RootDirectory()
+	if rootDir == nil {
+		// The task has been destroyed. Nothing to show here.
+		return
+	}
 	defer rootDir.DecRef()
 
 	if rootDir.Inode == nil {
