@@ -66,6 +66,11 @@ func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
 // (that return nil).  This is because valid references may still be held via
 // proc files or other mechanisms.
 func (f *FSContext) destroy() {
+	// Hold f.mu so that we don't race with RootDirectory() and
+	// WorkingDirectory().
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.root.DecRef()
 	f.root = nil
 
@@ -94,9 +99,9 @@ func (f *FSContext) Fork() *FSContext {
 }
 
 // WorkingDirectory returns the current working directory.
-// You should call DecRef on the returned Dirent when finished.
 //
-// This will return nil if called after destroy().
+// This will return nil if called after destroy(), otherwise it will return a
+// Dirent with a reference taken.
 func (f *FSContext) WorkingDirectory() *fs.Dirent {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -129,13 +134,15 @@ func (f *FSContext) SetWorkingDirectory(d *fs.Dirent) {
 }
 
 // RootDirectory returns the current filesystem root.
-// You should call DecRef on the returned Dirent when finished.
 //
-// This will return nil if called after destroy().
+// This will return nil if called after destroy(), otherwise it will return a
+// Dirent with a reference taken.
 func (f *FSContext) RootDirectory() *fs.Dirent {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.root.IncRef()
+	if f.root != nil {
+		f.root.IncRef()
+	}
 	return f.root
 }
 
