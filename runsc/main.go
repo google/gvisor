@@ -60,6 +60,7 @@ var (
 	fileAccess     = flag.String("file-access", "proxy", "specifies which filesystem to use: proxy (default), direct. Using a proxy is more secure because it disallows the sandbox from opennig files directly in the host.")
 	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	multiContainer = flag.Bool("multi-container", false, "enable *experimental* multi-container support.")
+	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 )
 
 var gitRevision = ""
@@ -110,6 +111,11 @@ func main() {
 		cmd.Fatalf("%v", err)
 	}
 
+	wa, err := boot.MakeWatchdogAction(*watchdogAction)
+	if err != nil {
+		cmd.Fatalf("%v", err)
+	}
+
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:        *rootDir,
@@ -125,6 +131,7 @@ func main() {
 		Strace:         *strace,
 		StraceLogSize:  *straceLogSize,
 		MultiContainer: *multiContainer,
+		WatchdogAction: wa,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")

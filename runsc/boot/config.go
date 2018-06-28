@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
 )
 
 // PlatformType tells which platform to use.
@@ -130,6 +132,18 @@ func (n NetworkType) String() string {
 	}
 }
 
+// MakeWatchdogAction converts type from string.
+func MakeWatchdogAction(s string) (watchdog.Action, error) {
+	switch strings.ToLower(s) {
+	case "log", "logwarning":
+		return watchdog.LogWarning, nil
+	case "panic":
+		return watchdog.Panic, nil
+	default:
+		return 0, fmt.Errorf("invalid watchdog action %q", s)
+	}
+}
+
 // Config holds configuration that is not part of the runtime spec.
 type Config struct {
 	// RootDir is the runtime root directory.
@@ -180,6 +194,8 @@ type Config struct {
 	// MultiContainer enables multiple containers support inside one sandbox.
 	// TODO: Remove this when multiple container is fully supported.
 	MultiContainer bool
+
+	WatchdogAction watchdog.Action
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -199,5 +215,6 @@ func (c *Config) ToFlags() []string {
 		"--strace=" + strconv.FormatBool(c.Strace),
 		"--strace-syscalls=" + strings.Join(c.StraceSyscalls, ","),
 		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),
+		"--watchdog-action=" + c.WatchdogAction.String(),
 	}
 }

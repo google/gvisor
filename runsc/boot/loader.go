@@ -205,7 +205,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	}
 
 	// Create a watchdog.
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, watchdog.LogWarning)
+	watchdog := watchdog.New(k, watchdog.DefaultTimeout, conf.WatchdogAction)
 
 	// Create the control server using the provided FD.
 	//
