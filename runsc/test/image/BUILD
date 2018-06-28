@@ -6,7 +6,10 @@ go_test(
     name = "image_test",
     size = "small",
     srcs = ["image_test.go"],
-    data = ["latin10k.txt"],
+    data = [
+        "latin10k.txt",
+        "mysql.sql",
+    ],
     embed = [":image"],
     tags = [
         # Requires docker and runsc to be configured before the test runs.
