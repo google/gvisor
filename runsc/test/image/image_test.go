@@ -59,6 +59,30 @@ func mountArg(source, target string) string {
 	return fmt.Sprintf("%s:%s", source, target)
 }
 
+func linkArg(source *docker, target string) string {
+	return fmt.Sprintf("%s:%s", source.name, target)
+}
+
+// prepareFiles creates temp directory to copy files there. The sandbox doesn't
+// have access to files in the test dir.
+func prepareFiles(names ...string) (string, error) {
+	dir, err := ioutil.TempDir("", "image-test")
+	if err != nil {
+		return "", fmt.Errorf("ioutil.TempDir failed: %v", err)
+	}
+	if err := os.Chmod(dir, 0777); err != nil {
+		return "", fmt.Errorf("os.Chmod(%q, 0777) failed: %v", dir, err)
+	}
+	for _, name := range names {
+		src := getLocalPath(name)
+		dst := path.Join(dir, name)
+		if err := testutil.Copy(src, dst); err != nil {
+			return "", fmt.Errorf("testutil.Copy(%q, %q) failed: %v", src, dst, err)
+		}
+	}
+	return dir, nil
+}
+
 func getLocalPath(file string) string {
 	return path.Join(".", file)
 }
@@ -75,6 +99,7 @@ func makeDocker(namePrefix string) docker {
 
 // do executes docker command.
 func (d *docker) do(args ...string) (string, error) {
+	fmt.Printf("Running: docker %s\n", args)
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -120,17 +145,32 @@ func (d *docker) findPort(sandboxPort int) (int, error) {
 // for the given pattern.
 func (d *docker) waitForOutput(pattern string, timeout time.Duration) error {
 	re := regexp.MustCompile(pattern)
+	var out string
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
-		out, err := d.do("logs", d.name)
+		var err error
+		out, err = d.do("logs", d.name)
 		if err != nil {
 			return err
 		}
 		if re.MatchString(out) {
+			// Success!
 			return nil
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for output %q", re.String())
+	return fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
+}
+
+func (d *docker) waitForHTTP(port int, timeout time.Duration) error {
+	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
+		url := fmt.Sprintf("http://localhost:%d/", port)
+		if _, err := http.Get(url); err == nil {
+			// Success!
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for HTTP server on port %d", port)
 }
 
 func TestHelloWorld(t *testing.T) {
@@ -140,31 +180,53 @@ func TestHelloWorld(t *testing.T) {
 	}
 	defer d.cleanUp()
 
-	if err := d.waitForOutput(".*Hello from Docker!.*", 5*time.Second); err != nil {
+	if err := d.waitForOutput("Hello from Docker!", 5*time.Second); err != nil {
 		t.Fatalf("docker didn't say hello: %v", err)
 	}
+}
+
+func testHTTPServer(port int) error {
+	url := fmt.Sprintf("http://localhost:%d/not-found", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error reaching http server: %v", err)
+	}
+	if want := http.StatusNotFound; resp.StatusCode != want {
+		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+
+	url = fmt.Sprintf("http://localhost:%d/latin10k.txt", port)
+	resp, err = http.Get(url)
+	if err != nil {
+		return fmt.Errorf("Error reaching http server: %v", err)
+	}
+	if want := http.StatusOK; resp.StatusCode != want {
+		return fmt.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("Error reading http response: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// READALL is the last word in the file. Ensures everything was read.
+	if want := "READALL"; strings.HasSuffix(string(body), want) {
+		return fmt.Errorf("response doesn't contain %q, resp: %q", want, body)
+	}
+	return nil
 }
 
 func TestHttpd(t *testing.T) {
 	d := makeDocker("http-test")
 
-	// Create temp directory to copy htdocs files. The sandbox doesn't have access
-	// to files in the test dir.
-	dir, err := ioutil.TempDir("", "httpd")
+	dir, err := prepareFiles("latin10k.txt")
 	if err != nil {
-		t.Fatalf("ioutil.TempDir failed: %v", err)
-	}
-	if err := os.Chmod(dir, 0777); err != nil {
-		t.Fatalf("os.Chmod(%q, 0777) failed: %v", dir, err)
-	}
-	src := getLocalPath("latin10k.txt")
-	dst := path.Join(dir, "latin10k.txt")
-	if err := testutil.Copy(src, dst); err != nil {
-		t.Fatalf("testutil.Copy(%q, %q) failed: %v", src, dst, err)
+		t.Fatalf("prepareFiles() failed: %v", err)
 	}
 
 	// Start the container.
-	if out, err := d.run("-p", "80", "-v", mountArg(dir, "/usr/local/apache2/htdocs"), "httpd"); err != nil {
+	if out, err := d.run("-p", "80", "-v", mountArg(dir, "/usr/local/apache2/htdocs:ro"), "httpd"); err != nil {
 		t.Fatalf("docker run failed: %v\nout: %s", err, out)
 	}
 	defer d.cleanUp()
@@ -176,37 +238,84 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.waitForOutput(".*'httpd -D FOREGROUND'.*", 5*time.Second); err != nil {
+	if err := d.waitForOutput("'httpd -D FOREGROUND'", 5*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 
-	url := fmt.Sprintf("http://localhost:%d/not-found", port)
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("error reaching http server: %v", err)
+	if err := testHTTPServer(port); err != nil {
+		t.Fatalf("testHTTPServer(%d) failed: %v", port, err)
 	}
-	if want := http.StatusNotFound; resp.StatusCode != want {
-		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+}
+
+func TestNginx(t *testing.T) {
+	d := makeDocker("net-test")
+
+	dir, err := prepareFiles("latin10k.txt")
+	if err != nil {
+		t.Fatalf("prepareFiles() failed: %v", err)
 	}
 
-	url = fmt.Sprintf("http://localhost:%d/latin10k.txt", port)
-	resp, err = http.Get(url)
-	if err != nil {
-		t.Fatalf("Error reaching http server: %v", err)
+	// Start the container.
+	if out, err := d.run("-p", "80", "-v", mountArg(dir, "/usr/share/nginx/html:ro"), "nginx"); err != nil {
+		t.Fatalf("docker run failed: %v\nout: %s", err, out)
 	}
-	if want := http.StatusOK; resp.StatusCode != want {
-		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	defer d.cleanUp()
+
+	// Find where port 80 is mapped to.
+	port, err := d.findPort(80)
+	if err != nil {
+		t.Fatalf("docker.findPort(80) failed: %v", err)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("Error reading http response: %v", err)
+	// Wait until it's up and running.
+	if err := d.waitForHTTP(port, 5*time.Second); err != nil {
+		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
 	}
-	defer resp.Body.Close()
 
-	// READALL is the last word in the file. Ensures everything was read.
-	if want := "READALL"; strings.HasSuffix(string(body), want) {
-		t.Errorf("response doesn't contain %q, resp: %q", want, body)
+	if err := testHTTPServer(port); err != nil {
+		t.Fatalf("testHTTPServer(%d) failed: %v", port, err)
+	}
+}
+
+func TestMysql(t *testing.T) {
+	d := makeDocker("mysql-test")
+
+	// Start the container.
+	if out, err := d.run("-e", "MYSQL_ROOT_PASSWORD=foobar123", "mysql"); err != nil {
+		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	}
+	defer d.cleanUp()
+
+	// Wait until it's up and running.
+	if err := d.waitForOutput("port: 3306  MySQL Community Server", 30*time.Second); err != nil {
+		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
+	}
+
+	client := makeDocker("mysql-client-test")
+	dir, err := prepareFiles("mysql.sql")
+	if err != nil {
+		t.Fatalf("prepareFiles() failed: %v", err)
+	}
+
+	// Tell mysql client to connect to the server and execute the file in verbose
+	// mode to verify the output.
+	args := []string{
+		"--link", linkArg(&d, "mysql"),
+		"-v", mountArg(dir, "/sql"),
+		"mysql",
+		"mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql",
+	}
+	if out, err := client.run(args...); err != nil {
+		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	}
+	defer client.cleanUp()
+
+	// Ensure file executed to the end and shutdown mysql.
+	if err := client.waitForOutput("--------------\nshutdown\n--------------", 5*time.Second); err != nil {
+		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
+	}
+	if err := d.waitForOutput("mysqld: Shutdown complete", 15*time.Second); err != nil {
+		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 }
 
