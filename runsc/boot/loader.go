@@ -83,6 +83,9 @@ type Loader struct {
 	// rootProcArgs refers to the root sandbox init task.
 	rootProcArgs kernel.CreateProcessArgs
 
+	// sandboxID is the ID for the whole sandbox.
+	sandboxID string
+
 	// mu guards containerRootTGIDs.
 	mu sync.Mutex
 
@@ -452,23 +455,46 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.Threa
 	return tgid, nil
 }
 
-// wait waits for the init process in the given container.
-func (l *Loader) wait(cid *string, waitStatus *uint32) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	tgid, ok := l.containerRootTGIDs[*cid]
-	if !ok {
-		return fmt.Errorf("can't find process for container %q in %v", *cid, l.containerRootTGIDs)
-	}
+// TODO: Per-container namespaces must be supported
+// for -pid.
 
-	// TODO: Containers don't map 1:1 with their root
-	// processes. Container exits should be managed explicitly
-	// rather than via PID.
+// waitContainer waits for the root process of a container to exit.
+func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
+	// Don't defer unlock, as doing so would make it impossible for
+	// multiple clients to wait on the same container.
+	l.mu.Lock()
+	tgid, ok := l.containerRootTGIDs[cid]
+	l.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("can't find process for container %q in %v", cid, l.containerRootTGIDs)
+	}
 	// If the thread either has already exited or exits during waiting,
 	// consider the container exited.
-	defer delete(l.containerRootTGIDs, *cid)
+	defer func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		// TODO: Containers don't map 1:1 with their root
+		// processes. Container exits should be managed explicitly
+		// rather than via PID.
+		delete(l.containerRootTGIDs, cid)
+	}()
+	return l.wait(tgid, cid, waitStatus)
+}
 
-	tg := l.k.TaskSet().Root.ThreadGroupWithID(tgid)
+func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
+	// TODO: Containers all currently share a PID namespace.
+	// When per-container PID namespaces are supported, wait should use cid
+	// to find the appropriate PID namespace.
+	if cid != l.sandboxID {
+		return errors.New("non-sandbox PID namespaces are not yet implemented")
+	}
+	return l.wait(tgid, cid, waitStatus)
+}
+
+// wait waits for the process with TGID 'tgid' in a container's PID namespace
+// to exit.
+func (l *Loader) wait(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
+	tg := l.k.TaskSet().Root.ThreadGroupWithID(kernel.ThreadID(tgid))
 	if tg == nil {
 		return fmt.Errorf("no thread group with ID %d", tgid)
 	}
@@ -482,6 +508,7 @@ func (l *Loader) setRootContainerID(cid string) {
 	defer l.mu.Unlock()
 	// The root container has PID 1.
 	l.containerRootTGIDs = map[string]kernel.ThreadID{cid: 1}
+	l.sandboxID = cid
 }
 
 // WaitForStartSignal waits for a start signal from the control server.

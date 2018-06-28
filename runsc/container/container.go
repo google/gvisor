@@ -353,6 +353,20 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 	return c.Sandbox.Wait(c.ID)
 }
 
+// WaitRootPID waits for process 'pid' in the sandbox's PID namespace and
+// returns its WaitStatus.
+func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
+	log.Debugf("Wait on pid %d in sandbox %q", pid, c.Sandbox.ID)
+	return c.Sandbox.WaitPID(pid, c.Sandbox.ID)
+}
+
+// WaitPID waits for process 'pid' in the container's PID namespace and returns
+// its WaitStatus.
+func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
+	log.Debugf("Wait on pid %d in container %q", pid, c.ID)
+	return c.Sandbox.WaitPID(pid, c.ID)
+}
+
 // Signal sends the signal to the container.
 func (c *Container) Signal(sig syscall.Signal) error {
 	log.Debugf("Signal container %q", c.ID)

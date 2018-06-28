@@ -84,6 +84,7 @@ func main() {
 	subcommands.Register(new(cmd.Run), "")
 	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.State), "")
+	subcommands.Register(new(cmd.Wait), "")
 
 	// Register internal commands with the internal group name. This causes
 	// them to be sorted below the user-facing commands with empty group.
