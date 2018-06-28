@@ -193,9 +193,6 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
-	if err := specutils.ValidateSpec(spec); err != nil {
-		return nil, err
-	}
 
 	containerRoot := filepath.Join(conf.RootDir, id)
 	if _, err := os.Stat(containerRoot); err == nil {
@@ -434,8 +431,10 @@ func (c *Container) Destroy() error {
 	log.Debugf("Destroy container %q", c.ID)
 
 	// First stop the container.
-	if err := c.Sandbox.Stop(c.ID); err != nil {
-		return err
+	if c.Sandbox != nil {
+		if err := c.Sandbox.Stop(c.ID); err != nil {
+			return err
+		}
 	}
 
 	// "If any poststop hook fails, the runtime MUST log a warning, but the

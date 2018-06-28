@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func TestWaitForReadyHappy(t *testing.T) {
@@ -93,4 +95,115 @@ func TestWaitForReadyTimeout(t *testing.T) {
 		t.Errorf("ProcessWaitReady got: %v, expected: timed out", err)
 	}
 	cmd.Process.Kill()
+}
+
+func TestSpecInvalid(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		spec  specs.Spec
+		error string
+	}{
+		{
+			name: "valid",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "valid+warning",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+					// This is normally set by docker and will just cause warnings to be logged.
+					ApparmorProfile: "someprofile",
+				},
+				// This is normally set by docker and will just cause warnings to be logged.
+				Linux: &specs.Linux{Seccomp: &specs.LinuxSeccomp{}},
+			},
+			error: "",
+		},
+		{
+			name: "no root",
+			spec: specs.Spec{
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+			},
+			error: "must be defined",
+		},
+		{
+			name: "empty root",
+			spec: specs.Spec{
+				Root: &specs.Root{},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+			},
+			error: "must be defined",
+		},
+		{
+			name: "no process",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+			},
+			error: "must be defined",
+		},
+		{
+			name: "empty args",
+			spec: specs.Spec{
+				Root:    &specs.Root{Path: "/"},
+				Process: &specs.Process{},
+			},
+			error: "must be defined",
+		},
+		{
+			name: "selinux",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args:         []string{"/bin/true"},
+					SelinuxLabel: "somelabel",
+				},
+			},
+			error: "is not supported",
+		},
+		{
+			name: "solaris",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Solaris: &specs.Solaris{},
+			},
+			error: "is not supported",
+		},
+		{
+			name: "windows",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Windows: &specs.Windows{},
+			},
+			error: "is not supported",
+		},
+	} {
+		err := ValidateSpec(&test.spec)
+		if len(test.error) == 0 {
+			if err != nil {
+				t.Errorf("ValidateSpec(%q) failed, err: %v", test.name, err)
+			}
+		} else {
+			if err == nil || !strings.Contains(err.Error(), test.error) {
+				t.Errorf("ValidateSpec(%q) wrong error, got: %v, want: .*%s.*", test.name, err, test.error)
+			}
+		}
+	}
 }

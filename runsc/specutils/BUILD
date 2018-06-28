@@ -22,4 +22,5 @@ go_test(
     size = "small",
     srcs = ["specutils_test.go"],
     embed = [":specutils"],
+    deps = ["@com_github_opencontainers_runtime-spec//specs-go:go_default_library"],
 )

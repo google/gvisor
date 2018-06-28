@@ -47,10 +47,28 @@ func LogSpec(spec *specs.Spec) {
 
 // ValidateSpec validates that the spec is compatible with runsc.
 func ValidateSpec(spec *specs.Spec) error {
+	// Mandatory fields.
 	if spec.Process == nil {
-		return fmt.Errorf("Process must be defined")
+		return fmt.Errorf("Spec.Process must be defined: %+v", spec)
 	}
-	if spec.Process.SelinuxLabel != "" {
+	if len(spec.Process.Args) == 0 {
+		return fmt.Errorf("Spec.Process.Arg must be defined: %+v", spec.Process)
+	}
+	if spec.Root == nil {
+		return fmt.Errorf("Spec.Root must be defined: %+v", spec)
+	}
+	if len(spec.Root.Path) == 0 {
+		return fmt.Errorf("Spec.Root.Path must be defined: %+v", spec.Root)
+	}
+
+	// Unsupported fields.
+	if spec.Solaris != nil {
+		return fmt.Errorf("Spec.Solaris is not supported: %+v", spec)
+	}
+	if spec.Windows != nil {
+		return fmt.Errorf("Spec.Windows is not supported: %+v", spec)
+	}
+	if len(spec.Process.SelinuxLabel) != 0 {
 		return fmt.Errorf("SELinux is not supported: %s", spec.Process.SelinuxLabel)
 	}
 
@@ -64,7 +82,7 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("Seccomp spec is being ignored")
 	}
 
-	// 2 annotations are use by containerd to support multi-container pods.
+	// Two annotations are use by containerd to support multi-container pods.
 	//   "io.kubernetes.cri.container-type"
 	//   "io.kubernetes.cri.sandbox-id"
 	containerType, hasContainerType := spec.Annotations[ContainerdContainerTypeAnnotation]
@@ -97,6 +115,9 @@ func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	var spec specs.Spec
 	if err := json.Unmarshal(specBytes, &spec); err != nil {
 		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile, err, string(specBytes))
+	}
+	if err := ValidateSpec(&spec); err != nil {
+		return nil, err
 	}
 	return &spec, nil
 }
