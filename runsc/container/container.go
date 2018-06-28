@@ -449,7 +449,7 @@ func (c *Container) Destroy() error {
 
 	// If we are the first container in the sandbox, take the sandbox down
 	// as well.
-	if c.Sandbox != nil && c.Sandbox.ID == c.ID {
+	if c.Sandbox != nil && c.Sandbox.IsRootContainer(c.ID) {
 		if err := c.Sandbox.Destroy(); err != nil {
 			log.Warningf("Failed to destroy sandbox %q: %v", c.Sandbox.ID, err)
 		}

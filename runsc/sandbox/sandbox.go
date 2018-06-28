@@ -434,7 +434,27 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	if err := conn.Call(boot.ContainerWait, &cid, &ws); err != nil {
 		return ws, fmt.Errorf("err waiting on container %q: %v", cid, err)
 	}
+
+	if s.IsRootContainer(cid) {
+		// If waiting for the root, give some time for the sandbox process to exit
+		// to prevent races with resources that might still be in use.
+		timeout := time.Now().Add(time.Second)
+		log.Debugf("Waiting for the sandbox process to exit")
+		for s.IsRunning() {
+			if time.Now().After(timeout) {
+				log.Debugf("Timeout waiting for sandbox process to exit")
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	return ws, nil
+}
+
+// IsRootContainer returns true if the specified container ID belongs to the
+// root container.
+func (s *Sandbox) IsRootContainer(cid string) bool {
+	return s.ID == cid
 }
 
 // Stop stops the container in the sandbox.
