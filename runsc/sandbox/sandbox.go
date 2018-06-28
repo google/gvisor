@@ -432,7 +432,29 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	defer conn.Close()
 
 	if err := conn.Call(boot.ContainerWait, &cid, &ws); err != nil {
-		return ws, fmt.Errorf("err waiting on container %q: %v", cid, err)
+		return ws, fmt.Errorf("error waiting on container %q: %v", cid, err)
+	}
+	return ws, nil
+}
+
+// WaitPID waits for process 'pid' in the container's sandbox and returns its
+// WaitStatus.
+func (s *Sandbox) WaitPID(pid int32, cid string) (syscall.WaitStatus, error) {
+	log.Debugf("Waiting for PID %d in sandbox %q", pid, s.ID)
+	var ws syscall.WaitStatus
+	conn, err := s.connect()
+	if err != nil {
+		return ws, err
+	}
+	defer conn.Close()
+
+	args := &boot.WaitPIDArgs{
+		PID: pid,
+		CID: cid,
+	}
+
+	if err := conn.Call(boot.ContainerWaitPID, args, &ws); err != nil {
+		return ws, fmt.Errorf("error waiting on PID %d in sandbox %q: %v", pid, s.ID, err)
 	}
 
 	if s.IsRootContainer(cid) {

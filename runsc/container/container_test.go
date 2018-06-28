@@ -75,9 +75,9 @@ func procListsEqual(got, want []*control.Process) bool {
 		pd1 := got[i]
 		pd2 := want[i]
 		// Zero out unimplemented and timing dependant fields.
-		pd1.Time, pd2.Time = "", ""
-		pd1.STime, pd2.STime = "", ""
-		pd1.C, pd2.C = 0, 0
+		pd1.Time = ""
+		pd1.STime = ""
+		pd1.C = 0
 		if *pd1 != *pd2 {
 			return false
 		}
@@ -1074,16 +1074,39 @@ func TestMultiContainerWait(t *testing.T) {
 		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
 
-	// Wait on the short lived container.
-	if ws, err := containers[1].Wait(); err != nil {
-		t.Fatalf("failed to wait for process %q: %v", strings.Join(containers[1].Spec.Process.Args, " "), err)
-	} else if es := ws.ExitStatus(); es != 0 {
-		t.Fatalf("process %q exited with non-zero status %d", strings.Join(containers[1].Spec.Process.Args, " "), es)
+	// Wait on the short lived container from multiple goroutines.
+	wg := sync.WaitGroup{}
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if ws, err := containers[1].Wait(); err != nil {
+				t.Errorf("failed to wait for process %q: %v", strings.Join(containers[1].Spec.Process.Args, " "), err)
+			} else if es := ws.ExitStatus(); es != 0 {
+				t.Errorf("process %q exited with non-zero status %d", strings.Join(containers[1].Spec.Process.Args, " "), es)
+			}
+
+			// After Wait returns, ensure that the root container is running and
+			// the child has finished.
+			if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+				t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
+			}
+		}()
 	}
 
-	// After Wait returns, ensure that the root container is running and
-	// the child has finished.
-	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
-		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
+	// Also wait via PID.
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			const pid = 2
+			if ws, err := containers[0].WaitPID(pid); err != nil {
+				t.Errorf("failed to wait for PID %d: %v", pid, err)
+			} else if es := ws.ExitStatus(); es != 0 {
+				t.Errorf("PID %d exited with non-zero status %d", pid, es)
+			}
+		}()
 	}
+
+	wg.Wait()
 }

@@ -61,6 +61,10 @@ const (
 	// and return its ExitStatus.
 	ContainerWait = "containerManager.Wait"
 
+	// ContainerWaitPID is used to wait on a process with a certain PID in
+	// the sandbox and return its ExitStatus.
+	ContainerWaitPID = "containerManager.WaitPID"
+
 	// NetworkCreateLinksAndRoutes is the URPC endpoint for creating links
 	// and routes in a network stack.
 	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
@@ -234,7 +238,22 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait")
-	return cm.l.wait(cid, waitStatus)
+	return cm.l.waitContainer(*cid, waitStatus)
+}
+
+// WaitPIDArgs are arguments to the WaitPID method.
+type WaitPIDArgs struct {
+	// PID is the PID in the container's PID namespace.
+	PID int32
+
+	// CID is the container ID.
+	CID string
+}
+
+// WaitPID waits for the process with PID 'pid' in the sandbox.
+func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error {
+	log.Debugf("containerManager.Wait")
+	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
 }
 
 // SignalArgs are arguments to the Signal method.
