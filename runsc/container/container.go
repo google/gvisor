@@ -135,7 +135,7 @@ func Load(rootDir, id string) (*Container, error) {
 			// see if this particular container is still running.
 		} else {
 			// Sandbox no longer exists, so this container
-			// definitly does not exist.
+			// definitely does not exist.
 			c.Status = Stopped
 			c.Sandbox = nil
 		}
