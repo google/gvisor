@@ -71,6 +71,7 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
 	// Register user-facing runsc commands.
+	subcommands.Register(new(cmd.Checkpoint), "")
 	subcommands.Register(new(cmd.Create), "")
 	subcommands.Register(new(cmd.Delete), "")
 	subcommands.Register(new(cmd.Events), "")
@@ -80,6 +81,7 @@ func main() {
 	subcommands.Register(new(cmd.List), "")
 	subcommands.Register(new(cmd.Pause), "")
 	subcommands.Register(new(cmd.PS), "")
+	subcommands.Register(new(cmd.Restore), "")
 	subcommands.Register(new(cmd.Resume), "")
 	subcommands.Register(new(cmd.Run), "")
 	subcommands.Register(new(cmd.Start), "")

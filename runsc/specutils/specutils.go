@@ -266,17 +266,6 @@ func IsSupportedDevMount(m specs.Mount) bool {
 	return true
 }
 
-// SupportedMounts filters out unsupported mounts.
-func SupportedMounts(mounts []specs.Mount) []specs.Mount {
-	var newMounts []specs.Mount
-	for _, m := range mounts {
-		if IsSupportedDevMount(m) {
-			newMounts = append(newMounts, m)
-		}
-	}
-	return newMounts
-}
-
 // BinPath returns the real path to self, resolving symbolink links. This is done
 // to make the process name appears as 'runsc', instead of 'exe'.
 func BinPath() (string, error) {

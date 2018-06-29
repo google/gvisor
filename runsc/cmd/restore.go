@@ -42,7 +42,7 @@ func (*Restore) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Restore) Synopsis() string {
-	return "restore a saved state of container"
+	return "restore a saved state of container (experimental)"
 }
 
 // Usage implements subcommands.Command.Usage.

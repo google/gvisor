@@ -22,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -104,6 +105,56 @@ func procListToString(pl []*control.Process) string {
 		strs = append(strs, fmt.Sprintf("%+v", p))
 	}
 	return fmt.Sprintf("[%s]", strings.Join(strs, ","))
+}
+
+// createWriteableOutputFile creates an output file that can be read and written to in the sandbox.
+func createWriteableOutputFile(path string) (*os.File, error) {
+	outputFile, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
+	if err != nil {
+		return nil, fmt.Errorf("error creating file: %q, %v", path, err)
+	}
+
+	// Chmod to allow writing after umask.
+	if err := outputFile.Chmod(0666); err != nil {
+		return nil, fmt.Errorf("error chmoding file: %q, %v", path, err)
+	}
+	return outputFile, nil
+}
+
+func readOutputNum(outputFile *os.File, path string, first bool) (int, error) {
+	var num int
+	time.Sleep(1 * time.Second)
+
+	// Check that outputFile exists and contains counting data.
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("error creating output file: %v", err)
+	}
+
+	if fileInfo.Size() == 0 {
+		return 0, fmt.Errorf("failed to write to file, file still appears empty")
+	}
+
+	// Read the first number in the new file
+	outputFileContent, err := ioutil.ReadAll(outputFile)
+	if err != nil {
+		return 0, fmt.Errorf("error reading file: %v", err)
+	}
+	if len(outputFileContent) == 0 {
+		return 0, fmt.Errorf("error no content was read")
+	}
+
+	nums := strings.Split(string(outputFileContent), "\n")
+
+	if first {
+		num, err = strconv.Atoi(nums[0])
+	} else {
+		num, err = strconv.Atoi(nums[len(nums)-2])
+	}
+	if err != nil {
+		return 0, fmt.Errorf("error getting number from file: %v", err)
+	}
+	return num, nil
 }
 
 // run starts the sandbox and waits for it to exit, checking that the
@@ -429,13 +480,28 @@ func TestExec(t *testing.T) {
 	}
 }
 
-// TestCheckpoint verifies that calling checkpoint with an image-path flag succeeds.
-// Since there is no current default image path, confirming that calling
-// checkpoint without an image path fails.
-// Checks that there is a file with the name and location given by image path.
-func TestCheckpoint(t *testing.T) {
-	// Container will succeed.
-	spec := testutil.NewSpecWithArgs("sleep", "100")
+// TestCheckpointRestore creates a container that continuously writes successive integers
+// to a file. To test checkpoint and restore functionality, the container is
+// checkpointed and the last number printed to the file is recorded. Then, it is restored in two
+// new containers and the first number printed from these containers is checked. Both should
+// be the next consecutive number after the last number from the checkpointed container.
+func TestCheckpointRestore(t *testing.T) {
+	outputPath := filepath.Join(os.TempDir(), "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	outputFileSandbox := strings.Replace(outputPath, os.TempDir(), "/tmp2", -1)
+
+	script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %s; sleep 1; done", outputFileSandbox)
+	spec := testutil.NewSpecWithArgs("bash", "-c", script)
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Type:        "bind",
+		Destination: "/tmp2",
+		Source:      os.TempDir(),
+	})
 
 	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
 	if err != nil {
@@ -464,20 +530,80 @@ func TestCheckpoint(t *testing.T) {
 	}
 	defer file.Close()
 
+	time.Sleep(1 * time.Second)
+
 	// Checkpoint running container; save state into new file.
 	if err := cont.Checkpoint(file); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
 	defer os.RemoveAll(imagePath)
 
-	// Check to see if file exists and contains data.
-	fileInfo, err := os.Stat(imagePath)
+	lastNum, err := readOutputNum(outputFile, outputPath, false)
 	if err != nil {
-		t.Fatalf("error checkpointing container: %v", err)
+		t.Fatalf("error with outputFile: %v", err)
 	}
-	if size := fileInfo.Size(); size == 0 {
-		t.Fatalf("failed checkpoint, file still appears empty: %v", err)
+
+	// Delete and recreate file before restoring.
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatalf("error removing file")
 	}
+	outputFile2, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile2.Close()
+
+	// Restore into a new container.
+	cont2, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", imagePath)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+	if err := cont2.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	firstNum, err := readOutputNum(outputFile2, outputPath, true)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	// Check that lastNum is one less than firstNum and that the container picks up from where it left off.
+	if lastNum+1 != firstNum {
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+	}
+
+	// Restore into another container!
+	// Delete and recreate file before restoring.
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatalf("error removing file")
+	}
+	outputFile3, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile3.Close()
+
+	// Restore into a new container.
+	cont3, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", imagePath)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont3.Destroy()
+	if err := cont3.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	firstNum2, err := readOutputNum(outputFile3, outputPath, true)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	// Check that lastNum is one less than firstNum and that the container picks up from where it left off.
+	if lastNum+1 != firstNum2 {
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+	}
+
 }
 
 // TestPauseResume tests that we can successfully pause and resume a container.
