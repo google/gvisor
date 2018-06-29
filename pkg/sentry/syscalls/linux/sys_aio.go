@@ -132,7 +132,7 @@ func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	timespecAddr := args[4].Pointer()
 
 	// Sanity check arguments.
-	if minEvents > events {
+	if minEvents < 0 || minEvents > events {
 		return 0, nil, syserror.EINVAL
 	}
 
@@ -358,6 +358,10 @@ func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	id := args[0].Uint64()
 	nrEvents := args[1].Int()
 	addr := args[2].Pointer()
+
+	if nrEvents < 0 {
+		return 0, nil, syserror.EINVAL
+	}
 
 	for i := int32(0); i < nrEvents; i++ {
 		// Copy in the address.
