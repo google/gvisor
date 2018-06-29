@@ -17,6 +17,7 @@ package gofer
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"gvisor.googlesource.com/gvisor/pkg/p9"
@@ -77,6 +78,29 @@ func (i *inodeFileState) saveLoading() struct{} {
 	return struct{}{}
 }
 
+// splitAbsolutePath splits the path on slashes ignoring the leading slash.
+func splitAbsolutePath(path string) []string {
+	if len(path) == 0 {
+		panic("There is no path!")
+	}
+	if path != filepath.Clean(path) {
+		panic(fmt.Sprintf("path %q is not clean", path))
+	}
+	// This case is to return {} rather than {""}
+	if path == "/" {
+		return []string{}
+	}
+	if path[0] != '/' {
+		panic(fmt.Sprintf("path %q is not absolute", path))
+	}
+
+	s := strings.Split(path, "/")
+
+	// Since p is absolute, the first component of s
+	// is an empty string. We must remove that.
+	return s[1:]
+}
+
 // loadLoading is invoked by stateify.
 func (i *inodeFileState) loadLoading(_ struct{}) {
 	i.loading.Lock()
@@ -98,7 +122,8 @@ func (i *inodeFileState) afterLoad() {
 		// TODO: Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
 		var err error
-		_, i.file, err = i.s.attach.walk(ctx, strings.Split(name, "/"))
+
+		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
 		if err != nil {
 			return fmt.Errorf("failed to walk to %q: %v", name, err)
 		}

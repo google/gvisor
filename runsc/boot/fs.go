@@ -38,6 +38,14 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
+const (
+	// Filesystem name for 9p gofer mounts.
+	rootFsName = "9p"
+
+	// Device name for root mount.
+	rootDevice = "9pfs-/"
+)
+
 type fdDispenser struct {
 	fds []int
 }
@@ -64,7 +72,8 @@ func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root mount namespace: %v", err)
 	}
-	if err := configureMounts(rootCtx, spec, conf, mns, fds); err != nil {
+	mounts := compileMounts(spec)
+	if err := setMounts(rootCtx, conf, mns, fds, mounts); err != nil {
 		return nil, fmt.Errorf("failed to configure mounts: %v", err)
 	}
 	if !fds.empty() {
@@ -73,27 +82,23 @@ func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec
 	return mns, nil
 }
 
-// configureMounts iterates over Spec.Mounts and mounts them in the specified
-// mount namespace.
-func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.MountNamespace, fds *fdDispenser) error {
+// compileMounts returns the supported mounts from the mount spec, adding any
+// additional mounts that are required by the OCI specification.
+func compileMounts(spec *specs.Spec) []specs.Mount {
 	// Keep track of whether proc, sys, and tmp were mounted.
 	var procMounted, sysMounted, tmpMounted bool
+	var mounts []specs.Mount
 
 	// Always mount /dev.
-	if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+	mounts = append(mounts, specs.Mount{
 		Type:        "devtmpfs",
 		Destination: "/dev",
-	}); err != nil {
-		return err
-	}
+	})
 
-	// Always mount /dev/pts.
-	if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+	mounts = append(mounts, specs.Mount{
 		Type:        "devpts",
 		Destination: "/dev/pts",
-	}); err != nil {
-		return err
-	}
+	})
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
@@ -101,6 +106,7 @@ func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *f
 			log.Warningf("ignoring dev mount at %q", m.Destination)
 			continue
 		}
+		mounts = append(mounts, m)
 		switch filepath.Clean(m.Destination) {
 		case "/proc":
 			procMounted = true
@@ -109,43 +115,45 @@ func configureMounts(ctx context.Context, spec *specs.Spec, conf *Config, mns *f
 		case "/tmp":
 			tmpMounted = true
 		}
-
-		if err := mountSubmount(ctx, spec, conf, mns, fds, m); err != nil {
-			return err
-		}
 	}
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
 	// says we SHOULD.
 	if !procMounted {
-		if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+		mounts = append(mounts, specs.Mount{
 			Type:        "proc",
 			Destination: "/proc",
-		}); err != nil {
-			return err
-		}
+		})
 	}
 	if !sysMounted {
-		if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+		mounts = append(mounts, specs.Mount{
 			Type:        "sysfs",
 			Destination: "/sys",
-		}); err != nil {
-			return err
-		}
+		})
 	}
 
 	// Technically we don't have to mount tmpfs at /tmp, as we could just
 	// rely on the host /tmp, but this is a nice optimization, and fixes
 	// some apps that call mknod in /tmp.
 	if !tmpMounted {
-		if err := mountSubmount(ctx, spec, conf, mns, nil, specs.Mount{
+		mounts = append(mounts, specs.Mount{
 			Type:        "tmpfs",
 			Destination: "/tmp",
-		}); err != nil {
+		})
+	}
+	return mounts
+}
+
+// setMounts iterates over mounts and mounts them in the specified
+// mount namespace.
+func setMounts(ctx context.Context, conf *Config, mns *fs.MountNamespace, fds *fdDispenser, mounts []specs.Mount) error {
+
+	// Mount all submounts from mounts.
+	for _, m := range mounts {
+		if err := mountSubmount(ctx, conf, mns, fds, m, mounts); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -158,19 +166,20 @@ func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *f
 		rootInode *fs.Inode
 		err       error
 	)
+
 	switch conf.FileAccess {
 	case FileAccessProxy:
 		fd := fds.remove()
 		log.Infof("Mounting root over 9P, ioFD: %d", fd)
 		hostFS := mustFindFilesystem("9p")
-		rootInode, err = hostFS.Mount(ctx, "root", mf, fmt.Sprintf("trans=fd,rfdno=%d,wfdno=%d,privateunixsocket=true", fd, fd))
+		rootInode, err = hostFS.Mount(ctx, rootDevice, mf, fmt.Sprintf("trans=fd,rfdno=%d,wfdno=%d,privateunixsocket=true", fd, fd))
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate root mount point: %v", err)
 		}
 
 	case FileAccessDirect:
 		hostFS := mustFindFilesystem("whitelistfs")
-		rootInode, err = hostFS.Mount(ctx, "root", mf, "root="+spec.Root.Path+",dont_translate_ownership=true")
+		rootInode, err = hostFS.Mount(ctx, rootDevice, mf, "root="+spec.Root.Path+",dont_translate_ownership=true")
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate root mount point: %v", err)
 		}
@@ -263,7 +272,7 @@ func getMountNameAndOptions(conf *Config, m specs.Mount, fds *fdDispenser) (stri
 	return fsName, data, useOverlay, err
 }
 
-func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.MountNamespace, fds *fdDispenser, m specs.Mount) error {
+func mountSubmount(ctx context.Context, conf *Config, mns *fs.MountNamespace, fds *fdDispenser, m specs.Mount, mounts []specs.Mount) error {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
 	fsName, data, useOverlay, err := getMountNameAndOptions(conf, m, fds)
@@ -285,14 +294,13 @@ func mountSubmount(ctx context.Context, spec *specs.Spec, conf *Config, mns *fs.
 		mf.ReadOnly = true
 	}
 
-	inode, err := filesystem.Mount(ctx, m.Type, mf, strings.Join(data, ","))
+	inode, err := filesystem.Mount(ctx, mountDevice(m), mf, strings.Join(data, ","))
 	if err != nil {
 		return fmt.Errorf("failed to create mount with source %q: %v", m.Source, err)
 	}
 
 	// If there are submounts, we need to overlay the mount on top of a
 	// ramfs with stub directories for submount paths.
-	mounts := specutils.SupportedMounts(spec.Mounts)
 	submounts := subtargets(m.Destination, mounts)
 	if len(submounts) > 0 {
 		log.Infof("Adding submount overlay over %q", m.Destination)
@@ -406,7 +414,7 @@ func mountDevice(m specs.Mount) string {
 	if m.Type == "bind" {
 		// Make a device string that includes the target, which is consistent across
 		// S/R and uniquely identifies the connection.
-		return "p9fs-" + m.Destination
+		return "9pfs-" + m.Destination
 	}
 	// All other fs types use device "none".
 	return "none"
@@ -417,14 +425,24 @@ func mountDevice(m specs.Mount) string {
 func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, fds *fdDispenser) error {
 	fsName, data, _, err := getMountNameAndOptions(conf, m, fds)
 	dataString := strings.Join(data, ",")
+
+	// Return the error or nil that corresponds to the default case in getMountNameAndOptions.
 	if err != nil {
 		return err
 	}
-	renv.MountSources[fsName] = append(renv.MountSources[fsName], fs.MountArgs{
+	// TODO: Fix this when we support all the mount types and make this a
+	// fatal error.
+	if fsName == "" {
+		return nil
+	}
+
+	newMount := fs.MountArgs{
 		Dev:   mountDevice(m),
 		Flags: mountFlags(m.Options),
 		Data:  dataString,
-	})
+	}
+	renv.MountSources[fsName] = append(renv.MountSources[fsName], newMount)
+	log.Infof("Added mount at %q: %+v", fsName, newMount)
 	return nil
 }
 
@@ -438,6 +456,8 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 		MountSources: make(map[string][]fs.MountArgs),
 	}
 
+	mounts := compileMounts(spec)
+
 	// Add root mount.
 	fd := fds.remove()
 	dataString := strings.Join([]string{"trans=fd", fmt.Sprintf("rfdno=%d", fd), fmt.Sprintf("wfdno=%d", fd), "privateunixsocket=true"}, ",")
@@ -445,15 +465,16 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 	if spec.Root.Readonly {
 		mf.ReadOnly = true
 	}
-	const rootFSName = "9p"
-	renv.MountSources[rootFSName] = append(renv.MountSources[rootFSName], fs.MountArgs{
-		Dev:   "p9fs-/",
+
+	rootMount := fs.MountArgs{
+		Dev:   rootDevice,
 		Flags: mf,
 		Data:  dataString,
-	})
+	}
+	renv.MountSources[rootFsName] = append(renv.MountSources[rootFsName], rootMount)
 
 	// Add submounts
-	for _, m := range spec.Mounts {
+	for _, m := range mounts {
 		if err := addRestoreMount(conf, renv, m, fds); err != nil {
 			return nil, err
 		}

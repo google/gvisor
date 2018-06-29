@@ -44,7 +44,7 @@ func (*Checkpoint) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Checkpoint) Synopsis() string {
-	return "checkpoint current state of container"
+	return "checkpoint current state of container (experimental)"
 }
 
 // Usage implements subcommands.Command.Usage.

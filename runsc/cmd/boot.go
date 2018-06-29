@@ -142,7 +142,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
+
 	l, err := boot.New(spec, conf, b.controllerFD, b.restoreFD, b.ioFDs.GetArray(), b.console)
+
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}

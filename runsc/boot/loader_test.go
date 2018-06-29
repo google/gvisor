@@ -364,7 +364,7 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "p9fs-/",
+							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
 							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
@@ -373,6 +373,24 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev: "none",
 						},
+						{
+							Dev: "none",
+						},
+						{
+							Dev: "none",
+						},
+					},
+					"devtmpfs": {
+						{
+							Dev: "none",
+						},
+					},
+					"devpts": {
+						{
+							Dev: "none",
+						},
+					},
+					"sysfs": {
 						{
 							Dev: "none",
 						},
@@ -406,13 +424,38 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "p9fs-/",
+							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
 							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
 						{
-							Dev:  "p9fs-/dev/fd-foo",
+							Dev:  "9pfs-/dev/fd-foo",
 							Data: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true",
+						},
+					},
+					"tmpfs": {
+						{
+							Dev: "none",
+						},
+					},
+					"devtmpfs": {
+						{
+							Dev: "none",
+						},
+					},
+					"devpts": {
+						{
+							Dev: "none",
+						},
+					},
+					"proc": {
+						{
+							Dev: "none",
+						},
+					},
+					"sysfs": {
+						{
+							Dev: "none",
 						},
 					},
 				},
@@ -445,7 +488,7 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "p9fs-/",
+							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
 							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
 						},
@@ -455,6 +498,29 @@ func TestRestoreEnvironment(t *testing.T) {
 							Dev:   "none",
 							Flags: fs.MountSourceFlags{NoAtime: true},
 							Data:  "uid=1022",
+						},
+						{
+							Dev: "none",
+						},
+					},
+					"devtmpfs": {
+						{
+							Dev: "none",
+						},
+					},
+					"devpts": {
+						{
+							Dev: "none",
+						},
+					},
+					"proc": {
+						{
+							Dev: "none",
+						},
+					},
+					"sysfs": {
+						{
+							Dev: "none",
 						},
 					},
 				},
