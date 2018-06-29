@@ -40,6 +40,7 @@ const (
 	notifyClose
 	notifyMTUChanged
 	notifyDrain
+	notifyReset
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
@@ -919,7 +920,20 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	switch e.state {
 	case stateConnected:
 		// Close for write.
-		if (flags & tcpip.ShutdownWrite) != 0 {
+		if (e.shutdownFlags & tcpip.ShutdownWrite) != 0 {
+			if (e.shutdownFlags & tcpip.ShutdownRead) != 0 {
+				// We're fully closed, if we have unread data we need to abort
+				// the connection with a RST.
+				e.rcvListMu.Lock()
+				rcvBufUsed := e.rcvBufUsed
+				e.rcvListMu.Unlock()
+
+				if rcvBufUsed > 0 {
+					e.notifyProtocolGoroutine(notifyReset)
+					return nil
+				}
+			}
+
 			e.sndBufMu.Lock()
 
 			if e.sndClosed {
