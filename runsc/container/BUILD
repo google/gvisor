@@ -16,6 +16,7 @@ go_library(
     deps = [
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/syserror",
         "//runsc/boot",
         "//runsc/sandbox",
         "//runsc/specutils",

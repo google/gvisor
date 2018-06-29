@@ -30,6 +30,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/sandbox"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -100,11 +101,12 @@ type Container struct {
 func Load(rootDir, id string) (*Container, error) {
 	log.Debugf("Load container %q %q", rootDir, id)
 	if err := validateID(id); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error validating id: %v", err)
 	}
 
 	cRoot, err := findContainerRoot(rootDir, id)
 	if err != nil {
+		// Preserve error so that callers can distinguish 'not found' errors.
 		return nil, err
 	}
 
@@ -471,6 +473,32 @@ func (c *Container) Destroy() error {
 
 	c.Sandbox = nil
 	c.Status = Stopped
+
+	return nil
+}
+
+// DestroyAndWait frees all resources associated with the container
+// and waits for destroy to finish before returning.
+func (c *Container) DestroyAndWait() error {
+	sandboxPid := c.Sandbox.Pid
+	goferPid := c.Sandbox.GoferPid
+
+	if err := c.Destroy(); err != nil {
+		return fmt.Errorf("error destroying container %v: %v", c, err)
+	}
+
+	if sandboxPid != 0 {
+		if err := waitForDeath(sandboxPid, 5*time.Second); err != nil {
+			return fmt.Errorf("error waiting for sandbox death: %v", err)
+		}
+	}
+
+	if goferPid != 0 {
+		if err := waitForDeath(goferPid, 5*time.Second); err != nil {
+			return fmt.Errorf("error waiting for gofer death: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -489,4 +517,31 @@ func (c *Container) save() error {
 		return fmt.Errorf("error writing container metadata: %v", err)
 	}
 	return nil
+}
+
+// waitForDeath ensures that process is dead before proceeding.
+//
+// This is racy because the kernel can potentially reuse the pid in the time
+// between the process' death and the first check after the process has ended.
+func waitForDeath(pid int, timeout time.Duration) error {
+	backoff := 1 * time.Millisecond
+	for start := time.Now(); time.Now().Sub(start) < timeout; {
+
+		if err := syscall.Kill(pid, 0); err != nil {
+			if err == syserror.ESRCH {
+				// pid does not exist so process must have died
+				return nil
+			}
+			return fmt.Errorf("error killing pid (%d): %v", pid, err)
+		}
+		// pid is still alive.
+
+		// Process continues to run, backoff and retry.
+		time.Sleep(backoff)
+		backoff *= 2
+		if backoff > 1*time.Second {
+			backoff = 1 * time.Second
+		}
+	}
+	return fmt.Errorf("timed out waiting for process (%d)", pid)
 }
