@@ -938,6 +938,10 @@ func (e *endpoint) protocolMainLoop(passive bool) *tcpip.Error {
 					e.snd.updateMaxPayloadSize(mtu, count)
 				}
 
+				if n&notifyReset != 0 {
+					e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+				}
+
 				if n&notifyClose != 0 && closeTimer == nil {
 					// Reset the connection 3 seconds after the
 					// endpoint has been closed.
