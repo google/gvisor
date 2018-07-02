@@ -361,10 +361,20 @@ Then restart the Docker daemon.
 
 ## FAQ & Known Issues
 
+### Will my container work with gVisor?
+
+gVisor implements a large portion of the Linux surface and while we strive to
+make it broadly compatible, there are (and always will be) unimplemented
+features and bugs. The only real way to know if it will work is to try. If you
+find a container that doesn’t work and there is no known issue, please [file a
+bug][bug] indicating the full command you used to run the image. Providing the
+debug logs is also helpful.
+
 ### What works?
 
 The following applications/images have been tested:
 
+* elasticsearch
 * golang
 * httpd
 * java8
@@ -384,32 +394,16 @@ The following applications/images have been tested:
 * tomcat
 * wordpress
 
-### What doesn't work yet?
-
-The following applications have been tested and may not yet work:
-
-* elasticsearch: Requires unimplemented socket ioctls. See [bug
-  #2](https://github.com/google/gvisor/issues/2).
-
-### Will my container work with gVisor?
-
-gVisor implements a large portion of the Linux surface and while we strive to
-make it broadly compatible, there are (and always will be) unimplemented
-features and bugs. The only real way to know if it will work is to try. If you
-find a container that doesn’t work and there is no known issue, please [file a
-bug][bug] indicating the full command you used to run the image. Providing the
-debug logs is also helpful.
-
-### When I run my container, docker fails with `flag provided but not defined: -console`
-
-You're using an old version of Docker. Refer to the
-[Requirements](#requirements) section for the minimum version supported.
-
 ### My container runs fine with *runc* but fails with *runsc*.
 
 If you’re having problems running a container with `runsc` it’s most likely due
 to a compatibility issue or a missing feature in gVisor. See **Debugging**,
 above.
+
+### When I run my container, docker fails with `flag provided but not defined: -console`
+
+You're using an old version of Docker. Refer to the
+[Requirements](#requirements) section for the minimum version supported.
 
 ### I can’t see a file copied with `docker cp` or `kubectl cp`.
 
