@@ -352,6 +352,9 @@ func (c *Container) Pid() int {
 // Wait waits for the container to exit, and returns its WaitStatus.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container %q", c.ID)
+	if c.Status == Stopped {
+		return 0, fmt.Errorf("container is stopped")
+	}
 	return c.Sandbox.Wait(c.ID)
 }
 
@@ -359,6 +362,9 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in sandbox %q", pid, c.Sandbox.ID)
+	if c.Status == Stopped {
+		return 0, fmt.Errorf("container is stopped")
+	}
 	return c.Sandbox.WaitPID(pid, c.Sandbox.ID)
 }
 
@@ -366,6 +372,9 @@ func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in container %q", pid, c.ID)
+	if c.Status == Stopped {
+		return 0, fmt.Errorf("container is stopped")
+	}
 	return c.Sandbox.WaitPID(pid, c.ID)
 }
 
