@@ -1211,6 +1211,9 @@ func TestMultiContainerWait(t *testing.T) {
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("process %q exited with non-zero status %d", strings.Join(containers[1].Spec.Process.Args, " "), es)
 			}
+			if _, err := containers[1].Wait(); err == nil {
+				t.Errorf("wait for stopped process %q should fail", strings.Join(containers[1].Spec.Process.Args, " "))
+			}
 
 			// After Wait returns, ensure that the root container is running and
 			// the child has finished.
@@ -1230,6 +1233,9 @@ func TestMultiContainerWait(t *testing.T) {
 				t.Errorf("failed to wait for PID %d: %v", pid, err)
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("PID %d exited with non-zero status %d", pid, es)
+			}
+			if _, err := containers[0].WaitPID(pid); err == nil {
+				t.Errorf("wait for stopped PID %d should fail", pid)
 			}
 		}()
 	}
