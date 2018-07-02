@@ -18,7 +18,7 @@
 //     local_server /tmp/my_bind_addr
 //
 // Then, connect using the Linux 9P filesystem:
-//     mount -t 9p -o trans=unix,version=9P2000.L /tmp/my_bind_addr /mnt
+//     mount -t 9p -o trans=unix /tmp/my_bind_addr /mnt
 //
 // This package also serves as an examplar.
 package main
