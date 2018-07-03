@@ -304,6 +304,37 @@ func TestCreateMountNamespace(t *testing.T) {
 			},
 			expectedPaths: []string{"/proc", "/dev", "/dev/fd-foo", "/dev/foo", "/dev/bar", "/sys"},
 		},
+		{
+			name: "mounts inside mandatory mounts",
+			spec: specs.Spec{
+				Root: &specs.Root{
+					Path:     os.TempDir(),
+					Readonly: true,
+				},
+				Mounts: []specs.Mount{
+					{
+						Destination: "/proc",
+						Type:        "tmpfs",
+					},
+					// We don't include /sys, and /tmp in
+					// the spec, since they will be added
+					// automatically.
+					//
+					// Instead, add submounts inside these
+					// directories and make sure they are
+					// visible under the mandatory mounts.
+					{
+						Destination: "/sys/bar",
+						Type:        "tmpfs",
+					},
+					{
+						Destination: "/tmp/baz",
+						Type:        "tmpfs",
+					},
+				},
+			},
+			expectedPaths: []string{"/proc", "/sys", "/sys/bar", "/tmp", "/tmp/baz"},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -495,12 +526,12 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 					"tmpfs": {
 						{
+							Dev: "none",
+						},
+						{
 							Dev:   "none",
 							Flags: fs.MountSourceFlags{NoAtime: true},
 							Data:  "uid=1022",
-						},
-						{
-							Dev: "none",
 						},
 					},
 					"devtmpfs": {
@@ -587,7 +618,7 @@ func TestRestoreEnvironment(t *testing.T) {
 			}
 		} else {
 			if !reflect.DeepEqual(*actualRenv, tc.expectedRenv) {
-				t.Fatalf("restore environments did not match for test:%s", tc.name)
+				t.Fatalf("restore environments did not match for test:%s\ngot:%+v\nwant:%+v\n", tc.name, *actualRenv, tc.expectedRenv)
 			}
 		}
 	}
