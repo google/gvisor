@@ -278,12 +278,6 @@ func PrepareVDSO(p platform.Platform) (*VDSO, error) {
 //
 // loadVDSO takes a reference on the VDSO and parameter page FrameRegions.
 func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) (usermem.Addr, error) {
-	if v == nil {
-		// Should be used only by tests.
-		ctx.Warningf("No VDSO provided, skipping VDSO mapping")
-		return 0, nil
-	}
-
 	if v.os != bin.os {
 		ctx.Warningf("Binary ELF OS %v and VDSO ELF OS %v differ", bin.os, v.os)
 		return 0, syserror.ENOEXEC
