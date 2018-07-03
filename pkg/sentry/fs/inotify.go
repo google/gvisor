@@ -16,6 +16,7 @@ package fs
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/ilist"
@@ -279,13 +280,13 @@ func (i *Inotify) AddWatch(target *Dirent, mask uint32) int32 {
 		// same inode. Obtain an extra reference if necessary.
 		existing.Pin(target)
 
+		newmask := mask
 		if mergeMask := mask&linux.IN_MASK_ADD != 0; mergeMask {
 			// "Add (OR) events to watch mask for this pathname if it already
 			// exists (instead of replacing mask)." -- inotify(7)
-			existing.mask |= mask
-		} else {
-			existing.mask = mask
+			newmask |= atomic.LoadUint32(&existing.mask)
 		}
+		atomic.StoreUint32(&existing.mask, newmask)
 		return existing.wd
 	}
 
