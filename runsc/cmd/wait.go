@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"os"
 	"syscall"
 
 	"context"
@@ -75,7 +77,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("error loading container: %v", err)
 	}
 
-	waitStatus := args[1].(*syscall.WaitStatus)
+	var waitStatus syscall.WaitStatus
 	switch {
 	// Wait on the whole container.
 	case wt.rootPID == unsetPID && wt.pid == unsetPID:
@@ -83,21 +85,43 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		if err != nil {
 			Fatalf("error waiting on container %q: %v", c.ID, err)
 		}
-		*waitStatus = ws
+		waitStatus = ws
 	// Wait on a PID in the root PID namespace.
 	case wt.rootPID != unsetPID:
 		ws, err := c.WaitRootPID(int32(wt.rootPID))
 		if err != nil {
 			Fatalf("error waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
 		}
-		*waitStatus = ws
+		waitStatus = ws
 	// Wait on a PID in the container's PID namespace.
 	case wt.pid != unsetPID:
 		ws, err := c.WaitPID(int32(wt.pid))
 		if err != nil {
 			Fatalf("error waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
 		}
-		*waitStatus = ws
+		waitStatus = ws
+	}
+	result := waitResult{
+		ID:         id,
+		ExitStatus: exitStatus(waitStatus),
+	}
+	// Write json-encoded wait result directly to stdout.
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		Fatalf("error marshaling wait result: %v", err)
 	}
 	return subcommands.ExitSuccess
+}
+
+type waitResult struct {
+	ID         string `json:"id"`
+	ExitStatus int    `json:"exitStatus"`
+}
+
+// exitStatus returns the correct exit status for a process based on if it
+// was signaled or exited cleanly.
+func exitStatus(status syscall.WaitStatus) int {
+	if status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	return status.ExitStatus()
 }
