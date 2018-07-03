@@ -156,7 +156,7 @@ func (d *docker) waitForOutput(pattern string, timeout time.Duration) error {
 			// Success!
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
 }
@@ -168,7 +168,7 @@ func (d *docker) waitForHTTP(port int, timeout time.Duration) error {
 			// Success!
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for HTTP server on port %d", port)
 }
@@ -238,8 +238,8 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.waitForOutput("'httpd -D FOREGROUND'", 5*time.Second); err != nil {
-		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
+	if err := d.waitForHTTP(port, 5*time.Second); err != nil {
+		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
 	}
 
 	if err := testHTTPServer(port); err != nil {
@@ -287,7 +287,7 @@ func TestMysql(t *testing.T) {
 	defer d.cleanUp()
 
 	// Wait until it's up and running.
-	if err := d.waitForOutput("port: 3306  MySQL Community Server", 30*time.Second); err != nil {
+	if err := d.waitForOutput("port: 3306  MySQL Community Server", 3*time.Minute); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 
@@ -311,10 +311,10 @@ func TestMysql(t *testing.T) {
 	defer client.cleanUp()
 
 	// Ensure file executed to the end and shutdown mysql.
-	if err := client.waitForOutput("--------------\nshutdown\n--------------", 5*time.Second); err != nil {
+	if err := client.waitForOutput("--------------\nshutdown\n--------------", 15*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
-	if err := d.waitForOutput("mysqld: Shutdown complete", 15*time.Second); err != nil {
+	if err := d.waitForOutput("mysqld: Shutdown complete", 30*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 }
