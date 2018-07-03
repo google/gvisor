@@ -998,6 +998,77 @@ func TestMountNewDir(t *testing.T) {
 	}
 }
 
+func TestReadonlyRoot(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/touch", "/foo")
+	spec.Root.Readonly = true
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	conf.Overlay = true
+
+	// Create, start and wait for the container.
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer s.Destroy()
+	if err := s.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	ws, err := s.Wait()
+	if err != nil {
+		t.Fatalf("error waiting on container: %v", err)
+	}
+	if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
+		t.Fatalf("container failed, waitStatus: %v", ws)
+	}
+}
+
+func TestReadonlyMount(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/touch", "/foo/file")
+	dir, err := ioutil.TempDir("", "ro-mount")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/foo",
+		Source:      dir,
+		Type:        "bind",
+		Options:     []string{"ro"},
+	})
+	spec.Root.Readonly = false
+
+	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	conf.Overlay = true
+
+	// Create, start and wait for the container.
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer s.Destroy()
+	if err := s.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+	ws, err := s.Wait()
+	if err != nil {
+		t.Fatalf("error waiting on container: %v", err)
+	}
+	if !ws.Exited() || syscall.Errno(ws.ExitStatus()) != syscall.EPERM {
+		t.Fatalf("container failed, waitStatus: %v", ws)
+	}
+}
+
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
