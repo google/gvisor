@@ -1342,7 +1342,15 @@ func (d *Dirent) InotifyEvent(events, cookie uint32) {
 
 	// The ordering below is important, Linux always notifies the parent first.
 	if d.parent != nil {
-		d.parent.Inode.Watches.Notify(d.name, events, cookie)
+		// name is immediately stale w.r.t. renames (renameMu doesn't
+		// protect against renames in the same directory). Holding
+		// d.parent.mu around Notify() wouldn't matter since Notify
+		// doesn't provide a synchronous mechanism for reading the name
+		// anyway.
+		d.parent.mu.Lock()
+		name := d.name
+		d.parent.mu.Unlock()
+		d.parent.Inode.Watches.Notify(name, events, cookie)
 	}
 	d.Inode.Watches.Notify("", events, cookie)
 
