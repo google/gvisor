@@ -83,7 +83,7 @@ func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec
 }
 
 // compileMounts returns the supported mounts from the mount spec, adding any
-// additional mounts that are required by the OCI specification.
+// mandatory mounts that are required by the OCI specification.
 func compileMounts(spec *specs.Spec) []specs.Mount {
 	// Keep track of whether proc, sys, and tmp were mounted.
 	var procMounted, sysMounted, tmpMounted bool
@@ -119,14 +119,15 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
 	// says we SHOULD.
+	var mandatoryMounts []specs.Mount
 	if !procMounted {
-		mounts = append(mounts, specs.Mount{
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
 			Type:        "proc",
 			Destination: "/proc",
 		})
 	}
 	if !sysMounted {
-		mounts = append(mounts, specs.Mount{
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
 			Type:        "sysfs",
 			Destination: "/sys",
 		})
@@ -136,11 +137,20 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 	// rely on the host /tmp, but this is a nice optimization, and fixes
 	// some apps that call mknod in /tmp.
 	if !tmpMounted {
-		mounts = append(mounts, specs.Mount{
+		// TODO: If the host /tmp (or a mount at /tmp) has
+		// files in it, we should overlay our tmpfs implementation over
+		// that. Until then, the /tmp mount will always appear empty at
+		// container creation.
+		mandatoryMounts = append(mandatoryMounts, specs.Mount{
 			Type:        "tmpfs",
 			Destination: "/tmp",
 		})
 	}
+
+	// The mandatory mounts should be ordered right after the root, in case
+	// there are submounts of these mandatory mounts already in the spec.
+	mounts = append(mounts[:0], append(mandatoryMounts, mounts[0:]...)...)
+
 	return mounts
 }
 
@@ -430,8 +440,8 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 	if err != nil {
 		return err
 	}
-	// TODO: Fix this when we support all the mount types and make this a
-	// fatal error.
+	// TODO: Fix this when we support all the mount types and
+	// make this a fatal error.
 	if fsName == "" {
 		return nil
 	}
