@@ -55,6 +55,11 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 //
 // name must be a readable, executable, regular file.
 func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals uint, name string) (*fs.Dirent, *fs.File, error) {
+	if name == "" {
+		ctx.Infof("cannot open empty name")
+		return nil, nil, syserror.ENOENT
+	}
+
 	d, err := mm.FindInode(ctx, root, wd, name, maxTraversals)
 	if err != nil {
 		return nil, nil, err

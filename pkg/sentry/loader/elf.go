@@ -405,6 +405,10 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 			}
 
 		case elf.PT_INTERP:
+			if phdr.Filesz < 2 {
+				ctx.Infof("PT_INTERP path too small: %v", phdr.Filesz)
+				return loadedELF{}, syserror.ENOEXEC
+			}
 			if phdr.Filesz > syscall.PathMax {
 				ctx.Infof("PT_INTERP path too big: %v", phdr.Filesz)
 				return loadedELF{}, syserror.ENOEXEC
@@ -423,8 +427,26 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 				return loadedELF{}, syserror.ENOEXEC
 			}
 
-			// Strip NUL-terminator from string.
-			interpreter = string(path[:len(path)-1])
+			// Strip NUL-terminator and everything beyond from
+			// string. Note that there may be a NUL-terminator
+			// before len(path)-1.
+			interpreter = string(path[:bytes.IndexByte(path, '\x00')])
+			if interpreter == "" {
+				// Linux actually attempts to open_exec("\0").
+				// open_exec -> do_open_execat fails to check
+				// that name != '\0' before calling
+				// do_filp_open, which thus opens the working
+				// directory.  do_open_execat returns EACCES
+				// because the directory is not a regular file.
+				//
+				// We bypass that nonsense and simply
+				// short-circuit with EACCES. Those this does
+				// mean that there may be some edge cases where
+				// the open path would return a different
+				// error.
+				ctx.Infof("PT_INTERP path is empty: %v", path)
+				return loadedELF{}, syserror.EACCES
+			}
 		}
 	}
 
