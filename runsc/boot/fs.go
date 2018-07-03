@@ -207,7 +207,7 @@ func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *f
 		return nil, fmt.Errorf("error adding submount overlay: %v", err)
 	}
 
-	if conf.Overlay {
+	if conf.Overlay && !spec.Root.Readonly {
 		log.Debugf("Adding overlay on top of root mount")
 		// Overlay a tmpfs filesystem on top of the root.
 		rootInode, err = addOverlay(ctx, conf, rootInode, "root-overlay-upper", mf)
