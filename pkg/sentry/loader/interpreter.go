@@ -82,6 +82,11 @@ func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, ar
 		}
 	}
 
+	if string(interp) == "" {
+		ctx.Infof("Interpreter script contains no interpreter: %v", line)
+		return "", []string{}, syserror.ENOEXEC
+	}
+
 	// Build the new argument list:
 	//
 	// 1. The interpreter.
