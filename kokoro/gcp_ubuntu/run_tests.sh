@@ -44,12 +44,15 @@ bazel test --test_output=errors //...
 exit_code=${?}
 
 if [[ ${exit_code} -eq 0 ]]; then
-  # image_test is tagged manual
-  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime} //runsc/test/image:image_test
-  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-kvm //runsc/test/image:image_test
-  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-nethost //runsc/test/image:image_test
-  bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}-overlay //runsc/test/image:image_test
-  exit_code=${?}
+  declare -a variations=("" "-kvm" "-hostnet" "-overlay")
+  for v in "${variations[@]}"; do
+    # image_test is tagged manual
+    bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}${v} //runsc/test/image:image_test
+    exit_code=${?}
+    if [[ ${exit_code} -ne 0 ]]; then
+      break
+    fi
+  done
 fi
 
 # Best effort to uninstall
