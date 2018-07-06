@@ -5,7 +5,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_test(
     name = "image_test",
     size = "large",
-    srcs = ["image_test.go"],
+    srcs = [
+        "image_test.go",
+        "python_test.go",
+    ],
     data = [
         "latin10k.txt",
         "mysql.sql",
