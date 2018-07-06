@@ -6,6 +6,8 @@ go_library(
     name = "rawfile",
     srcs = [
         "blockingpoll_amd64.s",
+        "blockingpoll_unsafe.go",
+        "blockingpoll_unsafe_amd64.go",
         "errors.go",
         "rawfile_unsafe.go",
     ],

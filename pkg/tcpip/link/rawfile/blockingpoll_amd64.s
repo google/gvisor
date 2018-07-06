@@ -8,7 +8,7 @@
 // entersyscall that relinquishes the P so that other Gs can run. This is meant
 // to be called in cases when the syscall is expected to block.
 //
-// func blockingPoll(fds unsafe.Pointer, nfds int, timeout int64) (n int, err syscall.Errno)
+// func blockingPoll(fds *pollEvent, nfds int, timeout int64) (n int, err syscall.Errno)
 TEXT ·blockingPoll(SB),NOSPLIT,$0-40
 	CALL	runtime·entersyscallblock(SB)
 	MOVQ	fds+0(FP), DI
