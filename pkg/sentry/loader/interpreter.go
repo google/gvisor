@@ -66,7 +66,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, ar
 	// Skip any whitespace before the interpeter.
 	line = bytes.TrimLeft(line, " \t")
 
-	// Linux only looks for a space or tab delimiting the interpreter and
+	// Linux only looks for spaces or tabs delimiting the interpreter and
 	// arg.
 	//
 	// execve(2): "On Linux, the entire string following the interpreter
@@ -77,9 +77,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, ar
 	i = bytes.IndexAny(line, " \t")
 	if i >= 0 {
 		interp = line[:i]
-		if i+1 < len(line) {
-			arg = line[i+1:]
-		}
+		arg = bytes.TrimLeft(line[i:], " \t")
 	}
 
 	if string(interp) == "" {
