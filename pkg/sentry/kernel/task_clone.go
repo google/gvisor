@@ -220,18 +220,15 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		pidns = pidns.NewChild(userns)
 	}
 	tg := t.tg
-	parent := t.parent
 	if opts.NewThreadGroup {
 		sh := t.tg.signalHandlers
 		if opts.NewSignalHandlers {
 			sh = sh.Fork()
 		}
 		tg = NewThreadGroup(pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
-		parent = t
 	}
 	cfg := &TaskConfig{
 		Kernel:            t.k,
-		Parent:            parent,
 		ThreadGroup:       tg,
 		TaskContext:       tc,
 		TaskResources:     t.tr.Fork(!opts.NewFiles, !opts.NewFSContext),
@@ -241,6 +238,11 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		AllowedCPUMask:    t.CPUMask(),
 		UTSNamespace:      utsns,
 		IPCNamespace:      ipcns,
+	}
+	if opts.NewThreadGroup {
+		cfg.Parent = t
+	} else {
+		cfg.InheritParent = t
 	}
 	if opts.NewNetworkNamespace {
 		cfg.NetworkNamespaced = true

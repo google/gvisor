@@ -31,6 +31,10 @@ type TaskConfig struct {
 	// Parent is the new task's parent. Parent may be nil.
 	Parent *Task
 
+	// If InheritParent is not nil, use InheritParent's parent as the new
+	// task's parent.
+	InheritParent *Task
+
 	// ThreadGroup is the ThreadGroup the new task belongs to.
 	*ThreadGroup
 
@@ -133,6 +137,9 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 	// IDs).
 	t.updateLogPrefixLocked()
 
+	if cfg.InheritParent != nil {
+		t.parent = cfg.InheritParent.parent
+	}
 	if t.parent != nil {
 		t.parent.children[t] = struct{}{}
 	}
