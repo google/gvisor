@@ -949,9 +949,10 @@ func (e *endpoint) protocolMainLoop(passive bool) *tcpip.Error {
 				}
 
 				if n&notifyReset != 0 {
+					e.mu.Lock()
 					e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+					e.mu.Unlock()
 				}
-
 				if n&notifyClose != 0 && closeTimer == nil {
 					// Reset the connection 3 seconds after the
 					// endpoint has been closed.

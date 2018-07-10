@@ -93,6 +93,8 @@ type endpoint struct {
 	//
 	// Once the peer has closed its send side, rcvClosed is set to true
 	// to indicate to users that no more data is coming.
+	//
+	// rcvListMu can be taken after the endpoint mu below.
 	rcvListMu  sync.Mutex `state:"nosave"`
 	rcvList    segmentList
 	rcvClosed  bool
@@ -394,7 +396,10 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become stateError so we should allow the
 	// reads to proceed before returning a ECONNRESET.
-	if s := e.state; s != stateConnected && s != stateClosed && e.rcvBufUsed == 0 {
+	e.rcvListMu.Lock()
+	bufUsed := e.rcvBufUsed
+	if s := e.state; s != stateConnected && s != stateClosed && bufUsed == 0 {
+		e.rcvListMu.Unlock()
 		e.mu.RUnlock()
 		if s == stateError {
 			return buffer.View{}, tcpip.ControlMessages{}, e.hardError
@@ -402,7 +407,6 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
 
-	e.rcvListMu.Lock()
 	v, err := e.readLocked()
 	e.rcvListMu.Unlock()
 
