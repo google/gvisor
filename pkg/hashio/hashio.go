@@ -37,11 +37,12 @@ passed hash verification. Hence the client code can safely do any kind of
 package hashio
 
 import (
-	"crypto/hmac"
 	"errors"
 	"hash"
 	"io"
 	"sync"
+
+	"crypto/hmac"
 )
 
 // SegmentSize is the unit we split payload data and insert hash at.
