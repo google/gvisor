@@ -201,6 +201,7 @@ type LinkEndpointCapabilities uint
 const (
 	CapabilityChecksumOffload LinkEndpointCapabilities = 1 << iota
 	CapabilityResolutionRequired
+	CapabilitySaveRestore
 )
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
