@@ -76,8 +76,11 @@ func TestWaitForReadyNotRunning(t *testing.T) {
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
 		return false, nil
 	})
-	if !strings.Contains(err.Error(), "not running") {
-		t.Errorf("ProcessWaitReady got: %v, expected: not running", err)
+	if err != nil && !strings.Contains(err.Error(), "terminated") {
+		t.Errorf("ProcessWaitReady got: %v, expected: process terminated", err)
+	}
+	if err == nil {
+		t.Errorf("ProcessWaitReady incorrectly succeeded")
 	}
 }
 

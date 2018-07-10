@@ -324,9 +324,14 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 		// Check if the process is still running.
 		var ws syscall.WaitStatus
 		var ru syscall.Rusage
+
+		// If the process is alive, child is 0 because of the NOHANG option.
+		// If the process has terminated, child equals the process id.
 		child, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, &ru)
-		if err != nil || child == pid {
-			return fmt.Errorf("process (%d) is not running, err: %v", pid, err)
+		if err != nil {
+			return fmt.Errorf("error waiting for process: %v", err)
+		} else if child == pid {
+			return fmt.Errorf("process %d has terminated", pid)
 		}
 
 		// Process continues to run, backoff and retry.
