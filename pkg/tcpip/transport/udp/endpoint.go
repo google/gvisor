@@ -121,7 +121,6 @@ func NewConnectedEndpoint(stack *stack.Stack, r *stack.Route, id stack.Transport
 // associated with it.
 func (e *endpoint) Close() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	switch e.state {
 	case stateBound, stateConnected:
@@ -142,6 +141,10 @@ func (e *endpoint) Close() {
 
 	// Update the state.
 	e.state = stateClosed
+
+	e.mu.Unlock()
+
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 }
 
 // Read reads data from the endpoint. This method does not block if
