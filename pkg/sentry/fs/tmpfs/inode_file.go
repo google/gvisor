@@ -451,9 +451,12 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 	// Constrain translations to f.attr.Unstable.Size (rounded up) to prevent
 	// translation to pages that may be concurrently truncated.
 	pgend := fs.OffsetPageEnd(f.attr.Unstable.Size)
-	var buserr error
+	var beyondEOF bool
 	if required.End > pgend {
-		buserr = &memmap.BusError{io.EOF}
+		if required.Start >= pgend {
+			return nil, &memmap.BusError{io.EOF}
+		}
+		beyondEOF = true
 		required.End = pgend
 	}
 	if optional.End > pgend {
@@ -481,9 +484,12 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 	// Don't return the error returned by f.data.Fill if it occurred outside of
 	// required.
 	if translatedEnd < required.End && cerr != nil {
-		return ts, cerr
+		return ts, &memmap.BusError{cerr}
 	}
-	return ts, buserr
+	if beyondEOF {
+		return ts, &memmap.BusError{io.EOF}
+	}
+	return ts, nil
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
