@@ -12,8 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package stack
+package kernel
 
-// StackFromEnv is the global stack created in restore run.
-// FIXME
-var StackFromEnv *Stack
+import (
+	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+)
+
+// saveDanglingEndpoints is invoked by stateify.
+func (k *Kernel) saveDanglingEndpoints() []tcpip.Endpoint {
+	return tcpip.GetDanglingEndpoints()
+}
+
+// loadDanglingEndpoints is invoked by stateify.
+func (k *Kernel) loadDanglingEndpoints(es []tcpip.Endpoint) {
+	for _, e := range es {
+		tcpip.AddDanglingEndpoint(e)
+	}
+}
