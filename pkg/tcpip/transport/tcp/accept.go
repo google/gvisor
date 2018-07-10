@@ -78,7 +78,8 @@ func encodeMSS(mss uint16) uint32 {
 // to go above a threshold.
 var synRcvdCount struct {
 	sync.Mutex
-	value uint64
+	value   uint64
+	pending sync.WaitGroup
 }
 
 // listenContext is used by a listening endpoint to store state used while
@@ -112,6 +113,7 @@ func incSynRcvdCount() bool {
 		return false
 	}
 
+	synRcvdCount.pending.Add(1)
 	synRcvdCount.value++
 
 	return true
@@ -125,6 +127,7 @@ func decSynRcvdCount() {
 	defer synRcvdCount.Unlock()
 
 	synRcvdCount.value--
+	synRcvdCount.pending.Done()
 }
 
 // newListenContext creates a new listen context.
@@ -302,7 +305,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		opts := parseSynSegmentOptions(s)
 		if incSynRcvdCount() {
 			s.incRef()
-			go e.handleSynSegment(ctx, s, &opts) // S/R-FIXME
+			go e.handleSynSegment(ctx, s, &opts) // S/R-SAFE: synRcvdCount is the barrier.
 		} else {
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 			// Send SYN with window scaling because we currently
@@ -391,10 +394,12 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 				return nil
 			}
 			if n&notifyDrain != 0 {
-				for s := e.segmentQueue.dequeue(); s != nil; s = e.segmentQueue.dequeue() {
+				for !e.segmentQueue.empty() {
+					s := e.segmentQueue.dequeue()
 					e.handleListenSegment(ctx, s)
 					s.decRef()
 				}
+				synRcvdCount.pending.Wait()
 				close(e.drainDone)
 				<-e.undrain
 			}
