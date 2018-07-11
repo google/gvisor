@@ -55,14 +55,10 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(*tcpip.Error)
 
-	vv         *buffer.VectorisedView
-	iovecs     []syscall.Iovec
-	views      []buffer.View
-	dispatcher stack.NetworkDispatcher
-
-	// egressLocal indicates whether packets destined to itself should be
-	// forwarded to the FD endpoint (true) or be sent back to netstack (false).
-	egressLocal bool
+	vv       *buffer.VectorisedView
+	iovecs   []syscall.Iovec
+	views    []buffer.View
+	attached bool
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -73,7 +69,6 @@ type Options struct {
 	ChecksumOffload bool
 	ClosedFunc      func(*tcpip.Error)
 	Address         tcpip.LinkAddress
-	EgressLocal     bool
 }
 
 // New creates a new fd-based endpoint.
@@ -95,15 +90,14 @@ func New(opts *Options) tcpip.LinkEndpointID {
 	}
 
 	e := &endpoint{
-		fd:          opts.FD,
-		mtu:         opts.MTU,
-		caps:        caps,
-		closed:      opts.ClosedFunc,
-		addr:        opts.Address,
-		hdrSize:     hdrSize,
-		views:       make([]buffer.View, len(BufConfig)),
-		iovecs:      make([]syscall.Iovec, len(BufConfig)),
-		egressLocal: opts.EgressLocal,
+		fd:      opts.FD,
+		mtu:     opts.MTU,
+		caps:    caps,
+		closed:  opts.ClosedFunc,
+		addr:    opts.Address,
+		hdrSize: hdrSize,
+		views:   make([]buffer.View, len(BufConfig)),
+		iovecs:  make([]syscall.Iovec, len(BufConfig)),
 	}
 	vv := buffer.NewVectorisedView(0, e.views)
 	e.vv = &vv
@@ -113,13 +107,13 @@ func New(opts *Options) tcpip.LinkEndpointID {
 // Attach launches the goroutine that reads packets from the file descriptor and
 // dispatches them via the provided dispatcher.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
-	e.dispatcher = dispatcher
-	go e.dispatchLoop() // S/R-FIXME
+	e.attached = true
+	go e.dispatchLoop(dispatcher) // S/R-FIXME
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (e *endpoint) IsAttached() bool {
-	return e.dispatcher != nil
+	return e.attached
 }
 
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
@@ -146,12 +140,6 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	if !e.egressLocal && r.LocalAddress != "" && r.LocalAddress == r.RemoteAddress {
-		hdrView := hdr.View()
-		vv := buffer.NewVectorisedView(len(hdrView)+len(payload), []buffer.View{hdrView, payload})
-		e.dispatcher.DeliverNetworkPacket(e, r.RemoteLinkAddress, protocol, &vv)
-		return nil
-	}
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
@@ -164,6 +152,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 
 	if len(payload) == 0 {
 		return rawfile.NonBlockingWrite(e.fd, hdr.UsedBytes())
+
 	}
 
 	return rawfile.NonBlockingWrite2(e.fd, hdr.UsedBytes(), payload)
@@ -196,7 +185,7 @@ func (e *endpoint) allocateViews(bufConfig []int) {
 }
 
 // dispatch reads one packet from the file descriptor and dispatches it.
-func (e *endpoint) dispatch(largeV buffer.View) (bool, *tcpip.Error) {
+func (e *endpoint) dispatch(d stack.NetworkDispatcher, largeV buffer.View) (bool, *tcpip.Error) {
 	e.allocateViews(BufConfig)
 
 	n, err := rawfile.BlockingReadv(e.fd, e.iovecs)
@@ -232,7 +221,7 @@ func (e *endpoint) dispatch(largeV buffer.View) (bool, *tcpip.Error) {
 	e.vv.SetSize(n)
 	e.vv.TrimFront(e.hdrSize)
 
-	e.dispatcher.DeliverNetworkPacket(e, addr, p, e.vv)
+	d.DeliverNetworkPacket(e, addr, p, e.vv)
 
 	// Prepare e.views for another packet: release used views.
 	for i := 0; i < used; i++ {
@@ -244,10 +233,10 @@ func (e *endpoint) dispatch(largeV buffer.View) (bool, *tcpip.Error) {
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
 // them to the network stack.
-func (e *endpoint) dispatchLoop() *tcpip.Error {
+func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) *tcpip.Error {
 	v := buffer.NewView(header.MaxIPPacketSize)
 	for {
-		cont, err := e.dispatch(v)
+		cont, err := e.dispatch(d, v)
 		if err != nil || !cont {
 			if e.closed != nil {
 				e.closed(err)
