@@ -657,7 +657,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			remoteAddr = ref.ep.ID().LocalAddress
 		}
 
-		r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref)
+		r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, ref)
 		r.NextHop = s.routeTable[i].Gateway
 		return r, nil
 	}
