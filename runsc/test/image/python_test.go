@@ -19,23 +19,25 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
 func TestPythonHello(t *testing.T) {
-	d := makeDocker("python-hello-test")
-	if out, err := d.run("-p", "8080", "google/python-hello"); err != nil {
+	d := testutil.MakeDocker("python-hello-test")
+	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
 		t.Fatalf("docker run failed: %v\nout: %s", err, out)
 	}
-	defer d.cleanUp()
+	defer d.CleanUp()
 
 	// Find where port 8080 is mapped to.
-	port, err := d.findPort(8080)
+	port, err := d.FindPort(8080)
 	if err != nil {
-		t.Fatalf("docker.findPort(8080) failed: %v", err)
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := d.waitForHTTP(port, 5*time.Second); err != nil {
+	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
 		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
 	}
 
