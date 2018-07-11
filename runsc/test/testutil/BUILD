@@ -4,7 +4,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "testutil",
-    srcs = ["testutil.go"],
+    srcs = [
+        "docker.go",
+        "testutil.go",
+    ],
     importpath = "gvisor.googlesource.com/gvisor/runsc/test/testutil",
     visibility = [
         "//runsc:__subpackages__",
