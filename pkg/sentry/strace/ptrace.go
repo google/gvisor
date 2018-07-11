@@ -15,164 +15,162 @@
 package strace
 
 import (
-	"syscall"
-
 	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 )
 
 // PtraceRequestSet are the possible ptrace(2) requests.
 var PtraceRequestSet = abi.ValueSet{
 	{
-		Value: syscall.PTRACE_TRACEME,
+		Value: linux.PTRACE_TRACEME,
 		Name:  "PTRACE_TRACEME",
 	},
 	{
-		Value: syscall.PTRACE_PEEKTEXT,
+		Value: linux.PTRACE_PEEKTEXT,
 		Name:  "PTRACE_PEEKTEXT",
 	},
 	{
-		Value: syscall.PTRACE_PEEKDATA,
+		Value: linux.PTRACE_PEEKDATA,
 		Name:  "PTRACE_PEEKDATA",
 	},
 	{
-		Value: syscall.PTRACE_PEEKUSR,
+		Value: linux.PTRACE_PEEKUSR,
 		Name:  "PTRACE_PEEKUSR",
 	},
 	{
-		Value: syscall.PTRACE_POKETEXT,
+		Value: linux.PTRACE_POKETEXT,
 		Name:  "PTRACE_POKETEXT",
 	},
 	{
-		Value: syscall.PTRACE_POKEDATA,
+		Value: linux.PTRACE_POKEDATA,
 		Name:  "PTRACE_POKEDATA",
 	},
 	{
-		Value: syscall.PTRACE_POKEUSR,
+		Value: linux.PTRACE_POKEUSR,
 		Name:  "PTRACE_POKEUSR",
 	},
 	{
-		Value: syscall.PTRACE_CONT,
+		Value: linux.PTRACE_CONT,
 		Name:  "PTRACE_CONT",
 	},
 	{
-		Value: syscall.PTRACE_KILL,
+		Value: linux.PTRACE_KILL,
 		Name:  "PTRACE_KILL",
 	},
 	{
-		Value: syscall.PTRACE_SINGLESTEP,
+		Value: linux.PTRACE_SINGLESTEP,
 		Name:  "PTRACE_SINGLESTEP",
 	},
 	{
-		Value: syscall.PTRACE_ATTACH,
+		Value: linux.PTRACE_ATTACH,
 		Name:  "PTRACE_ATTACH",
 	},
 	{
-		Value: syscall.PTRACE_DETACH,
+		Value: linux.PTRACE_DETACH,
 		Name:  "PTRACE_DETACH",
 	},
 	{
-		Value: syscall.PTRACE_SYSCALL,
+		Value: linux.PTRACE_SYSCALL,
 		Name:  "PTRACE_SYSCALL",
 	},
 	{
-		Value: syscall.PTRACE_SETOPTIONS,
+		Value: linux.PTRACE_SETOPTIONS,
 		Name:  "PTRACE_SETOPTIONS",
 	},
 	{
-		Value: syscall.PTRACE_GETEVENTMSG,
+		Value: linux.PTRACE_GETEVENTMSG,
 		Name:  "PTRACE_GETEVENTMSG",
 	},
 	{
-		Value: syscall.PTRACE_GETSIGINFO,
+		Value: linux.PTRACE_GETSIGINFO,
 		Name:  "PTRACE_GETSIGINFO",
 	},
 	{
-		Value: syscall.PTRACE_SETSIGINFO,
+		Value: linux.PTRACE_SETSIGINFO,
 		Name:  "PTRACE_SETSIGINFO",
 	},
 	{
-		Value: syscall.PTRACE_GETREGSET,
+		Value: linux.PTRACE_GETREGSET,
 		Name:  "PTRACE_GETREGSET",
 	},
 	{
-		Value: syscall.PTRACE_SETREGSET,
+		Value: linux.PTRACE_SETREGSET,
 		Name:  "PTRACE_SETREGSET",
 	},
 	{
-		Value: kernel.PTRACE_SEIZE,
+		Value: linux.PTRACE_SEIZE,
 		Name:  "PTRACE_SEIZE",
 	},
 	{
-		Value: kernel.PTRACE_INTERRUPT,
+		Value: linux.PTRACE_INTERRUPT,
 		Name:  "PTRACE_INTERRUPT",
 	},
 	{
-		Value: kernel.PTRACE_LISTEN,
+		Value: linux.PTRACE_LISTEN,
 		Name:  "PTRACE_LISTEN",
 	},
 	{
-		Value: kernel.PTRACE_PEEKSIGINFO,
+		Value: linux.PTRACE_PEEKSIGINFO,
 		Name:  "PTRACE_PEEKSIGINFO",
 	},
 	{
-		Value: kernel.PTRACE_GETSIGMASK,
+		Value: linux.PTRACE_GETSIGMASK,
 		Name:  "PTRACE_GETSIGMASK",
 	},
 	{
-		Value: kernel.PTRACE_SETSIGMASK,
+		Value: linux.PTRACE_SETSIGMASK,
 		Name:  "PTRACE_SETSIGMASK",
 	},
 	{
-		Value: syscall.PTRACE_GETREGS,
+		Value: linux.PTRACE_GETREGS,
 		Name:  "PTRACE_GETREGS",
 	},
 	{
-		Value: syscall.PTRACE_SETREGS,
+		Value: linux.PTRACE_SETREGS,
 		Name:  "PTRACE_SETREGS",
 	},
 	{
-		Value: syscall.PTRACE_GETFPREGS,
+		Value: linux.PTRACE_GETFPREGS,
 		Name:  "PTRACE_GETFPREGS",
 	},
 	{
-		Value: syscall.PTRACE_SETFPREGS,
+		Value: linux.PTRACE_SETFPREGS,
 		Name:  "PTRACE_SETFPREGS",
 	},
 	{
-		Value: syscall.PTRACE_GETFPXREGS,
+		Value: linux.PTRACE_GETFPXREGS,
 		Name:  "PTRACE_GETFPXREGS",
 	},
 	{
-		Value: syscall.PTRACE_SETFPXREGS,
+		Value: linux.PTRACE_SETFPXREGS,
 		Name:  "PTRACE_SETFPXREGS",
 	},
 	{
-		Value: syscall.PTRACE_OLDSETOPTIONS,
+		Value: linux.PTRACE_OLDSETOPTIONS,
 		Name:  "PTRACE_OLDSETOPTIONS",
 	},
 	{
-		Value: syscall.PTRACE_GET_THREAD_AREA,
+		Value: linux.PTRACE_GET_THREAD_AREA,
 		Name:  "PTRACE_GET_THREAD_AREA",
 	},
 	{
-		Value: syscall.PTRACE_SET_THREAD_AREA,
+		Value: linux.PTRACE_SET_THREAD_AREA,
 		Name:  "PTRACE_SET_THREAD_AREA",
 	},
 	{
-		Value: syscall.PTRACE_ARCH_PRCTL,
+		Value: linux.PTRACE_ARCH_PRCTL,
 		Name:  "PTRACE_ARCH_PRCTL",
 	},
 	{
-		Value: syscall.PTRACE_SYSEMU,
+		Value: linux.PTRACE_SYSEMU,
 		Name:  "PTRACE_SYSEMU",
 	},
 	{
-		Value: syscall.PTRACE_SYSEMU_SINGLESTEP,
+		Value: linux.PTRACE_SYSEMU_SINGLESTEP,
 		Name:  "PTRACE_SYSEMU_SINGLESTEP",
 	},
 	{
-		Value: syscall.PTRACE_SINGLEBLOCK,
+		Value: linux.PTRACE_SINGLEBLOCK,
 		Name:  "PTRACE_SINGLEBLOCK",
 	},
 }
