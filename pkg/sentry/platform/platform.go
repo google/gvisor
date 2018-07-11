@@ -305,8 +305,8 @@ type File interface {
 	MapInto(as AddressSpace, addr usermem.Addr, fr FileRange, at usermem.AccessType, precommit bool) error
 
 	// MapInternal returns a mapping of the given file offsets in the invoking
-	// process' address space for reading and writing. The lifetime of the
-	// returned mapping is implementation-defined.
+	// process' address space for reading and writing. The returned mapping is
+	// valid as long as a reference is held on the mapped range.
 	//
 	// Note that fr.Start and fr.End need not be page-aligned.
 	//
