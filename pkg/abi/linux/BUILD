@@ -48,6 +48,7 @@ go_library(
         "netlink_route.go",
         "poll.go",
         "prctl.go",
+        "ptrace.go",
         "rusage.go",
         "sched.go",
         "seccomp.go",
