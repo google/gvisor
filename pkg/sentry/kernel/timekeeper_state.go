@@ -37,5 +37,5 @@ func (t *Timekeeper) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (t *Timekeeper) afterLoad() {
-	t.restored = true
+	t.restored = make(chan struct{})
 }
