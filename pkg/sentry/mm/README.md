@@ -38,50 +38,50 @@ forces the kernel to create such a mapping to service the read.
 
 For a file, doing so consists of several logical phases:
 
-1. The kernel allocates physical memory to store the contents of the required
-   part of the file, and copies file contents to the allocated memory. Supposing
-   that the kernel chooses the physical memory at physical address (PA)
-   0x2fb000, the resulting state of the system is:
+1.  The kernel allocates physical memory to store the contents of the required
+    part of the file, and copies file contents to the allocated memory.
+    Supposing that the kernel chooses the physical memory at physical address
+    (PA) 0x2fb000, the resulting state of the system is:
 
         VMA:     VA:0x400000 -> /tmp/foo:0x0
         Filemap:                /tmp/foo:0x0 -> PA:0x2fb000
 
-   (In Linux the state of the mapping from file offset to physical memory is
-   stored in `struct address_space`, but to avoid confusion with other notions
-   of address space we will refer to this system as filemap, named after Linux
-   kernel source file `mm/filemap.c`.)
+    (In Linux the state of the mapping from file offset to physical memory is
+    stored in `struct address_space`, but to avoid confusion with other notions
+    of address space we will refer to this system as filemap, named after Linux
+    kernel source file `mm/filemap.c`.)
 
-2. The kernel stores the effective mapping from virtual to physical address in a
-   *page table entry* (PTE) in the application's *page tables*, which are used
-   by the CPU's virtual memory hardware to perform address translation. The
-   resulting state of the system is:
+2.  The kernel stores the effective mapping from virtual to physical address in
+    a *page table entry* (PTE) in the application's *page tables*, which are
+    used by the CPU's virtual memory hardware to perform address translation.
+    The resulting state of the system is:
 
         VMA:     VA:0x400000 -> /tmp/foo:0x0
         Filemap:                /tmp/foo:0x0 -> PA:0x2fb000
         PTE:     VA:0x400000 -----------------> PA:0x2fb000
 
-   The PTE is required for the application to actually use the contents of the
-   mapped file as virtual memory. However, the PTE is derived from the VMA and
-   filemap state, both of which are independently mutable, such that mutations
-   to either will affect the PTE. For example:
+    The PTE is required for the application to actually use the contents of the
+    mapped file as virtual memory. However, the PTE is derived from the VMA and
+    filemap state, both of which are independently mutable, such that mutations
+    to either will affect the PTE. For example:
 
-   - The application may remove the VMA using the `munmap` system call. This
-     breaks the mapping from VA:0x400000 to /tmp/foo:0x0, and consequently the
-     mapping from VA:0x400000 to PA:0x2fb000. However, it does not necessarily
-     break the mapping from /tmp/foo:0x0 to PA:0x2fb000, so a future mapping of
-     the same file offset may reuse this physical memory.
+    -   The application may remove the VMA using the `munmap` system call. This
+        breaks the mapping from VA:0x400000 to /tmp/foo:0x0, and consequently
+        the mapping from VA:0x400000 to PA:0x2fb000. However, it does not
+        necessarily break the mapping from /tmp/foo:0x0 to PA:0x2fb000, so a
+        future mapping of the same file offset may reuse this physical memory.
 
-   - The application may invalidate the file's contents by passing a length of 0
-     to the `ftruncate` system call. This breaks the mapping from /tmp/foo:0x0
-     to PA:0x2fb000, and consequently the mapping from VA:0x400000 to
-     PA:0x2fb000. However, it does not break the mapping from VA:0x400000 to
-     /tmp/foo:0x0, so future changes to the file's contents may again be made
-     visible at VA:0x400000 after another page fault results in the allocation
-     of a new physical address.
+    -   The application may invalidate the file's contents by passing a length
+        of 0 to the `ftruncate` system call. This breaks the mapping from
+        /tmp/foo:0x0 to PA:0x2fb000, and consequently the mapping from
+        VA:0x400000 to PA:0x2fb000. However, it does not break the mapping from
+        VA:0x400000 to /tmp/foo:0x0, so future changes to the file's contents
+        may again be made visible at VA:0x400000 after another page fault
+        results in the allocation of a new physical address.
 
-   Note that, in order to correctly break the mapping from VA:0x400000 to
-   PA:0x2fb000 in the latter case, filemap must also store a *reverse mapping*
-   from /tmp/foo:0x0 to VA:0x400000 so that it can locate and remove the PTE.
+    Note that, in order to correctly break the mapping from VA:0x400000 to
+    PA:0x2fb000 in the latter case, filemap must also store a *reverse mapping*
+    from /tmp/foo:0x0 to VA:0x400000 so that it can locate and remove the PTE.
 
 [^mmap-anon]: Memory mappings to non-files are discussed in later sections.
 
@@ -146,30 +146,30 @@ When the application first incurs a page fault on this address, the host kernel
 delivers information about the page fault to the sentry in a platform-dependent
 manner, and the sentry handles the fault:
 
-1. The sentry allocates memory to store the contents of the required part of the
-   file, and copies file contents to the allocated memory. However, since the
-   sentry is implemented atop a host kernel, it does not configure mappings to
-   physical memory directly. Instead, mappable "memory" in the sentry is
-   represented by a host file descriptor and offset, since (as noted in
-   "Background") this is the memory mapping primitive provided by the host
-   kernel. In general, memory is allocated from a temporary host file using the
-   `filemem` package. Supposing that the sentry allocates offset 0x3000 from
-   host file "memory-file", the resulting state is:
+1.  The sentry allocates memory to store the contents of the required part of
+    the file, and copies file contents to the allocated memory. However, since
+    the sentry is implemented atop a host kernel, it does not configure mappings
+    to physical memory directly. Instead, mappable "memory" in the sentry is
+    represented by a host file descriptor and offset, since (as noted in
+    "Background") this is the memory mapping primitive provided by the host
+    kernel. In general, memory is allocated from a temporary host file using the
+    `filemem` package. Supposing that the sentry allocates offset 0x3000 from
+    host file "memory-file", the resulting state is:
 
         Sentry VMA:     VA:0x400000 -> /tmp/foo:0x0
         Sentry filemap:                /tmp/foo:0x0 -> host:memory-file:0x3000
 
-2. The sentry stores the effective mapping from virtual address to host file in
-   a host VMA by invoking the `mmap` system call:
+2.  The sentry stores the effective mapping from virtual address to host file in
+    a host VMA by invoking the `mmap` system call:
 
         Sentry VMA:     VA:0x400000 -> /tmp/foo:0x0
         Sentry filemap:                /tmp/foo:0x0 -> host:memory-file:0x3000
           Host VMA:     VA:0x400000 -----------------> host:memory-file:0x3000
 
-3. The sentry returns control to the application, which immediately incurs the
-   page fault again.[^mmap-populate] However, since a host VMA now exists for
-   the faulting virtual address, the host kernel now handles the page fault as
-   described in "Background":
+3.  The sentry returns control to the application, which immediately incurs the
+    page fault again.[^mmap-populate] However, since a host VMA now exists for
+    the faulting virtual address, the host kernel now handles the page fault as
+    described in "Background":
 
         Sentry VMA:     VA:0x400000 -> /tmp/foo:0x0
         Sentry filemap:                /tmp/foo:0x0 -> host:memory-file:0x3000
@@ -183,12 +183,12 @@ independently mutable, and the desired state of host VMAs is derived from that
 state.
 
 [^mmap-populate]: The sentry could force the host kernel to establish PTEs when
-                  it creates the host VMA by passing the `MAP_POPULATE` flag to
-                  the `mmap` system call, but usually does not. This is because,
-                  to reduce the number of page faults that require handling by
-                  the sentry and (correspondingly) the number of host `mmap`
-                  system calls, the sentry usually creates host VMAs that are
-                  much larger than the single faulting page.
+    it creates the host VMA by passing the `MAP_POPULATE` flag to
+    the `mmap` system call, but usually does not. This is because,
+    to reduce the number of page faults that require handling by
+    the sentry and (correspondingly) the number of host `mmap`
+    system calls, the sentry usually creates host VMAs that are
+    much larger than the single faulting page.
 
 ## Private Mappings
 
@@ -233,45 +233,46 @@ there is no shared zero page.
 
 In Linux:
 
-- A virtual address space is represented by `struct mm_struct`.
+-   A virtual address space is represented by `struct mm_struct`.
 
-- VMAs are represented by `struct vm_area_struct`, stored in `struct
-  mm_struct::mmap`.
+-   VMAs are represented by `struct vm_area_struct`, stored in `struct
+    mm_struct::mmap`.
 
-- Mappings from file offsets to physical memory are stored in `struct
-  address_space`.
+-   Mappings from file offsets to physical memory are stored in `struct
+    address_space`.
 
-- Reverse mappings from file offsets to virtual mappings are stored in `struct
-  address_space::i_mmap`.
+-   Reverse mappings from file offsets to virtual mappings are stored in `struct
+    address_space::i_mmap`.
 
-- Physical memory pages are represented by a pointer to `struct page` or an
-  index called a *page frame number* (PFN), represented by `pfn_t`.
+-   Physical memory pages are represented by a pointer to `struct page` or an
+    index called a *page frame number* (PFN), represented by `pfn_t`.
 
-- PTEs are represented by architecture-dependent type `pte_t`, stored in a table
-  hierarchy rooted at `struct mm_struct::pgd`.
+-   PTEs are represented by architecture-dependent type `pte_t`, stored in a
+    table hierarchy rooted at `struct mm_struct::pgd`.
 
 In the sentry:
 
-- A virtual address space is represented by type [`mm.MemoryManager`][mm].
+-   A virtual address space is represented by type [`mm.MemoryManager`][mm].
 
-- Sentry VMAs are represented by type [`mm.vma`][mm], stored in
-  `mm.MemoryManager.vmas`.
+-   Sentry VMAs are represented by type [`mm.vma`][mm], stored in
+    `mm.MemoryManager.vmas`.
 
-- Mappings from sentry file offsets to host file offsets are abstracted through
-  interface method [`memmap.Mappable.Translate`][memmap].
+-   Mappings from sentry file offsets to host file offsets are abstracted
+    through interface method [`memmap.Mappable.Translate`][memmap].
 
-- Reverse mappings from sentry file offsets to virtual mappings are abstracted
-  through interface methods [`memmap.Mappable.AddMapping` and
-  `memmap.Mappable.RemoveMapping`][memmap].
+-   Reverse mappings from sentry file offsets to virtual mappings are abstracted
+    through interface methods
+    [`memmap.Mappable.AddMapping` and `memmap.Mappable.RemoveMapping`][memmap].
 
-- Host files that may be mapped into host VMAs are represented by type
-  [`platform.File`][platform].
+-   Host files that may be mapped into host VMAs are represented by type
+    [`platform.File`][platform].
 
-- Host VMAs are represented in the sentry by type [`mm.pma`][mm] ("platform
-  mapping area"), stored in `mm.MemoryManager.pmas`.
+-   Host VMAs are represented in the sentry by type [`mm.pma`][mm] ("platform
+    mapping area"), stored in `mm.MemoryManager.pmas`.
 
-- Creation and destruction of host VMAs is abstracted through interface methods
-  [`platform.AddressSpace.MapFile` and `platform.AddressSpace.Unmap`][platform].
+-   Creation and destruction of host VMAs is abstracted through interface
+    methods
+    [`platform.AddressSpace.MapFile` and `platform.AddressSpace.Unmap`][platform].
 
 [filemem]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/platform/filemem/filemem.go
 [memmap]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/memmap/memmap.go

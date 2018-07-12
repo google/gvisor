@@ -1,12 +1,12 @@
 This package contains:
 
-- A (partial) emulation of the "core Linux kernel", which governs task
-  execution and scheduling, system call dispatch, and signal handling. See
-  below for details.
+-   A (partial) emulation of the "core Linux kernel", which governs task
+    execution and scheduling, system call dispatch, and signal handling. See
+    below for details.
 
-- The top-level interface for the sentry's Linux kernel emulation in general,
-  used by the `main` function of all versions of the sentry. This interface
-  revolves around the `Env` type (defined in `kernel.go`).
+-   The top-level interface for the sentry's Linux kernel emulation in general,
+    used by the `main` function of all versions of the sentry. This interface
+    revolves around the `Env` type (defined in `kernel.go`).
 
 # Background
 
@@ -20,15 +20,15 @@ sentry's notion of a task unless otherwise specified.)
 At a high level, Linux application threads can be thought of as repeating a "run
 loop":
 
-- Some amount of application code is executed in userspace.
+-   Some amount of application code is executed in userspace.
 
-- A trap (explicit syscall invocation, hardware interrupt or exception, etc.)
-  causes control flow to switch to the kernel.
+-   A trap (explicit syscall invocation, hardware interrupt or exception, etc.)
+    causes control flow to switch to the kernel.
 
-- Some amount of kernel code is executed in kernelspace, e.g. to handle the
-  cause of the trap.
+-   Some amount of kernel code is executed in kernelspace, e.g. to handle the
+    cause of the trap.
 
-- The kernel "returns from the trap" into application code.
+-   The kernel "returns from the trap" into application code.
 
 Analogously, each task in the sentry is associated with a *task goroutine* that
 executes that task's run loop (`Task.run` in `task_run.go`). However, the
@@ -38,24 +38,25 @@ state to, and resuming execution from, checkpoints.
 While in kernelspace, a Linux thread can be descheduled (cease execution) in a
 variety of ways:
 
-- It can yield or be preempted, becoming temporarily descheduled but still
-  runnable. At present, the sentry delegates scheduling of runnable threads to
-  the Go runtime.
+-   It can yield or be preempted, becoming temporarily descheduled but still
+    runnable. At present, the sentry delegates scheduling of runnable threads to
+    the Go runtime.
 
-- It can exit, becoming permanently descheduled. The sentry's equivalent is
-  returning from `Task.run`, terminating the task goroutine.
+-   It can exit, becoming permanently descheduled. The sentry's equivalent is
+    returning from `Task.run`, terminating the task goroutine.
 
-- It can enter interruptible sleep, a state in which it can be woken by a
-  caller-defined wakeup or the receipt of a signal. In the sentry, interruptible
-  sleep (which is ambiguously referred to as *blocking*) is implemented by
-  making all events that can end blocking (including signal notifications)
-  communicated via Go channels and using `select` to multiplex wakeup sources;
-  see `task_block.go`.
+-   It can enter interruptible sleep, a state in which it can be woken by a
+    caller-defined wakeup or the receipt of a signal. In the sentry,
+    interruptible sleep (which is ambiguously referred to as *blocking*) is
+    implemented by making all events that can end blocking (including signal
+    notifications) communicated via Go channels and using `select` to multiplex
+    wakeup sources; see `task_block.go`.
 
-- It can enter uninterruptible sleep, a state in which it can only be woken by a
-  caller-defined wakeup. Killable sleep is a closely related variant in which
-  the task can also be woken by SIGKILL. (These definitions also include Linux's
-  "group-stopped" (`TASK_STOPPED`) and "ptrace-stopped" (`TASK_TRACED`) states.)
+-   It can enter uninterruptible sleep, a state in which it can only be woken by
+    a caller-defined wakeup. Killable sleep is a closely related variant in
+    which the task can also be woken by SIGKILL. (These definitions also include
+    Linux's "group-stopped" (`TASK_STOPPED`) and "ptrace-stopped"
+    (`TASK_TRACED`) states.)
 
 To maximize compatibility with Linux, sentry checkpointing appears as a spurious
 signal-delivery interrupt on all tasks; interrupted system calls return `EINTR`
@@ -71,21 +72,22 @@ through sleeping operations.
 
 We break the task's control flow graph into *states*, delimited by:
 
-1. Points where uninterruptible and killable sleeps may occur. For example,
-there exists a state boundary between signal dequeueing and signal delivery
-because there may be an intervening ptrace signal-delivery-stop.
+1.  Points where uninterruptible and killable sleeps may occur. For example,
+    there exists a state boundary between signal dequeueing and signal delivery
+    because there may be an intervening ptrace signal-delivery-stop.
 
-2. Points where sleep-induced branches may "rejoin" normal execution. For
-example, the syscall exit state exists because it can be reached immediately
-following a synchronous syscall, or after a task that is sleeping in `execve()`
-or `vfork()` resumes execution.
+2.  Points where sleep-induced branches may "rejoin" normal execution. For
+    example, the syscall exit state exists because it can be reached immediately
+    following a synchronous syscall, or after a task that is sleeping in
+    `execve()` or `vfork()` resumes execution.
 
-3. Points containing large branches. This is strictly for organizational
-purposes. For example, the state that processes interrupt-signaled conditions is
-kept separate from the main "app" state to reduce the size of the latter.
+3.  Points containing large branches. This is strictly for organizational
+    purposes. For example, the state that processes interrupt-signaled
+    conditions is kept separate from the main "app" state to reduce the size of
+    the latter.
 
-4. `SyscallReinvoke`, which does not correspond to anything in Linux, and exists
-solely to serve the autosave feature.
+4.  `SyscallReinvoke`, which does not correspond to anything in Linux, and
+    exists solely to serve the autosave feature.
 
 ![dot -Tpng -Goverlap=false -orun_states.png run_states.dot](g3doc/run_states.png "Task control flow graph")
 
