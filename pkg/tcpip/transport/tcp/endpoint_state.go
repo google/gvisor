@@ -88,17 +88,32 @@ func (e *endpoint) beforeSave() {
 	if !((e.state == stateBound || e.state == stateListen) == e.isPortReserved) {
 		panic("endpoint port must and must only be reserved in bound or listen state")
 	}
+}
 
-	if e.acceptedChan != nil {
-		close(e.acceptedChan)
-		e.acceptedEndpoints = make([]*endpoint, len(e.acceptedChan), cap(e.acceptedChan))
-		i := 0
-		for ep := range e.acceptedChan {
-			e.acceptedEndpoints[i] = ep
-			i++
-		}
-		if i != len(e.acceptedEndpoints) {
-			panic("endpoint acceptedChan buffer got consumed by background context")
+// saveAcceptedChan is invoked by stateify.
+func (e *endpoint) saveAcceptedChan() []*endpoint {
+	if e.acceptedChan == nil {
+		return nil
+	}
+	close(e.acceptedChan)
+	acceptedEndpoints := make([]*endpoint, len(e.acceptedChan), cap(e.acceptedChan))
+	i := 0
+	for ep := range e.acceptedChan {
+		acceptedEndpoints[i] = ep
+		i++
+	}
+	if i != len(acceptedEndpoints) {
+		panic("endpoint acceptedChan buffer got consumed by background context")
+	}
+	return acceptedEndpoints
+}
+
+// loadAcceptedChan is invoked by stateify.
+func (e *endpoint) loadAcceptedChan(acceptedEndpoints []*endpoint) {
+	if cap(acceptedEndpoints) > 0 {
+		e.acceptedChan = make(chan *endpoint, cap(acceptedEndpoints))
+		for _, ep := range acceptedEndpoints {
+			e.acceptedChan <- ep
 		}
 	}
 }
@@ -134,17 +149,6 @@ func (e *endpoint) loadState(state endpointState) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
-	// We load acceptedChan buffer indirectly here. Note that closed
-	// endpoints might not need to allocate the channel.
-	// FIXME
-	if cap(e.acceptedEndpoints) > 0 {
-		e.acceptedChan = make(chan *endpoint, cap(e.acceptedEndpoints))
-		for _, ep := range e.acceptedEndpoints {
-			e.acceptedChan <- ep
-		}
-		e.acceptedEndpoints = nil
-	}
-
 	e.stack = stack.StackFromEnv
 	e.segmentQueue.setLimit(2 * e.rcvBufSize)
 	e.workMu.Init()

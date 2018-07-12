@@ -206,11 +206,7 @@ type endpoint struct {
 	// acceptedChan is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
-	acceptedChan chan *endpoint `state:"manual"`
-
-	// acceptedEndpoints is only used to save / restore the channel buffer.
-	// FIXME
-	acceptedEndpoints []*endpoint
+	acceptedChan chan *endpoint `state:".([]*endpoint)"`
 
 	// The following are only used from the protocol goroutine, and
 	// therefore don't need locks to protect them.
