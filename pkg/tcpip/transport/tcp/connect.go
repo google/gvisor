@@ -828,7 +828,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	var closeTimer *time.Timer
 	var closeWaker sleep.Waker
 
-	defer func() {
+	epilogue := func() {
 		// e.mu is expected to be hold upon entering this section.
 
 		if e.snd != nil {
@@ -849,7 +849,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 		// When the protocol loop exits we should wake up our waiters.
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
-	}()
+	}
 
 	if handshake {
 		// This is an active connection, so we must initiate the 3-way
@@ -867,7 +867,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			e.mu.Lock()
 			e.state = stateError
 			e.hardError = err
-			// Lock released in deferred statement.
+			// Lock released below.
+			epilogue()
 
 			return err
 		}
@@ -1013,7 +1014,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		if err := funcs[v].f(); err != nil {
 			e.mu.Lock()
 			e.resetConnectionLocked(err)
-			// Lock released in deferred statement.
+			// Lock released below.
+			epilogue()
+
 			return nil
 		}
 	}
@@ -1021,7 +1024,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// Mark endpoint as closed.
 	e.mu.Lock()
 	e.state = stateClosed
-	// Lock released in deferred statement.
+	// Lock released below.
+	epilogue()
 
 	return nil
 }
