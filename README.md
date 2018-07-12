@@ -1,10 +1,11 @@
 # gVisor
 
 gVisor is a user-space kernel, written in Go, that implements a substantial
-portion of the Linux system surface. It includes an [Open Container Initiative
-(OCI)][oci] runtime called `runsc` that provides an isolation boundary between
-the application and the host kernel. The `runsc` runtime integrates with Docker
-and Kubernetes, making it simple to run sandboxed containers.
+portion of the Linux system surface. It includes an
+[Open Container Initiative (OCI)][oci] runtime called `runsc` that provides an
+isolation boundary between the application and the host kernel. The `runsc`
+runtime integrates with Docker and Kubernetes, making it simple to run sandboxed
+containers.
 
 gVisor takes a distinct approach to container sandboxing and makes a different
 set of technical trade-offs compared to existing sandbox technologies, thus
@@ -51,11 +52,11 @@ require a larger resource footprint and slower start-up times.
 [AppArmor][apparmor], allows the specification of a fine-grained security policy
 for an application or container. These schemes typically rely on hooks
 implemented inside the host kernel to enforce the rules. If the surface can be
-made small enough (i.e. a sufficiently complete policy defined), then this is
-an excellent way to sandbox applications and maintain native performance.
-However, in practice it can be extremely difficult (if not impossible) to
-reliably define a policy for arbitrary, previously unknown applications,
-making this approach challenging to apply universally.
+made small enough (i.e. a sufficiently complete policy defined), then this is an
+excellent way to sandbox applications and maintain native performance. However,
+in practice it can be extremely difficult (if not impossible) to reliably define
+a policy for arbitrary, previously unknown applications, making this approach
+challenging to apply universally.
 
 ![Rule-based execution](g3doc/Rule-Based-Execution.png "Rule-based execution")
 
@@ -109,9 +110,9 @@ application to directly control the system calls it makes.
 In order to provide defense-in-depth and limit the host system surface, the
 gVisor container runtime is normally split into two separate processes. First,
 the *Sentry* process includes the kernel and is responsible for executing user
-code and handling system calls. Second, file system operations that extend beyond
-the sandbox (not internal proc or tmp files, pipes, etc.) are sent to a proxy,
-called a *Gofer*, via a 9P connection.
+code and handling system calls. Second, file system operations that extend
+beyond the sandbox (not internal proc or tmp files, pipes, etc.) are sent to a
+proxy, called a *Gofer*, via a 9P connection.
 
 ![Sentry](g3doc/Sentry-Gofer.png "Sentry and Gofer")
 
@@ -138,17 +139,17 @@ isolation (see below).
 The Sentry requires a *platform* to implement basic context switching and memory
 mapping functionality. Today, gVisor supports two platforms:
 
-* The **Ptrace** platform uses SYSEMU functionality to execute user code without
-  executing host system calls. This platform can run anywhere that `ptrace`
-  works (even VMs without nested virtualization).
+*   The **Ptrace** platform uses SYSEMU functionality to execute user code
+    without executing host system calls. This platform can run anywhere that
+    `ptrace` works (even VMs without nested virtualization).
 
-* The **KVM** platform (experimental) allows the Sentry to act as both guest OS
-  and VMM, switching back and forth between the two worlds seamlessly. The KVM
-  platform can run on bare-metal or on a VM with nested virtualization enabled.
-  While there is no virtualized hardware layer -- the sandbox retains a process
-  model -- gVisor leverages virtualization extensions available on modern
-  processors in order to improve isolation and performance of address space
-  switches.
+*   The **KVM** platform (experimental) allows the Sentry to act as both guest
+    OS and VMM, switching back and forth between the two worlds seamlessly. The
+    KVM platform can run on bare-metal or on a VM with nested virtualization
+    enabled. While there is no virtualized hardware layer -- the sandbox retains
+    a process model -- gVisor leverages virtualization extensions available on
+    modern processors in order to improve isolation and performance of address
+    space switches.
 
 ### Performance
 
@@ -172,8 +173,8 @@ binaries).
 
 The easiest way to get `runsc` is from the
 [latest nightly build][runsc-nightly]. After you download the binary, check it
-against the SHA512 [checksum file][runsc-nightly-sha]. Older builds can be
-found here:
+against the SHA512 [checksum file][runsc-nightly-sha]. Older builds can be found
+here:
 `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc` and
 `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc.sha512`
 
@@ -193,8 +194,8 @@ sudo mv runsc /usr/local/bin
 
 Next, configure Docker to use `runsc` by adding a runtime entry to your Docker
 configuration (`/etc/docker/daemon.json`). You may have to create this file if
-it does not exist. Also, some Docker versions also require you to [specify the
-`storage-driver` field][docker-storage-driver].
+it does not exist. Also, some Docker versions also require you to
+[specify the `storage-driver` field][docker-storage-driver].
 
 In the end, the file should look something like:
 
@@ -208,7 +209,8 @@ In the end, the file should look something like:
 }
 ```
 
-You must restart the Docker daemon after making changes to this file, typically this is done via:
+You must restart the Docker daemon after making changes to this file, typically
+this is done via:
 
 ```
 sudo systemctl restart docker
@@ -229,8 +231,8 @@ docker run --runtime=runsc -it ubuntu /bin/bash
 ### Kubernetes Support (Experimental)
 
 gVisor can run sandboxed containers in a Kubernetes cluster with cri-o, although
-this is not recommended for production environments yet. Follow [these
-instructions][cri-o-k8s] to run [cri-o][cri-o] on a node in a Kubernetes
+this is not recommended for production environments yet. Follow
+[these instructions][cri-o-k8s] to run [cri-o][cri-o] on a node in a Kubernetes
 cluster. Build `runsc` and put it on the node, and set it as the
 `runtime_untrusted_workload` in `/etc/crio/crio.conf`.
 
@@ -251,11 +253,11 @@ gVisor currently requires x86\_64 Linux to build.
 
 Make sure the following dependencies are installed:
 
-* [git][git]
-* [Bazel][bazel]
-* [Python][python]
-* [Docker version 17.09.0 or greater][docker]
-* Gold linker (e.g. `binutils-gold` package on Ubuntu)
+*   [git][git]
+*   [Bazel][bazel]
+*   [Python][python]
+*   [Docker version 17.09.0 or greater][docker]
+*   Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
 #### Getting the source
 
@@ -274,7 +276,6 @@ Build and install the `runsc` binary.
 bazel build runsc
 sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 ```
-
 
 ### Testing
 
@@ -366,33 +367,33 @@ Then restart the Docker daemon.
 gVisor implements a large portion of the Linux surface and while we strive to
 make it broadly compatible, there are (and always will be) unimplemented
 features and bugs. The only real way to know if it will work is to try. If you
-find a container that doesn’t work and there is no known issue, please [file a
-bug][bug] indicating the full command you used to run the image. Providing the
-debug logs is also helpful.
+find a container that doesn’t work and there is no known issue, please
+[file a bug][bug] indicating the full command you used to run the image.
+Providing the debug logs is also helpful.
 
 ### What works?
 
 The following applications/images have been tested:
 
-* elasticsearch
-* golang
-* httpd
-* java8
-* jenkins
-* mariadb
-* memcached
-* mongo
-* mysql
-* nginx
-* node
-* php
-* postgres
-* prometheus
-* python
-* redis
-* registry
-* tomcat
-* wordpress
+*   elasticsearch
+*   golang
+*   httpd
+*   java8
+*   jenkins
+*   mariadb
+*   memcached
+*   mongo
+*   mysql
+*   nginx
+*   node
+*   php
+*   postgres
+*   prometheus
+*   python
+*   redis
+*   registry
+*   tomcat
+*   wordpress
 
 ### My container runs fine with *runc* but fails with *runsc*.
 
@@ -416,8 +417,8 @@ This bug is tracked in [bug #4](https://github.com/google/gvisor/issues/4).
 
 ## Technical details
 
-We plan to release a full paper with technical details and will include it
-here when available.
+We plan to release a full paper with technical details and will include it here
+when available.
 
 ## Community
 

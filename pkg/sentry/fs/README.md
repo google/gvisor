@@ -149,10 +149,10 @@ An `fs.File` references the following filesystem objects:
 fs.File -> fs.Dirent -> fs.Inode -> fs.MountedFilesystem
 ```
 
-The `fs.Inode` is restored using its `fs.MountedFilesystem`. The [Mount
-points](#mount-points) section above describes how this happens in detail. The
-`fs.Dirent` restores its pointer to an `fs.Inode`, pointers to parent and
-children `fs.Dirents`, and the basename of the file.
+The `fs.Inode` is restored using its `fs.MountedFilesystem`. The
+[Mount points](#mount-points) section above describes how this happens in
+detail. The `fs.Dirent` restores its pointer to an `fs.Inode`, pointers to
+parent and children `fs.Dirents`, and the basename of the file.
 
 Otherwise an `fs.File` restores flags, an offset, and a unique identifier (only
 used internally).
