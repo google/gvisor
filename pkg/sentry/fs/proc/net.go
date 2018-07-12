@@ -55,7 +55,7 @@ func (p *proc) newNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 
 // ifinet6 implements seqfile.SeqSource for /proc/net/if_inet6.
 type ifinet6 struct {
-	s inet.Stack `state:"nosave"` // S/R-FIXME
+	s inet.Stack
 }
 
 func (n *ifinet6) contents() []string {

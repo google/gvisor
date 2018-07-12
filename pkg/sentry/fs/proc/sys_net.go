@@ -102,7 +102,7 @@ func (m *tcpMem) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, 
 
 type tcpSack struct {
 	ramfs.Entry
-	s inet.Stack `state:"nosave"` // S/R-FIXME
+	s inet.Stack
 }
 
 func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
