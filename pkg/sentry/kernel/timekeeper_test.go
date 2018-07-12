@@ -107,7 +107,7 @@ func TestTimekeeperMonotonicForward(t *testing.T) {
 	}
 
 	tk := stateTestClocklessTimekeeper(t)
-	tk.restored = true
+	tk.restored = make(chan struct{})
 	tk.saveMonotonic = 100000
 	tk.saveRealtime = 400000
 	tk.SetClocks(c)
@@ -135,7 +135,7 @@ func TestTimekeeperMonotonicJumpBackwards(t *testing.T) {
 	}
 
 	tk := stateTestClocklessTimekeeper(t)
-	tk.restored = true
+	tk.restored = make(chan struct{})
 	tk.saveMonotonic = 100000
 	tk.saveRealtime = 600000
 	tk.SetClocks(c)
