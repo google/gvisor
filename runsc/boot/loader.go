@@ -347,9 +347,12 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 }
 
 // Destroy cleans up all resources used by the loader.
+//
+// Note that this will block until all open control server connections have
+// been closed. For that reason, this should NOT be called in a defer, because
+// a panic in a control server rpc would then hang forever.
 func (l *Loader) Destroy() {
 	if l.ctrl != nil {
-		// Shut down control server.
 		l.ctrl.srv.Stop()
 	}
 	l.stopSignalForwarding()
