@@ -37,7 +37,7 @@ func TestPythonHello(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
+	if err := d.WaitForHTTP(port, 10*time.Second); err != nil {
 		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
 	}
 
