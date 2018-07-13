@@ -48,6 +48,8 @@ type Filesystem interface {
 	// Mount generates a mountable Inode backed by device and configured
 	// using file system independent flags and file system dependent
 	// data options.
+	//
+	// Mount may return arbitrary errors. They do not need syserr translations.
 	Mount(ctx context.Context, device string, flags MountSourceFlags, data string) (*Inode, error)
 
 	// AllowUserMount determines whether mount(2) is allowed to mount a
