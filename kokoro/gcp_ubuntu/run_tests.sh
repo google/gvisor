@@ -33,7 +33,7 @@ bazel build //...
 
 # Test use this variable to determine what runtime to use.
 runtime=runsc_test_$((RANDOM))
-sudo -n ./runsc/test/image/install.sh --runtime ${runtime}
+sudo -n ./runsc/test/install.sh --runtime ${runtime}
 
 # Run the tests and upload results.
 #
@@ -56,7 +56,7 @@ if [[ ${exit_code} -eq 0 ]]; then
 fi
 
 # Best effort to uninstall
-sudo -n ./runsc/test/image/install.sh -u --runtime ${runtime}
+sudo -n ./runsc/test/install.sh -u --runtime ${runtime}
 set -e
 
 # Find and rename all test xml and log files so that Sponge can pick them up.
