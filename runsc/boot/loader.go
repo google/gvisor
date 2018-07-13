@@ -499,10 +499,12 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// multiple clients to wait on the same container.
 	l.mu.Lock()
 	tgid, ok := l.containerRootTGIDs[cid]
-	l.mu.Unlock()
 	if !ok {
+		defer l.mu.Unlock()
 		return fmt.Errorf("can't find process for container %q in %v", cid, l.containerRootTGIDs)
 	}
+	l.mu.Unlock()
+
 	// If the thread either has already exited or exits during waiting,
 	// consider the container exited.
 	defer func() {
