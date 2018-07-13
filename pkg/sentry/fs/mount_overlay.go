@@ -89,6 +89,11 @@ func (ofs *overlayFilesystem) AllowUserMount() bool {
 	return false
 }
 
+// AllowUserList implements Filesystem.AllowUserList.
+func (*overlayFilesystem) AllowUserList() bool {
+	return true
+}
+
 // Mount implements Filesystem.Mount.
 func (ofs *overlayFilesystem) Mount(ctx context.Context, device string, flags MountSourceFlags, data string) (*Inode, error) {
 	panic("overlayFilesystem.Mount should not be called!")

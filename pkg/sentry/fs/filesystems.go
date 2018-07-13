@@ -55,6 +55,10 @@ type Filesystem interface {
 	// AllowUserMount determines whether mount(2) is allowed to mount a
 	// file system of this type.
 	AllowUserMount() bool
+
+	// AllowUserList determines whether this filesystem is listed in
+	// /proc/filesystems
+	AllowUserList() bool
 }
 
 // filesystems is the global set of registered file systems. It does not need
