@@ -67,6 +67,11 @@ func (*Filesystem) AllowUserMount() bool {
 	return true
 }
 
+// AllowUserList allows this filesystem to be listed in /proc/filesystems.
+func (*Filesystem) AllowUserList() bool {
+	return true
+}
+
 // Flags returns that there is nothing special about this file system.
 //
 // In Linux, tmpfs returns FS_USERNS_MOUNT, see mm/shmem.c.

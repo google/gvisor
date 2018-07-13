@@ -66,6 +66,11 @@ func (*Filesystem) AllowUserMount() bool {
 	return false
 }
 
+// AllowUserList allows this filesystem to be listed in /proc/filesystems.
+func (*Filesystem) AllowUserList() bool {
+	return true
+}
+
 // Flags returns that there is nothing special about this file system.
 func (*Filesystem) Flags() fs.FilesystemFlags {
 	return 0
