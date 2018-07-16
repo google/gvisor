@@ -30,6 +30,7 @@ go_library(
         "dev.go",
         "elf.go",
         "errors.go",
+        "eventfd.go",
         "exec.go",
         "fcntl.go",
         "file.go",

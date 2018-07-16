@@ -44,8 +44,7 @@ import (
 //
 // CachingInodeOperations implements Mappable for the CachedFileObject:
 //
-// - If CachedFileObject.FD returns a value >= 0 and the current platform shares
-//   a host fd table with the sentry, then the value of CachedFileObject.FD
+// - If CachedFileObject.FD returns a value >= 0 then the file descriptor
 //   will be memory mapped on the host.
 //
 // - Otherwise, the contents of CachedFileObject are buffered into memory
