@@ -21,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
@@ -28,10 +29,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 // EventOperations represents an event with the semantics of Linux's file-based event
-// notification (eventfd).
+// notification (eventfd). Eventfds are usually internal to the Sentry but in certain
+// situations they may be converted into a host-backed eventfd.
 type EventOperations struct {
 	fsutil.NoopRelease   `state:"nosave"`
 	fsutil.PipeSeek      `state:"nosave"`
@@ -46,13 +49,16 @@ type EventOperations struct {
 
 	// Queue is used to notify interested parties when the event object
 	// becomes readable or writable.
-	waiter.Queue `state:"nosave"`
+	wq waiter.Queue `state:"nosave"`
 
 	// val is the current value of the event counter.
 	val uint64
 
 	// semMode specifies whether the event is in "semaphore" mode.
 	semMode bool
+
+	// hostfd indicates whether this eventfd is passed through to the host.
+	hostfd int
 }
 
 // New creates a new event object with the supplied initial value and mode.
@@ -62,7 +68,46 @@ func New(ctx context.Context, initVal uint64, semMode bool) *fs.File {
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &EventOperations{
 		val:     initVal,
 		semMode: semMode,
+		hostfd:  -1,
 	})
+}
+
+// HostFD returns the host eventfd associated with this event.
+func (e *EventOperations) HostFD() (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.hostfd >= 0 {
+		return e.hostfd, nil
+	}
+
+	flags := linux.EFD_NONBLOCK
+	if e.semMode {
+		flags |= linux.EFD_SEMAPHORE
+	}
+
+	fd, _, err := syscall.Syscall(syscall.SYS_EVENTFD2, uintptr(e.val), uintptr(flags), 0)
+	if err != 0 {
+		return -1, err
+	}
+
+	if err := fdnotifier.AddFD(int32(fd), &e.wq); err != nil {
+		syscall.Close(int(fd))
+		return -1, err
+	}
+
+	e.hostfd = int(fd)
+	return e.hostfd, nil
+}
+
+// Release implements fs.FileOperations.Release.
+func (e *EventOperations) Release() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.hostfd >= 0 {
+		fdnotifier.RemoveFD(int32(e.hostfd))
+		syscall.Close(e.hostfd)
+		e.hostfd = -1
+	}
 }
 
 // Read implements fs.FileOperations.Read.
@@ -87,8 +132,28 @@ func (e *EventOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	return 8, nil
 }
 
+// Must be called with e.mu locked.
+func (e *EventOperations) hostRead(ctx context.Context, dst usermem.IOSequence) error {
+	var buf [8]byte
+
+	if _, err := syscall.Read(e.hostfd, buf[:]); err != nil {
+		if err == syscall.EWOULDBLOCK {
+			return syserror.ErrWouldBlock
+		}
+		return err
+	}
+
+	_, err := dst.CopyOut(ctx, buf[:])
+	return err
+}
+
 func (e *EventOperations) read(ctx context.Context, dst usermem.IOSequence) error {
 	e.mu.Lock()
+
+	if e.hostfd >= 0 {
+		defer e.mu.Unlock()
+		return e.hostRead(ctx, dst)
+	}
 
 	// We can't complete the read if the value is currently zero.
 	if e.val == 0 {
@@ -112,11 +177,22 @@ func (e *EventOperations) read(ctx context.Context, dst usermem.IOSequence) erro
 	// Notify writers. We do this even if we were already writable because
 	// it is possible that a writer is waiting to write the maximum value
 	// to the event.
-	e.Notify(waiter.EventOut)
+	e.wq.Notify(waiter.EventOut)
 
 	var buf [8]byte
 	usermem.ByteOrder.PutUint64(buf[:], val)
 	_, err := dst.CopyOut(ctx, buf[:])
+	return err
+}
+
+// Must be called with e.mu locked.
+func (e *EventOperations) hostWrite(val uint64) error {
+	var buf [8]byte
+	usermem.ByteOrder.PutUint64(buf[:], val)
+	_, err := syscall.Write(e.hostfd, buf[:])
+	if err == syscall.EWOULDBLOCK {
+		return syserror.ErrWouldBlock
+	}
 	return err
 }
 
@@ -138,6 +214,11 @@ func (e *EventOperations) Signal(val uint64) error {
 
 	e.mu.Lock()
 
+	if e.hostfd >= 0 {
+		defer e.mu.Unlock()
+		return e.hostWrite(val)
+	}
+
 	// We only allow writes that won't cause the value to go over the max
 	// uint64 minus 1.
 	if val > math.MaxUint64-1-e.val {
@@ -149,16 +230,20 @@ func (e *EventOperations) Signal(val uint64) error {
 	e.mu.Unlock()
 
 	// Always trigger a notification.
-	e.Notify(waiter.EventIn)
+	e.wq.Notify(waiter.EventIn)
 
 	return nil
 }
 
 // Readiness returns the ready events for the event fd.
 func (e *EventOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
-	ready := waiter.EventMask(0)
-
 	e.mu.Lock()
+	if e.hostfd >= 0 {
+		defer e.mu.Unlock()
+		return fdnotifier.NonBlockingPoll(int32(e.hostfd), mask)
+	}
+
+	ready := waiter.EventMask(0)
 	if e.val > 0 {
 		ready |= waiter.EventIn
 	}
@@ -169,4 +254,26 @@ func (e *EventOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 	e.mu.Unlock()
 
 	return mask & ready
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (e *EventOperations) EventRegister(entry *waiter.Entry, mask waiter.EventMask) {
+	e.wq.EventRegister(entry, mask)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.hostfd >= 0 {
+		fdnotifier.UpdateFD(int32(e.hostfd))
+	}
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (e *EventOperations) EventUnregister(entry *waiter.Entry) {
+	e.wq.EventUnregister(entry)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.hostfd >= 0 {
+		fdnotifier.UpdateFD(int32(e.hostfd))
+	}
 }

@@ -21,6 +21,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/eventfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/refs",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
@@ -30,6 +31,7 @@ go_library(
         "//pkg/state",
         "//pkg/syserror",
         "//pkg/waiter",
+        "//pkg/waiter/fdnotifier",
     ],
 )
 
