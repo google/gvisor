@@ -141,17 +141,17 @@ func (m *machine) newVCPU() *vCPU {
 		panic(fmt.Sprintf("error setting signal mask: %v", err))
 	}
 
-	// Initialize architecture state.
-	if err := c.initArchState(); err != nil {
-		panic(fmt.Sprintf("error initialization vCPU state: %v", err))
-	}
-
 	// Map the run data.
 	runData, err := mapRunData(int(fd))
 	if err != nil {
 		panic(fmt.Sprintf("error mapping run data: %v", err))
 	}
 	c.runData = runData
+
+	// Initialize architecture state.
+	if err := c.initArchState(); err != nil {
+		panic(fmt.Sprintf("error initialization vCPU state: %v", err))
+	}
 
 	return c // Done.
 }
@@ -167,12 +167,6 @@ func newMachine(vm int) (*machine, error) {
 	m.kernel.Init(ring0.KernelOpts{
 		PageTables: pagetables.New(newAllocator()),
 	})
-
-	// Initialize architecture state.
-	if err := m.initArchState(); err != nil {
-		m.Destroy()
-		return nil, err
-	}
 
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
@@ -220,6 +214,12 @@ func newMachine(vm int) (*machine, error) {
 			virtual += length
 		}
 	})
+
+	// Initialize architecture state.
+	if err := m.initArchState(); err != nil {
+		m.Destroy()
+		return nil, err
+	}
 
 	// Ensure the machine is cleaned up properly.
 	runtime.SetFinalizer(m, (*machine).Destroy)
