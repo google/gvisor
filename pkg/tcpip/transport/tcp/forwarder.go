@@ -90,7 +90,7 @@ func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, v
 	// Launch a new goroutine to handle the request.
 	f.inFlight[id] = struct{}{}
 	s.incRef()
-	go f.handler(&ForwarderRequest{ // S/R-FIXME
+	go f.handler(&ForwarderRequest{ // S/R-SAFE: not used by Sentry.
 		forwarder:  f,
 		segment:    s,
 		synOptions: opts,

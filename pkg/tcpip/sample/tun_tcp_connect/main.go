@@ -187,7 +187,7 @@ func main() {
 
 	// Start the writer in its own goroutine.
 	writerCompletedCh := make(chan struct{})
-	go writer(writerCompletedCh, ep) // S/R-FIXME
+	go writer(writerCompletedCh, ep) // S/R-SAFE: sample code.
 
 	// Read data and write to standard output until the peer closes the
 	// connection from its side.

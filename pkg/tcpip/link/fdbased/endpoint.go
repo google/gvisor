@@ -108,7 +108,10 @@ func New(opts *Options) tcpip.LinkEndpointID {
 // dispatches them via the provided dispatcher.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.attached = true
-	go e.dispatchLoop(dispatcher) // S/R-FIXME
+	// Link endpoints are not savable. When transportation endpoints are
+	// saved, they stop sending outgoing packets and all incoming packets
+	// are rejected.
+	go e.dispatchLoop(dispatcher) // S/R-SAFE: See above.
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
