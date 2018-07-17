@@ -27,18 +27,22 @@ const (
 
 func TestFindUnallocatedRange(t *testing.T) {
 	for _, test := range []struct {
-		desc      string
-		usage     *usageSegmentDataSlices
-		length    uint64
-		alignment uint64
-		start     uint64
+		desc           string
+		usage          *usageSegmentDataSlices
+		start          uint64
+		length         uint64
+		alignment      uint64
+		unallocated    uint64
+		minUnallocated uint64
 	}{
 		{
-			desc:      "Initial allocation succeeds",
-			usage:     &usageSegmentDataSlices{},
-			length:    page,
-			alignment: page,
-			start:     0,
+			desc:           "Initial allocation succeeds",
+			usage:          &usageSegmentDataSlices{},
+			start:          0,
+			length:         page,
+			alignment:      page,
+			unallocated:    0,
+			minUnallocated: 0,
 		},
 		{
 			desc: "Allocation begins at start of file",
@@ -47,9 +51,11 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{2 * page},
 				Values: []usageInfo{{refs: 1}},
 			},
-			length:    page,
-			alignment: page,
-			start:     0,
+			start:          0,
+			length:         page,
+			alignment:      page,
+			unallocated:    0,
+			minUnallocated: 0,
 		},
 		{
 			desc: "In-use frames are not allocatable",
@@ -58,9 +64,11 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 2 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 2}},
 			},
-			length:    page,
-			alignment: page,
-			start:     2 * page,
+			start:          0,
+			length:         page,
+			alignment:      page,
+			unallocated:    2 * page,
+			minUnallocated: 2 * page,
 		},
 		{
 			desc: "Reclaimable frames are not allocatable",
@@ -69,9 +77,11 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 2 * page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 0}, {refs: 1}},
 			},
-			length:    page,
-			alignment: page,
-			start:     3 * page,
+			start:          0,
+			length:         page,
+			alignment:      page,
+			unallocated:    3 * page,
+			minUnallocated: 3 * page,
 		},
 		{
 			desc: "Gaps between in-use frames are allocatable",
@@ -80,9 +90,11 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			length:    page,
-			alignment: page,
-			start:     page,
+			start:          0,
+			length:         page,
+			alignment:      page,
+			unallocated:    page,
+			minUnallocated: page,
 		},
 		{
 			desc: "Inadequately-sized gaps are rejected",
@@ -91,9 +103,11 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, 3 * page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			length:    2 * page,
-			alignment: page,
-			start:     3 * page,
+			start:          0,
+			length:         2 * page,
+			alignment:      page,
+			unallocated:    3 * page,
+			minUnallocated: page,
 		},
 		{
 			desc: "Hugepage alignment is honored",
@@ -104,9 +118,37 @@ func TestFindUnallocatedRange(t *testing.T) {
 				End:    []uint64{page, hugepage + 2*page},
 				Values: []usageInfo{{refs: 1}, {refs: 1}},
 			},
-			length:    hugepage,
-			alignment: hugepage,
-			start:     2 * hugepage,
+			start:          0,
+			length:         hugepage,
+			alignment:      hugepage,
+			unallocated:    2 * hugepage,
+			minUnallocated: page,
+		},
+		{
+			desc: "Pages before start ignored",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{page, 3 * page},
+				End:    []uint64{2 * page, 4 * page},
+				Values: []usageInfo{{refs: 1}, {refs: 2}},
+			},
+			start:          page,
+			length:         page,
+			alignment:      page,
+			unallocated:    2 * page,
+			minUnallocated: 2 * page,
+		},
+		{
+			desc: "start may be in the middle of segment",
+			usage: &usageSegmentDataSlices{
+				Start:  []uint64{0, 3 * page},
+				End:    []uint64{2 * page, 4 * page},
+				Values: []usageInfo{{refs: 1}, {refs: 2}},
+			},
+			start:          page,
+			length:         page,
+			alignment:      page,
+			unallocated:    2 * page,
+			minUnallocated: 2 * page,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -114,8 +156,12 @@ func TestFindUnallocatedRange(t *testing.T) {
 			if err := usage.ImportSortedSlices(test.usage); err != nil {
 				t.Fatalf("Failed to initialize usage from %v: %v", test.usage, err)
 			}
-			if got, want := findUnallocatedRange(&usage, test.length, test.alignment), test.start; got != want {
-				t.Errorf("findUnallocatedRange(%v, %d, %d): got %d, wanted %d", test.usage, test.length, test.alignment, got, want)
+			unallocated, minUnallocated := findUnallocatedRange(&usage, test.start, test.length, test.alignment)
+			if unallocated != test.unallocated {
+				t.Errorf("findUnallocatedRange(%v, %x, %x, %x): got unallocated %x, wanted %x", test.usage, test.start, test.length, test.alignment, unallocated, test.unallocated)
+			}
+			if minUnallocated != test.minUnallocated {
+				t.Errorf("findUnallocatedRange(%v, %x, %x, %x): got minUnallocated %x, wanted %x", test.usage, test.start, test.length, test.alignment, minUnallocated, test.minUnallocated)
 			}
 		})
 	}
