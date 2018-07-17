@@ -25,6 +25,13 @@ func MakeDeviceID(major uint16, minor uint32) uint32 {
 	return (minor & 0xff) | ((uint32(major) & 0xfff) << 8) | ((minor >> 8) << 20)
 }
 
+// DecodeDeviceID decodes a device ID into major and minor device numbers.
+func DecodeDeviceID(rdev uint32) (uint16, uint32) {
+	major := uint16((rdev >> 8) & 0xfff)
+	minor := (rdev & 0xff) | ((rdev >> 20) << 8)
+	return major, minor
+}
+
 // Character device IDs.
 //
 // See Documentations/devices.txt and uapi/linux/major.h.
