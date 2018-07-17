@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid"
 )
@@ -84,6 +85,10 @@ func createStub() (*thread, error) {
 	if errno != 0 {
 		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
 	}
+
+	// Enable cpuid-faulting; this may fail on older kernels or hardware,
+	// so we just disregard the result. Host CPUID will be enabled.
+	syscall.RawSyscall(syscall.SYS_ARCH_PRCTL, linux.ARCH_SET_CPUID, 0, 0)
 
 	// Call the stub; should not return.
 	stubCall(stubStart, ppid)

@@ -221,6 +221,24 @@ func (*runApp) execute(t *Task) taskRunState {
 		// loop to figure out why.
 		return (*runApp)(nil)
 
+	case platform.ErrContextSignalCPUID:
+		// Is this a CPUID instruction?
+		expected := arch.CPUIDInstruction[:]
+		found := make([]byte, len(expected))
+		_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
+		if err == nil && bytes.Equal(expected, found) {
+			// Skip the cpuid instruction.
+			t.Arch().CPUIDEmulate(t)
+			t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
+
+			// Resume execution.
+			return (*runApp)(nil)
+		}
+
+		// The instruction at the given RIP was not a CPUID, and we
+		// fallthrough to the default signal deliver behavior below.
+		fallthrough
+
 	case platform.ErrContextSignal:
 		// Looks like a signal has been delivered to us. If it's a synchronous
 		// signal (SEGV, SIGBUS, etc.), it should be sent to the application
@@ -266,28 +284,7 @@ func (*runApp) execute(t *Task) taskRunState {
 		}
 
 		switch sig {
-		case linux.SIGILL:
-			// N.B. The debug stuff here is arguably
-			// expensive.  Don't fret. This gets called
-			// about 5 times for a typical application, if
-			// that.
-			t.Debugf("SIGILL @ %x", t.Arch().IP())
-
-			// Is this a CPUID instruction?
-			expected := arch.CPUIDInstruction[:]
-			found := make([]byte, len(expected))
-			_, err := t.CopyIn(usermem.Addr(t.Arch().IP()), &found)
-			if err == nil && bytes.Equal(expected, found) {
-				// Skip the cpuid instruction.
-				t.Arch().CPUIDEmulate(t)
-				t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
-				break
-			}
-
-			// Treat it like any other synchronous signal.
-			fallthrough
-
-		case linux.SIGSEGV, linux.SIGBUS, linux.SIGFPE, linux.SIGTRAP:
+		case linux.SIGILL, linux.SIGSEGV, linux.SIGBUS, linux.SIGFPE, linux.SIGTRAP:
 			// Synchronous signal. Send it to ourselves. Assume the signal is
 			// legitimate and force it (work around the signal being ignored or
 			// blocked) like Linux does. Conveniently, this is even the correct

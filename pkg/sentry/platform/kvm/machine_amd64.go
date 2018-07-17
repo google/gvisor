@@ -19,6 +19,7 @@ package kvm
 import (
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
@@ -39,6 +40,21 @@ func (m *machine) initArchState() error {
 		uintptr(reservedMemory-(3*usermem.PageSize))); errno != 0 {
 		return errno
 	}
+
+	// Enable CPUID faulting, if possible. Note that this also serves as a
+	// basic platform sanity tests, since we will enter guest mode for the
+	// first time here. The recovery is necessary, since if we fail to read
+	// the platform info register, we will retry to host mode and
+	// ultimately need to handle a segmentation fault.
+	old := debug.SetPanicOnFault(true)
+	defer func() {
+		recover()
+		debug.SetPanicOnFault(old)
+	}()
+	m.retryInGuest(func() {
+		ring0.SetCPUIDFaulting(true)
+	})
+
 	return nil
 }
 
@@ -238,6 +254,12 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 			Code:  arch.SignalInfoKernel,
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
+		if vector == ring0.GeneralProtectionFault {
+			// When CPUID faulting is enabled, we will generate a #GP(0) when
+			// userspace executes a CPUID instruction. This is handled above,
+			// because we need to be able to map and read user memory.
+			return info, usermem.AccessType{}, platform.ErrContextSignalCPUID
+		}
 		return info, usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.InvalidOpcode:
