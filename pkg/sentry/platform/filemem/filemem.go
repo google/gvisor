@@ -547,6 +547,8 @@ func (f *FileMem) IncRef(fr platform.FileRange) {
 	if gap.Ok() {
 		panic(fmt.Sprintf("IncRef(%v): attempted to IncRef on unallocated pages %v:\n%v", fr, gap.Range(), &f.usage))
 	}
+
+	f.usage.MergeAdjacent(fr)
 }
 
 // DecRef implements platform.File.DecRef.
