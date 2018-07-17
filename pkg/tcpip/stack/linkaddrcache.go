@@ -262,7 +262,7 @@ func (c *linkAddrCache) startAddressResolution(k tcpip.FullAddress, linkRes Link
 	e := c.makeAndAddEntry(k, "")
 	e.addWaker(waker)
 
-	go func() { // S/R-FIXME
+	go func() { // S/R-SAFE: link non-savable; wakers dropped synchronously.
 		for i := 0; ; i++ {
 			// Send link request, then wait for the timeout limit and check
 			// whether the request succeeded.

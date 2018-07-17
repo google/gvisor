@@ -187,6 +187,6 @@ func main() {
 			log.Fatal("Accept() failed:", err)
 		}
 
-		go echo(wq, n) // S/R-FIXME
+		go echo(wq, n) // S/R-SAFE: sample code.
 	}
 }
