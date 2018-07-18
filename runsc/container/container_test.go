@@ -121,12 +121,12 @@ func createWriteableOutputFile(path string) (*os.File, error) {
 	return outputFile, nil
 }
 
-func readOutputNum(outputFile *os.File, path string, first bool) (int, error) {
+func readOutputNum(f *os.File, first bool) (int, error) {
 	var num int
 	time.Sleep(1 * time.Second)
 
-	// Check that outputFile exists and contains counting data.
-	fileInfo, err := os.Stat(path)
+	// Check that f exists and contains counting data.
+	fileInfo, err := f.Stat()
 	if err != nil {
 		return 0, fmt.Errorf("error creating output file: %v", err)
 	}
@@ -136,15 +136,15 @@ func readOutputNum(outputFile *os.File, path string, first bool) (int, error) {
 	}
 
 	// Read the first number in the new file
-	outputFileContent, err := ioutil.ReadAll(outputFile)
+	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		return 0, fmt.Errorf("error reading file: %v", err)
 	}
-	if len(outputFileContent) == 0 {
+	if len(b) == 0 {
 		return 0, fmt.Errorf("error no content was read")
 	}
 
-	nums := strings.Split(string(outputFileContent), "\n")
+	nums := strings.Split(string(b), "\n")
 
 	if first {
 		num, err = strconv.Atoi(nums[0])
@@ -487,6 +487,9 @@ func TestExec(t *testing.T) {
 // be the next consecutive number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	outputPath := filepath.Join(os.TempDir(), "output")
+	// Make sure it does not already exist.
+	os.Remove(outputPath)
+
 	outputFile, err := createWriteableOutputFile(outputPath)
 	if err != nil {
 		t.Fatalf("error creating output file: %v", err)
@@ -538,7 +541,7 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 	defer os.RemoveAll(imagePath)
 
-	lastNum, err := readOutputNum(outputFile, outputPath, false)
+	lastNum, err := readOutputNum(outputFile, false)
 	if err != nil {
 		t.Fatalf("error with outputFile: %v", err)
 	}
@@ -563,7 +566,7 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	firstNum, err := readOutputNum(outputFile2, outputPath, true)
+	firstNum, err := readOutputNum(outputFile2, true)
 	if err != nil {
 		t.Fatalf("error with outputFile: %v", err)
 	}
@@ -594,7 +597,7 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	firstNum2, err := readOutputNum(outputFile3, outputPath, true)
+	firstNum2, err := readOutputNum(outputFile3, true)
 	if err != nil {
 		t.Fatalf("error with outputFile: %v", err)
 	}
