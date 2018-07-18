@@ -57,7 +57,14 @@ type fileOperations struct {
 var _ fs.FileOperations = (*fileOperations)(nil)
 
 // NewFile returns a file. NewFile is not appropriate with host pipes and sockets.
-func NewFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, i *inodeOperations, handles *handles) *fs.File {
+//
+// The `name` argument is only used to log a warning if we are returning a
+// writeable+executable file. (A metric counter is incremented in this case as
+// well.) Note that we cannot call d.BaseName() directly in this function,
+// because that would lead to a lock order violation, since this is called in
+// d.Create which holds d.mu, while d.BaseName() takes d.parent.mu, and the two
+// locks must be taken in the opposite order.
+func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileFlags, i *inodeOperations, handles *handles) *fs.File {
 	// Remote file systems enforce readability/writability at an offset,
 	// see fs/9p/vfs_inode.c:v9fs_vfs_atomic_open -> fs/open.c:finish_open.
 	flags.Pread = true
@@ -70,7 +77,6 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, i *inod
 	}
 	if flags.Write {
 		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Execute: true}); err == nil {
-			name, _ := dirent.FullName(fs.RootFromContext(ctx))
 			openedWX.Increment()
 			log.Warningf("Opened a writable executable: %q", name)
 		}
