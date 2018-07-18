@@ -168,7 +168,7 @@ func run(spec *specs.Spec) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		return fmt.Errorf("error creating container: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestLifecycle(t *testing.T) {
 	}
 	// Create the container.
 	id := testutil.UniqueContainerID()
-	if _, err := container.Create(id, spec, conf, bundleDir, "", "", ""); err != nil {
+	if _, err := container.Create(id, spec, conf, bundleDir, "", ""); err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
 
@@ -411,7 +411,7 @@ func TestExec(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestCheckpointRestore(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -557,13 +557,14 @@ func TestCheckpointRestore(t *testing.T) {
 	defer outputFile2.Close()
 
 	// Restore into a new container.
-	cont2, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", imagePath)
+	cont2, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont2.Destroy()
-	if err := cont2.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
+
+	if err := cont2.Restore(spec, conf, imagePath); err != nil {
+		t.Fatalf("error restoring container: %v", err)
 	}
 
 	firstNum, err := readOutputNum(outputFile2, true)
@@ -588,13 +589,14 @@ func TestCheckpointRestore(t *testing.T) {
 	defer outputFile3.Close()
 
 	// Restore into a new container.
-	cont3, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", imagePath)
+	cont3, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
 	defer cont3.Destroy()
-	if err := cont3.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
+
+	if err := cont3.Restore(spec, conf, imagePath); err != nil {
+		t.Fatalf("error restoring container: %v", err)
 	}
 
 	firstNum2, err := readOutputNum(outputFile3, true)
@@ -604,7 +606,7 @@ func TestCheckpointRestore(t *testing.T) {
 
 	// Check that lastNum is one less than firstNum and that the container picks up from where it left off.
 	if lastNum+1 != firstNum2 {
-		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
 	}
 
 }
@@ -626,7 +628,7 @@ func TestPauseResume(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -728,7 +730,7 @@ func TestPauseResumeStatus(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -795,7 +797,7 @@ func TestCapabilities(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -894,7 +896,7 @@ func TestConsoleSocket(t *testing.T) {
 
 	// Create the container and pass the socket name.
 	id := testutil.UniqueContainerID()
-	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "", "")
+	s, err := container.Create(id, spec, conf, bundleDir, socketRelPath, "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1014,7 +1016,7 @@ func TestReadonlyRoot(t *testing.T) {
 	conf.Overlay = true
 
 	// Create, start and wait for the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1055,7 +1057,7 @@ func TestReadonlyMount(t *testing.T) {
 	conf.Overlay = true
 
 	// Create, start and wait for the container.
-	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1095,7 +1097,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := container.Create(cid, spec, conf, bundleDir, "", "", "")
+		cont, err := container.Create(cid, spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1165,7 +1167,7 @@ func TestMultiContainerSanity(t *testing.T) {
 			t.Fatalf("error setting up container: %v", err)
 		}
 		defer os.RemoveAll(bundleDir)
-		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "", "")
+		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1241,7 +1243,7 @@ func TestMultiContainerWait(t *testing.T) {
 			t.Fatalf("error setting up container: %v", err)
 		}
 		defer os.RemoveAll(bundleDir)
-		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "", "")
+		cont, err := container.Create(containerIDs[i], spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}

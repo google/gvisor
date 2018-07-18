@@ -62,8 +62,8 @@ type Memory struct {
 // Event gets the events from the container.
 func (cm *containerManager) Event(_ *struct{}, out *Event) error {
 	stats := &Stats{}
-	stats.populateMemory(cm.k)
-	stats.populatePIDs(cm.k)
+	stats.populateMemory(cm.l.k)
+	stats.populatePIDs(cm.l.k)
 	*out = Event{Type: "stats", Data: stats}
 	return nil
 }
