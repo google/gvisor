@@ -56,7 +56,7 @@ type Sandbox struct {
 // Create creates the sandbox process.
 //
 // If restoreFile is not empty, the sandbox will be restored from file.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, restoreFile string) (*Sandbox, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 
 	binPath, err := specutils.BinPath()
@@ -71,7 +71,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	}
 
 	// Create the sandbox process.
-	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, binPath, ioFiles, restoreFile); err != nil {
+	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, binPath, ioFiles); err != nil {
 		return nil, err
 	}
 
@@ -122,6 +122,42 @@ func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string) error {
 	}
 	if err := conn.Call(boot.ContainerStart, args, nil); err != nil {
 		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)
+	}
+
+	return nil
+}
+
+// Restore sends the restore call for a container in the sandbox.
+func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f string) error {
+	log.Debugf("Restore sandbox %q", s.ID)
+
+	rf, err := os.Open(f)
+	if err != nil {
+		return fmt.Errorf("os.Open(%q) failed: %v", f, err)
+	}
+	defer rf.Close()
+
+	opt := boot.RestoreOpts{
+		FilePayload: urpc.FilePayload{
+			Files: []*os.File{rf},
+		},
+		SandboxID: s.ID,
+	}
+
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	// Configure the network.
+	if err := setupNetwork(conn, s.Pid, spec, conf); err != nil {
+		return fmt.Errorf("error setting up network: %v", err)
+	}
+
+	// Restore the container and start the root container.
+	if err := conn.Call(boot.ContainerRestore, &opt, nil); err != nil {
+		return fmt.Errorf("error restoring container %q: %v", cid, err)
 	}
 
 	return nil
@@ -254,7 +290,7 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, binPath string, ioFiles []*os.File, restoreFile string) error {
+func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, binPath string, ioFiles []*os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -276,26 +312,11 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		"--bundle", bundleDir,
 		"--controller-fd="+strconv.Itoa(nextFD),
 		fmt.Sprintf("--console=%t", consoleEnabled))
+	nextFD++
 
 	controllerFile := os.NewFile(uintptr(fd), "control_server_socket")
 	defer controllerFile.Close()
 	cmd.ExtraFiles = append(cmd.ExtraFiles, controllerFile)
-
-	// If a restore filename was given, open the file and append its FD to Args
-	// and the file to ExtraFiles.
-	if restoreFile != "" {
-		// Create the image file and open for reading.
-		rF, err := os.Open(restoreFile)
-		if err != nil {
-			return fmt.Errorf("os.Open(%q) failed: %v", restoreFile, err)
-		}
-		defer rF.Close()
-
-		nextFD++
-		cmd.Args = append(cmd.Args, "--restore-fd="+strconv.Itoa(nextFD))
-		cmd.ExtraFiles = append(cmd.ExtraFiles, rF)
-	}
-	nextFD++
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	for _, f := range ioFiles {
@@ -402,7 +423,8 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 }
 
 // waitForCreated waits for the sandbox subprocess control server to be
-// running, at which point the sandbox is in Created state.
+// running and for the loader to have been created, at which point the sandbox
+// is in Created state.
 func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 	log.Debugf("Waiting for sandbox %q creation", s.ID)
 
@@ -417,6 +439,15 @@ func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 	}
 	if err := specutils.WaitForReady(s.Pid, timeout, ready); err != nil {
 		return fmt.Errorf("unexpected error waiting for sandbox %q, err: %v", s.ID, err)
+	}
+	conn, err := s.connect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContainerWaitForLoader, nil, nil); err != nil {
+		return fmt.Errorf("err waiting on loader on sandbox %q, err: %v", s.ID, err)
 	}
 	return nil
 }

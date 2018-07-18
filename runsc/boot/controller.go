@@ -23,9 +23,13 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
+	"gvisor.googlesource.com/gvisor/pkg/urpc"
 )
 
 const (
@@ -47,8 +51,14 @@ const (
 	// processes running in a container.
 	ContainerProcesses = "containerManager.Processes"
 
+	// ContainerRestore restores a container from a statefile.
+	ContainerRestore = "containerManager.Restore"
+
 	// ContainerResume unpauses the paused container.
 	ContainerResume = "containerManager.Resume"
+
+	// ContainerWaitForLoader blocks until the container's loader has been created.
+	ContainerWaitForLoader = "containerManager.WaitForLoader"
 
 	// ContainerSignal is used to send a signal to a container.
 	ContainerSignal = "containerManager.Signal"
@@ -85,7 +95,7 @@ func ControlSocketAddr(id string) string {
 // controller holds the control server, and is used for communication into the
 // sandbox.
 type controller struct {
-	// srv is the contorl server.
+	// srv is the control server.
 	srv *server.Server
 
 	// manager holds the containerManager methods.
@@ -100,10 +110,9 @@ func newController(fd int, k *kernel.Kernel, w *watchdog.Watchdog) (*controller,
 	}
 
 	manager := &containerManager{
-		startChan:       make(chan struct{}),
-		startResultChan: make(chan error),
-		k:               k,
-		watchdog:        w,
+		startChan:         make(chan struct{}),
+		startResultChan:   make(chan error),
+		loaderCreatedChan: make(chan struct{}),
 	}
 	srv.Register(manager)
 
@@ -137,15 +146,13 @@ type containerManager struct {
 	// channel. A nil value indicates success.
 	startResultChan chan error
 
-	// k is the emulated linux kernel on which the sandboxed
-	// containers run.
-	k *kernel.Kernel
-
-	// watchdog is the kernel watchdog.
-	watchdog *watchdog.Watchdog
-
 	// l is the loader that creates containers and sandboxes.
 	l *Loader
+
+	// loaderCreatedChan is used to signal when the loader has been created.
+	// After a loader is created, a notify method is called that writes to
+	// this channel.
+	loaderCreatedChan chan struct{}
 }
 
 // StartRoot will start the root container process.
@@ -160,7 +167,7 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 // Processes retrieves information about processes running in the sandbox.
 func (cm *containerManager) Processes(_, out *[]*control.Process) error {
 	log.Debugf("containerManager.Processes")
-	return control.Processes(cm.k, out)
+	return control.Processes(cm.l.k, out)
 }
 
 // StartArgs contains arguments to the Start method.
@@ -194,7 +201,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		return errors.New("start argument missing container ID")
 	}
 
-	tgid, err := cm.l.startContainer(args, cm.k)
+	tgid, err := cm.l.startContainer(args, cm.l.k)
 	if err != nil {
 		return err
 	}
@@ -206,7 +213,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 // Execute runs a command on a created or running sandbox.
 func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) error {
 	log.Debugf("containerManager.Execute")
-	proc := control.Proc{Kernel: cm.k}
+	proc := control.Proc{Kernel: cm.l.k}
 	if err := proc.Exec(e, waitStatus); err != nil {
 		return fmt.Errorf("error executing: %+v: %v", e, err)
 	}
@@ -217,21 +224,105 @@ func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) err
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
 	state := control.State{
-		Kernel:   cm.k,
-		Watchdog: cm.watchdog,
+		Kernel:   cm.l.k,
+		Watchdog: cm.l.watchdog,
 	}
 	return state.Save(o, nil)
 }
 
 // Pause suspends a container.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
-	cm.k.Pause()
+	cm.l.k.Pause()
 	return nil
+}
+
+// WaitForLoader blocks until the container's loader has been created.
+func (cm *containerManager) WaitForLoader(_, _ *struct{}) error {
+	log.Debugf("containerManager.WaitForLoader")
+	<-cm.loaderCreatedChan
+	return nil
+}
+
+// RestoreOpts contains options related to restoring a container's file system.
+type RestoreOpts struct {
+	// FilePayload contains the state file to be restored.
+	urpc.FilePayload
+
+	// SandboxID contains the ID of the sandbox.
+	SandboxID string
+}
+
+// Restore loads a container from a statefile.
+// The container's current kernel is destroyed, a restore environment is created,
+// and the kernel is recreated with the restore state file. The container then sends the
+// signal to start.
+func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
+	log.Debugf("containerManager.Restore")
+	if len(o.FilePayload.Files) != 1 {
+		return fmt.Errorf("exactly one file must be provided")
+	}
+	defer o.FilePayload.Files[0].Close()
+
+	// Destroy the old kernel and create a new kernel.
+	cm.l.k.Pause()
+	cm.l.k.Destroy()
+
+	p, err := createPlatform(cm.l.conf)
+	if err != nil {
+		return fmt.Errorf("error creating platform: %v", err)
+	}
+	k := &kernel.Kernel{
+		Platform: p,
+	}
+	cm.l.k = k
+
+	// Set up the restore environment.
+	fds := &fdDispenser{fds: cm.l.ioFDs}
+	renv, err := createRestoreEnvironment(cm.l.spec, cm.l.conf, fds)
+	if err != nil {
+		return fmt.Errorf("error creating RestoreEnvironment: %v", err)
+	}
+	fs.SetRestoreEnvironment(*renv)
+
+	// Prepare to load from the state file.
+	networkStack := newEmptyNetworkStack(cm.l.conf, k)
+	info, err := o.FilePayload.Files[0].Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("error file was empty")
+	}
+
+	// Load the state.
+	loadOpts := state.LoadOpts{
+		Source: o.FilePayload.Files[0],
+	}
+	if err := loadOpts.Load(k, p, networkStack); err != nil {
+		return err
+	}
+
+	// Set timekeeper.
+	k.Timekeeper().SetClocks(time.NewCalibratedClocks())
+
+	// Since we have a new kernel we also must make a new watchdog.
+	watchdog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
+
+	// Change the loader fields to reflect the changes made when restoring.
+	cm.l.k = k
+	cm.l.watchdog = watchdog
+	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
+	cm.l.setRootContainerID(o.SandboxID)
+	cm.l.restore = true
+
+	// Tell the root container to start and wait for the result.
+	cm.startChan <- struct{}{}
+	return <-cm.startResultChan
 }
 
 // Resume unpauses a container.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
-	cm.k.Unpause()
+	cm.l.k.Unpause()
 	return nil
 }
 
@@ -272,7 +363,7 @@ func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	// process in theat container. Currently we just signal PID 1 in the
 	// sandbox.
 	si := arch.SignalInfo{Signo: args.Signo}
-	t := cm.k.TaskSet().Root.TaskWithID(1)
+	t := cm.l.k.TaskSet().Root.TaskWithID(1)
 	if t == nil {
 		return fmt.Errorf("cannot signal: no task with id 1")
 	}

@@ -27,6 +27,9 @@ import (
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tty"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -562,4 +565,46 @@ func subtargets(root string, mnts []specs.Mount) []string {
 		}
 	}
 	return targets
+}
+
+// setFileSystemForProcess is used to set up the file system and amend the procArgs accordingly.
+// procArgs are passed by reference and the FDMap field is modified.
+func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel) error {
+	ctx := procArgs.NewContext(k)
+
+	// Create the FD map, which will set stdin, stdout, and stderr.  If
+	// console is true, then ioctl calls will be passed through to the host
+	// fd.
+	fdm, err := createFDMap(ctx, k, ls, console)
+	if err != nil {
+		return fmt.Errorf("error importing fds: %v", err)
+	}
+
+	// CreateProcess takes a reference on FDMap if successful. We
+	// won't need ours either way.
+	procArgs.FDMap = fdm
+
+	// If this is the root container, we also need to setup the root mount
+	// namespace.
+	if k.RootMountNamespace() == nil {
+		// Use root user to configure mounts. The current user might not have
+		// permission to do so.
+		rootProcArgs := kernel.CreateProcessArgs{
+			WorkingDirectory:     "/",
+			Credentials:          auth.NewRootCredentials(creds.UserNamespace),
+			Umask:                0022,
+			MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		}
+		rootCtx := rootProcArgs.NewContext(k)
+
+		// Create the virtual filesystem.
+		mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
+		if err != nil {
+			return fmt.Errorf("error creating mounts: %v", err)
+		}
+
+		k.SetRootMountNamespace(mns)
+	}
+
+	return nil
 }

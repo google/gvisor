@@ -190,7 +190,7 @@ func List(rootDir string) ([]string, error) {
 
 // Create creates the container in a new Sandbox process, unless the metadata
 // indicates that an existing Sandbox should be used.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string, restoreFile string) (*Container, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string) (*Container, error) {
 	log.Debugf("Create container %q in root dir: %s", id, conf.RootDir)
 	if err := validateID(id); err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		log.Debugf("Creating new sandbox for container %q", id)
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
-		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket, restoreFile)
+		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
 		if err != nil {
 			c.Destroy()
 			return nil, err
@@ -309,10 +309,26 @@ func (c *Container) Start(conf *boot.Config) error {
 	return c.save()
 }
 
+// Restore takes a container and replaces its kernel and file system
+// to restore a container from its state file.
+func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile string) error {
+	log.Debugf("Restore container %q", c.ID)
+
+	if c.Status != Created {
+		return fmt.Errorf("cannot restore container in state %s", c.Status)
+	}
+
+	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
+		return err
+	}
+	c.Status = Running
+	return c.save()
+}
+
 // Run is a helper that calls Create + Start + Wait.
 func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string) (syscall.WaitStatus, error) {
 	log.Debugf("Run container %q in root dir: %s", id, conf.RootDir)
-	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile, "")
+	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile)
 	if err != nil {
 		return 0, fmt.Errorf("error creating container: %v", err)
 	}

@@ -133,12 +133,12 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("error destroying container: %v", err)
 	}
 
-	cont, err = container.Create(id, spec, conf, bundleDir, "", "", fullImagePath)
+	cont, err = container.Create(id, spec, conf, bundleDir, "", "")
 	if err != nil {
 		Fatalf("error restoring container: %v", err)
 	}
 
-	if err := cont.Start(conf); err != nil {
+	if err := cont.Restore(spec, conf, fullImagePath); err != nil {
 		Fatalf("error starting container: %v", err)
 	}
 

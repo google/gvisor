@@ -39,7 +39,7 @@ func TestGoferExits(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}

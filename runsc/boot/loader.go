@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -29,7 +28,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
@@ -38,7 +36,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/sighandling"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
 	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
@@ -77,6 +74,12 @@ type Loader struct {
 
 	watchdog *watchdog.Watchdog
 
+	// ioFDs are the FDs that attach the sandbox to the gofers.
+	ioFDs []int
+
+	// spec is the base configuration for the root container.
+	spec *specs.Spec
+
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
 	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
@@ -111,16 +114,7 @@ func init() {
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []int, console bool) (*Loader, error) {
-	var (
-		tk          *kernel.Timekeeper
-		creds       *auth.Credentials
-		vdso        *loader.VDSO
-		utsns       *kernel.UTSNamespace
-		ipcns       *kernel.IPCNamespace
-		restoreFile *os.File
-		procArgs    kernel.CreateProcessArgs
-	)
+func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console bool) (*Loader, error) {
 	// Create kernel and platform.
 	p, err := createPlatform(conf)
 	if err != nil {
@@ -130,60 +124,47 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 		Platform: p,
 	}
 
-	if restoreFD == -1 {
-		// Create VDSO.
-		//
-		// Pass k as the platform since it is savable, unlike the actual platform.
-		vdso, err = loader.PrepareVDSO(k)
-		if err != nil {
-			return nil, fmt.Errorf("error creating vdso: %v", err)
-		}
-
-		// Create timekeeper.
-		tk, err = kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
-		if err != nil {
-			return nil, fmt.Errorf("error creating timekeeper: %v", err)
-		}
-		tk.SetClocks(time.NewCalibratedClocks())
-
-		// Create capabilities.
-		caps, err := specutils.Capabilities(spec.Process.Capabilities)
-		if err != nil {
-			return nil, fmt.Errorf("error creating capabilities: %v", err)
-		}
-
-		// Convert the spec's additional GIDs to KGIDs.
-		extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
-		for _, GID := range spec.Process.User.AdditionalGids {
-			extraKGIDs = append(extraKGIDs, auth.KGID(GID))
-		}
-
-		// Create credentials.
-		creds = auth.NewUserCredentials(
-			auth.KUID(spec.Process.User.UID),
-			auth.KGID(spec.Process.User.GID),
-			extraKGIDs,
-			caps,
-			auth.NewRootUserNamespace())
-
-		// Create user namespace.
-		// TODO: Not clear what domain name should be here.  It is
-		// not configurable from runtime spec.
-		utsns = kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace)
-
-		ipcns = kernel.NewIPCNamespace(creds.UserNamespace)
-	} else {
-		// Create and set RestoreEnvironment
-		fds := &fdDispenser{fds: ioFDs}
-		renv, err := createRestoreEnvironment(spec, conf, fds)
-		if err != nil {
-			return nil, fmt.Errorf("error creating RestoreEnvironment: %v", err)
-		}
-		fs.SetRestoreEnvironment(*renv)
-
-		restoreFile = os.NewFile(uintptr(restoreFD), "restore_file")
-		defer restoreFile.Close()
+	// Create VDSO.
+	//
+	// Pass k as the platform since it is savable, unlike the actual platform.
+	vdso, err := loader.PrepareVDSO(k)
+	if err != nil {
+		return nil, fmt.Errorf("error creating vdso: %v", err)
 	}
+
+	// Create timekeeper.
+	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
+	if err != nil {
+		return nil, fmt.Errorf("error creating timekeeper: %v", err)
+	}
+	tk.SetClocks(time.NewCalibratedClocks())
+
+	// Create capabilities.
+	caps, err := specutils.Capabilities(spec.Process.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("error creating capabilities: %v", err)
+	}
+
+	// Convert the spec's additional GIDs to KGIDs.
+	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
+	for _, GID := range spec.Process.User.AdditionalGids {
+		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
+	}
+
+	// Create credentials.
+	creds := auth.NewUserCredentials(
+		auth.KUID(spec.Process.User.UID),
+		auth.KGID(spec.Process.User.GID),
+		extraKGIDs,
+		caps,
+		auth.NewRootUserNamespace())
+
+	// Create user namespace.
+	// TODO: Not clear what domain name should be here.  It is
+	// not configurable from runtime spec.
+	utsns := kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace)
+
+	ipcns := kernel.NewIPCNamespace(creds.UserNamespace)
 
 	if err := enableStrace(conf); err != nil {
 		return nil, fmt.Errorf("failed to enable strace: %v", err)
@@ -195,33 +176,20 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	// Run().
 	networkStack := newEmptyNetworkStack(conf, k)
 
-	if restoreFile == nil {
-		// Initiate the Kernel object, which is required by the Context passed
-		// to createVFS in order to mount (among other things) procfs.
-		if err = k.Init(kernel.InitKernelArgs{
-			FeatureSet:        cpuid.HostFeatureSet(),
-			Timekeeper:        tk,
-			RootUserNamespace: creds.UserNamespace,
-			NetworkStack:      networkStack,
-			// TODO: use number of logical processors from cgroups.
-			ApplicationCores: uint(runtime.NumCPU()),
-			Vdso:             vdso,
-			RootUTSNamespace: utsns,
-			RootIPCNamespace: ipcns,
-		}); err != nil {
-			return nil, fmt.Errorf("error initializing kernel: %v", err)
-		}
-	} else {
-		// Load the state.
-		loadOpts := state.LoadOpts{
-			Source: restoreFile,
-		}
-		if err := loadOpts.Load(k, p, networkStack); err != nil {
-			return nil, err
-		}
-
-		// Set timekeeper.
-		k.Timekeeper().SetClocks(time.NewCalibratedClocks())
+	// Initiate the Kernel object, which is required by the Context passed
+	// to createVFS in order to mount (among other things) procfs.
+	if err = k.Init(kernel.InitKernelArgs{
+		FeatureSet:        cpuid.HostFeatureSet(),
+		Timekeeper:        tk,
+		RootUserNamespace: creds.UserNamespace,
+		NetworkStack:      networkStack,
+		// TODO: use number of logical processors from cgroups.
+		ApplicationCores: uint(runtime.NumCPU()),
+		Vdso:             vdso,
+		RootUTSNamespace: utsns,
+		RootIPCNamespace: ipcns,
+	}); err != nil {
+		return nil, fmt.Errorf("error initializing kernel: %v", err)
 	}
 
 	// Turn on packet logging if enabled.
@@ -258,11 +226,9 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 	// Ensure that signals received are forwarded to the emulated kernel.
 	stopSignalForwarding := sighandling.PrepareForwarding(k, false)()
 
-	if restoreFile == nil {
-		procArgs, err = newProcess(spec, conf, ioFDs, console, creds, utsns, ipcns, k)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create root process: %v", err)
-		}
+	procArgs, err := newProcess(spec, conf, ioFDs, console, creds, utsns, ipcns, k)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create root process: %v", err)
 	}
 
 	l := &Loader{
@@ -271,9 +237,10 @@ func New(spec *specs.Spec, conf *Config, controllerFD, restoreFD int, ioFDs []in
 		conf:                 conf,
 		console:              console,
 		watchdog:             watchdog,
+		ioFDs:                ioFDs,
+		spec:                 spec,
 		stopSignalForwarding: stopSignalForwarding,
 		rootProcArgs:         procArgs,
-		restore:              restoreFile != nil,
 	}
 	ctrl.manager.l = l
 	return l, nil
@@ -306,41 +273,6 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
 		UTSNamespace:         utsns,
 		IPCNamespace:         ipcns,
-	}
-	ctx := procArgs.NewContext(k)
-
-	// Create the FD map, which will set stdin, stdout, and stderr.  If
-	// console is true, then ioctl calls will be passed through to the host
-	// fd.
-	fdm, err := createFDMap(ctx, k, ls, console)
-	if err != nil {
-		return kernel.CreateProcessArgs{}, fmt.Errorf("error importing fds: %v", err)
-	}
-
-	// CreateProcess takes a reference on FDMap if successful. We
-	// won't need ours either way.
-	procArgs.FDMap = fdm
-
-	// If this is the root container, we also need to setup the root mount
-	// namespace.
-	if k.RootMountNamespace() == nil {
-		// Use root user to configure mounts. The current user might not have
-		// permission to do so.
-		rootProcArgs := kernel.CreateProcessArgs{
-			WorkingDirectory:     "/",
-			Credentials:          auth.NewRootCredentials(creds.UserNamespace),
-			Umask:                0022,
-			MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		}
-		rootCtx := rootProcArgs.NewContext(k)
-
-		// Create the virtual filesystem.
-		mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
-		if err != nil {
-			return kernel.CreateProcessArgs{}, fmt.Errorf("error creating mounts: %v", err)
-		}
-
-		k.SetRootMountNamespace(mns)
 	}
 
 	return procArgs, nil
@@ -411,7 +343,20 @@ func (l *Loader) run() error {
 	}
 
 	// If we are restoring, we do not want to create a process.
+	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
+		err := setFileSystemForProcess(
+			&l.rootProcArgs,
+			l.spec,
+			l.conf,
+			l.ioFDs,
+			l.console,
+			l.rootProcArgs.Credentials,
+			l.rootProcArgs.Limits,
+			l.k)
+		if err != nil {
+			return err
+		}
 		// Create the root container init task.
 		if _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
 			return fmt.Errorf("failed to create init process: %v", err)
@@ -421,6 +366,7 @@ func (l *Loader) run() error {
 		l.rootProcArgs.FDMap.DecRef()
 	}
 
+	log.Infof("Process should have started...")
 	l.watchdog.Start()
 	return l.k.Start()
 }
@@ -464,6 +410,18 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.Threa
 		creds,
 		k.RootUTSNamespace(),
 		k.RootIPCNamespace(),
+		k)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create new process: %v", err)
+	}
+	err = setFileSystemForProcess(
+		&procArgs,
+		args.Spec,
+		args.Conf,
+		nil,
+		false,
+		creds,
+		procArgs.Limits,
 		k)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
@@ -551,6 +509,12 @@ func (l *Loader) setRootContainerID(cid string) {
 // WaitForStartSignal waits for a start signal from the control server.
 func (l *Loader) WaitForStartSignal() {
 	<-l.ctrl.manager.startChan
+}
+
+// NotifyLoaderCreated sends a signal to the container manager that this
+// loader has been created.
+func (l *Loader) NotifyLoaderCreated() {
+	l.ctrl.manager.loaderCreatedChan <- struct{}{}
 }
 
 // WaitExit waits for the root container to exit, and returns its exit status.

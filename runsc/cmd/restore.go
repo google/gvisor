@@ -94,16 +94,15 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 
 	restoreFile := filepath.Join(r.imagePath, checkpointFileName)
 
-	cont, err := container.Create(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, restoreFile)
+	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
+		Fatalf("error loading container: %v", err)
+	}
+	if err := c.Restore(spec, conf, restoreFile); err != nil {
 		Fatalf("error restoring container: %v", err)
 	}
 
-	if err := cont.Start(conf); err != nil {
-		Fatalf("error starting container: %v", err)
-	}
-
-	ws, err := cont.Wait()
+	ws, err := c.Wait()
 	if err != nil {
 		Fatalf("error running container: %v", err)
 	}
