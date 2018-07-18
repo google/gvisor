@@ -334,6 +334,17 @@ func (d *Dirent) SyncAll(ctx context.Context) {
 	}
 }
 
+// BaseName returns the base name of the dirent.
+func (d *Dirent) BaseName() string {
+	p := d.parent
+	if p == nil {
+		return d.name
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return d.name
+}
+
 // FullName returns the fully-qualified name and a boolean value representing
 // whether this Dirent was a descendant of root.
 // If the root argument is nil it is assumed to be the root of the Dirent tree.

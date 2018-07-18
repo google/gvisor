@@ -545,6 +545,7 @@ func TestPreadv(t *testing.T) {
 		f := NewFile(
 			ctx,
 			fs.NewDirent(rootInode, ""),
+			"",
 			fs.FileFlags{Read: true},
 			rootInode.InodeOperations.(*inodeOperations),
 			&handles{File: contextFile{file: openFile}},
@@ -751,6 +752,7 @@ func TestPwritev(t *testing.T) {
 		f := NewFile(
 			ctx,
 			fs.NewDirent(rootInode, ""),
+			"",
 			fs.FileFlags{Write: true},
 			rootInode.InodeOperations.(*inodeOperations),
 			&handles{File: contextFile{file: openFile}},

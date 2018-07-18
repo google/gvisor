@@ -127,7 +127,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	if iops.session().cachePolicy.usePageCache(d.Inode) {
 		iops.fileState.setHandlesForCachedIO(flags, h)
 	}
-	return NewFile(ctx, d, flags, iops, h), nil
+	return NewFile(ctx, d, name, flags, iops, h), nil
 }
 
 // CreateLink uses Create to create a symlink between oldname and newname.
