@@ -35,7 +35,7 @@ func New() fs.FileAsync {
 type FileAsync struct {
 	mu        sync.Mutex
 	e         waiter.Entry
-	requester auth.Credentials
+	requester *auth.Credentials
 
 	// Only one of the following is allowed to be non-nil.
 	recipientPG *kernel.ProcessGroup
