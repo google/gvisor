@@ -109,7 +109,7 @@ func (n *ifinet6) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 
 // netDev implements seqfile.SeqSource for /proc/net/dev.
 type netDev struct {
-	s inet.Stack `state:"nosave"` // S/R-FIXME
+	s inet.Stack
 }
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
