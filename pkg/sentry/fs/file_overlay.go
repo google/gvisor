@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
@@ -263,6 +264,34 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
 
+	// If there is no lower inode, the overlay will never need to do a
+	// copy-up, and thus will never need to invalidate any mappings. We can
+	// call ConfigureMMap directly on the upper file.
+	if o.lower == nil {
+		f := file.FileOperations.(*overlayFileOperations)
+		if err := f.upper.ConfigureMMap(ctx, opts); err != nil {
+			return err
+		}
+
+		// ConfigureMMap will set the MappableIdentity to the upper
+		// file and take a reference on it, but we must also hold a
+		// reference to the overlay file during the lifetime of the
+		// Mappable. If we do not do this, the overlay file can be
+		// Released before the upper file is Released, and we will be
+		// unable to traverse to the upper file during Save, thus
+		// preventing us from saving a proper inode mapping for the
+		// file.
+		file.IncRef()
+		id := &overlayMappingIdentity{
+			id:          opts.MappingIdentity,
+			overlayFile: file,
+		}
+
+		// Swap out the old MappingIdentity for the wrapped one.
+		opts.MappingIdentity = id
+		return nil
+	}
+
 	if !o.isMappableLocked() {
 		return syserror.ENODEV
 	}
@@ -342,4 +371,43 @@ func readdirOne(ctx context.Context, d *Dirent) (map[string]DentAttr, error) {
 	delete(stubSerializer.Entries, ".")
 	delete(stubSerializer.Entries, "..")
 	return stubSerializer.Entries, nil
+}
+
+// overlayMappingIdentity wraps a MappingIdentity, and also holds a reference
+// on a file during its lifetime.
+type overlayMappingIdentity struct {
+	refs.AtomicRefCount
+	id          memmap.MappingIdentity
+	overlayFile *File
+}
+
+// DecRef implements AtomicRefCount.DecRef.
+func (omi *overlayMappingIdentity) DecRef() {
+	omi.AtomicRefCount.DecRefWithDestructor(func() {
+		omi.overlayFile.DecRef()
+		omi.id.DecRef()
+	})
+}
+
+// DeviceID implements MappingIdentity.DeviceID using the device id from the
+// overlayFile.
+func (omi *overlayMappingIdentity) DeviceID() uint64 {
+	return omi.overlayFile.Dirent.Inode.StableAttr.DeviceID
+}
+
+// DeviceID implements MappingIdentity.InodeID using the inode id from the
+// overlayFile.
+func (omi *overlayMappingIdentity) InodeID() uint64 {
+	return omi.overlayFile.Dirent.Inode.StableAttr.InodeID
+}
+
+// MappedName implements MappingIdentity.MappedName.
+func (omi *overlayMappingIdentity) MappedName(ctx context.Context) string {
+	name, _ := omi.overlayFile.Dirent.FullName(RootFromContext(ctx))
+	return name
+}
+
+// Msync implements MappingIdentity.Msync.
+func (omi *overlayMappingIdentity) Msync(ctx context.Context, mr memmap.MappableRange) error {
+	return omi.id.Msync(ctx, mr)
 }
