@@ -78,7 +78,7 @@ type superOperations struct{}
 // Slave entries are dropped from dir when their master is closed, so an
 // existing slave Dirent in the tree is not sufficient to guarantee that it
 // still exists on the filesystem.
-func (superOperations) Revalidate(*fs.Dirent) bool {
+func (superOperations) Revalidate(context.Context, *fs.Dirent) bool {
 	return true
 }
 

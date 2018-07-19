@@ -488,7 +488,7 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 			//
 			// We never allow the file system to revalidate mounts, that could cause them
 			// to unexpectedly drop out before umount.
-			if cd.mounted || !cd.Inode.MountSource.Revalidate(cd) {
+			if cd.mounted || !cd.Inode.MountSource.Revalidate(ctx, cd) {
 				// Good to go. This is the fast-path.
 				return cd, nil
 			}

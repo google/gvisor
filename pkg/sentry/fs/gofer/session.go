@@ -121,7 +121,7 @@ func (s *session) Destroy() {
 }
 
 // Revalidate returns true if the cache policy is does not allow for VFS caching.
-func (s *session) Revalidate(*fs.Dirent) bool {
+func (s *session) Revalidate(ctx context.Context, d *fs.Dirent) bool {
 	return s.cachePolicy.revalidateDirent()
 }
 
