@@ -334,7 +334,9 @@ type Task struct {
 
 	// creds is the task's credentials.
 	//
-	// creds is protected by mu.
+	// creds is protected by mu, however the value itself is immutable and
+	// can only be changed by a copy. After reading the pointer, access
+	// will proceed outside the scope of mu.
 	creds *auth.Credentials
 
 	// utsns is the task's UTS namespace.

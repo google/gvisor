@@ -20,11 +20,13 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
-// Credentials returns t's credentials by value.
-func (t *Task) Credentials() auth.Credentials {
+// Credentials returns t's credentials.
+//
+// This value must be considered immutable.
+func (t *Task) Credentials() *auth.Credentials {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return *t.creds // Copy out with lock held.
+	return t.creds
 }
 
 // UserNamespace returns the user namespace associated with the task.
@@ -162,6 +164,7 @@ func (t *Task) SetRESUID(r, e, s auth.UID) error {
 func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 	root := t.creds.UserNamespace.MapToKUID(auth.RootUID)
 	oldR, oldE, oldS := t.creds.RealKUID, t.creds.EffectiveKUID, t.creds.SavedKUID
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.RealKUID, t.creds.EffectiveKUID, t.creds.SavedKUID = newR, newE, newS
 
 	// "1. If one or more of the real, effective or saved set user IDs was
@@ -297,6 +300,7 @@ func (t *Task) SetRESGID(r, e, s auth.GID) error {
 
 func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
 	oldE := t.creds.EffectiveKGID
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.RealKGID, t.creds.EffectiveKGID, t.creds.SavedKGID = newR, newE, newS
 
 	// Not documented, but compare Linux's kernel/cred.c:commit_creds().
@@ -321,6 +325,7 @@ func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 		}
 		kgids[i] = kgid
 	}
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.ExtraKGIDs = kgids
 	return nil
 }
@@ -352,6 +357,7 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 	if inheritable & ^(t.creds.InheritableCaps|t.creds.BoundingCaps) != 0 {
 		return syserror.EPERM
 	}
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.PermittedCaps = permitted
 	t.creds.InheritableCaps = inheritable
 	t.creds.EffectiveCaps = effective
@@ -384,6 +390,7 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 		return syserror.EPERM
 	}
 
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.UserNamespace = ns
 	// "The child process created by clone(2) with the CLONE_NEWUSER flag
 	// starts out with a complete set of capabilities in the new user
@@ -407,6 +414,7 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 func (t *Task) SetKeepCaps(k bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.KeepCaps = k
 }
 
@@ -490,6 +498,8 @@ func (t *Task) updateCredsForExecLocked() {
 			fileEffective = true
 		}
 	}
+
+	t.creds = t.creds.Fork() // See doc for creds.
 
 	// Now we enter poorly-documented, somewhat confusing territory. (The
 	// accompanying comment in Linux's security/commoncap.c:cap_bprm_set_creds

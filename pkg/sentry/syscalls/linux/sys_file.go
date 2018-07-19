@@ -415,14 +415,14 @@ func Creat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 // accessContext should only be used for access(2).
 type accessContext struct {
 	context.Context
-	creds auth.Credentials
+	creds *auth.Credentials
 }
 
 // Value implements context.Context.
 func (ac accessContext) Value(key interface{}) interface{} {
 	switch key {
 	case auth.CtxCredentials:
-		return &ac.creds
+		return ac.creds
 	default:
 		return ac.Context.Value(key)
 	}
