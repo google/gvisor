@@ -21,17 +21,19 @@ import (
 	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/refs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 )
 
 // DirentOperations provide file systems greater control over how long a Dirent stays pinned
 // in core. Implementations must not take Dirent.mu.
 type DirentOperations interface {
-	// Revalidate returns true if the Dirent is stale and its InodeOperations needs to be reloaded. Revalidate
-	// will never be called on a Dirent that is mounted.
-	Revalidate(dirent *Dirent) bool
+	// Revalidate returns true if the Dirent is stale and its
+	// InodeOperations needs to be reloaded. Revalidate will never be
+	// called on a Dirent that is mounted.
+	Revalidate(ctx context.Context, dirent *Dirent) bool
 
-	// Keep returns true if the Dirent should be kept in memory for as long as possible
-	// beyond any active references.
+	// Keep returns true if the Dirent should be kept in memory for as long
+	// as possible beyond any active references.
 	Keep(dirent *Dirent) bool
 }
 
@@ -263,7 +265,7 @@ type SimpleMountSourceOperations struct {
 }
 
 // Revalidate implements MountSourceOperations.Revalidate.
-func (*SimpleMountSourceOperations) Revalidate(*Dirent) bool {
+func (*SimpleMountSourceOperations) Revalidate(context.Context, *Dirent) bool {
 	return false
 }
 

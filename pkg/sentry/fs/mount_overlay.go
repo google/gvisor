@@ -34,8 +34,8 @@ func newOverlayMountSource(upper, lower *MountSource, flags MountSourceFlags) *M
 
 // Revalidate panics if the upper or lower MountSource require that dirent be
 // revalidated. Otherwise always returns false.
-func (o *overlayMountSourceOperations) Revalidate(dirent *Dirent) bool {
-	if o.upper.Revalidate(dirent) || o.lower.Revalidate(dirent) {
+func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, dirent *Dirent) bool {
+	if o.upper.Revalidate(ctx, dirent) || o.lower.Revalidate(ctx, dirent) {
 		panic("an overlay cannot revalidate file objects")
 	}
 	return false
