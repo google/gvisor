@@ -346,6 +346,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = msghdr(t, args[arg].Pointer(), false /* content */, uint64(maximumBlobSize))
 		case RecvMsgHdr:
 			output[arg] = msghdr(t, args[arg].Pointer(), true /* content */, uint64(maximumBlobSize))
+		case PostPath:
+			output[arg] = path(t, args[arg].Pointer())
 		case PipeFDs:
 			output[arg] = fdpair(t, args[arg].Pointer())
 		case Uname:

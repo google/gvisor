@@ -96,7 +96,7 @@ var linuxAMD64 = SyscallMap{
 	76:  makeSyscallInfo("truncate", Path, Hex),
 	77:  makeSyscallInfo("ftruncate", Hex, Hex),
 	78:  makeSyscallInfo("getdents", Hex, Hex, Hex),
-	79:  makeSyscallInfo("getcwd", Hex, Hex),
+	79:  makeSyscallInfo("getcwd", PostPath, Hex),
 	80:  makeSyscallInfo("chdir", Path),
 	81:  makeSyscallInfo("fchdir", Hex),
 	82:  makeSyscallInfo("rename", Path, Path),

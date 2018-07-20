@@ -75,6 +75,10 @@ const (
 	// Path is a pointer to a char* path.
 	Path
 
+	// PostPath is a pointer to a char* path, formatted after syscall
+	// execution.
+	PostPath
+
 	// ExecveStringVector is a NULL-terminated array of strings. Enforces
 	// the maximum execve array length.
 	ExecveStringVector
