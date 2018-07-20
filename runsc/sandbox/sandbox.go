@@ -54,8 +54,6 @@ type Sandbox struct {
 }
 
 // Create creates the sandbox process.
-//
-// If restoreFile is not empty, the sandbox will be restored from file.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 
