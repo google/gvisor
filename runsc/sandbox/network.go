@@ -350,6 +350,7 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 		routes = append(routes, boot.Route{
 			Destination: r.Dst.IP.Mask(r.Dst.Mask),
 			Mask:        r.Dst.Mask,
+			Gateway:     r.Gw,
 		})
 	}
 	return routes, def, nil
