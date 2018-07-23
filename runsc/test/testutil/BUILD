@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "docker.go",
         "testutil.go",
+        "testutil_race.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/runsc/test/testutil",
     visibility = [

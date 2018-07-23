@@ -66,7 +66,7 @@ func New() (*KVM, error) {
 		ring0.Init(cpuid.HostFeatureSet())
 	})
 	if globalErr != nil {
-		return nil, err
+		return nil, globalErr
 	}
 
 	// Create a new VM fd.
