@@ -26,10 +26,13 @@ go_library(
 
 go_test(
     name = "container_test",
-    size = "small",
+    size = "medium",
     srcs = ["container_test.go"],
     data = [
         "//runsc",
+    ],
+    tags = [
+        "requires-kvm",
     ],
     deps = [
         "//pkg/abi/linux",
@@ -37,6 +40,7 @@ go_test(
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
         "//pkg/unet",
+        "//runsc/boot",
         "//runsc/container",
         "//runsc/specutils",
         "//runsc/test/testutil",

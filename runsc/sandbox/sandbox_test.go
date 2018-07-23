@@ -31,7 +31,8 @@ func init() {
 
 func TestGoferExits(t *testing.T) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	rootDir, bundleDir, conf, err := testutil.SetupContainer(spec)
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
