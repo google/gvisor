@@ -36,7 +36,7 @@ var (
 	// ErrInvalidOp indicates the operation is not valid.
 	ErrInvalidOp = errors.New("invalid operation")
 
-	// ErrDenied indicates the operation was denid.
+	// ErrDenied indicates the operation was denied.
 	ErrDenied = errors.New("operation denied")
 
 	// ErrNotFound indicates that a node was not found on a walk.
