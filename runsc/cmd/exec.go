@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -156,11 +157,28 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 		Fatalf("error getting bin path: %v", err)
 	}
 	var args []string
+
+	// The command needs to write a pid file so that execAndWait can tell
+	// when it has started. If no pid-file was provided, we should use a
+	// filename in a temp directory.
+	pidFile := ex.pidFile
+	if pidFile == "" {
+		tmpDir, err := ioutil.TempDir("", "exec-pid-")
+		if err != nil {
+			Fatalf("error creating TempDir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+		pidFile = filepath.Join(tmpDir, "pid")
+		args = append(args, "--pid-file="+pidFile)
+	}
+
+	// Add the rest of the args, excluding the "detach" flag.
 	for _, a := range os.Args[1:] {
 		if !strings.Contains(a, "detach") {
 			args = append(args, a)
 		}
 	}
+
 	cmd := exec.Command(binPath, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -175,7 +193,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	// '--process' file is deleted as soon as this process returns and the child
 	// may fail to read it.
 	ready := func() (bool, error) {
-		_, err := os.Stat(ex.pidFile)
+		_, err := os.Stat(pidFile)
 		if err == nil {
 			// File appeared, we're done!
 			return true, nil
