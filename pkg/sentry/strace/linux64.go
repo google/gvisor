@@ -274,7 +274,7 @@ var linuxAMD64 = SyscallMap{
 	254: makeSyscallInfo("inotify_add_watch", Hex, Hex, Hex),
 	255: makeSyscallInfo("inotify_rm_watch", Hex, Hex),
 	256: makeSyscallInfo("migrate_pages", Hex, Hex, Hex, Hex),
-	257: makeSyscallInfo("openat", Hex, Path, Hex, Mode),
+	257: makeSyscallInfo("openat", Hex, Path, OpenFlags, Mode),
 	258: makeSyscallInfo("mkdirat", Hex, Path, Hex),
 	259: makeSyscallInfo("mknodat", Hex, Path, Mode, Hex),
 	260: makeSyscallInfo("fchownat", Hex, Path, Hex, Hex, Hex),
