@@ -17,6 +17,12 @@ gazelle_dependencies()
 
 # Add dependencies on external repositories.
 go_repository(
+    name = "com_github_cenkalti_backoff",
+    importpath = "github.com/cenkalti/backoff",
+    commit = "66e726b43552c0bab0539b28e640b89fd6862115",
+)
+
+go_repository(
     name = "com_github_google_go-cmp",
     importpath = "github.com/google/go-cmp",
     commit = "3af367b6b30c263d47e8895973edcca9a49cf029",
