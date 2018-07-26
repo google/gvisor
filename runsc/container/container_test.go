@@ -122,18 +122,24 @@ func createWriteableOutputFile(path string) (*os.File, error) {
 	return outputFile, nil
 }
 
-func readOutputNum(f *os.File, first bool) (int, error) {
-	var num int
-	time.Sleep(1 * time.Second)
-
-	// Check that f exists and contains counting data.
-	fileInfo, err := f.Stat()
-	if err != nil {
-		return 0, fmt.Errorf("error creating output file: %v", err)
+func waitForFile(f *os.File) error {
+	op := func() error {
+		fi, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if fi.Size() == 0 {
+			return fmt.Errorf("file %q is empty", f.Name())
+		}
+		return nil
 	}
+	return testutil.Poll(op, 5*time.Second)
+}
 
-	if fileInfo.Size() == 0 {
-		return 0, fmt.Errorf("failed to write to file, file still appears empty")
+func readOutputNum(f *os.File, first bool) (int, error) {
+	// Wait until file has contents.
+	if err := waitForFile(f); err != nil {
+		return 0, err
 	}
 
 	// Read the first number in the new file
@@ -147,6 +153,7 @@ func readOutputNum(f *os.File, first bool) (int, error) {
 
 	nums := strings.Split(string(b), "\n")
 
+	var num int
 	if first {
 		num, err = strconv.Atoi(nums[0])
 	} else {
@@ -579,7 +586,10 @@ func TestCheckpointRestore(t *testing.T) {
 		}
 		defer file.Close()
 
-		time.Sleep(1 * time.Second)
+		// Wait until application has ran.
+		if err := waitForFile(outputFile); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
 
 		// Checkpoint running container; save state into new file.
 		if err := cont.Checkpoint(file); err != nil {
@@ -727,7 +737,7 @@ func TestPauseResume(t *testing.T) {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(6 * time.Second)
 
 		// Verify that the two processes still exist. Sleep 5 is paused so
 		// it should still be in the process list after 10 seconds.
