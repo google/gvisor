@@ -402,6 +402,11 @@ func copyAttributesLocked(ctx context.Context, upper *Inode, lower *Inode) error
 		return err
 	}
 	for name := range lowerXattr {
+		// Don't copy-up attributes that configure an overlay in the
+		// lower.
+		if isXattrOverlay(name) {
+			continue
+		}
 		value, err := lower.Getxattr(name)
 		if err != nil {
 			return err
