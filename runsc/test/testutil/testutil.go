@@ -16,6 +16,7 @@
 package testutil
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -171,4 +173,12 @@ func Copy(src, dst string) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// Poll is a shorthand function to poll for something with given timeout.
+func Poll(cb func() error, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+	return backoff.Retry(cb, b)
 }
