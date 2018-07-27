@@ -14,6 +14,7 @@
 
 package refs
 
+// +stateify savable
 type savedReference struct {
 	obj interface{}
 }

@@ -4,8 +4,7 @@
 
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//tools/go_stateify:defs.bzl", "go_stateify")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
 
 go_stateify(
     name = "linux_state",

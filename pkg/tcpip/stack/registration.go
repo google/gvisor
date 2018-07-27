@@ -31,6 +31,8 @@ type NetworkEndpointID struct {
 }
 
 // TransportEndpointID is the identifier of a transport layer protocol endpoint.
+//
+// +stateify savable
 type TransportEndpointID struct {
 	// LocalPort is the local port associated with the endpoint.
 	LocalPort uint16

@@ -1,6 +1,6 @@
 package(licenses = ["notice"])  # BSD
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "notifier",

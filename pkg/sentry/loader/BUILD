@@ -1,7 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_embed_data", "go_library")
-load("//tools/go_stateify:defs.bzl", "go_stateify")
+load("@io_bazel_rules_go//go:def.bzl", "go_embed_data")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
 
 go_embed_data(
     name = "vdso_bin",

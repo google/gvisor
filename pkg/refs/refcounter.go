@@ -58,6 +58,8 @@ type WeakRefUser interface {
 }
 
 // WeakRef is a weak reference.
+//
+// +stateify savable
 type WeakRef struct {
 	ilist.Entry `state:"nosave"`
 
@@ -177,6 +179,8 @@ func (w *WeakRef) zap() {
 //
 // N.B. To allow the zero-object to be initialized, the count is offset by
 //      1, that is, when refCount is n, there are really n+1 references.
+//
+// +stateify savable
 type AtomicRefCount struct {
 	// refCount is composed of two fields:
 	//
