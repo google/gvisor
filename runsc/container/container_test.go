@@ -673,10 +673,25 @@ func TestCheckpointRestore(t *testing.T) {
 // It will then unpause and confirm that both processes are running. Then it will
 // wait until one sleep completes and check to make sure the other is running.
 func TestPauseResume(t *testing.T) {
-	for _, conf := range configs(all) {
+	for _, conf := range configs(kvm) {
 		t.Logf("Running test with conf: %+v", conf)
 		const uid = 343
 		spec := testutil.NewSpecWithArgs("sleep", "20")
+
+		dir, err := ioutil.TempDir("", "pause-test")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir failed: %v", err)
+		}
+		lock, err := ioutil.TempFile(dir, "lock")
+		if err != nil {
+			t.Fatalf("error creating output file: %v", err)
+		}
+		defer lock.Close()
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Type:        "bind",
+			Destination: "/tmp2",
+			Source:      dir,
+		})
 
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
@@ -709,19 +724,20 @@ func TestPauseResume(t *testing.T) {
 				PID:  2,
 				PPID: 0,
 				C:    0,
-				Cmd:  "sleep",
+				Cmd:  "bash",
 			},
 		}
 
+		script := fmt.Sprintf("while [[ -f /tmp2/%s ]]; do sleep 0.1; done", filepath.Base(lock.Name()))
 		execArgs := control.ExecArgs{
-			Filename:         "/bin/sleep",
-			Argv:             []string{"sleep", "5"},
+			Filename:         "/bin/bash",
+			Argv:             []string{"bash", "-c", script},
 			Envv:             []string{"PATH=" + os.Getenv("PATH")},
 			WorkingDirectory: "/",
 			KUID:             uid,
 		}
 
-		// First, start running exec (whick blocks).
+		// First, start running exec (which blocks).
 		go cont.Execute(&execArgs)
 
 		// Verify that "sleep 5" is running.
@@ -737,10 +753,14 @@ func TestPauseResume(t *testing.T) {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
-		time.Sleep(6 * time.Second)
+		if err := os.Remove(lock.Name()); err != nil {
+			t.Fatalf("os.Remove(lock) failed: %v", err)
+		}
+		// Script loops and sleeps for 100ms. Give a bit a time for it to exit in
+		// case pause didn't work.
+		time.Sleep(200 * time.Millisecond)
 
-		// Verify that the two processes still exist. Sleep 5 is paused so
-		// it should still be in the process list after 10 seconds.
+		// Verify that the two processes still exist.
 		if err := getAndCheckProcLists(cont, expectedPL); err != nil {
 			t.Fatal(err)
 		}
@@ -753,10 +773,6 @@ func TestPauseResume(t *testing.T) {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
-		if err := getAndCheckProcLists(cont, expectedPL); err != nil {
-			t.Fatal(err)
-		}
-
 		expectedPL2 := []*control.Process{
 			{
 				UID:  0,
@@ -767,8 +783,7 @@ func TestPauseResume(t *testing.T) {
 			},
 		}
 
-		// Verify there is only one process left since we waited 10 at most seconds for
-		// sleep 5 to end.
+		// Verify that deleting the file triggered the process to exit.
 		if err := waitForProcessList(cont, expectedPL2); err != nil {
 			t.Fatal(err)
 		}
