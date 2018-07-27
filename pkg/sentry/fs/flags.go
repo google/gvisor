@@ -45,6 +45,12 @@ type FileFlags struct {
 
 	// Async indicates that this file sends signals on IO events.
 	Async bool
+
+	// LargeFile indicates that this file should be opened even if it has
+	// size greater than linux's off_t. When running in 64-bit mode,
+	// Linux sets this flag for all files. Since gVisor is only compatible
+	// with 64-bit Linux, it also sets this flag for all files.
+	LargeFile bool
 }
 
 // SettableFileFlags is a subset of FileFlags above that can be changed

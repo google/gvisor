@@ -15,8 +15,7 @@
 package linux
 
 import (
-	"syscall"
-
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 )
@@ -24,13 +23,13 @@ import (
 // flagsToPermissions returns a Permissions object from Linux flags.
 // This includes truncate permission if O_TRUNC is set in the mask.
 func flagsToPermissions(mask uint) (p fs.PermMask) {
-	switch mask & syscall.O_ACCMODE {
-	case syscall.O_WRONLY:
+	switch mask & linux.O_ACCMODE {
+	case linux.O_WRONLY:
 		p.Write = true
-	case syscall.O_RDWR:
+	case linux.O_RDWR:
 		p.Write = true
 		p.Read = true
-	case syscall.O_RDONLY:
+	case linux.O_RDONLY:
 		p.Read = true
 	}
 	return
@@ -39,7 +38,7 @@ func flagsToPermissions(mask uint) (p fs.PermMask) {
 // fdFlagsToLinux converts a kernel.FDFlags object to a Linux representation.
 func fdFlagsToLinux(flags kernel.FDFlags) (mask uint) {
 	if flags.CloseOnExec {
-		mask |= syscall.FD_CLOEXEC
+		mask |= linux.FD_CLOEXEC
 	}
 	return
 }
@@ -47,30 +46,33 @@ func fdFlagsToLinux(flags kernel.FDFlags) (mask uint) {
 // flagsToLinux converts a FileFlags object to a Linux representation.
 func flagsToLinux(flags fs.FileFlags) (mask uint) {
 	if flags.Direct {
-		mask |= syscall.O_DIRECT
+		mask |= linux.O_DIRECT
 	}
 	if flags.NonBlocking {
-		mask |= syscall.O_NONBLOCK
+		mask |= linux.O_NONBLOCK
 	}
 	if flags.Sync {
-		mask |= syscall.O_SYNC
+		mask |= linux.O_SYNC
 	}
 	if flags.Append {
-		mask |= syscall.O_APPEND
+		mask |= linux.O_APPEND
 	}
 	if flags.Directory {
-		mask |= syscall.O_DIRECTORY
+		mask |= linux.O_DIRECTORY
 	}
 	if flags.Async {
-		mask |= syscall.O_ASYNC
+		mask |= linux.O_ASYNC
+	}
+	if flags.LargeFile {
+		mask |= linux.O_LARGEFILE
 	}
 	switch {
 	case flags.Read && flags.Write:
-		mask |= syscall.O_RDWR
+		mask |= linux.O_RDWR
 	case flags.Write:
-		mask |= syscall.O_WRONLY
+		mask |= linux.O_WRONLY
 	case flags.Read:
-		mask |= syscall.O_RDONLY
+		mask |= linux.O_RDONLY
 	}
 	return
 }
@@ -78,23 +80,24 @@ func flagsToLinux(flags fs.FileFlags) (mask uint) {
 // linuxToFlags converts linux file flags to a FileFlags object.
 func linuxToFlags(mask uint) (flags fs.FileFlags) {
 	return fs.FileFlags{
-		Direct:      mask&syscall.O_DIRECT != 0,
-		Sync:        mask&syscall.O_SYNC != 0,
-		NonBlocking: mask&syscall.O_NONBLOCK != 0,
-		Read:        (mask & syscall.O_ACCMODE) != syscall.O_WRONLY,
-		Write:       (mask & syscall.O_ACCMODE) != syscall.O_RDONLY,
-		Append:      mask&syscall.O_APPEND != 0,
-		Directory:   mask&syscall.O_DIRECTORY != 0,
-		Async:       mask&syscall.O_ASYNC != 0,
+		Direct:      mask&linux.O_DIRECT != 0,
+		Sync:        mask&linux.O_SYNC != 0,
+		NonBlocking: mask&linux.O_NONBLOCK != 0,
+		Read:        (mask & linux.O_ACCMODE) != linux.O_WRONLY,
+		Write:       (mask & linux.O_ACCMODE) != linux.O_RDONLY,
+		Append:      mask&linux.O_APPEND != 0,
+		Directory:   mask&linux.O_DIRECTORY != 0,
+		Async:       mask&linux.O_ASYNC != 0,
+		LargeFile:   mask&linux.O_LARGEFILE != 0,
 	}
 }
 
 // linuxToSettableFlags converts linux file flags to a SettableFileFlags object.
 func linuxToSettableFlags(mask uint) fs.SettableFileFlags {
 	return fs.SettableFileFlags{
-		Direct:      mask&syscall.O_DIRECT != 0,
-		NonBlocking: mask&syscall.O_NONBLOCK != 0,
-		Append:      mask&syscall.O_APPEND != 0,
-		Async:       mask&syscall.O_ASYNC != 0,
+		Direct:      mask&linux.O_DIRECT != 0,
+		NonBlocking: mask&linux.O_NONBLOCK != 0,
+		Append:      mask&linux.O_APPEND != 0,
+		Async:       mask&linux.O_ASYNC != 0,
 	}
 }
