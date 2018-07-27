@@ -1,17 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("//tools/go_stateify:defs.bzl", "go_stateify")
-
-go_stateify(
-    name = "stack_state",
-    srcs = [
-        "registration.go",
-        "stack.go",
-    ],
-    out = "stack_state.go",
-    package = "stack",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "stack",
@@ -22,7 +11,6 @@ go_library(
         "route.go",
         "stack.go",
         "stack_global_state.go",
-        "stack_state.go",
         "transport_demuxer.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/stack",
@@ -32,7 +20,6 @@ go_library(
     deps = [
         "//pkg/ilist",
         "//pkg/sleep",
-        "//pkg/state",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
