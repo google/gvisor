@@ -148,6 +148,8 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 		}
 
 		fileFlags := linuxToFlags(flags)
+		// Linux always adds the O_LARGEFILE flag when running in 64-bit mode.
+		fileFlags.LargeFile = true
 		if fs.IsDir(d.Inode.StableAttr) {
 			// Don't allow directories to be opened writable.
 			if fileFlags.Write {

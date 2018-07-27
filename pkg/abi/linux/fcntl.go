@@ -27,3 +27,8 @@ const (
 	F_SETLKW        = 7
 	F_SETOWN        = 8
 )
+
+// Flags for fcntl.
+const (
+	FD_CLOEXEC = 00000001
+)
