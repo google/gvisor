@@ -9,7 +9,7 @@ go_binary(
     ],
     pure = "on",
     visibility = [
-        "//runsc:__subpackages__",
+        "//visibility:public",
     ],
     x_defs = {"main.gitRevision": "{GIT_REVISION}"},
     deps = [
