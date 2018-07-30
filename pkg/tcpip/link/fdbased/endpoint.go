@@ -69,6 +69,8 @@ type Options struct {
 	ChecksumOffload bool
 	ClosedFunc      func(*tcpip.Error)
 	Address         tcpip.LinkAddress
+	SaveRestore     bool
+	DisconnectOk    bool
 }
 
 // New creates a new fd-based endpoint.
@@ -87,6 +89,14 @@ func New(opts *Options) tcpip.LinkEndpointID {
 	if opts.EthernetHeader {
 		hdrSize = header.EthernetMinimumSize
 		caps |= stack.CapabilityResolutionRequired
+	}
+
+	if opts.SaveRestore {
+		caps |= stack.CapabilitySaveRestore
+	}
+
+	if opts.DisconnectOk {
+		caps |= stack.CapabilityDisconnectOk
 	}
 
 	e := &endpoint{

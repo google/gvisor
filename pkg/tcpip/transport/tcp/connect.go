@@ -1023,7 +1023,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	// Mark endpoint as closed.
 	e.mu.Lock()
-	e.state = stateClosed
+	if e.state != stateError {
+		e.state = stateClosed
+	}
 	// Lock released below.
 	epilogue()
 
