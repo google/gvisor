@@ -52,10 +52,17 @@ func (e *endpoint) beforeSave() {
 	case stateInitial, stateBound:
 	case stateConnected:
 		if e.route.Capabilities()&stack.CapabilitySaveRestore == 0 {
-			panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.id.LocalAddress, e.id.LocalPort, e.id.RemoteAddress, e.id.RemotePort)})
+			if e.route.Capabilities()&stack.CapabilityDisconnectOk == 0 {
+				panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.id.LocalAddress, e.id.LocalPort, e.id.RemoteAddress, e.id.RemotePort)})
+			}
+			e.resetConnectionLocked(tcpip.ErrConnectionAborted)
+			e.mu.Unlock()
+			e.Close()
+			e.mu.Lock()
 		}
 		if !e.workerRunning {
-			// The endpoint must be in acceptedChan.
+			// The endpoint must be in acceptedChan or has been just
+			// disconnected and closed.
 			break
 		}
 		fallthrough
