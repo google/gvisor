@@ -94,8 +94,8 @@ func TestWaitForReadyTimeout(t *testing.T) {
 	err := WaitForReady(cmd.Process.Pid, 50*time.Millisecond, func() (bool, error) {
 		return false, nil
 	})
-	if !strings.Contains(err.Error(), "timed out") {
-		t.Errorf("ProcessWaitReady got: %v, expected: timed out", err)
+	if !strings.Contains(err.Error(), "not running yet") {
+		t.Errorf("ProcessWaitReady got: %v, expected: not running yet", err)
 	}
 	cmd.Process.Kill()
 }

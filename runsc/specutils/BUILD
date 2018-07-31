@@ -13,6 +13,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/sentry/kernel/auth",
+        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
     ],
 )
