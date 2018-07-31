@@ -809,14 +809,14 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		return uintptr(fd), nil, nil
 	case linux.F_GETFD:
-		return uintptr(fdFlagsToLinux(flags)), nil, nil
+		return uintptr(flags.ToLinuxFDFlags()), nil, nil
 	case linux.F_SETFD:
 		flags := args[2].Uint()
 		t.FDMap().SetFlags(fd, kernel.FDFlags{
 			CloseOnExec: flags&syscall.FD_CLOEXEC != 0,
 		})
 	case linux.F_GETFL:
-		return uintptr(flagsToLinux(file.Flags())), nil, nil
+		return uintptr(file.Flags().ToLinux()), nil, nil
 	case linux.F_SETFL:
 		flags := uint(args[2].Uint())
 		file.SetFlags(linuxToSettableFlags(flags))

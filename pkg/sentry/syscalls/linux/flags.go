@@ -17,7 +17,6 @@ package linux
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 )
 
 // flagsToPermissions returns a Permissions object from Linux flags.
@@ -31,48 +30,6 @@ func flagsToPermissions(mask uint) (p fs.PermMask) {
 		p.Read = true
 	case linux.O_RDONLY:
 		p.Read = true
-	}
-	return
-}
-
-// fdFlagsToLinux converts a kernel.FDFlags object to a Linux representation.
-func fdFlagsToLinux(flags kernel.FDFlags) (mask uint) {
-	if flags.CloseOnExec {
-		mask |= linux.FD_CLOEXEC
-	}
-	return
-}
-
-// flagsToLinux converts a FileFlags object to a Linux representation.
-func flagsToLinux(flags fs.FileFlags) (mask uint) {
-	if flags.Direct {
-		mask |= linux.O_DIRECT
-	}
-	if flags.NonBlocking {
-		mask |= linux.O_NONBLOCK
-	}
-	if flags.Sync {
-		mask |= linux.O_SYNC
-	}
-	if flags.Append {
-		mask |= linux.O_APPEND
-	}
-	if flags.Directory {
-		mask |= linux.O_DIRECTORY
-	}
-	if flags.Async {
-		mask |= linux.O_ASYNC
-	}
-	if flags.LargeFile {
-		mask |= linux.O_LARGEFILE
-	}
-	switch {
-	case flags.Read && flags.Write:
-		mask |= linux.O_RDWR
-	case flags.Write:
-		mask |= linux.O_WRONLY
-	case flags.Read:
-		mask |= linux.O_RDONLY
 	}
 	return
 }
