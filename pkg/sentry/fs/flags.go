@@ -14,6 +14,10 @@
 
 package fs
 
+import (
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+)
+
 // FileFlags encodes file flags.
 type FileFlags struct {
 	// Direct indicates that I/O should be done directly.
@@ -77,4 +81,39 @@ func (f FileFlags) Settable() SettableFileFlags {
 		Append:      f.Append,
 		Async:       f.Async,
 	}
+}
+
+// ToLinux converts a FileFlags object to a Linux representation.
+func (f FileFlags) ToLinux() (mask uint) {
+	if f.Direct {
+		mask |= linux.O_DIRECT
+	}
+	if f.NonBlocking {
+		mask |= linux.O_NONBLOCK
+	}
+	if f.Sync {
+		mask |= linux.O_SYNC
+	}
+	if f.Append {
+		mask |= linux.O_APPEND
+	}
+	if f.Directory {
+		mask |= linux.O_DIRECTORY
+	}
+	if f.Async {
+		mask |= linux.O_ASYNC
+	}
+	if f.LargeFile {
+		mask |= linux.O_LARGEFILE
+	}
+
+	switch {
+	case f.Read && f.Write:
+		mask |= linux.O_RDWR
+	case f.Write:
+		mask |= linux.O_WRONLY
+	case f.Read:
+		mask |= linux.O_RDONLY
+	}
+	return
 }
