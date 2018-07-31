@@ -30,7 +30,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_CLONE:         {},
 	syscall.SYS_CLOSE:         {},
 	syscall.SYS_DUP:           {},
-	syscall.SYS_DUP2:          {},
 	syscall.SYS_EPOLL_CREATE1: {},
 	syscall.SYS_EPOLL_CTL:     {},
 	syscall.SYS_EPOLL_PWAIT:   {},
