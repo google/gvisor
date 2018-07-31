@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -313,33 +314,30 @@ func SandboxID(spec *specs.Spec) (string, bool) {
 // the 'ready' function returns true. It continues to wait if 'ready' returns
 // false. It returns error on timeout, if the process stops or if 'ready' fails.
 func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) error {
-	backoff := 1 * time.Millisecond
-	for start := time.Now(); time.Now().Sub(start) < timeout; {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 1 * time.Millisecond
+	b.MaxInterval = 1 * time.Second
+	b.MaxElapsedTime = timeout
+
+	op := func() error {
 		if ok, err := ready(); err != nil {
-			return err
+			return backoff.Permanent(err)
 		} else if ok {
 			return nil
 		}
 
 		// Check if the process is still running.
-		var ws syscall.WaitStatus
-		var ru syscall.Rusage
-
 		// If the process is alive, child is 0 because of the NOHANG option.
 		// If the process has terminated, child equals the process id.
+		var ws syscall.WaitStatus
+		var ru syscall.Rusage
 		child, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, &ru)
 		if err != nil {
-			return fmt.Errorf("error waiting for process: %v", err)
+			return backoff.Permanent(fmt.Errorf("error waiting for process: %v", err))
 		} else if child == pid {
-			return fmt.Errorf("process %d has terminated", pid)
+			return backoff.Permanent(fmt.Errorf("process %d has terminated", pid))
 		}
-
-		// Process continues to run, backoff and retry.
-		time.Sleep(backoff)
-		backoff *= 2
-		if backoff > 1*time.Second {
-			backoff = 1 * time.Second
-		}
+		return fmt.Errorf("process %d not running yet", pid)
 	}
-	return fmt.Errorf("timed out waiting for process (%d)", pid)
+	return backoff.Retry(op, b)
 }
