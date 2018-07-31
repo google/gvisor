@@ -392,11 +392,17 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	}
 	if err := fchown(fd, uid, gid); err != nil {
 		syscall.Close(fd)
+		if e := syscall.Unlinkat(l.controlFD(), name); e != nil {
+			log.Warningf("error unlinking file %q after failed chown: %v", name, e)
+		}
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 	stat, err := stat(fd)
 	if err != nil {
 		syscall.Close(fd)
+		if e := syscall.Unlinkat(l.controlFD(), name); e != nil {
+			log.Warningf("error unlinking file %q after failed stat: %v", name, e)
+		}
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 
