@@ -183,6 +183,14 @@ func (m *MultiDevice) Load(key MultiDeviceKey, value uint64) bool {
 		m.rcache = make(map[uint64]MultiDeviceKey)
 	}
 
+	if val, exists := m.cache[key]; exists && val != value {
+		return false
+	}
+	if k, exists := m.rcache[value]; exists && k != key {
+		// Should never happen.
+		panic("MultiDevice's caches are inconsistent")
+	}
+
 	// Cache value at key.
 	m.cache[key] = value
 
