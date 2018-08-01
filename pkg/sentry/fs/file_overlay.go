@@ -60,6 +60,8 @@ func overlayFile(ctx context.Context, inode *Inode, flags FileFlags) (*File, err
 }
 
 // overlayFileOperations implements FileOperations for a file in an overlay.
+//
+// +stateify savable
 type overlayFileOperations struct {
 	// upperMu protects upper below. In contrast lower is stable.
 	upperMu sync.Mutex `state:"nosave"`
@@ -375,6 +377,8 @@ func readdirOne(ctx context.Context, d *Dirent) (map[string]DentAttr, error) {
 
 // overlayMappingIdentity wraps a MappingIdentity, and also holds a reference
 // on a file during its lifetime.
+//
+// +stateify savable
 type overlayMappingIdentity struct {
 	refs.AtomicRefCount
 	id          memmap.MappingIdentity

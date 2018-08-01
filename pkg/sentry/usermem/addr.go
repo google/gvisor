@@ -19,6 +19,8 @@ import (
 )
 
 // Addr represents a generic virtual address.
+//
+// +stateify savable
 type Addr uintptr
 
 // AddLength adds the given length to start and returns the result. ok is true

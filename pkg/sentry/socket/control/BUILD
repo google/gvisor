@@ -1,26 +1,14 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "control_state",
-    srcs = [
-        "control.go",
-    ],
-    out = "control_state.go",
-    imports = [
-        "gvisor.googlesource.com/gvisor/pkg/sentry/fs",
-    ],
-    package = "control",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "control",
-    srcs = [
-        "control.go",
-        "control_state.go",
-    ],
+    srcs = ["control.go"],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/control",
+    imports = [
+        "gvisor.googlesource.com/gvisor/pkg/sentry/fs",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
@@ -31,7 +19,6 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/syserror",
         "//pkg/tcpip/transport/unix",
     ],

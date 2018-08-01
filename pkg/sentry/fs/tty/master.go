@@ -27,6 +27,8 @@ import (
 
 // masterInodeOperations are the fs.InodeOperations for the master end of the
 // Terminal (ptmx file).
+//
+// +stateify savable
 type masterInodeOperations struct {
 	inodeOperations
 
@@ -96,6 +98,8 @@ func (mi *masterInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flag
 }
 
 // masterFileOperations are the fs.FileOperations for the master end of a terminal.
+//
+// +stateify savable
 type masterFileOperations struct {
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`

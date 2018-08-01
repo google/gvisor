@@ -41,6 +41,8 @@ const DefaultPipeSize = 65536
 // Pipe is an encapsulation of a platform-independent pipe.
 // It manages a buffered byte queue shared between a reader/writer
 // pair.
+//
+// +stateify savable
 type Pipe struct {
 	waiter.Queue `state:"nosave"`
 

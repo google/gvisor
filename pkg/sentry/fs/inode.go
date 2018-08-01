@@ -28,6 +28,8 @@ import (
 
 // Inode is a file system object that can be simultaneously referenced by different
 // components of the VFS (Dirent, fs.File, etc).
+//
+// +stateify savable
 type Inode struct {
 	// AtomicRefCount is our reference count.
 	refs.AtomicRefCount
@@ -58,6 +60,8 @@ type Inode struct {
 // Note that in Linux fcntl(2) and flock(2) locks are _not_ cooperative, because race and
 // deadlock conditions make merging them prohibitive. We do the same and keep them oblivious
 // to each other but provide a "context" as a convenient container.
+//
+// +stateify savable
 type LockCtx struct {
 	// Posix is a set of POSIX-style regional advisory locks, see fcntl(2).
 	Posix lock.Locks

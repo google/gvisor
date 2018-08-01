@@ -31,6 +31,8 @@ import (
 // read and write requests. This should only be used directly for named pipes.
 // pipe(2) and pipe2(2) only support unidirectional pipes and should use
 // either pipe.Reader or pipe.Writer.
+//
+// +stateify savable
 type ReaderWriter struct {
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`

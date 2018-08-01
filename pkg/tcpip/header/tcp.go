@@ -120,6 +120,8 @@ type TCPSynOptions struct {
 }
 
 // SACKBlock represents a single contiguous SACK block.
+//
+// +stateify savable
 type SACKBlock struct {
 	// Start indicates the lowest sequence number in the block.
 	Start seqnum.Value
@@ -131,6 +133,8 @@ type SACKBlock struct {
 
 // TCPOptions are used to parse and cache the TCP segment options for a non
 // syn/syn-ack segment.
+//
+// +stateify savable
 type TCPOptions struct {
 	// TS is true if the TimeStamp option is enabled.
 	TS bool

@@ -29,6 +29,8 @@ const binderEnabledKey = "binder_enabled"
 const ashmemEnabledKey = "ashmem_enabled"
 
 // filesystem is a devtmpfs.
+//
+// +stateify savable
 type filesystem struct{}
 
 func init() {

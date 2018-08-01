@@ -25,6 +25,8 @@ import (
 
 // regularFileOperations implements fs.FileOperations for a regular
 // tmpfs file.
+//
+// +stateify savable
 type regularFileOperations struct {
 	waiter.AlwaysReady   `state:"nosave"`
 	fsutil.NoopRelease   `state:"nosave"`

@@ -62,6 +62,8 @@ import (
 
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
 // Init() or LoadFrom().
+//
+// +stateify savable
 type Kernel struct {
 	// extMu serializes external changes to the Kernel with calls to
 	// Kernel.SaveTo. (Kernel.SaveTo requires that the state of the Kernel
@@ -158,7 +160,7 @@ type Kernel struct {
 
 	// exitErr is the error causing the sandbox to exit, if any. It is
 	// protected by extMu.
-	exitErr error
+	exitErr error `state:"nosave"`
 
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`

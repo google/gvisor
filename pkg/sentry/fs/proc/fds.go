@@ -138,6 +138,8 @@ func (f *fd) Close() error {
 }
 
 // fdDir implements /proc/TID/fd.
+//
+// +stateify savable
 type fdDir struct {
 	ramfs.Dir
 
@@ -197,6 +199,8 @@ func (f *fdDir) DeprecatedReaddir(ctx context.Context, dirCtx *fs.DirCtx, offset
 }
 
 // fdInfo is a single file in /proc/TID/fdinfo/.
+//
+// +stateify savable
 type fdInfo struct {
 	ramfs.File
 
@@ -229,6 +233,8 @@ func (*fdInfo) Truncate(ctx context.Context, inode *fs.Inode, size int64) error 
 
 // fdInfoDir implements /proc/TID/fdinfo.  It embeds an fdDir, but overrides
 // Lookup and Readdir.
+//
+// +stateify savable
 type fdInfoDir struct {
 	ramfs.Dir
 

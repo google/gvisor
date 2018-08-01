@@ -51,6 +51,8 @@ const maxTraversals = 10
 // to lock down the configurations. This filesystem should only be mounted at root.
 //
 // Think twice before exposing this to applications.
+//
+// +stateify savable
 type Filesystem struct {
 	// whitelist is a set of host paths to whitelist.
 	paths []string
@@ -266,8 +268,10 @@ func newMountSource(ctx context.Context, root string, mounter fs.FileOwner, file
 }
 
 // superOperations implements fs.MountSourceOperations.
+//
+// +stateify savable
 type superOperations struct {
-	fs.SimpleMountSourceOperations `state:"nosave"`
+	fs.SimpleMountSourceOperations
 
 	// root is the path of the mount point. All inode mappings
 	// are relative to this root.

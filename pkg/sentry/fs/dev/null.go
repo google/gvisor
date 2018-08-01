@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
+// +stateify savable
 type nullDevice struct {
 	ramfs.Entry
 }
@@ -54,6 +55,7 @@ func (n *nullDevice) Truncate(context.Context, *fs.Inode, int64) error {
 	return nil
 }
 
+// +stateify savable
 type zeroDevice struct {
 	nullDevice
 }
@@ -80,6 +82,7 @@ func (zd *zeroDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 	}), nil
 }
 
+// +stateify savable
 type zeroFileOperations struct {
 	fs.FileOperations
 }

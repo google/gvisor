@@ -65,6 +65,8 @@ const (
 
 // TaskGoroutineSchedInfo contains task goroutine scheduling state which must
 // be read and updated atomically.
+//
+// +stateify savable
 type TaskGoroutineSchedInfo struct {
 	// Timestamp was the value of Kernel.cpuClock when this
 	// TaskGoroutineSchedInfo was last updated.

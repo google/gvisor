@@ -1,21 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "gofer_state",
-    srcs = [
-        "file.go",
-        "file_state.go",
-        "fs.go",
-        "inode.go",
-        "inode_state.go",
-        "session.go",
-        "session_state.go",
-    ],
-    out = "gofer_state.go",
-    package = "gofer",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "gofer",
@@ -27,7 +12,6 @@ go_library(
         "file.go",
         "file_state.go",
         "fs.go",
-        "gofer_state.go",
         "handles.go",
         "inode.go",
         "inode_state.go",
@@ -41,7 +25,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/amutex",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/metric",
@@ -54,15 +37,11 @@ go_library(
         "//pkg/sentry/fs/fdpipe",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/host",
-        "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
-        "//pkg/sentry/uniqueid",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/transport/unix",

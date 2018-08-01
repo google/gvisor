@@ -26,6 +26,8 @@ import (
 
 // timekeeperClock is a ktime.Clock that reads time from a
 // kernel.Timekeeper-managed clock.
+//
+// +stateify savable
 type timekeeperClock struct {
 	tk *Timekeeper
 	c  sentrytime.ClockID
@@ -49,6 +51,8 @@ func (tc *timekeeperClock) Now() ktime.Time {
 
 // tgClock is a ktime.Clock that measures the time a thread group has spent
 // executing.
+//
+// +stateify savable
 type tgClock struct {
 	tg *ThreadGroup
 
@@ -155,6 +159,8 @@ func (tc *taskClock) Now() ktime.Time {
 }
 
 // signalNotifier is a ktime.Listener that sends signals to a ThreadGroup.
+//
+// +stateify savable
 type signalNotifier struct {
 	tg         *ThreadGroup
 	signal     linux.Signal
@@ -179,6 +185,8 @@ func (s *signalNotifier) Notify(exp uint64) {
 func (s *signalNotifier) Destroy() {}
 
 // TimerManager is a collection of supported process cpu timers.
+//
+// +stateify savable
 type TimerManager struct {
 	// Clocks used to drive thread group execution time timers.
 	virtClock *tgClock

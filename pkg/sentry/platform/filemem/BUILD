@@ -1,18 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "filemem_autogen_state",
-    srcs = [
-        "filemem.go",
-        "filemem_state.go",
-        "usage_set.go",
-    ],
-    out = "filemem_autogen_state.go",
-    package = "filemem",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_template_instance(
     name = "usage_set",
@@ -38,7 +27,6 @@ go_library(
     name = "filemem",
     srcs = [
         "filemem.go",
-        "filemem_autogen_state.go",
         "filemem_state.go",
         "filemem_unsafe.go",
         "usage_set.go",

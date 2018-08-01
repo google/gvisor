@@ -27,6 +27,8 @@ import (
 // holding an extra ref on each dirent known (by inotify) to point to the
 // inode. These are known as pins. For a full discussion, see
 // fs/g3doc/inotify.md.
+//
+// +stateify savable
 type Watch struct {
 	// Inotify instance which owns this watch.
 	owner *Inotify

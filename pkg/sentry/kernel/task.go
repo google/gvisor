@@ -52,6 +52,8 @@ import (
 // All fields that are "exclusive to the task goroutine" can only be accessed
 // by the task goroutine while it is running. The task goroutine does not
 // require synchronization to read or write these fields.
+//
+// +stateify savable
 type Task struct {
 	taskNode
 
