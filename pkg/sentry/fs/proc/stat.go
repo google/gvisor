@@ -25,6 +25,8 @@ import (
 )
 
 // statData backs /proc/stat.
+//
+// +stateify savable
 type statData struct {
 	// k is the owning Kernel.
 	k *kernel.Kernel

@@ -29,6 +29,8 @@ import (
 
 // An idMapSeqSource is a seqfile.SeqSource that returns UID or GID mappings
 // from a task's user namespace.
+//
+// +stateify savable
 type idMapSeqSource struct {
 	t    *kernel.Task
 	gids bool
@@ -70,6 +72,7 @@ type idMapSeqHandle struct {
 	value int
 }
 
+// +stateify savable
 type idMapSeqFile struct {
 	seqfile.SeqFile
 }

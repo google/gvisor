@@ -20,6 +20,8 @@ import (
 
 // AccessType specifies memory access types. This is used for
 // setting mapping permissions, as well as communicating faults.
+//
+// +stateify savable
 type AccessType struct {
 	// Read is read access.
 	Read bool

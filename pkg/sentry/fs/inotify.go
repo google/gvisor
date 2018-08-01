@@ -34,6 +34,8 @@ import (
 //
 // Lock ordering:
 //   Inotify.mu -> Inode.Watches.mu -> Watch.mu -> Inotify.evMu
+//
+// +stateify savable
 type Inotify struct {
 	// Unique identifier for this inotify instance. We don't just reuse the
 	// inotify fd because fds can be duped. These should not be exposed to the

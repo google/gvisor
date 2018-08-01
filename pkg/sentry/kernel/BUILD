@@ -1,58 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "kernel_state",
-    srcs = [
-        "abstract_socket_namespace.go",
-        "fd_map.go",
-        "fs_context.go",
-        "ipc_namespace.go",
-        "kernel.go",
-        "kernel_state.go",
-        "pending_signals.go",
-        "pending_signals_state.go",
-        "process_group_list.go",
-        "ptrace.go",
-        "rseq.go",
-        "session_list.go",
-        "sessions.go",
-        "signal.go",
-        "signal_handlers.go",
-        "syscalls.go",
-        "syscalls_state.go",
-        "syslog.go",
-        "task.go",
-        "task_clone.go",
-        "task_context.go",
-        "task_exec.go",
-        "task_exit.go",
-        "task_list.go",
-        "task_resources.go",
-        "task_run.go",
-        "task_sched.go",
-        "task_signals.go",
-        "task_start.go",
-        "task_syscall.go",
-        "thread_group.go",
-        "threads.go",
-        "timekeeper.go",
-        "timekeeper_state.go",
-        "timer.go",
-        "uts_namespace.go",
-        "vdso.go",
-        "version.go",
-    ],
-    out = "kernel_autogen_state.go",
-    imports = [
-        "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
-        "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
-        "gvisor.googlesource.com/gvisor/pkg/tcpip",
-    ],
-    package = "kernel",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_template_instance(
     name = "pending_signals_list",
@@ -118,7 +67,6 @@ go_library(
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
-        "kernel_autogen_state.go",
         "kernel_state.go",
         "pending_signals.go",
         "pending_signals_list.go",
@@ -164,6 +112,11 @@ go_library(
         "version.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel",
+    imports = [
+        "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
+        # "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
+        "gvisor.googlesource.com/gvisor/pkg/tcpip",
+    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi",

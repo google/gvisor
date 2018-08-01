@@ -29,6 +29,8 @@ import (
 // HostFileMapper caches mappings of an arbitrary host file descriptor. It is
 // used by implementations of memmap.Mappable that represent a host file
 // descriptor.
+//
+// +stateify savable
 type HostFileMapper struct {
 	// HostFile conceptually breaks the file into pieces called chunks, of
 	// size and alignment chunkSize, and caches mappings of the file on a chunk

@@ -36,6 +36,8 @@ type Linker interface {
 //      for e := l.Front(); e != nil; e = e.Next() {
 // 		// do something with e.
 //      }
+//
+// +stateify savable
 type List struct {
 	head Linker
 	tail Linker
@@ -155,6 +157,8 @@ func (l *List) Remove(e Linker) {
 // Entry is a default implementation of Linker. Users can add anonymous fields
 // of this type to their structs to make them automatically implement the
 // methods needed by List.
+//
+// +stateify savable
 type Entry struct {
 	next Linker
 	prev Linker

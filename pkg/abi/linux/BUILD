@@ -4,19 +4,7 @@
 
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "linux_state",
-    srcs = [
-        "binder.go",
-        "bpf.go",
-        "time.go",
-        "tty.go",
-    ],
-    out = "linux_state.go",
-    package = "linux",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "linux",
@@ -41,7 +29,6 @@ go_library(
         "ipc.go",
         "limits.go",
         "linux.go",
-        "linux_state.go",
         "mm.go",
         "netdevice.go",
         "netlink.go",
@@ -67,6 +54,5 @@ go_library(
         "//pkg/abi",
         "//pkg/binary",
         "//pkg/bits",
-        "//pkg/state",
     ],
 )

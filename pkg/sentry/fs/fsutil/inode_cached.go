@@ -55,6 +55,8 @@ import (
 //
 // Implementations of InodeOperations.WriteOut must call Sync to write out
 // in-memory modifications of data and metadata to the CachedFileObject.
+//
+// +stateify savable
 type CachingInodeOperations struct {
 	// backingFile is a handle to a cached file object.
 	backingFile CachedFileObject

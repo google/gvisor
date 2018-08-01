@@ -24,6 +24,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
+// +stateify savable
 type randomDevice struct {
 	ramfs.Entry
 }

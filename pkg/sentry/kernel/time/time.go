@@ -42,6 +42,8 @@ const (
 //
 // Time may represent time with respect to any clock and may not have any
 // meaning in the real world.
+//
+// +stateify savable
 type Time struct {
 	ns int64
 }
@@ -286,6 +288,8 @@ type TimerListener interface {
 }
 
 // Setting contains user-controlled mutable Timer properties.
+//
+// +stateify savable
 type Setting struct {
 	// Enabled is true if the timer is running.
 	Enabled bool
@@ -371,6 +375,8 @@ func (s Setting) advancedTo(now Time) (Setting, uint64) {
 //
 // Timers should be created using NewTimer and must be cleaned up by calling
 // Timer.Destroy when no longer used.
+//
+// +stateify savable
 type Timer struct {
 	// clock is the time source. clock is immutable.
 	clock Clock

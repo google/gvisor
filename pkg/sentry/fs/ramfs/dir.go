@@ -44,6 +44,8 @@ type CreateOps struct {
 }
 
 // Dir represents a single directory in the filesystem.
+//
+// +stateify savable
 type Dir struct {
 	Entry
 

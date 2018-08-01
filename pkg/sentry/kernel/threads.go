@@ -50,6 +50,8 @@ func (tid ThreadID) String() string {
 const InitTID ThreadID = 1
 
 // A TaskSet comprises all tasks in a system.
+//
+// +stateify savable
 type TaskSet struct {
 	// mu protects all relationships betweens tasks and thread groups in the
 	// TaskSet. (mu is approximately equivalent to Linux's tasklist_lock.)
@@ -110,6 +112,8 @@ func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup)) {
 //
 // N.B. A task is said to be visible in a PID namespace if the PID namespace
 // contains a thread ID that maps to that task.
+//
+// +stateify savable
 type PIDNamespace struct {
 	// owner is the TaskSet that this PID namespace belongs to. The owner
 	// pointer is immutable.
@@ -263,6 +267,8 @@ func (ns *PIDNamespace) UserNamespace() *auth.UserNamespace {
 // (threadGroupNode is an anonymous field in ThreadGroup; this is to expose
 // threadGroupEntry's methods on ThreadGroup to make it implement
 // threadGroupLinker.)
+//
+// +stateify savable
 type threadGroupNode struct {
 	// pidns is the PID namespace containing the thread group and all of its
 	// member tasks. The pidns pointer is immutable.
@@ -382,6 +388,8 @@ func (tg *ThreadGroup) ID() ThreadID {
 
 // A taskNode defines the relationship between a task and the rest of the
 // system. The comments on threadGroupNode also apply to taskNode.
+//
+// +stateify savable
 type taskNode struct {
 	// tg is the thread group that this task belongs to. The tg pointer is
 	// immutable.

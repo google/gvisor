@@ -1,27 +1,16 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "cpuid_state",
-    srcs = ["cpuid.go"],
-    out = "cpuid_state.go",
-    package = "cpuid",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "cpuid",
     srcs = [
         "cpu_amd64.s",
         "cpuid.go",
-        "cpuid_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/cpuid",
     visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/log",
-        "//pkg/state",
-    ],
+    deps = ["//pkg/log"],
 )
 
 go_test(

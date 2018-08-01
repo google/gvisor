@@ -21,6 +21,8 @@ import (
 )
 
 // IPCNamespace represents an IPC namespace.
+//
+// +stateify savable
 type IPCNamespace struct {
 	// User namespace which owns this IPC namespace. Immutable.
 	userNS *auth.UserNamespace

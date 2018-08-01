@@ -155,6 +155,8 @@ type FileMem struct {
 }
 
 // usage tracks usage information.
+//
+// +stateify savable
 type usageInfo struct {
 	// kind is the usage kind.
 	kind usage.MemoryKind

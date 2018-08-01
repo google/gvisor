@@ -81,6 +81,8 @@ var renameMu sync.RWMutex
 //
 // Dirents currently do not attempt to free entries that lack application references under
 // memory pressure.
+//
+// +stateify savable
 type Dirent struct {
 	// AtomicRefCount is our reference count.
 	refs.AtomicRefCount

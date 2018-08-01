@@ -1,24 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "fsutil_state",
-    srcs = [
-        "dirty_set_impl.go",
-        "file.go",
-        "file_range_set_impl.go",
-        "frame_ref_set_impl.go",
-        "handle.go",
-        "host_file_mapper.go",
-        "host_file_mapper_state.go",
-        "inode.go",
-        "inode_cached.go",
-    ],
-    out = "fsutil_state.go",
-    package = "fsutil",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_template_instance(
     name = "dirty_set_impl",
@@ -84,7 +67,6 @@ go_library(
         "frame_ref_set.go",
         "frame_ref_set_impl.go",
         "fsutil.go",
-        "fsutil_state.go",
         "handle.go",
         "host_file_mapper.go",
         "host_file_mapper_state.go",

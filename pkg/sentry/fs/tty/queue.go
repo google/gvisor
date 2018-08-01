@@ -32,11 +32,13 @@ import (
 // processed (i.e. undergo termios transformations) as they are added to the
 // read buffer. The read buffer is readable when its length is nonzero and
 // readable is true.
+//
+// +stateify savable
 type queue struct {
 	// mu protects everything in queue.
 	mu sync.Mutex `state:"nosave"`
 
-	waiter.Queue `state:"nosave"`
+	waiter.Queue `state:"zerovalue"`
 
 	// readBuf is buffer of data ready to be read when readable is true.
 	// This data has been processed.

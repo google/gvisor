@@ -37,6 +37,8 @@ import (
 )
 
 // fileOperations implements fs.FileOperations for a host file descriptor.
+//
+// +stateify savable
 type fileOperations struct {
 	fsutil.NoopRelease `state:"nosave"`
 

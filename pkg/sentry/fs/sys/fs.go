@@ -20,6 +20,8 @@ import (
 )
 
 // filesystem is a sysfs.
+//
+// +stateify savable
 type filesystem struct{}
 
 func init() {

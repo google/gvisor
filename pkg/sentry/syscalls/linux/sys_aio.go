@@ -69,6 +69,8 @@ type ioCallback struct {
 }
 
 // ioEvent describes an I/O result.
+//
+// +stateify savable
 type ioEvent struct {
 	Data    uint64
 	Obj     uint64

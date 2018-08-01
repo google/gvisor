@@ -1,18 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "linux_state",
-    srcs = [
-        "sys_aio.go",
-        "sys_futex.go",
-        "sys_poll.go",
-        "sys_time.go",
-    ],
-    out = "linux_state.go",
-    package = "linux",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "linux",
@@ -20,7 +8,6 @@ go_library(
         "error.go",
         "flags.go",
         "linux64.go",
-        "linux_state.go",
         "sigset.go",
         "sys_aio.go",
         "sys_capability.go",
@@ -66,7 +53,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/bpf",
-        "//pkg/eventchannel",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/rand",
@@ -74,7 +60,6 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
-        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",
         "//pkg/sentry/kernel",
@@ -85,7 +70,6 @@ go_library(
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/sched",
-        "//pkg/sentry/kernel/semaphore",
         "//pkg/sentry/kernel/shm",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
@@ -97,8 +81,6 @@ go_library(
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/state",
-        "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
