@@ -57,7 +57,7 @@ func TestTimeouts(t *testing.T) {
 
 func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 	// Create the stack and add a NIC.
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName, udp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName, udp.ProtocolName}, stack.Options{})
 
 	if err := s.CreateNIC(NICID, loopback.New()); err != nil {
 		return nil, err

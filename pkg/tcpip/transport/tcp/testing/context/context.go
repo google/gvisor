@@ -139,7 +139,7 @@ type Context struct {
 // New allocates and initializes a test context containing a new
 // stack and a link-layer endpoint.
 func New(t *testing.T, mtu uint32) *Context {
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultBufferSize, tcp.DefaultBufferSize * 10}); err != nil {

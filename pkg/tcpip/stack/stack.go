@@ -285,6 +285,14 @@ type Stack struct {
 	clock tcpip.Clock
 }
 
+// Options contains optional Stack configuration.
+type Options struct {
+	// Clock is an optional clock source used for timestampping packets.
+	//
+	// If no Clock is specified, the clock source will be time.Now.
+	Clock tcpip.Clock
+}
+
 // New allocates a new networking stack with only the requested networking and
 // transport protocols configured with default options.
 //
@@ -292,7 +300,12 @@ type Stack struct {
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
-func New(clock tcpip.Clock, network []string, transport []string) *Stack {
+func New(network []string, transport []string, opts Options) *Stack {
+	clock := opts.Clock
+	if clock == nil {
+		clock = &tcpip.StdClock{}
+	}
+
 	s := &Stack{
 		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
