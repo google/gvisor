@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
+// +stateify savable
 type file struct {
 	fs.InodeOperations
 

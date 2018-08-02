@@ -19,6 +19,8 @@ import (
 )
 
 // An AuxEntry represents an entry in an ELF auxiliary vector.
+//
+// +stateify savable
 type AuxEntry struct {
 	Key   uint64
 	Value usermem.Addr

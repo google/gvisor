@@ -18,6 +18,8 @@ import "gvisor.googlesource.com/gvisor/pkg/sentry/context"
 
 // overlayMountSourceOperations implements MountSourceOperations for an overlay
 // mount point.
+//
+// +stateify savable
 type overlayMountSourceOperations struct {
 	upper *MountSource
 	lower *MountSource
@@ -72,6 +74,8 @@ func (o *overlayMountSourceOperations) Destroy() {
 }
 
 // type overlayFilesystem is the filesystem for overlay mounts.
+//
+// +stateify savable
 type overlayFilesystem struct{}
 
 // Name implements Filesystem.Name.

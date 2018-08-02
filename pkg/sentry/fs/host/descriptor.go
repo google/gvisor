@@ -25,6 +25,8 @@ import (
 )
 
 // descriptor wraps a host fd.
+//
+// +stateify savable
 type descriptor struct {
 	// donated is true if the host fd was donated by another process.
 	donated bool

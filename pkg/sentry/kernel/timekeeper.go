@@ -25,6 +25,8 @@ import (
 )
 
 // Timekeeper manages all of the kernel clocks.
+//
+// +stateify savable
 type Timekeeper struct {
 	// clocks are the clock sources.
 	//

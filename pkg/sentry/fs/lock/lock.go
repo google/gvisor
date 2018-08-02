@@ -88,6 +88,8 @@ const LockEOF = math.MaxUint64
 //
 // A Lock may be downgraded from a write lock to a read lock only if
 // the write lock's uid is the same as the read lock.
+//
+// +stateify savable
 type Lock struct {
 	// Readers are the set of read lock holders identified by UniqueID.
 	// If len(Readers) > 0 then HasWriter must be false.
@@ -103,6 +105,8 @@ type Lock struct {
 }
 
 // Locks is a thread-safe wrapper around a LockSet.
+//
+// +stateify savable
 type Locks struct {
 	// mu protects locks below.
 	mu sync.Mutex `state:"nosave"`
@@ -111,7 +115,7 @@ type Locks struct {
 	locks LockSet
 
 	// blockedQueue is the queue of waiters that are waiting on a lock.
-	blockedQueue waiter.Queue
+	blockedQueue waiter.Queue `state:"zerovalue"`
 }
 
 // Blocker is the interface used for blocking locks. Passing a nil Blocker

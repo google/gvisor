@@ -26,6 +26,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
+// +stateify savable
 type pingPacket struct {
 	pingPacketEntry
 	senderAddress tcpip.FullAddress

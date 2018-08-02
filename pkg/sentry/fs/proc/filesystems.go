@@ -24,6 +24,8 @@ import (
 )
 
 // filesystemsData backs /proc/filesystems.
+//
+// +stateify savable
 type filesystemsData struct{}
 
 // NeedsUpdate returns true on the first generation. The set of registered file

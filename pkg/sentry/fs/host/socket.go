@@ -34,6 +34,8 @@ import (
 )
 
 // endpoint encapsulates the state needed to represent a host Unix socket.
+//
+// +stateify savable
 type endpoint struct {
 	queue waiter.Queue `state:"nosave"`
 

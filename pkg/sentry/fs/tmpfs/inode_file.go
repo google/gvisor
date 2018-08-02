@@ -43,6 +43,8 @@ import (
 // include an InvalidatorRegion associated with that reference. When the
 // referenced portion of the file is removed (with Truncate), the associated
 // InvalidatorRegion is invalidated.
+//
+// +stateify savable
 type fileInodeOperations struct {
 	fsutil.DeprecatedFileOperations `state:"nosave"`
 	fsutil.InodeNotDirectory        `state:"nosave"`

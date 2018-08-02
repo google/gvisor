@@ -30,6 +30,8 @@ import (
 type SeqHandle interface{}
 
 // SeqData holds the data for one unit in the file.
+//
+// +stateify savable
 type SeqData struct {
 	// The data to be returned to the user.
 	Buf []byte
@@ -82,6 +84,8 @@ func (s *SeqGenerationCounter) IsCurrent(generation int64) bool {
 }
 
 // SeqFile is used to provide dynamic files that can be ordered by record.
+//
+// +stateify savable
 type SeqFile struct {
 	ramfs.Entry
 

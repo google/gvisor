@@ -101,6 +101,8 @@ func (i InodeMappings) String() string {
 // (e.g. cannot be mounted at different locations).
 //
 // TODO: Move mount-specific information out of MountSource.
+//
+// +stateify savable
 type MountSource struct {
 	refs.AtomicRefCount
 
@@ -260,6 +262,8 @@ func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *Mo
 }
 
 // SimpleMountSourceOperations implements MountSourceOperations.
+//
+// +stateify savable
 type SimpleMountSourceOperations struct {
 	keep bool
 }

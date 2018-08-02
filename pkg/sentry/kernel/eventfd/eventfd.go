@@ -35,6 +35,8 @@ import (
 // EventOperations represents an event with the semantics of Linux's file-based event
 // notification (eventfd). Eventfds are usually internal to the Sentry but in certain
 // situations they may be converted into a host-backed eventfd.
+//
+// +stateify savable
 type EventOperations struct {
 	fsutil.NoopRelease   `state:"nosave"`
 	fsutil.PipeSeek      `state:"nosave"`
@@ -49,7 +51,7 @@ type EventOperations struct {
 
 	// Queue is used to notify interested parties when the event object
 	// becomes readable or writable.
-	wq waiter.Queue `state:"nosave"`
+	wq waiter.Queue `state:"zerovalue"`
 
 	// val is the current value of the event counter.
 	val uint64

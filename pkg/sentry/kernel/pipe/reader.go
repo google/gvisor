@@ -20,6 +20,8 @@ import (
 
 // Reader satisfies the fs.FileOperations interface for read-only pipes.
 // Reader should be used with !fs.FileFlags.Write to reject writes.
+//
+// +stateify savable
 type Reader struct {
 	ReaderWriter
 }

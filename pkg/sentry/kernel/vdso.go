@@ -52,6 +52,8 @@ type vdsoParams struct {
 // Everything in the struct is 8 bytes for easy alignment.
 //
 // It must be kept in sync with params in vdso/vdso_time.cc.
+//
+// +stateify savable
 type VDSOParamPage struct {
 	// The parameter page is fr, allocated from platform.Memory().
 	platform platform.Platform

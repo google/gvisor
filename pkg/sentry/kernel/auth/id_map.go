@@ -77,6 +77,8 @@ func (ns *UserNamespace) allIDsMapped(m *idMapSet, start, end uint32) bool {
 // An IDMapEntry represents a mapping from a range of contiguous IDs in a user
 // namespace to an equally-sized range of contiguous IDs in the namespace's
 // parent.
+//
+// +stateify savable
 type IDMapEntry struct {
 	// FirstID is the first ID in the range in the namespace.
 	FirstID uint32

@@ -254,6 +254,8 @@ const (
 // MemoryManager.
 //
 // Note that "highest address" below is always exclusive.
+//
+// +stateify savable
 type MmapLayout struct {
 	// MinAddr is the lowest mappable address.
 	MinAddr usermem.Addr

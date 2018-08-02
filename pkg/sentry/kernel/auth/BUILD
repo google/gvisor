@@ -1,20 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "auth_state",
-    srcs = [
-        "credentials.go",
-        "id.go",
-        "id_map_range.go",
-        "id_map_set.go",
-        "user_namespace.go",
-    ],
-    out = "auth_state.go",
-    package = "auth",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
     name = "id_map_range",
@@ -48,7 +35,6 @@ go_library(
     name = "auth",
     srcs = [
         "auth.go",
-        "auth_state.go",
         "capability_set.go",
         "context.go",
         "credentials.go",
@@ -66,7 +52,6 @@ go_library(
         "//pkg/bits",
         "//pkg/log",
         "//pkg/sentry/context",
-        "//pkg/state",
         "//pkg/syserror",
     ],
 )

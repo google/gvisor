@@ -54,6 +54,8 @@ func (v *View) ToVectorisedView(views [1]View) VectorisedView {
 
 // VectorisedView is a vectorised version of View using non contigous memory.
 // It supports all the convenience methods supported by View.
+//
+// +stateify savable
 type VectorisedView struct {
 	views []View
 	size  int

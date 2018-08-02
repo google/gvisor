@@ -20,6 +20,8 @@ import (
 )
 
 // Watches is the collection of inotify watches on an inode.
+//
+// +stateify savable
 type Watches struct {
 	// mu protects the fields below.
 	mu sync.RWMutex `state:"nosave"`

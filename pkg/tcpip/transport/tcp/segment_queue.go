@@ -21,6 +21,8 @@ import (
 )
 
 // segmentQueue is a bounded, thread-safe queue of TCP segments.
+//
+// +stateify savable
 type segmentQueue struct {
 	mu    sync.Mutex  `state:"nosave"`
 	list  segmentList `state:"wait"`

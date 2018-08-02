@@ -1,22 +1,10 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "seqfile_state",
-    srcs = [
-        "seqfile.go",
-    ],
-    out = "seqfile_state.go",
-    package = "seqfile",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "seqfile",
-    srcs = [
-        "seqfile.go",
-        "seqfile_state.go",
-    ],
+    srcs = ["seqfile.go"],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile",
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -26,26 +14,16 @@ go_library(
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/usermem",
-        "//pkg/state",
     ],
-)
-
-go_stateify(
-    name = "seqfile_test_state",
-    srcs = ["seqfile_test.go"],
-    out = "seqfile_test_state.go",
-    package = "seqfile",
 )
 
 go_test(
     name = "seqfile_test",
     size = "small",
-    srcs = [
-        "seqfile_test.go",
-        "seqfile_test_state.go",
-    ],
+    srcs = ["seqfile_test.go"],
     embed = [":seqfile"],
     deps = [
+        "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/ramfs/test",
