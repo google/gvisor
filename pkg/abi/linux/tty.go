@@ -286,18 +286,18 @@ var DefaultControlCharacters = [NumControlCharacters]uint8{
 	'\x7f',                 // VERASE = DEL
 	ControlCharacter('U'),  // VKILL = ^U
 	ControlCharacter('D'),  // VEOF = ^D
-	0, // VTIME
-	1, // VMIN
-	0, // VSWTC
-	ControlCharacter('Q'), // VSTART = ^Q
-	ControlCharacter('S'), // VSTOP = ^S
-	ControlCharacter('Z'), // VSUSP = ^Z
-	0, // VEOL
-	ControlCharacter('R'), // VREPRINT = ^R
-	ControlCharacter('O'), // VDISCARD = ^O
-	ControlCharacter('W'), // VWERASE = ^W
-	ControlCharacter('V'), // VLNEXT = ^V
-	0, // VEOL2
+	0,                      // VTIME
+	1,                      // VMIN
+	0,                      // VSWTC
+	ControlCharacter('Q'),  // VSTART = ^Q
+	ControlCharacter('S'),  // VSTOP = ^S
+	ControlCharacter('Z'),  // VSUSP = ^Z
+	0,                      // VEOL
+	ControlCharacter('R'),  // VREPRINT = ^R
+	ControlCharacter('O'),  // VDISCARD = ^O
+	ControlCharacter('W'),  // VWERASE = ^W
+	ControlCharacter('V'),  // VLNEXT = ^V
+	0,                      // VEOL2
 }
 
 // MasterTermios is the terminal configuration of the master end of a Unix98
