@@ -113,7 +113,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, syscall.EINVAL
 		}
 		// no_new_privs is assumed to always be set. See
-		// auth.Credentials.UpdateForExec.
+		// kernel.Task.updateCredsForExec.
 		return 0, nil, nil
 
 	case linux.PR_GET_NO_NEW_PRIVS:

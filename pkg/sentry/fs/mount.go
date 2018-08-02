@@ -159,10 +159,10 @@ const defaultDirentCacheSize uint64 = 1000
 func NewMountSource(mops MountSourceOperations, filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return &MountSource{
 		MountSourceOperations: mops,
-		Flags:      flags,
-		Filesystem: filesystem,
-		fscache:    NewDirentCache(defaultDirentCacheSize),
-		children:   make(map[*MountSource]struct{}),
+		Flags:                 flags,
+		Filesystem:            filesystem,
+		fscache:               NewDirentCache(defaultDirentCacheSize),
+		children:              make(map[*MountSource]struct{}),
 	}
 }
 
