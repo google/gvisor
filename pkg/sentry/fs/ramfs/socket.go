@@ -21,8 +21,6 @@ import (
 )
 
 // Socket represents a socket.
-//
-// +stateify savable
 type Socket struct {
 	Entry
 

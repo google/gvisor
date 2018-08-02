@@ -54,8 +54,6 @@ type congestionControl interface {
 }
 
 // sender holds the state necessary to send TCP segments.
-//
-// +stateify savable
 type sender struct {
 	ep *endpoint
 
@@ -135,8 +133,6 @@ type sender struct {
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
-//
-// +stateify savable
 type fastRecovery struct {
 	// active whether the endpoint is in fast recovery. The following fields
 	// are only meaningful when active is true.

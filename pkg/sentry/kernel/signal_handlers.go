@@ -22,8 +22,6 @@ import (
 )
 
 // SignalHandlers holds information about signal actions.
-//
-// +stateify savable
 type SignalHandlers struct {
 	// mu protects actions, as well as the signal state of all tasks and thread
 	// groups using this SignalHandlers object. (See comment on

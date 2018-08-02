@@ -71,8 +71,6 @@ func forEachMountSource(t *kernel.Task, fn func(string, *fs.MountSource)) {
 }
 
 // mountInfoFile is used to implement /proc/[pid]/mountinfo.
-//
-// +stateify savable
 type mountInfoFile struct {
 	t *kernel.Task
 }
@@ -154,8 +152,6 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 }
 
 // mountsFile is used to implement /proc/[pid]/mountinfo.
-//
-// +stateify savable
 type mountsFile struct {
 	t *kernel.Task
 }

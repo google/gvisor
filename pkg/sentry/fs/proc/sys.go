@@ -28,8 +28,6 @@ import (
 )
 
 // hostname is a file containing the system hostname.
-//
-// +stateify savable
 type hostname struct {
 	ramfs.Entry
 }
@@ -54,8 +52,6 @@ func (p *proc) newHostname(ctx context.Context, msrc *fs.MountSource) *fs.Inode 
 }
 
 // mmapMinAddrData backs /proc/sys/vm/mmap_min_addr.
-//
-// +stateify savable
 type mmapMinAddrData struct {
 	k *kernel.Kernel
 }
@@ -78,7 +74,6 @@ func (d *mmapMinAddrData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHand
 	}, 0
 }
 
-// +stateify savable
 type overcommitMemory struct{}
 
 func (*overcommitMemory) NeedsUpdate(generation int64) bool {

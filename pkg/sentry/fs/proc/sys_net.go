@@ -33,7 +33,6 @@ const (
 	tcpWMem
 )
 
-// +stateify savable
 type tcpMem struct {
 	ramfs.Entry
 	s    inet.Stack
@@ -101,7 +100,6 @@ func (m *tcpMem) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, 
 	return n, cperr
 }
 
-// +stateify savable
 type tcpSack struct {
 	ramfs.Entry
 	s inet.Stack

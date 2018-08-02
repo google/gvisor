@@ -36,8 +36,6 @@ const (
 // segment represents a TCP segment. It holds the payload and parsed TCP segment
 // information, and can be added to intrusive lists.
 // segment is mostly immutable, the only field allowed to change is viewToDeliver.
-//
-// +stateify savable
 type segment struct {
 	segmentEntry
 	refCnt int32

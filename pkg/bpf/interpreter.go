@@ -88,8 +88,6 @@ func (e Error) Error() string {
 }
 
 // Program is a BPF program that has been validated for consistency.
-//
-// +stateify savable
 type Program struct {
 	instructions []linux.BPFInstruction
 }

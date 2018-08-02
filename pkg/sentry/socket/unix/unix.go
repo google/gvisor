@@ -42,8 +42,6 @@ import (
 
 // SocketOperations is a Unix socket. It is similar to an epsocket, except it is backed
 // by a unix.Endpoint instead of a tcpip.Endpoint.
-//
-// +stateify savable
 type SocketOperations struct {
 	refs.AtomicRefCount
 	socket.ReceiveTimeout

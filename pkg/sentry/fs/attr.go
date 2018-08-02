@@ -91,8 +91,6 @@ func (n InodeType) String() string {
 
 // StableAttr contains Inode attributes that will be stable throughout the
 // lifetime of the Inode.
-//
-// +stateify savable
 type StableAttr struct {
 	// Type is the InodeType of a InodeOperations.
 	Type InodeType
@@ -152,8 +150,6 @@ func IsCharDevice(s StableAttr) bool {
 
 // UnstableAttr contains Inode attributes that may change over the lifetime
 // of the Inode.
-//
-// +stateify savable
 type UnstableAttr struct {
 	// Size is the file size in bytes.
 	Size int64
@@ -190,8 +186,6 @@ func WithCurrentTime(ctx context.Context, u UnstableAttr) UnstableAttr {
 }
 
 // AttrMask contains fields to mask StableAttr and UnstableAttr.
-//
-// +stateify savable
 type AttrMask struct {
 	Type             bool
 	DeviceID         bool
@@ -233,8 +227,6 @@ func (a AttrMask) Union(b AttrMask) AttrMask {
 }
 
 // PermMask are file access permissions.
-//
-// +stateify savable
 type PermMask struct {
 	// Read indicates reading is permitted.
 	Read bool
@@ -288,8 +280,6 @@ func (p PermMask) SupersetOf(other PermMask) bool {
 
 // FilePermissions represents the permissions of a file, with
 // Read/Write/Execute bits for user, group, and other.
-//
-// +stateify savable
 type FilePermissions struct {
 	User  PermMask
 	Group PermMask
@@ -380,8 +370,6 @@ func (f FilePermissions) AnyRead() bool {
 }
 
 // FileOwner represents ownership of a file.
-//
-// +stateify savable
 type FileOwner struct {
 	UID auth.KUID
 	GID auth.KGID

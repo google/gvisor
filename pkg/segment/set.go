@@ -88,8 +88,6 @@ const (
 // A Set is a mapping of segments with non-overlapping Range keys. The zero
 // value for a Set is an empty set. Set values are not safely movable nor
 // copyable. Set is thread-compatible.
-//
-// +stateify savable
 type Set struct {
 	root node `state:".(*SegmentDataSlices)"`
 }
@@ -598,7 +596,6 @@ func (s *Set) ApplyContiguous(r Range, fn func(seg Iterator)) GapIterator {
 	}
 }
 
-// +stateify savable
 type node struct {
 	// An internal binary tree node looks like:
 	//
@@ -1320,8 +1317,6 @@ func (n *node) writeDebugString(buf *bytes.Buffer, prefix string) {
 // SegmentDataSlices represents segments from a set as slices of start, end, and
 // values. SegmentDataSlices is primarily used as an intermediate representation
 // for save/restore and the layout here is optimized for that.
-//
-// +stateify savable
 type SegmentDataSlices struct {
 	Start  []Key
 	End    []Key

@@ -83,8 +83,6 @@ var (
 )
 
 // filesystem is a 9p client.
-//
-// +stateify savable
 type filesystem struct{}
 
 func init() {

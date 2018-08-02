@@ -21,8 +21,6 @@ import (
 
 // TaskResources is the subset of a task's data provided by its creator that is
 // not provided by the loader.
-//
-// +stateify savable
 type TaskResources struct {
 	// SignalMask is the set of signals whose delivery is currently blocked.
 	//

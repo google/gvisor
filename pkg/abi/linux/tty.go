@@ -38,8 +38,6 @@ type Termios struct {
 
 // KernelTermios is struct ktermios/struct termios2, defined in
 // uapi/asm-generic/termbits.h.
-//
-// +stateify savable
 type KernelTermios struct {
 	InputFlags        uint32
 	OutputFlags       uint32

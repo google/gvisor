@@ -1,7 +1,19 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "udp_state",
+    srcs = [
+        "endpoint.go",
+        "endpoint_state.go",
+        "udp_packet_list.go",
+    ],
+    out = "udp_state.go",
+    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
+    package = "udp",
+)
 
 go_template_instance(
     name = "udp_packet_list",
@@ -21,12 +33,13 @@ go_library(
         "endpoint_state.go",
         "protocol.go",
         "udp_packet_list.go",
+        "udp_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sleep",
+        "//pkg/state",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",

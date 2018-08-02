@@ -125,8 +125,6 @@ func GetFilesystems() []Filesystem {
 }
 
 // MountSourceFlags represents all mount option flags as a struct.
-//
-// +stateify savable
 type MountSourceFlags struct {
 	// ReadOnly corresponds to mount(2)'s "MS_RDONLY" and indicates that
 	// the filesystem should be mounted read-only.

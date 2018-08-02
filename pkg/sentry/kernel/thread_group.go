@@ -28,8 +28,6 @@ import (
 // groups" are usually called "processes" in userspace documentation.)
 //
 // ThreadGroup is a superset of Linux's struct signal_struct.
-//
-// +stateify savable
 type ThreadGroup struct {
 	threadGroupNode
 

@@ -47,8 +47,6 @@ const FileMaxOffset = math.MaxInt64
 // and write(2).
 //
 // FIXME: Split synchronization from cancellation.
-//
-// +stateify savable
 type File struct {
 	refs.AtomicRefCount
 

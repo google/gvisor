@@ -33,8 +33,6 @@ import (
 var openedWX = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_file", true /* sync */, "Number of times a writable+executable file was opened from a gofer.")
 
 // fileOperations implements fs.FileOperations for a remote file system.
-//
-// +stateify savable
 type fileOperations struct {
 	fsutil.NoIoctl     `state:"nosave"`
 	waiter.AlwaysReady `state:"nosave"`

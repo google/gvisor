@@ -28,8 +28,6 @@ var ptsDevice = device.NewAnonDevice()
 //
 // This devpts is always in the new "multi-instance" mode. i.e., it contains a
 // ptmx device tied to this mount.
-//
-// +stateify savable
 type filesystem struct{}
 
 func init() {
@@ -71,8 +69,6 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 }
 
 // superOperations implements fs.MountSourceOperations, preventing caching.
-//
-// +stateify savable
 type superOperations struct{}
 
 // Revalidate implements fs.DirentOperations.Revalidate.

@@ -60,8 +60,6 @@ type CredentialsControlMessage interface {
 }
 
 // A ControlMessages represents a collection of socket control messages.
-//
-// +stateify savable
 type ControlMessages struct {
 	// Rights is a control message containing FDs.
 	Rights RightsControlMessage
@@ -237,8 +235,6 @@ type BoundEndpoint interface {
 }
 
 // message represents a message passed over a Unix domain socket.
-//
-// +stateify savable
 type message struct {
 	ilist.Entry
 
@@ -310,8 +306,6 @@ type Receiver interface {
 }
 
 // queueReceiver implements Receiver for datagram sockets.
-//
-// +stateify savable
 type queueReceiver struct {
 	readQueue *queue.Queue
 }
@@ -375,8 +369,6 @@ func (q *queueReceiver) RecvMaxQueueSize() int64 {
 func (*queueReceiver) Release() {}
 
 // streamQueueReceiver implements Receiver for stream sockets.
-//
-// +stateify savable
 type streamQueueReceiver struct {
 	queueReceiver
 
@@ -587,7 +579,6 @@ type ConnectedEndpoint interface {
 	Release()
 }
 
-// +stateify savable
 type connectedEndpoint struct {
 	// endpoint represents the subset of the Endpoint functionality needed by
 	// the connectedEndpoint. It is implemented by both connectionedEndpoint
@@ -680,8 +671,6 @@ func (*connectedEndpoint) Release() {}
 // unix domain socket Endpoint implementations.
 //
 // Not to be used on its own.
-//
-// +stateify savable
 type baseEndpoint struct {
 	*waiter.Queue
 

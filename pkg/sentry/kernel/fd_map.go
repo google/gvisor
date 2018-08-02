@@ -46,8 +46,6 @@ func (f FDs) Less(i, j int) bool {
 }
 
 // FDFlags define flags for an individual descriptor.
-//
-// +stateify savable
 type FDFlags struct {
 	// CloseOnExec indicates the descriptor should be closed on exec.
 	CloseOnExec bool
@@ -71,16 +69,12 @@ func (f FDFlags) ToLinuxFDFlags() (mask uint) {
 
 // descriptor holds the details about a file descriptor, namely a pointer the
 // file itself and the descriptor flags.
-//
-// +stateify savable
 type descriptor struct {
 	file  *fs.File
 	flags FDFlags
 }
 
 // FDMap is used to manage File references and flags.
-//
-// +stateify savable
 type FDMap struct {
 	refs.AtomicRefCount
 	k     *Kernel

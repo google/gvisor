@@ -73,8 +73,6 @@ import (
 
 // execStop is a TaskStop that a task sets on itself when it wants to execve
 // and is waiting for the other tasks in its thread group to exit first.
-//
-// +stateify savable
 type execStop struct{}
 
 // Killable implements TaskStop.Killable.
@@ -121,8 +119,6 @@ func (t *Task) Execve(newTC *TaskContext) (*SyscallControl, error) {
 
 // The runSyscallAfterExecStop state continues execve(2) after all siblings of
 // a thread in the execve syscall have exited.
-//
-// +stateify savable
 type runSyscallAfterExecStop struct {
 	tc *TaskContext
 }

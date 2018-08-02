@@ -1,7 +1,14 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "fragmentation_state",
+    srcs = ["reassembler_list.go"],
+    out = "fragmentation_state.go",
+    package = "fragmentation",
+)
 
 go_template_instance(
     name = "reassembler_list",
@@ -19,6 +26,7 @@ go_library(
     srcs = [
         "frag_heap.go",
         "fragmentation.go",
+        "fragmentation_state.go",
         "reassembler.go",
         "reassembler_list.go",
     ],
@@ -26,6 +34,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/state",
         "//pkg/tcpip/buffer",
     ],
 )

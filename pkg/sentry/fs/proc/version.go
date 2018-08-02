@@ -23,8 +23,6 @@ import (
 )
 
 // versionData backs /proc/version.
-//
-// +stateify savable
 type versionData struct {
 	// k is the owning Kernel.
 	k *kernel.Kernel

@@ -33,8 +33,6 @@ import (
 )
 
 // proc is a root proc node.
-//
-// +stateify savable
 type proc struct {
 	ramfs.Dir
 
@@ -49,8 +47,6 @@ type proc struct {
 // stubProcFSFile is a file type that can be used to return file contents
 // which are constant. This file is not writable and will always have mode
 // 0444.
-//
-// +stateify savable
 type stubProcFSFile struct {
 	ramfs.Entry
 

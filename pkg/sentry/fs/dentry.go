@@ -21,8 +21,6 @@ import (
 )
 
 // DentAttr is the metadata of a directory entry. It is a subset of StableAttr.
-//
-// +stateify savable
 type DentAttr struct {
 	// Type is the InodeType of an Inode.
 	Type InodeType
@@ -156,8 +154,6 @@ func GenericReaddir(ctx *DirCtx, s *SortedDentryMap) (int, error) {
 }
 
 // SortedDentryMap is a sorted map of names and fs.DentAttr entries.
-//
-// +stateify savable
 type SortedDentryMap struct {
 	// names is always kept in sorted-order.
 	names []string

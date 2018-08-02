@@ -22,8 +22,6 @@ import (
 
 // receiver holds the state necessary to receive TCP segments and turn them
 // into a stream of bytes.
-//
-// +stateify savable
 type receiver struct {
 	ep *endpoint
 

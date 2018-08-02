@@ -23,8 +23,6 @@ import (
 // Restartable sequences, as described in https://lwn.net/Articles/650333/.
 
 // RSEQCriticalRegion describes a restartable sequence critical region.
-//
-// +stateify savable
 type RSEQCriticalRegion struct {
 	// When a task in this thread group has its CPU preempted (as defined by
 	// platform.ErrContextCPUPreempted) or has a signal delivered to an

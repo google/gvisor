@@ -25,7 +25,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// +stateify savable
 type udpPacket struct {
 	udpPacketEntry
 	senderAddress tcpip.FullAddress
@@ -50,8 +49,6 @@ const (
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
 // synchronized.
-//
-// +stateify savable
 type endpoint struct {
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.

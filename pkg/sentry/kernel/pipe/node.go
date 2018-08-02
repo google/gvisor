@@ -24,8 +24,6 @@ import (
 )
 
 // inodeOperations wraps fs.InodeOperations operations with common pipe opening semantics.
-//
-// +stateify savable
 type inodeOperations struct {
 	fs.InodeOperations
 

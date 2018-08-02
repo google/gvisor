@@ -18,7 +18,6 @@ import (
 	"time"
 )
 
-// +stateify savable
 type unixTime struct {
 	second int64
 	nano   int64

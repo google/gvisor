@@ -176,8 +176,6 @@ type Stracer interface {
 // SyscallTable is a lookup table of system calls. Critically, a SyscallTable
 // is *immutable*. In order to make supporting suspend and resume sane, they
 // must be uniquely registered and may not change during operation.
-//
-// +stateify savable
 type SyscallTable struct {
 	// OS is the operating system that this syscall table implements.
 	OS abi.OS `state:"wait"`

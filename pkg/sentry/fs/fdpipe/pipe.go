@@ -34,8 +34,6 @@ import (
 )
 
 // pipeOperations are the fs.FileOperations of a host pipe.
-//
-// +stateify savable
 type pipeOperations struct {
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`

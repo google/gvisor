@@ -25,8 +25,6 @@ import (
 // FSContext contains filesystem context.
 //
 // This includes umask and working directory.
-//
-// +stateify savable
 type FSContext struct {
 	refs.AtomicRefCount
 

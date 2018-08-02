@@ -27,8 +27,6 @@ import (
 //
 // FIXME: Remove Handle entirely in favor of individual fs.File
 // implementations using simple generic utilities.
-//
-// +stateify savable
 type Handle struct {
 	NoopRelease      `state:"nosave"`
 	NoIoctl          `state:"nosave"`

@@ -38,8 +38,6 @@ const (
 // pendingSignals holds a collection of pending signals. The zero value of
 // pendingSignals is a valid empty collection. pendingSignals is thread-unsafe;
 // users must provide synchronization.
-//
-// +stateify savable
 type pendingSignals struct {
 	// signals contains all pending signals.
 	//
@@ -54,14 +52,11 @@ type pendingSignals struct {
 }
 
 // pendingSignalQueue holds a pendingSignalList for a single signal number.
-//
-// +stateify savable
 type pendingSignalQueue struct {
 	pendingSignalList
 	length int
 }
 
-// +stateify savable
 type pendingSignal struct {
 	// pendingSignalEntry links into a pendingSignalList.
 	pendingSignalEntry

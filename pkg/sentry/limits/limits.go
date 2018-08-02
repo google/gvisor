@@ -47,8 +47,6 @@ const (
 const Infinity = ^uint64(0)
 
 // Limit specifies a system limit.
-//
-// +stateify savable
 type Limit struct {
 	// Cur specifies the current limit.
 	Cur uint64
@@ -57,8 +55,6 @@ type Limit struct {
 }
 
 // LimitSet represents the Limits that correspond to each LimitType.
-//
-// +stateify savable
 type LimitSet struct {
 	mu   sync.Mutex `state:"nosave"`
 	data map[LimitType]Limit

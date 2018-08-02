@@ -31,8 +31,6 @@ import (
 //
 // * fs.InodeOperations.Release
 // * fs.InodeOperations.GetFile
-//
-// +stateify savable
 type inodeOperations struct {
 	fsutil.DeprecatedFileOperations  `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`

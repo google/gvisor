@@ -52,8 +52,6 @@ func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 }
 
 // taskDir represents a task-level directory.
-//
-// +stateify savable
 type taskDir struct {
 	ramfs.Dir
 
@@ -94,8 +92,6 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 }
 
 // subtasks represents a /proc/TID/task directory.
-//
-// +stateify savable
 type subtasks struct {
 	ramfs.Dir
 
@@ -171,8 +167,6 @@ func (s *subtasks) DeprecatedReaddir(ctx context.Context, dirCtx *fs.DirCtx, off
 }
 
 // exe is an fs.InodeOperations symlink for the /proc/PID/exe file.
-//
-// +stateify savable
 type exe struct {
 	ramfs.Symlink
 
@@ -232,8 +226,6 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 
 // namespaceFile represents a file in the namespacefs, such as the files in
 // /proc/<pid>/ns.
-//
-// +stateify savable
 type namespaceFile struct {
 	ramfs.Symlink
 
@@ -282,8 +274,6 @@ func newNamespaceDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 }
 
 // mapsData implements seqfile.SeqSource for /proc/[pid]/maps.
-//
-// +stateify savable
 type mapsData struct {
 	t *kernel.Task
 }
@@ -321,7 +311,6 @@ func (md *mapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([
 	return []seqfile.SeqData{}, 0
 }
 
-// +stateify savable
 type taskStatData struct {
 	t *kernel.Task
 
@@ -402,8 +391,6 @@ func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle)
 }
 
 // statmData implements seqfile.SeqSource for /proc/[pid]/statm.
-//
-// +stateify savable
 type statmData struct {
 	t *kernel.Task
 }
@@ -438,8 +425,6 @@ func (s *statmData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([
 }
 
 // statusData implements seqfile.SeqSource for /proc/[pid]/status.
-//
-// +stateify savable
 type statusData struct {
 	t     *kernel.Task
 	pidns *kernel.PIDNamespace
@@ -505,7 +490,6 @@ type ioUsage interface {
 	IOUsage() *usage.IO
 }
 
-// +stateify savable
 type ioData struct {
 	ioUsage
 }
@@ -546,8 +530,6 @@ func (i *ioData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 // On Linux, /proc/[pid]/comm is writable, and writing to the comm file changes
 // the thread name. We don't implement this yet as there are no known users of
 // this feature.
-//
-// +stateify savable
 type comm struct {
 	ramfs.Entry
 
@@ -577,8 +559,6 @@ func (c *comm) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, off
 }
 
 // auxvec is a file containing the auxiliary vector for a task.
-//
-// +stateify savable
 type auxvec struct {
 	ramfs.Entry
 

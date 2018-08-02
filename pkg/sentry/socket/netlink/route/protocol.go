@@ -43,8 +43,6 @@ func typeKind(typ uint16) commandKind {
 }
 
 // Protocol implements netlink.Protocol.
-//
-// +stateify savable
 type Protocol struct{}
 
 var _ netlink.Protocol = (*Protocol)(nil)
