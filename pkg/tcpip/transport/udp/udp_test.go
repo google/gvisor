@@ -66,7 +66,7 @@ type headers struct {
 }
 
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName}, stack.Options{})
 
 	id, linkEP := channel.New(256, mtu, "")
 	if testing.Verbose() {

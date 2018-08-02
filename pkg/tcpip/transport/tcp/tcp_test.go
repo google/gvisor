@@ -2579,7 +2579,7 @@ func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 }
 
 func TestDefaultBufferSizes(t *testing.T) {
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2625,7 +2625,7 @@ func TestDefaultBufferSizes(t *testing.T) {
 }
 
 func TestMinMaxBufferSizes(t *testing.T) {
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2675,7 +2675,7 @@ func TestSelfConnect(t *testing.T) {
 	// it checks that if an endpoint binds to say 127.0.0.1:1000 then
 	// connects to 127.0.0.1:1000, then it will be connected to itself, and
 	// is able to send and receive data through the same endpoint.
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName}, []string{tcp.ProtocolName})
+	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	id := loopback.New()
 	if testing.Verbose() {

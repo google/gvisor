@@ -534,7 +534,7 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) inet.Stack {
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
 		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, ping.ProtocolName4}
-		return &epsocket.Stack{stack.New(clock, netProtos, protoNames)}
+		return &epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{Clock: clock})}
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

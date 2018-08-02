@@ -43,7 +43,7 @@ type testContext struct {
 }
 
 func newTestContext(t *testing.T) *testContext {
-	s := stack.New(&tcpip.StdClock{}, []string{ipv4.ProtocolName, arp.ProtocolName}, []string{ping.ProtocolName4})
+	s := stack.New([]string{ipv4.ProtocolName, arp.ProtocolName}, []string{ping.ProtocolName4}, stack.Options{})
 
 	const defaultMTU = 65536
 	id, linkEP := channel.New(256, defaultMTU, stackLinkAddr)
