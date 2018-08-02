@@ -453,7 +453,7 @@ func accessAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, resolve bool, m
 		// uid/gid. We do this by temporarily clearing all FS-related
 		// capabilities and switching the fsuid/fsgid around to the
 		// real ones." -fs/open.c:faccessat
-		creds := t.Credentials()
+		creds := t.Credentials().Fork()
 		creds.EffectiveKUID = creds.RealKUID
 		creds.EffectiveKGID = creds.RealKGID
 		if creds.EffectiveKUID.In(creds.UserNamespace) == auth.RootUID {
