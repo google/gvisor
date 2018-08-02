@@ -196,8 +196,6 @@ func bucketIndexForAddr(addr uintptr) uintptr {
 }
 
 // Manager holds futex state for a single virtual address space.
-//
-// +stateify savable
 type Manager struct {
 	buckets [bucketCount]bucket `state:"zerovalue"`
 }

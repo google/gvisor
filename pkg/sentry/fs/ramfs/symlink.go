@@ -22,8 +22,6 @@ import (
 )
 
 // Symlink represents a symlink.
-//
-// +stateify savable
 type Symlink struct {
 	Entry
 

@@ -241,7 +241,6 @@ func (t *Task) doSyscallEnter(sysno uintptr, args arch.SyscallArguments) taskRun
 	return t.doSyscallInvoke(sysno, args)
 }
 
-// +stateify savable
 type runSyscallAfterSyscallEnterStop struct{}
 
 func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
@@ -261,7 +260,6 @@ func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 	return t.doSyscallInvoke(sysno, args)
 }
 
-// +stateify savable
 type runSyscallAfterSysemuStop struct{}
 
 func (*runSyscallAfterSysemuStop) execute(t *Task) taskRunState {
@@ -296,7 +294,6 @@ func (t *Task) doSyscallInvoke(sysno uintptr, args arch.SyscallArguments) taskRu
 	return (*runSyscallExit)(nil).execute(t)
 }
 
-// +stateify savable
 type runSyscallReinvoke struct{}
 
 func (*runSyscallReinvoke) execute(t *Task) taskRunState {
@@ -313,7 +310,6 @@ func (*runSyscallReinvoke) execute(t *Task) taskRunState {
 	return t.doSyscallInvoke(sysno, args)
 }
 
-// +stateify savable
 type runSyscallExit struct{}
 
 func (*runSyscallExit) execute(t *Task) taskRunState {

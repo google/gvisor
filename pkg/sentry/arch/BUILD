@@ -1,7 +1,21 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
+
+go_stateify(
+    name = "arch_state",
+    srcs = [
+        "arch.go",
+        "arch_amd64.go",
+        "arch_state_x86.go",
+        "arch_x86.go",
+        "auxv.go",
+        "signal_amd64.go",
+    ],
+    out = "arch_state.go",
+    package = "arch",
+)
 
 go_library(
     name = "arch",
@@ -10,6 +24,7 @@ go_library(
         "arch.go",
         "arch_amd64.go",
         "arch_amd64.s",
+        "arch_state.go",
         "arch_state_x86.go",
         "arch_x86.go",
         "auxv.go",
@@ -31,6 +46,7 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/limits",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
     ],
 )

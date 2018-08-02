@@ -1,6 +1,23 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "host_state",
+    srcs = [
+        "control.go",
+        "descriptor.go",
+        "descriptor_state.go",
+        "file.go",
+        "fs.go",
+        "inode.go",
+        "inode_state.go",
+        "socket.go",
+        "socket_state.go",
+    ],
+    out = "host_state.go",
+    package = "host",
+)
 
 go_library(
     name = "host",
@@ -11,6 +28,7 @@ go_library(
         "device.go",
         "file.go",
         "fs.go",
+        "host_state.go",
         "inode.go",
         "inode_state.go",
         "ioctl_unsafe.go",
@@ -24,6 +42,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/amutex",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/refs",
@@ -33,14 +52,20 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/fs/lock",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
+        "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix",
+        "//pkg/sentry/uniqueid",
+        "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/link/rawfile",

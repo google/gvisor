@@ -56,8 +56,6 @@ func (setFunctions) Split(Range, noValue, uint64) (noValue, noValue) {
 // segment.Set is used for implementation where segments represent
 // ranges of pinned bytes, while gaps represent ranges of unpinned
 // bytes. All ranges are page-aligned.
-//
-// +stateify savable
 type PinBoard struct {
 	Set
 }

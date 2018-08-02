@@ -27,8 +27,6 @@ import (
 )
 
 // Dev is the root node.
-//
-// +stateify savable
 type Dev struct {
 	ramfs.Dir
 }

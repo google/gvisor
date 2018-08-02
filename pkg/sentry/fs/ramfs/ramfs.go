@@ -60,8 +60,6 @@ var (
 
 // Entry represents common internal state for file and directory nodes.
 // This may be used by other packages to easily create ramfs files.
-//
-// +stateify savable
 type Entry struct {
 	waiter.AlwaysReady    `state:"nosave"`
 	fsutil.NoMappable     `state:"nosave"`

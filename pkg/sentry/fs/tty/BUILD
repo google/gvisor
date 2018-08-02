@@ -1,6 +1,22 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "tty_state",
+    srcs = [
+        "dir.go",
+        "fs.go",
+        "inode.go",
+        "line_discipline.go",
+        "master.go",
+        "queue.go",
+        "slave.go",
+        "terminal.go",
+    ],
+    out = "tty_state.go",
+    package = "tty",
+)
 
 go_library(
     name = "tty",
@@ -13,6 +29,7 @@ go_library(
         "queue.go",
         "slave.go",
         "terminal.go",
+        "tty_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tty",
     visibility = ["//pkg/sentry:internal"],
@@ -27,6 +44,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
         "//pkg/tcpip/transport/unix",
         "//pkg/waiter",

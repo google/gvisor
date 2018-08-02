@@ -20,8 +20,6 @@ import (
 
 // CPUStats contains the subset of struct rusage fields that relate to CPU
 // scheduling.
-//
-// +stateify savable
 type CPUStats struct {
 	// UserTime is the amount of time spent executing application code.
 	UserTime time.Duration

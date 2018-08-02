@@ -23,8 +23,6 @@ import (
 // syslog represents a sentry-global kernel log.
 //
 // Currently, it contains only fun messages for a dmesg easter egg.
-//
-// +stateify savable
 type syslog struct {
 	// mu protects the below.
 	mu sync.Mutex `state:"nosave"`

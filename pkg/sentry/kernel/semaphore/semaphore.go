@@ -42,8 +42,6 @@ const (
 )
 
 // Registry maintains a set of semaphores that can be found by key or ID.
-//
-// +stateify savable
 type Registry struct {
 	// userNS owning the ipc name this registry belongs to. Immutable.
 	userNS *auth.UserNamespace
@@ -54,8 +52,6 @@ type Registry struct {
 }
 
 // Set represents a set of semaphores that can be operated atomically.
-//
-// +stateify savable
 type Set struct {
 	// registry owning this sem set. Immutable.
 	registry *Registry
@@ -83,8 +79,6 @@ type Set struct {
 }
 
 // sem represents a single semanphore from a set.
-//
-// +stateify savable
 type sem struct {
 	value   int16
 	waiters waiterList `state:"zerovalue"`
@@ -92,8 +86,6 @@ type sem struct {
 
 // waiter represents a caller that is waiting for the semaphore value to
 // become positive or zero.
-//
-// +stateify savable
 type waiter struct {
 	waiterEntry
 

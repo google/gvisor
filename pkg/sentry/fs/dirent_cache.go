@@ -25,8 +25,6 @@ import (
 //
 // A nil DirentCache corresponds to a cache with size 0. All methods can be
 // called, but nothing is actually cached.
-//
-// +stateify savable
 type DirentCache struct {
 	// Maximum size of the cache. This must be saved manually, to handle the case
 	// when cache is nil.

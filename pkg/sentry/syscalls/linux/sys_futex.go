@@ -132,8 +132,6 @@ func (f futexChecker) Op(addr uintptr, opIn uint32) (bool, error) {
 
 // futexWaitRestartBlock encapsulates the state required to restart futex(2)
 // via restart_syscall(2).
-//
-// +stateify savable
 type futexWaitRestartBlock struct {
 	duration time.Duration
 

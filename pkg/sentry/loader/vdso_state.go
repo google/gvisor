@@ -18,7 +18,6 @@ import (
 	"debug/elf"
 )
 
-// +stateify savable
 type elfProgHeader struct {
 	Type   elf.ProgType
 	Flags  elf.ProgFlag

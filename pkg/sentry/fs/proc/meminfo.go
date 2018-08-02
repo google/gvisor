@@ -26,8 +26,6 @@ import (
 )
 
 // meminfoData backs /proc/meminfo.
-//
-// +stateify savable
 type meminfoData struct {
 	// k is the owning Kernel.
 	k *kernel.Kernel

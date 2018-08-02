@@ -47,8 +47,6 @@ const (
 var modeRegexp = regexp.MustCompile("0[0-7][0-7][0-7]")
 
 // Filesystem is a tmpfs.
-//
-// +stateify savable
 type Filesystem struct{}
 
 func init() {

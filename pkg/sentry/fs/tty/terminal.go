@@ -21,8 +21,6 @@ import (
 )
 
 // Terminal is a pseudoterminal.
-//
-// +stateify savable
 type Terminal struct {
 	refs.AtomicRefCount
 

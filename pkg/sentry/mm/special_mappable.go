@@ -28,8 +28,6 @@ import (
 // semantics similar to Linux's mm/mmap.c:_install_special_mapping(), except
 // that SpecialMappable takes ownership of the memory that it represents
 // (_install_special_mapping() does not.)
-//
-// +stateify savable
 type SpecialMappable struct {
 	refs.AtomicRefCount
 

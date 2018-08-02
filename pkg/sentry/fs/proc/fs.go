@@ -22,8 +22,6 @@ import (
 )
 
 // filesystem is a procfs.
-//
-// +stateify savable
 type filesystem struct{}
 
 func init() {

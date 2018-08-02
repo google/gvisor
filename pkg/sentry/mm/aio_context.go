@@ -28,8 +28,6 @@ import (
 )
 
 // aioManager creates and manages asynchronous I/O contexts.
-//
-// +stateify savable
 type aioManager struct {
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
@@ -91,16 +89,12 @@ func (a *aioManager) lookupAIOContext(id uint64) (*AIOContext, bool) {
 }
 
 // ioResult is a completed I/O operation.
-//
-// +stateify savable
 type ioResult struct {
 	data interface{}
 	ioEntry
 }
 
 // AIOContext is a single asynchronous I/O context.
-//
-// +stateify savable
 type AIOContext struct {
 	// done is the notification channel used for all requests.
 	done chan struct{} `state:"nosave"`
@@ -196,8 +190,6 @@ func (ctx *AIOContext) WaitChannel() (chan struct{}, bool) {
 
 // aioMappable implements memmap.MappingIdentity and memmap.Mappable for AIO
 // ring buffers.
-//
-// +stateify savable
 type aioMappable struct {
 	refs.AtomicRefCount
 

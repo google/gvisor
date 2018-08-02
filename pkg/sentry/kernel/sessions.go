@@ -27,8 +27,6 @@ type SessionID ThreadID
 type ProcessGroupID ThreadID
 
 // Session contains a leader threadgroup and a list of ProcessGroups.
-//
-// +stateify savable
 type Session struct {
 	refs refs.AtomicRefCount
 
@@ -78,8 +76,6 @@ func (s *Session) decRef() {
 }
 
 // ProcessGroup contains an originator threadgroup and a parent Session.
-//
-// +stateify savable
 type ProcessGroup struct {
 	refs refs.AtomicRefCount // not exported.
 

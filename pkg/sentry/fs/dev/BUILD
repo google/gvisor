@@ -1,11 +1,25 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
+
+go_stateify(
+    name = "dev_state",
+    srcs = [
+        "dev.go",
+        "fs.go",
+        "full.go",
+        "null.go",
+        "random.go",
+    ],
+    out = "dev_state.go",
+    package = "dev",
+)
 
 go_library(
     name = "dev",
     srcs = [
         "dev.go",
+        "dev_state.go",
         "device.go",
         "fs.go",
         "full.go",
@@ -16,6 +30,8 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/amutex",
+        "//pkg/log",
         "//pkg/rand",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
@@ -29,7 +45,9 @@ go_library(
         "//pkg/sentry/mm",
         "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
+        "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
     ],
 )

@@ -157,8 +157,6 @@ func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
 // notifiers can notify them when events happen.
 //
 // The zero value for waiter.Queue is an empty queue ready for use.
-//
-// +stateify savable
 type Queue struct {
 	list ilist.List   `state:"zerovalue"`
 	mu   sync.RWMutex `state:"nosave"`

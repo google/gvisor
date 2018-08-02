@@ -33,8 +33,6 @@ type Entry interface {
 }
 
 // Queue is a buffer queue.
-//
-// +stateify savable
 type Queue struct {
 	ReaderQueue *waiter.Queue
 	WriterQueue *waiter.Queue

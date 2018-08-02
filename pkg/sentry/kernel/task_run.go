@@ -131,8 +131,6 @@ func (t *Task) doStop() {
 
 // The runApp state checks for interrupts before executing untrusted
 // application code.
-//
-// +stateify savable
 type runApp struct{}
 
 func (*runApp) execute(t *Task) taskRunState {

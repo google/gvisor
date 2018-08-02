@@ -30,8 +30,6 @@ import (
 )
 
 // TimerOperations implements fs.FileOperations for timerfds.
-//
-// +stateify savable
 type TimerOperations struct {
 	fsutil.ZeroSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`
@@ -40,7 +38,7 @@ type TimerOperations struct {
 	fsutil.NoMMap        `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
 
-	events waiter.Queue `state:"zerovalue"`
+	events waiter.Queue `state:"nosave"`
 	timer  *ktime.Timer
 
 	// val is the number of timer expirations since the last successful call to

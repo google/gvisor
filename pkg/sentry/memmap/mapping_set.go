@@ -35,8 +35,6 @@ import (
 type MappingsOfRange map[MappingOfRange]struct{}
 
 // MappingOfRange represents a mapping of a MappableRange.
-//
-// +stateify savable
 type MappingOfRange struct {
 	MappingSpace MappingSpace
 	AddrRange    usermem.AddrRange

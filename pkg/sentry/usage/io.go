@@ -19,8 +19,6 @@ import (
 )
 
 // IO contains I/O-related statistics.
-//
-// +stateify savable
 type IO struct {
 	// CharsRead is the number of bytes read by read syscalls.
 	CharsRead uint64

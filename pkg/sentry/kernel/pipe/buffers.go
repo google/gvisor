@@ -20,8 +20,6 @@ import (
 
 // Buffer encapsulates a queueable byte buffer that can
 // easily be truncated.  It is designed only for use with pipes.
-//
-// +stateify savable
 type Buffer struct {
 	ilist.Entry
 	data []byte

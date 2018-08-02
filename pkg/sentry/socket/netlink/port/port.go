@@ -32,8 +32,6 @@ import (
 const maxPorts = 10000
 
 // Manager allocates netlink port IDs.
-//
-// +stateify savable
 type Manager struct {
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`

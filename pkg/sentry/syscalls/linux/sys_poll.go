@@ -274,8 +274,6 @@ func copyOutTimevalRemaining(t *kernel.Task, startNs ktime.Time, timeout time.Du
 
 // pollRestartBlock encapsulates the state required to restart poll(2) via
 // restart_syscall(2).
-//
-// +stateify savable
 type pollRestartBlock struct {
 	pfdAddr usermem.Addr
 	nfds    uint

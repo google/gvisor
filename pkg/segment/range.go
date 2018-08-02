@@ -18,8 +18,6 @@ package segment
 type T uint64
 
 // A Range represents a contiguous range of T.
-//
-// +stateify savable
 type Range struct {
 	// Start is the inclusive start of the range.
 	Start T

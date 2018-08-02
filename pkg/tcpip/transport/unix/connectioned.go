@@ -85,8 +85,6 @@ type ConnectingEndpoint interface {
 // path != "" && acceptedChan != nil => bound and listening.
 //
 // Only one of these will be true at any moment.
-//
-// +stateify savable
 type connectionedEndpoint struct {
 	baseEndpoint
 

@@ -19,8 +19,6 @@ import (
 )
 
 // FileFlags encodes file flags.
-//
-// +stateify savable
 type FileFlags struct {
 	// Direct indicates that I/O should be done directly.
 	Direct bool

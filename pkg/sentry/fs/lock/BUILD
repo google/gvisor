@@ -1,7 +1,18 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "lock_state",
+    srcs = [
+        "lock.go",
+        "lock_range.go",
+        "lock_set.go",
+    ],
+    out = "lock_state.go",
+    package = "lock",
+)
 
 go_template_instance(
     name = "lock_range",
@@ -38,11 +49,13 @@ go_library(
         "lock_range.go",
         "lock_set.go",
         "lock_set_functions.go",
+        "lock_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
+        "//pkg/state",
         "//pkg/waiter",
     ],
 )

@@ -195,8 +195,6 @@ func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 //
 // Care must be taken when copying ReceiveTimeout as it contains atomic
 // variables.
-//
-// +stateify savable
 type ReceiveTimeout struct {
 	// ns is length of the timeout in nanoseconds.
 	//

@@ -1,7 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
 
 go_template_instance(
     name = "waiter_list",
@@ -14,10 +14,21 @@ go_template_instance(
     },
 )
 
+go_stateify(
+    name = "semaphore_state",
+    srcs = [
+        "semaphore.go",
+        "waiter_list.go",
+    ],
+    out = "semaphore_autogen_state.go",
+    package = "semaphore",
+)
+
 go_library(
     name = "semaphore",
     srcs = [
         "semaphore.go",
+        "semaphore_autogen_state.go",
         "waiter_list.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/semaphore",
@@ -29,6 +40,8 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
+        "//pkg/state",
+        "//pkg/state/statefile",
         "//pkg/syserror",
     ],
 )

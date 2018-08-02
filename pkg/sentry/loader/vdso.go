@@ -193,8 +193,6 @@ func validateVDSO(ctx context.Context, f *fs.File, size uint64) (elfInfo, error)
 //
 // NOTE: to support multiple architectures or operating systems, this
 // would need to contain a VDSO for each.
-//
-// +stateify savable
 type VDSO struct {
 	// ParamPage is the VDSO parameter page. This page should be updated to
 	// inform the VDSO for timekeeping data.

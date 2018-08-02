@@ -95,8 +95,6 @@ type commonEndpoint interface {
 
 // SocketOperations encapsulates all the state needed to represent a network stack
 // endpoint in the kernel context.
-//
-// +stateify savable
 type SocketOperations struct {
 	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`

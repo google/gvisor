@@ -28,8 +28,6 @@ import (
 
 // SignalAct represents the action that should be taken when a signal is
 // delivered, and is equivalent to struct sigaction on 64-bit x86.
-//
-// +stateify savable
 type SignalAct struct {
 	Handler  uint64
 	Flags    uint64
@@ -49,8 +47,6 @@ func (s *SignalAct) DeserializeTo(other *SignalAct) {
 
 // SignalStack represents information about a user stack, and is equivalent to
 // stack_t on 64-bit x86.
-//
-// +stateify savable
 type SignalStack struct {
 	Addr  uint64
 	Flags uint32
@@ -70,8 +66,6 @@ func (s *SignalStack) DeserializeTo(other *SignalStack) {
 
 // SignalInfo represents information about a signal being delivered, and is
 // equivalent to struct siginfo on 64-bit x86.
-//
-// +stateify savable
 type SignalInfo struct {
 	Signo int32 // Signal number
 	Errno int32 // Errno value

@@ -1,7 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//go:def.bzl", "go_embed_data")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
 
 go_embed_data(
     name = "vdso_bin",
@@ -10,12 +10,23 @@ go_embed_data(
     var = "vdsoBin",
 )
 
+go_stateify(
+    name = "loader_state",
+    srcs = [
+        "vdso.go",
+        "vdso_state.go",
+    ],
+    out = "loader_state.go",
+    package = "loader",
+)
+
 go_library(
     name = "loader",
     srcs = [
         "elf.go",
         "interpreter.go",
         "loader.go",
+        "loader_state.go",
         "vdso.go",
         "vdso_state.go",
         ":vdso_bin",
@@ -29,6 +40,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/log",
         "//pkg/rand",
+        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
@@ -43,6 +55,7 @@ go_library(
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

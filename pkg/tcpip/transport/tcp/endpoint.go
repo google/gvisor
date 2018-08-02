@@ -54,8 +54,6 @@ const (
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
-//
-// +stateify savable
 type SACKInfo struct {
 	// Blocks is the maximum number of SACK blocks we track
 	// per endpoint.
@@ -71,8 +69,6 @@ type SACKInfo struct {
 // have concurrent goroutines make calls into the endpoint, they are properly
 // synchronized. The protocol implementation, however, runs in a single
 // goroutine.
-//
-// +stateify savable
 type endpoint struct {
 	// workMu is used to arbitrate which goroutine may perform protocol
 	// work. Only the main protocol goroutine is expected to call Lock() on

@@ -38,8 +38,6 @@ import (
 
 // An ExitStatus is a value communicated from an exiting task or thread group
 // to the party that reaps it.
-//
-// +stateify savable
 type ExitStatus struct {
 	// Code is the numeric value passed to the call to exit or exit_group that
 	// caused the exit. If the exit was not caused by such a call, Code is 0.
@@ -224,8 +222,6 @@ func (t *Task) advanceExitStateLocked(oldExit, newExit TaskExitState) {
 }
 
 // runExit is the entry point into the task exit path.
-//
-// +stateify savable
 type runExit struct{}
 
 func (*runExit) execute(t *Task) taskRunState {
@@ -233,7 +229,6 @@ func (*runExit) execute(t *Task) taskRunState {
 	return (*runExitMain)(nil)
 }
 
-// +stateify savable
 type runExitMain struct{}
 
 func (*runExitMain) execute(t *Task) taskRunState {
@@ -536,7 +531,6 @@ func (t *Task) reparentLocked(parent *Task) {
 // tracer (if one exists) and reaps the leader immediately. In Linux, this is
 // in fs/exec.c:de_thread(); in the sentry, this is in Task.promoteLocked().
 
-// +stateify savable
 type runExitNotify struct{}
 
 func (*runExitNotify) execute(t *Task) taskRunState {

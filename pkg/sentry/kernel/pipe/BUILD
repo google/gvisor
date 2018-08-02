@@ -1,6 +1,20 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+
+go_stateify(
+    name = "pipe_state",
+    srcs = [
+        "buffers.go",
+        "node.go",
+        "pipe.go",
+        "reader.go",
+        "reader_writer.go",
+        "writer.go",
+    ],
+    out = "pipe_state.go",
+    package = "pipe",
+)
 
 go_library(
     name = "pipe",
@@ -9,6 +23,7 @@ go_library(
         "device.go",
         "node.go",
         "pipe.go",
+        "pipe_state.go",
         "reader.go",
         "reader_writer.go",
         "writer.go",
@@ -19,12 +34,15 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/amutex",
         "//pkg/ilist",
+        "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

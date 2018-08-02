@@ -25,8 +25,6 @@ import (
 
 // ptraceOptions are the subset of options controlling a task's ptrace behavior
 // that are set by ptrace(PTRACE_SETOPTIONS).
-//
-// +stateify savable
 type ptraceOptions struct {
 	// ExitKill is true if the tracee should be sent SIGKILL when the tracer
 	// exits.
@@ -187,8 +185,6 @@ func (t *Task) hasTracer() bool {
 }
 
 // ptraceStop is a TaskStop placed on tasks in a ptrace-stop.
-//
-// +stateify savable
 type ptraceStop struct {
 	// If frozen is true, the stopped task's tracer is currently operating on
 	// it, so Task.Kill should not remove the stop.

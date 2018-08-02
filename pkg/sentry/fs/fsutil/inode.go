@@ -31,8 +31,6 @@ func NewSimpleInodeOperations(i InodeSimpleAttributes) fs.InodeOperations {
 }
 
 // simpleInodeOperations is a simple implementation of Inode.
-//
-// +stateify savable
 type simpleInodeOperations struct {
 	DeprecatedFileOperations  `state:"nosave"`
 	InodeNotDirectory         `state:"nosave"`
@@ -50,8 +48,6 @@ type simpleInodeOperations struct {
 
 // InodeSimpleAttributes implements a subset of the Inode interface. It provides
 // read-only access to attributes.
-//
-// +stateify savable
 type InodeSimpleAttributes struct {
 	// FSType is the filesystem type reported by StatFS.
 	FSType uint64
@@ -114,8 +110,6 @@ func (*InodeSimpleAttributes) Truncate(context.Context, *fs.Inode, int64) error 
 //
 // Users need not initialize Xattrs to non-nil (it will be initialized
 // when the first extended attribute is set.
-//
-// +stateify savable
 type InMemoryAttributes struct {
 	Unstable fs.UnstableAttr
 	Xattrs   map[string][]byte

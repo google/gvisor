@@ -51,8 +51,6 @@ type SCMRights interface {
 // RightsFiles represents a SCM_RIGHTS socket control message. A reference is
 // maintained for each fs.File and is release either when an FD is created or
 // when the Release method is called.
-//
-// +stateify savable
 type RightsFiles []*fs.File
 
 // NewSCMRights creates a new SCM_RIGHTS socket control message representation
@@ -130,8 +128,6 @@ func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte) []by
 }
 
 // scmCredentials represents an SCM_CREDENTIALS socket control message.
-//
-// +stateify savable
 type scmCredentials struct {
 	t    *kernel.Task
 	kuid auth.KUID

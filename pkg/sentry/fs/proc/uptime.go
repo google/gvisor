@@ -27,8 +27,6 @@ import (
 )
 
 // uptime is a file containing the system uptime.
-//
-// +stateify savable
 type uptime struct {
 	ramfs.Entry
 

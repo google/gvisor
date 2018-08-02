@@ -1,11 +1,21 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
+
+go_stateify(
+    name = "netlink_state",
+    srcs = [
+        "socket.go",
+    ],
+    out = "netlink_state.go",
+    package = "netlink",
+)
 
 go_library(
     name = "netlink",
     srcs = [
         "message.go",
+        "netlink_state.go",
         "provider.go",
         "socket.go",
     ],
@@ -26,6 +36,7 @@ go_library(
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/usermem",
+        "//pkg/state",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",

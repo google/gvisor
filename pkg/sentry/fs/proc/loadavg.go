@@ -23,8 +23,6 @@ import (
 )
 
 // loadavgData backs /proc/loadavg.
-//
-// +stateify savable
 type loadavgData struct{}
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.

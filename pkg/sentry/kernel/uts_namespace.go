@@ -22,8 +22,6 @@ import (
 
 // UTSNamespace represents a UTS namespace, a holder of two system identifiers:
 // the hostname and domain name.
-//
-// +stateify savable
 type UTSNamespace struct {
 	// mu protects all fields below.
 	mu         sync.Mutex `state:"nosave"`

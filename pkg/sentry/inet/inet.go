@@ -87,8 +87,6 @@ type InterfaceAddr struct {
 }
 
 // TCPBufferSize contains settings controlling TCP buffer sizing.
-//
-// +stateify savable
 type TCPBufferSize struct {
 	// Min is the minimum size.
 	Min int

@@ -22,13 +22,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// +stateify savable
-type dir struct {
+type Dir struct {
 	ramfs.Dir
 }
 
 func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.Inode) *fs.Inode {
-	d := &dir{}
+	d := &Dir{}
 	d.InitDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return fs.NewInode(d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),

@@ -21,8 +21,6 @@ import (
 
 // Credentials contains information required to authorize privileged operations
 // in a user namespace.
-//
-// +stateify savable
 type Credentials struct {
 	// Real/effective/saved user/group IDs in the root user namespace. None of
 	// these should ever be NoID.

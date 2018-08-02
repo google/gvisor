@@ -26,8 +26,6 @@ import (
 )
 
 // fullDevice is used to implement /dev/full.
-//
-// +stateify savable
 type fullDevice struct {
 	ramfs.Entry
 }

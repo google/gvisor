@@ -32,8 +32,6 @@ import (
 const DefaultTraversalLimit = 10
 
 // MountNamespace defines a collection of mounts.
-//
-// +stateify savable
 type MountNamespace struct {
 	refs.AtomicRefCount
 

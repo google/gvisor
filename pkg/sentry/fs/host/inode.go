@@ -34,8 +34,6 @@ import (
 
 // inodeOperations implements fs.InodeOperations for an fs.Inodes backed
 // by a host file descriptor.
-//
-// +stateify savable
 type inodeOperations struct {
 	fsutil.InodeNotVirtual           `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
@@ -67,8 +65,6 @@ type inodeOperations struct {
 // circular load dependency between it and inodeOperations). Even with
 // lazy loading, this approach defines the dependencies between objects
 // and the expected load behavior more concretely.
-//
-// +stateify savable
 type inodeFileState struct {
 	// Common file system state.
 	mops *superOperations `state:"wait"`

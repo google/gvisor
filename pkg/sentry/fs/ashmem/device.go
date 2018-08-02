@@ -27,19 +27,17 @@ import (
 )
 
 // Device implements fs.InodeOperations.
-//
-// +stateify savable
 type Device struct {
-	fsutil.DeprecatedFileOperations  `state:"nosave"`
-	fsutil.InodeNoExtendedAttributes `state:"nosave"`
-	fsutil.InodeNotDirectory         `state:"nosave"`
-	fsutil.InodeNotRenameable        `state:"nosave"`
-	fsutil.InodeNotSocket            `state:"nosave"`
-	fsutil.InodeNotSymlink           `state:"nosave"`
-	fsutil.NoFsync                   `state:"nosave"`
-	fsutil.NoMappable                `state:"nosave"`
-	fsutil.NoopWriteOut              `state:"nosave"`
-	fsutil.NotDirReaddir             `state:"nosave"`
+	fsutil.DeprecatedFileOperations
+	fsutil.InodeNoExtendedAttributes
+	fsutil.InodeNotDirectory
+	fsutil.InodeNotRenameable
+	fsutil.InodeNotSocket
+	fsutil.InodeNotSymlink
+	fsutil.NoFsync
+	fsutil.NoMappable
+	fsutil.NoopWriteOut
+	fsutil.NotDirReaddir
 
 	mu       sync.Mutex `state:"nosave"`
 	unstable fs.UnstableAttr

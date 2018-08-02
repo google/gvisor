@@ -748,8 +748,6 @@ func (t *Task) CopyInSignalStack(addr usermem.Addr) (arch.SignalStack, error) {
 // groupStop is a TaskStop placed on tasks that have received a stop signal
 // (SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU). (The term "group-stop" originates from
 // the ptrace man page.)
-//
-// +stateify savable
 type groupStop struct{}
 
 // Killable implements TaskStop.Killable.
@@ -883,8 +881,6 @@ func (t *Task) signalStop(target *Task, code int32, status int32) {
 }
 
 // The runInterrupt state handles conditions indicated by interrupts.
-//
-// +stateify savable
 type runInterrupt struct{}
 
 func (*runInterrupt) execute(t *Task) taskRunState {
@@ -1024,7 +1020,6 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	return (*runApp)(nil)
 }
 
-// +stateify savable
 type runInterruptAfterSignalDeliveryStop struct{}
 
 func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
