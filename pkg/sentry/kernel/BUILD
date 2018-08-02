@@ -47,6 +47,7 @@ go_stateify(
     ],
     out = "kernel_autogen_state.go",
     imports = [
+        "gvisor.googlesource.com/gvisor/pkg/bpf",
         "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
         "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
         "gvisor.googlesource.com/gvisor/pkg/tcpip",

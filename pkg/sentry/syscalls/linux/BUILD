@@ -42,6 +42,7 @@ go_library(
         "sys_rlimit.go",
         "sys_rusage.go",
         "sys_sched.go",
+        "sys_seccomp.go",
         "sys_sem.go",
         "sys_shm.go",
         "sys_signal.go",

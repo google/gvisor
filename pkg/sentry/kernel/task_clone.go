@@ -280,7 +280,10 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// "If fork/clone and execve are allowed by @prog, any child processes will
 	// be constrained to the same filters and system call ABI as the parent." -
 	// Documentation/prctl/seccomp_filter.txt
-	nt.syscallFilters = append([]bpf.Program(nil), t.syscallFilters...)
+	if f := t.syscallFilters.Load(); f != nil {
+		copiedFilters := append([]bpf.Program(nil), f.([]bpf.Program)...)
+		nt.syscallFilters.Store(copiedFilters)
+	}
 	if opts.Vfork {
 		nt.vforkParent = t
 	}
