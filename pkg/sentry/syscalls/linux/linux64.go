@@ -359,6 +359,7 @@ var AMD64 = &kernel.SyscallTable{
 		312: syscalls.CapError(linux.CAP_SYS_PTRACE), // Kcmp, requires cap_sys_ptrace
 		313: syscalls.CapError(linux.CAP_SYS_MODULE), // FinitModule, requires cap_sys_module
 		// "Backports."
+		317: Seccomp,
 		318: GetRandom,
 	},
 

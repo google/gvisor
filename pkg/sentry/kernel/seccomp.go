@@ -144,10 +144,15 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 	input := data.asBPFInput()
 
 	ret := uint32(linux.SECCOMP_RET_ALLOW)
+	f := t.syscallFilters.Load()
+	if f == nil {
+		return ret
+	}
+
 	// "Every filter successfully installed will be evaluated (in reverse
 	// order) for each system call the task makes." - kernel/seccomp.c
-	for i := len(t.syscallFilters) - 1; i >= 0; i-- {
-		thisRet, err := bpf.Exec(t.syscallFilters[i], input)
+	for i := len(f.([]bpf.Program)) - 1; i >= 0; i-- {
+		thisRet, err := bpf.Exec(f.([]bpf.Program)[i], input)
 		if err != nil {
 			t.Debugf("seccomp-bpf filter %d returned error: %v", i, err)
 			thisRet = linux.SECCOMP_RET_KILL
@@ -180,15 +185,53 @@ func (t *Task) AppendSyscallFilter(p bpf.Program) error {
 	// maxSyscallFilterInstructions. (This restriction is inherited from
 	// Linux.)
 	totalLength := p.Length()
-	for _, f := range t.syscallFilters {
-		totalLength += f.Length() + 4
+	var newFilters []bpf.Program
+
+	// While syscallFilters are an atomic.Value we must take the mutex to
+	// prevent our read-copy-update from happening while another task
+	// is syncing syscall filters to us, this keeps the filters in a
+	// consistent state.
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sf := t.syscallFilters.Load(); sf != nil {
+		oldFilters := sf.([]bpf.Program)
+		for _, f := range oldFilters {
+			totalLength += f.Length() + 4
+		}
+		newFilters = append(newFilters, oldFilters...)
 	}
+
 	if totalLength > maxSyscallFilterInstructions {
 		return syserror.ENOMEM
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.syscallFilters = append(t.syscallFilters, p)
+
+	newFilters = append(newFilters, p)
+	t.syscallFilters.Store(newFilters)
+	return nil
+}
+
+// SyncSyscallFiltersToThreadGroup will copy this task's filters to all other
+// threads in our thread group.
+func (t *Task) SyncSyscallFiltersToThreadGroup() error {
+	f := t.syscallFilters.Load()
+
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
+
+	// Note: No new privs is always assumed to be set.
+	for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
+		if ot.ThreadID() != t.ThreadID() {
+			// We must take the other task's mutex to prevent it from
+			// appending to its own syscall filters while we're syncing.
+			ot.mu.Lock()
+			var copiedFilters []bpf.Program
+			if f != nil {
+				copiedFilters = append(copiedFilters, f.([]bpf.Program)...)
+			}
+			ot.syscallFilters.Store(copiedFilters)
+			ot.mu.Unlock()
+		}
+	}
 	return nil
 }
 
@@ -196,9 +239,8 @@ func (t *Task) AppendSyscallFilter(p bpf.Program) error {
 // seccomp syscall filtering mode, appropriate for both prctl(PR_GET_SECCOMP)
 // and /proc/[pid]/status.
 func (t *Task) SeccompMode() int {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if len(t.syscallFilters) > 0 {
+	f := t.syscallFilters.Load()
+	if f != nil && len(f.([]bpf.Program)) > 0 {
 		return linux.SECCOMP_MODE_FILTER
 	}
 	return linux.SECCOMP_MODE_NONE

@@ -18,28 +18,12 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/bpf"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
-
-// userSockFprog is equivalent to Linux's struct sock_fprog on amd64.
-type userSockFprog struct {
-	// Len is the length of the filter in BPF instructions.
-	Len uint16
-
-	_ [6]byte // padding for alignment
-
-	// Filter is a user pointer to the struct sock_filter array that makes up
-	// the filter program. Filter is a uint64 rather than a usermem.Addr
-	// because usermem.Addr is actually uintptr, which is not a fixed-size
-	// type, and encoding/binary.Read objects to this.
-	Filter uint64
-}
 
 // Prctl implements linux syscall prctl(2).
 // It has a list of subfunctions which operate on the process. The arguments are
@@ -143,20 +127,8 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			// Unsupported mode.
 			return 0, nil, syscall.EINVAL
 		}
-		var fprog userSockFprog
-		if _, err := t.CopyIn(args[2].Pointer(), &fprog); err != nil {
-			return 0, nil, err
-		}
-		filter := make([]linux.BPFInstruction, int(fprog.Len))
-		if _, err := t.CopyIn(usermem.Addr(fprog.Filter), &filter); err != nil {
-			return 0, nil, err
-		}
-		compiledFilter, err := bpf.Compile(filter)
-		if err != nil {
-			t.Debugf("Invalid seccomp-bpf filter: %v", err)
-			return 0, nil, syscall.EINVAL
-		}
-		return 0, nil, t.AppendSyscallFilter(compiledFilter)
+
+		return 0, nil, seccomp(t, linux.SECCOMP_SET_MODE_FILTER, 0, args[2].Pointer())
 
 	case linux.PR_GET_SECCOMP:
 		return uintptr(t.SeccompMode()), nil, nil
