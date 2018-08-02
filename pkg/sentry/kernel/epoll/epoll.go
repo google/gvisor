@@ -58,6 +58,8 @@ const (
 // potentially be reassigned. We also cannot use just the file pointer because
 // it is possible to have multiple entries for the same file object as long as
 // they are created with different FDs (i.e., the FDs point to the same file).
+//
+// +stateify savable
 type FileIdentifier struct {
 	File *fs.File
 	Fd   kdefs.FD
@@ -65,6 +67,8 @@ type FileIdentifier struct {
 
 // pollEntry holds all the state associated with an event poll entry, that is,
 // a file being observed by an event poll object.
+//
+// +stateify savable
 type pollEntry struct {
 	ilist.Entry
 	file     *refs.WeakRef  `state:"manual"`
@@ -92,6 +96,8 @@ func (p *pollEntry) WeakRefGone() {
 
 // EventPoll holds all the state associated with an event poll object, that is,
 // collection of files to observe and their current state.
+//
+// +stateify savable
 type EventPoll struct {
 	fsutil.PipeSeek      `state:"zerovalue"`
 	fsutil.NotDirReaddir `state:"zerovalue"`
@@ -102,7 +108,7 @@ type EventPoll struct {
 
 	// Wait queue is used to notify interested parties when the event poll
 	// object itself becomes readable or writable.
-	waiter.Queue
+	waiter.Queue `state:"zerovalue"`
 
 	// files is the map of all the files currently being observed, it is
 	// protected by mu.

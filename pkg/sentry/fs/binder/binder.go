@@ -40,15 +40,17 @@ const (
 )
 
 // Device implements fs.InodeOperations.
+//
+// +stateify savable
 type Device struct {
-	fsutil.InodeNoExtendedAttributes
-	fsutil.InodeNotDirectory
-	fsutil.InodeNotRenameable
-	fsutil.InodeNotSocket
-	fsutil.InodeNotSymlink
-	fsutil.NoMappable
-	fsutil.NoopWriteOut
-	fsutil.DeprecatedFileOperations
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNotDirectory         `state:"nosave"`
+	fsutil.InodeNotRenameable        `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.NoMappable                `state:"nosave"`
+	fsutil.NoopWriteOut              `state:"nosave"`
+	fsutil.DeprecatedFileOperations  `state:"nosave"`
 
 	// mu protects unstable.
 	mu       sync.Mutex `state:"nosave"`
@@ -186,10 +188,12 @@ func (bd *Device) StatFS(context.Context) (fs.Info, error) {
 }
 
 // Proc implements fs.FileOperations and fs.IoctlGetter.
+//
+// +stateify savable
 type Proc struct {
-	fsutil.NoFsync
-	fsutil.DeprecatedFileOperations
-	fsutil.NotDirReaddir
+	fsutil.NoFsync                  `state:"nosave"`
+	fsutil.DeprecatedFileOperations `state:"nosave"`
+	fsutil.NotDirReaddir            `state:"nosave"`
 
 	bd       *Device
 	task     *kernel.Task

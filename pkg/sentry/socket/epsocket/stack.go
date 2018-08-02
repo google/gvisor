@@ -26,6 +26,8 @@ import (
 )
 
 // Stack implements inet.Stack for netstack/tcpip/stack.Stack.
+//
+// +stateify savable
 type Stack struct {
 	Stack *stack.Stack `state:"manual"`
 }

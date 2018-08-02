@@ -72,6 +72,8 @@ const (
 // Registry tracks all shared memory segments in an IPC namespace. The registry
 // provides the mechanisms for creating and finding segments, and reporting
 // global shm parameters.
+//
+// +stateify savable
 type Registry struct {
 	// userNS owns the IPC namespace this registry belong to. Immutable.
 	userNS *auth.UserNamespace
@@ -288,6 +290,8 @@ func (r *Registry) remove(s *Shm) {
 // shmctl(SHM_RMID).
 //
 // Shm implements memmap.Mappable and memmap.MappingIdentity.
+//
+// +stateify savable
 type Shm struct {
 	// AtomicRefCount tracks the number of references to this segment from
 	// maps. A segment always holds a reference to itself, until it's marked for

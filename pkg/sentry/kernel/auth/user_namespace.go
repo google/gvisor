@@ -23,6 +23,8 @@ import (
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
 // details.
+//
+// +stateify savable
 type UserNamespace struct {
 	// parent is this namespace's parent. If this is the root namespace, parent
 	// is nil. The parent pointer is immutable.

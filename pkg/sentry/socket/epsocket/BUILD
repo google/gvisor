@@ -1,24 +1,12 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "epsocket_state",
-    srcs = [
-        "epsocket.go",
-        "save_restore.go",
-        "stack.go",
-    ],
-    out = "epsocket_state.go",
-    package = "epsocket",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "epsocket",
     srcs = [
         "device.go",
         "epsocket.go",
-        "epsocket_state.go",
         "provider.go",
         "save_restore.go",
         "stack.go",
@@ -31,7 +19,6 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/log",
-        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
@@ -44,7 +31,6 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",

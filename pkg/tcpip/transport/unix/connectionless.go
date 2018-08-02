@@ -25,6 +25,8 @@ import (
 //
 // Specifically, this means datagram unix sockets not created with
 // socketpair(2).
+//
+// +stateify savable
 type connectionlessEndpoint struct {
 	baseEndpoint
 }

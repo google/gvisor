@@ -27,6 +27,8 @@ import (
 // cpuinfo is a file describing the CPU capabilities.
 //
 // Presently cpuinfo never changes, so it doesn't need to be a SeqFile.
+//
+// +stateify savable
 type cpuinfo struct {
 	ramfs.Entry
 

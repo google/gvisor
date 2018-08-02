@@ -27,6 +27,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
 
+// +stateify savable
 type endpointMap struct {
 	mu sync.RWMutex `state:"nosave"`
 	// TODO: Make map with private unix sockets savable.
@@ -63,6 +64,8 @@ func (e *endpointMap) get(key device.MultiDeviceKey) unix.BoundEndpoint {
 }
 
 // session holds state for each 9p session established during sys_mount.
+//
+// +stateify savable
 type session struct {
 	refs.AtomicRefCount
 

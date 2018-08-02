@@ -409,6 +409,8 @@ func (f Feature) flagString(cpuinfoOnly bool) string {
 }
 
 // FeatureSet is a set of Features for a cpu.
+//
+// +stateify savable
 type FeatureSet struct {
 	// Set is the set of features that are enabled in this FeatureSet.
 	Set map[Feature]bool

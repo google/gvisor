@@ -1,40 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "fs_state",
-    srcs = [
-        "attr.go",
-        "dentry.go",
-        "dirent.go",
-        "dirent_cache.go",
-        "dirent_list.go",
-        "dirent_state.go",
-        "file.go",
-        "file_overlay.go",
-        "file_state.go",
-        "filesystems.go",
-        "flags.go",
-        "inode.go",
-        "inode_inotify.go",
-        "inode_operations.go",
-        "inode_overlay.go",
-        "inotify.go",
-        "inotify_event.go",
-        "inotify_watch.go",
-        "mock.go",
-        "mount.go",
-        "mount_overlay.go",
-        "mount_state.go",
-        "mounts.go",
-        "overlay.go",
-        "path.go",
-    ],
-    out = "fs_state.go",
-    package = "fs",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "fs",
@@ -54,7 +21,6 @@ go_library(
         "filesystems.go",
         "flags.go",
         "fs.go",
-        "fs_state.go",
         "inode.go",
         "inode_inotify.go",
         "inode_operations.go",

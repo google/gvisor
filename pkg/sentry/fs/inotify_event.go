@@ -28,6 +28,8 @@ import (
 const inotifyEventBaseSize = 16
 
 // Event represents a struct inotify_event from linux.
+//
+// +stateify savable
 type Event struct {
 	ilist.Entry
 

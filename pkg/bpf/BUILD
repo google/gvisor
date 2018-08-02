@@ -1,21 +1,11 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "bpf_state",
-    srcs = [
-        "interpreter.go",
-    ],
-    out = "bpf_state.go",
-    package = "bpf",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "bpf",
     srcs = [
         "bpf.go",
-        "bpf_state.go",
         "decoder.go",
         "input_bytes.go",
         "interpreter.go",
@@ -23,10 +13,7 @@ go_library(
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/bpf",
     visibility = ["//visibility:public"],
-    deps = [
-        "//pkg/abi/linux",
-        "//pkg/state",
-    ],
+    deps = ["//pkg/abi/linux"],
 )
 
 go_test(

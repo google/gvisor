@@ -51,6 +51,8 @@ var netlinkSocketDevice = device.NewAnonDevice()
 // to/from the kernel.
 //
 // Socket implements socket.Socket.
+//
+// +stateify savable
 type Socket struct {
 	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`

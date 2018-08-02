@@ -49,14 +49,16 @@ import (
 // corresponding Dirents hold on their parent (this directory).
 //
 // dirInodeOperations implements fs.InodeOperations.
+//
+// +stateify savable
 type dirInodeOperations struct {
-	fsutil.DeprecatedFileOperations
-	fsutil.InodeNotSocket
-	fsutil.InodeNotRenameable
-	fsutil.InodeNotSymlink
-	fsutil.InodeNoExtendedAttributes
-	fsutil.NoMappable
-	fsutil.NoopWriteOut
+	fsutil.DeprecatedFileOperations  `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotRenameable        `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.NoMappable                `state:"nosave"`
+	fsutil.NoopWriteOut              `state:"nosave"`
 
 	// msrc is the super block this directory is on.
 	//
@@ -348,6 +350,8 @@ func (d *dirInodeOperations) masterClose(t *Terminal) {
 //
 // This is nearly identical to fsutil.DirFileOperations, except that it takes
 // df.di.mu in IterateDir.
+//
+// +stateify savable
 type dirFileOperations struct {
 	waiter.AlwaysReady `state:"nosave"`
 	fsutil.NoopRelease `state:"nosave"`

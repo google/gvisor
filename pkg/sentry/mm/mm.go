@@ -46,6 +46,8 @@ import (
 )
 
 // MemoryManager implements a virtual address space.
+//
+// +stateify savable
 type MemoryManager struct {
 	// p is the platform.
 	//
@@ -207,6 +209,8 @@ type MemoryManager struct {
 }
 
 // vma represents a virtual memory area.
+//
+// +stateify savable
 type vma struct {
 	// mappable is the virtual memory object mapped by this vma. If mappable is
 	// nil, the vma represents a private anonymous mapping.
@@ -346,6 +350,8 @@ func (v *vma) loadRealPerms(b int) {
 }
 
 // pma represents a platform mapping area.
+//
+// +stateify savable
 type pma struct {
 	// file is the file mapped by this pma. Only pmas for which file ==
 	// platform.Platform.Memory() may be saved. pmas hold a reference to the
@@ -380,6 +386,7 @@ type pma struct {
 	internalMappings safemem.BlockSeq `state:"nosave"`
 }
 
+// +stateify savable
 type privateRefs struct {
 	mu sync.Mutex `state:"nosave"`
 

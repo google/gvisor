@@ -16,6 +16,8 @@ package tcp
 
 // renoState stores the variables related to TCP New Reno congestion
 // control algorithm.
+//
+// +stateify savable
 type renoState struct {
 	s *sender
 }

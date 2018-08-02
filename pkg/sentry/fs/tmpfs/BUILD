@@ -1,18 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "tmpfs_state",
-    srcs = [
-        "file_regular.go",
-        "fs.go",
-        "inode_file.go",
-        "tmpfs.go",
-    ],
-    out = "tmpfs_state.go",
-    package = "tmpfs",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "tmpfs",
@@ -22,13 +10,11 @@ go_library(
         "fs.go",
         "inode_file.go",
         "tmpfs.go",
-        "tmpfs_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/log",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
@@ -41,7 +27,6 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],

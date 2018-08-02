@@ -1,24 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "mm_state",
-    srcs = [
-        "aio_context.go",
-        "aio_context_state.go",
-        "file_refcount_set.go",
-        "io_list.go",
-        "mm.go",
-        "pma_set.go",
-        "save_restore.go",
-        "special_mappable.go",
-        "vma_set.go",
-    ],
-    out = "mm_state.go",
-    package = "mm",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_template_instance(
     name = "file_refcount_set",
@@ -101,7 +84,6 @@ go_library(
         "lifecycle.go",
         "metadata.go",
         "mm.go",
-        "mm_state.go",
         "pma.go",
         "pma_set.go",
         "proc_pid_maps.go",
@@ -131,7 +113,6 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/buffer",

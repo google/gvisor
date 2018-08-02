@@ -39,10 +39,12 @@ const (
 )
 
 // Area implements fs.FileOperations.
+//
+// +stateify savable
 type Area struct {
-	fsutil.NoFsync
-	fsutil.DeprecatedFileOperations
-	fsutil.NotDirReaddir
+	fsutil.NoFsync                  `state:"nosave"`
+	fsutil.DeprecatedFileOperations `state:"nosave"`
+	fsutil.NotDirReaddir            `state:"nosave"`
 
 	ad *Device
 

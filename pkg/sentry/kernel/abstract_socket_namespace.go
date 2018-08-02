@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
+// +stateify savable
 type abstractEndpoint struct {
 	ep   unix.BoundEndpoint
 	wr   *refs.WeakRef
@@ -39,6 +40,8 @@ func (e *abstractEndpoint) WeakRefGone() {
 }
 
 // AbstractSocketNamespace is used to implement the Linux abstract socket functionality.
+//
+// +stateify savable
 type AbstractSocketNamespace struct {
 	mu sync.Mutex `state:"nosave"`
 

@@ -72,6 +72,8 @@ const (
 //  termiosMu
 //    inQueue.mu
 //      outQueue.mu
+//
+// +stateify savable
 type lineDiscipline struct {
 	// inQueue is the input queue of the terminal.
 	inQueue queue
@@ -183,6 +185,8 @@ type transformer interface {
 
 // outputQueueTransformer implements transformer. It performs line discipline
 // transformations on the output queue.
+//
+// +stateify savable
 type outputQueueTransformer struct{}
 
 // transform does output processing for one end of the pty. See
@@ -254,6 +258,8 @@ func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte
 
 // inputQueueTransformer implements transformer. It performs line discipline
 // transformations on the input queue.
+//
+// +stateify savable
 type inputQueueTransformer struct{}
 
 // transform does input processing for one end of the pty. Characters read are

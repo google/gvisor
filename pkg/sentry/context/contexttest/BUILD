@@ -1,23 +1,11 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify")
-
-go_stateify(
-    name = "contexttest_state",
-    srcs = [
-        "contexttest.go",
-    ],
-    out = "contexttest_state.go",
-    package = "contexttest",
-)
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "contexttest",
     testonly = 1,
-    srcs = [
-        "contexttest.go",
-        "contexttest_state.go",
-    ],
+    srcs = ["contexttest.go"],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -28,6 +16,5 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/ptrace",
         "//pkg/sentry/uniqueid",
-        "//pkg/state",
     ],
 )

@@ -153,6 +153,8 @@ func NewFloatingPointData() *FloatingPointData {
 
 // State contains the common architecture bits for X86 (the build tag of this
 // file ensures it's only built on x86).
+//
+// +stateify savable
 type State struct {
 	// The system registers.
 	Regs syscall.PtraceRegs `state:".(syscallPtraceRegs)"`

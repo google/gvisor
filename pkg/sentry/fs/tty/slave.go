@@ -27,6 +27,8 @@ import (
 
 // slaveInodeOperations are the fs.InodeOperations for the slave end of the
 // Terminal (pts file).
+//
+// +stateify savable
 type slaveInodeOperations struct {
 	inodeOperations
 
@@ -86,6 +88,8 @@ func (si *slaveInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags
 }
 
 // slaveFileOperations are the fs.FileOperations for the slave end of a terminal.
+//
+// +stateify savable
 type slaveFileOperations struct {
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`

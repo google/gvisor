@@ -37,6 +37,8 @@ const (
 
 // execArgFile is a file containing the exec args (either cmdline or environ)
 // for a given task.
+//
+// +stateify savable
 type execArgFile struct {
 	ramfs.Entry
 

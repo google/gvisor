@@ -1,26 +1,12 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-
-go_stateify(
-    name = "ashmem_state",
-    srcs = [
-        "area.go",
-        "device.go",
-        "pin_board.go",
-        "uint64_range.go",
-        "uint64_set.go",
-    ],
-    out = "ashmem_state.go",
-    package = "ashmem",
-)
 
 go_library(
     name = "ashmem",
     srcs = [
         "area.go",
-        "ashmem_state.go",
         "device.go",
         "pin_board.go",
         "uint64_range.go",
@@ -41,7 +27,6 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/state",
         "//pkg/syserror",
         "//pkg/tcpip/transport/unix",
     ],

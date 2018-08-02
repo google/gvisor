@@ -1,32 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_stateify", "go_test")
-
-go_stateify(
-    name = "proc_state",
-    srcs = [
-        "cpuinfo.go",
-        "exec_args.go",
-        "fds.go",
-        "file.go",
-        "filesystems.go",
-        "fs.go",
-        "loadavg.go",
-        "meminfo.go",
-        "mounts.go",
-        "net.go",
-        "proc.go",
-        "stat.go",
-        "sys.go",
-        "sys_net.go",
-        "task.go",
-        "uid_gid_map.go",
-        "uptime.go",
-        "version.go",
-    ],
-    out = "proc_state.go",
-    package = "proc",
-)
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "proc",
@@ -42,7 +16,6 @@ go_library(
         "mounts.go",
         "net.go",
         "proc.go",
-        "proc_state.go",
         "rpcinet_proc.go",
         "stat.go",
         "sys.go",
@@ -56,9 +29,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/amutex",
-        "//pkg/log",
-        "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/proc/device",
@@ -73,8 +43,6 @@ go_library(
         "//pkg/sentry/socket/rpcinet",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/state",
-        "//pkg/syserr",
         "//pkg/syserror",
     ],
 )

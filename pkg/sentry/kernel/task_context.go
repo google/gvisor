@@ -35,6 +35,8 @@ var ErrNoSyscalls = errors.New("no syscall table found")
 type Auxmap map[string]interface{}
 
 // TaskContext is the subset of a task's data that is provided by the loader.
+//
+// +stateify savable
 type TaskContext struct {
 	// Name is the thread name set by the prctl(PR_SET_NAME) system call.
 	Name string

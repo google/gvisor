@@ -213,6 +213,8 @@ const (
 
 // FullAddress represents a full transport node address, as required by the
 // Connect() and Bind() methods.
+//
+// +stateify savable
 type FullAddress struct {
 	// NIC is the ID of the NIC this address refers to.
 	//
@@ -256,6 +258,8 @@ func (s SlicePayload) Size() int {
 }
 
 // A ControlMessages contains socket control messages for IP sockets.
+//
+// +stateify savable
 type ControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool

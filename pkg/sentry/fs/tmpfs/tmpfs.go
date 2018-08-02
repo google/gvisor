@@ -49,6 +49,8 @@ func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent 
 }
 
 // Dir is a directory.
+//
+// +stateify savable
 type Dir struct {
 	ramfs.Dir
 
@@ -122,6 +124,8 @@ func (*Dir) StatFS(context.Context) (fs.Info, error) {
 }
 
 // Symlink is a symlink.
+//
+// +stateify savable
 type Symlink struct {
 	ramfs.Symlink
 }
@@ -149,6 +153,8 @@ func (s *Symlink) StatFS(context.Context) (fs.Info, error) {
 }
 
 // Socket is a socket.
+//
+// +stateify savable
 type Socket struct {
 	ramfs.Socket
 }
@@ -176,6 +182,8 @@ func (s *Socket) StatFS(context.Context) (fs.Info, error) {
 }
 
 // Fifo is a tmpfs named pipe.
+//
+// +stateify savable
 type Fifo struct {
 	ramfs.Entry
 }
