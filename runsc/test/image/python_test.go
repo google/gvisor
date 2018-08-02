@@ -24,6 +24,9 @@ import (
 )
 
 func TestPythonHello(t *testing.T) {
+	if out, err := testutil.Pull("google/python-hello"); err != nil {
+		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	}
 	d := testutil.MakeDocker("python-hello-test")
 	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
 		t.Fatalf("docker run failed: %v\nout: %s", err, out)

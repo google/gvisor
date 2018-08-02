@@ -82,6 +82,9 @@ func testHTTPServer(port int) error {
 }
 
 func TestHttpd(t *testing.T) {
+	if out, err := testutil.Pull("httpd"); err != nil {
+		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	}
 	d := testutil.MakeDocker("http-test")
 
 	dir, err := testutil.PrepareFiles("latin10k.txt")
@@ -112,6 +115,9 @@ func TestHttpd(t *testing.T) {
 }
 
 func TestNginx(t *testing.T) {
+	if out, err := testutil.Pull("nginx"); err != nil {
+		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	}
 	d := testutil.MakeDocker("net-test")
 
 	dir, err := testutil.PrepareFiles("latin10k.txt")
@@ -142,6 +148,9 @@ func TestNginx(t *testing.T) {
 }
 
 func TestMysql(t *testing.T) {
+	if out, err := testutil.Pull("mysql"); err != nil {
+		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	}
 	d := testutil.MakeDocker("mysql-test")
 
 	// Start the container.
