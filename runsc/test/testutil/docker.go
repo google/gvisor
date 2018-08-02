@@ -94,6 +94,24 @@ func getLocalPath(file string) string {
 	return path.Join(".", file)
 }
 
+// do executes docker command.
+func do(args ...string) (string, error) {
+	fmt.Printf("Running: docker %s\n", args)
+	cmd := exec.Command("docker", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("error executing docker %s: %v", args, err)
+	}
+	return string(out), nil
+}
+
+// Pull pulls a docker image. This is used in tests to isolate the
+// time to pull the image off the network from the time to actually
+// start the container, to avoid timeouts over slow networks.
+func Pull(image string) (string, error) {
+	return do("pull", image)
+}
+
 // Docker contains the name and the runtime of a docker container.
 type Docker struct {
 	Runtime string
@@ -107,30 +125,19 @@ func MakeDocker(namePrefix string) Docker {
 	return Docker{Name: namePrefix + suffix, Runtime: runtime()}
 }
 
-// Do executes docker command.
-func (d *Docker) Do(args ...string) (string, error) {
-	fmt.Printf("Running: docker %s\n", args)
-	cmd := exec.Command("docker", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("error executing docker %s: %v", args, err)
-	}
-	return string(out), nil
-}
-
 // Run calls 'docker run' with the arguments provided.
 func (d *Docker) Run(args ...string) (string, error) {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
 	a = append(a, args...)
-	return d.Do(a...)
+	return do(a...)
 }
 
 // CleanUp kills and deletes the container.
 func (d *Docker) CleanUp() error {
-	if _, err := d.Do("kill", d.Name); err != nil {
+	if _, err := do("kill", d.Name); err != nil {
 		return fmt.Errorf("error killing container %q: %v", d.Name, err)
 	}
-	if _, err := d.Do("rm", d.Name); err != nil {
+	if _, err := do("rm", d.Name); err != nil {
 		return fmt.Errorf("error deleting container %q: %v", d.Name, err)
 	}
 	return nil
@@ -140,7 +147,7 @@ func (d *Docker) CleanUp() error {
 // docker to allocate a free port in the host and prevent conflicts.
 func (d *Docker) FindPort(sandboxPort int) (int, error) {
 	format := fmt.Sprintf(`{{ (index (index .NetworkSettings.Ports "%d/tcp") 0).HostPort }}`, sandboxPort)
-	out, err := d.Do("inspect", "-f", format, d.Name)
+	out, err := do("inspect", "-f", format, d.Name)
 	if err != nil {
 		return -1, fmt.Errorf("error retrieving port: %v", err)
 	}
@@ -158,7 +165,7 @@ func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) error {
 	var out string
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
 		var err error
-		out, err = d.Do("logs", d.Name)
+		out, err = do("logs", d.Name)
 		if err != nil {
 			return err
 		}

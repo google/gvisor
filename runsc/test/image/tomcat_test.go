@@ -24,6 +24,9 @@ import (
 )
 
 func TestTomcat(t *testing.T) {
+	if out, err := testutil.Pull("tomcat:8.0"); err != nil {
+		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	}
 	d := testutil.MakeDocker("tomcat-test")
 	if out, err := d.Run("-p", "8080", "tomcat:8.0"); err != nil {
 		t.Fatalf("docker run failed: %v\nout: %s", err, out)
