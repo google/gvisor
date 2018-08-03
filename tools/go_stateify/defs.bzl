@@ -1,7 +1,20 @@
 """Stateify is a tool for generating state wrappers for Go types.
 
-The go_stateify rule is used to generate a file that will appear in a Go
-target; the output file should appear explicitly in a srcs list. For example:
+The recommended way is to use the go_library rule defined below with mostly
+identical configuration as the native go_library rule.
+
+load("//tools/go_stateify:defs.bzl", "go_library")
+
+go_library(
+    name = "foo",
+    srcs = ["foo.go"],
+)
+
+Under the hood, the go_stateify rule is used to generate a file that will
+appear in a Go target; the output file should appear explicitly in a srcs list.
+For example (the above is still the preferred way):
+
+load("//tools/go_stateify:defs.bzl", "go_stateify")
 
 go_stateify(
     name = "foo_state",
@@ -35,8 +48,6 @@ def _go_stateify_impl(ctx):
         args += ["-statepkg=%s" % ctx.attr._statepkg]
     if ctx.attr.imports:
         args += ["-imports=%s" % ",".join(ctx.attr.imports)]
-    if ctx.attr.explicit:
-        args += ["-explicit=true"]
     args += ["--"]
     for src in ctx.attr.srcs:
         args += [f.path for f in src.files]
@@ -57,7 +68,6 @@ def _go_stateify_impl(ctx):
 #   imports: an optional list of extra non-aliased, Go-style absolute import paths.
 #   out: the name of the generated file output. This must not conflict with any other files and must be added to the srcs of the relevant go_library.
 #   package: the package name for the input sources.
-#   explicit: only generate for types explicitly annotated as savable.
 go_stateify = rule(
     implementation = _go_stateify_impl,
     attrs = {
@@ -65,7 +75,6 @@ go_stateify = rule(
         "imports": attr.string_list(mandatory = False),
         "package": attr.string(mandatory = True),
         "out": attr.output(mandatory = True),
-        "explicit": attr.bool(default = False),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_stateify:stateify")),
         "_statepkg": attr.string(default = "gvisor.googlesource.com/gvisor/pkg/state"),
     },
@@ -81,7 +90,6 @@ def go_library(name, srcs, deps = [], imports = [], **kwargs):
             imports = imports,
             package = name,
             out = name + "_state_autogen.go",
-            explicit = True,
         )
         all_srcs = srcs + [name + "_state_autogen.go"]
         if "//pkg/state" not in deps:
