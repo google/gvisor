@@ -33,7 +33,6 @@ var (
 	imports  = flag.String("imports", "", "extra imports for the output file")
 	output   = flag.String("output", "", "output file")
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
-	explicit = flag.Bool("explicit", false, "only generate for types explicitly tagged '// +stateify savable'")
 )
 
 // resolveTypeName returns a qualified type name.
@@ -318,24 +317,21 @@ func main() {
 				continue
 			}
 
-			if *explicit {
-				// In explicit mode, only generate code for
-				// types explicitly marked
-				// "// +stateify savable" in one of the
-				// proceeding comment lines.
-				if d.Doc == nil {
-					continue
+			// Only generate code for types marked
+			// "// +stateify savable" in one of the proceeding
+			// comment lines.
+			if d.Doc == nil {
+				continue
+			}
+			savable := false
+			for _, l := range d.Doc.List {
+				if l.Text == "// +stateify savable" {
+					savable = true
+					break
 				}
-				savable := false
-				for _, l := range d.Doc.List {
-					if l.Text == "// +stateify savable" {
-						savable = true
-						break
-					}
-				}
-				if !savable {
-					continue
-				}
+			}
+			if !savable {
+				continue
 			}
 
 			for _, gs := range d.Specs {

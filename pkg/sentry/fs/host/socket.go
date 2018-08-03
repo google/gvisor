@@ -37,7 +37,7 @@ import (
 //
 // +stateify savable
 type endpoint struct {
-	queue waiter.Queue `state:"nosave"`
+	queue waiter.Queue `state:"zerovalue"`
 
 	// stype is the type of Unix socket. (Ex: unix.SockStream,
 	// unix.SockSeqpacket, unix.SockDgram)
