@@ -187,6 +187,10 @@ type endpoint struct {
 	sndWaker      sleep.Waker `state:"manual"`
 	sndCloseWaker sleep.Waker `state:"manual"`
 
+	// cc stores the name of the Congestion Control algorithm to use for
+	// this endpoint.
+	cc CongestionControlOption
+
 	// The following are used when a "packet too big" control packet is
 	// received. They are protected by sndBufMu. They are used to
 	// communicate to the main protocol goroutine how many such control
@@ -252,6 +256,11 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 	var rs ReceiveBufferSizeOption
 	if err := stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
 		e.rcvBufSize = rs.Default
+	}
+
+	var cs CongestionControlOption
+	if err := stack.TransportProtocolOption(ProtocolNumber, &cs); err == nil {
+		e.cc = cs
 	}
 
 	if p := stack.GetTCPProbe(); p != nil {
