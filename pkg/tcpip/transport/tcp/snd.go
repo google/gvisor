@@ -51,6 +51,11 @@ type congestionControl interface {
 	// number of packet's that were acked by the most recent cumulative
 	// acknowledgement.
 	Update(packetsAcked int)
+
+	// PostRecovery is invoked when the sender is exiting a fast retransmit/
+	// recovery phase. This provides congestion control algorithms a way
+	// to adjust their state when exiting recovery.
+	PostRecovery()
 }
 
 // sender holds the state necessary to send TCP segments.
@@ -174,7 +179,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		},
 	}
 
-	s.cc = newRenoCC(s)
+	s.cc = s.initCongestionControl(ep.cc)
 
 	// A negative sndWndScale means that no scaling is in use, otherwise we
 	// store the scaling value.
@@ -187,6 +192,17 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	s.resendTimer.init(&s.resendWaker)
 
 	return s
+}
+
+func (s *sender) initCongestionControl(congestionControlName CongestionControlOption) congestionControl {
+	switch congestionControlName {
+	case ccCubic:
+		return newCubicCC(s)
+	case ccReno:
+		fallthrough
+	default:
+		return newRenoCC(s)
+	}
 }
 
 // updateMaxPayloadSize updates the maximum payload size based on the given
@@ -409,6 +425,7 @@ func (s *sender) sendData() {
 }
 
 func (s *sender) enterFastRecovery() {
+	s.fr.active = true
 	// Save state to reflect we're now in fast recovery.
 	// See : https://tools.ietf.org/html/rfc5681#section-3.2 Step 3.
 	// We inflat the cwnd by 3 to account for the 3 packets which triggered
@@ -417,7 +434,6 @@ func (s *sender) enterFastRecovery() {
 	s.fr.first = s.sndUna
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
-	s.fr.active = true
 }
 
 func (s *sender) leaveFastRecovery() {
@@ -429,12 +445,13 @@ func (s *sender) leaveFastRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.sndCwnd = s.sndSsthresh
+	s.cc.PostRecovery()
 }
 
 // checkDuplicateAck is called when an ack is received. It manages the state
 // related to duplicate acks and determines if a retransmit is needed according
 // to the rules in RFC 6582 (NewReno).
-func (s *sender) checkDuplicateAck(seg *segment) bool {
+func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	ack := seg.ackNumber
 	if s.fr.active {
 		// We are in fast recovery mode. Ignore the ack if it's out of
@@ -474,6 +491,7 @@ func (s *sender) checkDuplicateAck(seg *segment) bool {
 		//
 		// N.B. The retransmit timer will be reset by the caller.
 		s.fr.first = ack
+		s.dupAckCount = 0
 		return true
 	}
 
@@ -508,16 +526,11 @@ func (s *sender) checkDuplicateAck(seg *segment) bool {
 	return true
 }
 
-// updateCwnd updates the congestion window based on the number of packets that
-// were acknowledged.
-func (s *sender) updateCwnd(packetsAcked int) {
-}
-
 // handleRcvdSegment is called when a segment is received; it is responsible for
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(seg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
-	if s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
+	if !s.ep.sendTSOk && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
 		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
@@ -534,10 +547,25 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// Ignore ack if it doesn't acknowledge any new data.
 	ack := seg.ackNumber
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
+		s.dupAckCount = 0
 		// When an ack is received we must reset the timer. We stop it
 		// here and it will be restarted later if needed.
 		s.resendTimer.disable()
 
+		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
+		// Specifically we should only update the RTO using TSEcr if the
+		// following condition holds:
+		//
+		//    A TSecr value received in a segment is used to update the
+		//    averaged RTT measurement only if the segment acknowledges
+		//    some new data, i.e., only if it advances the left edge of
+		//    the send window.
+		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
+			// TSVal/Ecr values sent by Netstack are at a millisecond
+			// granularity.
+			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
+			s.updateRTO(elapsed)
+		}
 		// Remove all acknowledged data from the write list.
 		acked := s.sndUna.Size(ack)
 		s.sndUna = ack

@@ -96,3 +96,8 @@ func (r *renoState) HandleRTOExpired() {
 	// initial congestion window.
 	r.s.sndCwnd = 1
 }
+
+// PostRecovery implements congestionControl.PostRecovery.
+func (r *renoState) PostRecovery() {
+	// noop.
+}

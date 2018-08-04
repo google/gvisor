@@ -242,6 +242,27 @@ func (c *Context) GetPacket() []byte {
 	return nil
 }
 
+// GetPacketNonBlocking reads a packet from the link layer endpoint
+// and verifies that it is an IPv4 packet with the expected source
+// and destination address. If no packet is available it will return
+// nil immediately.
+func (c *Context) GetPacketNonBlocking() []byte {
+	select {
+	case p := <-c.linkEP.C:
+		if p.Proto != ipv4.ProtocolNumber {
+			c.t.Fatalf("Bad network protocol: got %v, wanted %v", p.Proto, ipv4.ProtocolNumber)
+		}
+		b := make([]byte, len(p.Header)+len(p.Payload))
+		copy(b, p.Header)
+		copy(b[len(p.Header):], p.Payload)
+
+		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
+		return b
+	default:
+		return nil
+	}
+}
+
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
 func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byte, maxTotalSize int) {
 	// Allocate a buffer data and headers.
@@ -353,6 +374,32 @@ func (c *Context) ReceiveAndCheckPacket(data []byte, offset, size int) {
 	if p := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; bytes.Compare(pdata, p) != 0 {
 		c.t.Fatalf("Data is different: expected %v, got %v", pdata, p)
 	}
+}
+
+// ReceiveNonBlockingAndCheckPacket reads a packet from the link layer endpoint
+// and verifies that the packet packet payload of packet matches the slice of
+// data indicated by offset & size. It returns true if a packet was received and
+// processed.
+func (c *Context) ReceiveNonBlockingAndCheckPacket(data []byte, offset, size int) bool {
+	b := c.GetPacketNonBlocking()
+	if b == nil {
+		return false
+	}
+	checker.IPv4(c.t, b,
+		checker.PayloadLen(size+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(TestPort),
+			checker.SeqNum(uint32(c.IRS.Add(seqnum.Size(1+offset)))),
+			checker.AckNum(uint32(seqnum.Value(testInitialSequenceNumber).Add(1))),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	pdata := data[offset:][:size]
+	if p := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; bytes.Compare(pdata, p) != 0 {
+		c.t.Fatalf("Data is different: expected %v, got %v", pdata, p)
+	}
+	return true
 }
 
 // CreateV6Endpoint creates and initializes c.ep as a IPv6 Endpoint. If v6Only

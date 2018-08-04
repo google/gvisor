@@ -69,6 +69,11 @@ type ReceiveBufferSizeOption struct {
 	Max     int
 }
 
+const (
+	ccReno  = "reno"
+	ccCubic = "cubic"
+)
+
 // CongestionControlOption sets the current congestion control algorithm.
 type CongestionControlOption string
 
@@ -227,8 +232,8 @@ func init() {
 		return &protocol{
 			sendBufferSize:             SendBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
 			recvBufferSize:             ReceiveBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
-			congestionControl:          "reno",
-			availableCongestionControl: []string{"reno"},
+			congestionControl:          ccReno,
+			availableCongestionControl: []string{ccReno, ccCubic},
 		}
 	})
 }
