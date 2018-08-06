@@ -64,6 +64,7 @@ func (p *PCIDs) Assign(pt *PageTables) (uint16, bool) {
 	if len(p.avail) > 0 {
 		pcid := p.avail[len(p.avail)-1]
 		p.avail = p.avail[:len(p.avail)-1]
+		p.cache[pt] = pcid
 
 		// We need to flush because while this is in the available
 		// pool, it may have been used previously.
