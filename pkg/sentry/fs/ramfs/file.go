@@ -30,6 +30,8 @@ import (
 // thus should only be used for small files.
 //
 // A File is not mappable.
+//
+// +stateify savable
 type File struct {
 	Entry
 
