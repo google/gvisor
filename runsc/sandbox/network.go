@@ -221,12 +221,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 			continue
 		}
 
-		// Get the link for the interface.
-		ifaceLink, err := netlink.LinkByName(iface.Name)
-		if err != nil {
-			return fmt.Errorf("error getting link for interface %q: %v", iface.Name, err)
-		}
-
 		// Create the socket.
 		const protocol = 0x0300 // htons(ETH_P_ALL)
 		fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
@@ -238,7 +232,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 		// Bind to the appropriate device.
 		ll := syscall.SockaddrLinklayer{
 			Protocol: protocol,
-			Ifindex:  ifaceLink.Attrs().Index,
+			Ifindex:  iface.Index,
 			Hatype:   0, // No ARP type.
 			Pkttype:  syscall.PACKET_OTHERHOST,
 		}
@@ -264,6 +258,12 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 			Name:   iface.Name,
 			MTU:    iface.MTU,
 			Routes: routes,
+		}
+
+		// Get the link for the interface.
+		ifaceLink, err := netlink.LinkByName(iface.Name)
+		if err != nil {
+			return fmt.Errorf("error getting link for interface %q: %v", iface.Name, err)
 		}
 
 		// Collect the addresses for the interface, enable forwarding,
