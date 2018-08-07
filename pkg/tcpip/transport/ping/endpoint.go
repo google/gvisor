@@ -71,12 +71,14 @@ type endpoint struct {
 	// The following fields are protected by the mu mutex.
 	mu         sync.RWMutex `state:"nosave"`
 	sndBufSize int
-	id         stack.TransportEndpointID
-	state      endpointState
-	bindNICID  tcpip.NICID
-	bindAddr   tcpip.Address
-	regNICID   tcpip.NICID
-	route      stack.Route `state:"manual"`
+	// shutdownFlags represent the current shutdown state of the endpoint.
+	shutdownFlags tcpip.ShutdownFlags
+	id            stack.TransportEndpointID
+	state         endpointState
+	bindNICID     tcpip.NICID
+	bindAddr      tcpip.Address
+	regNICID      tcpip.NICID
+	route         stack.Route `state:"manual"`
 }
 
 func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
@@ -93,7 +95,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 // associated with it.
 func (e *endpoint) Close() {
 	e.mu.Lock()
-
+	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
 		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, ProtocolNumber4, e.id)
@@ -204,6 +206,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+
+	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
+	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
+		return 0, tcpip.ErrClosedForSend
+	}
 
 	// Prepare for write.
 	for {
@@ -465,8 +472,9 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) *tcpip.Error {
 // Shutdown closes the read and/or write end of the endpoint connection
 // to its peer.
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.shutdownFlags |= flags
 
 	if e.state != stateConnected {
 		return tcpip.ErrNotConnected

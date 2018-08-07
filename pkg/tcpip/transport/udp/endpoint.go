@@ -80,6 +80,9 @@ type endpoint struct {
 	dstPort    uint16
 	v6only     bool
 
+	// shutdownFlags represent the current shutdown state of the endpoint.
+	shutdownFlags tcpip.ShutdownFlags
+
 	// effectiveNetProtos contains the network protocols actually in use. In
 	// most cases it will only contain "netProto", but in cases like IPv6
 	// endpoints with v6only set to false, this could include multiple
@@ -124,6 +127,7 @@ func NewConnectedEndpoint(stack *stack.Stack, r *stack.Route, id stack.Transport
 // associated with it.
 func (e *endpoint) Close() {
 	e.mu.Lock()
+	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 
 	switch e.state {
 	case stateBound, stateConnected:
@@ -235,6 +239,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 	e.mu.RLock()
 	defer e.mu.RUnlock()
+
+	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
+	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
+		return 0, tcpip.ErrClosedForSend
+	}
 
 	// Prepare for write.
 	for {
@@ -562,12 +571,14 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) *tcpip.Error {
 // Shutdown closes the read and/or write end of the endpoint connection
 // to its peer.
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	if e.state != stateConnected {
 		return tcpip.ErrNotConnected
 	}
+
+	e.shutdownFlags |= flags
 
 	if flags&tcpip.ShutdownRead != 0 {
 		e.rcvMu.Lock()

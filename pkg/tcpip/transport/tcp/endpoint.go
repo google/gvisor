@@ -1024,7 +1024,7 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 		}
 
 	default:
-		return tcpip.ErrInvalidEndpointState
+		return tcpip.ErrNotConnected
 	}
 
 	return nil
