@@ -56,6 +56,20 @@ type transportProtocolState struct {
 // passed to stack.AddTCPProbe.
 type TCPProbeFunc func(s TCPEndpointState)
 
+// TCPCubicState is used to hold a copy of the internal cubic state when the
+// TCPProbeFunc is invoked.
+type TCPCubicState struct {
+	WLastMax                float64
+	WMax                    float64
+	T                       time.Time
+	TimeSinceLastCongestion time.Duration
+	C                       float64
+	K                       float64
+	Beta                    float64
+	WC                      float64
+	WEst                    float64
+}
+
 // TCPEndpointID is the unique 4 tuple that identifies a given endpoint.
 type TCPEndpointID struct {
 	// LocalPort is the local port associated with the endpoint.
@@ -180,6 +194,9 @@ type TCPSenderState struct {
 
 	// FastRecovery holds the fast recovery state for the endpoint.
 	FastRecovery TCPFastRecoveryState
+
+	// Cubic holds the state related to CUBIC congestion control.
+	Cubic TCPCubicState
 }
 
 // TCPSACKInfo holds TCP SACK related information for a given TCP endpoint.

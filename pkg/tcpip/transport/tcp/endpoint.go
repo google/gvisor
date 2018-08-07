@@ -1452,5 +1452,19 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		SndWndScale:      e.snd.sndWndScale,
 		MaxSentAck:       e.snd.maxSentAck,
 	}
+
+	if cubic, ok := e.snd.cc.(*cubicState); ok {
+		s.Sender.Cubic = stack.TCPCubicState{
+			WMax:                    cubic.wMax,
+			WLastMax:                cubic.wLastMax,
+			T:                       cubic.t,
+			TimeSinceLastCongestion: time.Since(cubic.t),
+			C:                       cubic.c,
+			K:                       cubic.k,
+			Beta:                    cubic.beta,
+			WC:                      cubic.wC,
+			WEst:                    cubic.wEst,
+		}
+	}
 	return s
 }
