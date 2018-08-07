@@ -212,12 +212,13 @@ func configs(opts configOptions) []*boot.Config {
 		cs = append(cs, c)
 	}
 
-	// TODO: KVM doesn't work with --race.
-	if !testutil.RaceEnabled && opts&kvm != 0 {
-		c := testutil.TestConfig()
-		c.Platform = boot.PlatformKVM
-		cs = append(cs, c)
-	}
+	// TODO: KVM tests are flaky. Disable until fixed.
+	// // TODO: KVM doesn't work with --race.
+	// if !testutil.RaceEnabled && opts&kvm != 0 {
+	// 	c := testutil.TestConfig()
+	// 	c.Platform = boot.PlatformKVM
+	// 	cs = append(cs, c)
+	// }
 
 	return cs
 }
