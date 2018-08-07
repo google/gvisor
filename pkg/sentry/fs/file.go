@@ -91,7 +91,7 @@ type File struct {
 	mu amutex.AbortableMutex `state:"nosave"`
 
 	// FileOperations implements file system specific behavior for this File.
-	FileOperations FileOperations
+	FileOperations FileOperations `state:"wait"`
 
 	// offset is the File's offset. Updating offset is protected by mu but
 	// can be read atomically via File.Offset() outside of mu.

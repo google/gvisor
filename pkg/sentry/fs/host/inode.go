@@ -77,7 +77,7 @@ type inodeFileState struct {
 	descriptor *descriptor `state:"wait"`
 
 	// Event queue for blocking operations.
-	queue waiter.Queue `state:"nosave"`
+	queue waiter.Queue `state:"zerovalue"`
 
 	// sattr is used to restore the inodeOperations.
 	sattr fs.StableAttr `state:"wait"`

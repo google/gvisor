@@ -61,7 +61,7 @@ const (
 //
 // +stateify savable
 type FileIdentifier struct {
-	File *fs.File
+	File *fs.File `state:"wait"`
 	Fd   kdefs.FD
 }
 
