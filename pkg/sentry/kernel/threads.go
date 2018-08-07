@@ -441,6 +441,8 @@ func (t *Task) Timekeeper() *Timekeeper {
 
 // Parent returns t's parent.
 func (t *Task) Parent() *Task {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
 	return t.parent
 }
 
