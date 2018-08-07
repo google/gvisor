@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -181,4 +182,13 @@ func Poll(cb func() error, timeout time.Duration) error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	return backoff.Retry(cb, b)
+}
+
+// WaitForHTTP tries GET requests on a port until the call succeeds or timeout.
+func WaitForHTTP(port int, timeout time.Duration) error {
+	cb := func() error {
+		_, err := http.Get(fmt.Sprintf("http://localhost:%d/", port))
+		return err
+	}
+	return Poll(cb, timeout)
 }

@@ -39,8 +39,8 @@ import (
 
 func TestHelloWorld(t *testing.T) {
 	d := testutil.MakeDocker("hello-test")
-	if out, err := d.Run("hello-world"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := d.Run("hello-world"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -82,8 +82,8 @@ func testHTTPServer(port int) error {
 }
 
 func TestHttpd(t *testing.T) {
-	if out, err := testutil.Pull("httpd"); err != nil {
-		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	if err := testutil.Pull("httpd"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("http-test")
 
@@ -93,8 +93,8 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Start the container.
-	if out, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/local/apache2/htdocs:ro"), "httpd"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/local/apache2/htdocs:ro"), "httpd"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -105,8 +105,8 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
-		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	if err := testHTTPServer(port); err != nil {
@@ -115,8 +115,8 @@ func TestHttpd(t *testing.T) {
 }
 
 func TestNginx(t *testing.T) {
-	if out, err := testutil.Pull("nginx"); err != nil {
-		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	if err := testutil.Pull("nginx"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("net-test")
 
@@ -126,8 +126,8 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Start the container.
-	if out, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/share/nginx/html:ro"), "nginx"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/share/nginx/html:ro"), "nginx"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -138,8 +138,8 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
-		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	if err := testHTTPServer(port); err != nil {
@@ -148,14 +148,14 @@ func TestNginx(t *testing.T) {
 }
 
 func TestMysql(t *testing.T) {
-	if out, err := testutil.Pull("mysql"); err != nil {
-		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	if err := testutil.Pull("mysql"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("mysql-test")
 
 	// Start the container.
-	if out, err := d.Run("-e", "MYSQL_ROOT_PASSWORD=foobar123", "mysql"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := d.Run("-e", "MYSQL_ROOT_PASSWORD=foobar123", "mysql"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -178,8 +178,8 @@ func TestMysql(t *testing.T) {
 		"mysql",
 		"mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql",
 	}
-	if out, err := client.Run(args...); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := client.Run(args...); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer client.CleanUp()
 

@@ -44,10 +44,14 @@ bazel test --test_output=errors //...
 exit_code=${?}
 
 if [[ ${exit_code} -eq 0 ]]; then
+  # These names are used to exclude tests not supported in certain
+  # configuration, e.g. save/restore not supported with hostnet.
   declare -a variations=("" "-kvm" "-hostnet" "-overlay")
   for v in "${variations[@]}"; do
-    # image_test is tagged manual
-    bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}${v} //runsc/test/image:image_test
+    # Run runsc tests with docker that are tagged manual.
+    bazel test --test_output=errors --test_env=RUNSC_RUNTIME=${runtime}${v} \
+      //runsc/test/image:image_test \
+      //runsc/test/integration:integration_test
     exit_code=${?}
     if [[ ${exit_code} -ne 0 ]]; then
       break

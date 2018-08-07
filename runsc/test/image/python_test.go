@@ -24,12 +24,12 @@ import (
 )
 
 func TestPythonHello(t *testing.T) {
-	if out, err := testutil.Pull("google/python-hello"); err != nil {
-		t.Fatalf("docker pull failed: %v\nout: %s", err, out)
+	if err := testutil.Pull("google/python-hello"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("python-hello-test")
-	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if _, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -40,8 +40,8 @@ func TestPythonHello(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 10*time.Second); err != nil {
-		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Ensure that content is being served.

@@ -37,11 +37,9 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
-// This container is a docker image for the Flask microframework hello world application.
-const container = "python-hello-test"
-
 // httpRequestSucceeds sends a request to a given url and checks that the status is OK.
-func httpRequestSucceeds(client http.Client, url string) error {
+func httpRequestSucceeds(client http.Client, server string, port int) error {
+	url := fmt.Sprintf("http://%s:%d", server, port)
 	// Ensure that content is being served.
 	resp, err := client.Get(url)
 	if err != nil {
@@ -55,33 +53,50 @@ func httpRequestSucceeds(client http.Client, url string) error {
 
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
-	d := testutil.MakeDocker(container)
-
-	// Test docker create.
-	if out, err := d.Do("create", "--runtime", d.Runtime, "--name", d.Name, "-p", "8080", "google/python-hello"); err != nil {
-		t.Fatalf("docker create failed: %v\nout: %s", err, out)
+	if err := testutil.Pull("nginx"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
 	}
-
-	// Test docker start.
-	if out, err := d.Do("start", d.Name); err != nil {
+	d := testutil.MakeDocker("lifecycle-test")
+	if err := d.Create("-p", "80", "nginx"); err != nil {
+		t.Fatalf("docker create failed: %v", err)
+	}
+	if err := d.Start(); err != nil {
 		d.CleanUp()
-		t.Fatalf("docker start failed: %v\nout: %s", err, out)
+		t.Fatalf("docker start failed: %v", err)
 	}
 
-	// Test docker stop.
-	if out, err := d.Do("stop", d.Name); err != nil {
+	// Test that container is working
+	port, err := d.FindPort(80)
+	if err != nil {
+		t.Fatalf("docker.FindPort(80) failed: %v", err)
+	}
+	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	}
+	client := http.Client{Timeout: time.Duration(2 * time.Second)}
+	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
+		t.Errorf("http request failed: %v", err)
+	}
+
+	if err := d.Stop(); err != nil {
 		d.CleanUp()
-		t.Fatalf("docker stop failed: %v\nout: %s", err, out)
+		t.Fatalf("docker stop failed: %v", err)
 	}
-
-	// Test removing the container.
-	if out, err := d.Do("rm", d.Name); err != nil {
-		t.Fatalf("docker rm failed: %v\nout: %s", err, out)
+	if err := d.Remove(); err != nil {
+		t.Fatalf("docker rm failed: %v", err)
 	}
 }
 
 func TestPauseResume(t *testing.T) {
-	d := testutil.MakeDocker(container)
+	if !testutil.IsPauseResumeSupported() {
+		t.Log("Pause/resume is not supported, skipping test.")
+		return
+	}
+
+	if err := testutil.Pull("google/python-hello"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("pause-resume-test")
 	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
 		t.Fatalf("docker run failed: %v\nout: %s", err, out)
 	}
@@ -94,28 +109,22 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
-		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
-	timeout := time.Duration(2 * time.Second)
-	client := http.Client{
-		Timeout: timeout,
-	}
-
-	url := fmt.Sprintf("http://localhost:%d", port)
 	// Check that container is working.
-	if err := httpRequestSucceeds(client, url); err != nil {
+	client := http.Client{Timeout: time.Duration(2 * time.Second)}
+	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
 		t.Errorf("http request failed: %v", err)
 	}
 
-	// Pause container.
-	if out, err := d.Do("pause", d.Name); err != nil {
-		t.Fatalf("docker pause failed: %v\nout: %s", err, out)
+	if err := d.Pause(); err != nil {
+		t.Fatalf("docker pause failed: %v", err)
 	}
 
 	// Check if container is paused.
-	switch _, err := client.Get(url); v := err.(type) {
+	switch _, err := client.Get(fmt.Sprintf("http://localhost:%d", port)); v := err.(type) {
 	case nil:
 		t.Errorf("http req expected to fail but it succeeded")
 	case net.Error:
@@ -126,18 +135,17 @@ func TestPauseResume(t *testing.T) {
 		t.Errorf("http req got unexpected error %v", v)
 	}
 
-	// Resume container.
-	if out, err := d.Do("unpause", d.Name); err != nil {
-		t.Fatalf("docker unpause failed: %v\nout: %s", err, out)
+	if err := d.Unpause(); err != nil {
+		t.Fatalf("docker unpause failed: %v", err)
 	}
 
 	// Wait until it's up and running.
-	if err := d.WaitForHTTP(port, 5*time.Second); err != nil {
-		t.Fatalf("docker.WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
 	// Check if container is working again.
-	if err := httpRequestSucceeds(client, url); err != nil {
+	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
 		t.Errorf("http request failed: %v", err)
 	}
 }

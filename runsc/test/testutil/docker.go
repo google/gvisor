@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -39,6 +38,12 @@ func runtime() string {
 		return "runsc-test"
 	}
 	return r
+}
+
+// IsPauseResumeSupported returns true if Pause/Resume is supported by runtime.
+func IsPauseResumeSupported() bool {
+	// Native host network stack can't be saved.
+	return !strings.Contains(runtime(), "hostnet")
 }
 
 // EnsureSupportedDockerVersion checks if correct docker is installed.
@@ -100,7 +105,7 @@ func do(args ...string) (string, error) {
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("error executing docker %s: %v", args, err)
+		return "", fmt.Errorf("error executing docker %s: %v\nout: %s", args, err, out)
 	}
 	return string(out), nil
 }
@@ -108,8 +113,9 @@ func do(args ...string) (string, error) {
 // Pull pulls a docker image. This is used in tests to isolate the
 // time to pull the image off the network from the time to actually
 // start the container, to avoid timeouts over slow networks.
-func Pull(image string) (string, error) {
-	return do("pull", image)
+func Pull(image string) error {
+	_, err := do("pull", image)
+	return err
 }
 
 // Docker contains the name and the runtime of a docker container.
@@ -125,6 +131,30 @@ func MakeDocker(namePrefix string) Docker {
 	return Docker{Name: namePrefix + suffix, Runtime: runtime()}
 }
 
+// Create calls 'docker create' with the arguments provided.
+func (d *Docker) Create(args ...string) error {
+	a := []string{"create", "--runtime", d.Runtime, "--name", d.Name}
+	a = append(a, args...)
+	_, err := do(a...)
+	return err
+}
+
+// Start calls 'docker start'.
+func (d *Docker) Start() error {
+	if _, err := do("start", d.Name); err != nil {
+		return fmt.Errorf("error starting container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
+// Stop calls 'docker stop'.
+func (d *Docker) Stop() error {
+	if _, err := do("stop", d.Name); err != nil {
+		return fmt.Errorf("error stopping container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
 // Run calls 'docker run' with the arguments provided.
 func (d *Docker) Run(args ...string) (string, error) {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
@@ -132,15 +162,36 @@ func (d *Docker) Run(args ...string) (string, error) {
 	return do(a...)
 }
 
+// Pause calls 'docker pause'.
+func (d *Docker) Pause() error {
+	if _, err := do("pause", d.Name); err != nil {
+		return fmt.Errorf("error pausing container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
+// Unpause calls 'docker pause'.
+func (d *Docker) Unpause() error {
+	if _, err := do("unpause", d.Name); err != nil {
+		return fmt.Errorf("error unpausing container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
+// Remove calls 'docker rm'.
+func (d *Docker) Remove() error {
+	if _, err := do("rm", d.Name); err != nil {
+		return fmt.Errorf("error deleting container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
 // CleanUp kills and deletes the container.
 func (d *Docker) CleanUp() error {
 	if _, err := do("kill", d.Name); err != nil {
 		return fmt.Errorf("error killing container %q: %v", d.Name, err)
 	}
-	if _, err := do("rm", d.Name); err != nil {
-		return fmt.Errorf("error deleting container %q: %v", d.Name, err)
-	}
-	return nil
+	return d.Remove()
 }
 
 // FindPort returns the host port that is mapped to 'sandboxPort'. This calls
@@ -176,17 +227,4 @@ func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
-}
-
-// WaitForHTTP tries GET requests on a port until the call succeeds or a timeout.
-func (d *Docker) WaitForHTTP(port int, timeout time.Duration) error {
-	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
-		url := fmt.Sprintf("http://localhost:%d/", port)
-		if _, err := http.Get(url); err == nil {
-			// Success!
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("timeout waiting for HTTP server on port %d", port)
 }
