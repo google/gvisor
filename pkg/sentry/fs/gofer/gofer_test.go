@@ -15,11 +15,11 @@
 package gofer
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"syscall"
 	"testing"
+	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
@@ -32,15 +32,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
 
-// A errMock is an error that comes from bad usage of the mock.
-var errMock = errors.New("mock error")
-
 // goodMockFile returns a file that can be Walk'ed to and created.
 func goodMockFile(mode p9.FileMode, size uint64) *p9test.FileMock {
 	return &p9test.FileMock{
 		GetAttrMock: p9test.GetAttrMock{
-			Valid: p9.AttrMask{Mode: true, Size: true, RDev: true},
 			Attr:  p9.Attr{Mode: mode, Size: size, RDev: 0},
+			Valid: p9.AttrMaskAll(),
 		},
 	}
 }
@@ -62,7 +59,7 @@ func newClosedSocket() (*unet.Socket, error) {
 
 // root returns a p9 file mock and an fs.InodeOperations created from that file.  Any
 // functions performed on fs.InodeOperations will use the p9 file mock.
-func root(ctx context.Context, mode p9.FileMode, size uint64) (*p9test.FileMock, *fs.Inode, error) {
+func root(ctx context.Context, cp cachePolicy, mode p9.FileMode, size uint64) (*p9test.FileMock, *fs.Inode, error) {
 	sock, err := newClosedSocket()
 	if err != nil {
 		return nil, nil, err
@@ -72,7 +69,8 @@ func root(ctx context.Context, mode p9.FileMode, size uint64) (*p9test.FileMock,
 	s := &session{
 		conn:        sock,
 		mounter:     fs.RootOwner,
-		cachePolicy: cacheNone,
+		cachePolicy: cp,
+		client:      &p9.Client{},
 	}
 
 	rootFile := goodMockFile(mode, size)
@@ -109,43 +107,149 @@ func TestLookup(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	for _, test := range tests {
-		// Set up mock.
-		rootFile, rootInode, err := root(ctx, p9.PermissionsMask, 0)
-		if err != nil {
-			t.Errorf("TestWalk %s failed: root error got %v, want nil", test.name, err)
-		}
-
-		rootFile.WalkGetAttrMock.QIDs = []p9.QID{{}}
-		rootFile.WalkGetAttrMock.Err = test.want
-		rootFile.WalkGetAttrMock.File = goodMockFile(p9.PermissionsMask, 0)
-
-		// Call function.
-		dirent, err := rootInode.Lookup(ctx, test.fileName)
-
-		// Unwrap the InodeOperations.
-		var newInodeOperations fs.InodeOperations
-		if dirent != nil {
-			if dirent.IsNegative() {
-				err = syscall.ENOENT
-			} else {
-				newInodeOperations = dirent.Inode.InodeOperations
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, cacheNone, p9.PermissionsMask, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
 			}
-		}
 
-		// Check return values.
-		if err != test.want {
-			t.Errorf("TestWalk %s failed: got %v, want %v", test.name, err, test.want)
-		}
-		if err == nil && newInodeOperations == nil {
-			t.Errorf("TestWalk %s failed: expected either non-nil err or non-nil node, but both are nil", test.name)
-		}
+			rootFile.WalkGetAttrMock.QIDs = []p9.QID{{}}
+			rootFile.WalkGetAttrMock.Err = test.want
+			rootFile.WalkGetAttrMock.File = goodMockFile(p9.PermissionsMask, 0)
 
-		// Check mock parameters.
-		if !rootFile.WalkGetAttrMock.Called {
-			t.Errorf("TestWalk %s failed: GetAttr not called; error: %v", test.name, err)
-		} else if rootFile.WalkGetAttrMock.Names[0] != test.fileName {
-			t.Errorf("TestWalk %s failed: file name not set", test.name)
-		}
+			// Call function.
+			dirent, err := rootInode.Lookup(ctx, test.fileName)
+
+			// Unwrap the InodeOperations.
+			var newInodeOperations fs.InodeOperations
+			if dirent != nil {
+				if dirent.IsNegative() {
+					err = syscall.ENOENT
+				} else {
+					newInodeOperations = dirent.Inode.InodeOperations
+				}
+			}
+
+			// Check return values.
+			if err != test.want {
+				t.Errorf("Lookup got err %v, want %v", err, test.want)
+			}
+			if err == nil && newInodeOperations == nil {
+				t.Errorf("Lookup got non-nil err and non-nil node, wanted at least one non-nil")
+			}
+
+			// Check mock parameters.
+			if !rootFile.WalkGetAttrMock.Called {
+				t.Errorf("GetAttr not called; error: %v", err)
+			} else if rootFile.WalkGetAttrMock.Names[0] != test.fileName {
+				t.Errorf("file name not set")
+			}
+		})
+	}
+}
+
+func TestRevalidation(t *testing.T) {
+	tests := []struct {
+		cachePolicy               cachePolicy
+		preModificationWantReval  bool
+		postModificationWantReval bool
+	}{
+		{
+			// Policy cacheNone causes Revalidate to always return
+			// true.
+			cachePolicy:               cacheNone,
+			preModificationWantReval:  true,
+			postModificationWantReval: true,
+		},
+		{
+			// Policy cacheAll causes Revalidate to always return
+			// false.
+			cachePolicy:               cacheAll,
+			preModificationWantReval:  false,
+			postModificationWantReval: false,
+		},
+		{
+			// Policy cacheAllWritethrough causes Revalidate to
+			// always return false.
+			cachePolicy:               cacheAllWritethrough,
+			preModificationWantReval:  false,
+			postModificationWantReval: false,
+		},
+		{
+			// Policy cacheRemoteRevalidating causes Revalidate to
+			// always return true.
+			//
+			// TODO: The cacheRemoteRevalidating
+			// policy should only return true if the remote file's
+			// attributes have changed.
+			cachePolicy:               cacheRemoteRevalidating,
+			preModificationWantReval:  true,
+			postModificationWantReval: true,
+		},
+	}
+
+	ctx := contexttest.Context(t)
+	for _, test := range tests {
+		name := fmt.Sprintf("cachepolicy=%s", test.cachePolicy)
+		t.Run(name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, test.cachePolicy, p9.ModeDirectory|p9.PermissionsMask, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
+			}
+
+			rootDir := fs.NewDirent(rootInode, "root")
+
+			// Create a mock file that we will walk to from the root.
+			const (
+				name = "foo"
+				mode = p9.PermissionsMask
+			)
+			file := goodMockFile(mode, 0)
+			file.GetAttrMock.Valid = p9.AttrMaskAll()
+
+			// Tell the root mock how to walk to this file.
+			rootFile.WalkGetAttrMock.QIDs = []p9.QID{{}}
+			rootFile.WalkGetAttrMock.File = file
+			rootFile.WalkGetAttrMock.Attr = file.GetAttrMock.Attr
+			rootFile.WalkGetAttrMock.Valid = file.GetAttrMock.Valid
+
+			// Do the walk.
+			dirent, err := rootDir.Walk(ctx, rootDir, name)
+			if err != nil {
+				t.Fatalf("Lookup(%q) failed: %v", name, err)
+			}
+
+			// Walk again. Depending on the cache policy, we may get a new
+			// dirent.
+			newDirent, err := rootDir.Walk(ctx, rootDir, name)
+			if err != nil {
+				t.Fatalf("Lookup(%q) failed: %v", name, err)
+			}
+			if test.preModificationWantReval && dirent == newDirent {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got old dirent %v, wanted a new dirent", name, test.cachePolicy, dirent)
+			}
+			if !test.preModificationWantReval && dirent != newDirent {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got new dirent %v, wanted old dirent %v", name, test.cachePolicy, newDirent, dirent)
+			}
+
+			// Modify the underlying mocked file's modification time.
+			file.GetAttrMock.Attr.MTimeSeconds = uint64(time.Now().Unix())
+
+			// Walk again. Depending on the cache policy, we may get a new
+			// dirent.
+			newDirent, err = rootDir.Walk(ctx, rootDir, name)
+			if err != nil {
+				t.Fatalf("Lookup(%q) failed: %v", name, err)
+			}
+			if test.postModificationWantReval && dirent == newDirent {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got old dirent %v, wanted a new dirent", name, test.cachePolicy, dirent)
+			}
+			if !test.postModificationWantReval && dirent != newDirent {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got new dirent %v, wanted old dirent %v", name, test.cachePolicy, newDirent, dirent)
+			}
+		})
 	}
 }
 
@@ -197,56 +301,57 @@ func TestSetTimestamps(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		// Set up mock.
-		rootFile, rootInode, err := root(ctx, p9.PermissionsMask, 0)
-		if err != nil {
-			t.Errorf("TestSetTimestamps %s failed: root error got %v, want nil", test.name, err)
-		}
-
-		// Call function.
-		err = rootInode.SetTimestamps(ctx, nil /* Dirent */, test.ts)
-
-		// Check return values.
-		if err != nil {
-			t.Errorf("TestSetTimestamps %s failed: got %v, want nil", test.name, err)
-		}
-
-		// Check mock parameters.
-		if !(test.ts.ATimeOmit && test.ts.MTimeOmit) && !rootFile.SetAttrMock.Called {
-			t.Errorf("TestSetTimestamps %s failed: SetAttr not called", test.name)
-			continue
-		}
-
-		// Check what was passed to the mock function.
-		attr := rootFile.SetAttrMock.Attr
-		atimeGiven := ktime.FromUnix(int64(attr.ATimeSeconds), int64(attr.ATimeNanoSeconds))
-		if test.ts.ATimeOmit {
-			if rootFile.SetAttrMock.Valid.ATime {
-				t.Errorf("TestSetTimestamps %s failed: ATime got set true in mask, wanted false", test.name)
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, cacheNone, p9.PermissionsMask, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
 			}
-		} else {
-			if got, want := rootFile.SetAttrMock.Valid.ATimeNotSystemTime, !test.ts.ATimeSetSystemTime; got != want {
-				t.Errorf("TestSetTimestamps %s failed: got ATimeNotSystemTime %v, want %v", test.name, got, want)
-			}
-			if !test.ts.ATimeSetSystemTime && !test.ts.ATime.Equal(atimeGiven) {
-				t.Errorf("TestSetTimestamps %s failed: ATime got %v, want %v", test.name, atimeGiven, test.ts.ATime)
-			}
-		}
 
-		mtimeGiven := ktime.FromUnix(int64(attr.MTimeSeconds), int64(attr.MTimeNanoSeconds))
-		if test.ts.MTimeOmit {
-			if rootFile.SetAttrMock.Valid.MTime {
-				t.Errorf("TestSetTimestamps %s failed: MTime got set true in mask, wanted false", test.name)
-			}
-		} else {
-			if got, want := rootFile.SetAttrMock.Valid.MTimeNotSystemTime, !test.ts.MTimeSetSystemTime; got != want {
-				t.Errorf("TestSetTimestamps %s failed: got MTimeNotSystemTime %v, want %v", test.name, got, want)
-			}
-			if !test.ts.MTimeSetSystemTime && !test.ts.MTime.Equal(mtimeGiven) {
-				t.Errorf("TestSetTimestamps %s failed: MTime got %v, want %v", test.name, mtimeGiven, test.ts.MTime)
-			}
-		}
+			// Call function.
+			err = rootInode.SetTimestamps(ctx, nil /* Dirent */, test.ts)
 
+			// Check return values.
+			if err != nil {
+				t.Errorf("SetTimestamps failed: got error %v, want nil", err)
+			}
+
+			// Check mock parameters.
+			if !(test.ts.ATimeOmit && test.ts.MTimeOmit) && !rootFile.SetAttrMock.Called {
+				t.Errorf("TestSetTimestamps failed: SetAttr not called")
+				return
+			}
+
+			// Check what was passed to the mock function.
+			attr := rootFile.SetAttrMock.Attr
+			atimeGiven := ktime.FromUnix(int64(attr.ATimeSeconds), int64(attr.ATimeNanoSeconds))
+			if test.ts.ATimeOmit {
+				if rootFile.SetAttrMock.Valid.ATime {
+					t.Errorf("ATime got set true in mask, wanted false")
+				}
+			} else {
+				if got, want := rootFile.SetAttrMock.Valid.ATimeNotSystemTime, !test.ts.ATimeSetSystemTime; got != want {
+					t.Errorf("got ATimeNotSystemTime %v, want %v", got, want)
+				}
+				if !test.ts.ATimeSetSystemTime && !test.ts.ATime.Equal(atimeGiven) {
+					t.Errorf("ATime got %v, want %v", atimeGiven, test.ts.ATime)
+				}
+			}
+
+			mtimeGiven := ktime.FromUnix(int64(attr.MTimeSeconds), int64(attr.MTimeNanoSeconds))
+			if test.ts.MTimeOmit {
+				if rootFile.SetAttrMock.Valid.MTime {
+					t.Errorf("MTime got set true in mask, wanted false")
+				}
+			} else {
+				if got, want := rootFile.SetAttrMock.Valid.MTimeNotSystemTime, !test.ts.MTimeSetSystemTime; got != want {
+					t.Errorf("got MTimeNotSystemTime %v, want %v", got, want)
+				}
+				if !test.ts.MTimeSetSystemTime && !test.ts.MTime.Equal(mtimeGiven) {
+					t.Errorf("MTime got %v, want %v", mtimeGiven, test.ts.MTime)
+				}
+			}
+		})
 	}
 }
 
@@ -283,43 +388,43 @@ func TestSetPermissions(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	for _, test := range tests {
-		// Set up mock.
-		rootFile, rootInode, err := root(ctx, 0, 0)
-		if err != nil {
-			t.Errorf("TestSetPermissions %s failed: root error got %v, want nil", test.name, err)
-		}
-		rootFile.SetAttrMock.Err = test.setAttrErr
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, cacheNone, 0, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
+			}
+			rootFile.SetAttrMock.Err = test.setAttrErr
 
-		ok := rootInode.SetPermissions(ctx, nil /* Dirent */, test.perms)
+			ok := rootInode.SetPermissions(ctx, nil /* Dirent */, test.perms)
 
-		// Check return value.
-		if ok != test.want {
-			t.Errorf("TestSetPermissions %s failed: got %v, want %v", test.name, ok, test.want)
-		}
+			// Check return value.
+			if ok != test.want {
+				t.Errorf("SetPermissions got %v, want %v", ok, test.want)
+			}
 
-		// Check mock parameters.
-		pattr := rootFile.SetAttrMock.Attr
-		if !rootFile.SetAttrMock.Called {
-			t.Errorf("TestSetPermissions %s failed: SetAttr not called", test.name)
-			continue
-		}
-		if !rootFile.SetAttrMock.Valid.Permissions {
-			t.Errorf("TestSetPermissions %s failed: SetAttr did not get right request (got false, expected SetAttrMask.Permissions true)",
-				test.name)
-		}
-		if got := fs.FilePermsFromP9(pattr.Permissions); got != test.perms {
-			t.Errorf("TestSetPermissions %s failed: SetAttr did not get right permissions -- got %v, want %v",
-				test.name, got, test.perms)
-		}
+			// Check mock parameters.
+			pattr := rootFile.SetAttrMock.Attr
+			if !rootFile.SetAttrMock.Called {
+				t.Errorf("SetAttr not called")
+				return
+			}
+			if !rootFile.SetAttrMock.Valid.Permissions {
+				t.Errorf("SetAttr did not get right request (got false, expected SetAttrMask.Permissions true)")
+			}
+			if got := fs.FilePermsFromP9(pattr.Permissions); got != test.perms {
+				t.Errorf("SetAttr did not get right permissions -- got %v, want %v", got, test.perms)
+			}
+		})
 	}
 }
 
 func TestClose(t *testing.T) {
 	ctx := contexttest.Context(t)
 	// Set up mock.
-	rootFile, rootInode, err := root(ctx, p9.PermissionsMask, 0)
+	rootFile, rootInode, err := root(ctx, cacheNone, p9.PermissionsMask, 0)
 	if err != nil {
-		t.Errorf("TestClose failed: root error got %v, want nil", err)
+		t.Fatalf("error creating root: %v", err)
 	}
 
 	// Call function.
@@ -350,9 +455,9 @@ func TestRename(t *testing.T) {
 		want error
 	}
 	ctx := contexttest.Context(t)
-	rootFile, rootInode, err := root(ctx, p9.PermissionsMask, 0)
+	rootFile, rootInode, err := root(ctx, cacheNone, p9.PermissionsMask, 0)
 	if err != nil {
-		t.Errorf("TestRename failed: root error got %v, want nil", err)
+		t.Fatalf("error creating root: %v", err)
 	}
 
 	tests := []renameTest{
@@ -383,35 +488,37 @@ func TestRename(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		mockFile := goodMockFile(p9.PermissionsMask, 0)
-		rootFile.WalkGetAttrMock.QIDs = []p9.QID{{}}
-		rootFile.WalkGetAttrMock.File = mockFile
+		t.Run(test.name, func(t *testing.T) {
+			mockFile := goodMockFile(p9.PermissionsMask, 0)
+			rootFile.WalkGetAttrMock.QIDs = []p9.QID{{}}
+			rootFile.WalkGetAttrMock.File = mockFile
 
-		dirent, err := rootInode.Lookup(ctx, "foo")
-		if err != nil {
-			t.Fatalf("root.Walk failed: %v", err)
-		}
-		mockFile.RenameMock.Err = test.renameErr
-		mockFile.RenameMock.Called = false
+			dirent, err := rootInode.Lookup(ctx, "foo")
+			if err != nil {
+				t.Fatalf("root.Walk failed: %v", err)
+			}
+			mockFile.RenameMock.Err = test.renameErr
+			mockFile.RenameMock.Called = false
 
-		// Use a dummy oldParent to acquire write access to that directory.
-		oldParent := &inodeOperations{
-			readdirCache: fs.NewSortedDentryMap(nil),
-		}
-		oldInode := fs.NewInode(oldParent, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Directory})
+			// Use a dummy oldParent to acquire write access to that directory.
+			oldParent := &inodeOperations{
+				readdirCache: fs.NewSortedDentryMap(nil),
+			}
+			oldInode := fs.NewInode(oldParent, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Directory})
 
-		// Call function.
-		err = dirent.Inode.InodeOperations.Rename(ctx, oldInode, "", test.newParent, test.newName)
+			// Call function.
+			err = dirent.Inode.InodeOperations.Rename(ctx, oldInode, "", test.newParent, test.newName)
 
-		// Check return value.
-		if err != test.want {
-			t.Errorf("TestRename %s failed: got %v, want %v", test.name, err, test.want)
-		}
+			// Check return value.
+			if err != test.want {
+				t.Errorf("Rename got %v, want %v", err, test.want)
+			}
 
-		// Check mock parameters.
-		if got, want := mockFile.RenameMock.Called, test.renameCalled; got != want {
-			t.Errorf("TestRename %s failed: renameCalled got %v want %v", test.name, got, want)
-		}
+			// Check mock parameters.
+			if got, want := mockFile.RenameMock.Called, test.renameCalled; got != want {
+				t.Errorf("renameCalled got %v want %v", got, want)
+			}
+		})
 	}
 }
 
@@ -523,46 +630,48 @@ func TestPreadv(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	for _, test := range tests {
-		// Set up mock.
-		rootFile, rootInode, err := root(ctx, test.mode, 1024)
-		if err != nil {
-			t.Errorf("TestPreadv %s failed: root error got %v, want nil", test.name, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, cacheNone, test.mode, 1024)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
+			}
 
-		// Set up the read buffer.
-		dst := usermem.BytesIOSequence(test.buffer[:test.sliceSize])
+			// Set up the read buffer.
+			dst := usermem.BytesIOSequence(test.buffer[:test.sliceSize])
 
-		// This file will be read from.
-		openFile := &readAtFileFake{
-			Err:        test.readAtErr,
-			FileLength: test.sliceSize,
-			ChunkSize:  test.chunkSize,
-		}
-		rootFile.WalkGetAttrMock.File = openFile
-		rootFile.WalkGetAttrMock.Attr.Mode = test.mode
-		rootFile.WalkGetAttrMock.Valid.Mode = true
+			// This file will be read from.
+			openFile := &readAtFileFake{
+				Err:        test.readAtErr,
+				FileLength: test.sliceSize,
+				ChunkSize:  test.chunkSize,
+			}
+			rootFile.WalkGetAttrMock.File = openFile
+			rootFile.WalkGetAttrMock.Attr.Mode = test.mode
+			rootFile.WalkGetAttrMock.Valid.Mode = true
 
-		f := NewFile(
-			ctx,
-			fs.NewDirent(rootInode, ""),
-			"",
-			fs.FileFlags{Read: true},
-			rootInode.InodeOperations.(*inodeOperations),
-			&handles{File: contextFile{file: openFile}},
-		)
+			f := NewFile(
+				ctx,
+				fs.NewDirent(rootInode, ""),
+				"",
+				fs.FileFlags{Read: true},
+				rootInode.InodeOperations.(*inodeOperations),
+				&handles{File: contextFile{file: openFile}},
+			)
 
-		// Call function.
-		_, err = f.Preadv(ctx, dst, 0)
+			// Call function.
+			_, err = f.Preadv(ctx, dst, 0)
 
-		// Check return value.
-		if err != test.want {
-			t.Errorf("TestPreadv %s failed: got %v, want %v", test.name, err, test.want)
-		}
+			// Check return value.
+			if err != test.want {
+				t.Errorf("Preadv got %v, want %v", err, test.want)
+			}
 
-		// Check mock parameters.
-		if test.readAtCalled != openFile.Called {
-			t.Errorf("TestPreadv %s failed: ReadAt called: %v, but expected opposite", test.name, openFile.Called)
-		}
+			// Check mock parameters.
+			if test.readAtCalled != openFile.Called {
+				t.Errorf("ReadAt called: %v, but expected opposite", openFile.Called)
+			}
+		})
 	}
 }
 
@@ -610,28 +719,30 @@ func TestReadlink(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	for _, test := range tests {
-		// Set up mock.
-		rootFile, rootInode, err := root(ctx, test.mode, 0)
-		if err != nil {
-			t.Errorf("TestReadlink %s failed: root error got %v, want nil", test.name, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			rootFile, rootInode, err := root(ctx, cacheNone, test.mode, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
+			}
 
-		openFile := goodMockFile(test.mode, 0)
-		rootFile.WalkMock.File = openFile
-		rootFile.ReadlinkMock.Err = test.readlinkErr
+			openFile := goodMockFile(test.mode, 0)
+			rootFile.WalkMock.File = openFile
+			rootFile.ReadlinkMock.Err = test.readlinkErr
 
-		// Call function.
-		_, err = rootInode.Readlink(ctx)
+			// Call function.
+			_, err = rootInode.Readlink(ctx)
 
-		// Check return value.
-		if err != test.want {
-			t.Errorf("TestReadlink %s failed: got %v, want %v", test.name, err, test.want)
-		}
+			// Check return value.
+			if err != test.want {
+				t.Errorf("Readlink got %v, want %v", err, test.want)
+			}
 
-		// Check mock parameters.
-		if test.readlinkCalled && !rootFile.ReadlinkMock.Called {
-			t.Errorf("TestReadlink %s failed: Readlink not called", test.name)
-		}
+			// Check mock parameters.
+			if test.readlinkCalled && !rootFile.ReadlinkMock.Called {
+				t.Errorf("Readlink not called")
+			}
+		})
 	}
 }
 
@@ -735,44 +846,46 @@ func TestPwritev(t *testing.T) {
 
 	ctx := contexttest.Context(t)
 	for _, test := range tests {
-		// Set up mock.
-		_, rootInode, err := root(ctx, test.mode, 0)
-		if err != nil {
-			t.Errorf("TestPwritev %s failed: root error got %v, want nil", test.name, err)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			// Set up mock.
+			_, rootInode, err := root(ctx, cacheNone, test.mode, 0)
+			if err != nil {
+				t.Fatalf("error creating root: %v", err)
+			}
 
-		src := usermem.BytesIOSequence(test.buffer[:test.sliceSize])
+			src := usermem.BytesIOSequence(test.buffer[:test.sliceSize])
 
-		// This is the file that will be used for writing.
-		openFile := &writeAtFileFake{
-			Err:       test.writeAtErr,
-			ChunkSize: test.chunkSize,
-		}
+			// This is the file that will be used for writing.
+			openFile := &writeAtFileFake{
+				Err:       test.writeAtErr,
+				ChunkSize: test.chunkSize,
+			}
 
-		f := NewFile(
-			ctx,
-			fs.NewDirent(rootInode, ""),
-			"",
-			fs.FileFlags{Write: true},
-			rootInode.InodeOperations.(*inodeOperations),
-			&handles{File: contextFile{file: openFile}},
-		)
+			f := NewFile(
+				ctx,
+				fs.NewDirent(rootInode, ""),
+				"",
+				fs.FileFlags{Write: true},
+				rootInode.InodeOperations.(*inodeOperations),
+				&handles{File: contextFile{file: openFile}},
+			)
 
-		// Call function.
-		_, err = f.Pwritev(ctx, src, 0)
+			// Call function.
+			_, err = f.Pwritev(ctx, src, 0)
 
-		// Check return value.
-		if err != test.want {
-			t.Errorf("TestPwritev %s failed: got %v, want %v", test.name, err, test.want)
-		}
+			// Check return value.
+			if err != test.want {
+				t.Errorf("Pwritev got %v, want %v", err, test.want)
+			}
 
-		// Check mock parameters.
-		if test.writeAtCalled != openFile.Called {
-			t.Errorf("TestPwritev %s failed: WriteAt called: %v, but expected opposite", test.name, openFile.Called)
-			continue
-		}
-		if openFile.Called && test.writeAtErr != nil && openFile.LengthWritten != test.sliceSize {
-			t.Errorf("TestPwritev %s failed: wrote %d bytes, expected %d bytes written", test.name, openFile.LengthWritten, test.sliceSize)
-		}
+			// Check mock parameters.
+			if test.writeAtCalled != openFile.Called {
+				t.Errorf("WriteAt called: %v, but expected opposite", openFile.Called)
+				return
+			}
+			if openFile.Called && test.writeAtErr != nil && openFile.LengthWritten != test.sliceSize {
+				t.Errorf("wrote %d bytes, expected %d bytes written", openFile.LengthWritten, test.sliceSize)
+			}
+		})
 	}
 }

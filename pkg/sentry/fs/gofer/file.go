@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"fmt"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -71,6 +72,17 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 	// see fs/9p/vfs_inode.c:v9fs_vfs_atomic_open -> fs/open.c:finish_open.
 	flags.Pread = true
 	flags.Pwrite = true
+
+	if fs.IsFile(dirent.Inode.StableAttr) {
+		// If cache policy is "remote revalidating", then we must
+		// ensure that we have a host FD. Otherwise, the
+		// sentry-internal page cache will be used, and we can end up
+		// in an inconsistent state if the remote file changes.
+		cp := dirent.Inode.InodeOperations.(*inodeOperations).session().cachePolicy
+		if cp == cacheRemoteRevalidating && handles.Host == nil {
+			panic(fmt.Sprintf("remote-revalidating cache policy requires gofer to donate host FD, but file %q did not have host FD", name))
+		}
+	}
 
 	f := &fileOperations{
 		inodeOperations: i,
@@ -202,7 +214,6 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 			err = f.inodeOperations.cachingInodeOps.WriteOut(ctx, file.Dirent.Inode)
 		}
 		return n, err
-
 	}
 	return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 }

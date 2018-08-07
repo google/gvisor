@@ -34,7 +34,33 @@ const (
 	// Use virtual file system cache for everything, but send writes to the
 	// fs agent immediately.
 	cacheAllWritethrough
+
+	// Use virtual file system cache for everything, but reload dirents
+	// from the remote filesystem on each lookup. Thus, if the remote
+	// filesystem has changed, the returned dirent will have the updated
+	// state.
+	//
+	// This policy should *only* be used with remote filesystems that
+	// donate their host FDs to the sandbox and thus use the host page
+	// cache, otherwise the dirent state will be inconsistent.
+	cacheRemoteRevalidating
 )
+
+// String returns the string name of the cache policy.
+func (cp cachePolicy) String() string {
+	switch cp {
+	case cacheNone:
+		return "cacheNone"
+	case cacheAll:
+		return "cacheAll"
+	case cacheAllWritethrough:
+		return "cacheAllWritethrough"
+	case cacheRemoteRevalidating:
+		return "cacheRemoteRevalidating"
+	default:
+		return "unknown"
+	}
+}
 
 func parseCachePolicy(policy string) (cachePolicy, error) {
 	switch policy {
@@ -44,6 +70,8 @@ func parseCachePolicy(policy string) (cachePolicy, error) {
 		return cacheNone, nil
 	case "fscache_writethrough":
 		return cacheAllWritethrough, nil
+	case "remote_revalidating":
+		return cacheRemoteRevalidating, nil
 	}
 	return cacheNone, fmt.Errorf("unsupported cache mode: %s", policy)
 }
@@ -63,14 +91,16 @@ func (cp cachePolicy) cacheReaddir() bool {
 }
 
 // usePageCache determines whether the page cache should be used for the given
-// inode.
+// inode. If the remote filesystem donates host FDs to the sentry, then the
+// host kernel's page cache will be used, otherwise we will use a
+// sentry-internal page cache.
 func (cp cachePolicy) usePageCache(inode *fs.Inode) bool {
 	// Do cached IO for regular files only. Some "character devices" expect
 	// no caching.
 	if !fs.IsFile(inode.StableAttr) {
 		return false
 	}
-	return cp == cacheAll || cp == cacheAllWritethrough
+	return cp == cacheAll || cp == cacheAllWritethrough || cp == cacheRemoteRevalidating
 }
 
 // writeThough indicates whether writes to the file should be synced to the
@@ -79,10 +109,16 @@ func (cp cachePolicy) writeThrough(inode *fs.Inode) bool {
 	return cp == cacheNone || cp == cacheAllWritethrough
 }
 
-// revalidateDirent indicates that dirents should be revalidated after they are
-// looked up.
+// revalidateDirent indicates that a dirent should be revalidated after a
+// lookup, because the looked up version may be stale.
 func (cp cachePolicy) revalidateDirent() bool {
-	return cp == cacheNone
+	if cp == cacheAll || cp == cacheAllWritethrough {
+		return false
+	}
+
+	// TODO: The cacheRemoteRevalidating policy should only
+	// return true if the remote file's attributes have changed.
+	return true
 }
 
 // keepDirent indicates that dirents should be kept pinned in the dirent tree
