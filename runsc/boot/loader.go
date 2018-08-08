@@ -174,7 +174,10 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
 	// Run().
-	networkStack := newEmptyNetworkStack(conf, k)
+	networkStack, err := newEmptyNetworkStack(conf, k)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create network: %v", err)
+	}
 
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
@@ -525,16 +528,20 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) inet.Stack {
+func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 	switch conf.Network {
 	case NetworkHost:
-		return hostinet.NewStack()
+		return hostinet.NewStack(), nil
 
 	case NetworkNone, NetworkSandbox:
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
 		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, ping.ProtocolName4}
-		return &epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{Clock: clock})}
+		s := &epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{Clock: clock})}
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
+			return nil, fmt.Errorf("failed to enable SACK: %v", err)
+		}
+		return s, nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

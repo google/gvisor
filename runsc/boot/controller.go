@@ -285,7 +285,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	fs.SetRestoreEnvironment(*renv)
 
 	// Prepare to load from the state file.
-	networkStack := newEmptyNetworkStack(cm.l.conf, k)
+	networkStack, err := newEmptyNetworkStack(cm.l.conf, k)
+	if err != nil {
+		return fmt.Errorf("failed to create network: %v", err)
+	}
 	info, err := o.FilePayload.Files[0].Stat()
 	if err != nil {
 		return err
