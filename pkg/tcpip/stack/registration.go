@@ -205,6 +205,7 @@ const (
 	CapabilityResolutionRequired
 	CapabilitySaveRestore
 	CapabilityDisconnectOk
+	CapabilityLoopback
 )
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,

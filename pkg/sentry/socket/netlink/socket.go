@@ -16,6 +16,7 @@
 package netlink
 
 import (
+	"math"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -39,8 +40,18 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// defaultSendBufferSize is the default size for the send buffer.
-const defaultSendBufferSize = 16 * 1024
+const sizeOfInt32 int = 4
+
+const (
+	// minBufferSize is the smallest size of a send buffer.
+	minSendBufferSize = 4 << 10 // 4096 bytes.
+
+	// defaultSendBufferSize is the default size for the send buffer.
+	defaultSendBufferSize = 16 * 1024
+
+	// maxBufferSize is the largest size a send buffer can grow to.
+	maxSendBufferSize = 4 << 20 // 4MB
+)
 
 // netlinkSocketDevice is the netlink socket virtual device.
 var netlinkSocketDevice = device.NewAnonDevice()
@@ -86,7 +97,7 @@ type Socket struct {
 
 	// sendBufferSize is the send buffer "size". We don't actually have a
 	// fixed buffer but only consume this many bytes.
-	sendBufferSize uint64
+	sendBufferSize uint32
 }
 
 var _ socket.Socket = (*Socket)(nil)
@@ -273,13 +284,54 @@ func (s *Socket) Shutdown(t *kernel.Task, how int) *syserr.Error {
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
 func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (interface{}, *syserr.Error) {
-	// TODO: no sockopts supported.
+	switch level {
+	case linux.SOL_SOCKET:
+		switch name {
+		case linux.SO_SNDBUF:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+			return int32(s.sendBufferSize), nil
+
+		case linux.SO_RCVBUF:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+			// We don't have limit on receiving size.
+			return math.MaxInt32, nil
+		}
+	}
+	// TODO: other sockopts are not supported.
 	return nil, syserr.ErrProtocolNotAvailable
 }
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
 func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
-	// TODO: no sockopts supported.
+	switch level {
+	case linux.SOL_SOCKET:
+		switch name {
+		case linux.SO_SNDBUF:
+			if len(opt) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			size := usermem.ByteOrder.Uint32(opt)
+			if size < minSendBufferSize {
+				size = minSendBufferSize
+			} else if size > maxSendBufferSize {
+				size = maxSendBufferSize
+			}
+			s.sendBufferSize = size
+			return nil
+		case linux.SO_RCVBUF:
+			if len(opt) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+			// We don't have limit on receiving size. So just accept anything as
+			// valid for compatibility.
+			return nil
+		}
+	}
+	// TODO: other sockopts are not supported.
 	return syserr.ErrProtocolNotAvailable
 }
 
@@ -489,7 +541,7 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 
 	// For simplicity, and consistency with Linux, we copy in the entire
 	// message up front.
-	if uint64(src.NumBytes()) > s.sendBufferSize {
+	if src.NumBytes() > int64(s.sendBufferSize) {
 		return 0, syserr.ErrMessageTooLong
 	}
 

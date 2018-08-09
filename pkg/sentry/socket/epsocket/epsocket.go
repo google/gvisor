@@ -48,7 +48,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	nstack "gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -452,7 +452,7 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (
 // sockets backed by a commonEndpoint.
 func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType unix.SockType, level, name, outLen int) (interface{}, *syserr.Error) {
 	switch level {
-	case syscall.SOL_SOCKET:
+	case linux.SOL_SOCKET:
 		switch name {
 		case linux.SO_TYPE:
 			if outLen < sizeOfInt32 {
@@ -634,7 +634,7 @@ func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVa
 // sockets backed by a commonEndpoint.
 func SetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, level int, name int, optVal []byte) *syserr.Error {
 	switch level {
-	case syscall.SOL_SOCKET:
+	case linux.SOL_SOCKET:
 		switch name {
 		case linux.SO_SNDBUF:
 			if len(optVal) < sizeOfInt32 {
@@ -1191,7 +1191,9 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 		if err != nil {
 			return err
 		}
-		usermem.ByteOrder.PutUint16(ifr.Data[:2], f)
+		// Drop the flags that don't fit in the size that we need to return. This
+		// matches Linux behavior.
+		usermem.ByteOrder.PutUint16(ifr.Data[:2], uint16(f))
 
 	case syscall.SIOCGIFADDR:
 		// Copy the IPv4 address out.
@@ -1304,7 +1306,7 @@ func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
 // interfaceStatusFlags returns status flags for an interface in the stack.
 // Flag values and meanings are described in greater detail in netdevice(7) in
 // the SIOCGIFFLAGS section.
-func interfaceStatusFlags(stack inet.Stack, name string) (uint16, *syserr.Error) {
+func interfaceStatusFlags(stack inet.Stack, name string) (uint32, *syserr.Error) {
 	// epsocket should only ever be passed an epsocket.Stack.
 	epstack, ok := stack.(*Stack)
 	if !ok {
@@ -1312,37 +1314,27 @@ func interfaceStatusFlags(stack inet.Stack, name string) (uint16, *syserr.Error)
 	}
 
 	// Find the NIC corresponding to this interface.
-	var (
-		nicid tcpip.NICID
-		info  nstack.NICInfo
-		found bool
-	)
-	ns := epstack.Stack
-	for nicid, info = range ns.NICInfo() {
+	for _, info := range epstack.Stack.NICInfo() {
 		if info.Name == name {
-			found = true
-			break
+			return nicStateFlagsToLinux(info.Flags), nil
 		}
 	}
-	if !found {
-		return 0, syserr.ErrNoDevice
-	}
+	return 0, syserr.ErrNoDevice
+}
 
-	// Set flags based on NIC state.
-	nicFlags, err := ns.NICFlags(nicid)
-	if err != nil {
-		return 0, syserr.TranslateNetstackError(err)
+func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
+	var rv uint32
+	if f.Up {
+		rv |= linux.IFF_UP | linux.IFF_LOWER_UP
 	}
-
-	var retFlags uint16
-	if nicFlags.Up {
-		retFlags |= linux.IFF_UP
+	if f.Running {
+		rv |= linux.IFF_RUNNING
 	}
-	if nicFlags.Running {
-		retFlags |= linux.IFF_RUNNING
+	if f.Promiscuous {
+		rv |= linux.IFF_PROMISC
 	}
-	if nicFlags.Promiscuous {
-		retFlags |= linux.IFF_PROMISC
+	if f.Loopback {
+		rv |= linux.IFF_LOOPBACK
 	}
-	return retFlags, nil
+	return rv
 }

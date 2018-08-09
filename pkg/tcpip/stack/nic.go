@@ -67,6 +67,13 @@ func (n *NIC) setPromiscuousMode(enable bool) {
 	n.mu.Unlock()
 }
 
+func (n *NIC) isPromiscuousMode() bool {
+	n.mu.RLock()
+	rv := n.promiscuous
+	n.mu.RUnlock()
+	return rv
+}
+
 // setSpoofing enables or disables address spoofing.
 func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Lock()

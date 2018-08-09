@@ -184,3 +184,8 @@ const (
 	IFA_MULTICAST = 7
 	IFA_FLAGS     = 8
 )
+
+// Device types, from uapi/linux/if_arp.h.
+const (
+	ARPHRD_LOOPBACK = 772
+)

@@ -563,6 +563,12 @@ type NICInfo struct {
 	Name              string
 	LinkAddress       tcpip.LinkAddress
 	ProtocolAddresses []tcpip.ProtocolAddress
+
+	// Flags indicate the state of the NIC.
+	Flags NICStateFlags
+
+	// MTU is the maximum transmission unit.
+	MTU uint32
 }
 
 // NICInfo returns a map of NICIDs to their associated information.
@@ -572,10 +578,18 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 
 	nics := make(map[tcpip.NICID]NICInfo)
 	for id, nic := range s.nics {
+		flags := NICStateFlags{
+			Up:          true, // Netstack interfaces are always up.
+			Running:     nic.linkEP.IsAttached(),
+			Promiscuous: nic.isPromiscuousMode(),
+			Loopback:    nic.linkEP.Capabilities()&CapabilityLoopback != 0,
+		}
 		nics[id] = NICInfo{
 			Name:              nic.name,
 			LinkAddress:       nic.linkEP.LinkAddress(),
 			ProtocolAddresses: nic.Addresses(),
+			Flags:             flags,
+			MTU:               nic.linkEP.MTU(),
 		}
 	}
 	return nics
@@ -591,27 +605,9 @@ type NICStateFlags struct {
 
 	// Promiscuous indicates whether the interface is in promiscuous mode.
 	Promiscuous bool
-}
 
-// NICFlags returns flags about the state of the NIC. It returns an error if
-// the NIC corresponding to id cannot be found.
-func (s *Stack) NICFlags(id tcpip.NICID) (NICStateFlags, *tcpip.Error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[id]
-	if nic == nil {
-		return NICStateFlags{}, tcpip.ErrUnknownNICID
-	}
-
-	ret := NICStateFlags{
-		// Netstack interfaces are always up.
-		Up: true,
-
-		Running:     nic.linkEP.IsAttached(),
-		Promiscuous: nic.promiscuous,
-	}
-	return ret, nil
+	// Loopback indicates whether the interface is a loopback.
+	Loopback bool
 }
 
 // AddAddress adds a new network-layer address to the specified NIC.

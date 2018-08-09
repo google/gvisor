@@ -67,6 +67,9 @@ type Interface struct {
 
 	// Addr is the hardware device address.
 	Addr []byte
+
+	// MTU is the maximum transmission unit.
+	MTU uint32
 }
 
 // InterfaceAddr contains information about a network interface address.

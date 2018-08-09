@@ -41,10 +41,16 @@ func (s *Stack) SupportsIPv6() bool {
 func (s *Stack) Interfaces() map[int32]inet.Interface {
 	is := make(map[int32]inet.Interface)
 	for id, ni := range s.Stack.NICInfo() {
+		var devType uint16
+		if ni.Flags.Loopback {
+			devType = linux.ARPHRD_LOOPBACK
+		}
 		is[int32(id)] = inet.Interface{
-			Name: ni.Name,
-			Addr: []byte(ni.LinkAddress),
-			// TODO: Other fields.
+			Name:       ni.Name,
+			Addr:       []byte(ni.LinkAddress),
+			Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
+			DeviceType: devType,
+			MTU:        ni.MTU,
 		}
 	}
 	return is
