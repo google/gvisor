@@ -53,7 +53,8 @@ type FDFlags struct {
 	CloseOnExec bool
 }
 
-// ToLinuxFileFlags converts a kernel.FDFlags object to a Linux file flags representation.
+// ToLinuxFileFlags converts a kernel.FDFlags object to a Linux file flags
+// representation.
 func (f FDFlags) ToLinuxFileFlags() (mask uint) {
 	if f.CloseOnExec {
 		mask |= linux.O_CLOEXEC
@@ -61,7 +62,8 @@ func (f FDFlags) ToLinuxFileFlags() (mask uint) {
 	return
 }
 
-// ToLinuxFDFlags converts a kernel.FDFlags object to a Linux descriptor flags representation.
+// ToLinuxFDFlags converts a kernel.FDFlags object to a Linux descriptor flags
+// representation.
 func (f FDFlags) ToLinuxFDFlags() (mask uint) {
 	if f.CloseOnExec {
 		mask |= linux.FD_CLOEXEC

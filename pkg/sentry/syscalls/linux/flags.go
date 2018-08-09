@@ -34,8 +34,8 @@ func flagsToPermissions(mask uint) (p fs.PermMask) {
 	return
 }
 
-// linuxToFlags converts linux file flags to a FileFlags object.
-func linuxToFlags(mask uint) (flags fs.FileFlags) {
+// linuxToFlags converts Linux file flags to a FileFlags object.
+func linuxToFlags(mask uint) fs.FileFlags {
 	return fs.FileFlags{
 		Direct:      mask&linux.O_DIRECT != 0,
 		Sync:        mask&linux.O_SYNC != 0,
@@ -46,15 +46,5 @@ func linuxToFlags(mask uint) (flags fs.FileFlags) {
 		Directory:   mask&linux.O_DIRECTORY != 0,
 		Async:       mask&linux.O_ASYNC != 0,
 		LargeFile:   mask&linux.O_LARGEFILE != 0,
-	}
-}
-
-// linuxToSettableFlags converts linux file flags to a SettableFileFlags object.
-func linuxToSettableFlags(mask uint) fs.SettableFileFlags {
-	return fs.SettableFileFlags{
-		Direct:      mask&linux.O_DIRECT != 0,
-		NonBlocking: mask&linux.O_NONBLOCK != 0,
-		Append:      mask&linux.O_APPEND != 0,
-		Async:       mask&linux.O_ASYNC != 0,
 	}
 }
