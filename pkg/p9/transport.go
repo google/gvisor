@@ -206,11 +206,11 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		// The message is too small.
 		//
 		// See above: it's probably screwed.
-		return NoTag, nil, ErrNoValidMessage
+		return NoTag, nil, ErrSocket{ErrNoValidMessage}
 	}
 	if size > maximumLength || size > msize {
 		// The message is too big.
-		return NoTag, nil, &ErrMessageTooLarge{size, msize}
+		return NoTag, nil, ErrSocket{&ErrMessageTooLarge{size, msize}}
 	}
 	remaining := size - headerLength
 

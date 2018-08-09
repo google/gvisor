@@ -73,8 +73,8 @@ func TestRecvOverrun(t *testing.T) {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	if _, _, err := recv(server, maximumLength, messageByType); err != ErrNoValidMessage {
-		t.Fatalf("recv got err %v expected ErrNoValidMessage", err)
+	if _, _, err := recv(server, maximumLength, messageByType); err == nil {
+		t.Fatalf("recv got err %v expected ErrSocket{ErrNoValidMessage}", err)
 	}
 }
 
