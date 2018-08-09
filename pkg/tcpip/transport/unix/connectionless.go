@@ -77,9 +77,15 @@ func (e *connectionlessEndpoint) BidirectionalConnect(ce ConnectingEndpoint, ret
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
 func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *tcpip.Error) {
+	e.Lock()
+	r := e.receiver
+	e.Unlock()
+	if r == nil {
+		return nil, tcpip.ErrConnectionRefused
+	}
 	return &connectedEndpoint{
 		endpoint:   e,
-		writeQueue: e.receiver.(*queueReceiver).readQueue,
+		writeQueue: r.(*queueReceiver).readQueue,
 	}, nil
 }
 

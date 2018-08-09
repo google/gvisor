@@ -224,7 +224,11 @@ type BoundEndpoint interface {
 	// type that isn't SockStream or SockSeqpacket.
 	BidirectionalConnect(ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *tcpip.Error
 
-	// UnidirectionalConnect establishes a write-only connection to a unix endpoint.
+	// UnidirectionalConnect establishes a write-only connection to a unix
+	// endpoint.
+	//
+	// An endpoint which calls UnidirectionalConnect and supports it itself must
+	// not hold its own lock when calling UnidirectionalConnect.
 	//
 	// This method will return tcpip.ErrConnectionRefused on a non-SockDgram
 	// endpoint.
