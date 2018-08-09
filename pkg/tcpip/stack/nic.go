@@ -327,8 +327,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 		return
 	}
 
-	r := makeRoute(protocol, dst, src, ref)
-	r.LocalLinkAddress = linkEP.LinkAddress()
+	r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
 	r.RemoteLinkAddress = remoteLinkAddr
 	ref.ep.HandlePacket(&r, vv)
 	ref.decRef()

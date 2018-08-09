@@ -162,6 +162,13 @@ func (d *Docker) Run(args ...string) (string, error) {
 	return do(a...)
 }
 
+// Exec calls 'docker exec' with the arguments provided.
+func (d *Docker) Exec(args ...string) (string, error) {
+	a := []string{"exec", d.Name}
+	a = append(a, args...)
+	return do(a...)
+}
+
 // Pause calls 'docker pause'.
 func (d *Docker) Pause() error {
 	if _, err := do("pause", d.Name); err != nil {

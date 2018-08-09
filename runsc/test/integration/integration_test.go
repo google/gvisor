@@ -31,6 +31,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,36 +55,36 @@ func httpRequestSucceeds(client http.Client, server string, port int) error {
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
 	if err := testutil.Pull("nginx"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
+		t.Fatal("docker pull failed:", err)
 	}
 	d := testutil.MakeDocker("lifecycle-test")
 	if err := d.Create("-p", "80", "nginx"); err != nil {
-		t.Fatalf("docker create failed: %v", err)
+		t.Fatal("docker create failed:", err)
 	}
 	if err := d.Start(); err != nil {
 		d.CleanUp()
-		t.Fatalf("docker start failed: %v", err)
+		t.Fatal("docker start failed:", err)
 	}
 
 	// Test that container is working
 	port, err := d.FindPort(80)
 	if err != nil {
-		t.Fatalf("docker.FindPort(80) failed: %v", err)
+		t.Fatal("docker.FindPort(80) failed: ", err)
 	}
 	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+		t.Fatal("WaitForHTTP() timeout:", err)
 	}
 	client := http.Client{Timeout: time.Duration(2 * time.Second)}
 	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
-		t.Errorf("http request failed: %v", err)
+		t.Error("http request failed:", err)
 	}
 
 	if err := d.Stop(); err != nil {
 		d.CleanUp()
-		t.Fatalf("docker stop failed: %v", err)
+		t.Fatal("docker stop failed:", err)
 	}
 	if err := d.Remove(); err != nil {
-		t.Fatalf("docker rm failed: %v", err)
+		t.Fatal("docker rm failed:", err)
 	}
 }
 
@@ -94,7 +95,7 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	if err := testutil.Pull("google/python-hello"); err != nil {
-		t.Fatalf("docker pull failed: %v", err)
+		t.Fatal("docker pull failed:", err)
 	}
 	d := testutil.MakeDocker("pause-resume-test")
 	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
@@ -105,22 +106,22 @@ func TestPauseResume(t *testing.T) {
 	// Find where port 8080 is mapped to.
 	port, err := d.FindPort(8080)
 	if err != nil {
-		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+		t.Fatal("docker.FindPort(8080) failed:", err)
 	}
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+		t.Fatal("WaitForHTTP() timeout:", err)
 	}
 
 	// Check that container is working.
 	client := http.Client{Timeout: time.Duration(2 * time.Second)}
 	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
-		t.Errorf("http request failed: %v", err)
+		t.Error("http request failed:", err)
 	}
 
 	if err := d.Pause(); err != nil {
-		t.Fatalf("docker pause failed: %v", err)
+		t.Fatal("docker pause failed:", err)
 	}
 
 	// Check if container is paused.
@@ -136,17 +137,50 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	if err := d.Unpause(); err != nil {
-		t.Fatalf("docker unpause failed: %v", err)
+		t.Fatal("docker unpause failed:", err)
 	}
 
 	// Wait until it's up and running.
 	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+		t.Fatal("WaitForHTTP() timeout:", err)
 	}
 
 	// Check if container is working again.
 	if err := httpRequestSucceeds(client, "localhost", port); err != nil {
-		t.Errorf("http request failed: %v", err)
+		t.Error("http request failed:", err)
+	}
+}
+
+// Create client and server that talk to each other using the local IP.
+func TestConnectToSelf(t *testing.T) {
+	d := testutil.MakeDocker("connect-to-self-test")
+
+	// Creates server that replies "server" and exists. Sleeps at the end because
+	// 'docker exec' gets killed if the init process exists before it can finish.
+	if _, err := d.Run("ubuntu:trusty", "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
+		t.Fatal("docker run failed:", err)
+	}
+	defer d.CleanUp()
+
+	// Finds IP address for eth0.
+	ip, err := d.Exec("/bin/sh", "-c", "ifconfig eth0 | grep -E -o \".*inet [^ ]+\" | cut -d: -f2")
+	if err != nil {
+		t.Fatal("docker exec failed:", err)
+	}
+	ip = strings.TrimRight(ip, "\n")
+
+	// Runs client that sends "client" to the server and exits.
+	reply, err := d.Exec("/bin/sh", "-c", fmt.Sprintf("echo client | nc %s 8080", ip))
+	if err != nil {
+		t.Fatal("docker exec failed:", err)
+	}
+
+	// Ensure both client and server got the message from each other.
+	if want := "server\n"; reply != want {
+		t.Errorf("Error on server, want: %q, got: %q", want, reply)
+	}
+	if err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
+		t.Fatal("docker.WaitForOutput(client) timeout:", err)
 	}
 }
 
