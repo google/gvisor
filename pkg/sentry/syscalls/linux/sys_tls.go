@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
 // ArchPrctl implements linux syscall arch_prctl(2).
@@ -36,9 +37,13 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		}
 
 	case linux.ARCH_SET_FS:
+		fsbase := args[1].Uint64()
+		if _, ok := t.MemoryManager().CheckIORange(usermem.Addr(fsbase), 0); !ok {
+			return 0, nil, syscall.EPERM
+		}
 		regs := &t.Arch().StateData().Regs
 		regs.Fs = 0
-		regs.Fs_base = args[1].Uint64()
+		regs.Fs_base = fsbase
 
 	default:
 		return 0, nil, syscall.EINVAL
