@@ -29,15 +29,19 @@ import (
 // Lookup loads an Inode at name into a Dirent based on the session's cache
 // policy.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	if i.session().cachePolicy.cacheReaddir() {
+	cp := i.session().cachePolicy
+	if cp.cacheReaddir() {
 		// Check to see if we have readdirCache that indicates the
 		// child does not exist.  Avoid holding readdirMu longer than
 		// we need to.
 		i.readdirMu.Lock()
 		if i.readdirCache != nil && !i.readdirCache.Contains(name) {
-			// No such child.  Return a negative dirent.
+			// No such child.
 			i.readdirMu.Unlock()
-			return fs.NewNegativeDirent(name), nil
+			if cp.cacheNegativeDirents() {
+				return fs.NewNegativeDirent(name), nil
+			}
+			return nil, syserror.ENOENT
 		}
 		i.readdirMu.Unlock()
 	}
@@ -46,7 +50,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	qids, newFile, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		if err == syscall.ENOENT {
-			if i.session().cachePolicy.cacheNegativeDirents() {
+			if cp.cacheNegativeDirents() {
 				// Return a negative Dirent. It will stay cached until something
 				// is created over it.
 				return fs.NewNegativeDirent(name), nil
