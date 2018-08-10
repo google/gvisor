@@ -365,7 +365,7 @@ Then restart the Docker daemon.
 gVisor has the ability to checkpoint a process, save its current state in a
 state file, and restore into a new container using the state file. For more
 information about the checkpoint and restore commands, see the
-[checkpoint/restore readme](https://gvisor.googlesource.com/gvisor/+/master/runsc/checkpoint_restore.md).
+[checkpoint-restore][checkpoint/restore readme]
 
 ## FAQ & Known Issues
 
@@ -442,6 +442,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [apparmor]: https://wiki.ubuntu.com/AppArmor
 [bazel]: https://bazel.build
 [bug]: https://github.com/google/gvisor/issues
+[checkpoint-restore]: https://gvisor.googlesource.com/gvisor/+/master/g3doc/checkpoint_restore.md
 [cri-o-k8s]: https://github.com/kubernetes-incubator/cri-o/blob/master/kubernetes.md
 [cri-o]: https://github.com/kubernetes-incubator/cri-o
 [docker-storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
