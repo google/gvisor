@@ -162,8 +162,8 @@ func TestConnectToSelf(t *testing.T) {
 	}
 	defer d.CleanUp()
 
-	// Finds IP address for eth0.
-	ip, err := d.Exec("/bin/sh", "-c", "ifconfig eth0 | grep -E -o \".*inet [^ ]+\" | cut -d: -f2")
+	// Finds IP address for host.
+	ip, err := d.Exec("/bin/sh", "-c", "cat /etc/hosts | grep ${HOSTNAME} | awk '{print $1}'")
 	if err != nil {
 		t.Fatal("docker exec failed:", err)
 	}
