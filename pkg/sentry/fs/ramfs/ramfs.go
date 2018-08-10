@@ -279,8 +279,8 @@ func (*Entry) CreateDirectory(context.Context, *fs.Inode, string, fs.FilePermiss
 }
 
 // Bind is not supported by default.
-func (*Entry) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) error {
-	return ErrInvalidOp
+func (*Entry) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
+	return nil, ErrInvalidOp
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo. CreateFifo is not supported by

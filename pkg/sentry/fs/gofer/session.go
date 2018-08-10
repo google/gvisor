@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"fmt"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/p9"
@@ -28,39 +29,60 @@ import (
 )
 
 // +stateify savable
-type endpointMap struct {
+type endpointMaps struct {
+	// mu protexts the direntMap, the keyMap, and the pathMap below.
 	mu sync.RWMutex `state:"nosave"`
-	// TODO: Make map with private unix sockets savable.
-	m map[device.MultiDeviceKey]unix.BoundEndpoint
+
+	// direntMap links sockets to their dirents.
+	// It is filled concurrently with the keyMap and is stored upon save.
+	// Before saving, this map is used to populate the pathMap.
+	direntMap map[unix.BoundEndpoint]*fs.Dirent
+
+	// keyMap links MultiDeviceKeys (containing inode IDs) to their sockets.
+	// It is not stored during save because the inode ID may change upon restore.
+	keyMap map[device.MultiDeviceKey]unix.BoundEndpoint `state:"nosave"`
+
+	// pathMap links the sockets to their paths.
+	// It is filled before saving from the direntMap and is stored upon save.
+	// Upon restore, this map is used to re-populate the keyMap.
+	pathMap map[unix.BoundEndpoint]string
 }
 
-// add adds the endpoint to the map.
+// add adds the endpoint to the maps.
+// A reference is taken on the dirent argument.
 //
-// Precondition: map must have been locked with 'lock'.
-func (e *endpointMap) add(key device.MultiDeviceKey, ep unix.BoundEndpoint) {
-	e.m[key] = ep
+// Precondition: maps must have been locked with 'lock'.
+func (e *endpointMaps) add(key device.MultiDeviceKey, d *fs.Dirent, ep unix.BoundEndpoint) {
+	e.keyMap[key] = ep
+	d.IncRef()
+	e.direntMap[ep] = d
 }
 
-// remove deletes the key from the map.
+// remove deletes the key from the maps.
 //
-// Precondition: map must have been locked with 'lock'.
-func (e *endpointMap) remove(key device.MultiDeviceKey) {
-	delete(e.m, key)
+// Precondition: maps must have been locked with 'lock'.
+func (e *endpointMaps) remove(key device.MultiDeviceKey) {
+	endpoint := e.get(key)
+	delete(e.keyMap, key)
+
+	d := e.direntMap[endpoint]
+	d.DecRef()
+	delete(e.direntMap, endpoint)
 }
 
 // lock blocks other addition and removal operations from happening while
 // the backing file is being created or deleted. Returns a function that unlocks
 // the endpoint map.
-func (e *endpointMap) lock() func() {
+func (e *endpointMaps) lock() func() {
 	e.mu.Lock()
 	return func() { e.mu.Unlock() }
 }
 
-func (e *endpointMap) get(key device.MultiDeviceKey) unix.BoundEndpoint {
-	e.mu.RLock()
-	ep := e.m[key]
-	e.mu.RUnlock()
-	return ep
+// get returns the endpoint mapped to the given key.
+//
+// Precondition: maps must have been locked for reading.
+func (e *endpointMaps) get(key device.MultiDeviceKey) unix.BoundEndpoint {
+	return e.keyMap[key]
 }
 
 // session holds state for each 9p session established during sys_mount.
@@ -115,7 +137,7 @@ type session struct {
 	// TODO: there are few possible races with someone stat'ing the
 	// file and another deleting it concurrently, where the file will not be
 	// reported as socket file.
-	endpoints *endpointMap `state:"wait"`
+	endpoints *endpointMaps `state:"wait"`
 }
 
 // Destroy tears down the session.
@@ -149,7 +171,9 @@ func (s *session) SaveInodeMapping(inode *fs.Inode, path string) {
 
 // newInodeOperations creates a new 9p fs.InodeOperations backed by a p9.File and attributes
 // (p9.QID, p9.AttrMask, p9.Attr).
-func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p9.QID, valid p9.AttrMask, attr p9.Attr) (fs.StableAttr, *inodeOperations) {
+//
+// Endpoints lock must not be held if socket == false.
+func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p9.QID, valid p9.AttrMask, attr p9.Attr, socket bool) (fs.StableAttr, *inodeOperations) {
 	deviceKey := device.MultiDeviceKey{
 		Device:          attr.RDev,
 		SecondaryDevice: s.connID,
@@ -164,10 +188,16 @@ func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p
 	}
 
 	if s.endpoints != nil {
-		// If unix sockets are allowed on this filesystem, check if this file is
-		// supposed to be a socket file.
-		if s.endpoints.get(deviceKey) != nil {
+		if socket {
 			sattr.Type = fs.Socket
+		} else {
+			// If unix sockets are allowed on this filesystem, check if this file is
+			// supposed to be a socket file.
+			unlock := s.endpoints.lock()
+			if s.endpoints.get(deviceKey) != nil {
+				sattr.Type = fs.Socket
+			}
+			unlock()
 		}
 	}
 
@@ -215,7 +245,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	if o.privateunixsocket {
-		s.endpoints = &endpointMap{m: make(map[device.MultiDeviceKey]unix.BoundEndpoint)}
+		s.endpoints = newEndpointMaps()
 	}
 
 	// Construct the MountSource with the session and superBlockFlags.
@@ -248,6 +278,77 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 		return nil, err
 	}
 
-	sattr, iops := newInodeOperations(ctx, s, s.attach, qid, valid, attr)
+	sattr, iops := newInodeOperations(ctx, s, s.attach, qid, valid, attr, false)
 	return fs.NewInode(iops, m, sattr), nil
+}
+
+// newEndpointMaps creates a new endpointMaps.
+func newEndpointMaps() *endpointMaps {
+	return &endpointMaps{
+		direntMap: make(map[unix.BoundEndpoint]*fs.Dirent),
+		keyMap:    make(map[device.MultiDeviceKey]unix.BoundEndpoint),
+		pathMap:   make(map[unix.BoundEndpoint]string),
+	}
+}
+
+// fillKeyMap populates key and dirent maps upon restore from saved
+// pathmap.
+func (s *session) fillKeyMap(ctx context.Context) error {
+	unlock := s.endpoints.lock()
+	defer unlock()
+
+	for ep, dirPath := range s.endpoints.pathMap {
+		_, file, err := s.attach.walk(ctx, splitAbsolutePath(dirPath))
+		if err != nil {
+			return fmt.Errorf("error filling endpointmaps, failed to walk to %q: %v", dirPath, err)
+		}
+
+		qid, _, attr, err := file.getAttr(ctx, p9.AttrMaskAll())
+		if err != nil {
+			return fmt.Errorf("failed to get file attributes of %s: %v", dirPath, err)
+		}
+
+		key := device.MultiDeviceKey{
+			Device:          attr.RDev,
+			SecondaryDevice: s.connID,
+			Inode:           qid.Path,
+		}
+
+		s.endpoints.keyMap[key] = ep
+	}
+	return nil
+}
+
+// fillPathMap populates paths for endpoints from dirents in direntMap
+// before save.
+func (s *session) fillPathMap() error {
+	unlock := s.endpoints.lock()
+	defer unlock()
+
+	for ep, dir := range s.endpoints.direntMap {
+		mountRoot := dir.MountRoot()
+		defer mountRoot.DecRef()
+		dirPath, _ := dir.FullName(mountRoot)
+		if dirPath == "" {
+			return fmt.Errorf("error getting path from dirent")
+		}
+		s.endpoints.pathMap[ep] = dirPath
+	}
+	return nil
+}
+
+// restoreEndpointMaps recreates and fills the key and dirent maps.
+func (s *session) restoreEndpointMaps(ctx context.Context) error {
+	// When restoring, only need to create the keyMap because the dirent and path
+	// maps got stored through the save.
+	s.endpoints.keyMap = make(map[device.MultiDeviceKey]unix.BoundEndpoint)
+	if err := s.fillKeyMap(ctx); err != nil {
+		return fmt.Errorf("failed to insert sockets into endpoint map: %v", err)
+	}
+
+	// Re-create pathMap because it can no longer be trusted as socket paths can
+	// change while process continues to run. Empty pathMap will be re-filled upon
+	// next save.
+	s.endpoints.pathMap = make(map[unix.BoundEndpoint]string)
+	return nil
 }

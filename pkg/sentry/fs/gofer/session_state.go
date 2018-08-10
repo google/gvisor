@@ -18,16 +18,17 @@ import (
 	"fmt"
 
 	"gvisor.googlesource.com/gvisor/pkg/p9"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
 
 // beforeSave is invoked by stateify.
-//
-// TODO: Make map with private unix sockets savable.
-func (e *endpointMap) beforeSave() {
-	if len(e.m) != 0 {
-		panic("EndpointMap with existing private unix sockets cannot be saved")
+func (s *session) beforeSave() {
+	if s.endpoints != nil {
+		if err := s.fillPathMap(); err != nil {
+			panic("failed to save paths to endpoint map before saving" + err.Error())
+		}
 	}
 }
 
@@ -72,6 +73,9 @@ func (s *session) afterLoad() {
 	if opts.aname != s.aname {
 		panic(fmt.Sprintf("new attach name %v, want %v", opts.aname, s.aname))
 	}
+
+	// Check if endpointMaps exist when uds sockets are enabled
+	// (only pathmap will actualy have been saved).
 	if opts.privateunixsocket != (s.endpoints != nil) {
 		panic(fmt.Sprintf("new privateunixsocket option %v, want %v", opts.privateunixsocket, s.endpoints != nil))
 	}
@@ -96,4 +100,16 @@ func (s *session) afterLoad() {
 	if err != nil {
 		panic(fmt.Sprintf("failed to attach to aname: %v", err))
 	}
+
+	// If private unix sockets are enabled, create and fill the session's endpoint
+	// maps.
+	if opts.privateunixsocket {
+		// TODO: Context is not plumbed to save/restore.
+		ctx := &dummyClockContext{context.Background()}
+
+		if err = s.restoreEndpointMaps(ctx); err != nil {
+			panic("failed to restore endpoint maps: " + err.Error())
+		}
+	}
+
 }

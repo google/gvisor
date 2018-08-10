@@ -276,9 +276,11 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			}
 
 			// Create the socket.
-			if err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}}); err != nil {
+			childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
+			if err != nil {
 				return tcpip.ErrPortInUse
 			}
+			childDir.DecRef()
 		}
 
 		return nil

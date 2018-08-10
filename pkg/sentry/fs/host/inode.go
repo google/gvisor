@@ -310,8 +310,8 @@ func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldNa
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data unix.BoundEndpoint, perm fs.FilePermissions) error {
-	return syserror.EOPNOTSUPP
+func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data unix.BoundEndpoint, perm fs.FilePermissions) (*fs.Dirent, error) {
+	return nil, syserror.EOPNOTSUPP
 }
 
 // BoundEndpoint implements fs.InodeOperations.BoundEndpoint.

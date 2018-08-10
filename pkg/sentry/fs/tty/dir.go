@@ -215,8 +215,8 @@ func (d *dirInodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode,
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (d *dirInodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data unix.BoundEndpoint, perm fs.FilePermissions) error {
-	return syserror.EPERM
+func (d *dirInodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, data unix.BoundEndpoint, perm fs.FilePermissions) (*fs.Dirent, error) {
+	return nil, syserror.EPERM
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

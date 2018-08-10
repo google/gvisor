@@ -254,8 +254,8 @@ func (InodeNotDirectory) CreateDirectory(context.Context, *fs.Inode, string, fs.
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (InodeNotDirectory) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) error {
-	return syserror.ENOTDIR
+func (InodeNotDirectory) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
+	return nil, syserror.ENOTDIR
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.

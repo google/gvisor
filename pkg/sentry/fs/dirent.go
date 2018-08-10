@@ -385,6 +385,19 @@ func (d *Dirent) fullName(root *Dirent) (string, bool) {
 	return s, reachable
 }
 
+// MountRoot finds and returns the mount-root for a given dirent.
+func (d *Dirent) MountRoot() *Dirent {
+	renameMu.RLock()
+	defer renameMu.RUnlock()
+
+	mountRoot := d
+	for !mountRoot.mounted && mountRoot.parent != nil {
+		mountRoot = mountRoot.parent
+	}
+	mountRoot.IncRef()
+	return mountRoot
+}
+
 func (d *Dirent) freeze() {
 	if d.frozen {
 		// Already frozen.
@@ -665,6 +678,16 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 	}
 	child := file.Dirent
 
+	d.finishCreate(child, name)
+
+	// Return the reference and the new file. When the last reference to
+	// the file is dropped, file.Dirent may no longer be cached.
+	return file, nil
+}
+
+// finishCreate validates the created file, adds it as a child of this dirent,
+// and notifies any watchers.
+func (d *Dirent) finishCreate(child *Dirent, name string) {
 	// Sanity check c, its name must be consistent.
 	if child.name != name {
 		panic(fmt.Sprintf("create from %q to %q returned unexpected name %q", d.name, name, child.name))
@@ -697,10 +720,6 @@ func (d *Dirent) Create(ctx context.Context, root *Dirent, name string, flags Fi
 
 	// Allow the file system to take extra references on c.
 	child.maybeExtendReference()
-
-	// Return the reference and the new file. When the last reference to
-	// the file is dropped, file.Dirent may no longer be cached.
-	return file, nil
 }
 
 // genericCreate executes create if name does not exist. Removes a negative Dirent at name if
@@ -716,11 +735,6 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 	// Are we frozen?
 	if d.frozen && !d.Inode.IsVirtual() {
 		return syscall.ENOENT
-	}
-
-	// Execute the create operation.
-	if err := create(); err != nil {
-		return err
 	}
 
 	// Remove any negative Dirent. We've already asserted above with d.exists
@@ -745,7 +759,8 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 		w.Drop()
 	}
 
-	return nil
+	// Execute the create operation.
+	return create()
 }
 
 // CreateLink creates a new link in this directory.
@@ -797,23 +812,29 @@ func (d *Dirent) CreateDirectory(ctx context.Context, root *Dirent, name string,
 }
 
 // Bind satisfies the InodeOperations interface; otherwise same as GetFile.
-func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, socket unix.BoundEndpoint, perms FilePermissions) error {
+func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data unix.BoundEndpoint, perms FilePermissions) (*Dirent, error) {
 	d.dirMu.Lock()
 	defer d.dirMu.Unlock()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	var childDir *Dirent
 	err := d.genericCreate(ctx, root, name, func() error {
-		if err := d.Inode.Bind(ctx, name, socket, perms); err != nil {
-			return err
+		var e error
+		childDir, e = d.Inode.Bind(ctx, name, data, perms)
+		if e != nil {
+			return e
 		}
-		d.Inode.Watches.Notify(name, linux.IN_CREATE, 0)
+		d.finishCreate(childDir, name)
 		return nil
 	})
 	if err == syscall.EEXIST {
-		return syscall.EADDRINUSE
+		return nil, syscall.EADDRINUSE
 	}
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return childDir, err
 }
 
 // CreateFifo creates a new named pipe under this dirent.

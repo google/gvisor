@@ -1,6 +1,13 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+go_binary(
+    name = "uds_test_app",
+    srcs = [
+        "uds_test_app.go",
+    ],
+)
 
 go_library(
     name = "container",
@@ -29,6 +36,7 @@ go_test(
     size = "medium",
     srcs = ["container_test.go"],
     data = [
+        ":uds_test_app",
         "//runsc",
     ],
     tags = [

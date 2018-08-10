@@ -314,17 +314,22 @@ func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, p
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep unix.BoundEndpoint, perms fs.FilePermissions) error {
+func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep unix.BoundEndpoint, perms fs.FilePermissions) (*fs.Dirent, error) {
 	if d.CreateOps == nil || d.CreateOps.NewBoundEndpoint == nil {
-		return ErrDenied
+		return nil, ErrDenied
 	}
-	_, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
+	inode, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewBoundEndpoint(ctx, dir, ep, perms)
 	})
 	if err == syscall.EEXIST {
-		return syscall.EADDRINUSE
+		return nil, syscall.EADDRINUSE
 	}
-	return err
+	if err != nil {
+		return nil, err
+	}
+	// Take another ref on inode which will be donated to the new dirent.
+	inode.IncRef()
+	return fs.NewDirent(inode, name), nil
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.

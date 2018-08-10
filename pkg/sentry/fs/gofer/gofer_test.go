@@ -74,7 +74,7 @@ func root(ctx context.Context, cp cachePolicy, mode p9.FileMode, size uint64) (*
 	}
 
 	rootFile := goodMockFile(mode, size)
-	sattr, rootInodeOperations := newInodeOperations(ctx, s, contextFile{file: rootFile}, p9.QID{}, rootFile.GetAttrMock.Valid, rootFile.GetAttrMock.Attr)
+	sattr, rootInodeOperations := newInodeOperations(ctx, s, contextFile{file: rootFile}, p9.QID{}, rootFile.GetAttrMock.Valid, rootFile.GetAttrMock.Attr, false /* socket */)
 	m := fs.NewMountSource(s, &filesystem{}, fs.MountSourceFlags{})
 	return rootFile, fs.NewInode(rootInodeOperations, m, sattr), nil
 }

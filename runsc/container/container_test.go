@@ -15,6 +15,7 @@
 package container_test
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -108,7 +109,8 @@ func procListToString(pl []*control.Process) string {
 	return fmt.Sprintf("[%s]", strings.Join(strs, ","))
 }
 
-// createWriteableOutputFile creates an output file that can be read and written to in the sandbox.
+// createWriteableOutputFile creates an output file that can be read and
+// written to in the sandbox.
 func createWriteableOutputFile(path string) (*os.File, error) {
 	outputFile, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
 	if err != nil {
@@ -136,13 +138,19 @@ func waitForFile(f *os.File) error {
 	return testutil.Poll(op, 5*time.Second)
 }
 
-func readOutputNum(f *os.File, first bool) (int, error) {
-	// Wait until file has contents.
-	if err := waitForFile(f); err != nil {
-		return 0, err
+// readOutputNum reads a file at given filepath and returns the int at the
+// requested position.
+func readOutputNum(file string, position int) (int, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return 0, fmt.Errorf("error opening file: %q, %v", file, err)
 	}
 
-	// Read the first number in the new file
+	// Ensure that there is content in output file.
+	if err := waitForFile(f); err != nil {
+		return 0, fmt.Errorf("error waiting for output file: %v", err)
+	}
+
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		return 0, fmt.Errorf("error reading file: %v", err)
@@ -151,14 +159,18 @@ func readOutputNum(f *os.File, first bool) (int, error) {
 		return 0, fmt.Errorf("error no content was read")
 	}
 
+	// Strip leading null bytes caused by file offset not being 0 upon restore.
+	b = bytes.Trim(b, "\x00")
 	nums := strings.Split(string(b), "\n")
 
-	var num int
-	if first {
-		num, err = strconv.Atoi(nums[0])
-	} else {
-		num, err = strconv.Atoi(nums[len(nums)-2])
+	if position >= len(nums) {
+		return 0, fmt.Errorf("position %v is not within the length of content %v", position, nums)
 	}
+	if position == -1 {
+		// Expectation of newline at the end of last position.
+		position = len(nums) - 2
+	}
+	num, err := strconv.Atoi(nums[position])
 	if err != nil {
 		return 0, fmt.Errorf("error getting number from file: %v", err)
 	}
@@ -194,6 +206,27 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	return nil
 }
 
+// findUDSApp finds the uds_test_app binary to be used in the UnixDomainSocket test.
+func findUDSApp() (string, error) {
+	// TODO: Use bazel FindBinary function.
+
+	// uds_test_app is in a directory like:
+	// './linux_amd64_pure_stripped/uds_test_app.go'.
+	//
+	// Since I don't want to construct 'linux_amd64_pure_stripped' based on the
+	// build type, do a quick search for: './*/uds_test_app'
+	// Note: This glob will only succeed when file is one directory deep.
+	matches, err := filepath.Glob("./*/uds_test_app")
+	if err != nil {
+		return "", fmt.Errorf("error globbing: %v", err)
+	}
+	if i := len(matches); i != 1 {
+		return "", fmt.Errorf("error identifying uds_test_app from matches: got %d matches", i)
+	}
+
+	return matches[0], nil
+}
+
 type configOptions int
 
 const (
@@ -204,7 +237,8 @@ const all = overlay | kvm
 
 // configs generates different configurations to run tests.
 func configs(opts configOptions) []*boot.Config {
-	cs := []*boot.Config{testutil.TestConfig()}
+	cs := []*boot.Config{testutil.TestConfig(), testutil.TestConfig()}
+	return cs
 
 	if opts&overlay != 0 {
 		c := testutil.TestConfig()
@@ -544,6 +578,7 @@ func TestCheckpointRestore(t *testing.T) {
 		if err := os.Chmod(dir, 0777); err != nil {
 			t.Fatalf("error chmoding file: %q, %v", dir, err)
 		}
+		defer os.RemoveAll(dir)
 
 		outputPath := filepath.Join(dir, "output")
 		outputFile, err := createWriteableOutputFile(outputPath)
@@ -598,7 +633,7 @@ func TestCheckpointRestore(t *testing.T) {
 		}
 		defer os.RemoveAll(imagePath)
 
-		lastNum, err := readOutputNum(outputFile, false)
+		lastNum, err := readOutputNum(outputPath, -1)
 		if err != nil {
 			t.Fatalf("error with outputFile: %v", err)
 		}
@@ -624,15 +659,22 @@ func TestCheckpointRestore(t *testing.T) {
 			t.Fatalf("error restoring container: %v", err)
 		}
 
-		firstNum, err := readOutputNum(outputFile2, true)
+		// Wait until application has ran.
+		if err := waitForFile(outputFile2); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
+
+		firstNum, err := readOutputNum(outputPath, 0)
 		if err != nil {
 			t.Fatalf("error with outputFile: %v", err)
 		}
 
-		// Check that lastNum is one less than firstNum and that the container picks up from where it left off.
+		// Check that lastNum is one less than firstNum and that the container picks
+		// up from where it left off.
 		if lastNum+1 != firstNum {
 			t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
 		}
+		cont2.Destroy()
 
 		// Restore into another container!
 		// Delete and recreate file before restoring.
@@ -656,15 +698,169 @@ func TestCheckpointRestore(t *testing.T) {
 			t.Fatalf("error restoring container: %v", err)
 		}
 
-		firstNum2, err := readOutputNum(outputFile3, true)
+		// Wait until application has ran.
+		if err := waitForFile(outputFile3); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
+
+		firstNum2, err := readOutputNum(outputPath, 0)
 		if err != nil {
 			t.Fatalf("error with outputFile: %v", err)
 		}
 
-		// Check that lastNum is one less than firstNum and that the container picks up from where it left off.
+		// Check that lastNum is one less than firstNum and that the container picks
+		// up from where it left off.
 		if lastNum+1 != firstNum2 {
 			t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
 		}
+		cont3.Destroy()
+	}
+}
+
+// TestUnixDomainSockets checks that Checkpoint/Restore works in cases
+// with filesystem Unix Domain Socket use.
+func TestUnixDomainSockets(t *testing.T) {
+	const (
+		output    = "uds_output"
+		goferRoot = "/tmp2"
+		socket    = "uds_socket"
+	)
+
+	// Skip overlay because test requires writing to host file.
+	for _, conf := range configs(kvm) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		dir, err := ioutil.TempDir("", "uds-test")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir failed: %v", err)
+		}
+		if err := os.Chmod(dir, 0777); err != nil {
+			t.Fatalf("error chmoding file: %q, %v", dir, err)
+		}
+		defer os.RemoveAll(dir)
+
+		outputPath := filepath.Join(dir, output)
+
+		outputFile, err := createWriteableOutputFile(outputPath)
+		if err != nil {
+			t.Fatalf("error creating output file: %v", err)
+		}
+		defer outputFile.Close()
+
+		// Get file path for corresponding output file in sandbox.
+		outputFileSandbox := filepath.Join(goferRoot, output)
+
+		// Need to get working directory, even though not intuitive.
+		wd, _ := os.Getwd()
+		localPath, err := findUDSApp()
+		if err != nil {
+			t.Fatalf("error finding localPath: %v", err)
+		}
+		app := filepath.Join(wd, localPath)
+
+		if _, err = os.Stat(app); err != nil {
+			t.Fatalf("error finding the uds_test_app: %v", err)
+		}
+
+		socketPath := filepath.Join(dir, socket)
+		socketPathSandbox := filepath.Join(goferRoot, socket)
+		defer os.Remove(socketPath)
+
+		spec := testutil.NewSpecWithArgs(app, "--file", outputFileSandbox,
+			"--socket", socketPathSandbox)
+
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Type:        "bind",
+			Destination: goferRoot,
+			Source:      dir,
+		})
+
+		spec.Process.User = specs.User{
+			UID: uint32(os.Getuid()),
+			GID: uint32(os.Getgid()),
+		}
+
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create and start the container.
+		cont, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+
+		// Set the image path, the location where the checkpoint image will be saved.
+		imagePath := filepath.Join(dir, "test-image-file")
+
+		// Create the image file and open for writing.
+		file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		if err != nil {
+			t.Fatalf("error opening new file at imagePath: %v", err)
+		}
+		defer file.Close()
+		defer os.RemoveAll(imagePath)
+
+		// Wait until application has ran.
+		if err := waitForFile(outputFile); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
+
+		// Checkpoint running container; save state into new file.
+		if err := cont.Checkpoint(file); err != nil {
+			t.Fatalf("error checkpointing container to empty file: %v", err)
+		}
+
+		// Read last number outputted before checkpoint.
+		lastNum, err := readOutputNum(outputPath, -1)
+		if err != nil {
+			t.Fatalf("error with outputFile: %v", err)
+		}
+
+		// Delete and recreate file before restoring.
+		if err := os.Remove(outputPath); err != nil {
+			t.Fatalf("error removing file")
+		}
+		outputFile2, err := createWriteableOutputFile(outputPath)
+		if err != nil {
+			t.Fatalf("error creating output file: %v", err)
+		}
+		defer outputFile2.Close()
+
+		// Restore into a new container.
+		contRestore, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer contRestore.Destroy()
+
+		if err := contRestore.Restore(spec, conf, imagePath); err != nil {
+			t.Fatalf("error restoring container: %v", err)
+		}
+
+		// Wait until application has ran.
+		if err := waitForFile(outputFile2); err != nil {
+			t.Fatalf("Failed to wait for output file: %v", err)
+		}
+
+		// Read first number outputted after restore.
+		firstNum, err := readOutputNum(outputPath, 0)
+		if err != nil {
+			t.Fatalf("error with outputFile: %v", err)
+		}
+
+		// Check that lastNum is one less than firstNum.
+		if lastNum+1 != firstNum {
+			t.Errorf("error numbers not consecutive, previous: %d, next: %d", lastNum, firstNum)
+		}
+		contRestore.Destroy()
 	}
 }
 
