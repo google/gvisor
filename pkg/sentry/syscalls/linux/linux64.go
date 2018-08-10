@@ -319,7 +319,7 @@ var AMD64 = &kernel.SyscallTable{
 		272: Unshare,
 		273: syscalls.Error(syscall.ENOSYS), // SetRobustList, obsolete
 		274: syscalls.Error(syscall.ENOSYS), // GetRobustList, obsolete
-		//     275: Splice, TODO
+		275: Splice,
 		//     276: Tee, TODO
 		//     277: SyncFileRange, TODO
 		//     278: Vmsplice, TODO
