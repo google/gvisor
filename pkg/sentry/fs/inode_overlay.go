@@ -57,6 +57,10 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 	var upperInode *Inode
 	var lowerInode *Inode
 
+	// We must remember whether the upper fs returned a negative dirent,
+	// because it is only safe to return one if the upper did.
+	var negativeUpperChild bool
+
 	// Does the parent directory exist in the upper file system?
 	if parent.upper != nil {
 		// First check if a file object exists in the upper file system.
@@ -70,7 +74,9 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 			return nil, err
 		}
 		if child != nil {
-			if !child.IsNegative() {
+			if child.IsNegative() {
+				negativeUpperChild = true
+			} else {
 				upperInode = child.Inode
 				upperInode.IncRef()
 			}
@@ -81,7 +87,18 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		if overlayHasWhiteout(parent.upper, name) {
 			if upperInode == nil {
 				parent.copyMu.RUnlock()
-				return NewNegativeDirent(name), nil
+				if negativeUpperChild {
+					// If the upper fs returnd a negative
+					// Dirent, then the upper is OK with
+					// that negative Dirent being cached in
+					// the Dirent tree, so we can return
+					// one from the overlay.
+					return NewNegativeDirent(name), nil
+				}
+				// Upper fs is not OK with a negative Dirent
+				// being cached in the Dirent tree, so don't
+				// return one.
+				return nil, syserror.ENOENT
 			}
 			entry, err := newOverlayEntry(ctx, upperInode, nil, false)
 			if err != nil {
@@ -127,9 +144,14 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 
 	// Was all of this for naught?
 	if upperInode == nil && lowerInode == nil {
-		// Return a negative Dirent indicating that nothing was found.
 		parent.copyMu.RUnlock()
-		return NewNegativeDirent(name), nil
+		// We can only return a negative dirent if the upper returned
+		// one as well. See comments above regarding negativeUpperChild
+		// for more info.
+		if negativeUpperChild {
+			return NewNegativeDirent(name), nil
+		}
+		return nil, syserror.ENOENT
 	}
 
 	// Did we find a lower Inode? Remember this because we may decide we don't
@@ -568,10 +590,19 @@ func overlayHandleOps(o *overlayEntry) HandleOperations {
 }
 
 // NewTestOverlayDir returns an overlay Inode for tests.
-func NewTestOverlayDir(ctx context.Context, upper *Inode, lower *Inode) *Inode {
+//
+// If `revalidate` is true, then the upper filesystem will require
+// revalidation.
+func NewTestOverlayDir(ctx context.Context, upper, lower *Inode, revalidate bool) *Inode {
 	fs := &overlayFilesystem{}
+	var upperMsrc *MountSource
+	if revalidate {
+		upperMsrc = NewRevalidatingMountSource(fs, MountSourceFlags{})
+	} else {
+		upperMsrc = NewNonCachingMountSource(fs, MountSourceFlags{})
+	}
 	msrc := NewMountSource(&overlayMountSourceOperations{
-		upper: NewNonCachingMountSource(fs, MountSourceFlags{}),
+		upper: upperMsrc,
 		lower: NewNonCachingMountSource(fs, MountSourceFlags{}),
 	}, fs, MountSourceFlags{})
 	overlay := &overlayEntry{

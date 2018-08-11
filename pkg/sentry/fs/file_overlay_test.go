@@ -21,6 +21,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
 )
 
 func TestReaddir(t *testing.T) {
@@ -48,7 +49,7 @@ func TestReaddir(t *testing.T) {
 					{name: "a"},
 					{name: "b"},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			names: []string{".", "..", "a", "b"},
 		},
 		{
@@ -59,7 +60,7 @@ func TestReaddir(t *testing.T) {
 					{name: "b"},
 				}, nil), /* upper */
 				nil, /* lower */
-			),
+				false /* revalidate */),
 			names: []string{".", "..", "a", "b"},
 		},
 		{
@@ -67,11 +68,11 @@ func TestReaddir(t *testing.T) {
 			dir: fs.NewTestOverlayDir(ctx,
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "a"},
-				}, nil), /* lower */
+				}, nil), /* upper */
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "b"},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			names: []string{".", "..", "a", "b"},
 		},
 		{
@@ -79,11 +80,11 @@ func TestReaddir(t *testing.T) {
 			dir: fs.NewTestOverlayDir(ctx,
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "a"},
-				}, []string{"b"}), /* lower */
+				}, []string{"b"}), /* upper */
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "c"},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			names: []string{".", "..", "a", "c"},
 		},
 		{
@@ -91,12 +92,12 @@ func TestReaddir(t *testing.T) {
 			dir: fs.NewTestOverlayDir(ctx,
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "a"},
-				}, []string{"b"}), /* lower */
+				}, []string{"b"}), /* upper */
 				newTestRamfsDir(ctx, []dirContent{
 					{name: "b"}, /* will be masked */
 					{name: "c"},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			names: []string{".", "..", "a", "c"},
 		},
 	} {
@@ -117,6 +118,59 @@ func TestReaddir(t *testing.T) {
 				t.Errorf("Readdir got names %v, want %v", stubSerializer.Order, test.names)
 			}
 		})
+	}
+}
+
+func TestReaddirRevalidation(t *testing.T) {
+	ctx := contexttest.Context(t)
+	ctx = &rootContext{
+		Context: ctx,
+		root:    fs.NewDirent(newTestRamfsDir(ctx, nil, nil), "root"),
+	}
+
+	// Create an overlay with two directories, each with one file.
+	upper := newTestRamfsDir(ctx, []dirContent{{name: "a"}}, nil)
+	lower := newTestRamfsDir(ctx, []dirContent{{name: "b"}}, nil)
+	overlay := fs.NewTestOverlayDir(ctx, upper, lower, true /* revalidate */)
+
+	// Get a handle to the dirent in the upper filesystem so that we can
+	// modify it without going through the dirent.
+	upperDir := upper.InodeOperations.(*dir).InodeOperations.(*ramfstest.Dir)
+
+	// Check that overlay returns the files from both upper and lower.
+	openDir, err := overlay.GetFile(ctx, fs.NewDirent(overlay, "stub"), fs.FileFlags{Read: true})
+	if err != nil {
+		t.Fatalf("GetFile got error %v, want nil", err)
+	}
+	ser := &fs.CollectEntriesSerializer{}
+	if err := openDir.Readdir(ctx, ser); err != nil {
+		t.Fatalf("Readdir got error %v, want nil", err)
+	}
+	got, want := ser.Order, []string{".", "..", "a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Readdir got names %v, want %v", got, want)
+	}
+
+	// Remove "a" from the upper and add "c".
+	if err := upperDir.Remove(ctx, upper, "a"); err != nil {
+		t.Fatalf("error removing child: %v", err)
+	}
+	upperDir.AddChild(ctx, "c", fs.NewInode(ramfstest.NewFile(ctx, fs.FilePermissions{}),
+		upper.MountSource, fs.StableAttr{Type: fs.RegularFile}))
+
+	// Seek to beginning of the directory and do the readdir again.
+	if _, err := openDir.Seek(ctx, fs.SeekSet, 0); err != nil {
+		t.Fatalf("error seeking to beginning of dir: %v", err)
+	}
+	ser = &fs.CollectEntriesSerializer{}
+	if err := openDir.Readdir(ctx, ser); err != nil {
+		t.Fatalf("Readdir got error %v, want nil", err)
+	}
+
+	// Readdir should return the updated children.
+	got, want = ser.Order, []string{".", "..", "b", "c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Readdir got names %v, want %v", got, want)
 	}
 }
 

@@ -35,7 +35,6 @@ func TestLookup(t *testing.T) {
 		name string
 
 		// Want from lookup.
-		err      error
 		found    bool
 		hasUpper bool
 		hasLower bool
@@ -50,7 +49,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: false,
@@ -66,7 +65,7 @@ func TestLookup(t *testing.T) {
 					},
 				}, nil), /* upper */
 				nil, /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: true,
@@ -87,7 +86,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: false,
@@ -108,7 +107,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: true,
@@ -129,7 +128,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: true,
@@ -150,7 +149,7 @@ func TestLookup(t *testing.T) {
 						dir:  true,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: true,
@@ -166,7 +165,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    false,
 			hasUpper: false,
@@ -182,7 +181,7 @@ func TestLookup(t *testing.T) {
 						dir:  false,
 					},
 				}, nil), /* lower */
-			),
+				false /* revalidate */),
 			name:     "a",
 			found:    true,
 			hasUpper: false,
@@ -191,13 +190,14 @@ func TestLookup(t *testing.T) {
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			dirent, err := test.dir.Lookup(ctx, test.name)
-			if err != test.err {
-				t.Fatalf("lookup got error %v, want %v", err, test.err)
-			}
-			if test.found && dirent.IsNegative() {
-				t.Fatalf("lookup expected to find %q, got negative dirent", test.name)
+			if test.found && (err == syserror.ENOENT || dirent.IsNegative()) {
+				t.Fatalf("lookup %q expected to find positive dirent, got dirent %v err %v", test.name, dirent, err)
 			}
 			if !test.found {
+				if err != syserror.ENOENT && !dirent.IsNegative() {
+					t.Errorf("lookup %q expected to return ENOENT or negative dirent, got dirent %v err %v", test.name, dirent, err)
+				}
+				// Nothing more to check.
 				return
 			}
 			if hasUpper := dirent.Inode.TestHasUpperFS(); hasUpper != test.hasUpper {
@@ -205,6 +205,95 @@ func TestLookup(t *testing.T) {
 			}
 			if hasLower := dirent.Inode.TestHasLowerFS(); hasLower != test.hasLower {
 				t.Errorf("lookup got lower filesystem %v, want %v", hasLower, test.hasLower)
+			}
+		})
+	}
+}
+
+func TestLookupRevalidation(t *testing.T) {
+	// File name used in the tests.
+	fileName := "foofile"
+	ctx := contexttest.Context(t)
+	for _, tc := range []struct {
+		// Test description.
+		desc string
+
+		// Upper and lower fs for the overlay.
+		upper *fs.Inode
+		lower *fs.Inode
+
+		// Whether the upper requires revalidation.
+		revalidate bool
+
+		// Whether we should get the same dirent on second lookup.
+		wantSame bool
+	}{
+		{
+			desc:       "file from upper with no revalidation",
+			upper:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			lower:      newTestRamfsDir(ctx, nil, nil),
+			revalidate: false,
+			wantSame:   true,
+		},
+		{
+			desc:       "file from upper with revalidation",
+			upper:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			lower:      newTestRamfsDir(ctx, nil, nil),
+			revalidate: true,
+			wantSame:   false,
+		},
+		{
+			desc:       "file from lower with no revalidation",
+			upper:      newTestRamfsDir(ctx, nil, nil),
+			lower:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			revalidate: false,
+			wantSame:   true,
+		},
+		{
+			desc:       "file from lower with revalidation",
+			upper:      newTestRamfsDir(ctx, nil, nil),
+			lower:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			revalidate: true,
+			// The file does not exist in the upper, so we do not
+			// need to revalidate it.
+			wantSame: true,
+		},
+		{
+			desc:       "file from upper and lower with no revalidation",
+			upper:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			lower:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			revalidate: false,
+			wantSame:   true,
+		},
+		{
+			desc:       "file from upper and lower with revalidation",
+			upper:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			lower:      newTestRamfsDir(ctx, []dirContent{{name: fileName}}, nil),
+			revalidate: true,
+			wantSame:   false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			root := fs.NewDirent(newTestRamfsDir(ctx, nil, nil), "root")
+			ctx = &rootContext{
+				Context: ctx,
+				root:    root,
+			}
+			overlay := fs.NewDirent(fs.NewTestOverlayDir(ctx, tc.upper, tc.lower, tc.revalidate), "overlay")
+			// Lookup the file twice through the overlay.
+			first, err := overlay.Walk(ctx, root, fileName)
+			if err != nil {
+				t.Fatalf("overlay.Walk(%q) failed: %v", fileName, err)
+			}
+			second, err := overlay.Walk(ctx, root, fileName)
+			if err != nil {
+				t.Fatalf("overlay.Walk(%q) failed: %v", fileName, err)
+			}
+
+			if tc.wantSame && first != second {
+				t.Errorf("dirent lookup got different dirents, wanted same\nfirst=%+v\nsecond=%+v", first, second)
+			} else if !tc.wantSame && first == second {
+				t.Errorf("dirent lookup got the same dirent, wanted different: %+v", first)
 			}
 		})
 	}
@@ -231,6 +320,10 @@ type dirContent struct {
 	dir  bool
 }
 
+func newTestRamfsInode(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	return fs.NewInode(ramfstest.NewFile(ctx, fs.FilePermissions{}), msrc, fs.StableAttr{Type: fs.RegularFile})
+}
+
 func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []string) *fs.Inode {
 	msrc := fs.NewCachingMountSource(nil, fs.MountSourceFlags{})
 	contents := make(map[string]*fs.Inode)
@@ -238,7 +331,7 @@ func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []stri
 		if c.dir {
 			contents[c.name] = newTestRamfsDir(ctx, nil, nil)
 		} else {
-			contents[c.name] = fs.NewInode(ramfstest.NewFile(ctx, fs.FilePermissions{}), msrc, fs.StableAttr{Type: fs.RegularFile})
+			contents[c.name] = newTestRamfsInode(ctx, msrc)
 		}
 	}
 	dops := ramfstest.NewDir(ctx, contents, fs.FilePermissions{

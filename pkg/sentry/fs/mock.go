@@ -68,7 +68,7 @@ func NewMockMountSource(cache *DirentCache) *MountSource {
 }
 
 // Revalidate implements fs.MountSourceOperations.Revalidate.
-func (n *MockMountSourceOps) Revalidate(context.Context, *Dirent) bool {
+func (n *MockMountSourceOps) Revalidate(context.Context, *Inode) bool {
 	return n.revalidate
 }
 

@@ -193,6 +193,18 @@ interface. It multiplexes between upper and lower directory memory mappings and
 stores a copy of memory references so they can be transferred to the upper
 directory `fs.Mappable` when the file is copied up.
 
+The lower filesystem in an overlay may contain another (nested) overlay, but the
+upper filesystem may not contain another overlay. In other words, nested
+overlays form a tree structure that only allows branching in the lower
+filesystem.
+
+Caching decisions in the overlay are delegated to the upper filesystem, meaning
+that the Keep and Revalidate methods on the overlay return the same values as
+the upper filesystem. A small wrinkle is that the lower filesystem is not
+allowed to return `true` from Revalidate, as the overlay can not reload inodes
+from the lower filesystem. A lower filesystem that does return `true` from
+Revalidate will trigger a panic.
+
 The `fs.Inode` also holds a reference to a `fs.MountedFilesystem` that
 normalizes across the mounted filesystem state of the upper and lower
 directories.

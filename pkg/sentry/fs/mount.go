@@ -27,10 +27,10 @@ import (
 // DirentOperations provide file systems greater control over how long a Dirent stays pinned
 // in core. Implementations must not take Dirent.mu.
 type DirentOperations interface {
-	// Revalidate returns true if the Dirent is stale and its
+	// Revalidate returns true if the Inode is stale and its
 	// InodeOperations needs to be reloaded. Revalidate will never be
-	// called on a Dirent that is mounted.
-	Revalidate(ctx context.Context, dirent *Dirent) bool
+	// called on a Inode that is mounted.
+	Revalidate(ctx context.Context, inode *Inode) bool
 
 	// Keep returns true if the Dirent should be kept in memory for as long
 	// as possible beyond any active references.
@@ -249,7 +249,8 @@ func (msrc *MountSource) FlushDirentRefs() {
 // aggressively. Filesystem may be nil if there is no backing filesystem.
 func NewCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(&SimpleMountSourceOperations{
-		keep: true,
+		keep:       true,
+		revalidate: false,
 	}, filesystem, flags)
 }
 
@@ -257,7 +258,17 @@ func NewCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *Mount
 // Filesystem may be nil if there is no backing filesystem.
 func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(&SimpleMountSourceOperations{
-		keep: false,
+		keep:       false,
+		revalidate: false,
+	}, filesystem, flags)
+}
+
+// NewRevalidatingMountSource returns a generic mount that will cache dirents,
+// but will revalidate them on each lookup.
+func NewRevalidatingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
+	return NewMountSource(&SimpleMountSourceOperations{
+		keep:       true,
+		revalidate: true,
 	}, filesystem, flags)
 }
 
@@ -265,12 +276,13 @@ func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *Mo
 //
 // +stateify savable
 type SimpleMountSourceOperations struct {
-	keep bool
+	keep       bool
+	revalidate bool
 }
 
 // Revalidate implements MountSourceOperations.Revalidate.
-func (*SimpleMountSourceOperations) Revalidate(context.Context, *Dirent) bool {
-	return false
+func (smo *SimpleMountSourceOperations) Revalidate(context.Context, *Inode) bool {
+	return smo.revalidate
 }
 
 // Keep implements MountSourceOperations.Keep.

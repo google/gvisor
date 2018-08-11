@@ -145,12 +145,12 @@ func (s *session) Destroy() {
 	s.conn.Close()
 }
 
-// Revalidate returns true if the cache policy is does not allow for VFS caching.
-func (s *session) Revalidate(ctx context.Context, d *fs.Dirent) bool {
+// Revalidate implements MountSource.Revalidate.
+func (s *session) Revalidate(ctx context.Context, i *fs.Inode) bool {
 	return s.cachePolicy.revalidateDirent()
 }
 
-// TakeRefs takes an extra reference on dirent if possible.
+// Keep implements MountSource.Keep.
 func (s *session) Keep(d *fs.Dirent) bool {
 	return s.cachePolicy.keepDirent(d.Inode)
 }

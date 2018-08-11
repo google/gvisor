@@ -14,10 +14,13 @@
 
 package fs
 
-import "gvisor.googlesource.com/gvisor/pkg/sentry/context"
+import (
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+)
 
 // overlayMountSourceOperations implements MountSourceOperations for an overlay
-// mount point.
+// mount point. The upper filesystem determines the caching behavior of the
+// overlay.
 //
 // +stateify savable
 type overlayMountSourceOperations struct {
@@ -34,19 +37,33 @@ func newOverlayMountSource(upper, lower *MountSource, flags MountSourceFlags) *M
 	}, &overlayFilesystem{}, flags)
 }
 
-// Revalidate panics if the upper or lower MountSource require that dirent be
-// revalidated. Otherwise always returns false.
-func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, dirent *Dirent) bool {
-	if o.upper.Revalidate(ctx, dirent) || o.lower.Revalidate(ctx, dirent) {
-		panic("an overlay cannot revalidate file objects")
+// Revalidate implements MountSourceOperations.Revalidate for an overlay by
+// delegating to the upper filesystem's Revalidate method. We cannot reload
+// files from the lower filesystem, so we panic if the lower filesystem's
+// Revalidate method returns true.
+func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, inode *Inode) bool {
+	if inode.overlay == nil {
+		panic("overlay cannot revalidate inode that is not an overlay")
 	}
-	return false
+
+	// Should we bother checking this, or just ignore?
+	if inode.overlay.lower != nil && o.lower.Revalidate(ctx, inode.overlay.lower) {
+		panic("an overlay cannot revalidate file objects from the lower fs")
+	}
+
+	if inode.overlay.upper == nil {
+		// Nothing to revalidate.
+		return false
+	}
+
+	// Does the upper require revalidation?
+	return o.upper.Revalidate(ctx, inode.overlay.upper)
 }
 
-// Keep returns true if either upper or lower MountSource require that the
-// dirent be kept in memory.
+// Keep implements MountSourceOperations by delegating to the upper
+// filesystem's Keep method.
 func (o *overlayMountSourceOperations) Keep(dirent *Dirent) bool {
-	return o.upper.Keep(dirent) || o.lower.Keep(dirent)
+	return o.upper.Keep(dirent)
 }
 
 // ResetInodeMappings propagates the call to both upper and lower MountSource.
