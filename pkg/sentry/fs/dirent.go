@@ -533,14 +533,18 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 		return nil, syscall.ENOENT
 	}
 
-	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be expensive,
-	// if possible release the lock and re-acquire it.
+	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be
+	// expensive, if possible release the lock and re-acquire it.
 	if walkMayUnlock {
+		// While this dirent is unlocked, the lookup below is not allowed to proceed in tandem with a
+		// rename operation. The rename should be fully complete before we call Lookup on anything.
 		d.mu.Unlock()
+		renameMu.RLock()
 	}
 	c, err := d.Inode.Lookup(ctx, name)
 	if walkMayUnlock {
 		d.mu.Lock()
+		renameMu.RUnlock()
 	}
 	// No dice.
 	if err != nil {
@@ -1047,34 +1051,12 @@ func (d *Dirent) flush() {
 	}
 }
 
-// Busy indicates whether this Dirent is a mount point or root dirent, or has
-// active positive children.
-//
-// This is expensive, since it flushes the children cache.
-//
-// TODO: Fix this busy-ness check.
+// Busy indicates whether this Dirent is a mount point or root dirent.
 func (d *Dirent) Busy() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if d.mounted || d.parent == nil {
-		return true
-	}
-
-	// Flush any cached references to children that are doomed.
-	d.flush()
-
-	// Count positive children.
-	var nonNegative int
-	for _, w := range d.children {
-		if child := w.Get(); child != nil {
-			if !child.(*Dirent).IsNegative() {
-				nonNegative++
-			}
-			child.DecRef()
-		}
-	}
-	return nonNegative > 0
+	return d.mounted || d.parent == nil
 }
 
 // mount mounts a new dirent with the given inode over d.
