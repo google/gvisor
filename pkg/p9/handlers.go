@@ -17,6 +17,7 @@ package p9
 import (
 	"io"
 	"os"
+	"strings"
 	"sync/atomic"
 	"syscall"
 
@@ -83,8 +84,24 @@ func (t *Tflush) handle(cs *connState) message {
 	return &Rflush{}
 }
 
+// isSafeName returns true iff the name does not contain directory characters.
+//
+// We permit walks only on safe names and store the sequence of paths used for
+// any given walk in each FID. (This is immutable.) We use this to mark
+// relevant FIDs as moved when a successful rename occurs.
+func isSafeName(name string) bool {
+	return name != "" && !strings.Contains(name, "/") && name != "." && name != ".."
+}
+
 // handle implements handler.handle.
 func (t *Twalk) handle(cs *connState) message {
+	// Check the names.
+	for _, name := range t.Names {
+		if !isSafeName(name) {
+			return newErr(syscall.EINVAL)
+		}
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -200,6 +217,11 @@ func (t *Tlopen) handle(cs *connState) message {
 }
 
 func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return nil, syscall.EINVAL
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -216,7 +238,11 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	// Replace the FID reference.
 	//
 	// The new file will be opened already.
-	cs.InsertFID(t.FID, &fidRef{file: nsf, opened: true, openFlags: t.OpenFlags})
+	cs.InsertFID(t.FID, &fidRef{
+		file:      nsf,
+		opened:    true,
+		openFlags: t.OpenFlags,
+	})
 
 	return &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit, File: osFile}}, nil
 }
@@ -240,6 +266,11 @@ func (t *Tsymlink) handle(cs *connState) message {
 }
 
 func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return nil, syscall.EINVAL
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -258,6 +289,11 @@ func (t *Tsymlink) do(cs *connState, uid UID) (*Rsymlink, error) {
 
 // handle implements handler.handle.
 func (t *Tlink) handle(cs *connState) message {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return newErr(syscall.EINVAL)
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -282,6 +318,11 @@ func (t *Tlink) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Trenameat) handle(cs *connState) message {
+	// Don't allow complex names.
+	if !isSafeName(t.OldName) || !isSafeName(t.NewName) {
+		return newErr(syscall.EINVAL)
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.OldDirectory)
 	if !ok {
@@ -306,6 +347,11 @@ func (t *Trenameat) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Tunlinkat) handle(cs *connState) message {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return newErr(syscall.EINVAL)
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -323,6 +369,11 @@ func (t *Tunlinkat) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Trename) handle(cs *connState) message {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return newErr(syscall.EINVAL)
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -437,6 +488,11 @@ func (t *Tmknod) handle(cs *connState) message {
 }
 
 func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return nil, syscall.EINVAL
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -463,6 +519,11 @@ func (t *Tmkdir) handle(cs *connState) message {
 }
 
 func (t *Tmkdir) do(cs *connState, uid UID) (*Rmkdir, error) {
+	// Don't allow complex names.
+	if !isSafeName(t.Name) {
+		return nil, syscall.EINVAL
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.Directory)
 	if !ok {
@@ -619,6 +680,13 @@ func (t *Tflushf) handle(cs *connState) message {
 
 // handle implements handler.handle.
 func (t *Twalkgetattr) handle(cs *connState) message {
+	// Check the names.
+	for _, name := range t.Names {
+		if !isSafeName(name) {
+			return newErr(syscall.EINVAL)
+		}
+	}
+
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
