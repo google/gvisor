@@ -94,7 +94,7 @@ type fd struct {
 	*fs.File
 }
 
-// newFD returns a new fd based on an existing file.
+// newFd returns a new fd based on an existing file.
 //
 // This inherits one reference to the file.
 func newFd(t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
@@ -129,6 +129,11 @@ func (f *fd) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 // Truncate is ignored.
 func (f *fd) Truncate(context.Context, *fs.Inode, int64) error {
 	return nil
+}
+
+func (f *fd) Release(ctx context.Context) {
+	f.Symlink.Release(ctx)
+	f.File.DecRef()
 }
 
 // Close releases the reference on the file.
@@ -204,13 +209,14 @@ func (f *fdDir) DeprecatedReaddir(ctx context.Context, dirCtx *fs.DirCtx, offset
 type fdInfo struct {
 	ramfs.File
 
+	file    *fs.File
 	flags   fs.FileFlags
 	fdFlags kernel.FDFlags
 }
 
 // newFdInfo returns a new fdInfo based on an existing file.
 func newFdInfo(t *kernel.Task, file *fs.File, fdFlags kernel.FDFlags, msrc *fs.MountSource) *fs.Inode {
-	fdi := &fdInfo{flags: file.Flags(), fdFlags: fdFlags}
+	fdi := &fdInfo{file: file, flags: file.Flags(), fdFlags: fdFlags}
 	fdi.InitFile(t, fs.RootOwner, fs.FilePermissions{User: fs.PermMask{Read: true}})
 	// TODO: Get pos, locks, and other data.  For now we only
 	// have flags.
@@ -229,6 +235,11 @@ func (*fdInfo) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, of
 // Truncate implements fs.InodeOperations.Truncate.
 func (*fdInfo) Truncate(ctx context.Context, inode *fs.Inode, size int64) error {
 	return ramfs.ErrInvalidOp
+}
+
+func (f *fdInfo) Release(ctx context.Context) {
+	f.File.Release(ctx)
+	f.file.DecRef()
 }
 
 // fdInfoDir implements /proc/TID/fdinfo.  It embeds an fdDir, but overrides
