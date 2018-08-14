@@ -365,7 +365,7 @@ Then restart the Docker daemon.
 gVisor has the ability to checkpoint a process, save its current state in a
 state file, and restore into a new container using the state file. For more
 information about the checkpoint and restore commands, see the
-[checkpoint-restore][checkpoint/restore readme]
+[checkpoint/restore readme][checkpoint-restore].
 
 ## FAQ & Known Issues
 
