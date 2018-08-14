@@ -227,33 +227,43 @@ func findUDSApp() (string, error) {
 	return matches[0], nil
 }
 
-type configOptions int
+type configOption int
 
 const (
-	overlay configOptions = 1 << iota
+	overlay configOption = iota
 	kvm
+	nonExclusiveFS
 )
-const all = overlay | kvm
+
+var all = []configOption{overlay, kvm, nonExclusiveFS}
 
 // configs generates different configurations to run tests.
-func configs(opts configOptions) []*boot.Config {
-	cs := []*boot.Config{testutil.TestConfig(), testutil.TestConfig()}
-	return cs
+func configs(opts ...configOption) []*boot.Config {
+	// Always load the default config.
+	cs := []*boot.Config{testutil.TestConfig()}
 
-	if opts&overlay != 0 {
+	for _, o := range opts {
 		c := testutil.TestConfig()
-		c.Overlay = true
+		switch o {
+		case overlay:
+			c.Overlay = true
+		case kvm:
+			// TODO: KVM tests are flaky. Disable until fixed.
+			continue
+
+			// TODO: KVM doesn't work with --race.
+			if testutil.RaceEnabled {
+				continue
+			}
+			c.Platform = boot.PlatformKVM
+		case nonExclusiveFS:
+			c.FileAccess = boot.FileAccessProxy
+		default:
+			panic(fmt.Sprintf("unknown config option %v", o))
+
+		}
 		cs = append(cs, c)
 	}
-
-	// TODO: KVM tests are flaky. Disable until fixed.
-	// // TODO: KVM doesn't work with --race.
-	// if !testutil.RaceEnabled && opts&kvm != 0 {
-	// 	c := testutil.TestConfig()
-	// 	c.Platform = boot.PlatformKVM
-	// 	cs = append(cs, c)
-	// }
-
 	return cs
 }
 
@@ -261,7 +271,7 @@ func configs(opts configOptions) []*boot.Config {
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
 func TestLifecycle(t *testing.T) {
-	for _, conf := range configs(all) {
+	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 		// The container will just sleep for a long time.  We will kill it before
 		// it finishes sleeping.
@@ -1049,10 +1059,11 @@ func TestPauseResumeStatus(t *testing.T) {
 // - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
 //   this check.
 func TestCapabilities(t *testing.T) {
-	const uid = 343
-	const gid = 2401
+	// Pick uid/gid different than ours.
+	uid := auth.KUID(os.Getuid() + 1)
+	gid := auth.KGID(os.Getgid() + 1)
 
-	for _, conf := range configs(all) {
+	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("sleep", "100")
@@ -1142,7 +1153,7 @@ func TestCapabilities(t *testing.T) {
 
 // Test that an tty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for _, conf := range configs(all) {
+	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 		spec := testutil.NewSpecWithArgs("true")
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
@@ -1303,8 +1314,6 @@ func TestReadonlyRoot(t *testing.T) {
 		defer os.RemoveAll(rootDir)
 		defer os.RemoveAll(bundleDir)
 
-		conf.Overlay = true
-
 		// Create, start and wait for the container.
 		s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 		if err != nil {
@@ -1347,8 +1356,6 @@ func TestReadonlyMount(t *testing.T) {
 		}
 		defer os.RemoveAll(rootDir)
 		defer os.RemoveAll(bundleDir)
-
-		conf.Overlay = true
 
 		// Create, start and wait for the container.
 		s, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
@@ -1430,7 +1437,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
-	for _, conf := range configs(all) {
+	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		containerIDs := []string{
@@ -1618,4 +1625,150 @@ func TestMultiContainerWait(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// Check that modifications to a volume mount are propigated into and out of
+// the sandbox.
+func TestContainerVolumeContentsShared(t *testing.T) {
+	// Only run this test with shared proxy, since that is the only
+	// behavior it is testing.
+	conf := testutil.TestConfig()
+	conf.FileAccess = boot.FileAccessProxy
+	t.Logf("Running test with conf: %+v", conf)
+
+	// Main process just sleeps. We will use "exec" to probe the state of
+	// the filesystem.
+	spec := testutil.NewSpecWithArgs("sleep", "1000")
+
+	// Mount host temp dir inside the sandbox at '/tmp2'.
+	hostTmpDir, err := ioutil.TempDir("", "root-fs-test")
+	sandboxTmpDir := "/tmp2"
+	if err != nil {
+		t.Fatalf("TempDir failed: %v", err)
+	}
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Type:        "bind",
+		Destination: sandboxTmpDir,
+		Source:      hostTmpDir,
+	})
+
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create and start the container.
+	c, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// File that will be used to check consistency inside/outside sandbox.
+	hostFilename := filepath.Join(hostTmpDir, "file")
+	sandboxFilename := filepath.Join(sandboxTmpDir, "file")
+
+	// File does not exist yet. Reading from the sandbox should fail.
+	execArgsTestFile := control.ExecArgs{
+		Filename: "/usr/bin/test",
+		Argv:     []string{"test", "-f", sandboxFilename},
+	}
+	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+	} else if ws.ExitStatus() == 0 {
+		t.Errorf("test %q exited with code %v, wanted not zero", ws.ExitStatus(), err)
+	}
+
+	// Create the file from outside of the sandbox.
+	if err := ioutil.WriteFile(hostFilename, []byte("foobar"), 0777); err != nil {
+		t.Fatalf("error writing to file %q: %v", hostFilename, err)
+	}
+
+	// Now we should be able to test the file from within the sandbox.
+	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+	} else if ws.ExitStatus() != 0 {
+		t.Errorf("test %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+	}
+
+	// Rename the file from outside of the sandbox.
+	newHostFilename := filepath.Join(hostTmpDir, "newfile")
+	newSandboxFilename := filepath.Join(sandboxTmpDir, "newfile")
+	if err := os.Rename(hostFilename, newHostFilename); err != nil {
+		t.Fatalf("os.Rename(%q, %q) failed: %v", hostFilename, newHostFilename, err)
+	}
+
+	// File should no longer exist at the old path within the sandbox.
+	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+	} else if ws.ExitStatus() == 0 {
+		t.Errorf("test %q exited with code %v, wanted not zero", sandboxFilename, ws.ExitStatus())
+	}
+
+	// We should be able to test the new filename from within the sandbox.
+	execArgsTestNewFile := control.ExecArgs{
+		Filename: "/usr/bin/test",
+		Argv:     []string{"test", "-f", newSandboxFilename},
+	}
+	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
+		t.Fatalf("unexpected error testing file %q: %v", newSandboxFilename, err)
+	} else if ws.ExitStatus() != 0 {
+		t.Errorf("test %q exited with code %v, wanted zero", newSandboxFilename, ws.ExitStatus())
+	}
+
+	// Delete the renamed file from outside of the sandbox.
+	if err := os.Remove(newHostFilename); err != nil {
+		t.Fatalf("error removing file %q: %v", hostFilename, err)
+	}
+
+	// Renamed file should no longer exist at the old path within the sandbox.
+	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
+		t.Fatalf("unexpected error testing file %q: %v", newSandboxFilename, err)
+	} else if ws.ExitStatus() == 0 {
+		t.Errorf("test %q exited with code %v, wanted not zero", newSandboxFilename, ws.ExitStatus())
+	}
+
+	// Now create the file from WITHIN the sandbox.
+	execArgsTouch := control.ExecArgs{
+		Filename: "/usr/bin/touch",
+		Argv:     []string{"touch", sandboxFilename},
+		KUID:     auth.KUID(os.Getuid()),
+		KGID:     auth.KGID(os.Getgid()),
+	}
+	if ws, err := c.Execute(&execArgsTouch); err != nil {
+		t.Fatalf("unexpected error touching file %q: %v", sandboxFilename, err)
+	} else if ws.ExitStatus() != 0 {
+		t.Errorf("touch %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+	}
+
+	// File should exist outside the sandbox.
+	if _, err := os.Stat(hostFilename); err != nil {
+		t.Errorf("stat %q got error %v, wanted nil", hostFilename, err)
+	}
+
+	// File should exist outside the sandbox.
+	if _, err := os.Stat(hostFilename); err != nil {
+		t.Errorf("stat %q got error %v, wanted nil", hostFilename, err)
+	}
+
+	// Delete the file from within the sandbox.
+	execArgsRemove := control.ExecArgs{
+		Filename: "/bin/rm",
+		Argv:     []string{"rm", sandboxFilename},
+	}
+	if ws, err := c.Execute(&execArgsRemove); err != nil {
+		t.Fatalf("unexpected error removing file %q: %v", sandboxFilename, err)
+	} else if ws.ExitStatus() != 0 {
+		t.Errorf("remove %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+	}
+
+	// File should not exist outside the sandbox.
+	if _, err := os.Stat(hostFilename); !os.IsNotExist(err) {
+		t.Errorf("stat %q got error %v, wanted ErrNotExist", hostFilename, err)
+	}
 }

@@ -35,10 +35,9 @@ const (
 	// fs agent immediately.
 	cacheAllWritethrough
 
-	// Use virtual file system cache for everything, but reload dirents
-	// from the remote filesystem on each lookup. Thus, if the remote
-	// filesystem has changed, the returned dirent will have the updated
-	// state.
+	// Use the (host) page cache for reads/writes, but don't cache anything
+	// else. This allows the sandbox filesystem to stay in sync with any
+	// changes to the remote filesystem.
 	//
 	// This policy should *only* be used with remote filesystems that
 	// donate their host FDs to the sandbox and thus use the host page

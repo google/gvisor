@@ -64,6 +64,11 @@ const (
 	// requests and forwards them to the host.
 	FileAccessProxy FileAccessType = iota
 
+	// FileAccessProxyExclusive is the same as FileAccessProxy, but enables
+	// extra caching for improved performance. It should only be used if
+	// the sandbox has exclusive access to the filesystem.
+	FileAccessProxyExclusive
+
 	// FileAccessDirect connects the sandbox directly to the host filesystem.
 	FileAccessDirect
 )
@@ -73,6 +78,8 @@ func MakeFileAccessType(s string) (FileAccessType, error) {
 	switch s {
 	case "proxy":
 		return FileAccessProxy, nil
+	case "proxy-exclusive":
+		return FileAccessProxyExclusive, nil
 	case "direct":
 		return FileAccessDirect, nil
 	default:
@@ -84,6 +91,8 @@ func (f FileAccessType) String() string {
 	switch f {
 	case FileAccessProxy:
 		return "proxy"
+	case FileAccessProxyExclusive:
+		return "proxy-exclusive"
 	case FileAccessDirect:
 		return "direct"
 	default:

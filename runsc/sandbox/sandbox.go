@@ -233,7 +233,7 @@ func (s *Sandbox) connError(err error) error {
 }
 
 func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir, binPath string) ([]*os.File, error) {
-	if conf.FileAccess != boot.FileAccessProxy {
+	if conf.FileAccess == boot.FileAccessDirect {
 		// Don't start a gofer. The sandbox will access host FS directly.
 		return nil, nil
 	}
@@ -369,11 +369,11 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
 	}
 
-	if conf.FileAccess == boot.FileAccessProxy {
+	if conf.FileAccess == boot.FileAccessDirect {
+		log.Infof("Sandbox will be started in the current mount namespace")
+	} else {
 		log.Infof("Sandbox will be started in new mount namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.MountNamespace})
-	} else {
-		log.Infof("Sandbox will be started in the current mount namespace")
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks

@@ -398,7 +398,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -458,11 +458,11 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 						{
 							Dev:  "9pfs-/dev/fd-foo",
-							Data: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true",
+							Data: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -522,7 +522,7 @@ func TestRestoreEnvironment(t *testing.T) {
 						{
 							Dev:   "9pfs-/",
 							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
+							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -606,21 +606,21 @@ func TestRestoreEnvironment(t *testing.T) {
 			errorExpected: true,
 		},
 	}
-
 	for _, tc := range testCases {
-		fds := &fdDispenser{fds: tc.ioFDs}
-
-		actualRenv, err := createRestoreEnvironment(tc.spec, tc.conf, fds)
-		if !tc.errorExpected && err != nil {
-			t.Fatalf("could not create restore environment for test:%s", tc.name)
-		} else if tc.errorExpected {
-			if err == nil {
-				t.Fatalf("expected an error, but no error occurred.")
+		t.Run(tc.name, func(t *testing.T) {
+			fds := &fdDispenser{fds: tc.ioFDs}
+			actualRenv, err := createRestoreEnvironment(tc.spec, tc.conf, fds)
+			if !tc.errorExpected && err != nil {
+				t.Fatalf("could not create restore environment for test:%s", tc.name)
+			} else if tc.errorExpected {
+				if err == nil {
+					t.Errorf("expected an error, but no error occurred.")
+				}
+			} else {
+				if !reflect.DeepEqual(*actualRenv, tc.expectedRenv) {
+					t.Errorf("restore environments did not match for test:%s\ngot:%+v\nwant:%+v\n", tc.name, *actualRenv, tc.expectedRenv)
+				}
 			}
-		} else {
-			if !reflect.DeepEqual(*actualRenv, tc.expectedRenv) {
-				t.Fatalf("restore environments did not match for test:%s\ngot:%+v\nwant:%+v\n", tc.name, *actualRenv, tc.expectedRenv)
-			}
-		}
+		})
 	}
 }
