@@ -43,7 +43,6 @@ go_library(
         "shm.go",
         "signal.go",
         "socket.go",
-        "splice.go",
         "time.go",
         "tty.go",
         "uio.go",
