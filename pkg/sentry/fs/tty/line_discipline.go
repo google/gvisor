@@ -23,6 +23,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -90,6 +91,12 @@ type lineDiscipline struct {
 	// column is the location in a row of the cursor. This is important for
 	// handling certain special characters like backspace.
 	column int
+
+	// masterWaiter is used to wait on the master end of the TTY.
+	masterWaiter waiter.Queue `state:"zerovalue"`
+
+	// slaveWaiter is used to wait on the slave end of the TTY.
+	slaveWaiter waiter.Queue `state:"zerovalue"`
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
@@ -127,7 +134,9 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	// buffer to its read buffer. Anything already in the read buffer is
 	// now readable.
 	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
-		l.inQueue.pushWaitBuf(l)
+		if n := l.inQueue.pushWaitBuf(l); n > 0 {
+			l.slaveWaiter.Notify(waiter.EventIn)
+		}
 	}
 
 	return 0, err
@@ -152,13 +161,32 @@ func (l *lineDiscipline) inputQueueReadSize(ctx context.Context, io usermem.IO, 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	return l.inQueue.read(ctx, dst, l)
+	n, pushed, err := l.inQueue.read(ctx, dst, l)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		l.masterWaiter.Notify(waiter.EventOut)
+		if pushed {
+			l.slaveWaiter.Notify(waiter.EventIn)
+		}
+		return n, nil
+	}
+	return 0, syserror.ErrWouldBlock
 }
 
 func (l *lineDiscipline) inputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	return l.inQueue.write(ctx, src, l)
+	n, err := l.inQueue.write(ctx, src, l)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		l.slaveWaiter.Notify(waiter.EventIn)
+		return n, nil
+	}
+	return 0, syserror.ErrWouldBlock
 }
 
 func (l *lineDiscipline) outputQueueReadSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
@@ -168,13 +196,32 @@ func (l *lineDiscipline) outputQueueReadSize(ctx context.Context, io usermem.IO,
 func (l *lineDiscipline) outputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	return l.outQueue.read(ctx, dst, l)
+	n, pushed, err := l.outQueue.read(ctx, dst, l)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		l.slaveWaiter.Notify(waiter.EventOut)
+		if pushed {
+			l.masterWaiter.Notify(waiter.EventIn)
+		}
+		return n, nil
+	}
+	return 0, syserror.ErrWouldBlock
 }
 
 func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	defer l.termiosMu.RUnlock()
-	return l.outQueue.write(ctx, src, l)
+	n, err := l.outQueue.write(ctx, src, l)
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		l.masterWaiter.Notify(waiter.EventIn)
+		return n, nil
+	}
+	return 0, syserror.ErrWouldBlock
 }
 
 // transformer is a helper interface to make it easier to stateify queue.
@@ -326,7 +373,9 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 		q.readBuf.WriteRune(c)
 		// Anything written to the readBuf will have to be echoed.
 		if l.termios.LEnabled(linux.ECHO) {
-			l.outQueue.writeBytes(cBytes, l)
+			if l.outQueue.writeBytes(cBytes, l) > 0 {
+				l.masterWaiter.Notify(waiter.EventIn)
+			}
 		}
 
 		// If we finish a line, make it available for reading.

@@ -38,8 +38,6 @@ type queue struct {
 	// mu protects everything in queue.
 	mu sync.Mutex `state:"nosave"`
 
-	waiter.Queue `state:"zerovalue"`
-
 	// readBuf is buffer of data ready to be read when readable is true.
 	// This data has been processed.
 	readBuf bytes.Buffer `state:".([]byte)"`
@@ -112,15 +110,17 @@ func (q *queue) readableSize(ctx context.Context, io usermem.IO, args arch.Sysca
 
 }
 
-// read reads from q to userspace.
+// read reads from q to userspace. It returns the number of bytes read as well
+// as whether the read caused more readable data to become available (whether
+// data was pushed from the wait buffer to the read buffer).
 //
 // Preconditions:
 // * l.termiosMu must be held for reading.
-func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, error) {
+func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipline) (int64, bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if !q.readable {
-		return 0, syserror.ErrWouldBlock
+		return 0, false, syserror.ErrWouldBlock
 	}
 
 	// Read out from the read buffer.
@@ -133,7 +133,7 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	}
 	n, err := dst.Writer(ctx).Write(q.readBuf.Bytes()[:n])
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	// Discard bytes read out.
 	q.readBuf.Next(n)
@@ -144,16 +144,9 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 	}
 
 	// Move data from the queue's wait buffer to its read buffer.
-	q.pushWaitBufLocked(l)
+	nPushed := q.pushWaitBufLocked(l)
 
-	// If state changed, notify any waiters. If nothing was available to
-	// read, let the caller know we could block.
-	if n > 0 {
-		q.Notify(waiter.EventOut)
-	} else {
-		return 0, syserror.ErrWouldBlock
-	}
-	return int64(n), nil
+	return int64(n), nPushed > 0, nil
 }
 
 // write writes to q from userspace.
@@ -169,14 +162,20 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 		return 0, err
 	}
 	b = b[:n]
-	return q.writeBytes(b, l)
+
+	// If state changed, notify any waiters. If we were unable to write
+	// anything, let the caller know we could block.
+	if c := q.writeBytes(b, l); c > 0 {
+		return c, nil
+	}
+	return 0, syserror.ErrWouldBlock
 }
 
 // writeBytes writes to q from b.
 //
 // Preconditions:
 // * l.termiosMu must be held for reading.
-func (q *queue) writeBytes(b []byte, l *lineDiscipline) (int64, error) {
+func (q *queue) writeBytes(b []byte, l *lineDiscipline) int64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	// Write as much as possible to the read buffer.
@@ -185,36 +184,26 @@ func (q *queue) writeBytes(b []byte, l *lineDiscipline) (int64, error) {
 	// Write remaining data to the wait buffer.
 	nWaiting, _ := q.waitBuf.Write(b[n:])
 
-	// If state changed, notify any waiters. If we were unable to write
-	// anything, let the caller know we could block.
-	if n > 0 {
-		q.Notify(waiter.EventIn)
-	} else if nWaiting == 0 {
-		return 0, syserror.ErrWouldBlock
-	}
-	return int64(n + nWaiting), nil
+	return int64(n + nWaiting)
 }
 
 // pushWaitBuf fills the queue's read buffer with data from the wait buffer.
 //
 // Preconditions:
 // * l.termiosMu must be held for reading.
-func (q *queue) pushWaitBuf(l *lineDiscipline) {
+func (q *queue) pushWaitBuf(l *lineDiscipline) int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.pushWaitBufLocked(l)
+	return q.pushWaitBufLocked(l)
 }
 
 // Preconditions:
 // * l.termiosMu must be held for reading.
 // * q.mu must be locked.
-func (q *queue) pushWaitBufLocked(l *lineDiscipline) {
+func (q *queue) pushWaitBufLocked(l *lineDiscipline) int {
 	// Remove bytes from the wait buffer and move them to the read buffer.
 	n := q.transform(l, q, q.waitBuf.Bytes())
 	q.waitBuf.Next(n)
 
-	// If state changed, notify any waiters.
-	if n > 0 {
-		q.Notify(waiter.EventIn)
-	}
+	return n
 }

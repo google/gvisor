@@ -109,14 +109,12 @@ func (sf *slaveFileOperations) Release() {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (sf *slaveFileOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	sf.si.t.ld.outQueue.EventRegister(e, mask)
-	sf.si.t.ld.inQueue.EventRegister(e, mask)
+	sf.si.t.ld.slaveWaiter.EventRegister(e, mask)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (sf *slaveFileOperations) EventUnregister(e *waiter.Entry) {
-	sf.si.t.ld.outQueue.EventUnregister(e)
-	sf.si.t.ld.inQueue.EventUnregister(e)
+	sf.si.t.ld.slaveWaiter.EventUnregister(e)
 }
 
 // Readiness implements waiter.Waitable.Readiness.

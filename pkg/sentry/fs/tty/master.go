@@ -124,14 +124,12 @@ func (mf *masterFileOperations) Release() {
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (mf *masterFileOperations) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	mf.t.ld.inQueue.EventRegister(e, mask)
-	mf.t.ld.outQueue.EventRegister(e, mask)
+	mf.t.ld.masterWaiter.EventRegister(e, mask)
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (mf *masterFileOperations) EventUnregister(e *waiter.Entry) {
-	mf.t.ld.inQueue.EventUnregister(e)
-	mf.t.ld.outQueue.EventUnregister(e)
+	mf.t.ld.masterWaiter.EventUnregister(e)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
