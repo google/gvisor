@@ -150,6 +150,9 @@ func GetAddress(sfamily int, addr []byte) (tcpip.FullAddress, *syserr.Error) {
 	switch family {
 	case linux.AF_UNIX:
 		path := addr[2:]
+		if len(path) > linux.UnixPathMax {
+			return tcpip.FullAddress{}, syserr.ErrInvalidArgument
+		}
 		// Drop the terminating NUL (if one exists) and everything after it.
 		// Skip the first byte, which is NUL for abstract paths.
 		if len(path) > 1 {
