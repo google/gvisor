@@ -364,7 +364,23 @@ func overlayBind(ctx context.Context, o *overlayEntry, name string, data unix.Bo
 	if o.upper == nil {
 		return nil, syserror.EOPNOTSUPP
 	}
-	return o.upper.InodeOperations.Bind(ctx, o.upper, name, data, perm)
+	d, err := o.upper.InodeOperations.Bind(ctx, o.upper, name, data, perm)
+	if err != nil {
+		return nil, err
+	}
+
+	// Grab the inode and drop the dirent, we don't need it.
+	inode := d.Inode
+	inode.IncRef()
+	d.DecRef()
+
+	// Create a new overlay entry and dirent for the socket.
+	entry, err := newOverlayEntry(ctx, inode, nil, false)
+	if err != nil {
+		inode.DecRef()
+		return nil, err
+	}
+	return NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
 }
 
 func overlayBoundEndpoint(o *overlayEntry, path string) unix.BoundEndpoint {
