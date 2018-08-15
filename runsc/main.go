@@ -109,6 +109,10 @@ func main() {
 		cmd.Fatalf("%v", err)
 	}
 
+	if fsAccess == boot.FileAccessProxy && *overlay {
+		cmd.Fatalf("overlay flag is incompatible with proxy-shared file access")
+	}
+
 	netType, err := boot.MakeNetworkType(*network)
 	if err != nil {
 		cmd.Fatalf("%v", err)
@@ -117,10 +121,6 @@ func main() {
 	wa, err := boot.MakeWatchdogAction(*watchdogAction)
 	if err != nil {
 		cmd.Fatalf("%v", err)
-	}
-
-	if *fileAccess == "proxy" && *overlay {
-		cmd.Fatalf("overlay flag is incompatible with file-access=proxy")
 	}
 
 	// Create a new Config from the flags.

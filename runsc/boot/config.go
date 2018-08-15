@@ -76,7 +76,7 @@ const (
 // MakeFileAccessType converts type from string.
 func MakeFileAccessType(s string) (FileAccessType, error) {
 	switch s {
-	case "proxy":
+	case "proxy-shared":
 		return FileAccessProxy, nil
 	case "proxy-exclusive":
 		return FileAccessProxyExclusive, nil
@@ -90,7 +90,7 @@ func MakeFileAccessType(s string) (FileAccessType, error) {
 func (f FileAccessType) String() string {
 	switch f {
 	case FileAccessProxy:
-		return "proxy"
+		return "proxy-shared"
 	case FileAccessProxyExclusive:
 		return "proxy-exclusive"
 	case FileAccessDirect:
