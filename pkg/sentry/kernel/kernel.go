@@ -504,6 +504,14 @@ type CreateProcessArgs struct {
 
 	// IPCNamespace is the initial IPC namespace.
 	IPCNamespace *IPCNamespace
+
+	// Root optionally contains the dirent that serves as the root for the
+	// process. If nil, the mount namespace's root is used as the process'
+	// root.
+	//
+	// Anyone setting Root must donate a reference (i.e. increment it) to
+	// keep it alive until it is decremented by CreateProcess.
+	Root *fs.Dirent
 }
 
 // NewContext returns a context.Context that represents the task that will be
@@ -581,8 +589,12 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 	ctx := args.NewContext(k)
 
 	// Grab the root directory.
-	root := fs.RootFromContext(ctx)
+	root := args.Root
+	if root == nil {
+		root = fs.RootFromContext(ctx)
+	}
 	defer root.DecRef()
+	args.Root = nil
 
 	// Grab the working directory.
 	wd := root // Default.

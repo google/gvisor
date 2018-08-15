@@ -17,6 +17,7 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"path"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
@@ -181,11 +182,15 @@ type StartArgs struct {
 
 	// CID is the ID of the container to start.
 	CID string
+
+	// FilePayload contains the file descriptor over which the sandbox will
+	// request files from its root filesystem.
+	urpc.FilePayload
 }
 
 // Start runs a created container within a sandbox.
 func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Start")
+	log.Debugf("containerManager.Start: %+v", args)
 
 	// Validate arguments.
 	if args == nil {
@@ -200,8 +205,18 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if args.CID == "" {
 		return errors.New("start argument missing container ID")
 	}
+	// Prevent CIDs containing ".." from confusing the sentry when creating
+	// /containers/<cid> directory.
+	// TODO: Once we have multiple independant roots, this
+	// check won't be necessary.
+	if path.Clean(args.CID) != args.CID {
+		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
+	}
+	if len(args.FilePayload.Files) != 1 {
+		return fmt.Errorf("start arguments must contain one file for the container root")
+	}
 
-	tgid, err := cm.l.startContainer(args, cm.l.k)
+	tgid, err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files[0])
 	if err != nil {
 		return err
 	}

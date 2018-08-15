@@ -31,6 +31,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -84,7 +85,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 	log.Debugf("Start root sandbox %q, pid: %d", s.ID, s.Pid)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -104,21 +105,67 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 	return nil
 }
 
+// CreateChild creates a non-root container inside the sandbox.
+func (s *Sandbox) CreateChild(cid, bundleDir string) error {
+	log.Debugf("Create non-root container sandbox %q, pid: %d for container %q with bundle directory %q", s.ID, s.Pid, cid, bundleDir)
+
+	// Connect to the gofer and prepare it to serve from bundleDir for this
+	// container.
+	goferConn, err := s.goferConnect()
+	if err != nil {
+		return fmt.Errorf("couldn't connect to gofer: %v", err)
+	}
+	defer goferConn.Close()
+	goferReq := fsgofer.AddBundleDirsRequest{BundleDirs: map[string]string{cid: bundleDir}}
+	if err := goferConn.Call(fsgofer.AddBundleDirs, &goferReq, nil); err != nil {
+		return fmt.Errorf("error serving new filesystem for non-root container %v: %v", goferReq, err)
+	}
+
+	return nil
+}
+
 // Start starts running a non-root container inside the sandbox.
 func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string) error {
 	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
-	conn, err := s.connect()
+
+	sandboxConn, err := s.sandboxConnect()
+	if err != nil {
+		return fmt.Errorf("couldn't connect to sandbox: %v", err)
+	}
+	defer sandboxConn.Close()
+	goferConn, err := s.goferConnect()
+	if err != nil {
+		return fmt.Errorf("couldn't connect to gofer: %v", err)
+	}
+	defer goferConn.Close()
+
+	// Create socket that connects the sandbox and gofer.
+	sandEnd, goferEnd, err := createSocketPair()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer sandEnd.Close()
+	defer goferEnd.Close()
 
-	args := boot.StartArgs{
-		Spec: spec,
-		Conf: conf,
-		CID:  cid,
+	// Tell the Gofer about the new filesystem it needs to serve.
+	goferReq := fsgofer.ServeDirectoryRequest{
+		Dir:         spec.Root.Path,
+		IsReadOnly:  spec.Root.Readonly,
+		CID:         cid,
+		FilePayload: urpc.FilePayload{Files: []*os.File{goferEnd}},
 	}
-	if err := conn.Call(boot.ContainerStart, args, nil); err != nil {
+	if err := goferConn.Call(fsgofer.ServeDirectory, &goferReq, nil); err != nil {
+		return fmt.Errorf("error serving new filesystem for non-root container %v: %v", goferReq, err)
+	}
+
+	// Start running the container.
+	args := boot.StartArgs{
+		Spec:        spec,
+		Conf:        conf,
+		CID:         cid,
+		FilePayload: urpc.FilePayload{Files: []*os.File{sandEnd}},
+	}
+	if err := sandboxConn.Call(boot.ContainerStart, &args, nil); err != nil {
 		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)
 	}
 
@@ -142,7 +189,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f str
 		SandboxID: s.ID,
 	}
 
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -165,7 +212,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f str
 // given container in this sandbox.
 func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	log.Debugf("Getting processes for container %q in sandbox %q", cid, s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +230,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 // Execute runs the specified command in the container.
 func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", cid, s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return 0, s.connError(err)
 	}
@@ -203,7 +250,7 @@ func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, 
 // Event retrieves stats about the sandbox such as memory and CPU utilization.
 func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	log.Debugf("Getting events for container %q in sandbox %q", cid, s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return nil, err
 	}
@@ -219,9 +266,18 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	return &e, nil
 }
 
-func (s *Sandbox) connect() (*urpc.Client, error) {
+func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
 	conn, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
+	if err != nil {
+		return nil, s.connError(err)
+	}
+	return conn, nil
+}
+
+func (s *Sandbox) goferConnect() (*urpc.Client, error) {
+	log.Debugf("Connecting to gofer for sandbox %q", s.ID)
+	conn, err := client.ConnectTo(fsgofer.ControlSocketAddr(s.ID))
 	if err != nil {
 		return nil, s.connError(err)
 	}
@@ -244,31 +300,45 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 
 	// Add root mount and then add any other additional mounts.
 	mountCount := 1
+
+	// Add additional mounts.
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			mountCount++
 		}
 	}
-
 	sandEnds := make([]*os.File, 0, mountCount)
 	goferEnds := make([]*os.File, 0, mountCount)
-	for i := 0; i < mountCount; i++ {
-		// Create socket that connects the sandbox and gofer.
-		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	// nextFD is the next available file descriptor for the gofer process.
+	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
+	var nextFD int
+	for nextFD = 3; nextFD-3 < mountCount; nextFD++ {
+		sandEnd, goferEnd, err := createSocketPair()
 		if err != nil {
 			return nil, err
 		}
-		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox io fd"))
-
-		goferEnd := os.NewFile(uintptr(fds[1]), "gofer io fd")
 		defer goferEnd.Close()
+		sandEnds = append(sandEnds, sandEnd)
 		goferEnds = append(goferEnds, goferEnd)
-
-		args = append(args, fmt.Sprintf("--io-fds=%d", 3+i))
+		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
 	}
+
+	// Create and donate a file descriptor for the control server.
+	addr := fsgofer.ControlSocketAddr(s.ID)
+	serverFD, err := server.CreateSocket(addr)
+	if err != nil {
+		return nil, fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
+	}
+
+	// Add the control server fd.
+	args = append(args, "--controller-fd="+strconv.Itoa(nextFD))
+	nextFD++
+	controllerFile := os.NewFile(uintptr(serverFD), "gofer_control_socket_server")
+	defer controllerFile.Close()
 
 	cmd := exec.Command(binPath, args...)
 	cmd.ExtraFiles = goferEnds
+	cmd.ExtraFiles = append(cmd.ExtraFiles, controllerFile)
 
 	// Setup any uid/gid mappings, and create or join the configured user
 	// namespace so the gofer's view of the filesystem aligns with the
@@ -286,6 +356,15 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	return sandEnds, nil
 }
 
+// createSocketPair creates a pair of files wrapping a socket pair.
+func createSocketPair() (*os.File, *os.File, error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return os.NewFile(uintptr(fds[0]), "sandbox io fd"), os.NewFile(uintptr(fds[1]), "gofer io fd"), nil
+}
+
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, binPath string, ioFiles []*os.File) error {
@@ -296,7 +375,9 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Create control server socket here and donate FD to child process because
 	// it may be in a different network namespace and won't be reachable from
 	// outside.
-	fd, err := server.CreateSocket(boot.ControlSocketAddr(s.ID))
+	addr := boot.ControlSocketAddr(s.ID)
+	fd, err := server.CreateSocket(addr)
+	log.Infof("creating sandbox process with addr: %s", addr)
 	if err != nil {
 		return fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
 	}
@@ -438,7 +519,7 @@ func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 	if err := specutils.WaitForReady(s.Pid, timeout, ready); err != nil {
 		return fmt.Errorf("unexpected error waiting for sandbox %q, err: %v", s.ID, err)
 	}
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -454,7 +535,7 @@ func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	log.Debugf("Waiting for container %q in sandbox %q", cid, s.ID)
 	var ws syscall.WaitStatus
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return ws, err
 	}
@@ -471,7 +552,7 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 func (s *Sandbox) WaitPID(pid int32, cid string) (syscall.WaitStatus, error) {
 	log.Debugf("Waiting for PID %d in sandbox %q", pid, s.ID)
 	var ws syscall.WaitStatus
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return ws, err
 	}
@@ -536,7 +617,7 @@ func (s *Sandbox) Destroy() error {
 // Signal sends the signal to a container in the sandbox.
 func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 	log.Debugf("Signal sandbox %q", s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -556,7 +637,7 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 // The statefile will be written to f.
 func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
 	log.Debugf("Checkpoint sandbox %q", s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -577,7 +658,7 @@ func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
 // Pause sends the pause call for a container in the sandbox.
 func (s *Sandbox) Pause(cid string) error {
 	log.Debugf("Pause sandbox %q", s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -592,7 +673,7 @@ func (s *Sandbox) Pause(cid string) error {
 // Resume sends the resume call for a container in the sandbox.
 func (s *Sandbox) Resume(cid string) error {
 	log.Debugf("Resume sandbox %q", s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
 	}
@@ -630,7 +711,7 @@ func (s *Sandbox) IsRunning() bool {
 // Stacks collects and returns all stacks for the sandbox.
 func (s *Sandbox) Stacks() (string, error) {
 	log.Debugf("Stacks sandbox %q", s.ID)
-	conn, err := s.connect()
+	conn, err := s.sandboxConnect()
 	if err != nil {
 		return "", err
 	}

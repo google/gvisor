@@ -36,7 +36,6 @@ go_library(
         "//pkg/p9",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
-        "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/container",

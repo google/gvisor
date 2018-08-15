@@ -66,6 +66,11 @@ func (f fileType) String() string {
 	return "unknown"
 }
 
+// ControlSocketAddr generates an abstract unix socket name for the given id.
+func ControlSocketAddr(id string) string {
+	return fmt.Sprintf("\x00runsc-gofer.%s", id)
+}
+
 // Config sets configuration options for each attach point.
 type Config struct {
 	// ROMount is set to true if this is a readonly mount.

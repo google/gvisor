@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -229,7 +230,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	// Ensure that signals received are forwarded to the emulated kernel.
 	stopSignalForwarding := sighandling.PrepareForwarding(k, false)()
 
-	procArgs, err := newProcess(spec, conf, ioFDs, console, creds, utsns, ipcns, k)
+	procArgs, err := newProcess(spec, creds, utsns, ipcns, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root process: %v", err)
 	}
@@ -250,7 +251,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 }
 
 // newProcess creates a process that can be run with kernel.CreateProcess.
-func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds *auth.Credentials, utsns *kernel.UTSNamespace, ipcns *kernel.IPCNamespace, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
+func newProcess(spec *specs.Spec, creds *auth.Credentials, utsns *kernel.UTSNamespace, ipcns *kernel.IPCNamespace, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -277,7 +278,6 @@ func newProcess(spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds
 		UTSNamespace:         utsns,
 		IPCNamespace:         ipcns,
 	}
-
 	return procArgs, nil
 }
 
@@ -356,7 +356,8 @@ func (l *Loader) run() error {
 			l.console,
 			l.rootProcArgs.Credentials,
 			l.rootProcArgs.Limits,
-			l.k)
+			l.k,
+			"" /* CID, which isn't needed for the root container */)
 		if err != nil {
 			return err
 		}
@@ -376,8 +377,7 @@ func (l *Loader) run() error {
 
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process.
-func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.ThreadID, error) {
-	spec := args.Spec
+func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, file *os.File) (kernel.ThreadID, error) {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
@@ -406,26 +406,24 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.Threa
 	// when indicated by the spec.
 
 	procArgs, err := newProcess(
-		args.Spec,
-		args.Conf,
-		nil,   // ioFDs
-		false, // console
+		spec,
 		creds,
-		k.RootUTSNamespace(),
-		k.RootIPCNamespace(),
-		k)
+		l.k.RootUTSNamespace(),
+		l.k.RootIPCNamespace(),
+		l.k)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
 	err = setFileSystemForProcess(
 		&procArgs,
-		args.Spec,
-		args.Conf,
-		nil,
+		spec,
+		conf,
+		[]int{int(file.Fd())}, // ioFDs
 		false,
 		creds,
 		procArgs.Limits,
-		k)
+		k,
+		cid)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
@@ -435,7 +433,7 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.Threa
 		return 0, fmt.Errorf("failed to create process in sentry: %v", err)
 	}
 
-	ts := k.TaskSet()
+	ts := l.k.TaskSet()
 	tgid := ts.Root.IDOfThreadGroup(tg)
 	if tgid == 0 {
 		return 0, errors.New("failed to get thread group ID of new process")
@@ -446,7 +444,7 @@ func (l *Loader) startContainer(args *StartArgs, k *kernel.Kernel) (kernel.Threa
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.containerRootTGIDs[args.CID] = tgid
+	l.containerRootTGIDs[cid] = tgid
 
 	return tgid, nil
 }

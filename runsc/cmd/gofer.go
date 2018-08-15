@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"os"
-	"sync"
 	"syscall"
 
 	"context"
@@ -25,7 +24,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -36,6 +34,10 @@ type Gofer struct {
 	bundleDir string
 	ioFDs     intFlags
 	applyCaps bool
+
+	// controllerFD is the file descriptor of a stream socket for the
+	// control server that is donated to this process.
+	controllerFD int
 }
 
 // Name implements subcommands.Command.
@@ -58,11 +60,12 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
+	f.IntVar(&g.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 }
 
 // Execute implements subcommands.Command.
 func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if g.bundleDir == "" || len(g.ioFDs) < 1 {
+	if g.bundleDir == "" || len(g.ioFDs) < 1 || g.controllerFD == -1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -134,29 +137,14 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("Too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
 
-	runServers(ats, g.ioFDs)
-	return subcommands.ExitSuccess
-}
+	ctrl, err := fsgofer.NewController(g.controllerFD, g.bundleDir)
 
-func runServers(ats []p9.Attacher, ioFDs []int) {
-	// Run the loops and wait for all to exit.
-	var wg sync.WaitGroup
-	for i, ioFD := range ioFDs {
-		wg.Add(1)
-		go func(ioFD int, at p9.Attacher) {
-			socket, err := unet.NewSocket(ioFD)
-			if err != nil {
-				Fatalf("err creating server on FD %d: %v", ioFD, err)
-			}
-			s := p9.NewServer(at)
-			if err := s.Handle(socket); err != nil {
-				Fatalf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFD, err)
-			}
-			wg.Done()
-		}(ioFD, ats[i])
+	if err := ctrl.Serve(ats, g.ioFDs); err != nil {
+		Fatalf("Failed to serve via P9: %v", err)
 	}
-	wg.Wait()
-	log.Infof("All 9P servers exited.")
+	ctrl.Wait()
+
+	return subcommands.ExitSuccess
 }
 
 func isReadonlyMount(opts []string) bool {

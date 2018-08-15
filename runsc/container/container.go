@@ -249,6 +249,13 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
+
+		// Prepare the gofer to serve the container's filesystem.
+		err = sb.Sandbox.CreateChild(c.ID, bundleDir)
+		if err != nil {
+			c.Destroy()
+			return nil, err
+		}
 	}
 	c.Status = Created
 

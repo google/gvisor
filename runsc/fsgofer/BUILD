@@ -5,6 +5,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "fsgofer",
     srcs = [
+        "control.go",
         "fsgofer.go",
         "fsgofer_unsafe.go",
     ],
@@ -14,9 +15,12 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/control/server",
         "//pkg/fd",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/unet",
+        "//pkg/urpc",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
