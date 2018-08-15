@@ -473,7 +473,7 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 			if err == nil {
 				return int32(0), nil
 			}
-			return int32(syserr.ToLinux(syserr.TranslateNetstackError(err)).Number()), nil
+			return int32(syserr.TranslateNetstackError(err).ToLinux().Number()), nil
 
 		case linux.SO_PEERCRED:
 			if family != linux.AF_UNIX || outLen < syscall.SizeofUcred {

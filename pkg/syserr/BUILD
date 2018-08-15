@@ -6,7 +6,6 @@ go_library(
     name = "syserr",
     srcs = [
         "host_linux.go",
-        "linuxabi.go",
         "netstack.go",
         "syserr.go",
     ],
