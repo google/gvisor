@@ -6,6 +6,7 @@ go_library(
     name = "sys",
     srcs = [
         "device.go",
+        "devices.go",
         "fs.go",
         "sys.go",
     ],
@@ -16,6 +17,8 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/ramfs",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/usermem",
+        "//pkg/syserror",
     ],
 )

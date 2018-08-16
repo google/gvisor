@@ -22,13 +22,25 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
+// sys is a root sys node.
+//
 // +stateify savable
-type dir struct {
+type sys struct {
 	ramfs.Dir
 }
 
+func newFile(node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
+	sattr := fs.StableAttr{
+		DeviceID:  sysfsDevice.DeviceID(),
+		InodeID:   sysfsDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+		Type:      fs.SpecialFile,
+	}
+	return fs.NewInode(node, msrc, sattr)
+}
+
 func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.Inode) *fs.Inode {
-	d := &dir{}
+	d := &sys{}
 	d.InitDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return fs.NewInode(d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
@@ -48,7 +60,7 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		"bus":      newDir(ctx, msrc, nil),
 		"class":    newDir(ctx, msrc, nil),
 		"dev":      newDir(ctx, msrc, nil),
-		"devices":  newDir(ctx, msrc, nil),
+		"devices":  newDevicesDir(ctx, msrc),
 		"firmware": newDir(ctx, msrc, nil),
 		"fs":       newDir(ctx, msrc, nil),
 		"kernel":   newDir(ctx, msrc, nil),
