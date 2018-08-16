@@ -2949,13 +2949,13 @@ func TestTCPEndpointProbe(t *testing.T) {
 		// We don't do an extensive validation of every field but a
 		// basic sanity test.
 		if got, want := state.ID.LocalAddress, tcpip.Address(context.StackAddr); got != want {
-			t.Fatalf("unexpected LocalAddress got: %d, want: %d", got, want)
+			t.Fatalf("unexpected LocalAddress got: %q, want: %q", got, want)
 		}
 		if got, want := state.ID.LocalPort, c.Port; got != want {
 			t.Fatalf("unexpected LocalPort got: %d, want: %d", got, want)
 		}
 		if got, want := state.ID.RemoteAddress, tcpip.Address(context.TestAddr); got != want {
-			t.Fatalf("unexpected RemoteAddress got: %d, want: %d", got, want)
+			t.Fatalf("unexpected RemoteAddress got: %q, want: %q", got, want)
 		}
 		if got, want := state.ID.RemotePort, uint16(context.TestPort); got != want {
 			t.Fatalf("unexpected RemotePort got: %d, want: %d", got, want)
