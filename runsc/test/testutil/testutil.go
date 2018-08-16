@@ -37,39 +37,53 @@ var RaceEnabled = false
 
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
-
-	// runsc is in a directory like: 'runsc/linux_amd64_pure_stripped/runsc'.
-	// Since I don't want to construct 'linux_amd64_pure_stripped' based on the
-	// build type, do a quick search for: 'runsc/*/runsc'
-	exePath := ""
-	lv1 := "./runsc"
-	lv1fis, err := ioutil.ReadDir(lv1)
+	path, err := FindFile("runsc/runsc")
 	if err != nil {
 		return err
 	}
-	for _, fi := range lv1fis {
-		if !fi.IsDir() {
-			continue
-		}
-		lv2fis, err := ioutil.ReadDir(filepath.Join(lv1, fi.Name()))
-		if err != nil {
-			return err
-		}
-		for _, candidate := range lv2fis {
-			if !candidate.IsDir() && candidate.Name() == "runsc" {
-				exePath, err = filepath.Abs(filepath.Join(lv1, fi.Name(), candidate.Name()))
-				if err != nil {
-					return err
-				}
-				break
-			}
-		}
-	}
-	if exePath == "" {
-		return fmt.Errorf("path to runsc not found")
-	}
-	specutils.ExePath = exePath
+	specutils.ExePath = path
 	return nil
+}
+
+// FindFile searchs for a file inside the test run environment. It returns the
+// full path to the file. It fails if none or more than one file is found.
+func FindFile(path string) (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	// The test root is demarcated by a path element called "__main__". Search for
+	// it backwards from the in the working directory.
+	root := wd
+	for {
+		dir, name := filepath.Split(root)
+		if name == "__main__" {
+			break
+		}
+		if len(dir) == 0 {
+			return "", fmt.Errorf("directory __main__ not found in %q", wd)
+		}
+		// Remove ending slash to loop around.
+		root = dir[:len(dir)-1]
+	}
+
+	// bazel adds the build type to the directory structure. Since I don't want
+	// to guess what build type it's, just place '*' to match anything.
+	//
+	// The pattern goes like: /test-path/__main__/directories/*/file.
+	pattern := filepath.Join(root, filepath.Dir(path), "*", filepath.Base(path))
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", fmt.Errorf("error globbing %q: %v", pattern, err)
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("file %q not found", path)
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("more than one match found for %q: %s", path, matches)
+	}
+	return matches[0], nil
 }
 
 // TestConfig return the default configuration to use in tests.

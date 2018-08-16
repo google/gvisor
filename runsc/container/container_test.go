@@ -206,27 +206,6 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	return nil
 }
 
-// findUDSApp finds the uds_test_app binary to be used in the UnixDomainSocket test.
-func findUDSApp() (string, error) {
-	// TODO: Use bazel FindBinary function.
-
-	// uds_test_app is in a directory like:
-	// './linux_amd64_pure_stripped/uds_test_app.go'.
-	//
-	// Since I don't want to construct 'linux_amd64_pure_stripped' based on the
-	// build type, do a quick search for: './*/uds_test_app'
-	// Note: This glob will only succeed when file is one directory deep.
-	matches, err := filepath.Glob("./*/uds_test_app")
-	if err != nil {
-		return "", fmt.Errorf("error globbing: %v", err)
-	}
-	if i := len(matches); i != 1 {
-		return "", fmt.Errorf("error identifying uds_test_app from matches: got %d matches", i)
-	}
-
-	return matches[0], nil
-}
-
 type configOption int
 
 const (
@@ -760,16 +739,9 @@ func TestUnixDomainSockets(t *testing.T) {
 		// Get file path for corresponding output file in sandbox.
 		outputFileSandbox := filepath.Join(goferRoot, output)
 
-		// Need to get working directory, even though not intuitive.
-		wd, _ := os.Getwd()
-		localPath, err := findUDSApp()
+		app, err := testutil.FindFile("runsc/container/uds_test_app")
 		if err != nil {
-			t.Fatalf("error finding localPath: %v", err)
-		}
-		app := filepath.Join(wd, localPath)
-
-		if _, err = os.Stat(app); err != nil {
-			t.Fatalf("error finding the uds_test_app: %v", err)
+			t.Fatal("error finding uds_test_app:", err)
 		}
 
 		socketPath := filepath.Join(dir, socket)
