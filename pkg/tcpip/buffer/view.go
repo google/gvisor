@@ -121,7 +121,6 @@ func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
 }
 
 // First returns the first view of the vectorised view.
-// It panics if the vectorised view is empty.
 func (vv *VectorisedView) First() View {
 	if len(vv.views) == 0 {
 		return nil
