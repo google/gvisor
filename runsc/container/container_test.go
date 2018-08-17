@@ -215,6 +215,7 @@ const (
 )
 
 var all = []configOption{overlay, kvm, nonExclusiveFS}
+var noOverlay = []configOption{kvm, nonExclusiveFS}
 
 // configs generates different configurations to run tests.
 func configs(opts ...configOption) []*boot.Config {
@@ -557,7 +558,7 @@ func TestExec(t *testing.T) {
 // be the next consecutive number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir("", "checkpoint-test")
@@ -716,7 +717,7 @@ func TestUnixDomainSockets(t *testing.T) {
 	)
 
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir("", "uds-test")
@@ -852,7 +853,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // It will then unpause and confirm that both processes are running. Then it will
 // wait until one sleep completes and check to make sure the other is running.
 func TestPauseResume(t *testing.T) {
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 		const uid = 343
 		spec := testutil.NewSpecWithArgs("sleep", "20")
@@ -1208,7 +1209,7 @@ func TestConsoleSocket(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("/bin/true")
