@@ -57,10 +57,20 @@ func newPossible(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newCPU(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	return newDir(ctx, msrc, map[string]*fs.Inode{
-		"possible": newPossible(ctx, msrc),
+	m := map[string]*fs.Inode{
 		"online":   newPossible(ctx, msrc),
-	})
+		"possible": newPossible(ctx, msrc),
+		"present":  newPossible(ctx, msrc),
+	}
+
+	// Add directories for each of the cpus.
+	if k := kernel.KernelFromContext(ctx); k != nil {
+		for i := 0; uint(i) < k.ApplicationCores(); i++ {
+			m[fmt.Sprintf("cpu%d", i)] = newDir(ctx, msrc, nil)
+		}
+	}
+
+	return newDir(ctx, msrc, m)
 }
 
 func newSystemDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
