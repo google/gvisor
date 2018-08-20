@@ -153,9 +153,9 @@ func GetAddress(sfamily int, addr []byte) (tcpip.FullAddress, *syserr.Error) {
 		if len(path) > linux.UnixPathMax {
 			return tcpip.FullAddress{}, syserr.ErrInvalidArgument
 		}
-		// Drop the terminating NUL (if one exists) and everything after it.
-		// Skip the first byte, which is NUL for abstract paths.
-		if len(path) > 1 {
+		// Drop the terminating NUL (if one exists) and everything after
+		// it for filesystem (non-abstract) addresses.
+		if len(path) > 0 && path[0] != 0 {
 			if n := bytes.IndexByte(path[1:], 0); n >= 0 {
 				path = path[:n+1]
 			}
@@ -743,22 +743,20 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (interface{}, uint32) {
 	case linux.AF_UNIX:
 		var out linux.SockAddrUnix
 		out.Family = linux.AF_UNIX
-		for i := 0; i < len([]byte(addr.Addr)); i++ {
+		l := len([]byte(addr.Addr))
+		for i := 0; i < l; i++ {
 			out.Path[i] = int8(addr.Addr[i])
 		}
-		// Linux just returns the header for empty addresses.
-		if len(addr.Addr) == 0 {
-			return out, 2
-		}
+
 		// Linux returns the used length of the address struct (including the
 		// null terminator) for filesystem paths. The Family field is 2 bytes.
 		// It is sometimes allowed to exclude the null terminator if the
-		// address length is the max. Abstract paths always return the full
-		// length.
-		if out.Path[0] == 0 || len([]byte(addr.Addr)) == len(out.Path) {
-			return out, uint32(binary.Size(out))
+		// address length is the max. Abstract and empty paths always return
+		// the full exact length.
+		if l == 0 || out.Path[0] == 0 || l == len(out.Path) {
+			return out, uint32(2 + l)
 		}
-		return out, uint32(3 + len(addr.Addr))
+		return out, uint32(3 + l)
 	case linux.AF_INET:
 		var out linux.SockAddrInet
 		copy(out.Addr[:], addr.Addr)
