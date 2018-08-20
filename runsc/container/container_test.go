@@ -558,17 +558,19 @@ func TestExec(t *testing.T) {
 // be the next consecutive number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(noOverlay...) {
+	//
+	// TODO: Skip nonExclusiveFS because $TEST_TMPDIR mount is
+	// mistakenly marked as RO after revalidation.
+	for _, conf := range configs(kvm) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		dir, err := ioutil.TempDir("", "checkpoint-test")
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
 		if err != nil {
 			t.Fatalf("ioutil.TempDir failed: %v", err)
 		}
 		if err := os.Chmod(dir, 0777); err != nil {
 			t.Fatalf("error chmoding file: %q, %v", dir, err)
 		}
-		defer os.RemoveAll(dir)
 
 		outputPath := filepath.Join(dir, "output")
 		outputFile, err := createWriteableOutputFile(outputPath)
@@ -577,14 +579,8 @@ func TestCheckpointRestore(t *testing.T) {
 		}
 		defer outputFile.Close()
 
-		script := "for ((i=0; ;i++)); do echo $i >> /tmp2/output; sleep 1; done"
+		script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
 		spec := testutil.NewSpecWithArgs("bash", "-c", script)
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Destination: "/tmp2",
-			Source:      dir,
-		})
-
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -711,34 +707,29 @@ func TestCheckpointRestore(t *testing.T) {
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
 	const (
-		output    = "uds_output"
-		goferRoot = "/tmp2"
-		socket    = "uds_socket"
+		output = "uds_output"
+		socket = "uds_socket"
 	)
 
 	// Skip overlay because test requires writing to host file.
-	for _, conf := range configs(noOverlay...) {
+	//
+	// TODO: Skip nonExclusiveFS because $TEST_TMPDIR mount is
+	// mistakenly marked as RO after revalidation.
+	for _, conf := range configs(kvm) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		dir, err := ioutil.TempDir("", "uds-test")
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "uds-test")
 		if err != nil {
 			t.Fatalf("ioutil.TempDir failed: %v", err)
-		}
-		if err := os.Chmod(dir, 0777); err != nil {
-			t.Fatalf("error chmoding file: %q, %v", dir, err)
 		}
 		defer os.RemoveAll(dir)
 
 		outputPath := filepath.Join(dir, output)
-
-		outputFile, err := createWriteableOutputFile(outputPath)
+		outputFile, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
 		if err != nil {
 			t.Fatalf("error creating output file: %v", err)
 		}
 		defer outputFile.Close()
-
-		// Get file path for corresponding output file in sandbox.
-		outputFileSandbox := filepath.Join(goferRoot, output)
 
 		app, err := testutil.FindFile("runsc/container/uds_test_app")
 		if err != nil {
@@ -746,18 +737,9 @@ func TestUnixDomainSockets(t *testing.T) {
 		}
 
 		socketPath := filepath.Join(dir, socket)
-		socketPathSandbox := filepath.Join(goferRoot, socket)
 		defer os.Remove(socketPath)
 
-		spec := testutil.NewSpecWithArgs(app, "--file", outputFileSandbox,
-			"--socket", socketPathSandbox)
-
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Destination: goferRoot,
-			Source:      dir,
-		})
-
+		spec := testutil.NewSpecWithArgs(app, "--file", outputPath, "--socket", socketPath)
 		spec.Process.User = specs.User{
 			UID: uint32(os.Getuid()),
 			GID: uint32(os.Getgid()),
@@ -811,7 +793,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		if err := os.Remove(outputPath); err != nil {
 			t.Fatalf("error removing file")
 		}
-		outputFile2, err := createWriteableOutputFile(outputPath)
+		outputFile2, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
 		if err != nil {
 			t.Fatalf("error creating output file: %v", err)
 		}
@@ -858,20 +840,11 @@ func TestPauseResume(t *testing.T) {
 		const uid = 343
 		spec := testutil.NewSpecWithArgs("sleep", "20")
 
-		dir, err := ioutil.TempDir("", "pause-test")
-		if err != nil {
-			t.Fatalf("ioutil.TempDir failed: %v", err)
-		}
-		lock, err := ioutil.TempFile(dir, "lock")
+		lock, err := ioutil.TempFile(testutil.TmpDir(), "lock")
 		if err != nil {
 			t.Fatalf("error creating output file: %v", err)
 		}
 		defer lock.Close()
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Type:        "bind",
-			Destination: "/tmp2",
-			Source:      dir,
-		})
 
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
@@ -908,7 +881,7 @@ func TestPauseResume(t *testing.T) {
 			},
 		}
 
-		script := fmt.Sprintf("while [[ -f /tmp2/%s ]]; do sleep 0.1; done", filepath.Base(lock.Name()))
+		script := fmt.Sprintf("while [[ -f %q ]]; do sleep 0.1; done", lock.Name())
 		execArgs := control.ExecArgs{
 			Filename:         "/bin/bash",
 			Argv:             []string{"bash", "-c", script},
@@ -1040,14 +1013,6 @@ func TestCapabilities(t *testing.T) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("sleep", "100")
-
-		// We generate files in the host temporary directory.
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: os.TempDir(),
-			Source:      os.TempDir(),
-			Type:        "bind",
-		})
-
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -1218,7 +1183,7 @@ func TestRunNonRoot(t *testing.T) {
 
 		// User that container runs as can't list '$TMP/blocked' and would fail to
 		// mount it.
-		dir, err := ioutil.TempDir("", "blocked")
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
 		if err != nil {
 			t.Fatalf("ioutil.TempDir() failed: %v", err)
 		}
@@ -1230,15 +1195,8 @@ func TestRunNonRoot(t *testing.T) {
 			t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 		}
 
-		// We generate files in the host temporary directory.
-		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: dir,
-			Source:      dir,
-			Type:        "bind",
-		})
-
 		if err := run(spec, conf); err != nil {
-			t.Fatalf("error running sadbox: %v", err)
+			t.Fatalf("error running sandbox: %v", err)
 		}
 	}
 }
@@ -1249,17 +1207,20 @@ func TestMountNewDir(t *testing.T) {
 	for _, conf := range configs(overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		srcDir := path.Join(os.TempDir(), "src", "newdir", "anotherdir")
+		root, err := ioutil.TempDir(testutil.TmpDir(), "root")
+		if err != nil {
+			t.Fatal("ioutil.TempDir() failed:", err)
+		}
+		if err := os.Chmod(root, 0755); err != nil {
+			t.Fatalf("os.Chmod(%q) failed: %v", root, err)
+		}
+
+		srcDir := path.Join(root, "src", "dir", "anotherdir")
 		if err := os.MkdirAll(srcDir, 0755); err != nil {
 			t.Fatalf("os.MkDir(%q) failed: %v", srcDir, err)
 		}
 
-		// Attempt to remove dir to ensure it doesn't exist.
-		mountDir := path.Join(os.TempDir(), "newdir")
-		if err := os.RemoveAll(mountDir); err != nil {
-			t.Fatalf("os.RemoveAll(%q) failed: %v", mountDir, err)
-		}
-		mountDir = path.Join(mountDir, "anotherdir")
+		mountDir := path.Join(root, "dir", "anotherdir")
 
 		spec := testutil.NewSpecWithArgs("/bin/ls", mountDir)
 		spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -1269,7 +1230,7 @@ func TestMountNewDir(t *testing.T) {
 		})
 
 		if err := run(spec, conf); err != nil {
-			t.Fatalf("error running sadbox: %v", err)
+			t.Fatalf("error running sandbox: %v", err)
 		}
 	}
 }
@@ -1310,13 +1271,13 @@ func TestReadonlyMount(t *testing.T) {
 	for _, conf := range configs(overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		spec := testutil.NewSpecWithArgs("/bin/touch", "/foo/file")
-		dir, err := ioutil.TempDir("", "ro-mount")
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
+		spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
 		if err != nil {
 			t.Fatalf("ioutil.TempDir() failed: %v", err)
 		}
 		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: "/foo",
+			Destination: dir,
 			Source:      dir,
 			Type:        "bind",
 			Options:     []string{"ro"},
@@ -1613,17 +1574,14 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	// the filesystem.
 	spec := testutil.NewSpecWithArgs("sleep", "1000")
 
-	// Mount host temp dir inside the sandbox at '/tmp2'.
-	hostTmpDir, err := ioutil.TempDir("", "root-fs-test")
-	sandboxTmpDir := "/tmp2"
+	// TODO: $TEST_TMPDIR mount is mistakenly marked as RO after
+	// revalidation. Remove when it's fixed.
+	spec.Root.Readonly = false
+
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "root-fs-test")
 	if err != nil {
 		t.Fatalf("TempDir failed: %v", err)
 	}
-	spec.Mounts = append(spec.Mounts, specs.Mount{
-		Type:        "bind",
-		Destination: sandboxTmpDir,
-		Source:      hostTmpDir,
-	})
 
 	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
@@ -1643,105 +1601,103 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	}
 
 	// File that will be used to check consistency inside/outside sandbox.
-	hostFilename := filepath.Join(hostTmpDir, "file")
-	sandboxFilename := filepath.Join(sandboxTmpDir, "file")
+	filename := filepath.Join(dir, "file")
 
 	// File does not exist yet. Reading from the sandbox should fail.
 	execArgsTestFile := control.ExecArgs{
 		Filename: "/usr/bin/test",
-		Argv:     []string{"test", "-f", sandboxFilename},
+		Argv:     []string{"test", "-f", filename},
 	}
 	if ws, err := c.Execute(&execArgsTestFile); err != nil {
-		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", ws.ExitStatus(), err)
 	}
 
 	// Create the file from outside of the sandbox.
-	if err := ioutil.WriteFile(hostFilename, []byte("foobar"), 0777); err != nil {
-		t.Fatalf("error writing to file %q: %v", hostFilename, err)
+	if err := ioutil.WriteFile(filename, []byte("foobar"), 0777); err != nil {
+		t.Fatalf("error writing to file %q: %v", filename, err)
 	}
 
 	// Now we should be able to test the file from within the sandbox.
 	if ws, err := c.Execute(&execArgsTestFile); err != nil {
-		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
-		t.Errorf("test %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+		t.Errorf("test %q exited with code %v, wanted zero", filename, ws.ExitStatus())
 	}
 
 	// Rename the file from outside of the sandbox.
-	newHostFilename := filepath.Join(hostTmpDir, "newfile")
-	newSandboxFilename := filepath.Join(sandboxTmpDir, "newfile")
-	if err := os.Rename(hostFilename, newHostFilename); err != nil {
-		t.Fatalf("os.Rename(%q, %q) failed: %v", hostFilename, newHostFilename, err)
+	newFilename := filepath.Join(dir, "newfile")
+	if err := os.Rename(filename, newFilename); err != nil {
+		t.Fatalf("os.Rename(%q, %q) failed: %v", filename, newFilename, err)
 	}
 
 	// File should no longer exist at the old path within the sandbox.
 	if ws, err := c.Execute(&execArgsTestFile); err != nil {
-		t.Fatalf("unexpected error testing file %q: %v", sandboxFilename, err)
+		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
-		t.Errorf("test %q exited with code %v, wanted not zero", sandboxFilename, ws.ExitStatus())
+		t.Errorf("test %q exited with code %v, wanted not zero", filename, ws.ExitStatus())
 	}
 
 	// We should be able to test the new filename from within the sandbox.
 	execArgsTestNewFile := control.ExecArgs{
 		Filename: "/usr/bin/test",
-		Argv:     []string{"test", "-f", newSandboxFilename},
+		Argv:     []string{"test", "-f", newFilename},
 	}
 	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
-		t.Fatalf("unexpected error testing file %q: %v", newSandboxFilename, err)
+		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() != 0 {
-		t.Errorf("test %q exited with code %v, wanted zero", newSandboxFilename, ws.ExitStatus())
+		t.Errorf("test %q exited with code %v, wanted zero", newFilename, ws.ExitStatus())
 	}
 
 	// Delete the renamed file from outside of the sandbox.
-	if err := os.Remove(newHostFilename); err != nil {
-		t.Fatalf("error removing file %q: %v", hostFilename, err)
+	if err := os.Remove(newFilename); err != nil {
+		t.Fatalf("error removing file %q: %v", filename, err)
 	}
 
 	// Renamed file should no longer exist at the old path within the sandbox.
 	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
-		t.Fatalf("unexpected error testing file %q: %v", newSandboxFilename, err)
+		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() == 0 {
-		t.Errorf("test %q exited with code %v, wanted not zero", newSandboxFilename, ws.ExitStatus())
+		t.Errorf("test %q exited with code %v, wanted not zero", newFilename, ws.ExitStatus())
 	}
 
 	// Now create the file from WITHIN the sandbox.
 	execArgsTouch := control.ExecArgs{
 		Filename: "/usr/bin/touch",
-		Argv:     []string{"touch", sandboxFilename},
+		Argv:     []string{"touch", filename},
 		KUID:     auth.KUID(os.Getuid()),
 		KGID:     auth.KGID(os.Getgid()),
 	}
 	if ws, err := c.Execute(&execArgsTouch); err != nil {
-		t.Fatalf("unexpected error touching file %q: %v", sandboxFilename, err)
+		t.Fatalf("unexpected error touching file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
-		t.Errorf("touch %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+		t.Errorf("touch %q exited with code %v, wanted zero", filename, ws.ExitStatus())
 	}
 
 	// File should exist outside the sandbox.
-	if _, err := os.Stat(hostFilename); err != nil {
-		t.Errorf("stat %q got error %v, wanted nil", hostFilename, err)
+	if _, err := os.Stat(filename); err != nil {
+		t.Errorf("stat %q got error %v, wanted nil", filename, err)
 	}
 
 	// File should exist outside the sandbox.
-	if _, err := os.Stat(hostFilename); err != nil {
-		t.Errorf("stat %q got error %v, wanted nil", hostFilename, err)
+	if _, err := os.Stat(filename); err != nil {
+		t.Errorf("stat %q got error %v, wanted nil", filename, err)
 	}
 
 	// Delete the file from within the sandbox.
 	execArgsRemove := control.ExecArgs{
 		Filename: "/bin/rm",
-		Argv:     []string{"rm", sandboxFilename},
+		Argv:     []string{"rm", filename},
 	}
 	if ws, err := c.Execute(&execArgsRemove); err != nil {
-		t.Fatalf("unexpected error removing file %q: %v", sandboxFilename, err)
+		t.Fatalf("unexpected error removing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
-		t.Errorf("remove %q exited with code %v, wanted zero", sandboxFilename, ws.ExitStatus())
+		t.Errorf("remove %q exited with code %v, wanted zero", filename, ws.ExitStatus())
 	}
 
 	// File should not exist outside the sandbox.
-	if _, err := os.Stat(hostFilename); !os.IsNotExist(err) {
-		t.Errorf("stat %q got error %v, wanted ErrNotExist", hostFilename, err)
+	if _, err := os.Stat(filename); !os.IsNotExist(err) {
+		t.Errorf("stat %q got error %v, wanted ErrNotExist", filename, err)
 	}
 }

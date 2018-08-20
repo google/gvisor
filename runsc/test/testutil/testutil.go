@@ -35,6 +35,16 @@ import (
 // RaceEnabled is set to true if it was built with '--race' option.
 var RaceEnabled = false
 
+// TmpDir returns the absolute path to a writable directory that can be used as
+// scratch by the test.
+func TmpDir() string {
+	dir := os.Getenv("TEST_TMPDIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return dir
+}
+
 // ConfigureExePath configures the executable for runsc in the test environment.
 func ConfigureExePath() error {
 	path, err := FindFile("runsc/runsc")
@@ -102,7 +112,7 @@ func TestConfig() *boot.Config {
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
 // in tests.
 func NewSpecWithArgs(args ...string) *specs.Spec {
-	spec := &specs.Spec{
+	return &specs.Spec{
 		// The host filesystem root is the container root.
 		Root: &specs.Root{
 			Path:     "/",
@@ -114,13 +124,23 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 				"PATH=" + os.Getenv("PATH"),
 			},
 		},
+		Mounts: []specs.Mount{
+			// Root is readonly, but many tests want to write to tmpdir.
+			// This creates a writable mount inside the root. Also, when tmpdir points
+			// to "/tmp", it makes the the actual /tmp to be mounted and not a tmpfs
+			// inside the sentry.
+			specs.Mount{
+				Type:        "bind",
+				Destination: TmpDir(),
+				Source:      TmpDir(),
+			},
+		},
 	}
-	return spec
 }
 
 // SetupRootDir creates a root directory for containers.
 func SetupRootDir() (string, error) {
-	rootDir, err := ioutil.TempDir("", "containers")
+	rootDir, err := ioutil.TempDir(TmpDir(), "containers")
 	if err != nil {
 		return "", fmt.Errorf("error creating root dir: %v", err)
 	}
@@ -141,7 +161,7 @@ func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir str
 // SetupContainerInRoot creates a bundle for the container, generates a test
 // config, and writes the spec to config.json in the bundle dir.
 func SetupContainerInRoot(rootDir string, spec *specs.Spec, conf *boot.Config) (bundleDir string, err error) {
-	bundleDir, err = ioutil.TempDir("", "bundle")
+	bundleDir, err = ioutil.TempDir(TmpDir(), "bundle")
 	if err != nil {
 		return "", fmt.Errorf("error creating bundle dir: %v", err)
 	}

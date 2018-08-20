@@ -377,7 +377,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// outside.
 	addr := boot.ControlSocketAddr(s.ID)
 	fd, err := server.CreateSocket(addr)
-	log.Infof("creating sandbox process with addr: %s", addr)
+	log.Infof("Creating sandbox process with addr: %s", addr[1:]) // skip "\00".
 	if err != nil {
 		return fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
 	}
