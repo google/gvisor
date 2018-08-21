@@ -33,7 +33,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
@@ -123,22 +122,28 @@ func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAdd
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		vs := vv.Views()
-		bs := make([][]byte, 1, 1+len(vs))
-		var length int
+		length := vv.Size()
+		if length > int(e.maxPCAPLen) {
+			length = int(e.maxPCAPLen)
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size()))); err != nil {
+			panic(err)
+		}
 		for _, v := range vs {
-			if length+len(v) > int(e.maxPCAPLen) {
-				l := int(e.maxPCAPLen) - length
-				bs = append(bs, []byte(v)[:l])
-				length += l
+			if length == 0 {
 				break
 			}
-			bs = append(bs, []byte(v))
-			length += len(v)
+			if len(v) > length {
+				v = v[:length]
+			}
+			if _, err := buf.Write([]byte(v)); err != nil {
+				panic(err)
+			}
+			length -= len(v)
 		}
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen))
-		binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(vv.Size())))
-		bs[0] = buf.Bytes()
-		if err := rawfile.NonBlockingWriteN(int(e.file.Fd()), bs...); err != nil {
+		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 	}
@@ -188,21 +193,33 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		LogPacket("send", protocol, hdr.UsedBytes(), payload)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		bs := [][]byte{nil, hdr.UsedBytes(), payload}
-		var length int
-
-		for i, b := range bs[1:] {
-			if rem := int(e.maxPCAPLen) - length; len(b) > rem {
-				b = b[:rem]
-			}
-			bs[i+1] = b
-			length += len(b)
+		hdrBuf := hdr.UsedBytes()
+		length := len(hdrBuf) + len(payload)
+		if length > int(e.maxPCAPLen) {
+			length = int(e.maxPCAPLen)
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen))
-		binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(hdr.UsedLength()+len(payload))))
-		bs[0] = buf.Bytes()
-		if err := rawfile.NonBlockingWriteN(int(e.file.Fd()), bs...); err != nil {
+		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(hdr.UsedLength()+len(payload)))); err != nil {
+			panic(err)
+		}
+		if len(hdrBuf) > length {
+			hdrBuf = hdrBuf[:length]
+		}
+		if _, err := buf.Write(hdrBuf); err != nil {
+			panic(err)
+		}
+		length -= len(hdrBuf)
+		if length > 0 {
+			p := payload
+			if len(p) > length {
+				p = p[:length]
+			}
+			if _, err := buf.Write(p); err != nil {
+				panic(err)
+			}
+		}
+		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 	}
