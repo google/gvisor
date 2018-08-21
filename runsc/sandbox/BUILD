@@ -1,6 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "sandbox",
@@ -27,19 +27,5 @@ go_library(
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@com_github_vishvananda_netlink//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-go_test(
-    name = "sandbox_test",
-    size = "small",
-    srcs = ["sandbox_test.go"],
-    data = [
-        "//runsc",
-    ],
-    embed = [":sandbox"],
-    deps = [
-        "//pkg/log",
-        "//runsc/test/testutil",
     ],
 )

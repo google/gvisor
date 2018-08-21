@@ -40,46 +40,45 @@ import (
 // It is used to start/stop sandbox process (and associated processes like
 // gofers), as well as for running and manipulating containers inside a running
 // sandbox.
+//
+// Note: Sandbox must be immutable because a copy of it is saved for each
+// container and changes would not be synchronized to all of them.
 type Sandbox struct {
-	// ID is the id of the sandbox. By convention, this is the same ID as
-	// the first container run in the sandbox.
+	// ID is the id of the sandbox (immutable). By convention, this is the same
+	// ID as the first container run in the sandbox.
 	ID string `json:"id"`
 
-	// Pid is the pid of the running sandbox. May be 0 is the sandbox is
-	// not running.
+	// Pid is the pid of the running sandbox (immutable). May be 0 is the sandbox
+	// is not running.
 	Pid int `json:"pid"`
-
-	// GoferPid is the pid of the gofer running along side the sandbox. May
-	// be 0 if the gofer has been killed or it's not being used.
-	GoferPid int `json:"goferPid"`
 }
 
 // Create creates the sandbox process.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string) (*Sandbox, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string) (*Sandbox, int, error) {
 	s := &Sandbox{ID: id}
 
 	binPath, err := specutils.BinPath()
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Create the gofer process.
-	ioFiles, err := s.createGoferProcess(spec, conf, bundleDir, binPath)
+	goferPid, ioFiles, err := s.createGoferProcess(spec, conf, bundleDir, binPath)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Create the sandbox process.
 	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, binPath, ioFiles); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Wait for the control server to come up (or timeout).
 	if err := s.waitForCreated(10 * time.Second); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return s, nil
+	return s, goferPid, nil
 }
 
 // StartRoot starts running the root container process inside the sandbox.
@@ -288,10 +287,10 @@ func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
 }
 
-func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir, binPath string) ([]*os.File, error) {
+func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir, binPath string) (int, []*os.File, error) {
 	if conf.FileAccess == boot.FileAccessDirect {
 		// Don't start a gofer. The sandbox will access host FS directly.
-		return nil, nil
+		return 0, nil, nil
 	}
 
 	// Start with the general config flags.
@@ -315,7 +314,7 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	for nextFD = 3; nextFD-3 < mountCount; nextFD++ {
 		sandEnd, goferEnd, err := createSocketPair()
 		if err != nil {
-			return nil, err
+			return 0, nil, err
 		}
 		defer goferEnd.Close()
 		sandEnds = append(sandEnds, sandEnd)
@@ -327,7 +326,7 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	addr := fsgofer.ControlSocketAddr(s.ID)
 	serverFD, err := server.CreateSocket(addr)
 	if err != nil {
-		return nil, fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
+		return 0, nil, fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
 	}
 
 	// Add the control server fd.
@@ -349,11 +348,10 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
 	if err := startInNS(cmd, nss); err != nil {
-		return nil, err
+		return 0, nil, err
 	}
-	s.GoferPid = cmd.Process.Pid
 	log.Infof("Gofer started, pid: %d", cmd.Process.Pid)
-	return sandEnds, nil
+	return cmd.Process.Pid, sandEnds, nil
 }
 
 // createSocketPair creates a pair of files wrapping a socket pair.
@@ -562,23 +560,8 @@ func (s *Sandbox) WaitPID(pid int32, cid string) (syscall.WaitStatus, error) {
 		PID: pid,
 		CID: cid,
 	}
-
 	if err := conn.Call(boot.ContainerWaitPID, args, &ws); err != nil {
 		return ws, fmt.Errorf("error waiting on PID %d in sandbox %q: %v", pid, s.ID, err)
-	}
-
-	if s.IsRootContainer(cid) {
-		// If waiting for the root, give some time for the sandbox process to exit
-		// to prevent races with resources that might still be in use.
-		timeout := time.Now().Add(time.Second)
-		log.Debugf("Waiting for the sandbox process to exit")
-		for s.IsRunning() {
-			if time.Now().After(timeout) {
-				log.Debugf("Timeout waiting for sandbox process to exit")
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
 	}
 	return ws, nil
 }
@@ -602,15 +585,8 @@ func (s *Sandbox) Destroy() error {
 	if s.Pid != 0 {
 		// TODO: Too harsh?
 		log.Debugf("Killing sandbox %q", s.ID)
-		killProcess(s.Pid, unix.SIGKILL)
-		s.Pid = 0
+		signalProcess(s.Pid, unix.SIGKILL)
 	}
-	if s.GoferPid != 0 {
-		log.Debugf("Killing gofer for sandbox %q", s.ID)
-		killProcess(s.GoferPid, unix.SIGKILL)
-		s.GoferPid = 0
-	}
-
 	return nil
 }
 
@@ -689,19 +665,8 @@ func (s *Sandbox) Resume(cid string) error {
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {
 		// Send a signal 0 to the sandbox process.
-		if err := killProcess(s.Pid, 0); err == nil {
-			return true
-		}
-	}
-	if s.GoferPid != 0 {
-		// Send a signal 0 to the gofer process.
-		if err := killProcess(s.GoferPid, 0); err == nil {
-			log.Warningf("Found orphan gofer process, pid: %d", s.GoferPid)
-			// Attempt to kill gofer if it's orphan.
-			killProcess(s.GoferPid, unix.SIGKILL)
-
-			// Don't wait for gofer to die. Return 'running' and hope gofer is dead
-			// next time around.
+		if err := signalProcess(s.Pid, 0); err == nil {
+			// Succeeded, process is running.
 			return true
 		}
 	}
@@ -724,10 +689,10 @@ func (s *Sandbox) Stacks() (string, error) {
 	return stacks, nil
 }
 
-// killProcess sends a signal to the host process (i.e. a sandbox or gofer
+// signalProcess sends a signal to the host process (i.e. a sandbox or gofer
 // process). Sandbox.Signal should be used to send a signal to a process
 // running inside the sandbox.
-func killProcess(pid int, sig syscall.Signal) error {
+func signalProcess(pid int, sig syscall.Signal) error {
 	if err := syscall.Kill(pid, sig); err != nil {
 		return fmt.Errorf("error sending signal %d to pid %d: %v", sig, pid, err)
 	}

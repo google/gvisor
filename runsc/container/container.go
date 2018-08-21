@@ -16,6 +16,7 @@
 package container
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -27,10 +28,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/sandbox"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -89,6 +90,10 @@ type Container struct {
 	// Status is the current container Status.
 	Status Status `json:"status"`
 
+	// GoferPid is the pid of the gofer running along side the sandbox. May
+	// be 0 if the gofer has been killed or it's not being used.
+	GoferPid int `json:"goferPid"`
+
 	// Sandbox is the sandbox this container is running in. It will be nil
 	// if the container is not in state Running or Created.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
@@ -130,12 +135,11 @@ func Load(rootDir, id string) (*Container, error) {
 	// This is inherently racey.
 	if c.Status == Running || c.Status == Created {
 		// Check if the sandbox process is still running.
-		if c.Sandbox.IsRunning() {
+		if c.IsRunning() {
 			// TODO: Send a message into the sandbox to
 			// see if this particular container is still running.
 		} else {
-			// Sandbox no longer exists, so this container
-			// definitely does not exist.
+			// Sandbox no longer exists, so this container definitely does not exist.
 			c.Status = Stopped
 			c.Sandbox = nil
 		}
@@ -221,12 +225,13 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		log.Debugf("Creating new sandbox for container %q", id)
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
-		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
+		s, goferPid, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
 		if err != nil {
 			c.Destroy()
 			return nil, err
 		}
 		c.Sandbox = s
+		c.GoferPid = goferPid
 	} else {
 		// This is sort of confusing. For a sandbox with a root
 		// container and a child container in it, runsc sees:
@@ -398,7 +403,18 @@ func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 	if c.Status == Stopped {
 		return 0, fmt.Errorf("container is stopped")
 	}
-	return c.Sandbox.WaitPID(pid, c.ID)
+	ws, err := c.Sandbox.WaitPID(pid, c.ID)
+	if err != nil {
+		return 0, err
+	}
+	if c.Sandbox.IsRootContainer(c.ID) {
+		// If waiting for the root, give some time for the sandbox process to exit
+		// to prevent races with resources that might still be in use.
+		if err := c.waitForStopped(); err != nil {
+			return 0, err
+		}
+	}
+	return ws, nil
 }
 
 // Signal sends the signal to the container.
@@ -502,6 +518,14 @@ func (c *Container) Destroy() error {
 			log.Warningf("Failed to destroy sandbox %q: %v", c.Sandbox.ID, err)
 		}
 	}
+	if c.GoferPid != 0 {
+		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
+		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+			log.Warningf("error sending signal %d to pid %d: %v", syscall.SIGKILL, c.GoferPid, err)
+		} else {
+			c.GoferPid = 0
+		}
+	}
 
 	c.Sandbox = nil
 	c.Status = Stopped
@@ -509,29 +533,38 @@ func (c *Container) Destroy() error {
 	return nil
 }
 
+// IsRunning returns true if the sandbox or gofer process is running.
+func (c *Container) IsRunning() bool {
+	if c.Status == Stopped {
+		return false
+	}
+	if c.Sandbox != nil && c.Sandbox.IsRunning() {
+		return true
+	}
+	if c.GoferPid != 0 {
+		// Send a signal 0 to the gofer process.
+		if err := syscall.Kill(c.GoferPid, 0); err == nil {
+			log.Warningf("Found orphan gofer process, pid: %d", c.GoferPid)
+			// Attempt to kill gofer if it's orphan.
+			syscall.Kill(c.GoferPid, syscall.SIGKILL)
+
+			// Don't wait for gofer to die. Return 'running' and hope gofer is dead
+			// next time around.
+			return true
+		}
+	}
+	return false
+}
+
 // DestroyAndWait frees all resources associated with the container
 // and waits for destroy to finish before returning.
+//
+// TODO: This only works for single container.
 func (c *Container) DestroyAndWait() error {
-	sandboxPid := c.Sandbox.Pid
-	goferPid := c.Sandbox.GoferPid
-
 	if err := c.Destroy(); err != nil {
 		return fmt.Errorf("error destroying container %v: %v", c, err)
 	}
-
-	if sandboxPid != 0 {
-		if err := waitForDeath(sandboxPid, 5*time.Second); err != nil {
-			return fmt.Errorf("error waiting for sandbox death: %v", err)
-		}
-	}
-
-	if goferPid != 0 {
-		if err := waitForDeath(goferPid, 5*time.Second); err != nil {
-			return fmt.Errorf("error waiting for gofer death: %v", err)
-		}
-	}
-
-	return nil
+	return c.waitForStopped()
 }
 
 // save saves the container metadata to a file.
@@ -551,29 +584,15 @@ func (c *Container) save() error {
 	return nil
 }
 
-// waitForDeath ensures that process is dead before proceeding.
-//
-// This is racy because the kernel can potentially reuse the pid in the time
-// between the process' death and the first check after the process has ended.
-func waitForDeath(pid int, timeout time.Duration) error {
-	backoff := 1 * time.Millisecond
-	for start := time.Now(); time.Now().Sub(start) < timeout; {
-
-		if err := syscall.Kill(pid, 0); err != nil {
-			if err == syserror.ESRCH {
-				// pid does not exist so process must have died
-				return nil
-			}
-			return fmt.Errorf("error killing pid (%d): %v", pid, err)
+func (c *Container) waitForStopped() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+	op := func() error {
+		if !c.IsRunning() {
+			return fmt.Errorf("container is still running")
 		}
-		// pid is still alive.
-
-		// Process continues to run, backoff and retry.
-		time.Sleep(backoff)
-		backoff *= 2
-		if backoff > 1*time.Second {
-			backoff = 1 * time.Second
-		}
+		return nil
 	}
-	return fmt.Errorf("timed out waiting for process (%d)", pid)
+	return backoff.Retry(op, b)
 }

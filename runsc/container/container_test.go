@@ -350,7 +350,7 @@ func TestLifecycle(t *testing.T) {
 		// ourselves.
 		p, _ := os.FindProcess(s.Sandbox.Pid)
 		p.Wait()
-		g, _ := os.FindProcess(s.Sandbox.GoferPid)
+		g, _ := os.FindProcess(s.GoferPid)
 		g.Wait()
 
 		// Load the container from disk and check the status.
@@ -1699,5 +1699,50 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	// File should not exist outside the sandbox.
 	if _, err := os.Stat(filename); !os.IsNotExist(err) {
 		t.Errorf("stat %q got error %v, wanted ErrNotExist", filename, err)
+	}
+}
+
+func TestGoferExits(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create and start the container.
+	c, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	sandboxProc, err := os.FindProcess(c.Sandbox.Pid)
+	if err != nil {
+		t.Fatalf("error finding sandbox process: %v", err)
+	}
+	gofer, err := os.FindProcess(c.GoferPid)
+	if err != nil {
+		t.Fatalf("error finding sandbox process: %v", err)
+	}
+
+	// Kill sandbox and expect gofer to exit on its own.
+	if err := sandboxProc.Kill(); err != nil {
+		t.Fatalf("error killing sandbox process: %v", err)
+	}
+	if _, err := sandboxProc.Wait(); err != nil {
+		t.Fatalf("error waiting for sandbox process: %v", err)
+	}
+
+	if _, err := gofer.Wait(); err != nil {
+		t.Fatalf("error waiting for gofer process: %v", err)
+	}
+	if c.IsRunning() {
+		t.Errorf("container shouldn't be running, container: %+v", c)
 	}
 }
