@@ -568,12 +568,18 @@ func (t *Task) Value(key interface{}) interface{} {
 	case CtxPIDNamespace:
 		return t.tg.pidns
 	case CtxUTSNamespace:
+		t.mu.Lock()
+		defer t.mu.Unlock()
 		return t.utsns
 	case CtxIPCNamespace:
+		t.mu.Lock()
+		defer t.mu.Unlock()
 		return t.ipcns
 	case CtxTask:
 		return t
 	case auth.CtxCredentials:
+		t.mu.Lock()
+		defer t.mu.Unlock()
 		return t.creds
 	case context.CtxThreadGroupID:
 		return int32(t.ThreadGroup().ID())
