@@ -35,21 +35,21 @@ var BigEndian = binary.BigEndian
 
 // AppendUint16 appends the binary representation of a uint16 to buf.
 func AppendUint16(buf []byte, order binary.ByteOrder, num uint16) []byte {
-	buf = extendZero(2, buf)
+	buf = append(buf, make([]byte, 2)...)
 	order.PutUint16(buf[len(buf)-2:], num)
 	return buf
 }
 
 // AppendUint32 appends the binary representation of a uint32 to buf.
 func AppendUint32(buf []byte, order binary.ByteOrder, num uint32) []byte {
-	buf = extendZero(4, buf)
+	buf = append(buf, make([]byte, 4)...)
 	order.PutUint32(buf[len(buf)-4:], num)
 	return buf
 }
 
 // AppendUint64 appends the binary representation of a uint64 to buf.
 func AppendUint64(buf []byte, order binary.ByteOrder, num uint64) []byte {
-	buf = extendZero(8, buf)
+	buf = append(buf, make([]byte, 8)...)
 	order.PutUint64(buf[len(buf)-8:], num)
 	return buf
 }
@@ -202,13 +202,6 @@ func sizeof(data reflect.Value) uintptr {
 	default:
 		panic("invalid type: " + data.Type().String())
 	}
-}
-
-func extendZero(amount uintptr, buf []byte) []byte {
-	for i := uintptr(0); i < amount; i++ {
-		buf = append(buf, 0)
-	}
-	return buf
 }
 
 // ReadUint16 reads a uint16 from r.
