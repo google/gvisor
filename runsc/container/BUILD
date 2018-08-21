@@ -39,6 +39,7 @@ go_test(
         ":uds_test_app",
         "//runsc",
     ],
+    embed = [":container"],
     tags = [
         "requires-kvm",
     ],
@@ -49,7 +50,6 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/unet",
         "//runsc/boot",
-        "//runsc/container",
         "//runsc/specutils",
         "//runsc/test/testutil",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
