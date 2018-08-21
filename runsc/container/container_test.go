@@ -213,8 +213,10 @@ const (
 	nonExclusiveFS
 )
 
-var all = []configOption{overlay, kvm, nonExclusiveFS}
-var noOverlay = []configOption{kvm, nonExclusiveFS}
+// TODO: nonExclusiveFS was removed because it causes timeout
+// with --race. Put it back when bug is fixed.
+var all = []configOption{overlay, kvm}
+var noOverlay = []configOption{kvm}
 
 // configs generates different configurations to run tests.
 func configs(opts ...configOption) []*boot.Config {
@@ -557,10 +559,7 @@ func TestExec(t *testing.T) {
 // be the next consecutive number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	//
-	// TODO: Skip nonExclusiveFS because $TEST_TMPDIR mount is
-	// mistakenly marked as RO after revalidation.
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
@@ -711,10 +710,7 @@ func TestUnixDomainSockets(t *testing.T) {
 	)
 
 	// Skip overlay because test requires writing to host file.
-	//
-	// TODO: Skip nonExclusiveFS because $TEST_TMPDIR mount is
-	// mistakenly marked as RO after revalidation.
-	for _, conf := range configs(kvm) {
+	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "uds-test")
