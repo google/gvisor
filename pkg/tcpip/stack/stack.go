@@ -469,6 +469,13 @@ func (s *Stack) SetRouteTable(table []tcpip.Route) {
 	s.routeTable = table
 }
 
+// GetRouteTable returns the route table which is currently in use.
+func (s *Stack) GetRouteTable() []tcpip.Route {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]tcpip.Route(nil), s.routeTable...)
+}
+
 // NewEndpoint creates a new transport layer endpoint of the given protocol.
 func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	t, ok := s.transportProtocols[transport]
