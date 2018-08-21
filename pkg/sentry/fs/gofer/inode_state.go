@@ -108,9 +108,13 @@ func (i *inodeFileState) loadLoading(_ struct{}) {
 
 // afterLoad is invoked by stateify.
 func (i *inodeFileState) afterLoad() {
-	load := func() error {
+	load := func() (err error) {
 		// See comment on i.loading().
-		defer i.loading.Unlock()
+		defer func() {
+			if err == nil {
+				i.loading.Unlock()
+			}
+		}()
 
 		// Manually restore the p9.File.
 		name, ok := i.s.inodeMappings[i.sattr.InodeID]
@@ -121,7 +125,6 @@ func (i *inodeFileState) afterLoad() {
 		}
 		// TODO: Context is not plumbed to save/restore.
 		ctx := &dummyClockContext{context.Background()}
-		var err error
 
 		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
 		if err != nil {
