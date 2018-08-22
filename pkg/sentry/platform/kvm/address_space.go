@@ -273,6 +273,9 @@ func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 			Start: addr,
 			End:   addr + usermem.Addr(length),
 		})
+
+		// Recycle any freed intermediate pages.
+		as.pageTables.Allocator.Recycle()
 	}
 }
 

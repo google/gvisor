@@ -67,3 +67,10 @@ func (a allocator) LookupPTEs(physical uintptr) *pagetables.PTEs {
 func (a allocator) FreePTEs(ptes *pagetables.PTEs) {
 	a.base.FreePTEs(ptes)
 }
+
+// Recycle implements pagetables.Allocator.Recycle.
+//
+//go:nosplit
+func (a allocator) Recycle() {
+	a.base.Recycle()
+}

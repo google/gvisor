@@ -27,8 +27,12 @@ type Allocator interface {
 	// LookupPTEs looks up PTEs by physical address.
 	LookupPTEs(physical uintptr) *PTEs
 
-	// FreePTEs frees a set of PTEs.
+	// FreePTEs marks a set of PTEs a freed, although they may not be available
+	// for use again until Recycle is called, below.
 	FreePTEs(ptes *PTEs)
+
+	// Recycle makes freed PTEs available for use again.
+	Recycle()
 }
 
 // RuntimeAllocator is a trivial allocator.
@@ -42,6 +46,9 @@ type RuntimeAllocator struct {
 
 	// pool is the set of free-to-use PTEs.
 	pool []*PTEs
+
+	// freed is the set of recently-freed PTEs.
+	freed []*PTEs
 }
 
 // NewRuntimeAllocator returns an allocator that uses runtime allocation.
@@ -51,8 +58,15 @@ func NewRuntimeAllocator() *RuntimeAllocator {
 	}
 }
 
+// Recycle returns freed pages to the pool.
+func (r *RuntimeAllocator) Recycle() {
+	r.pool = append(r.pool, r.freed...)
+	r.freed = r.freed[:0]
+}
+
 // Drain empties the pool.
 func (r *RuntimeAllocator) Drain() {
+	r.Recycle()
 	for i, ptes := range r.pool {
 		// Zap the entry in the underlying array to ensure that it can
 		// be properly garbage collected.
@@ -104,6 +118,5 @@ func (r *RuntimeAllocator) LookupPTEs(physical uintptr) *PTEs {
 //
 //go:nosplit
 func (r *RuntimeAllocator) FreePTEs(ptes *PTEs) {
-	// Add to the pool.
-	r.pool = append(r.pool, ptes)
+	r.freed = append(r.freed, ptes)
 }
