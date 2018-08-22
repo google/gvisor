@@ -398,7 +398,18 @@ func (d *Dirent) MountRoot() *Dirent {
 	return mountRoot
 }
 
-func (d *Dirent) freeze() {
+// Freeze prevents this dirent from walking to more nodes. Freeze is applied
+// recursively to all children.
+//
+// If this particular Dirent represents a Virtual node, then Walks and Creates
+// may proceed as before.
+//
+// Freeze can only be called before the application starts running, otherwise
+// the root it might be out of sync with the application root if modified by
+// sys_chroot.
+func (d *Dirent) Freeze() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.frozen {
 		// Already frozen.
 		return
@@ -417,21 +428,6 @@ func (d *Dirent) freeze() {
 
 	// Drop all expired weak references.
 	d.flush()
-}
-
-// Freeze prevents this dirent from walking to more nodes. Freeze is applied
-// recursively to all children.
-//
-// If this particular Dirent represents a Virtual node, then Walks and Creates
-// may proceed as before.
-//
-// Freeze can only be called before the application starts running, otherwise
-// the root it might be out of sync with the application root if modified by
-// sys_chroot.
-func (d *Dirent) Freeze() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.freeze()
 }
 
 // descendantOf returns true if the receiver dirent is equal to, or a
@@ -1586,7 +1582,9 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// reasons, so we flush all references on the replaced node and
 		// its children.
 		replaced.Inode.Watches.Unpin(replaced)
+		replaced.mu.Lock()
 		replaced.flush()
+		replaced.mu.Unlock()
 	}
 
 	if err := renamed.Inode.Rename(ctx, oldParent, renamed, newParent, newName); err != nil {
@@ -1637,7 +1635,9 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	renamed.dropExtendedReference()
 
 	// Same as replaced.flush above.
+	renamed.mu.Lock()
 	renamed.flush()
+	renamed.mu.Unlock()
 
 	return nil
 }
