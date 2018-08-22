@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build linux
+
 // Package fdbased provides the implemention of data-link layer endpoints
 // backed by boundary-preserving file descriptors (e.g., TUN devices,
 // seqpacket/datagram sockets).

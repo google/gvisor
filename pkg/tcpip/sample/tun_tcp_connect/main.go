@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build linux
+
 // This sample creates a stack with TCP and IPv4 protocols on top of a TUN
 // device, and connects to a peer. Similar to "nc <address> <port>". While the
 // sample is running, attempts to connect to its IPv4 address will result in

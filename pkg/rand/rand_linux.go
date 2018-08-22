@@ -12,18 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !linux
-
 // Package rand implements a cryptographically secure pseudorandom number
 // generator.
 package rand
 
-import "crypto/rand"
+import (
+	"io"
 
-// Reader is the default reader.
-var Reader = rand.Reader
+	"golang.org/x/sys/unix"
+)
+
+// reader implements an io.Reader that returns pseudorandom bytes.
+type reader struct{}
 
 // Read implements io.Reader.Read.
+func (reader) Read(p []byte) (int, error) {
+	return unix.Getrandom(p, 0)
+}
+
+// Reader is the default reader.
+var Reader io.Reader = reader{}
+
+// Read reads from the default reader.
 func Read(b []byte) (int, error) {
-	return rand.Read(b)
+	return io.ReadFull(Reader, b)
 }
