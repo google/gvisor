@@ -655,6 +655,9 @@ func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace
 		// Start in the interpreter.
 		// N.B. AT_ENTRY above contains the *original* entry point.
 		bin.entry = interp.entry
+	} else {
+		// Always add AT_BASE even if there is no interpreter.
+		bin.auxv = append(bin.auxv, arch.AuxEntry{linux.AT_BASE, 0})
 	}
 
 	return bin, ac, nil
