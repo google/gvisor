@@ -67,7 +67,7 @@ func (i *inodeFileState) beforeSave() {
 	if i.sattr.Type == fs.RegularFile {
 		uattr, err := i.unstableAttr(&dummyClockContext{context.Background()})
 		if err != nil {
-			panic(fmt.Sprintf("failed to get unstable atttribute of %s: %v", i.s.inodeMappings[i.sattr.InodeID], err))
+			panic(fs.ErrSaveRejection{fmt.Errorf("failed to get unstable atttribute of %s: %v", i.s.inodeMappings[i.sattr.InodeID], err)})
 		}
 		i.savedUAttr = &uattr
 	}
@@ -128,7 +128,7 @@ func (i *inodeFileState) afterLoad() {
 
 		_, i.file, err = i.s.attach.walk(ctx, splitAbsolutePath(name))
 		if err != nil {
-			return fmt.Errorf("failed to walk to %q: %v", name, err)
+			return fs.ErrCorruption{fmt.Errorf("failed to walk to %q: %v", name, err)}
 		}
 
 		// Remap the saved inode number into the gofer device using the
@@ -136,7 +136,7 @@ func (i *inodeFileState) afterLoad() {
 		// environment.
 		qid, mask, attrs, err := i.file.getAttr(ctx, p9.AttrMaskAll())
 		if err != nil {
-			return fmt.Errorf("failed to get file attributes of %s: %v", name, err)
+			return fs.ErrCorruption{fmt.Errorf("failed to get file attributes of %s: %v", name, err)}
 		}
 		if !mask.RDev {
 			return fs.ErrCorruption{fmt.Errorf("file %s lacks device", name)}

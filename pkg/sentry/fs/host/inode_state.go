@@ -31,7 +31,7 @@ func (i *inodeFileState) beforeSave() {
 	if !i.descriptor.donated && i.sattr.Type == fs.RegularFile {
 		uattr, err := i.unstableAttr(context.Background())
 		if err != nil {
-			panic(fmt.Sprintf("failed to get unstable atttribute of %s: %v", i.mops.inodeMappings[i.sattr.InodeID], err))
+			panic(fs.ErrSaveRejection{fmt.Errorf("failed to get unstable atttribute of %s: %v", i.mops.inodeMappings[i.sattr.InodeID], err)})
 		}
 		i.savedUAttr = &uattr
 	}
@@ -47,7 +47,7 @@ func (i *inodeFileState) afterLoad() {
 	// Remap the inode number.
 	var s syscall.Stat_t
 	if err := syscall.Fstat(i.FD(), &s); err != nil {
-		panic(fmt.Sprintf("failed to get metadata for fd %d: %v", i.FD(), err))
+		panic(fs.ErrCorruption{fmt.Errorf("failed to get metadata for fd %d: %v", i.FD(), err)})
 	}
 	key := device.MultiDeviceKey{
 		Device: s.Dev,
