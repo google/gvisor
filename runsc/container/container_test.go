@@ -704,22 +704,20 @@ func TestCheckpointRestore(t *testing.T) {
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
-	const (
-		output = "uds_output"
-		socket = "uds_socket"
-	)
-
 	// Skip overlay because test requires writing to host file.
 	for _, conf := range configs(noOverlay...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		dir, err := ioutil.TempDir(testutil.TmpDir(), "uds-test")
+		// UDS path is limited to 108 chars for compatibility with older systems.
+		// Use '/tmp' (instead of testutil.TmpDir) to to ensure the size limit is
+		// not exceeded. Assumes '/tmp' exists in the system.
+		dir, err := ioutil.TempDir("/tmp", "uds-test")
 		if err != nil {
 			t.Fatalf("ioutil.TempDir failed: %v", err)
 		}
 		defer os.RemoveAll(dir)
 
-		outputPath := filepath.Join(dir, output)
+		outputPath := filepath.Join(dir, "uds_output")
 		outputFile, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0666)
 		if err != nil {
 			t.Fatalf("error creating output file: %v", err)
@@ -731,13 +729,20 @@ func TestUnixDomainSockets(t *testing.T) {
 			t.Fatal("error finding uds_test_app:", err)
 		}
 
-		socketPath := filepath.Join(dir, socket)
+		socketPath := filepath.Join(dir, "uds_socket")
 		defer os.Remove(socketPath)
 
 		spec := testutil.NewSpecWithArgs(app, "--file", outputPath, "--socket", socketPath)
 		spec.Process.User = specs.User{
 			UID: uint32(os.Getuid()),
 			GID: uint32(os.Getgid()),
+		}
+		spec.Mounts = []specs.Mount{
+			specs.Mount{
+				Type:        "bind",
+				Destination: "/tmp",
+				Source:      "/tmp",
+			},
 		}
 
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
