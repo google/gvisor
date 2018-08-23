@@ -396,6 +396,10 @@ func (tg *ThreadGroup) SendTimerSignal(info *arch.SignalInfo, includeSys bool) e
 }
 
 func (t *Task) sendSignalLocked(info *arch.SignalInfo, group bool) error {
+	return t.sendSignalTimerLocked(info, group, nil)
+}
+
+func (t *Task) sendSignalTimerLocked(info *arch.SignalInfo, group bool, timer *IntervalTimer) error {
 	if t.exitState == TaskExitDead {
 		return syserror.ESRCH
 	}
@@ -429,6 +433,9 @@ func (t *Task) sendSignalLocked(info *arch.SignalInfo, group bool) error {
 	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
 	if linux.SignalSetOf(sig)&t.tr.SignalMask == 0 && ignored && !t.hasTracer() {
 		t.Debugf("Discarding ignored signal %d", sig)
+		if timer != nil {
+			timer.signalRejectedLocked()
+		}
 		return nil
 	}
 
@@ -436,11 +443,14 @@ func (t *Task) sendSignalLocked(info *arch.SignalInfo, group bool) error {
 	if group {
 		q = &t.tg.pendingSignals
 	}
-	if !q.enqueue(info) {
+	if !q.enqueue(info, timer) {
 		if sig.IsRealtime() {
 			return syserror.EAGAIN
 		}
 		t.Debugf("Discarding duplicate signal %d", sig)
+		if timer != nil {
+			timer.signalRejectedLocked()
+		}
 		return nil
 	}
 

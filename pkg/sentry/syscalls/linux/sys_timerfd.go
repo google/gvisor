@@ -85,28 +85,18 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	if _, err := t.CopyIn(newValAddr, &newVal); err != nil {
 		return 0, nil, err
 	}
-	var s ktime.Setting
-	var err error
-	if flags&linux.TFD_TIMER_ABSTIME != 0 {
-		s, err = ktime.SettingFromAbsSpec(ktime.FromTimespec(newVal.Value),
-			newVal.Interval.ToDuration())
-	} else {
-		s, err = ktime.SettingFromSpec(newVal.Value.ToDuration(),
-			newVal.Interval.ToDuration(), tf.Clock())
-	}
+	newS, err := ktime.SettingFromItimerspec(newVal, flags&linux.TFD_TIMER_ABSTIME != 0, tf.Clock())
 	if err != nil {
 		return 0, nil, err
 	}
-	valueNS, intervalNS := ktime.SpecFromSetting(tf.SetTime(s))
-	if oldValAddr == 0 {
-		return 0, nil, nil
+	tm, oldS := tf.SetTime(newS)
+	if oldValAddr != 0 {
+		oldVal := ktime.ItimerspecFromSetting(tm, oldS)
+		if _, err := t.CopyOut(oldValAddr, &oldVal); err != nil {
+			return 0, nil, err
+		}
 	}
-	oldVal := linux.Itimerspec{
-		Interval: linux.DurationToTimespec(intervalNS),
-		Value:    linux.DurationToTimespec(valueNS),
-	}
-	_, err = t.CopyOut(oldValAddr, &oldVal)
-	return 0, nil, err
+	return 0, nil, nil
 }
 
 // TimerfdGettime implements Linux syscall timerfd_gettime(2).
@@ -125,11 +115,8 @@ func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		return 0, nil, syserror.EINVAL
 	}
 
-	valueNS, intervalNS := ktime.SpecFromSetting(tf.GetTime())
-	curVal := linux.Itimerspec{
-		Interval: linux.DurationToTimespec(intervalNS),
-		Value:    linux.DurationToTimespec(valueNS),
-	}
+	tm, s := tf.GetTime()
+	curVal := ktime.ItimerspecFromSetting(tm, s)
 	_, err := t.CopyOut(curValAddr, &curVal)
 	return 0, nil, err
 }

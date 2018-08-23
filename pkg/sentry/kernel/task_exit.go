@@ -129,7 +129,7 @@ func (t *Task) killLocked() {
 		// enqueueing an actual siginfo, such that
 		// kernel/signal.c:collect_signal() initializes si_code to SI_USER.
 		Code: arch.SignalInfoUser,
-	})
+	}, nil)
 	t.interrupt()
 }
 

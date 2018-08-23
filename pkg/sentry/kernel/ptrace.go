@@ -627,7 +627,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 			// running, so we don't have to.
 			child.pendingSignals.enqueue(&arch.SignalInfo{
 				Signo: int32(linux.SIGSTOP),
-			})
+			}, nil)
 			child.tg.signalHandlers.mu.Unlock()
 		}
 	}

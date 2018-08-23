@@ -320,8 +320,8 @@ func SettingFromSpec(value time.Duration, interval time.Duration, c Clock) (Sett
 	}, nil
 }
 
-// SettingFromAbsSpec converts a (value, interval) pair to a Setting based on a
-// reading from c. value is interpreted as an absolute time.
+// SettingFromAbsSpec converts a (value, interval) pair to a Setting. value is
+// interpreted as an absolute time.
 func SettingFromAbsSpec(value Time, interval time.Duration) (Setting, error) {
 	if value.Before(ZeroTime) {
 		return Setting{}, syserror.EINVAL
@@ -336,6 +336,16 @@ func SettingFromAbsSpec(value Time, interval time.Duration) (Setting, error) {
 	}, nil
 }
 
+// SettingFromItimerspec converts a linux.Itimerspec to a Setting. If abs is
+// true, its.Value is interpreted as an absolute time. Otherwise, it is
+// interpreted as a time relative to c.Now().
+func SettingFromItimerspec(its linux.Itimerspec, abs bool, c Clock) (Setting, error) {
+	if abs {
+		return SettingFromAbsSpec(FromTimespec(its.Value), its.Interval.ToDuration())
+	}
+	return SettingFromSpec(its.Value.ToDuration(), its.Interval.ToDuration(), c)
+}
+
 // SpecFromSetting converts a timestamp and a Setting to a (relative value,
 // interval) pair, as used by most Linux syscalls that return a struct
 // itimerval or struct itimerspec.
@@ -344,6 +354,15 @@ func SpecFromSetting(now Time, s Setting) (value, period time.Duration) {
 		return 0, s.Period
 	}
 	return s.Next.Sub(now), s.Period
+}
+
+// ItimerspecFromSetting converts a Setting to a linux.Itimerspec.
+func ItimerspecFromSetting(now Time, s Setting) linux.Itimerspec {
+	val, iv := SpecFromSetting(now, s)
+	return linux.Itimerspec{
+		Interval: linux.DurationToTimespec(iv),
+		Value:    linux.DurationToTimespec(val),
+	}
 }
 
 // advancedTo returns an updated Setting and a number of expirations after

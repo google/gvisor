@@ -143,6 +143,22 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 		oldTID = tracer.tg.pidns.tids[t]
 	}
 	t.promoteLocked()
+	// "POSIX timers are not preserved (timer_create(2))." - execve(2). Handle
+	// this first since POSIX timers are protected by the signal mutex, which
+	// we're about to change. Note that we have to stop and destroy timers
+	// without holding any mutexes to avoid circular lock ordering.
+	var its []*IntervalTimer
+	t.tg.signalHandlers.mu.Lock()
+	for _, it := range t.tg.timers {
+		its = append(its, it)
+	}
+	t.tg.timers = make(map[linux.TimerID]*IntervalTimer)
+	t.tg.signalHandlers.mu.Unlock()
+	t.tg.pidns.owner.mu.Unlock()
+	for _, it := range its {
+		it.DestroyTimer()
+	}
+	t.tg.pidns.owner.mu.Lock()
 	// "During an execve(2), the dispositions of handled signals are reset to
 	// the default; the dispositions of ignored signals are left unchanged. ...
 	// [The] signal mask is preserved across execve(2). ... [The] pending

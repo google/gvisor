@@ -209,3 +209,23 @@ const (
 	// POLL_HUP indicates that a device disconnected.
 	POLL_HUP = SI_POLL | 6
 )
+
+// Sigevent represents struct sigevent.
+type Sigevent struct {
+	Value  uint64 // union sigval {int, void*}
+	Signo  int32
+	Notify int32
+
+	// struct sigevent here contains 48-byte union _sigev_un. However, only
+	// member _tid is significant to the kernel.
+	Tid         int32
+	UnRemainder [44]byte
+}
+
+// Possible values for Sigevent.Notify, aka struct sigevent::sigev_notify.
+const (
+	SIGEV_SIGNAL    = 0
+	SIGEV_NONE      = 1
+	SIGEV_THREAD    = 2
+	SIGEV_THREAD_ID = 4
+)

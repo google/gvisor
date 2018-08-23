@@ -19,9 +19,11 @@
 // Lock order (outermost locks must be taken first):
 //
 // Kernel.extMu
-//   TaskSet.mu
-//     SignalHandlers.mu
-//       Task.mu
+//   ThreadGroup.timerMu
+//     ktime.Timer.mu (for IntervalTimer)
+//       TaskSet.mu
+//         SignalHandlers.mu
+//           Task.mu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
@@ -706,8 +708,12 @@ func (k *Kernel) pauseTimeLocked() {
 		if t == t.tg.leader {
 			t.tg.tm.pause()
 		}
-		// This means we'll iterate FDMaps shared by multiple tasks repeatedly,
-		// but ktime.Timer.Pause is idempotent so this is harmless.
+		// This means we'll iterate ThreadGroups and FDMaps shared by multiple
+		// tasks repeatedly, but ktime.Timer.Pause is idempotent so this is
+		// harmless.
+		for _, it := range t.tg.timers {
+			it.PauseTimer()
+		}
 		if fdm := t.tr.FDMap; fdm != nil {
 			for _, desc := range fdm.files {
 				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
@@ -734,6 +740,9 @@ func (k *Kernel) resumeTimeLocked() {
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
 			t.tg.tm.resume()
+		}
+		for _, it := range t.tg.timers {
+			it.ResumeTimer()
 		}
 		if fdm := t.tr.FDMap; fdm != nil {
 			for _, desc := range fdm.files {

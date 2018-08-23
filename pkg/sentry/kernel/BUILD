@@ -71,6 +71,7 @@ go_library(
         "pending_signals.go",
         "pending_signals_list.go",
         "pending_signals_state.go",
+        "posixtimer.go",
         "process_group_list.go",
         "ptrace.go",
         "rseq.go",
@@ -114,7 +115,6 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel",
     imports = [
         "gvisor.googlesource.com/gvisor/pkg/bpf",
-        "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
         "gvisor.googlesource.com/gvisor/pkg/tcpip",
     ],
     visibility = ["//:sandbox"],

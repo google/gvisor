@@ -155,6 +155,14 @@ type ThreadGroup struct {
 	// tm contains process timers. TimerManager fields are immutable.
 	tm TimerManager
 
+	// timers is the thread group's POSIX interval timers. nextTimerID is the
+	// TimerID at which allocation should begin searching for an unused ID.
+	//
+	// timers and nextTimerID are protected by timerMu.
+	timerMu     sync.Mutex `state:"nosave"`
+	timers      map[linux.TimerID]*IntervalTimer
+	nextTimerID linux.TimerID
+
 	// exitedCPUStats is the CPU usage for all exited tasks in the thread
 	// group. exitedCPUStats is protected by the TaskSet mutex.
 	exitedCPUStats usage.CPUStats
@@ -218,6 +226,7 @@ func NewThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminationSignal linu
 		limits:            limits,
 	}
 	tg.tm = newTimerManager(tg, monotonicClock)
+	tg.timers = make(map[linux.TimerID]*IntervalTimer)
 	tg.rscr.Store(&RSEQCriticalRegion{})
 	return tg
 }
@@ -252,9 +261,23 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 
 // release releases the thread group's resources.
 func (tg *ThreadGroup) release() {
-	// This must be done without holding the TaskSet mutex since thread group
-	// timers call SendSignal with Timer.mu locked.
+	// These must be done without holding the TaskSet or signal mutexes since
+	// timers send signals with Timer.mu locked.
+
 	tg.tm.destroy()
+
+	var its []*IntervalTimer
+	tg.pidns.owner.mu.Lock()
+	tg.signalHandlers.mu.Lock()
+	for _, it := range tg.timers {
+		its = append(its, it)
+	}
+	tg.timers = make(map[linux.TimerID]*IntervalTimer) // nil maps can't be saved
+	tg.signalHandlers.mu.Unlock()
+	tg.pidns.owner.mu.Unlock()
+	for _, it := range its {
+		it.DestroyTimer()
+	}
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.

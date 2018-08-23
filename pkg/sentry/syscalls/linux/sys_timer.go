@@ -166,3 +166,88 @@ func Alarm(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	return uintptr(sec), nil, nil
 }
+
+// TimerCreate implements linux syscall timer_create(2).
+func TimerCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	clockID := args[0].Int()
+	sevp := args[1].Pointer()
+	timerIDp := args[2].Pointer()
+
+	c, err := getClock(t, clockID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	var sev *linux.Sigevent
+	if sevp != 0 {
+		sev = &linux.Sigevent{}
+		if _, err = t.CopyIn(sevp, sev); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	id, err := t.IntervalTimerCreate(c, sev)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if _, err := t.CopyOut(timerIDp, &id); err != nil {
+		t.IntervalTimerDelete(id)
+		return 0, nil, err
+	}
+
+	return uintptr(id), nil, nil
+}
+
+// TimerSettime implements linux syscall timer_settime(2).
+func TimerSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	timerID := linux.TimerID(args[0].Value)
+	flags := args[1].Int()
+	newValAddr := args[2].Pointer()
+	oldValAddr := args[3].Pointer()
+
+	var newVal linux.Itimerspec
+	if _, err := t.CopyIn(newValAddr, &newVal); err != nil {
+		return 0, nil, err
+	}
+	oldVal, err := t.IntervalTimerSettime(timerID, newVal, flags&linux.TIMER_ABSTIME != 0)
+	if err != nil {
+		return 0, nil, err
+	}
+	if oldValAddr != 0 {
+		if _, err := t.CopyOut(oldValAddr, &oldVal); err != nil {
+			return 0, nil, err
+		}
+	}
+	return 0, nil, nil
+}
+
+// TimerGettime implements linux syscall timer_gettime(2).
+func TimerGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	timerID := linux.TimerID(args[0].Value)
+	curValAddr := args[1].Pointer()
+
+	curVal, err := t.IntervalTimerGettime(timerID)
+	if err != nil {
+		return 0, nil, err
+	}
+	_, err = t.CopyOut(curValAddr, &curVal)
+	return 0, nil, err
+}
+
+// TimerGetoverrun implements linux syscall timer_getoverrun(2).
+func TimerGetoverrun(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	timerID := linux.TimerID(args[0].Value)
+
+	o, err := t.IntervalTimerGetoverrun(timerID)
+	if err != nil {
+		return 0, nil, err
+	}
+	return uintptr(o), nil, nil
+}
+
+// TimerDelete implements linux syscall timer_delete(2).
+func TimerDelete(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	timerID := linux.TimerID(args[0].Value)
+	return 0, nil, t.IntervalTimerDelete(timerID)
+}

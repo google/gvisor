@@ -18,20 +18,29 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 )
 
+// +stateify savable
+type savedPendingSignal struct {
+	si    *arch.SignalInfo
+	timer *IntervalTimer
+}
+
 // saveSignals is invoked by stateify.
-func (p *pendingSignals) saveSignals() []*arch.SignalInfo {
-	var pending []*arch.SignalInfo
+func (p *pendingSignals) saveSignals() []savedPendingSignal {
+	var pending []savedPendingSignal
 	for _, q := range p.signals {
 		for ps := q.pendingSignalList.Front(); ps != nil; ps = ps.Next() {
-			pending = append(pending, ps.SignalInfo)
+			pending = append(pending, savedPendingSignal{
+				si:    ps.SignalInfo,
+				timer: ps.timer,
+			})
 		}
 	}
 	return pending
 }
 
 // loadSignals is invoked by stateify.
-func (p *pendingSignals) loadSignals(pending []*arch.SignalInfo) {
-	for _, si := range pending {
-		p.enqueue(si)
+func (p *pendingSignals) loadSignals(pending []savedPendingSignal) {
+	for _, sps := range pending {
+		p.enqueue(sps.si, sps.timer)
 	}
 }
