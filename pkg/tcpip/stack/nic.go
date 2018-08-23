@@ -282,12 +282,12 @@ func (n *NIC) RemoveAddress(addr tcpip.Address) *tcpip.Error {
 func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
-		atomic.AddUint64(&n.stack.stats.UnknownProtocolRcvdPackets, 1)
+		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
 		return
 	}
 
 	if len(vv.First()) < netProto.MinimumPacketSize() {
-		atomic.AddUint64(&n.stack.stats.MalformedRcvdPackets, 1)
+		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
@@ -330,7 +330,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 	}
 
 	if ref == nil {
-		atomic.AddUint64(&n.stack.stats.UnknownNetworkEndpointRcvdPackets, 1)
+		n.stack.stats.UnknownNetworkEndpointRcvdPackets.Increment()
 		return
 	}
 
@@ -345,19 +345,19 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv *buffer.VectorisedView) {
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
-		atomic.AddUint64(&n.stack.stats.UnknownProtocolRcvdPackets, 1)
+		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
 		return
 	}
 
 	transProto := state.proto
 	if len(vv.First()) < transProto.MinimumPacketSize() {
-		atomic.AddUint64(&n.stack.stats.MalformedRcvdPackets, 1)
+		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
 	srcPort, dstPort, err := transProto.ParsePorts(vv.First())
 	if err != nil {
-		atomic.AddUint64(&n.stack.stats.MalformedRcvdPackets, 1)
+		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
@@ -379,7 +379,7 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// We could not find an appropriate destination for this packet, so
 	// deliver it to the global handler.
 	if !transProto.HandleUnknownDestinationPacket(r, id, vv) {
-		atomic.AddUint64(&n.stack.stats.MalformedRcvdPackets, 1)
+		n.stack.stats.MalformedRcvdPackets.Increment()
 	}
 }
 

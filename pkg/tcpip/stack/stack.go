@@ -26,7 +26,6 @@ package stack
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
@@ -308,6 +307,9 @@ type Options struct {
 	//
 	// If no Clock is specified, the clock source will be time.Now.
 	Clock tcpip.Clock
+
+	// Stats are optional statistic counters.
+	Stats tcpip.Stats
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -331,6 +333,7 @@ func New(network []string, transport []string, opts Options) *Stack {
 		linkAddrCache:      newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 		PortManager:        ports.NewPortManager(),
 		clock:              clock,
+		stats:              opts.Stats.FillIn(),
 	}
 
 	// Add specified network protocols.
@@ -437,27 +440,12 @@ func (s *Stack) NowNanoseconds() int64 {
 	return s.clock.NowNanoseconds()
 }
 
-// Stats returns a snapshot of the current stats.
-//
-// NOTE: The underlying stats are updated using atomic instructions as a result
-// the snapshot returned does not represent the value of all the stats at any
-// single given point of time.
-// TODO: Make stats available in sentry for debugging/diag.
-func (s *Stack) Stats() tcpip.Stats {
-	return tcpip.Stats{
-		UnknownProtocolRcvdPackets:        atomic.LoadUint64(&s.stats.UnknownProtocolRcvdPackets),
-		UnknownNetworkEndpointRcvdPackets: atomic.LoadUint64(&s.stats.UnknownNetworkEndpointRcvdPackets),
-		MalformedRcvdPackets:              atomic.LoadUint64(&s.stats.MalformedRcvdPackets),
-		DroppedPackets:                    atomic.LoadUint64(&s.stats.DroppedPackets),
-	}
-}
-
-// MutableStats returns a mutable copy of the current stats.
+// Stats returns a mutable copy of the current stats.
 //
 // This is not generally exported via the public interface, but is available
 // internally.
-func (s *Stack) MutableStats() *tcpip.Stats {
-	return &s.stats
+func (s *Stack) Stats() tcpip.Stats {
+	return s.stats
 }
 
 // SetRouteTable assigns the route table to be used by this stack. It

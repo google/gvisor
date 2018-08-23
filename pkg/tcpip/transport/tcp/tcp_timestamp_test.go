@@ -268,7 +268,8 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	defer c.WQ.EventUnregister(&we)
 
 	stk := c.Stack()
-	droppedPackets := stk.Stats().DroppedPackets
+	droppedPacketsStat := stk.Stats().DroppedPackets
+	droppedPackets := droppedPacketsStat.Value()
 	data := []byte{1, 2, 3}
 	// Save the sequence number as we will reset it later down
 	// in the test.
@@ -283,11 +284,11 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	}
 
 	// Assert that DroppedPackets was incremented by 1.
-	if got, want := stk.Stats().DroppedPackets, droppedPackets+1; got != want {
+	if got, want := droppedPacketsStat.Value(), droppedPackets+1; got != want {
 		t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
 	}
 
-	droppedPackets = stk.Stats().DroppedPackets
+	droppedPackets = droppedPacketsStat.Value()
 	// Reset the sequence number so that the other endpoint accepts
 	// this segment and does not treat it like an out of order delivery.
 	rep.NextSeqNum = savedSeqNum
@@ -301,7 +302,7 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	}
 
 	// Assert that DroppedPackets was not incremented by 1.
-	if got, want := stk.Stats().DroppedPackets, droppedPackets; got != want {
+	if got, want := droppedPacketsStat.Value(), droppedPackets; got != want {
 		t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
 	}
 

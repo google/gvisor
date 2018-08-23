@@ -34,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
@@ -465,23 +466,62 @@ type TransportProtocolNumber uint32
 // NetworkProtocolNumber is the number of a network protocol.
 type NetworkProtocolNumber uint32
 
+// A StatCounter keeps track of a statistic.
+type StatCounter struct {
+	count uint64
+}
+
+// Increment adds one to the counter.
+func (s *StatCounter) Increment() {
+	atomic.AddUint64(&s.count, 1)
+}
+
+// Value returns the current value of the counter.
+func (s *StatCounter) Value() uint64 {
+	return atomic.LoadUint64(&s.count)
+}
+
+// IncrementBy increments the counter by v.
+func (s *StatCounter) IncrementBy(v uint64) {
+	atomic.AddUint64(&s.count, v)
+}
+
 // Stats holds statistics about the networking stack.
+//
+// All fields are optional.
 type Stats struct {
 	// UnknownProtocolRcvdPackets is the number of packets received by the
 	// stack that were for an unknown or unsupported protocol.
-	UnknownProtocolRcvdPackets uint64
+	UnknownProtocolRcvdPackets *StatCounter
 
 	// UnknownNetworkEndpointRcvdPackets is the number of packets received
 	// by the stack that were for a supported network protocol, but whose
 	// destination address didn't having a matching endpoint.
-	UnknownNetworkEndpointRcvdPackets uint64
+	UnknownNetworkEndpointRcvdPackets *StatCounter
 
 	// MalformedRcvPackets is the number of packets received by the stack
 	// that were deemed malformed.
-	MalformedRcvdPackets uint64
+	MalformedRcvdPackets *StatCounter
 
 	// DroppedPackets is the number of packets dropped due to full queues.
-	DroppedPackets uint64
+	DroppedPackets *StatCounter
+}
+
+// FillIn returns a copy of s with nil fields initialized to new StatCounters.
+func (s Stats) FillIn() Stats {
+	if s.UnknownProtocolRcvdPackets == nil {
+		s.UnknownProtocolRcvdPackets = &StatCounter{}
+	}
+	if s.UnknownNetworkEndpointRcvdPackets == nil {
+		s.UnknownNetworkEndpointRcvdPackets = &StatCounter{}
+	}
+	if s.MalformedRcvdPackets == nil {
+		s.MalformedRcvdPackets = &StatCounter{}
+	}
+	if s.DroppedPackets == nil {
+		s.DroppedPackets = &StatCounter{}
+	}
+	return s
 }
 
 // String implements the fmt.Stringer interface.

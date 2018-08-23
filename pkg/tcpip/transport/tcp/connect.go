@@ -16,7 +16,6 @@ package tcp
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/rand"
@@ -292,7 +291,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		// not carry a timestamp option then the segment must be dropped
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.
 		if h.ep.sendTSOk && !s.parsedOptions.TS {
-			atomic.AddUint64(&h.ep.stack.MutableStats().DroppedPackets, 1)
+			h.ep.stack.Stats().DroppedPackets.Increment()
 			return nil
 		}
 
@@ -793,7 +792,7 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			// must be dropped as per
 			// https://tools.ietf.org/html/rfc7323#section-3.2.
 			if e.sendTSOk && !s.parsedOptions.TS {
-				atomic.AddUint64(&e.stack.MutableStats().DroppedPackets, 1)
+				e.stack.Stats().DroppedPackets.Increment()
 				s.decRef()
 				continue
 			}

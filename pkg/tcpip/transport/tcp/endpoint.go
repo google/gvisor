@@ -1225,7 +1225,7 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv *buffer.VectorisedView) {
 	s := newSegment(r, id, vv)
 	if !s.parse() {
-		atomic.AddUint64(&e.stack.MutableStats().MalformedRcvdPackets, 1)
+		e.stack.Stats().MalformedRcvdPackets.Increment()
 		s.decRef()
 		return
 	}
@@ -1235,7 +1235,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 		e.newSegmentWaker.Assert()
 	} else {
 		// The queue is full, so we drop the segment.
-		atomic.AddUint64(&e.stack.MutableStats().DroppedPackets, 1)
+		e.stack.Stats().DroppedPackets.Increment()
 		s.decRef()
 	}
 }
