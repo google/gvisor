@@ -1371,7 +1371,6 @@ func TestAbbreviatedIDs(t *testing.T) {
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
-	t.Skip("Test is flakey.") // TODO: Remove.
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 

@@ -16,6 +16,7 @@ package fsgofer
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -67,13 +68,13 @@ func (cr *Controller) Wait() {
 }
 
 // Serve starts serving each Attacher in ats via its corresponding file
-// descriptor in ioFDs.
+// descriptor in ioFDs. This takes ownership of the FDs in ioFDs.
 func (cr *Controller) Serve(ats []p9.Attacher, ioFDs []int) error {
 	if len(ats) != len(ioFDs) {
 		return fmt.Errorf("number of attach points does not match the number of IO FDs (%d and %d)", len(ats), len(ioFDs))
 	}
 	for i, _ := range ats {
-		cr.api.serve(ats[i], ioFDs[i])
+		cr.api.serve(ats[i], os.NewFile(uintptr(ioFDs[i]), "io fd"))
 	}
 	return nil
 }
@@ -181,23 +182,23 @@ func (api *api) ServeDirectory(req *ServeDirectoryRequest, _ *struct{}) error {
 		ROMount:          req.IsReadOnly,
 		LazyOpenForWrite: true,
 	})
-	api.serve(at, int(req.FilePayload.Files[0].Fd()))
+	api.serve(at, req.FilePayload.Files[0])
 
 	return nil
 }
 
 // serve begins serving a directory via a file descriptor.
-func (api *api) serve(at p9.Attacher, ioFD int) {
+func (api *api) serve(at p9.Attacher, ioFile *os.File) {
 	api.p9wg.Add(1)
-	go func(ioFD int, at p9.Attacher) {
-		socket, err := unet.NewSocket(ioFD)
+	go func() {
+		socket, err := unet.NewSocket(int(ioFile.Fd()))
 		if err != nil {
-			panic(fmt.Sprintf("err creating server on FD %d: %v", ioFD, err))
+			panic(fmt.Sprintf("err creating server on FD %d: %v", ioFile.Fd(), err))
 		}
 		s := p9.NewServer(at)
 		if err := s.Handle(socket); err != nil {
-			panic(fmt.Sprintf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFD, err))
+			panic(fmt.Sprintf("P9 server returned error. Gofer is shutting down. FD: %d, err: %v", ioFile.Fd(), err))
 		}
 		api.p9wg.Done()
-	}(ioFD, at)
+	}()
 }
