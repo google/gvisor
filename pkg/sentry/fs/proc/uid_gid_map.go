@@ -68,6 +68,8 @@ func (imss *idMapSeqSource) ReadSeqFileData(ctx context.Context, handle seqfile.
 }
 
 // TODO: Fix issue requiring idMapSeqHandle wrapping an int.
+//
+// +stateify savable
 type idMapSeqHandle struct {
 	value int
 }
