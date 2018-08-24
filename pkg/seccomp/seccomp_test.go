@@ -355,3 +355,55 @@ func TestRealDeal(t *testing.T) {
 		}
 	}
 }
+
+// TestMerge ensures that empty rules are not erased when rules are merged.
+func TestMerge(t *testing.T) {
+	for _, tst := range []struct {
+		name  string
+		main  []Rule
+		merge []Rule
+		want  []Rule
+	}{
+		{
+			name:  "empty both",
+			main:  nil,
+			merge: nil,
+			want:  []Rule{Rule{}, Rule{}},
+		},
+		{
+			name:  "empty main",
+			main:  nil,
+			merge: []Rule{Rule{}},
+			want:  []Rule{Rule{}, Rule{}},
+		},
+		{
+			name:  "empty merge",
+			main:  []Rule{Rule{}},
+			merge: nil,
+			want:  []Rule{Rule{}, Rule{}},
+		},
+	} {
+		t.Run(tst.name, func(t *testing.T) {
+			mainRules := SyscallRules{1: tst.main}
+			mergeRules := SyscallRules{1: tst.merge}
+			mainRules.Merge(mergeRules)
+			if got, want := len(mainRules[1]), len(tst.want); got != want {
+				t.Errorf("wrong length, got: %d, want: %d", got, want)
+			}
+			for i, r := range mainRules[1] {
+				if r != tst.want[i] {
+					t.Errorf("result, got: %v, want: %v", r, tst.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestAddRule ensures that empty rules are not erased when rules are added.
+func TestAddRule(t *testing.T) {
+	rules := SyscallRules{1: {}}
+	rules.AddRule(1, Rule{})
+	if got, want := len(rules[1]), 2; got != want {
+		t.Errorf("len(rules[1]), got: %d, want: %d", got, want)
+	}
+}

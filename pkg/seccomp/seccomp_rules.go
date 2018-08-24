@@ -34,7 +34,7 @@ func seccompDataOffsetArgLow(i int) uint32 {
 }
 
 func seccompDataOffsetArgHigh(i int) uint32 {
-	return uint32(seccompDataOffsetArgs + i*8 + 4)
+	return seccompDataOffsetArgLow(i) + 4
 }
 
 // AllowAny is marker to indicate any value will be accepted.
@@ -100,7 +100,11 @@ func NewSyscallRules() SyscallRules {
 // AddRule adds the given rule. It will create a new entry for a new syscall, otherwise
 // it will append to the existing rules.
 func (sr SyscallRules) AddRule(sysno uintptr, r Rule) {
-	if _, ok := sr[sysno]; ok {
+	if cur, ok := sr[sysno]; ok {
+		// An empty rules means allow all. Honor it when more rules are added.
+		if len(cur) == 0 {
+			sr[sysno] = append(sr[sysno], Rule{})
+		}
 		sr[sysno] = append(sr[sysno], r)
 	} else {
 		sr[sysno] = []Rule{r}
@@ -110,7 +114,14 @@ func (sr SyscallRules) AddRule(sysno uintptr, r Rule) {
 // Merge merges the given SyscallRules.
 func (sr SyscallRules) Merge(rules SyscallRules) {
 	for sysno, rs := range rules {
-		if _, ok := sr[sysno]; ok {
+		if cur, ok := sr[sysno]; ok {
+			// An empty rules means allow all. Honor it when more rules are added.
+			if len(cur) == 0 {
+				sr[sysno] = append(sr[sysno], Rule{})
+			}
+			if len(rs) == 0 {
+				rs = []Rule{Rule{}}
+			}
 			sr[sysno] = append(sr[sysno], rs...)
 		} else {
 			sr[sysno] = rs
