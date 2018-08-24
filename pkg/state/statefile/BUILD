@@ -10,7 +10,6 @@ go_library(
     deps = [
         "//pkg/binary",
         "//pkg/compressio",
-        "//pkg/hashio",
     ],
 )
 
@@ -19,5 +18,5 @@ go_test(
     size = "small",
     srcs = ["statefile_test.go"],
     embed = [":statefile"],
-    deps = ["//pkg/hashio"],
+    deps = ["//pkg/compressio"],
 )

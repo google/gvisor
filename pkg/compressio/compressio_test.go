@@ -59,6 +59,7 @@ type testOpts struct {
 	PostDecompress  func()
 	CompressIters   int
 	DecompressIters int
+	CorruptData     bool
 }
 
 func doTest(t harness, opts testOpts) {
@@ -104,15 +105,22 @@ func doTest(t harness, opts testOpts) {
 	if opts.DecompressIters <= 0 {
 		opts.DecompressIters = 1
 	}
+	if opts.CorruptData {
+		b := compressed.Bytes()
+		b[rand.Intn(len(b))]++
+	}
 	for i := 0; i < opts.DecompressIters; i++ {
 		decompressed.Reset()
 		r, err := opts.NewReader(bytes.NewBuffer(compressed.Bytes()))
 		if err != nil {
+			if opts.CorruptData {
+				continue
+			}
 			t.Errorf("%s: NewReader got err %v, expected nil", opts.Name, err)
 			return
 		}
-		if _, err := io.Copy(&decompressed, r); err != nil {
-			t.Errorf("%s: decompress got err %v, expected nil", opts.Name, err)
+		if _, err := io.Copy(&decompressed, r); (err != nil) != opts.CorruptData {
+			t.Errorf("%s: decompress got err %v unexpectly", opts.Name, err)
 			return
 		}
 	}
@@ -120,6 +128,10 @@ func doTest(t harness, opts testOpts) {
 		opts.PostDecompress()
 	}
 	decompressionTime := time.Since(decompressionStartTime)
+
+	if opts.CorruptData {
+		return
+	}
 
 	// Verify.
 	if decompressed.Len() != len(opts.Data) {
@@ -136,7 +148,11 @@ func doTest(t harness, opts testOpts) {
 		opts.Name, compressionTime, compressionRatio, decompressionTime)
 }
 
+var hashKey = []byte("01234567890123456789012345678901")
+
 func TestCompress(t *testing.T) {
+	rand.Seed(time.Now().Unix())
+
 	var (
 		data  = initTest(t, 10*1024*1024)
 		data0 = data[:0]
@@ -153,17 +169,27 @@ func TestCompress(t *testing.T) {
 				continue
 			}
 
-			// Do the compress test.
-			doTest(t, testOpts{
-				Name: fmt.Sprintf("len(data)=%d, blockSize=%d", len(data), blockSize),
-				Data: data,
-				NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-					return NewWriter(b, blockSize, flate.BestCompression)
-				},
-				NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-					return NewReader(b)
-				},
-			})
+			for _, key := range [][]byte{nil, hashKey} {
+				for _, corruptData := range []bool{false, true} {
+					if key == nil && corruptData {
+						// No need to test corrupt data
+						// case when not doing hashing.
+						continue
+					}
+					// Do the compress test.
+					doTest(t, testOpts{
+						Name: fmt.Sprintf("len(data)=%d, blockSize=%d, key=%s, corruptData=%v", len(data), blockSize, string(key), corruptData),
+						Data: data,
+						NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
+							return NewWriter(b, key, blockSize, flate.BestSpeed)
+						},
+						NewReader: func(b *bytes.Buffer) (io.Reader, error) {
+							return NewReader(b, key)
+						},
+						CorruptData: corruptData,
+					})
+				}
+			}
 		}
 
 		// Do the vanilla test.
@@ -171,7 +197,7 @@ func TestCompress(t *testing.T) {
 			Name: fmt.Sprintf("len(data)=%d, vanilla flate", len(data)),
 			Data: data,
 			NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-				return flate.NewWriter(b, flate.BestCompression)
+				return flate.NewWriter(b, flate.BestSpeed)
 			},
 			NewReader: func(b *bytes.Buffer) (io.Reader, error) {
 				return flate.NewReader(b), nil
@@ -181,47 +207,84 @@ func TestCompress(t *testing.T) {
 }
 
 const (
-	// benchBlockSize is the blockSize for benchmarks.
-	benchBlockSize = 32 * 1024
-
-	// benchDataSize is the amount of data for benchmarks.
-	benchDataSize = 10 * 1024 * 1024
+	benchDataSize = 600 * 1024 * 1024
 )
 
-func BenchmarkCompress(b *testing.B) {
+func benchmark(b *testing.B, compress bool, hash bool, blockSize uint32) {
 	b.StopTimer()
 	b.SetBytes(benchDataSize)
 	data := initTest(b, benchDataSize)
+	compIters := b.N
+	decompIters := b.N
+	if compress {
+		decompIters = 0
+	} else {
+		compIters = 0
+	}
+	key := hashKey
+	if !hash {
+		key = nil
+	}
 	doTest(b, testOpts{
-		Name:         fmt.Sprintf("len(data)=%d, blockSize=%d", len(data), benchBlockSize),
+		Name:         fmt.Sprintf("compress=%t, hash=%t, len(data)=%d, blockSize=%d", compress, hash, len(data), blockSize),
 		Data:         data,
 		PreCompress:  b.StartTimer,
 		PostCompress: b.StopTimer,
 		NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-			return NewWriter(b, benchBlockSize, flate.BestCompression)
+			return NewWriter(b, key, blockSize, flate.BestSpeed)
 		},
 		NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-			return NewReader(b)
+			return NewReader(b, key)
 		},
-		CompressIters: b.N,
+		CompressIters:   compIters,
+		DecompressIters: decompIters,
 	})
 }
 
-func BenchmarkDecompress(b *testing.B) {
-	b.StopTimer()
-	b.SetBytes(benchDataSize)
-	data := initTest(b, benchDataSize)
-	doTest(b, testOpts{
-		Name:           fmt.Sprintf("len(data)=%d, blockSize=%d", len(data), benchBlockSize),
-		Data:           data,
-		PreDecompress:  b.StartTimer,
-		PostDecompress: b.StopTimer,
-		NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
-			return NewWriter(b, benchBlockSize, flate.BestCompression)
-		},
-		NewReader: func(b *bytes.Buffer) (io.Reader, error) {
-			return NewReader(b)
-		},
-		DecompressIters: b.N,
-	})
+func BenchmarkCompressNoHash64K(b *testing.B) {
+	benchmark(b, true, false, 64*1024)
+}
+
+func BenchmarkCompressHash64K(b *testing.B) {
+	benchmark(b, true, true, 64*1024)
+}
+
+func BenchmarkDecompressNoHash64K(b *testing.B) {
+	benchmark(b, false, false, 64*1024)
+}
+
+func BenchmarkDecompressHash64K(b *testing.B) {
+	benchmark(b, false, true, 64*1024)
+}
+
+func BenchmarkCompressNoHash1M(b *testing.B) {
+	benchmark(b, true, false, 1024*1024)
+}
+
+func BenchmarkCompressHash1M(b *testing.B) {
+	benchmark(b, true, true, 1024*1024)
+}
+
+func BenchmarkDecompressNoHash1M(b *testing.B) {
+	benchmark(b, false, false, 1024*1024)
+}
+
+func BenchmarkDecompressHash1M(b *testing.B) {
+	benchmark(b, false, true, 1024*1024)
+}
+
+func BenchmarkCompressNoHash16M(b *testing.B) {
+	benchmark(b, true, false, 16*1024*1024)
+}
+
+func BenchmarkCompressHash16M(b *testing.B) {
+	benchmark(b, true, true, 16*1024*1024)
+}
+
+func BenchmarkDecompressNoHash16M(b *testing.B) {
+	benchmark(b, false, false, 16*1024*1024)
+}
+
+func BenchmarkDecompressHash16M(b *testing.B) {
+	benchmark(b, false, true, 16*1024*1024)
 }
