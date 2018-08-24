@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -700,4 +701,48 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 	// Set the procArgs root directory.
 	procArgs.Root = containerRootDirent
 	return nil
+}
+
+// GetExecutablePathInternal traverses the *container's* filesystem to resolve
+// exec's absolute path. For example, if the container is being served files by
+// the fsgofer serving /foo/bar as the container root, it will search within
+// /foo/bar, not the host root.
+// TODO: Unit test this.
+func GetExecutablePathInternal(ctx context.Context, procArgs *kernel.CreateProcessArgs) (string, error) {
+	exec := filepath.Clean(procArgs.Filename)
+
+	// Don't search PATH if exec is a path to a file (absolute or relative).
+	if strings.IndexByte(exec, '/') >= 0 {
+		return exec, nil
+	}
+
+	// Search the PATH for a file whose name matches the one we are looking
+	// for.
+	pathDirs := specutils.GetPath(procArgs.Envv)
+	for _, p := range pathDirs {
+		// Walk to the end of the path.
+		curDir := procArgs.Root
+		for _, pc := range strings.Split(p, "/") {
+			var err error
+			if curDir, err = curDir.Walk(ctx, curDir, pc); err != nil {
+				break
+			}
+		}
+		if curDir == nil {
+			continue
+		}
+		// Check for the executable in the path directory.
+		dirent, err := curDir.Walk(ctx, curDir, exec)
+		if err != nil {
+			continue
+		}
+		// Check whether we can read and execute the file in question.
+		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Read: true, Execute: true}); err != nil {
+			log.Infof("Found executable at %q, but user cannot execute it: %v", path.Join(p, exec), err)
+			continue
+		}
+		return path.Join("/", p, exec), nil
+	}
+
+	return "", fmt.Errorf("could not find executable %s in path %v", exec, pathDirs)
 }

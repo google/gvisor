@@ -126,6 +126,8 @@ func ReadSpec(bundleDir string) (*specs.Spec, error) {
 // GetExecutablePath returns the absolute path to the executable, relative to
 // the root. It searches the environment PATH for the first file that exists
 // with the given name.
+// TODO: Remove this in favor of finding executables via
+// boot.GetExecutablePathInternal.
 func GetExecutablePath(exec, root string, env []string) (string, error) {
 	exec = filepath.Clean(exec)
 
@@ -134,18 +136,9 @@ func GetExecutablePath(exec, root string, env []string) (string, error) {
 		return exec, nil
 	}
 
-	// Get the PATH from the environment.
-	const prefix = "PATH="
-	var path []string
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			path = strings.Split(strings.TrimPrefix(e, prefix), ":")
-			break
-		}
-	}
-
 	// Search the PATH for a file whose name matches the one we are looking
 	// for.
+	path := GetPath(env)
 	for _, p := range path {
 		abs := filepath.Join(root, p, exec)
 		// Do not follow symlink link because the target is in the container
@@ -159,6 +152,18 @@ func GetExecutablePath(exec, root string, env []string) (string, error) {
 	// Could not find a suitable path, just return the original string.
 	log.Warningf("could not find executable %s in path %s", exec, path)
 	return exec, nil
+}
+
+// GetPath returns the PATH as a slice of strings given the environemnt
+// variables.
+func GetPath(env []string) []string {
+	const prefix = "PATH="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return strings.Split(strings.TrimPrefix(e, prefix), ":")
+		}
+	}
+	return nil
 }
 
 // Capabilities takes in spec and returns a TaskCapabilities corresponding to

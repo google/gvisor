@@ -428,6 +428,10 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
 
+	if procArgs.Filename, err = GetExecutablePathInternal(procArgs.NewContext(k), &procArgs); err != nil {
+		return 0, err
+	}
+
 	tg, err := l.k.CreateProcess(procArgs)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create process in sentry: %v", err)
