@@ -345,6 +345,10 @@ func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundle
 	setUIDGIDMappings(cmd, spec)
 	nss := filterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
 
+	if conf.Overlay {
+		args = append(args, "--panic-on-write=true")
+	}
+
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
 	if err := startInNS(cmd, nss); err != nil {

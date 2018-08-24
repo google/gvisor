@@ -38,6 +38,8 @@ type Gofer struct {
 	// controllerFD is the file descriptor of a stream socket for the
 	// control server that is donated to this process.
 	controllerFD int
+
+	panicOnWrite bool
 }
 
 // Name implements subcommands.Command.
@@ -61,6 +63,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
 	f.IntVar(&g.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
+	f.BoolVar(&g.panicOnWrite, "panic-on-write", false, "if true, panics on attempts to write to RO mounts. RW mounts are unnaffected")
 }
 
 // Execute implements subcommands.Command.
@@ -110,7 +113,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
 	p := absPath(g.bundleDir, spec.Root.Path)
 	ats = append(ats, fsgofer.NewAttachPoint(p, fsgofer.Config{
-		ROMount: spec.Root.Readonly,
+		ROMount:      spec.Root.Readonly,
+		PanicOnWrite: g.panicOnWrite,
 		// Docker uses overlay2 by default for the root mount, and overlay2 does a copy-up when
 		// each file is opened as writable. Thus, we open files lazily to avoid copy-up.
 		LazyOpenForWrite: true,
@@ -123,6 +127,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			p = absPath(g.bundleDir, m.Source)
 			ats = append(ats, fsgofer.NewAttachPoint(p, fsgofer.Config{
 				ROMount:          isReadonlyMount(m.Options),
+				PanicOnWrite:     g.panicOnWrite,
 				LazyOpenForWrite: false,
 			}))
 

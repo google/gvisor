@@ -76,6 +76,9 @@ type Config struct {
 	// ROMount is set to true if this is a readonly mount.
 	ROMount bool
 
+	// PanicOnWrite panics on attempts to write to RO mounts.
+	PanicOnWrite bool
+
 	// LazyOpenForWrite makes the underlying file to be opened in RDONLY
 	// mode initially and be reopened in case write access is desired.
 	// This is done to workaround the behavior in 'overlay2' that
@@ -375,6 +378,9 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 // Create implements p9.File.
 func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid p9.UID, gid p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return nil, nil, p9.QID{}, 0, syscall.EBADF
 	}
 	if !isNameValid(name) {
@@ -429,6 +435,9 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 // Mkdir implements p9.File.
 func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID) (p9.QID, error) {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return p9.QID{}, syscall.EBADF
 	}
 
@@ -585,6 +594,9 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 // an error happens.
 func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return syscall.EBADF
 	}
 
@@ -722,6 +734,9 @@ func (*localFile) Remove() error {
 // Rename implements p9.File.
 func (l *localFile) Rename(directory p9.File, name string) error {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return syscall.EBADF
 	}
 	if !isNameValid(name) {
@@ -789,6 +804,9 @@ func (l *localFile) WriteAt(p []byte, offset uint64) (int, error) {
 // Symlink implements p9.File.
 func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.QID, error) {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return p9.QID{}, syscall.EBADF
 	}
 	if !isNameValid(newName) {
@@ -819,6 +837,9 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 // Link implements p9.File.
 func (l *localFile) Link(target p9.File, newName string) error {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return syscall.EBADF
 	}
 	if !isNameValid(newName) {
@@ -842,6 +863,9 @@ func (*localFile) Mknod(_ string, _ p9.FileMode, _ uint32, _ uint32, _ p9.UID, _
 // UnlinkAt implements p9.File.
 func (l *localFile) UnlinkAt(name string, flags uint32) error {
 	if l.conf.ROMount {
+		if l.conf.PanicOnWrite {
+			panic("attempt to write to RO mount")
+		}
 		return syscall.EBADF
 	}
 	if !isNameValid(name) {

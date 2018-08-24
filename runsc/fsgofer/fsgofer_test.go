@@ -34,6 +34,15 @@ func init() {
 	allConfs = append(allConfs, roConfs...)
 }
 
+func assertPanic(t *testing.T, f func()) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("function did not panic")
+		}
+	}()
+	f()
+}
+
 var (
 	allTypes = []fileType{regular, directory, symlink}
 
@@ -431,6 +440,22 @@ func TestROMountChecks(t *testing.T) {
 		if err := s.file.SetAttr(valid, attr); err != syscall.EBADF {
 			t.Errorf("%v: SetAttr() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
+	})
+}
+
+func TestROMountPanics(t *testing.T) {
+	conf := Config{ROMount: true, PanicOnWrite: true}
+	runCustom(t, allTypes, []Config{conf}, func(t *testing.T, s state) {
+		assertPanic(t, func() { s.file.Create("..", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.Mkdir("..", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.Rename(s.file, "..") })
+		assertPanic(t, func() { s.file.Symlink("some_place", "..", p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.UnlinkAt("..", 0) })
+		assertPanic(t, func() { s.file.Link(s.file, "..") })
+
+		valid := p9.SetAttrMask{Size: true}
+		attr := p9.SetAttr{Size: 0}
+		assertPanic(t, func() { s.file.SetAttr(valid, attr) })
 	})
 }
 
