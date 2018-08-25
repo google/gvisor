@@ -7,12 +7,14 @@ go_library(
     srcs = [
         "client.go",
         "dhcp.go",
+        "dhcp_string.go",
         "server.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/dhcp",
     deps = [
         "//pkg/rand",
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/udp",
@@ -33,5 +35,6 @@ go_test(
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
     ],
 )

@@ -26,19 +26,21 @@ import (
 
 // Config is standard DHCP configuration.
 type Config struct {
-	ServerAddress    tcpip.Address     // address of the server
-	SubnetMask       tcpip.AddressMask // client address subnet mask
-	Gateway          tcpip.Address     // client default gateway
-	DomainNameServer tcpip.Address     // client domain name server
-	LeaseLength      time.Duration     // length of the address lease
+	Error         error
+	ServerAddress tcpip.Address     // address of the server
+	SubnetMask    tcpip.AddressMask // client address subnet mask
+	Gateway       tcpip.Address     // client default gateway
+	DNS           []tcpip.Address   // client DNS server addresses
+	LeaseLength   time.Duration     // length of the address lease
 }
 
 func (cfg *Config) decode(opts []option) error {
 	*cfg = Config{}
 	for _, opt := range opts {
 		b := opt.body
-		if l := opt.code.len(); l != -1 && l != len(b) {
-			return fmt.Errorf("%s bad length: %d", opt.code, len(b))
+		if !opt.code.lenValid(len(b)) {
+			// TODO: s/%v/%s/ when `go vet` is smarter.
+			return fmt.Errorf("%v: bad length: %d", opt.code, len(b))
 		}
 		switch opt.code {
 		case optLeaseTime:
@@ -51,7 +53,12 @@ func (cfg *Config) decode(opts []option) error {
 		case optDefaultGateway:
 			cfg.Gateway = tcpip.Address(b)
 		case optDomainNameServer:
-			cfg.DomainNameServer = tcpip.Address(b)
+			for ; len(b) > 0; b = b[4:] {
+				if len(b) < 4 {
+					return fmt.Errorf("DNS bad length: %d", len(b))
+				}
+				cfg.DNS = append(cfg.DNS, tcpip.Address(b[:4]))
+			}
 		}
 	}
 	return nil
@@ -67,8 +74,12 @@ func (cfg Config) encode() (opts []option) {
 	if cfg.Gateway != "" {
 		opts = append(opts, option{optDefaultGateway, []byte(cfg.Gateway)})
 	}
-	if cfg.DomainNameServer != "" {
-		opts = append(opts, option{optDomainNameServer, []byte(cfg.DomainNameServer)})
+	if len(cfg.DNS) > 0 {
+		dns := make([]byte, 0, 4*len(cfg.DNS))
+		for _, addr := range cfg.DNS {
+			dns = append(dns, addr...)
+		}
+		opts = append(opts, option{optDomainNameServer, dns})
 	}
 	if l := cfg.LeaseLength / time.Second; l != 0 {
 		v := make([]byte, 4)
@@ -82,8 +93,10 @@ func (cfg Config) encode() (opts []option) {
 }
 
 const (
-	serverPort = 67
-	clientPort = 68
+	// ServerPort is the well-known UDP port number for a DHCP server.
+	ServerPort = 67
+	// ClientPort is the well-known UDP port number for a DHCP client.
+	ClientPort = 68
 )
 
 var magicCookie = []byte{99, 130, 83, 99} // RFC 1497
@@ -107,10 +120,10 @@ func (h header) isValid() bool {
 	if o := h.op(); o != opRequest && o != opReply {
 		return false
 	}
-	if h[1] != 0x01 || h[2] != 0x06 || h[3] != 0x00 {
+	if h[1] != 0x01 || h[2] != 0x06 {
 		return false
 	}
-	return bytes.Equal(h[236:240], magicCookie) && h[len(h)-1] == 0
+	return bytes.Equal(h[236:240], magicCookie)
 }
 
 func (h header) op() op           { return op(h[0]) }
@@ -141,7 +154,7 @@ func (h header) options() (opts options, err error) {
 		}
 		optlen := int(h[i+1])
 		if len(h) < i+2+optlen {
-			return nil, fmt.Errorf("option too long")
+			return nil, fmt.Errorf("option %v too long i=%d, optlen=%d", optionCode(h[i]), i, optlen)
 		}
 		opts = append(opts, option{
 			code: optionCode(h[i]),
@@ -160,6 +173,8 @@ func (h header) setOptions(opts []option) {
 		copy(h[i+2:i+2+len(opt.body)], opt.body)
 		i += 2 + len(opt.body)
 	}
+	h[i] = 255 // End option
+	i++
 	for ; i < len(h); i++ {
 		h[i] = 0
 	}
@@ -182,47 +197,31 @@ const (
 	optSubnetMask       optionCode = 1
 	optDefaultGateway   optionCode = 3
 	optDomainNameServer optionCode = 6
+	optDomainName       optionCode = 15
 	optReqIPAddr        optionCode = 50
 	optLeaseTime        optionCode = 51
 	optDHCPMsgType      optionCode = 53 // dhcpMsgType
 	optDHCPServer       optionCode = 54
 	optParamReq         optionCode = 55
+	optMessage          optionCode = 56
+	optClientID         optionCode = 61
 )
 
-func (code optionCode) len() int {
+func (code optionCode) lenValid(l int) bool {
 	switch code {
-	case optSubnetMask, optDefaultGateway, optDomainNameServer,
+	case optSubnetMask, optDefaultGateway,
 		optReqIPAddr, optLeaseTime, optDHCPServer:
-		return 4
+		return l == 4
 	case optDHCPMsgType:
-		return 1
-	case optParamReq:
-		return -1 // no fixed length
-	default:
-		return -1
-	}
-}
-
-func (code optionCode) String() string {
-	switch code {
-	case optSubnetMask:
-		return "option(subnet-mask)"
-	case optDefaultGateway:
-		return "option(default-gateway)"
+		return l == 1
 	case optDomainNameServer:
-		return "option(dns)"
-	case optReqIPAddr:
-		return "option(request-ip-address)"
-	case optLeaseTime:
-		return "option(least-time)"
-	case optDHCPMsgType:
-		return "option(message-type)"
-	case optDHCPServer:
-		return "option(server)"
+		return l%4 == 0
+	case optMessage, optDomainName, optClientID:
+		return l >= 1
 	case optParamReq:
-		return "option(parameter-request)"
+		return true // no fixed length
 	default:
-		return fmt.Sprintf("option(%d)", code)
+		return true // unknown option, assume ok
 	}
 }
 
@@ -232,16 +231,26 @@ func (opts options) dhcpMsgType() (dhcpMsgType, error) {
 	for _, opt := range opts {
 		if opt.code == optDHCPMsgType {
 			if len(opt.body) != 1 {
-				return 0, fmt.Errorf("%s: bad length: %d", optDHCPMsgType, len(opt.body))
+				// TODO: s/%v/%s/ when `go vet` is smarter.
+				return 0, fmt.Errorf("%v: bad length: %d", opt.code, len(opt.body))
 			}
 			v := opt.body[0]
 			if v <= 0 || v >= 8 {
-				return 0, fmt.Errorf("%s: unknown value: %d", optDHCPMsgType, v)
+				return 0, fmt.Errorf("DHCP bad length: %d", len(opt.body))
 			}
 			return dhcpMsgType(v), nil
 		}
 	}
 	return 0, nil
+}
+
+func (opts options) message() string {
+	for _, opt := range opts {
+		if opt.code == optMessage {
+			return string(opt.body)
+		}
+	}
+	return ""
 }
 
 func (opts options) len() int {

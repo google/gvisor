@@ -764,9 +764,8 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 func (s *Stack) AddLinkAddress(nicid tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
 	fullAddr := tcpip.FullAddress{NIC: nicid, Addr: addr}
 	s.linkAddrCache.add(fullAddr, linkAddr)
-	// TODO: provide a way for a
-	// transport endpoint to receive a signal that AddLinkAddress
-	// for a particular address has been called.
+	// TODO: provide a way for a transport endpoint to receive a signal
+	// that AddLinkAddress for a particular address has been called.
 }
 
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
