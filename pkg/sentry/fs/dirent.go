@@ -1267,8 +1267,6 @@ func (d *Dirent) destroy() {
 		return
 	}
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
