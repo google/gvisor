@@ -18,6 +18,7 @@ go_library(
         "//runsc/boot:__subpackages__",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/sentry/platform",

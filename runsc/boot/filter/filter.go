@@ -28,7 +28,7 @@ import (
 )
 
 // Install installs seccomp filters for based on the given platform.
-func Install(p platform.Platform, whitelistFS, console, hostNetwork bool) error {
+func Install(p platform.Platform, whitelistFS, hostNetwork bool) error {
 	s := allowedSyscalls
 
 	// Set of additional filters used by -race and -msan. Returns empty
@@ -38,10 +38,6 @@ func Install(p platform.Platform, whitelistFS, console, hostNetwork bool) error 
 	if whitelistFS {
 		Report("direct file access allows unrestricted file access!")
 		s.Merge(whitelistFSFilters())
-	}
-	if console {
-		Report("console is enabled: syscall filters less restrictive!")
-		s.Merge(consoleFilters())
 	}
 	if hostNetwork {
 		Report("host networking enabled: syscall filters less restrictive!")

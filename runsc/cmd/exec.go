@@ -35,6 +35,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/console"
 	"gvisor.googlesource.com/gvisor/runsc/container"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -50,6 +51,11 @@ type Exec struct {
 	detach      bool
 	processPath string
 	pidFile     string
+
+	// consoleSocket is the path to an AF_UNIX socket which will receive a
+	// file descriptor referencing the master end of the console's
+	// pseudoterminal.
+	consoleSocket string
 }
 
 // Name implements subcommands.Command.Name.
@@ -91,6 +97,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&ex.detach, "detach", false, "detach from the container's process")
 	f.StringVar(&ex.processPath, "process", "", "path to the process.json")
 	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
+	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -178,11 +185,35 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 			args = append(args, a)
 		}
 	}
-
 	cmd := exec.Command(binPath, args...)
+
+	// Exec stdio defaults to current process stdio.
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// If the console control socket file is provided, then create a new
+	// pty master/slave pair and set the tty on the sandbox process.
+	if ex.consoleSocket != "" {
+		// Create a new tty pair and send the master on the provided
+		// socket.
+		tty, err := console.NewWithSocket(ex.consoleSocket)
+		if err != nil {
+			Fatalf("error setting up console with socket %q: %v", ex.consoleSocket, err)
+		}
+		defer tty.Close()
+
+		// Set stdio to the new tty slave.
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid:  true,
+			Setctty: true,
+			Ctty:    int(tty.Fd()),
+		}
+	}
+
 	if err := cmd.Start(); err != nil {
 		Fatalf("failure to start child exec process, err: %v", err)
 	}
@@ -252,11 +283,12 @@ func (ex *Exec) argsFromCLI(argv []string) (*control.ExecArgs, error) {
 	return &control.ExecArgs{
 		Argv:             argv,
 		WorkingDirectory: ex.cwd,
-		FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
 		KUID:             ex.user.kuid,
 		KGID:             ex.user.kgid,
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
+		StdioIsPty:       ex.consoleSocket != "",
+		FilePayload:      urpc.FilePayload{[]*os.File{os.Stdin, os.Stdout, os.Stderr}},
 	}, nil
 }
 
@@ -292,11 +324,12 @@ func argsFromProcess(p *specs.Process) (*control.ExecArgs, error) {
 		Argv:             p.Args,
 		Envv:             p.Env,
 		WorkingDirectory: p.Cwd,
-		FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
 		KUID:             auth.KUID(p.User.UID),
 		KGID:             auth.KGID(p.User.GID),
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
+		StdioIsPty:       p.Terminal,
+		FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
 	}, nil
 }
 

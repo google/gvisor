@@ -31,6 +31,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/console"
 	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -392,7 +393,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		"boot",
 		"--bundle", bundleDir,
 		"--controller-fd="+strconv.Itoa(nextFD),
-		fmt.Sprintf("--console=%t", consoleEnabled))
+		"--console="+strconv.FormatBool(consoleEnabled))
 	nextFD++
 
 	controllerFile := os.NewFile(uintptr(fd), "control_server_socket")
@@ -407,14 +408,19 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nextFD++
 	}
 
+	// Sandbox stdio defaults to current process stdio.
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	// If the console control socket file is provided, then create a new
 	// pty master/slave pair and set the tty on the sandbox process.
 	if consoleEnabled {
-		// setupConsole will send the master on the socket, and return
-		// the slave.
-		tty, err := setupConsole(consoleSocket)
+		// console.NewWithSocket will send the master on the socket,
+		// and return the slave.
+		tty, err := console.NewWithSocket(consoleSocket)
 		if err != nil {
-			return fmt.Errorf("error setting up control socket %q: %v", consoleSocket, err)
+			return fmt.Errorf("error setting up console with socket %q: %v", consoleSocket, err)
 		}
 		defer tty.Close()
 
@@ -423,10 +429,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		cmd.Stderr = tty
 		cmd.SysProcAttr.Setctty = true
 		cmd.SysProcAttr.Ctty = int(tty.Fd())
-	} else {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 	}
 
 	// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT

@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/seccomp"
 )
 
@@ -78,15 +79,36 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_TGKILL:          {},
 	syscall.SYS_WRITE:           {},
 	syscall.SYS_WRITEV:          {},
-}
 
-// TODO: Ioctl is needed in order to support tty consoles.
-// Once filters support argument-checking, we should only allow ioctl
-// with tty-related arguments.
-func consoleFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		syscall.SYS_IOCTL: {},
-	}
+	// SYS_IOCTL is needed for terminal support, but we only allow
+	// setting/getting termios and winsize.
+	syscall.SYS_IOCTL: []seccomp.Rule{
+		{
+			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TCGETS),
+			seccomp.AllowAny{}, /* termios struct */
+		},
+		{
+			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TCSETS),
+			seccomp.AllowAny{}, /* termios struct */
+		},
+		{
+			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TCSETSW),
+			seccomp.AllowAny{}, /* termios struct */
+		},
+		{
+			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TIOCSWINSZ),
+			seccomp.AllowAny{}, /* winsize struct */
+		},
+		{
+			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TIOCGWINSZ),
+			seccomp.AllowAny{}, /* winsize struct */
+		},
+	},
 }
 
 // whitelistFSFilters returns syscalls made by whitelistFS. Using WhitelistFS

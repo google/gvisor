@@ -48,7 +48,6 @@ go_library(
         "//pkg/unet",
         "//pkg/waiter",
         "//pkg/waiter/fdnotifier",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

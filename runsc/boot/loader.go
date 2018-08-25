@@ -340,7 +340,7 @@ func (l *Loader) run() error {
 	} else {
 		whitelistFS := l.conf.FileAccess == FileAccessDirect
 		hostNet := l.conf.Network == NetworkHost
-		if err := filter.Install(l.k.Platform, whitelistFS, l.console, hostNet); err != nil {
+		if err := filter.Install(l.k.Platform, whitelistFS, hostNet); err != nil {
 			return fmt.Errorf("Failed to install seccomp filters: %v", err)
 		}
 	}

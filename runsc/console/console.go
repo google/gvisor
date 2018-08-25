@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sandbox
+// Package console contains utilities for working with pty consols in runsc.
+package console
 
 import (
 	"fmt"
@@ -23,9 +24,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// setupConsole creates pty master/slave pair, sends the master FD over the
-// given socket, and returns the slave.
-func setupConsole(socketPath string) (*os.File, error) {
+// NewWithSocket creates pty master/slave pair, sends the master FD over the given
+// socket, and returns the slave.
+func NewWithSocket(socketPath string) (*os.File, error) {
 	// Create a new pty master and slave.
 	ptyMaster, ptySlave, err := pty.Open()
 	if err != nil {

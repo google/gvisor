@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"syscall"
 
-	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -296,7 +295,7 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 	fd := f.iops.fileState.FD()
 	ioctl := args[1].Uint64()
 	switch ioctl {
-	case unix.TCGETS:
+	case linux.TCGETS:
 		termios, err := ioctlGetTermios(fd)
 		if err != nil {
 			return 0, err
@@ -306,7 +305,7 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		})
 		return 0, err
 
-	case unix.TCSETS, unix.TCSETSW:
+	case linux.TCSETS, linux.TCSETSW:
 		var termios linux.Termios
 		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &termios, usermem.IOOpts{
 			AddressSpaceActive: true,
@@ -316,7 +315,7 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		err := ioctlSetTermios(fd, ioctl, &termios)
 		return 0, err
 
-	case unix.TIOCGPGRP:
+	case linux.TIOCGPGRP:
 		// Args: pid_t *argp
 		// When successful, equivalent to *argp = tcgetpgrp(fd).
 		// Get the process group ID of the foreground process group on
@@ -332,7 +331,7 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		})
 		return 0, err
 
-	case unix.TIOCSPGRP:
+	case linux.TIOCSPGRP:
 		// Args: const pid_t *argp
 		// Equivalent to tcsetpgrp(fd, *argp).
 		// Set the foreground process group ID of this terminal.
@@ -343,10 +342,10 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		log.Warningf("Ignoring application ioctl(TIOCSPGRP) call")
 		return 0, nil
 
-	case unix.TIOCGWINSZ:
+	case linux.TIOCGWINSZ:
 		// Args: struct winsize *argp
 		// Get window size.
-		winsize, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+		winsize, err := ioctlGetWinsize(fd)
 		if err != nil {
 			return 0, err
 		}
@@ -355,16 +354,16 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		})
 		return 0, err
 
-	case unix.TIOCSWINSZ:
+	case linux.TIOCSWINSZ:
 		// Args: const struct winsize *argp
 		// Set window size.
-		var winsize unix.Winsize
+		var winsize linux.Winsize
 		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &winsize, usermem.IOOpts{
 			AddressSpaceActive: true,
 		}); err != nil {
 			return 0, err
 		}
-		err := unix.IoctlSetWinsize(fd, unix.TIOCSWINSZ, &winsize)
+		err := ioctlSetWinsize(fd, &winsize)
 		return 0, err
 
 	default:

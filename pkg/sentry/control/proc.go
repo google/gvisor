@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -73,6 +72,10 @@ type ExecArgs struct {
 	// Capabilities is the list of capabilities to give to the process.
 	Capabilities *auth.TaskCapabilities
 
+	// StdioIsPty indicates that FDs 0, 1, and 2 are connected to a host
+	// pty fd.
+	StdioIsPty bool
+
 	// FilePayload determines the files to give to the new process.
 	urpc.FilePayload
 }
@@ -108,17 +111,11 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 	mounter := fs.FileOwnerFromContext(ctx)
 
 	for appFD, f := range args.FilePayload.Files {
-		// Copy the underlying FD.
-		newFD, err := syscall.Dup(int(f.Fd()))
-		if err != nil {
-			return err
-		}
-		f.Close()
+		enableIoctl := args.StdioIsPty && appFD <= 2
 
-		// Install the given file as an FD.
-		file, err := host.NewFile(ctx, newFD, mounter)
+		// Import the given file FD. This dups the FD as well.
+		file, err := host.ImportFile(ctx, int(f.Fd()), mounter, enableIoctl)
 		if err != nil {
-			syscall.Close(newFD)
 			return err
 		}
 		defer file.DecRef()

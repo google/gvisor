@@ -26,6 +26,14 @@ const (
 	disabledChar = 0
 )
 
+// Winsize is struct winsize, defined in uapi/asm-generic/termios.h.
+type Winsize struct {
+	Row    uint16
+	Col    uint16
+	Xpixel uint16
+	Ypixel uint16
+}
+
 // Termios is struct termios, defined in uapi/asm-generic/termbits.h.
 type Termios struct {
 	InputFlags        uint32

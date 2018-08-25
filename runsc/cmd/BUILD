@@ -38,6 +38,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/urpc",
         "//runsc/boot",
+        "//runsc/console",
         "//runsc/container",
         "//runsc/fsgofer",
         "//runsc/specutils",
