@@ -151,41 +151,60 @@ func TestLookup(t *testing.T) {
 
 func TestRevalidation(t *testing.T) {
 	tests := []struct {
-		cachePolicy               cachePolicy
-		preModificationWantReval  bool
-		postModificationWantReval bool
+		cachePolicy cachePolicy
+
+		// Whether dirent should be reloaded before any modifications.
+		preModificationWantReload bool
+
+		// Whether dirent should be reloaded after updating an unstable
+		// attribute on the remote fs.
+		postModificationWantReload bool
+
+		// Whether dirent unstable attributes should be updated after
+		// updating an attribute on the remote fs.
+		postModificationWantUpdatedAttrs bool
+
+		// Whether dirent should be reloaded after the remote has
+		// removed the file.
+		postRemovalWantReload bool
 	}{
 		{
 			// Policy cacheNone causes Revalidate to always return
 			// true.
-			cachePolicy:               cacheNone,
-			preModificationWantReval:  true,
-			postModificationWantReval: true,
+			cachePolicy:                      cacheNone,
+			preModificationWantReload:        true,
+			postModificationWantReload:       true,
+			postModificationWantUpdatedAttrs: true,
+			postRemovalWantReload:            true,
 		},
 		{
 			// Policy cacheAll causes Revalidate to always return
 			// false.
-			cachePolicy:               cacheAll,
-			preModificationWantReval:  false,
-			postModificationWantReval: false,
+			cachePolicy:                      cacheAll,
+			preModificationWantReload:        false,
+			postModificationWantReload:       false,
+			postModificationWantUpdatedAttrs: false,
+			postRemovalWantReload:            false,
 		},
 		{
 			// Policy cacheAllWritethrough causes Revalidate to
 			// always return false.
-			cachePolicy:               cacheAllWritethrough,
-			preModificationWantReval:  false,
-			postModificationWantReval: false,
+			cachePolicy:                      cacheAllWritethrough,
+			preModificationWantReload:        false,
+			postModificationWantReload:       false,
+			postModificationWantUpdatedAttrs: false,
+			postRemovalWantReload:            false,
 		},
 		{
 			// Policy cacheRemoteRevalidating causes Revalidate to
-			// always return true.
-			//
-			// TODO: The cacheRemoteRevalidating
-			// policy should only return true if the remote file's
-			// attributes have changed.
-			cachePolicy:               cacheRemoteRevalidating,
-			preModificationWantReval:  true,
-			postModificationWantReval: true,
+			// return update cached unstable attrs, and returns
+			// true only when the remote inode itself has been
+			// removed or replaced.
+			cachePolicy:                      cacheRemoteRevalidating,
+			preModificationWantReload:        false,
+			postModificationWantReload:       false,
+			postModificationWantUpdatedAttrs: true,
+			postRemovalWantReload:            true,
 		},
 	}
 
@@ -227,15 +246,17 @@ func TestRevalidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Lookup(%q) failed: %v", name, err)
 			}
-			if test.preModificationWantReval && dirent == newDirent {
+			if test.preModificationWantReload && dirent == newDirent {
 				t.Errorf("Lookup(%q) with cachePolicy=%s got old dirent %v, wanted a new dirent", name, test.cachePolicy, dirent)
 			}
-			if !test.preModificationWantReval && dirent != newDirent {
+			if !test.preModificationWantReload && dirent != newDirent {
 				t.Errorf("Lookup(%q) with cachePolicy=%s got new dirent %v, wanted old dirent %v", name, test.cachePolicy, newDirent, dirent)
 			}
 
 			// Modify the underlying mocked file's modification time.
-			file.GetAttrMock.Attr.MTimeSeconds = uint64(time.Now().Unix())
+			nowSeconds := time.Now().Unix()
+			rootFile.WalkGetAttrMock.Attr.MTimeSeconds = uint64(nowSeconds)
+			file.GetAttrMock.Attr.MTimeSeconds = uint64(nowSeconds)
 
 			// Walk again. Depending on the cache policy, we may get a new
 			// dirent.
@@ -243,11 +264,35 @@ func TestRevalidation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Lookup(%q) failed: %v", name, err)
 			}
-			if test.postModificationWantReval && dirent == newDirent {
+			if test.postModificationWantReload && dirent == newDirent {
 				t.Errorf("Lookup(%q) with cachePolicy=%s got old dirent %v, wanted a new dirent", name, test.cachePolicy, dirent)
 			}
-			if !test.postModificationWantReval && dirent != newDirent {
+			if !test.postModificationWantReload && dirent != newDirent {
 				t.Errorf("Lookup(%q) with cachePolicy=%s got new dirent %v, wanted old dirent %v", name, test.cachePolicy, newDirent, dirent)
+			}
+			uattrs, err := newDirent.Inode.UnstableAttr(ctx)
+			if err != nil {
+				t.Fatalf("Error getting unstable attrs: %v", err)
+			}
+			gotModTimeSeconds := uattrs.ModificationTime.Seconds()
+			if test.postModificationWantUpdatedAttrs && gotModTimeSeconds != nowSeconds {
+				t.Fatalf("Lookup(%q) with cachePolicy=%s got new modification time %v, wanted %v", name, test.cachePolicy, gotModTimeSeconds, nowSeconds)
+			}
+
+			// Make WalkGetAttr return ENOENT. This simulates
+			// removing the file from the remote fs.
+			rootFile.WalkGetAttrMock = p9test.WalkGetAttrMock{
+				Err: syscall.ENOENT,
+			}
+
+			// Walk again. Depending on the cache policy, we may
+			// get ENOENT.
+			newDirent, err = rootDir.Walk(ctx, rootDir, name)
+			if test.postRemovalWantReload && err == nil {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got nil error, wanted ENOENT", name, test.cachePolicy)
+			}
+			if !test.postRemovalWantReload && (err != nil || dirent != newDirent) {
+				t.Errorf("Lookup(%q) with cachePolicy=%s got new dirent %v and error %v, wanted old dirent %v and nil error", name, test.cachePolicy, newDirent, err, dirent)
 			}
 		})
 	}

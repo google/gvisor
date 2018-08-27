@@ -41,23 +41,29 @@ func newOverlayMountSource(upper, lower *MountSource, flags MountSourceFlags) *M
 // delegating to the upper filesystem's Revalidate method. We cannot reload
 // files from the lower filesystem, so we panic if the lower filesystem's
 // Revalidate method returns true.
-func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, inode *Inode) bool {
-	if inode.overlay == nil {
+func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, name string, parent, child *Inode) bool {
+	if child.overlay == nil {
 		panic("overlay cannot revalidate inode that is not an overlay")
 	}
 
-	// Should we bother checking this, or just ignore?
-	if inode.overlay.lower != nil && o.lower.Revalidate(ctx, inode.overlay.lower) {
+	// Revalidate is never called on a mount point, so parent and child
+	// must be from the same mount, and thus must both be overlay inodes.
+	if parent.overlay == nil {
+		panic("trying to revalidate an overlay inode but the parent is not an overlay")
+	}
+
+	// We can't revalidate from the lower filesystem.
+	if child.overlay.lower != nil && o.lower.Revalidate(ctx, name, parent.overlay.lower, child.overlay.lower) {
 		panic("an overlay cannot revalidate file objects from the lower fs")
 	}
 
-	if inode.overlay.upper == nil {
-		// Nothing to revalidate.
+	// Do we have anything to revalidate?
+	if child.overlay.upper == nil {
 		return false
 	}
 
 	// Does the upper require revalidation?
-	return o.upper.Revalidate(ctx, inode.overlay.upper)
+	return o.upper.Revalidate(ctx, name, parent.overlay.upper, child.overlay.upper)
 }
 
 // Keep implements MountSourceOperations by delegating to the upper

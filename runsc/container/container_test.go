@@ -134,7 +134,13 @@ func waitForFile(f *os.File) error {
 		}
 		return nil
 	}
-	return testutil.Poll(op, 5*time.Second)
+
+	timeout := 5 * time.Second
+	if testutil.RaceEnabled {
+		// Race makes slow things even slow, so bump the timeout.
+		timeout = 3 * timeout
+	}
+	return testutil.Poll(op, timeout)
 }
 
 // readOutputNum reads a file at given filepath and returns the int at the
@@ -213,10 +219,8 @@ const (
 	nonExclusiveFS
 )
 
-// TODO: nonExclusiveFS was removed because it causes timeout
-// with --race. Put it back when bug is fixed.
-var all = []configOption{overlay, kvm}
-var noOverlay = []configOption{kvm}
+var noOverlay = []configOption{kvm, nonExclusiveFS}
+var all = append(noOverlay, overlay)
 
 // configs generates different configurations to run tests.
 func configs(opts ...configOption) []*boot.Config {
@@ -1571,10 +1575,6 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	// Main process just sleeps. We will use "exec" to probe the state of
 	// the filesystem.
 	spec := testutil.NewSpecWithArgs("sleep", "1000")
-
-	// TODO: $TEST_TMPDIR mount is mistakenly marked as RO after
-	// revalidation. Remove when it's fixed.
-	spec.Root.Readonly = false
 
 	dir, err := ioutil.TempDir(testutil.TmpDir(), "root-fs-test")
 	if err != nil {

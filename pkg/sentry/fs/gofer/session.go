@@ -146,13 +146,13 @@ func (s *session) Destroy() {
 }
 
 // Revalidate implements MountSource.Revalidate.
-func (s *session) Revalidate(ctx context.Context, i *fs.Inode) bool {
-	return s.cachePolicy.revalidateDirent()
+func (s *session) Revalidate(ctx context.Context, name string, parent, child *fs.Inode) bool {
+	return s.cachePolicy.revalidate(ctx, name, parent, child)
 }
 
 // Keep implements MountSource.Keep.
 func (s *session) Keep(d *fs.Dirent) bool {
-	return s.cachePolicy.keepDirent(d.Inode)
+	return s.cachePolicy.keep(d)
 }
 
 // ResetInodeMappings implements fs.MountSourceOperations.ResetInodeMappings.

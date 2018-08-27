@@ -213,25 +213,6 @@ func (a AttrMask) Empty() bool {
 	return a == AttrMask{}
 }
 
-// Union returns an AttrMask containing the inclusive disjunction of fields in a and b.
-func (a AttrMask) Union(b AttrMask) AttrMask {
-	return AttrMask{
-		Type:             a.Type || b.Type,
-		DeviceID:         a.DeviceID || b.DeviceID,
-		InodeID:          a.InodeID || b.InodeID,
-		BlockSize:        a.BlockSize || b.BlockSize,
-		Size:             a.Size || b.Size,
-		Usage:            a.Usage || b.Usage,
-		Perms:            a.Perms || b.Perms,
-		UID:              a.UID || b.UID,
-		GID:              a.GID || b.GID,
-		AccessTime:       a.AccessTime || b.AccessTime,
-		ModificationTime: a.ModificationTime || b.ModificationTime,
-		StatusChangeTime: a.StatusChangeTime || b.StatusChangeTime,
-		Links:            a.Links || b.Links,
-	}
-}
-
 // PermMask are file access permissions.
 //
 // +stateify savable

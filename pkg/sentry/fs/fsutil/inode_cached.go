@@ -427,6 +427,47 @@ func (c *CachingInodeOperations) touchStatusChangeTimeLocked(ctx context.Context
 	c.dirtyAttr.StatusChangeTime = true
 }
 
+// UpdateUnstable updates the cached unstable attributes. Only non-dirty
+// attributes are updated.
+func (c *CachingInodeOperations) UpdateUnstable(attr fs.UnstableAttr) {
+	// All attributes are protected by attrMu.
+	c.attrMu.Lock()
+
+	if !c.dirtyAttr.Usage {
+		c.attr.Usage = attr.Usage
+	}
+	if !c.dirtyAttr.Perms {
+		c.attr.Perms = attr.Perms
+	}
+	if !c.dirtyAttr.UID {
+		c.attr.Owner.UID = attr.Owner.UID
+	}
+	if !c.dirtyAttr.GID {
+		c.attr.Owner.GID = attr.Owner.GID
+	}
+	if !c.dirtyAttr.AccessTime {
+		c.attr.AccessTime = attr.AccessTime
+	}
+	if !c.dirtyAttr.ModificationTime {
+		c.attr.ModificationTime = attr.ModificationTime
+	}
+	if !c.dirtyAttr.StatusChangeTime {
+		c.attr.StatusChangeTime = attr.StatusChangeTime
+	}
+	if !c.dirtyAttr.Links {
+		c.attr.Links = attr.Links
+	}
+
+	// Size requires holding attrMu and dataMu.
+	c.dataMu.Lock()
+	if !c.dirtyAttr.Size {
+		c.attr.Size = attr.Size
+	}
+	c.dataMu.Unlock()
+
+	c.attrMu.Unlock()
+}
+
 // Read reads from frames and otherwise directly from the backing file
 // into dst starting at offset until dst is full, EOF is reached, or an
 // error is encountered.

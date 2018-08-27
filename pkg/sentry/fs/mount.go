@@ -27,10 +27,13 @@ import (
 // DirentOperations provide file systems greater control over how long a Dirent stays pinned
 // in core. Implementations must not take Dirent.mu.
 type DirentOperations interface {
-	// Revalidate returns true if the Inode is stale and its
-	// InodeOperations needs to be reloaded. Revalidate will never be
-	// called on a Inode that is mounted.
-	Revalidate(ctx context.Context, inode *Inode) bool
+	// Revalidate is called during lookup each time we encounter a Dirent
+	// in the cache. Implementations may update stale properties of the
+	// child Inode. If Revalidate returns true, then the entire Inode will
+	// be reloaded.
+	//
+	// Revalidate will never be called on a Inode that is mounted.
+	Revalidate(ctx context.Context, name string, parent, child *Inode) bool
 
 	// Keep returns true if the Dirent should be kept in memory for as long
 	// as possible beyond any active references.
@@ -281,7 +284,7 @@ type SimpleMountSourceOperations struct {
 }
 
 // Revalidate implements MountSourceOperations.Revalidate.
-func (smo *SimpleMountSourceOperations) Revalidate(context.Context, *Inode) bool {
+func (smo *SimpleMountSourceOperations) Revalidate(context.Context, string, *Inode, *Inode) bool {
 	return smo.revalidate
 }
 
