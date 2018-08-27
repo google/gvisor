@@ -214,6 +214,8 @@ func (NoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 }
 
 // DirFileOperations implements FileOperations for directories.
+//
+// +stateify savable
 type DirFileOperations struct {
 	waiter.AlwaysReady `state:"nosave"`
 	NoopRelease        `state:"nosave"`
