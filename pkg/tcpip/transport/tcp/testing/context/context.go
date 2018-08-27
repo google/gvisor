@@ -295,9 +295,8 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	c.linkEP.Inject(ipv4.ProtocolNumber, &vv)
 }
 
-// SendPacket builds and sends a TCP segment(with the provided payload & TCP
-// headers) in an IPv4 packet via the link layer endpoint.
-func (c *Context) SendPacket(payload []byte, h *Headers) {
+// BuildSegment builds a TCP segment based on the given Headers and payload.
+func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView {
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.TCPMinimumSize + header.IPv4MinimumSize + len(h.TCPOpts) + len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -340,6 +339,20 @@ func (c *Context) SendPacket(payload []byte, h *Headers) {
 	// Inject packet.
 	var views [1]buffer.View
 	vv := buf.ToVectorisedView(views)
+
+	return vv
+}
+
+// SendSegment sends a TCP segment that has already been built and written to a
+// buffer.VectorisedView.
+func (c *Context) SendSegment(s *buffer.VectorisedView) {
+	c.linkEP.Inject(ipv4.ProtocolNumber, s)
+}
+
+// SendPacket builds and sends a TCP segment(with the provided payload & TCP
+// headers) in an IPv4 packet via the link layer endpoint.
+func (c *Context) SendPacket(payload []byte, h *Headers) {
+	vv := c.BuildSegment(payload, h)
 	c.linkEP.Inject(ipv4.ProtocolNumber, &vv)
 }
 

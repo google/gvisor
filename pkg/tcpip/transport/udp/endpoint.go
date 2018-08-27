@@ -327,7 +327,10 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 	if err != nil {
 		return 0, err
 	}
-	sendUDP(route, v, e.id.LocalPort, dstPort)
+
+	if err := sendUDP(route, v, e.id.LocalPort, dstPort); err != nil {
+		return 0, err
+	}
 	return uintptr(len(v)), nil
 }
 
@@ -446,6 +449,9 @@ func sendUDP(r *stack.Route, data buffer.View, localPort, remotePort uint16) *tc
 
 		udp.SetChecksum(^udp.CalculateChecksum(xsum, length))
 	}
+
+	// Track count of packets sent.
+	r.Stats().UDP.PacketsSent.Increment()
 
 	return r.WritePacket(&hdr, data, ProtocolNumber)
 }
@@ -758,15 +764,18 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	hdr := header.UDP(vv.First())
 	if int(hdr.Length()) > vv.Size() {
 		// Malformed packet.
+		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		return
 	}
 
 	vv.TrimFront(header.UDPMinimumSize)
 
 	e.rcvMu.Lock()
+	e.stack.Stats().UDP.PacketsReceived.Increment()
 
 	// Drop the packet if our buffer is currently full.
 	if !e.rcvReady || e.rcvClosed || e.rcvBufSize >= e.rcvBufSizeMax {
+		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
 		e.rcvMu.Unlock()
 		return
 	}

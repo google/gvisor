@@ -604,6 +604,11 @@ func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffe
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
 	}
 
+	r.Stats().TCP.SegmentsSent.Increment()
+	if (flags & flagRst) != 0 {
+		r.Stats().TCP.ResetsSent.Increment()
+	}
+
 	return r.WritePacket(&hdr, data, ProtocolNumber)
 }
 
@@ -639,6 +644,11 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.View, fla
 		}
 
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
+	}
+
+	r.Stats().TCP.SegmentsSent.Increment()
+	if (flags & flagRst) != 0 {
+		r.Stats().TCP.ResetsSent.Increment()
 	}
 
 	return r.WritePacket(&hdr, data, ProtocolNumber)

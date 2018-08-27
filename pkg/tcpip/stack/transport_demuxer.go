@@ -19,6 +19,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 )
 
 type protocolIDs struct {
@@ -111,6 +112,10 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 
 	// Fail if we didn't find one.
 	if ep == nil {
+		// UDP packet could not be delivered to an unknown destination port.
+		if protocol == header.UDPProtocolNumber {
+			r.Stats().UDP.UnknownPortErrors.Increment()
+		}
 		return false
 	}
 

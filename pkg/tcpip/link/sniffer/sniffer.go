@@ -118,7 +118,7 @@ func NewWithFile(lower tcpip.LinkEndpointID, file *os.File, snapLen uint32) (tcp
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		LogPacket("recv", protocol, vv.First(), nil)
+		logPacket("recv", protocol, vv.First(), nil)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		vs := vv.Views()
@@ -190,7 +190,7 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		LogPacket("send", protocol, hdr.UsedBytes(), payload)
+		logPacket("send", protocol, hdr.UsedBytes(), payload)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		hdrBuf := hdr.UsedBytes()
@@ -226,8 +226,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 	return e.lower.WritePacket(r, hdr, payload, protocol)
 }
 
-// LogPacket logs the given packet.
-func LogPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byte) {
+func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byte) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -316,9 +315,19 @@ func LogPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byt
 	case header.TCPProtocolNumber:
 		transName = "tcp"
 		tcp := header.TCP(b)
+		offset := int(tcp.DataOffset())
+		if offset < header.TCPMinimumSize {
+			details += fmt.Sprintf("invalid packet: tcp data offset too small %d", offset)
+			break
+		}
+		if offset > len(tcp) {
+			details += fmt.Sprintf("invalid packet: tcp data offset %d larger than packet buffer length %d", offset, len(tcp))
+			break
+		}
+
 		srcPort = tcp.SourcePort()
 		dstPort = tcp.DestinationPort()
-		size -= uint16(tcp.DataOffset())
+		size -= uint16(offset)
 
 		// Initialize the TCP flags.
 		flags := tcp.Flags()
@@ -334,6 +343,7 @@ func LogPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byt
 		} else {
 			details += fmt.Sprintf(" options: %+v", tcp.ParsedOptions())
 		}
+
 	default:
 		log.Infof("%s %v -> %v unknown transport protocol: %d", prefix, src, dst, transProto)
 		return

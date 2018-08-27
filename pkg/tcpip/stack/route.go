@@ -70,6 +70,11 @@ func (r *Route) MaxHeaderLength() uint16 {
 	return r.ref.ep.MaxHeaderLength()
 }
 
+// Stats returns a mutable copy of current stats.
+func (r *Route) Stats() tcpip.Stats {
+	return r.ref.nic.stack.Stats()
+}
+
 // PseudoHeaderChecksum forwards the call to the network endpoint's
 // implementation.
 func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber) uint16 {
@@ -125,7 +130,11 @@ func (r *Route) IsResolutionRequired() bool {
 
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(hdr *buffer.Prependable, payload buffer.View, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
-	return r.ref.ep.WritePacket(r, hdr, payload, protocol)
+	err := r.ref.ep.WritePacket(r, hdr, payload, protocol)
+	if err == tcpip.ErrNoRoute {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
+	}
+	return err
 }
 
 // MTU returns the MTU of the underlying network endpoint.

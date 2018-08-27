@@ -267,8 +267,7 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	c.WQ.EventRegister(&we, waiter.EventIn)
 	defer c.WQ.EventUnregister(&we)
 
-	stk := c.Stack()
-	droppedPacketsStat := stk.Stats().DroppedPackets
+	droppedPacketsStat := c.Stack().Stats().DroppedPackets
 	droppedPackets := droppedPacketsStat.Value()
 	data := []byte{1, 2, 3}
 	// Save the sequence number as we will reset it later down

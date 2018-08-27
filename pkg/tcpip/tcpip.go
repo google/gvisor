@@ -31,6 +31,7 @@ package tcpip
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,48 +48,56 @@ import (
 // Note: to support save / restore, it is important that all tcpip errors have
 // distinct error messages.
 type Error struct {
-	string
+	msg string
+
+	ignoreStats bool
 }
 
 // String implements fmt.Stringer.String.
 func (e *Error) String() string {
-	return e.string
+	return e.msg
+}
+
+// IgnoreStats indicates whether this error type should be included in failure
+// counts in tcpip.Stats structs.
+func (e *Error) IgnoreStats() bool {
+	return e.ignoreStats
 }
 
 // Errors that can be returned by the network stack.
 var (
-	ErrUnknownProtocol       = &Error{"unknown protocol"}
-	ErrUnknownNICID          = &Error{"unknown nic id"}
-	ErrUnknownProtocolOption = &Error{"unknown option for protocol"}
-	ErrDuplicateNICID        = &Error{"duplicate nic id"}
-	ErrDuplicateAddress      = &Error{"duplicate address"}
-	ErrNoRoute               = &Error{"no route"}
-	ErrBadLinkEndpoint       = &Error{"bad link layer endpoint"}
-	ErrAlreadyBound          = &Error{"endpoint already bound"}
-	ErrInvalidEndpointState  = &Error{"endpoint is in invalid state"}
-	ErrAlreadyConnecting     = &Error{"endpoint is already connecting"}
-	ErrAlreadyConnected      = &Error{"endpoint is already connected"}
-	ErrNoPortAvailable       = &Error{"no ports are available"}
-	ErrPortInUse             = &Error{"port is in use"}
-	ErrBadLocalAddress       = &Error{"bad local address"}
-	ErrClosedForSend         = &Error{"endpoint is closed for send"}
-	ErrClosedForReceive      = &Error{"endpoint is closed for receive"}
-	ErrWouldBlock            = &Error{"operation would block"}
-	ErrConnectionRefused     = &Error{"connection was refused"}
-	ErrTimeout               = &Error{"operation timed out"}
-	ErrAborted               = &Error{"operation aborted"}
-	ErrConnectStarted        = &Error{"connection attempt started"}
-	ErrDestinationRequired   = &Error{"destination address is required"}
-	ErrNotSupported          = &Error{"operation not supported"}
-	ErrQueueSizeNotSupported = &Error{"queue size querying not supported"}
-	ErrNotConnected          = &Error{"endpoint not connected"}
-	ErrConnectionReset       = &Error{"connection reset by peer"}
-	ErrConnectionAborted     = &Error{"connection aborted"}
-	ErrNoSuchFile            = &Error{"no such file"}
-	ErrInvalidOptionValue    = &Error{"invalid option value specified"}
-	ErrNoLinkAddress         = &Error{"no remote link address"}
-	ErrBadAddress            = &Error{"bad address"}
-	ErrNetworkUnreachable    = &Error{"network is unreachable"}
+	ErrUnknownProtocol       = &Error{msg: "unknown protocol"}
+	ErrUnknownNICID          = &Error{msg: "unknown nic id"}
+	ErrUnknownProtocolOption = &Error{msg: "unknown option for protocol"}
+	ErrDuplicateNICID        = &Error{msg: "duplicate nic id"}
+	ErrDuplicateAddress      = &Error{msg: "duplicate address"}
+	ErrNoRoute               = &Error{msg: "no route"}
+	ErrBadLinkEndpoint       = &Error{msg: "bad link layer endpoint"}
+	ErrAlreadyBound          = &Error{msg: "endpoint already bound", ignoreStats: true}
+	ErrInvalidEndpointState  = &Error{msg: "endpoint is in invalid state"}
+	ErrAlreadyConnecting     = &Error{msg: "endpoint is already connecting", ignoreStats: true}
+	ErrAlreadyConnected      = &Error{msg: "endpoint is already connected", ignoreStats: true}
+	ErrNoPortAvailable       = &Error{msg: "no ports are available"}
+	ErrPortInUse             = &Error{msg: "port is in use"}
+	ErrBadLocalAddress       = &Error{msg: "bad local address"}
+	ErrClosedForSend         = &Error{msg: "endpoint is closed for send"}
+	ErrClosedForReceive      = &Error{msg: "endpoint is closed for receive"}
+	ErrWouldBlock            = &Error{msg: "operation would block", ignoreStats: true}
+	ErrConnectionRefused     = &Error{msg: "connection was refused"}
+	ErrTimeout               = &Error{msg: "operation timed out"}
+	ErrAborted               = &Error{msg: "operation aborted"}
+	ErrConnectStarted        = &Error{msg: "connection attempt started", ignoreStats: true}
+	ErrDestinationRequired   = &Error{msg: "destination address is required"}
+	ErrNotSupported          = &Error{msg: "operation not supported"}
+	ErrQueueSizeNotSupported = &Error{msg: "queue size querying not supported"}
+	ErrNotConnected          = &Error{msg: "endpoint not connected"}
+	ErrConnectionReset       = &Error{msg: "connection reset by peer"}
+	ErrConnectionAborted     = &Error{msg: "connection aborted"}
+	ErrNoSuchFile            = &Error{msg: "no such file"}
+	ErrInvalidOptionValue    = &Error{msg: "invalid option value specified"}
+	ErrNoLinkAddress         = &Error{msg: "no remote link address"}
+	ErrBadAddress            = &Error{msg: "bad address"}
+	ErrNetworkUnreachable    = &Error{msg: "network is unreachable"}
 )
 
 // Errors related to Subnet
@@ -473,7 +482,7 @@ type StatCounter struct {
 
 // Increment adds one to the counter.
 func (s *StatCounter) Increment() {
-	atomic.AddUint64(&s.count, 1)
+	s.IncrementBy(1)
 }
 
 // Value returns the current value of the counter.
@@ -486,6 +495,82 @@ func (s *StatCounter) IncrementBy(v uint64) {
 	atomic.AddUint64(&s.count, v)
 }
 
+// IPStats collects IP-specific stats (both v4 and v6).
+type IPStats struct {
+	// PacketsReceived is the total number of IP packets received from the link
+	// layer in nic.DeliverNetworkPacket.
+	PacketsReceived *StatCounter
+
+	// InvalidAddressesReceived is the total number of IP packets received
+	// with an unknown or invalid destination address.
+	InvalidAddressesReceived *StatCounter
+
+	// PacketsDelivered is the total number of incoming IP packets that
+	// are successfully delivered to the transport layer via HandlePacket.
+	PacketsDelivered *StatCounter
+
+	// PacketsSent is the total number of IP packets sent via WritePacket.
+	PacketsSent *StatCounter
+
+	// OutgoingPacketErrors is the total number of IP packets which failed
+	// to write to a link-layer endpoint.
+	OutgoingPacketErrors *StatCounter
+}
+
+// TCPStats collects TCP-specific stats.
+type TCPStats struct {
+	// ActiveConnectionOpenings is the number of connections opened successfully
+	// via Connect.
+	ActiveConnectionOpenings *StatCounter
+
+	// PassiveConnectionOpenings is the number of connections opened
+	// successfully via Listen.
+	PassiveConnectionOpenings *StatCounter
+
+	// FailedConnectionAttempts is the number of calls to Connect or Listen
+	// (active and passive openings, respectively) that end in an error.
+	FailedConnectionAttempts *StatCounter
+
+	// ValidSegmentsReceived is the number of TCP segments received that the
+	// transport layer successfully parsed.
+	ValidSegmentsReceived *StatCounter
+
+	// InvalidSegmentsReceived is the number of TCP segments received that
+	// the transport layer could not parse.
+	InvalidSegmentsReceived *StatCounter
+
+	// SegmentsSent is the number of TCP segments sent.
+	SegmentsSent *StatCounter
+
+	// ResetsSent is the number of TCP resets sent.
+	ResetsSent *StatCounter
+
+	// ResetsReceived is the number of TCP resets received.
+	ResetsReceived *StatCounter
+}
+
+// UDPStats collects UDP-specific stats.
+type UDPStats struct {
+	// PacketsReceived is the number of UDP datagrams received via
+	// HandlePacket.
+	PacketsReceived *StatCounter
+
+	// UnknownPortErrors is the number of incoming UDP datagrams dropped
+	// because they did not have a known destination port.
+	UnknownPortErrors *StatCounter
+
+	// ReceiveBufferErrors is the number of incoming UDP datagrams dropped
+	// due to the receiving buffer being in an invalid state.
+	ReceiveBufferErrors *StatCounter
+
+	// MalformedPacketsReceived is the number of incoming UDP datagrams
+	// dropped due to the UDP header being in a malformed state.
+	MalformedPacketsReceived *StatCounter
+
+	// PacketsSent is the number of UDP datagrams sent via sendUDP.
+	PacketsSent *StatCounter
+}
+
 // Stats holds statistics about the networking stack.
 //
 // All fields are optional.
@@ -494,33 +579,42 @@ type Stats struct {
 	// stack that were for an unknown or unsupported protocol.
 	UnknownProtocolRcvdPackets *StatCounter
 
-	// UnknownNetworkEndpointRcvdPackets is the number of packets received
-	// by the stack that were for a supported network protocol, but whose
-	// destination address didn't having a matching endpoint.
-	UnknownNetworkEndpointRcvdPackets *StatCounter
-
 	// MalformedRcvPackets is the number of packets received by the stack
 	// that were deemed malformed.
 	MalformedRcvdPackets *StatCounter
 
 	// DroppedPackets is the number of packets dropped due to full queues.
 	DroppedPackets *StatCounter
+
+	// IP breaks out IP-specific stats (both v4 and v6).
+	IP IPStats
+
+	// TCP breaks out TCP-specific stats.
+	TCP TCPStats
+
+	// UDP breaks out UDP-specific stats.
+	UDP UDPStats
+}
+
+func fillIn(v reflect.Value) {
+	for i := 0; i < v.NumField(); i++ {
+		v := v.Field(i)
+		switch v.Kind() {
+		case reflect.Ptr:
+			if s, ok := v.Addr().Interface().(**StatCounter); ok {
+				if *s == nil {
+					*s = &StatCounter{}
+				}
+			}
+		case reflect.Struct:
+			fillIn(v)
+		}
+	}
 }
 
 // FillIn returns a copy of s with nil fields initialized to new StatCounters.
 func (s Stats) FillIn() Stats {
-	if s.UnknownProtocolRcvdPackets == nil {
-		s.UnknownProtocolRcvdPackets = &StatCounter{}
-	}
-	if s.UnknownNetworkEndpointRcvdPackets == nil {
-		s.UnknownNetworkEndpointRcvdPackets = &StatCounter{}
-	}
-	if s.MalformedRcvdPackets == nil {
-		s.MalformedRcvdPackets = &StatCounter{}
-	}
-	if s.DroppedPackets == nil {
-		s.DroppedPackets = &StatCounter{}
-	}
+	fillIn(reflect.ValueOf(&s).Elem())
 	return s
 }
 

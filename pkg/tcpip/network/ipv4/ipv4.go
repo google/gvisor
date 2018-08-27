@@ -121,6 +121,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		DstAddr:     r.RemoteAddress,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
+	r.Stats().IP.PacketsSent.Increment()
 
 	return e.linkEP.WritePacket(r, hdr, payload, ProtocolNumber)
 }
@@ -153,6 +154,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv *buffer.VectorisedView) {
 		e.handleICMP(r, vv)
 		return
 	}
+	r.Stats().IP.PacketsDelivered.Increment()
 	e.dispatcher.DeliverTransportPacket(r, p, vv)
 }
 

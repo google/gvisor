@@ -829,9 +829,14 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 // created (so no new handshaking is done); for stack-accepted connections not
 // yet accepted by the app, they are restored without running the main goroutine
 // here.
-func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tcpip.Error {
+func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	defer func() {
+		if err != nil && !err.IgnoreStats() {
+			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		}
+	}()
 
 	connectingAddr := addr.Addr
 
@@ -960,6 +965,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) *tc
 
 	if run {
 		e.workerRunning = true
+		e.stack.Stats().TCP.ActiveConnectionOpenings.Increment()
 		go e.protocolMainLoop(handshake) // S/R-SAFE: will be drained before save.
 	}
 
@@ -1032,9 +1038,14 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 
 // Listen puts the endpoint in "listen" mode, which allows it to accept
 // new connections.
-func (e *endpoint) Listen(backlog int) *tcpip.Error {
+func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	defer func() {
+		if err != nil && !err.IgnoreStats() {
+			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		}
+	}()
 
 	// Allow the backlog to be adjusted if the endpoint is not shutting down.
 	// When the endpoint shuts down, it sets workerCleanup to true, and from
@@ -1075,6 +1086,7 @@ func (e *endpoint) Listen(backlog int) *tcpip.Error {
 	}
 	e.workerRunning = true
 
+	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 	go e.protocolListenLoop( // S/R-SAFE: drained on save.
 		seqnum.Size(e.receiveBufferAvailable()))
 
@@ -1226,8 +1238,14 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	s := newSegment(r, id, vv)
 	if !s.parse() {
 		e.stack.Stats().MalformedRcvdPackets.Increment()
+		e.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
 		s.decRef()
 		return
+	}
+
+	e.stack.Stats().TCP.ValidSegmentsReceived.Increment()
+	if (s.flags & flagRst) != 0 {
+		e.stack.Stats().TCP.ResetsReceived.Increment()
 	}
 
 	// Send packet to worker goroutine.

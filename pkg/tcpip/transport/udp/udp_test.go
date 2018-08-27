@@ -661,3 +661,41 @@ func TestV4WriteOnConnected(t *testing.T) {
 		c.t.Fatalf("Bad payload: got %x, want %x", udp.Payload(), payload)
 	}
 }
+
+func TestReadIncrementsPacketsReceived(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	// Create IPv4 UDP endpoint
+	var err *tcpip.Error
+	c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+	if err != nil {
+		c.t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}, nil); err != nil {
+		c.t.Fatalf("Bind failed: %v", err)
+	}
+
+	testV4Read(c)
+
+	var want uint64 = 1
+	if got := c.s.Stats().UDP.PacketsReceived.Value(); got != want {
+		c.t.Fatalf("Read did not increment PacketsReceived: got %v, want %v", got, want)
+	}
+}
+
+func TestWriteIncrementsPacketsSent(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createV6Endpoint(false)
+
+	testDualWrite(c)
+
+	var want uint64 = 2
+	if got := c.s.Stats().UDP.PacketsSent.Value(); got != want {
+		c.t.Fatalf("Write did not increment PacketsSent: got %v, want %v", got, want)
+	}
+}
