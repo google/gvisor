@@ -150,6 +150,10 @@ func (sf *slaveFileOperations) Ioctl(ctx context.Context, io usermem.IO, args ar
 			AddressSpaceActive: true,
 		})
 		return 0, err
+	case linux.TIOCGWINSZ:
+		return 0, sf.si.t.ld.windowSize(ctx, io, args)
+	case linux.TIOCSWINSZ:
+		return 0, sf.si.t.ld.setWindowSize(ctx, io, args)
 	default:
 		return 0, syserror.ENOTTY
 	}

@@ -172,6 +172,10 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, io usermem.IO, args a
 	case linux.TIOCSPTLCK:
 		// TODO: Implement pty locking. For now just pretend we do.
 		return 0, nil
+	case linux.TIOCGWINSZ:
+		return 0, mf.t.ld.windowSize(ctx, io, args)
+	case linux.TIOCSWINSZ:
+		return 0, mf.t.ld.setWindowSize(ctx, io, args)
 	default:
 		return 0, syserror.ENOTTY
 	}

@@ -328,3 +328,13 @@ var DefaultSlaveTermios = KernelTermios{
 	InputSpeed:        38400,
 	OutputSpeed:       38400,
 }
+
+// WindowSize corresponds to struct winsize defined in
+// include/uapi/asm-generic/termios.h.
+//
+// +stateify savable
+type WindowSize struct {
+	Rows uint16
+	Cols uint16
+	_    [4]byte // Padding for 2 unused shorts.
+}

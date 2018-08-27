@@ -76,6 +76,12 @@ const (
 //
 // +stateify savable
 type lineDiscipline struct {
+	// sizeMu protects size.
+	sizeMu sync.Mutex `state:"nosave"`
+
+	// size is the terminal size (width and height).
+	size linux.WindowSize
+
 	// inQueue is the input queue of the terminal.
 	inQueue queue
 
@@ -140,6 +146,24 @@ func (l *lineDiscipline) setTermios(ctx context.Context, io usermem.IO, args arc
 	}
 
 	return 0, err
+}
+
+func (l *lineDiscipline) windowSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+	l.sizeMu.Lock()
+	defer l.sizeMu.Unlock()
+	_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), l.size, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	return err
+}
+
+func (l *lineDiscipline) setWindowSize(ctx context.Context, io usermem.IO, args arch.SyscallArguments) error {
+	l.sizeMu.Lock()
+	defer l.sizeMu.Unlock()
+	_, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &l.size, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	return err
 }
 
 func (l *lineDiscipline) masterReadiness() waiter.EventMask {
