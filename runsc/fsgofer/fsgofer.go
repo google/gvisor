@@ -91,14 +91,29 @@ type attachPoint struct {
 	prefix string
 	conf   Config
 
-	mu       sync.Mutex
-	attached bool
+	// attachedMu protects attached.
+	attachedMu sync.Mutex
+	attached   bool
+
+	// deviceMu protects devices and nextDevice.
+	deviceMu sync.Mutex
+
+	// nextDevice is the next device id that will be allocated.
+	nextDevice uint8
+
+	// devices is a map from actual host devices to "small" integers that
+	// can be combined with host inode to form a unique virtual inode id.
+	devices map[uint64]uint8
 }
 
 // NewAttachPoint creates a new attacher that gives local file
 // access to all files under 'prefix'.
 func NewAttachPoint(prefix string, c Config) p9.Attacher {
-	return &attachPoint{prefix: prefix, conf: c}
+	return &attachPoint{
+		prefix:  prefix,
+		conf:    c,
+		devices: make(map[uint64]uint8),
+	}
 }
 
 // Attach implements p9.Attacher.
@@ -131,21 +146,45 @@ func (a *attachPoint) Attach(appPath string) (p9.File, error) {
 		return nil, fmt.Errorf("failed to stat file %q, err: %v", root, err)
 	}
 
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.attachedMu.Lock()
+	defer a.attachedMu.Unlock()
 	if a.attached {
 		f.Close()
 		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
 	}
 	a.attached = true
 
-	return newLocalFile(a.conf, f, root, stat)
+	return newLocalFile(a, f, root, stat)
 }
 
-func makeQID(stat syscall.Stat_t) p9.QID {
+// makeQID returns a unique QID for the given stat buffer.
+func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
+	a.deviceMu.Lock()
+	defer a.deviceMu.Unlock()
+
+	// First map the host device id to a unique 8-bit integer.
+	dev, ok := a.devices[stat.Dev]
+	if !ok {
+		a.devices[stat.Dev] = a.nextDevice
+		dev = a.nextDevice
+		a.nextDevice++
+		if a.nextDevice < dev {
+			panic(fmt.Sprintf("device id overflow! map: %+v", a.devices))
+		}
+	}
+
+	// Construct a "virtual" inode id with the uint8 device number in the
+	// first 8 bits, and the rest of the bits from the host inode id.
+	maskedIno := stat.Ino & 0x00ffffffffffffff
+	if maskedIno != stat.Ino {
+		log.Warningf("first 8 bytes of host inode id %x will be truncated to construct virtual inode id", stat.Ino)
+	}
+	ino := uint64(dev)<<56 | maskedIno
+	log.Debugf("host inode %x on device %x mapped to virtual inode %x", stat.Ino, stat.Dev, ino)
+
 	return p9.QID{
 		Type: p9.FileMode(stat.Mode).QIDType(),
-		Path: stat.Ino,
+		Path: ino,
 	}
 }
 
@@ -193,6 +232,9 @@ func isNameValid(name string) bool {
 type localFile struct {
 	p9.DefaultWalkGetAttr
 
+	// attachPoint is the attachPoint that serves this localFile.
+	attachPoint *attachPoint
+
 	// mu protects 'hostPath' when file is renamed.
 	mu sync.Mutex
 
@@ -213,8 +255,6 @@ type localFile struct {
 
 	ft fileType
 
-	conf Config
-
 	// readDirMu protects against concurrent Readdir calls.
 	readDirMu sync.Mutex
 }
@@ -228,7 +268,8 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 	symlinkIdx := len(modes) - 1
 
 	startIdx := 0
-	if parent.conf.ROMount || parent.conf.LazyOpenForWrite {
+	conf := parent.attachPoint.conf
+	if conf.ROMount || conf.LazyOpenForWrite {
 		// Skip attempt to open in RDWR based on configuration.
 		startIdx = 1
 	}
@@ -269,7 +310,7 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 	return os.NewFile(uintptr(fd), newPath), newPath, nil
 }
 
-func newLocalFile(conf Config, file *os.File, path string, stat syscall.Stat_t) (*localFile, error) {
+func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_t) (*localFile, error) {
 	var ft fileType
 	switch stat.Mode & syscall.S_IFMT {
 	case syscall.S_IFREG:
@@ -282,9 +323,9 @@ func newLocalFile(conf Config, file *os.File, path string, stat syscall.Stat_t) 
 		return nil, syscall.EINVAL
 	}
 	return &localFile{
+		attachPoint: a,
 		hostPath:    path,
 		controlFile: file,
-		conf:        conf,
 		mode:        invalidMode,
 		ft:          ft,
 	}, nil
@@ -338,7 +379,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 
 	// Check if control file can be used or if a new open must be created.
 	var newFile *os.File
-	if mode == p9.ReadOnly || !l.conf.LazyOpenForWrite {
+	if mode == p9.ReadOnly || !l.attachPoint.conf.LazyOpenForWrite {
 		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.controlFile.Name())
 		newFile = l.controlFile
 	} else {
@@ -372,13 +413,14 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	// Set fields on success
 	l.openedFile = newFile
 	l.mode = mode
-	return fd, makeQID(stat), 0, nil
+	return fd, l.attachPoint.makeQID(stat), 0, nil
 }
 
 // Create implements p9.File.
 func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid p9.UID, gid p9.GID) (*fd.FD, p9.File, p9.QID, uint32, error) {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return nil, nil, p9.QID{}, 0, syscall.EBADF
@@ -423,19 +465,20 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	cPath := path.Join(l.hostPath, name)
 	f := os.NewFile(uintptr(fd), cPath)
 	c := &localFile{
+		attachPoint: l.attachPoint,
 		hostPath:    cPath,
 		controlFile: f,
 		openedFile:  f,
 		mode:        mode,
-		conf:        l.conf,
 	}
-	return newFDMaybe(c.openedFile), c, makeQID(stat), 0, nil
+	return newFDMaybe(c.openedFile), c, l.attachPoint.makeQID(stat), 0, nil
 }
 
 // Mkdir implements p9.File.
 func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID) (p9.QID, error) {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return p9.QID{}, syscall.EBADF
@@ -464,7 +507,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	return makeQID(stat), nil
+	return l.attachPoint.makeQID(stat), nil
 }
 
 // Walk implements p9.File.
@@ -485,12 +528,12 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		defer l.mu.Unlock()
 
 		c := &localFile{
+			attachPoint: l.attachPoint,
 			hostPath:    l.hostPath,
 			controlFile: os.NewFile(uintptr(newFd), l.hostPath),
 			mode:        invalidMode,
-			conf:        l.conf,
 		}
-		return []p9.QID{makeQID(stat)}, c, nil
+		return []p9.QID{l.attachPoint.makeQID(stat)}, c, nil
 	}
 
 	var qids []p9.QID
@@ -508,12 +551,12 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
-		c, err := newLocalFile(last.conf, f, path, stat)
+		c, err := newLocalFile(last.attachPoint, f, path, stat)
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
 
-		qids = append(qids, makeQID(stat))
+		qids = append(qids, l.attachPoint.makeQID(stat))
 		last = c
 	}
 	return qids, last, nil
@@ -586,15 +629,16 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 		CTime:  true,
 	}
 
-	return makeQID(stat), valid, attr, nil
+	return l.attachPoint.makeQID(stat), valid, attr, nil
 }
 
 // SetAttr implements p9.File. Due to mismatch in file API, options
 // cannot be changed atomicaly and user may see partial changes when
 // an error happens.
 func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return syscall.EBADF
@@ -624,7 +668,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	}
 
 	fd := l.controlFD()
-	if l.conf.LazyOpenForWrite && l.ft == regular {
+	if conf.LazyOpenForWrite && l.ft == regular {
 		// Regular files are opened in RO mode when lazy open is set.
 		// Thus it needs to be reopened here for write.
 		f, err := os.OpenFile(l.hostPath, openFlags|os.O_WRONLY, 0)
@@ -733,8 +777,9 @@ func (*localFile) Remove() error {
 
 // Rename implements p9.File.
 func (l *localFile) Rename(directory p9.File, name string) error {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return syscall.EBADF
@@ -803,8 +848,9 @@ func (l *localFile) WriteAt(p []byte, offset uint64) (int, error) {
 
 // Symlink implements p9.File.
 func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.QID, error) {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return p9.QID{}, syscall.EBADF
@@ -831,13 +877,14 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	return makeQID(stat), nil
+	return l.attachPoint.makeQID(stat), nil
 }
 
 // Link implements p9.File.
 func (l *localFile) Link(target p9.File, newName string) error {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return syscall.EBADF
@@ -862,8 +909,9 @@ func (*localFile) Mknod(_ string, _ p9.FileMode, _ uint32, _ uint32, _ p9.UID, _
 
 // UnlinkAt implements p9.File.
 func (l *localFile) UnlinkAt(name string, flags uint32) error {
-	if l.conf.ROMount {
-		if l.conf.PanicOnWrite {
+	conf := l.attachPoint.conf
+	if conf.ROMount {
+		if conf.PanicOnWrite {
 			panic("attempt to write to RO mount")
 		}
 		return syscall.EBADF
@@ -906,7 +954,7 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 		if err != nil {
 			continue
 		}
-		qid := makeQID(stat)
+		qid := l.attachPoint.makeQID(stat)
 		dirents = append(dirents, p9.Dirent{
 			QID:    qid,
 			Type:   qid.Type,
