@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -223,15 +224,19 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// init container in the sandbox.
 	if specutils.ShouldCreateSandbox(spec) || !conf.MultiContainer {
 		log.Debugf("Creating new sandbox for container %q", id)
+		ioFiles, err := c.createGoferProcess(spec, conf, bundleDir)
+		if err != nil {
+			return nil, err
+		}
+
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
-		s, goferPid, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket)
+		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket, ioFiles)
 		if err != nil {
 			c.Destroy()
 			return nil, err
 		}
 		c.Sandbox = s
-		c.GoferPid = goferPid
 	} else {
 		// This is sort of confusing. For a sandbox with a root
 		// container and a child container in it, runsc sees:
@@ -254,13 +259,6 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
-
-		// Prepare the gofer to serve the container's filesystem.
-		err = sb.Sandbox.CreateChild(c.ID, bundleDir)
-		if err != nil {
-			c.Destroy()
-			return nil, err
-		}
 	}
 	c.Status = Created
 
@@ -304,7 +302,12 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 	} else {
-		if err := c.Sandbox.Start(c.Spec, conf, c.ID); err != nil {
+		// Create the gofer process.
+		ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
+		if err != nil {
+			return err
+		}
+		if err := c.Sandbox.Start(c.Spec, conf, c.ID, ioFiles); err != nil {
 			c.Destroy()
 			return err
 		}
@@ -518,6 +521,8 @@ func (c *Container) Destroy() error {
 			log.Warningf("Failed to destroy sandbox %q: %v", c.Sandbox.ID, err)
 		}
 	}
+	c.Sandbox = nil
+
 	if c.GoferPid != 0 {
 		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
 		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
@@ -527,9 +532,7 @@ func (c *Container) Destroy() error {
 		}
 	}
 
-	c.Sandbox = nil
 	c.Status = Stopped
-
 	return nil
 }
 
@@ -595,4 +598,73 @@ func (c *Container) waitForStopped() error {
 		return nil
 	}
 	return backoff.Retry(op, b)
+}
+
+func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, error) {
+	if conf.FileAccess == boot.FileAccessDirect {
+		// Don't start a gofer. The sandbox will access host FS directly.
+		return nil, nil
+	}
+
+	if err := setupFS(spec, conf, bundleDir); err != nil {
+		return nil, fmt.Errorf("failed to setup mounts: %v", err)
+	}
+
+	// Start with the general config flags.
+	args := conf.ToFlags()
+	args = append(args, "gofer", "--bundle", bundleDir)
+	if conf.Overlay {
+		args = append(args, "--panic-on-write=true")
+	}
+
+	// Add root mount and then add any other additional mounts.
+	mountCount := 1
+
+	// Add additional mounts.
+	for _, m := range spec.Mounts {
+		if specutils.Is9PMount(m) {
+			mountCount++
+		}
+	}
+	sandEnds := make([]*os.File, 0, mountCount)
+	goferEnds := make([]*os.File, 0, mountCount)
+
+	// nextFD is the next available file descriptor for the gofer process.
+	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
+	nextFD := 3
+	for ; nextFD-3 < mountCount; nextFD++ {
+		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, err
+		}
+		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox io fd"))
+
+		goferEnd := os.NewFile(uintptr(fds[1]), "gofer io fd")
+		defer goferEnd.Close()
+		goferEnds = append(goferEnds, goferEnd)
+
+		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
+	}
+
+	binPath, err := specutils.BinPath()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(binPath, args...)
+	cmd.ExtraFiles = goferEnds
+
+	// Setup any uid/gid mappings, and create or join the configured user
+	// namespace so the gofer's view of the filesystem aligns with the
+	// users in the sandbox.
+	specutils.SetUIDGIDMappings(cmd, spec)
+	nss := specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
+
+	// Start the gofer in the given namespace.
+	log.Debugf("Starting gofer: %s %v", binPath, args)
+	if err := specutils.StartInNS(cmd, nss); err != nil {
+		return nil, err
+	}
+	log.Infof("Gofer started, pid: %d", cmd.Process.Pid)
+	c.GoferPid = cmd.Process.Pid
+	return sandEnds, nil
 }

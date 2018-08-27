@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
 const (
@@ -132,7 +133,7 @@ func createDefaultLoopbackInterface(conn *urpc.Client) error {
 
 func joinNetNS(nsPath string) (func(), error) {
 	runtime.LockOSThread()
-	restoreNS, err := applyNS(specs.LinuxNamespace{
+	restoreNS, err := specutils.ApplyNS(specs.LinuxNamespace{
 		Type: specs.NetworkNamespace,
 		Path: nsPath,
 	})

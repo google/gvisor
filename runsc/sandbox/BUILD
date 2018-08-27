@@ -5,7 +5,6 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "sandbox",
     srcs = [
-        "namespace.go",
         "network.go",
         "sandbox.go",
     ],
@@ -21,7 +20,6 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/console",
-        "//runsc/fsgofer",
         "//runsc/specutils",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@com_github_vishvananda_netlink//:go_default_library",

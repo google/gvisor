@@ -212,11 +212,11 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if path.Clean(args.CID) != args.CID {
 		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
 	}
-	if len(args.FilePayload.Files) != 1 {
-		return fmt.Errorf("start arguments must contain one file for the container root")
+	if len(args.FilePayload.Files) == 0 {
+		return fmt.Errorf("start arguments must contain at least one file for the container root")
 	}
 
-	tgid, err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files[0])
+	tgid, err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
 		return err
 	}

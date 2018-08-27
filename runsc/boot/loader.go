@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -377,7 +378,7 @@ func (l *Loader) run() error {
 
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process.
-func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, file *os.File) (kernel.ThreadID, error) {
+func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) (kernel.ThreadID, error) {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
@@ -414,11 +415,23 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
+
+	// Can't take ownership away from os.File. dup them to get a new FDs.
+	var ioFDs []int
+	for _, f := range files {
+		fd, err := syscall.Dup(int(f.Fd()))
+		if err != nil {
+			return 0, fmt.Errorf("failed to dup file: %v", err)
+		}
+		f.Close()
+		ioFDs = append(ioFDs, fd)
+	}
+
 	err = setFileSystemForProcess(
 		&procArgs,
 		spec,
 		conf,
-		[]int{int(file.Fd())}, // ioFDs
+		ioFDs,
 		false,
 		creds,
 		procArgs.Limits,
@@ -453,8 +466,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	return tgid, nil
 }
 
-// TODO: Per-container namespaces must be supported
-// for -pid.
+// TODO: Per-container namespaces must be supported for -pid.
 
 // waitContainer waits for the root process of a container to exit.
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {

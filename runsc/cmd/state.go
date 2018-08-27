@@ -63,8 +63,11 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	}
 	log.Debugf("Returning state for container %+v", c)
 
+	state := c.State()
+	log.Debugf("State: %+v", state)
+
 	// Write json-encoded state directly to stdout.
-	b, err := json.MarshalIndent(c.State(), "", "  ")
+	b, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		Fatalf("error marshaling container state: %v", err)
 	}

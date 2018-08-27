@@ -13,6 +13,7 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
+        "fs.go",
         "hook.go",
         "status.go",
     ],
@@ -28,13 +29,17 @@ go_library(
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
 go_test(
     name = "container_test",
     size = "medium",
-    srcs = ["container_test.go"],
+    srcs = [
+        "container_test.go",
+        "fs_test.go",
+    ],
     data = [
         ":uds_test_app",
         "//runsc",

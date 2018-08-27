@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"reflect"
@@ -34,6 +33,15 @@ import (
 func init() {
 	log.SetLevel(log.Debug)
 	rand.Seed(time.Now().UnixNano())
+}
+
+func testConfig() *Config {
+	return &Config{
+		RootDir:        "unused_root_dir",
+		Network:        NetworkNone,
+		FileAccess:     FileAccessDirect,
+		DisableSeccomp: true,
+	}
 }
 
 // testSpec returns a simple spec that can be used in tests.
@@ -55,12 +63,7 @@ func createLoader() (*Loader, error) {
 	if err != nil {
 		return nil, err
 	}
-	conf := &Config{
-		RootDir:        "unused_root_dir",
-		Network:        NetworkNone,
-		FileAccess:     FileAccessDirect,
-		DisableSeccomp: true,
-	}
+	conf := testConfig()
 	spec := testSpec()
 	return New(spec, conf, fd, nil, false)
 }
@@ -152,18 +155,6 @@ func TestStartSignal(t *testing.T) {
 
 // Test that MountNamespace can be created with various specs.
 func TestCreateMountNamespace(t *testing.T) {
-	conf := &Config{
-		RootDir:        "unused_root_dir",
-		FileAccess:     FileAccessDirect,
-		DisableSeccomp: true,
-	}
-
-	testFile, err := ioutil.TempFile(os.TempDir(), "create-mount-namespace-")
-	if err != nil {
-		t.Fatalf("ioutil.TempFile() failed, err: %v", err)
-	}
-	defer os.RemoveAll(testFile.Name())
-
 	testCases := []struct {
 		name string
 		// Spec that will be used to create the mount manager.  Note
@@ -234,8 +225,7 @@ func TestCreateMountNamespace(t *testing.T) {
 					},
 					{
 						Destination: "/foo/qux",
-						Source:      testFile.Name(),
-						Type:        "bind",
+						Type:        "tmpfs",
 					},
 					{
 						// File mounts with the same prefix.
@@ -284,8 +274,7 @@ func TestCreateMountNamespace(t *testing.T) {
 					{
 						// Mount with the same prefix.
 						Destination: "/dev/fd-foo",
-						Source:      testFile.Name(),
-						Type:        "bind",
+						Type:        "tmpfs",
 					},
 					{
 						// Unsupported fs type.
@@ -298,8 +287,7 @@ func TestCreateMountNamespace(t *testing.T) {
 					},
 					{
 						Destination: "/dev/bar",
-						Source:      testFile.Name(),
-						Type:        "bind",
+						Type:        "tmpfs",
 					},
 				},
 			},
@@ -339,19 +327,22 @@ func TestCreateMountNamespace(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		ctx := contexttest.Context(t)
-		mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, nil)
-		if err != nil {
-			t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
-		}
-		defer mm.DecRef()
-		root := mm.Root()
-		defer root.DecRef()
-		for _, p := range tc.expectedPaths {
-			if _, err := mm.FindInode(ctx, root, root, p, 0); err != nil {
-				t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
+		t.Run(tc.name, func(t *testing.T) {
+			conf := testConfig()
+			ctx := contexttest.Context(t)
+			mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, nil)
+			if err != nil {
+				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 			}
-		}
+			defer mm.DecRef()
+			root := mm.Root()
+			defer root.DecRef()
+			for _, p := range tc.expectedPaths {
+				if _, err := mm.FindInode(ctx, root, root, p, 0); err != nil {
+					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
+				}
+			}
+		})
 	}
 }
 
@@ -361,7 +352,7 @@ func TestRestoreEnvironment(t *testing.T) {
 	testCases := []struct {
 		name          string
 		spec          *specs.Spec
-		conf          *Config
+		fileAccess    FileAccessType
 		ioFDs         []int
 		errorExpected bool
 		expectedRenv  fs.RestoreEnvironment
@@ -384,12 +375,7 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			conf: &Config{
-				RootDir:        "unused_root_dir",
-				Network:        NetworkNone,
-				FileAccess:     FileAccessProxy,
-				DisableSeccomp: true,
-			},
+			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -444,12 +430,7 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			conf: &Config{
-				RootDir:        "unused_root_dir",
-				Network:        NetworkNone,
-				FileAccess:     FileAccessProxy,
-				DisableSeccomp: true,
-			},
+			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0, 1},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -508,12 +489,7 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			conf: &Config{
-				RootDir:        "unused_root_dir",
-				Network:        NetworkNone,
-				FileAccess:     FileAccessProxy,
-				DisableSeccomp: true,
-			},
+			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -572,12 +548,7 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			conf: &Config{
-				RootDir:        "unused_root_dir",
-				Network:        NetworkNone,
-				FileAccess:     FileAccessDirect,
-				DisableSeccomp: true,
-			},
+			fileAccess:    FileAccessDirect,
 			ioFDs:         []int{0, 1},
 			errorExpected: true,
 		},
@@ -596,20 +567,17 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			conf: &Config{
-				RootDir:        "unused_root_dir",
-				Network:        NetworkNone,
-				FileAccess:     FileAccessDirect,
-				DisableSeccomp: true,
-			},
+			fileAccess:    FileAccessDirect,
 			ioFDs:         []int{0},
 			errorExpected: true,
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			conf := testConfig()
+			conf.FileAccess = tc.fileAccess
 			fds := &fdDispenser{fds: tc.ioFDs}
-			actualRenv, err := createRestoreEnvironment(tc.spec, tc.conf, fds)
+			actualRenv, err := createRestoreEnvironment(tc.spec, conf, fds)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)
 			} else if tc.errorExpected {

@@ -32,7 +32,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func runtime() string {
+func getRuntime() string {
 	r := os.Getenv("RUNSC_RUNTIME")
 	if r == "" {
 		return "runsc-test"
@@ -43,7 +43,7 @@ func runtime() string {
 // IsPauseResumeSupported returns true if Pause/Resume is supported by runtime.
 func IsPauseResumeSupported() bool {
 	// Native host network stack can't be saved.
-	return !strings.Contains(runtime(), "hostnet")
+	return !strings.Contains(getRuntime(), "hostnet")
 }
 
 // EnsureSupportedDockerVersion checks if correct docker is installed.
@@ -128,7 +128,7 @@ type Docker struct {
 // Names of containers will be unique.
 func MakeDocker(namePrefix string) Docker {
 	suffix := fmt.Sprintf("-%06d", rand.Int())[:7]
-	return Docker{Name: namePrefix + suffix, Runtime: runtime()}
+	return Docker{Name: namePrefix + suffix, Runtime: getRuntime()}
 }
 
 // Create calls 'docker create' with the arguments provided.

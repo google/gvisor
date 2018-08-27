@@ -1211,9 +1211,6 @@ func TestMountNewDir(t *testing.T) {
 		if err != nil {
 			t.Fatal("ioutil.TempDir() failed:", err)
 		}
-		if err := os.Chmod(root, 0755); err != nil {
-			t.Fatalf("os.Chmod(%q) failed: %v", root, err)
-		}
 
 		srcDir := path.Join(root, "src", "dir", "anotherdir")
 		if err := os.MkdirAll(srcDir, 0755); err != nil {
@@ -1746,4 +1743,8 @@ func TestGoferExits(t *testing.T) {
 	if c.IsRunning() {
 		t.Errorf("container shouldn't be running, container: %+v", c)
 	}
+}
+
+func TestMain(m *testing.M) {
+	testutil.RunAsRoot(m)
 }

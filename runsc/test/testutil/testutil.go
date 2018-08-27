@@ -23,11 +23,16 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"syscall"
+	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -226,4 +231,56 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 		return err
 	}
 	return Poll(cb, timeout)
+}
+
+// RunAsRoot ensures the test runs with CAP_SYS_ADMIN. If need it will create
+// a new user namespace and reexecute the test as root inside of the namespace.
+func RunAsRoot(m *testing.M) {
+	caps, err := capability.NewPid2(os.Getpid())
+	if err != nil {
+		panic(err.Error())
+	}
+	if err := caps.Load(); err != nil {
+		panic(err.Error())
+	}
+	if caps.Get(capability.EFFECTIVE, capability.CAP_SYS_ADMIN) {
+		// Capability: check! Good to run.
+		os.Exit(m.Run())
+	}
+
+	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
+	// as root inside that namespace to get it.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	cmd := exec.Command("/proc/self/exe", os.Args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+		// Set current user/group as root inside the namespace.
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
+		GidMappingsEnableSetgroups: false,
+		Credential: &syscall.Credential{
+			Uid: 0,
+			Gid: 0,
+		},
+	}
+	cmd.Env = os.Environ()
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			if ws, ok := exit.Sys().(syscall.WaitStatus); ok {
+				os.Exit(ws.ExitStatus())
+			}
+			os.Exit(-1)
+		}
+		panic(fmt.Sprint("error running child process:", err.Error()))
+	}
+	os.Exit(0)
 }

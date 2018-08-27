@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sandbox
+package specutils
 
 import (
 	"fmt"
@@ -74,10 +74,10 @@ func nsPath(nst specs.LinuxNamespaceType) string {
 	}
 }
 
-// getNS returns true and the namespace with the given type from the slice of
+// GetNS returns true and the namespace with the given type from the slice of
 // namespaces in the spec.  It returns false if the slice does not contain a
 // namespace with the type.
-func getNS(nst specs.LinuxNamespaceType, s *specs.Spec) (specs.LinuxNamespace, bool) {
+func GetNS(nst specs.LinuxNamespaceType, s *specs.Spec) (specs.LinuxNamespace, bool) {
 	if s.Linux == nil {
 		return specs.LinuxNamespace{}, false
 	}
@@ -89,35 +89,35 @@ func getNS(nst specs.LinuxNamespaceType, s *specs.Spec) (specs.LinuxNamespace, b
 	return specs.LinuxNamespace{}, false
 }
 
-// filterNS returns a slice of namespaces from the spec with types that match
+// FilterNS returns a slice of namespaces from the spec with types that match
 // those in the `filter` slice.
-func filterNS(filter []specs.LinuxNamespaceType, s *specs.Spec) []specs.LinuxNamespace {
+func FilterNS(filter []specs.LinuxNamespaceType, s *specs.Spec) []specs.LinuxNamespace {
 	if s.Linux == nil {
 		return nil
 	}
 	var out []specs.LinuxNamespace
 	for _, nst := range filter {
-		if ns, ok := getNS(nst, s); ok {
+		if ns, ok := GetNS(nst, s); ok {
 			out = append(out, ns)
 		}
 	}
 	return out
 }
 
-// setNS sets the namespace of the given type.  It must be called with
+// SetNS sets the namespace of the given type.  It must be called with
 // OSThreadLocked.
-func setNS(fd, nsType uintptr) error {
+func SetNS(fd, nsType uintptr) error {
 	if _, _, err := syscall.RawSyscall(unix.SYS_SETNS, fd, nsType, 0); err != 0 {
 		return err
 	}
 	return nil
 }
 
-// applyNS applies the namespace on the current thread and returns a function
+// ApplyNS applies the namespace on the current thread and returns a function
 // that will restore the namespace to the original value.
 //
 // Preconditions: Must be called with os thread locked.
-func applyNS(ns specs.LinuxNamespace) (func(), error) {
+func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
 	log.Infof("applying namespace %v at path %q", ns.Type, ns.Path)
 	newNS, err := os.Open(ns.Path)
 	if err != nil {
@@ -134,22 +134,22 @@ func applyNS(ns specs.LinuxNamespace) (func(), error) {
 
 	// Set netns to the one requested and setup function to restore it back.
 	flag := nsCloneFlag(ns.Type)
-	if err := setNS(newNS.Fd(), flag); err != nil {
+	if err := SetNS(newNS.Fd(), flag); err != nil {
 		oldNS.Close()
 		return nil, fmt.Errorf("error setting namespace of type %v and path %q: %v", ns.Type, ns.Path, err)
 	}
 	return func() {
 		log.Infof("restoring namespace %v", ns.Type)
 		defer oldNS.Close()
-		if err := setNS(oldNS.Fd(), flag); err != nil {
+		if err := SetNS(oldNS.Fd(), flag); err != nil {
 			panic(fmt.Sprintf("error restoring namespace: of type %v: %v", ns.Type, err))
 		}
 	}, nil
 }
 
-// startInNS joins or creates the given namespaces and calls cmd.Start before
+// StartInNS joins or creates the given namespaces and calls cmd.Start before
 // restoring the namespaces to the original values.
-func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
+func StartInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 	// We are about to setup namespaces, which requires the os thread being
 	// locked so that Go doesn't change the thread out from under us.
 	runtime.LockOSThread()
@@ -167,7 +167,7 @@ func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 		}
 		// Join the given namespace, and restore the current namespace
 		// before exiting.
-		restoreNS, err := applyNS(ns)
+		restoreNS, err := ApplyNS(ns)
 		if err != nil {
 			return err
 		}
@@ -177,8 +177,8 @@ func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) error {
 	return cmd.Start()
 }
 
-// setUIDGIDMappings sets the given uid/gid mappings from the spec on the cmd.
-func setUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
+// SetUIDGIDMappings sets the given uid/gid mappings from the spec on the cmd.
+func SetUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
 	if s.Linux == nil {
 		return
 	}

@@ -32,7 +32,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/console"
-	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -55,31 +54,20 @@ type Sandbox struct {
 }
 
 // Create creates the sandbox process.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string) (*Sandbox, int, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// Create the gofer process.
-	goferPid, ioFiles, err := s.createGoferProcess(spec, conf, bundleDir, binPath)
-	if err != nil {
-		return nil, 0, err
-	}
-
 	// Create the sandbox process.
-	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, binPath, ioFiles); err != nil {
-		return nil, 0, err
+	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, ioFiles); err != nil {
+		return nil, err
 	}
 
 	// Wait for the control server to come up (or timeout).
 	if err := s.waitForCreated(10 * time.Second); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
-	return s, goferPid, nil
+	return s, nil
 }
 
 // StartRoot starts running the root container process inside the sandbox.
@@ -105,70 +93,29 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 	return nil
 }
 
-// CreateChild creates a non-root container inside the sandbox.
-func (s *Sandbox) CreateChild(cid, bundleDir string) error {
-	log.Debugf("Create non-root container sandbox %q, pid: %d for container %q with bundle directory %q", s.ID, s.Pid, cid, bundleDir)
-
-	// Connect to the gofer and prepare it to serve from bundleDir for this
-	// container.
-	goferConn, err := s.goferConnect()
-	if err != nil {
-		return fmt.Errorf("couldn't connect to gofer: %v", err)
-	}
-	defer goferConn.Close()
-	goferReq := fsgofer.AddBundleDirsRequest{BundleDirs: map[string]string{cid: bundleDir}}
-	if err := goferConn.Call(fsgofer.AddBundleDirs, &goferReq, nil); err != nil {
-		return fmt.Errorf("error serving new filesystem for non-root container %v: %v", goferReq, err)
-	}
-
-	return nil
-}
-
 // Start starts running a non-root container inside the sandbox.
-func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string) error {
-	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
+func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, ioFiles []*os.File) error {
+	for _, f := range ioFiles {
+		defer f.Close()
+	}
 
+	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
 		return fmt.Errorf("couldn't connect to sandbox: %v", err)
 	}
 	defer sandboxConn.Close()
-	goferConn, err := s.goferConnect()
-	if err != nil {
-		return fmt.Errorf("couldn't connect to gofer: %v", err)
-	}
-	defer goferConn.Close()
-
-	// Create socket that connects the sandbox and gofer.
-	sandEnd, goferEnd, err := createSocketPair()
-	if err != nil {
-		return err
-	}
-	defer sandEnd.Close()
-	defer goferEnd.Close()
-
-	// Tell the Gofer about the new filesystem it needs to serve.
-	goferReq := fsgofer.ServeDirectoryRequest{
-		Dir:         spec.Root.Path,
-		IsReadOnly:  spec.Root.Readonly,
-		CID:         cid,
-		FilePayload: urpc.FilePayload{Files: []*os.File{goferEnd}},
-	}
-	if err := goferConn.Call(fsgofer.ServeDirectory, &goferReq, nil); err != nil {
-		return fmt.Errorf("error serving new filesystem for non-root container %v: %v", goferReq, err)
-	}
 
 	// Start running the container.
 	args := boot.StartArgs{
 		Spec:        spec,
 		Conf:        conf,
 		CID:         cid,
-		FilePayload: urpc.FilePayload{Files: []*os.File{sandEnd}},
+		FilePayload: urpc.FilePayload{Files: ioFiles},
 	}
 	if err := sandboxConn.Call(boot.ContainerStart, &args, nil); err != nil {
 		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)
 	}
-
 	return nil
 }
 
@@ -275,102 +222,13 @@ func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	return conn, nil
 }
 
-func (s *Sandbox) goferConnect() (*urpc.Client, error) {
-	log.Debugf("Connecting to gofer for sandbox %q", s.ID)
-	conn, err := client.ConnectTo(fsgofer.ControlSocketAddr(s.ID))
-	if err != nil {
-		return nil, s.connError(err)
-	}
-	return conn, nil
-}
-
 func (s *Sandbox) connError(err error) error {
 	return fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
 }
 
-func (s *Sandbox) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir, binPath string) (int, []*os.File, error) {
-	if conf.FileAccess == boot.FileAccessDirect {
-		// Don't start a gofer. The sandbox will access host FS directly.
-		return 0, nil, nil
-	}
-
-	// Start with the general config flags.
-	args := conf.ToFlags()
-	args = append(args, "gofer", "--bundle", bundleDir)
-
-	// Add root mount and then add any other additional mounts.
-	mountCount := 1
-
-	// Add additional mounts.
-	for _, m := range spec.Mounts {
-		if specutils.Is9PMount(m) {
-			mountCount++
-		}
-	}
-	sandEnds := make([]*os.File, 0, mountCount)
-	goferEnds := make([]*os.File, 0, mountCount)
-	// nextFD is the next available file descriptor for the gofer process.
-	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
-	var nextFD int
-	for nextFD = 3; nextFD-3 < mountCount; nextFD++ {
-		sandEnd, goferEnd, err := createSocketPair()
-		if err != nil {
-			return 0, nil, err
-		}
-		defer goferEnd.Close()
-		sandEnds = append(sandEnds, sandEnd)
-		goferEnds = append(goferEnds, goferEnd)
-		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
-	}
-
-	// Create and donate a file descriptor for the control server.
-	addr := fsgofer.ControlSocketAddr(s.ID)
-	serverFD, err := server.CreateSocket(addr)
-	if err != nil {
-		return 0, nil, fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
-	}
-
-	// Add the control server fd.
-	args = append(args, "--controller-fd="+strconv.Itoa(nextFD))
-	nextFD++
-	controllerFile := os.NewFile(uintptr(serverFD), "gofer_control_socket_server")
-	defer controllerFile.Close()
-
-	cmd := exec.Command(binPath, args...)
-	cmd.ExtraFiles = goferEnds
-	cmd.ExtraFiles = append(cmd.ExtraFiles, controllerFile)
-
-	// Setup any uid/gid mappings, and create or join the configured user
-	// namespace so the gofer's view of the filesystem aligns with the
-	// users in the sandbox.
-	setUIDGIDMappings(cmd, spec)
-	nss := filterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
-
-	if conf.Overlay {
-		args = append(args, "--panic-on-write=true")
-	}
-
-	// Start the gofer in the given namespace.
-	log.Debugf("Starting gofer: %s %v", binPath, args)
-	if err := startInNS(cmd, nss); err != nil {
-		return 0, nil, err
-	}
-	log.Infof("Gofer started, pid: %d", cmd.Process.Pid)
-	return cmd.Process.Pid, sandEnds, nil
-}
-
-// createSocketPair creates a pair of files wrapping a socket pair.
-func createSocketPair() (*os.File, *os.File, error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-	return os.NewFile(uintptr(fds[0]), "sandbox io fd"), os.NewFile(uintptr(fds[1]), "gofer io fd"), nil
-}
-
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, binPath string, ioFiles []*os.File) error {
+func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -387,6 +245,10 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 
 	consoleEnabled := consoleSocket != ""
 
+	binPath, err := specutils.BinPath()
+	if err != nil {
+		return err
+	}
 	cmd := exec.Command(binPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 	cmd.Args = append(cmd.Args,
@@ -464,7 +326,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
 	// namespace.
-	if ns, ok := getNS(specs.NetworkNamespace, spec); ok && conf.Network != boot.NetworkNone {
+	if ns, ok := specutils.GetNS(specs.NetworkNamespace, spec); ok && conf.Network != boot.NetworkNone {
 		log.Infof("Sandbox will be started in the container's network namespace: %+v", ns)
 		nss = append(nss, ns)
 	} else {
@@ -478,10 +340,10 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	//   - Gofer: when using a Gofer, the sandbox process can run isolated in an
 	//       empty namespace.
 	if conf.Network == boot.NetworkHost || conf.FileAccess == boot.FileAccessDirect {
-		if userns, ok := getNS(specs.UserNamespace, spec); ok {
+		if userns, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
-			setUIDGIDMappings(cmd, spec)
+			specutils.SetUIDGIDMappings(cmd, spec)
 		} else {
 			log.Infof("Sandbox will be started in the current user namespace")
 		}
@@ -496,7 +358,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
-	if err := startInNS(cmd, nss); err != nil {
+	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return err
 	}
 	s.Pid = cmd.Process.Pid

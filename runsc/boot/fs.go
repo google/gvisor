@@ -510,8 +510,6 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 		MountSources: make(map[string][]fs.MountArgs),
 	}
 
-	mounts := compileMounts(spec)
-
 	// Add root mount.
 	fd := fds.remove()
 	opts := p9MountOptions(conf, fd)
@@ -528,8 +526,8 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 	}
 	renv.MountSources[rootFsName] = append(renv.MountSources[rootFsName], rootMount)
 
-	// Add submounts
-	for _, m := range mounts {
+	// Add submounts.
+	for _, m := range compileMounts(spec) {
 		if err := addRestoreMount(conf, renv, m, fds); err != nil {
 			return nil, err
 		}
