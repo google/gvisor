@@ -510,10 +510,6 @@ func (c *Container) Destroy() error {
 		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
 
-	if err := os.RemoveAll(c.Root); err != nil {
-		log.Warningf("Failed to delete container root directory %q, err: %v", c.Root, err)
-	}
-
 	// If we are the first container in the sandbox, take the sandbox down
 	// as well.
 	if c.Sandbox != nil && c.Sandbox.IsRootContainer(c.ID) {
@@ -530,6 +526,14 @@ func (c *Container) Destroy() error {
 		} else {
 			c.GoferPid = 0
 		}
+	}
+
+	if err := destroyFS(c.Spec); err != nil {
+		return fmt.Errorf("error destroying container fs: %v", err)
+	}
+
+	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
 	}
 
 	c.Status = Stopped

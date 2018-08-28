@@ -134,6 +134,35 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 	return nil
 }
 
+// destroyFS unmounts mounts done by runsc under `spec.Root.Path`. This
+// recovers the container rootfs into the original state.
+func destroyFS(spec *specs.Spec) error {
+	for _, m := range spec.Mounts {
+		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
+			continue
+		}
+
+		// It's possible that 'm.Destination' follows symlinks inside the
+		// container.
+		dst, err := resolveSymlinks(spec.Root.Path, m.Destination)
+		if err != nil {
+			return err
+		}
+
+		flags := syscall.MNT_DETACH
+		log.Infof("Unmounting dst: %q, flags: %#x", dst, flags)
+		// Do not return error if dst is not a mountpoint.
+		// Based on http://man7.org/linux/man-pages/man2/umount.2.html
+		// For kernel version 2.6+ and MNT_DETACH flag, EINVAL means
+		// the dst is not a mount point.
+		if err := syscall.Unmount(dst, flags); err != nil &&
+			!os.IsNotExist(err) && err != syscall.EINVAL {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolveSymlinks walks 'rel' having 'root' as the root directory. If there are
 // symlinks, they are evaluated relative to 'root' to ensure the end result is
 // the same as if the process was running inside the container.
