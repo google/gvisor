@@ -45,7 +45,13 @@ func (d *Dirent) saveChildren() map[string]*Dirent {
 		if rc := w.Get(); rc != nil {
 			// Drop the reference count obtain in w.Get()
 			rc.DecRef()
-			c[name] = rc.(*Dirent)
+
+			cd := rc.(*Dirent)
+			if cd.IsNegative() {
+				// Don't bother saving negative Dirents.
+				continue
+			}
+			c[name] = cd
 		}
 	}
 	return c
