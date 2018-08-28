@@ -201,7 +201,7 @@ type Dirent struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// children are cached via weak references.
-	children map[string]*refs.WeakRef
+	children map[string]*refs.WeakRef `state:".(map[string]*Dirent)"`
 }
 
 // NewDirent returns a new root Dirent, taking the caller's reference on inode. The caller

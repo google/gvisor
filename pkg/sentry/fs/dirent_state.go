@@ -17,6 +17,8 @@ package fs
 import (
 	"fmt"
 	"sync/atomic"
+
+	"gvisor.googlesource.com/gvisor/pkg/refs"
 )
 
 // beforeSave is invoked by stateify.
@@ -33,6 +35,27 @@ func (d *Dirent) beforeSave() {
 	if atomic.LoadInt32(&d.deleted) != 0 {
 		n, _ := d.FullName(nil /* root */)
 		panic(ErrSaveRejection{fmt.Errorf("deleted file %q still has open fds", n)})
+	}
+}
+
+// saveChildren is invoked by stateify.
+func (d *Dirent) saveChildren() map[string]*Dirent {
+	c := make(map[string]*Dirent)
+	for name, w := range d.children {
+		if rc := w.Get(); rc != nil {
+			// Drop the reference count obtain in w.Get()
+			rc.DecRef()
+			c[name] = rc.(*Dirent)
+		}
+	}
+	return c
+}
+
+// loadChildren is invoked by stateify.
+func (d *Dirent) loadChildren(children map[string]*Dirent) {
+	d.children = make(map[string]*refs.WeakRef)
+	for name, c := range children {
+		d.children[name] = refs.NewWeakRef(c, nil)
 	}
 }
 
