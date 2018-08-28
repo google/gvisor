@@ -7,8 +7,6 @@ go_test(
     size = "large",
     srcs = [
         "image_test.go",
-        "python_test.go",
-        "tomcat_test.go",
     ],
     data = [
         "latin10k.txt",

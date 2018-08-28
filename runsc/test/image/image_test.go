@@ -192,6 +192,70 @@ func TestMysql(t *testing.T) {
 	}
 }
 
+func TestPythonHello(t *testing.T) {
+	if err := testutil.Pull("google/python-hello"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("python-hello-test")
+	if _, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Find where port 8080 is mapped to.
+	port, err := d.FindPort(8080)
+	if err != nil {
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+	}
+
+	// Wait until it's up and running.
+	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	}
+
+	// Ensure that content is being served.
+	url := fmt.Sprintf("http://localhost:%d", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Errorf("Error reaching http server: %v", err)
+	}
+	if want := http.StatusOK; resp.StatusCode != want {
+		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+}
+
+func TestTomcat(t *testing.T) {
+	if err := testutil.Pull("tomcat:8.0"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("tomcat-test")
+	if _, err := d.Run("-p", "8080", "tomcat:8.0"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Find where port 8080 is mapped to.
+	port, err := d.FindPort(8080)
+	if err != nil {
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+	}
+
+	// Wait until it's up and running.
+	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	}
+
+	// Ensure that content is being served.
+	url := fmt.Sprintf("http://localhost:%d", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Errorf("Error reaching http server: %v", err)
+	}
+	if want := http.StatusOK; resp.StatusCode != want {
+		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+}
+
 func MainTest(m *testing.M) {
 	testutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
