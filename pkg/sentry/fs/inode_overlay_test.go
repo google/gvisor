@@ -299,6 +299,76 @@ func TestLookupRevalidation(t *testing.T) {
 	}
 }
 
+func TestCacheFlush(t *testing.T) {
+	ctx := contexttest.Context(t)
+
+	// Upper and lower each have a file.
+	upperFileName := "file-from-upper"
+	lowerFileName := "file-from-lower"
+	upper := newTestRamfsDir(ctx, []dirContent{{name: upperFileName}}, nil)
+	lower := newTestRamfsDir(ctx, []dirContent{{name: lowerFileName}}, nil)
+
+	overlay := fs.NewTestOverlayDir(ctx, upper, lower, true /* revalidate */)
+
+	mns, err := fs.NewMountNamespace(ctx, overlay)
+	if err != nil {
+		t.Fatalf("NewMountNamespace failed: %v", err)
+	}
+	root := mns.Root()
+	defer root.DecRef()
+
+	ctx = &rootContext{
+		Context: ctx,
+		root:    root,
+	}
+
+	for _, fileName := range []string{upperFileName, lowerFileName} {
+		// Walk to the file.
+		dirent, err := mns.FindInode(ctx, root, nil, fileName, 0)
+		if err != nil {
+			t.Fatalf("FindInode(%q) failed: %v", fileName, err)
+		}
+
+		// Get a file from the dirent.
+		file, err := dirent.Inode.GetFile(ctx, dirent, fs.FileFlags{Read: true})
+		if err != nil {
+			t.Fatalf("GetFile() failed: %v", err)
+		}
+
+		// The dirent should have 3 refs, one from us, one from the
+		// file, and one from the dirent cache.
+		// dirent cache.
+		if got, want := dirent.ReadRefs(), 3; int(got) != want {
+			t.Errorf("dirent.ReadRefs() got %d want %d", got, want)
+		}
+
+		// Drop the file reference.
+		file.DecRef()
+
+		// Dirent should have 2 refs left.
+		if got, want := dirent.ReadRefs(), 2; int(got) != want {
+			t.Errorf("dirent.ReadRefs() got %d want %d", got, want)
+		}
+
+		// Flush the dirent cache.
+		mns.FlushMountSourceRefs()
+
+		// Dirent should have 1 ref left from the dirent cache.
+		if got, want := dirent.ReadRefs(), 1; int(got) != want {
+			t.Errorf("dirent.ReadRefs() got %d want %d", got, want)
+		}
+
+		// Drop our ref.
+		dirent.DecRef()
+
+		// We should be back to zero refs.
+		if got, want := dirent.ReadRefs(), 0; int(got) != want {
+			t.Errorf("dirent.ReadRefs() got %d want %d", got, want)
+		}
+	}
+
+}
+
 type dir struct {
 	fs.InodeOperations
 

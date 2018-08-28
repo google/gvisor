@@ -348,10 +348,10 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 // Precondition: the path must be non-empty.
 func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path string, maxTraversals uint) (*Dirent, error) {
 	if root == nil {
-		panic("MountNamespace.FindInode: root must not be nil")
+		panic("MountNamespace.FindLink: root must not be nil")
 	}
 	if len(path) == 0 {
-		panic("MountNamespace.FindInode: path is empty")
+		panic("MountNamespace.FindLink: path is empty")
 	}
 
 	// Split the path.
