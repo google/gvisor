@@ -14,6 +14,8 @@
 
 package linux
 
+import "math"
+
 // shmat(2) flags. Source: include/uapi/linux/shm.h
 const (
 	SHM_RDONLY = 010000  // Read-only access.
@@ -36,6 +38,15 @@ const (
 	SHM_UNLOCK = 12
 	SHM_STAT   = 13
 	SHM_INFO   = 14
+)
+
+// SHM defaults as specified by linux. Source: include/uapi/linux/shm.h
+const (
+	SHMMIN = 1
+	SHMMNI = 4096
+	SHMMAX = math.MaxUint64 - 1<<24
+	SHMALL = math.MaxUint64 - 1<<24
+	SHMSEG = 4096
 )
 
 // ShmidDS is equivalent to struct shmid64_ds. Source:

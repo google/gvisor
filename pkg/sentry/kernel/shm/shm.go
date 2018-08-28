@@ -35,7 +35,6 @@ package shm
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -50,23 +49,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-)
-
-// Various limits for shared memory segments.
-const (
-	// shmsTotalMaxPages is the system-wide limit on all shared memory segments, measured
-	// in number of pages.
-	shmsTotalMaxPages = math.MaxInt64 // SHMALL
-
-	// shmMaxSize is the maximum size of a single segment, in bytes.
-	shmMaxSize = math.MaxInt64 // SHMMAX
-
-	// shmMinSize is the minimum specifiable size of a segment, effectively
-	// yielding a size rounded up to the next page size. Measured in bytes.
-	shmMinSize = 1 // SHMMIN
-
-	// shmsTotalMax is the maximum number of segments on the system.
-	shmsTotalMax = 4096 // SHMMNI
 )
 
 // Registry tracks all shared memory segments in an IPC namespace. The registry
@@ -119,7 +101,7 @@ func (r *Registry) findByKey(key int32) *Shm {
 // FindOrCreate looks up or creates a segment in the registry. It's functionally
 // analogous to open(2).
 func (r *Registry) FindOrCreate(ctx context.Context, pid, key int32, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
-	if create && (size < shmMinSize || size > shmMaxSize) {
+	if create && (size < linux.SHMMIN || size > linux.SHMMAX) {
 		// "A new segment was to be created and size is less than SHMMIN or
 		// greater than SHMMAX." - man shmget(2)
 		return nil, syserror.EINVAL
@@ -128,7 +110,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid, key int32, size uint64
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.shms) >= shmsTotalMax {
+	if len(r.shms) >= linux.SHMMNI {
 		// "All possible shared memory IDs have been taken (SHMMNI) ..."
 		//   - man shmget(2)
 		return nil, syserror.ENOSPC
@@ -179,7 +161,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid, key int32, size uint64
 		return nil, syserror.EINVAL
 	}
 
-	if numPages := sizeAligned / usermem.PageSize; r.totalPages+numPages > shmsTotalMaxPages {
+	if numPages := sizeAligned / usermem.PageSize; r.totalPages+numPages > linux.SHMALL {
 		// "... allocating a segment of the requested size would cause the
 		// system to exceed the system-wide limit on shared memory (SHMALL)."
 		//   - man shmget(2)
@@ -245,11 +227,11 @@ func (r *Registry) newShm(ctx context.Context, pid, key int32, creator fs.FileOw
 // system. See shmctl(IPC_INFO).
 func (r *Registry) IPCInfo() *linux.ShmParams {
 	return &linux.ShmParams{
-		ShmMax: shmMaxSize,
-		ShmMin: shmMinSize,
-		ShmMni: shmsTotalMax,
-		ShmSeg: shmsTotalMax, // Linux also sets this to SHMMNI.
-		ShmAll: shmsTotalMaxPages,
+		ShmMax: linux.SHMMAX,
+		ShmMin: linux.SHMMIN,
+		ShmMni: linux.SHMMNI,
+		ShmSeg: linux.SHMSEG,
+		ShmAll: linux.SHMALL,
 	}
 }
 
