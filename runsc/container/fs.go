@@ -22,7 +22,6 @@ import (
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -84,29 +83,29 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		}
 		srcfi, err := os.Stat(src)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to stat() mount source: %v", err)
 		}
 
 		// It's possible that 'm.Destination' follows symlinks inside the
 		// container.
 		dst, err := resolveSymlinks(spec.Root.Path, m.Destination)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to resolve symlinks: %v", err)
 		}
 
 		// Create mount point if it doesn't exits
 		if _, err := os.Stat(dst); os.IsNotExist(err) {
 			if srcfi.IsDir() {
 				if err := os.MkdirAll(dst, 0755); err != nil {
-					return err
+					return fmt.Errorf("failed to make mount directory %q: %v", dst, err)
 				}
 			} else {
 				if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-					return err
+					return fmt.Errorf("failed to make mount directory for file %q: %v", filepath.Dir(dst), err)
 				}
 				f, err := os.OpenFile(dst, os.O_CREATE, 0755)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to open mount file %q: %v", dst, err)
 				}
 				f.Close()
 			}
@@ -116,7 +115,7 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		flags |= syscall.MS_BIND
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", src, dst, flags)
 		if err := syscall.Mount(src, dst, m.Type, uintptr(flags), ""); err != nil {
-			return err
+			return fmt.Errorf("failed to mount src: %q, dst: %q, flags: %#x, err: %v", src, dst, flags, err)
 		}
 	}
 
@@ -124,7 +123,13 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 	if spec.Root.Readonly {
 		log.Infof("Remounting root as readonly: %q", spec.Root.Path)
 		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
-		return unix.Mount(spec.Root.Path, spec.Root.Path, "bind", flags, "")
+		src := spec.Root.Path
+		if !filepath.IsAbs(src) {
+			src = filepath.Join(bundleDir, src)
+		}
+		if err := syscall.Mount(src, src, "bind", flags, ""); err != nil {
+			return fmt.Errorf("failed to remount root as readonly with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
+		}
 	}
 	return nil
 }
