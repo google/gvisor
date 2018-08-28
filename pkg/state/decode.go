@@ -365,6 +365,12 @@ func (ds *decodeState) decodeObject(os *objectState, obj reflect.Value, object *
 			// (For non-interfaces this is a no-op).
 			dyntyp := reflect.TypeOf(obj.Interface())
 			if dyntyp.Kind() == reflect.Map {
+				// Remove the map object count here to avoid
+				// double counting, as this object will be
+				// counted again when it gets processed later.
+				// We do not add a reference count as the
+				// reference is artificial.
+				ds.stats.Remove(obj)
 				obj.Set(ds.register(id, dyntyp).obj)
 			} else if dyntyp.Kind() == reflect.Ptr {
 				ds.push(true /* dereference */, "", nil)

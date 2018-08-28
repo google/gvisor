@@ -335,6 +335,12 @@ func (es *encodeState) encodeObject(obj reflect.Value, mapAsValue bool, format s
 			object = &pb.Object{Value: &pb.Object_MapValue{es.encodeMap(obj)}}
 		} else {
 			// Encode a reference to the map.
+			//
+			// Remove the map object count here to avoid double
+			// counting, as this object will be counted again when
+			// it gets processed later. We do not add a reference
+			// count as the reference is artificial.
+			es.stats.Remove(obj)
 			object = &pb.Object{Value: &pb.Object_RefValue{es.register(obj)}}
 		}
 	default:

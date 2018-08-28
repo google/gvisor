@@ -68,6 +68,17 @@ func (s *Stats) Add(obj reflect.Value) {
 	entry.count++
 }
 
+// Remove removes a sample count. It should only be called after a previous
+// Add().
+func (s *Stats) Remove(obj reflect.Value) {
+	if s == nil {
+		return
+	}
+	typ := obj.Type()
+	entry := s.byType[typ]
+	entry.count--
+}
+
 // Start starts a sample.
 func (s *Stats) Start(obj reflect.Value) {
 	if s == nil {
