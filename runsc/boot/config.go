@@ -204,7 +204,12 @@ type Config struct {
 	// TODO: Remove this when multiple container is fully supported.
 	MultiContainer bool
 
+	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action
+
+	// PanicSignal register signal handling that panics. Usually set to
+	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
+	PanicSignal int
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -225,5 +230,6 @@ func (c *Config) ToFlags() []string {
 		"--strace-syscalls=" + strings.Join(c.StraceSyscalls, ","),
 		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),
 		"--watchdog-action=" + c.WatchdogAction.String(),
+		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 	}
 }

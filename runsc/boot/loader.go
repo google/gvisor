@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"os/signal"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -229,7 +230,18 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
 	}
 	// Ensure that signals received are forwarded to the emulated kernel.
-	stopSignalForwarding := sighandling.PrepareForwarding(k, false)()
+	ps := syscall.Signal(conf.PanicSignal)
+	stopSignalForwarding := sighandling.PrepareForwarding(k, ps)()
+	if conf.PanicSignal != -1 {
+		// Panics if the sentry receives 'conf.PanicSignal'.
+		panicChan := make(chan os.Signal, 1)
+		signal.Notify(panicChan, ps)
+		go func() { // S/R-SAFE: causes sentry panic.
+			<-panicChan
+			panic("Signal-induced panic")
+		}()
+		log.Infof("Panic signal set to %v(%d)", ps, conf.PanicSignal)
+	}
 
 	procArgs, err := newProcess(spec, creds, utsns, ipcns, k)
 	if err != nil {

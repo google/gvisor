@@ -61,6 +61,7 @@ var (
 	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	multiContainer = flag.Bool("multi-container", false, "enable *experimental* multi-container support.")
 	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
+	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 )
 
 var gitRevision = ""
@@ -139,6 +140,7 @@ func main() {
 		StraceLogSize:  *straceLogSize,
 		MultiContainer: *multiContainer,
 		WatchdogAction: wa,
+		PanicSignal:    *panicSignal,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")

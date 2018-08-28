@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"syscall"
+
 	"context"
 	"flag"
 	"github.com/google/subcommands"
@@ -27,6 +29,7 @@ import (
 type Debug struct {
 	pid    int
 	stacks bool
+	signal int
 }
 
 // Name implements subcommands.Command.
@@ -48,6 +51,7 @@ func (*Debug) Usage() string {
 func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&d.pid, "pid", 0, "sandbox process ID. Container ID is not necessary if this is set")
 	f.BoolVar(&d.stacks, "stacks", false, "if true, dumps all sandbox stacks to the log")
+	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -96,6 +100,12 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("sandbox %q is not running", c.Sandbox.ID)
 	}
 
+	if d.signal > 0 {
+		log.Infof("Sending signal %d to process: %d", d.signal, c.Sandbox.Pid)
+		if err := syscall.Kill(c.Sandbox.Pid, syscall.Signal(d.signal)); err != nil {
+			Fatalf("failed to send signal %d to processs %d", d.signal, c.Sandbox.Pid)
+		}
+	}
 	if d.stacks {
 		log.Infof("Retrieving sandbox stacks")
 		stacks, err := c.Sandbox.Stacks()
