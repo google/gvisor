@@ -6,8 +6,6 @@ go_library(
     name = "filter",
     srcs = [
         "config.go",
-        "config_go110.go",
-        "config_go111.go",
         "extra_filters.go",
         "extra_filters_msan.go",
         "extra_filters_race.go",
