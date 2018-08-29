@@ -451,6 +451,7 @@ func (d *Dirent) descendantOf(p *Dirent) bool {
 // Inode.Lookup, otherwise walk will keep d.mu locked.
 //
 // Preconditions:
+// - renameMu must be held for reading.
 // - d.mu must be held.
 // - name must must not contain "/"s.
 func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnlock bool) (*Dirent, error) {
@@ -461,22 +462,18 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 		d.IncRef()
 		return d, nil
 	} else if name == ".." {
-		renameMu.RLock()
 		// Respect the chroot. Note that in Linux there is no check to enforce
 		// that d is a descendant of root.
 		if d == root {
 			d.IncRef()
-			renameMu.RUnlock()
 			return d, nil
 		}
 		// Are we already at the root? Then ".." is ".".
 		if d.IsRoot() {
 			d.IncRef()
-			renameMu.RUnlock()
 			return d, nil
 		}
 		d.parent.IncRef()
-		renameMu.RUnlock()
 		return d.parent, nil
 	}
 
@@ -532,15 +529,11 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 	// Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be
 	// expensive, if possible release the lock and re-acquire it.
 	if walkMayUnlock {
-		// While this dirent is unlocked, the lookup below is not allowed to proceed in tandem with a
-		// rename operation. The rename should be fully complete before we call Lookup on anything.
 		d.mu.Unlock()
-		renameMu.RLock()
 	}
 	c, err := d.Inode.Lookup(ctx, name)
 	if walkMayUnlock {
 		d.mu.Lock()
-		renameMu.RUnlock()
 	}
 	// No dice.
 	if err != nil {
@@ -608,18 +601,27 @@ func (d *Dirent) Walk(ctx context.Context, root *Dirent, name string) (*Dirent, 
 		panic("Dirent.Walk: root must not be nil")
 	}
 
+	// We could use lockDirectory here, but this is a hot path and we want
+	// to avoid defer.
+	renameMu.RLock()
 	d.dirMu.RLock()
 	d.mu.Lock()
+
 	child, err := d.walk(ctx, root, name, true /* may unlock */)
+
 	d.mu.Unlock()
 	d.dirMu.RUnlock()
+	renameMu.RUnlock()
 
 	return child, err
 }
 
 // exists returns true if name exists in relation to d.
 //
-// Preconditions: d.mu must be held.
+// Preconditions:
+// - renameMu must be held for reading.
+// - d.mu must be held.
+// - name must must not contain "/"s.
 func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
 	child, err := d.walk(ctx, root, name, true /* may unlock */)
 	if err != nil {
@@ -634,24 +636,13 @@ func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
 // lockDirectory should be called for any operation that changes this `d`s
 // children (creating or removing them).
 func (d *Dirent) lockDirectory() func() {
-	if d.Inode.overlay != nil {
-		// overlay copyUp may need to look at Dirent parents, and hence
-		// may need renameMu.
-		renameMu.RLock()
-		d.dirMu.Lock()
-		d.mu.Lock()
-		return func() {
-			d.mu.Unlock()
-			d.dirMu.Unlock()
-			renameMu.RUnlock()
-		}
-	}
-
+	renameMu.RLock()
 	d.dirMu.Lock()
 	d.mu.Lock()
 	return func() {
 		d.mu.Unlock()
 		d.dirMu.Unlock()
+		renameMu.RUnlock()
 	}
 }
 
@@ -724,9 +715,10 @@ func (d *Dirent) finishCreate(child *Dirent, name string) {
 
 // genericCreate executes create if name does not exist. Removes a negative Dirent at name if
 // create succeeds.
-//
-// Preconditions: d.mu must be held.
 func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, create func() error) error {
+	unlock := d.lockDirectory()
+	defer unlock()
+
 	// Does something already exist?
 	if d.exists(ctx, root, name) {
 		return syscall.EEXIST
@@ -765,9 +757,6 @@ func (d *Dirent) genericCreate(ctx context.Context, root *Dirent, name string, c
 
 // CreateLink creates a new link in this directory.
 func (d *Dirent) CreateLink(ctx context.Context, root *Dirent, oldname, newname string) error {
-	unlock := d.lockDirectory()
-	defer unlock()
-
 	return d.genericCreate(ctx, root, newname, func() error {
 		if err := d.Inode.CreateLink(ctx, d, oldname, newname); err != nil {
 			return err
@@ -779,9 +768,6 @@ func (d *Dirent) CreateLink(ctx context.Context, root *Dirent, oldname, newname 
 
 // CreateHardLink creates a new hard link in this directory.
 func (d *Dirent) CreateHardLink(ctx context.Context, root *Dirent, target *Dirent, name string) error {
-	unlock := d.lockDirectory()
-	defer unlock()
-
 	// Make sure that target does not span filesystems.
 	if d.Inode.MountSource != target.Inode.MountSource {
 		return syscall.EXDEV
@@ -799,9 +785,6 @@ func (d *Dirent) CreateHardLink(ctx context.Context, root *Dirent, target *Diren
 
 // CreateDirectory creates a new directory under this dirent.
 func (d *Dirent) CreateDirectory(ctx context.Context, root *Dirent, name string, perms FilePermissions) error {
-	unlock := d.lockDirectory()
-	defer unlock()
-
 	return d.genericCreate(ctx, root, name, func() error {
 		if err := d.Inode.CreateDirectory(ctx, d, name, perms); err != nil {
 			return err
@@ -813,11 +796,6 @@ func (d *Dirent) CreateDirectory(ctx context.Context, root *Dirent, name string,
 
 // Bind satisfies the InodeOperations interface; otherwise same as GetFile.
 func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data unix.BoundEndpoint, perms FilePermissions) (*Dirent, error) {
-	d.dirMu.Lock()
-	defer d.dirMu.Unlock()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	var childDir *Dirent
 	err := d.genericCreate(ctx, root, name, func() error {
 		var e error
@@ -839,9 +817,6 @@ func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data unix.
 
 // CreateFifo creates a new named pipe under this dirent.
 func (d *Dirent) CreateFifo(ctx context.Context, root *Dirent, name string, perms FilePermissions) error {
-	unlock := d.lockDirectory()
-	defer unlock()
-
 	return d.genericCreate(ctx, root, name, func() error {
 		if err := d.Inode.CreateFifo(ctx, d, name, perms); err != nil {
 			return err
