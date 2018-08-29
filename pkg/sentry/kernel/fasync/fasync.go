@@ -47,6 +47,7 @@ type FileAsync struct {
 func (a *FileAsync) Callback(e *waiter.Entry) {
 	a.mu.Lock()
 	if a.e.Callback == nil {
+		a.mu.Unlock()
 		return
 	}
 	t := a.recipientT
