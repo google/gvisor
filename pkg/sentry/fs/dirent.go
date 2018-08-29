@@ -1549,16 +1549,19 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	// Check constraints on the object being replaced, if any.
 	replaced, err := newParent.walk(ctx, root, newName, false /* may unlock */)
 	if err == nil {
-		defer replaced.DecRef()
+		// NOTE: We don't want to keep replaced alive
+		// across the Rename, so must call DecRef manually (no defer).
 
 		// Target should not be an ancestor of source.
 		if replaced == oldParent {
+			replaced.DecRef()
 			// Why is this not EINVAL? See fs/namei.c.
 			return syscall.ENOTEMPTY
 		}
 
 		// Is the thing we're trying to replace busy?
 		if replaced.Busy() {
+			replaced.DecRef()
 			return syscall.EBUSY
 		}
 
@@ -1566,9 +1569,11 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		oldIsDir := IsDir(renamed.Inode.StableAttr)
 		newIsDir := IsDir(replaced.Inode.StableAttr)
 		if !newIsDir && oldIsDir {
+			replaced.DecRef()
 			return syscall.ENOTDIR
 		}
 		if !oldIsDir && newIsDir {
+			replaced.DecRef()
 			return syscall.EISDIR
 		}
 
@@ -1583,6 +1588,9 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		replaced.mu.Lock()
 		replaced.flush()
 		replaced.mu.Unlock()
+
+		// Done with replaced.
+		replaced.DecRef()
 	}
 
 	if err := renamed.Inode.Rename(ctx, oldParent, renamed, newParent, newName); err != nil {
