@@ -85,7 +85,7 @@ func (p *protocol) MinimumPacketSize() int {
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
 
-// ParsePorts returns the source and destination ports stored in the given udp
+// ParsePorts returns the source and destination ports stored in the given ping
 // packet.
 func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	return 0, binary.BigEndian.Uint16(v[header.ICMPv4MinimumSize:]), nil
