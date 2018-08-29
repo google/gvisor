@@ -27,24 +27,33 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
 )
 
+// Options are seccomp filter related options.
+type Options struct {
+	Platform     platform.Platform
+	WhitelistFS  bool
+	HostNetwork  bool
+	ControllerFD int
+}
+
 // Install installs seccomp filters for based on the given platform.
-func Install(p platform.Platform, whitelistFS, hostNetwork bool) error {
+func Install(opt Options) error {
 	s := allowedSyscalls
+	s.Merge(controlServerFilters(opt.ControllerFD))
 
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
-	if whitelistFS {
+	if opt.WhitelistFS {
 		Report("direct file access allows unrestricted file access!")
 		s.Merge(whitelistFSFilters())
 	}
-	if hostNetwork {
+	if opt.HostNetwork {
 		Report("host networking enabled: syscall filters less restrictive!")
 		s.Merge(hostInetFilters())
 	}
 
-	switch p := p.(type) {
+	switch p := opt.Platform.(type) {
 	case *ptrace.PTrace:
 		s.Merge(ptraceFilters())
 	case *kvm.KVM:

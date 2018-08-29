@@ -351,9 +351,13 @@ func (l *Loader) run() error {
 	if l.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
-		whitelistFS := l.conf.FileAccess == FileAccessDirect
-		hostNet := l.conf.Network == NetworkHost
-		if err := filter.Install(l.k.Platform, whitelistFS, hostNet); err != nil {
+		opts := filter.Options{
+			Platform:     l.k.Platform,
+			WhitelistFS:  l.conf.FileAccess == FileAccessDirect,
+			HostNetwork:  l.conf.Network == NetworkHost,
+			ControllerFD: l.ctrl.srv.FD(),
+		}
+		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("Failed to install seccomp filters: %v", err)
 		}
 	}
