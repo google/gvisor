@@ -56,9 +56,11 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		// Add a basic set of top-level directories. In Linux, these
 		// are dynamically added depending on the KConfig. Here we just
 		// add the most common ones.
-		"block":    newDir(ctx, msrc, nil),
-		"bus":      newDir(ctx, msrc, nil),
-		"class":    newDir(ctx, msrc, nil),
+		"block": newDir(ctx, msrc, nil),
+		"bus":   newDir(ctx, msrc, nil),
+		"class": newDir(ctx, msrc, map[string]*fs.Inode{
+			"power_supply": newDir(ctx, msrc, nil),
+		}),
 		"dev":      newDir(ctx, msrc, nil),
 		"devices":  newDevicesDir(ctx, msrc),
 		"firmware": newDir(ctx, msrc, nil),
