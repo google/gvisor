@@ -204,6 +204,9 @@ type Config struct {
 	// TODO: Remove this when multiple container is fully supported.
 	MultiContainer bool
 
+	// SpecFile is the file containing the OCI spec.
+	SpecFile string
+
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action
 
