@@ -254,7 +254,7 @@ func RunAsRoot(m *testing.M) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	cmd := exec.Command("/proc/self/exe", os.Args...)
+	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
 		// Set current user/group as root inside the namespace.
