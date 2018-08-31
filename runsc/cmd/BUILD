@@ -42,6 +42,7 @@ go_library(
         "//runsc/console",
         "//runsc/container",
         "//runsc/fsgofer",
+        "//runsc/fsgofer/filter",
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

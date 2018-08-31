@@ -28,6 +28,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
+	"gvisor.googlesource.com/gvisor/runsc/fsgofer/filter"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -149,6 +150,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	if mountIdx != len(g.ioFDs) {
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+	}
+
+	if err := filter.Install(); err != nil {
+		Fatalf("Failed to install seccomp filters: %v", err)
 	}
 
 	runServers(ats, g.ioFDs)
