@@ -233,6 +233,16 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
 
+	// Create control server socket here and donate FD to child process because
+	// it may be in a different network namespace and won't be reachable from
+	// outside.
+	addr := boot.ControlSocketAddr(s.ID)
+	fd, err := server.CreateSocket(addr)
+	log.Infof("Creating sandbox process with addr: %s", addr[1:]) // skip "\00".
+	if err != nil {
+		return fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
+	}
+
 	consoleEnabled := consoleSocket != ""
 
 	binPath, err := specutils.BinPath()
@@ -241,61 +251,16 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 	cmd := exec.Command(binPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
+	cmd.Args = append(cmd.Args,
+		"boot",
+		"--bundle", bundleDir,
+		"--controller-fd="+strconv.Itoa(nextFD),
+		"--console="+strconv.FormatBool(consoleEnabled))
+	nextFD++
 
-	// Open the log files to pass to the sandbox as FDs.
-	//
-	// These flags must come BEFORE the "boot" command in cmd.Args.
-	if conf.LogFilename != "" {
-		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("error opening log file %q: %v", conf.LogFilename, err)
-		}
-		defer logFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, logFile)
-		cmd.Args = append(cmd.Args, "--log-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-	if conf.DebugLogDir != "" {
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLogDir, "boot")
-		if err != nil {
-			return fmt.Errorf("error opening debug log file in %q: %v", conf.DebugLogDir, err)
-		}
-		defer debugLogFile.Close()
-		cmd.ExtraFiles = append(cmd.ExtraFiles, debugLogFile)
-		cmd.Args = append(cmd.Args, "--debug-log-fd="+strconv.Itoa(nextFD))
-		nextFD++
-	}
-
-	// Add the "boot" command to the args.
-	//
-	// All flags after this must be for the boot command
-	cmd.Args = append(cmd.Args, "boot", "--console="+strconv.FormatBool(consoleEnabled))
-
-	// Create a socket for the control server and donate it to the sandbox.
-	addr := boot.ControlSocketAddr(s.ID)
-	sockFD, err := server.CreateSocket(addr)
-	log.Infof("Creating sandbox process with addr: %s", addr[1:]) // skip "\00".
-	if err != nil {
-		return fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
-	}
-	controllerFile := os.NewFile(uintptr(sockFD), "control_server_socket")
+	controllerFile := os.NewFile(uintptr(fd), "control_server_socket")
 	defer controllerFile.Close()
 	cmd.ExtraFiles = append(cmd.ExtraFiles, controllerFile)
-	cmd.Args = append(cmd.Args, "--controller-fd="+strconv.Itoa(nextFD))
-	nextFD++
-
-	// Open the spec file to donate to the sandbox.
-	if conf.SpecFile == "" {
-		return fmt.Errorf("conf.SpecFile must be set")
-	}
-	specFile, err := os.Open(conf.SpecFile)
-	if err != nil {
-		return fmt.Errorf("error opening spec file %q: %v", conf.SpecFile, err)
-	}
-	defer specFile.Close()
-	cmd.ExtraFiles = append(cmd.ExtraFiles, specFile)
-	cmd.Args = append(cmd.Args, "--spec-fd="+strconv.Itoa(nextFD))
-	nextFD++
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	for _, f := range ioFiles {
@@ -390,11 +355,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	} else {
 		log.Infof("Sandbox will be started in new user namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
-	}
-
-	// Log the fds we are donating to the sandbox process.
-	for i, f := range cmd.ExtraFiles {
-		log.Debugf("Donating FD %d: %q", i+3, f.Name())
 	}
 
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)

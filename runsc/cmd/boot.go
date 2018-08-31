@@ -32,11 +32,8 @@ import (
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
 type Boot struct {
-	// bundleDir is the directory containing the OCI spec.
+	// bundleDir is the path to the bundle directory.
 	bundleDir string
-
-	// specFD is the file descriptor that the spec will be read from.
-	specFD int
 
 	// controllerFD is the file descriptor of a stream socket for the
 	// control server that is donated to this process.
@@ -71,7 +68,7 @@ func (*Boot) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (b *Boot) SetFlags(f *flag.FlagSet) {
-	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
+	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
@@ -81,7 +78,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 0 {
+	if b.bundleDir == "" || b.controllerFD == -1 || f.NArg() != 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -89,10 +86,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
 	debug.SetTraceback("all")
 
-	// Get the spec from the specFD.
-	specFile := os.NewFile(uintptr(b.specFD), "spec file")
-	defer specFile.Close()
-	spec, err := specutils.ReadSpecFromFile(specFile)
+	// Get the spec from the bundleDir.
+	spec, err := specutils.ReadSpec(b.bundleDir)
 	if err != nil {
 		Fatalf("error reading spec: %v", err)
 	}

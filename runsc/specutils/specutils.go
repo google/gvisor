@@ -108,24 +108,14 @@ func ValidateSpec(spec *specs.Spec) error {
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
 func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	// The spec file must be in "config.json" inside the bundle directory.
-	specPath := filepath.Join(bundleDir, "config.json")
-	specFile, err := os.Open(specPath)
+	specFile := filepath.Join(bundleDir, "config.json")
+	specBytes, err := ioutil.ReadFile(specFile)
 	if err != nil {
-		return nil, fmt.Errorf("error opening spec file %q: %v", specPath, err)
-	}
-	defer specFile.Close()
-	return ReadSpecFromFile(specFile)
-}
-
-// ReadSpecFromFile reads an OCI runtime spec from the given File.
-func ReadSpecFromFile(specFile *os.File) (*specs.Spec, error) {
-	specBytes, err := ioutil.ReadAll(specFile)
-	if err != nil {
-		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile.Name(), err)
+		return nil, fmt.Errorf("error reading spec from file %q: %v", specFile, err)
 	}
 	var spec specs.Spec
 	if err := json.Unmarshal(specBytes, &spec); err != nil {
-		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile.Name(), err, string(specBytes))
+		return nil, fmt.Errorf("error unmarshaling spec from file %q: %v\n %s", specFile, err, string(specBytes))
 	}
 	if err := ValidateSpec(&spec); err != nil {
 		return nil, err
@@ -355,12 +345,4 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 		return fmt.Errorf("process %d not running yet", pid)
 	}
 	return backoff.Retry(op, b)
-}
-
-// DebugLogFile opens a file in logDir based on the timestamp and subcommand
-// for writing.
-func DebugLogFile(logDir, subcommand string) (*os.File, error) {
-	// Format: <debug-log-dir>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
-	filename := fmt.Sprintf("runsc.log.%s.%s", time.Now().Format("20060102-150405.000000"), subcommand)
-	return os.OpenFile(filepath.Join(logDir, filename), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }

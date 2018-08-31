@@ -176,7 +176,6 @@ func SetupContainerInRoot(rootDir string, spec *specs.Spec, conf *boot.Config) (
 	}
 
 	conf.RootDir = rootDir
-	conf.SpecFile = filepath.Join(bundleDir, "config.json")
 	return bundleDir, nil
 }
 

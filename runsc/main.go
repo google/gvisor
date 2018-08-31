@@ -17,11 +17,13 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"context"
 	"flag"
@@ -30,7 +32,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/cmd"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
 var (
@@ -47,8 +48,6 @@ var (
 	// Debugging flags.
 	debugLogDir = flag.String("debug-log-dir", "", "additional location for logs. It creates individual log files per command")
 	logPackets  = flag.Bool("log-packets", false, "enable network packet logging")
-	logFD       = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD  = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
 
 	// Debugging flags: strace related
 	strace         = flag.Bool("strace", false, "enable strace")
@@ -65,7 +64,6 @@ var (
 	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 )
 
-// gitRevision is set during linking.
 var gitRevision = ""
 
 func main() {
@@ -154,9 +152,7 @@ func main() {
 	}
 
 	var logFile io.Writer = os.Stderr
-	if *logFD > -1 {
-		logFile = os.NewFile(uintptr(*logFD), "log file")
-	} else if *logFilename != "" {
+	if *logFilename != "" {
 		// We must set O_APPEND and not O_TRUNC because Docker passes
 		// the same log file for all commands (and also parses these
 		// log files), so we can't destroy them on each command.
@@ -177,17 +173,18 @@ func main() {
 		cmd.Fatalf("invalid log format %q, must be 'json' or 'text'", *logFormat)
 	}
 
-	if *debugLogFD > -1 {
-		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
-		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
-	} else if *debugLogDir != "" {
+	if *debugLogDir != "" {
 		if err := os.MkdirAll(*debugLogDir, 0775); err != nil {
 			cmd.Fatalf("error creating dir %q: %v", *debugLogDir, err)
 		}
-		subcommand := flag.CommandLine.Arg(0)
-		f, err := specutils.DebugLogFile(*debugLogDir, subcommand)
+
+		// Format: <debug-log-dir>/runsc.log.<yyymmdd-hhmmss.uuuuuu>.<command>
+		scmd := flag.CommandLine.Arg(0)
+		filename := fmt.Sprintf("runsc.log.%s.%s", time.Now().Format("20060102-150405.000000"), scmd)
+		path := filepath.Join(*debugLogDir, filename)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 		if err != nil {
-			cmd.Fatalf("error opening debug log file in %q: %v", *debugLogDir, err)
+			cmd.Fatalf("error opening log file %q: %v", filename, err)
 		}
 		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
 	}
