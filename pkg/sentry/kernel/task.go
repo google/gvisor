@@ -354,19 +354,19 @@ type Task struct {
 
 	// creds is the task's credentials.
 	//
-	// creds is protected by mu, however the value itself is immutable and
-	// can only be changed by a copy. After reading the pointer, access
-	// will proceed outside the scope of mu.
+	// creds is protected by mu, however the value itself is immutable and can
+	// only be changed by a copy. After reading the pointer, access will
+	// proceed outside the scope of mu. creds is owned by the task goroutine.
 	creds *auth.Credentials
 
 	// utsns is the task's UTS namespace.
 	//
-	// utsns is protected by mu.
+	// utsns is protected by mu. utsns is owned by the task goroutine.
 	utsns *UTSNamespace
 
 	// ipcns is the task's IPC namespace.
 	//
-	// ipcns is protected by mu.
+	// ipcns is protected by mu. ipcns is owned by the task goroutine.
 	ipcns *IPCNamespace
 
 	// abstractSockets tracks abstract sockets that are in use.
@@ -547,6 +547,9 @@ func (t *Task) Kernel() *Kernel {
 }
 
 // Value implements context.Context.Value.
+//
+// Preconditions: The caller must be running on the task goroutine (as implied
+// by the requirements of context.Context).
 func (t *Task) Value(key interface{}) interface{} {
 	switch key {
 	case CtxCanTrace:
@@ -556,18 +559,12 @@ func (t *Task) Value(key interface{}) interface{} {
 	case CtxPIDNamespace:
 		return t.tg.pidns
 	case CtxUTSNamespace:
-		t.mu.Lock()
-		defer t.mu.Unlock()
 		return t.utsns
 	case CtxIPCNamespace:
-		t.mu.Lock()
-		defer t.mu.Unlock()
 		return t.ipcns
 	case CtxTask:
 		return t
 	case auth.CtxCredentials:
-		t.mu.Lock()
-		defer t.mu.Unlock()
 		return t.creds
 	case context.CtxThreadGroupID:
 		return int32(t.ThreadGroup().ID())
