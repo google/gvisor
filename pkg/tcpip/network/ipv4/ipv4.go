@@ -67,7 +67,7 @@ func newEndpoint(nicid tcpip.NICID, addr tcpip.Address, dispatcher stack.Transpo
 		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 	}
 	copy(e.address[:], addr)
-	e.id = stack.NetworkEndpointID{tcpip.Address(e.address[:])}
+	e.id = stack.NetworkEndpointID{LocalAddress: tcpip.Address(e.address[:])}
 
 	go e.echoReplier()
 

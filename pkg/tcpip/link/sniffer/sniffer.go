@@ -303,6 +303,37 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byt
 		log.Infof("%s %s %v -> %v %s len:%d id:%04x code:%d", prefix, transName, src, dst, icmpType, size, id, icmp.Code())
 		return
 
+	case header.ICMPv6ProtocolNumber:
+		transName = "icmp"
+		icmp := header.ICMPv6(b)
+		icmpType := "unknown"
+		switch icmp.Type() {
+		case header.ICMPv6DstUnreachable:
+			icmpType = "destination unreachable"
+		case header.ICMPv6PacketTooBig:
+			icmpType = "packet too big"
+		case header.ICMPv6TimeExceeded:
+			icmpType = "time exceeded"
+		case header.ICMPv6ParamProblem:
+			icmpType = "param problem"
+		case header.ICMPv6EchoRequest:
+			icmpType = "echo request"
+		case header.ICMPv6EchoReply:
+			icmpType = "echo reply"
+		case header.ICMPv6RouterSolicit:
+			icmpType = "router solicit"
+		case header.ICMPv6RouterAdvert:
+			icmpType = "router advert"
+		case header.ICMPv6NeighborSolicit:
+			icmpType = "neighbor solicit"
+		case header.ICMPv6NeighborAdvert:
+			icmpType = "neighbor advert"
+		case header.ICMPv6RedirectMsg:
+			icmpType = "redirect message"
+		}
+		log.Infof("%s %s %v -> %v %s len:%d id:%04x code:%d", prefix, transName, src, dst, icmpType, size, id, icmp.Code())
+		return
+
 	case header.UDPProtocolNumber:
 		transName = "udp"
 		udp := header.UDP(b)
