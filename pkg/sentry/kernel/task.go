@@ -499,13 +499,6 @@ func (t *Task) afterLoad() {
 // struct.
 const copyScratchBufferLen = 52
 
-// TaskMaybe is the interface for extracting Tasks out of things which may be
-// or contain Task objects.
-type TaskMaybe interface {
-	// ExtractTask returns the Task.
-	ExtractTask() *Task
-}
-
 // CopyScratchBuffer returns a scratch buffer to be used in CopyIn/CopyOut
 // functions. It must only be used within those functions and can only be used
 // by the task goroutine; it exists to improve performance and thus
@@ -523,11 +516,6 @@ func (t *Task) CopyScratchBuffer(size int) []byte {
 // FutexWaiter returns the Task's futex.Waiter.
 func (t *Task) FutexWaiter() *futex.Waiter {
 	return t.futexWaiter
-}
-
-// ExtractTask implements TaskMaybe.ExtractTask.
-func (t *Task) ExtractTask() *Task {
-	return t
 }
 
 // TaskContext returns t's TaskContext.
