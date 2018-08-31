@@ -253,20 +253,21 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		}
 	}
 
-	// Deactivate the address space before releasing the MM.
+	// Deactivate the address space and update max RSS before releasing the
+	// task's MM.
 	t.Deactivate()
-
-	// Update the max resident set size before releasing t.tc.mm.
 	t.tg.pidns.owner.mu.Lock()
 	t.updateRSSLocked()
 	t.tg.pidns.owner.mu.Unlock()
-
-	// Release all of the task's resources.
 	t.mu.Lock()
 	t.tc.release()
-	t.tr.release()
 	t.mu.Unlock()
+
+	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
+
+	t.fsc.DecRef()
+	t.fds.DecRef()
 
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.

@@ -332,7 +332,8 @@ func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
-		if fdmap := t.FDMap(); fdmap != nil {
+		// We can skip locking Task.mu here since the kernel is paused.
+		if fdmap := t.fds; fdmap != nil {
 			for _, desc := range fdmap.files {
 				if flags := desc.file.Flags(); !flags.Write {
 					continue
@@ -381,7 +382,8 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
-		if fdmap := t.FDMap(); fdmap != nil {
+		// We can skip locking Task.mu here since the kernel is paused.
+		if fdmap := t.fds; fdmap != nil {
 			for _, desc := range fdmap.files {
 				if desc.file != nil {
 					if e, ok := desc.file.FileOperations.(*epoll.EventPoll); ok {
@@ -625,20 +627,23 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	tr := newTaskResources(args.FDMap, newFSContext(root, wd, args.Umask))
-	// NewTask unconditionally takes ownership of tr, so we never have to call
-	// tr.release.
+
+	// Take a reference on the FDMap, which will be transferred to
+	// TaskSet.NewTask().
+	args.FDMap.IncRef()
 
 	// Create the task.
 	config := &TaskConfig{
-		Kernel:         k,
-		ThreadGroup:    tg,
-		TaskContext:    tc,
-		TaskResources:  tr,
-		Credentials:    args.Credentials,
-		UTSNamespace:   args.UTSNamespace,
-		IPCNamespace:   args.IPCNamespace,
-		AllowedCPUMask: sched.NewFullCPUSet(k.applicationCores),
+		Kernel:                  k,
+		ThreadGroup:             tg,
+		TaskContext:             tc,
+		FSContext:               newFSContext(root, wd, args.Umask),
+		FDMap:                   args.FDMap,
+		Credentials:             args.Credentials,
+		AllowedCPUMask:          sched.NewFullCPUSet(k.applicationCores),
+		UTSNamespace:            args.UTSNamespace,
+		IPCNamespace:            args.IPCNamespace,
+		AbstractSocketNamespace: NewAbstractSocketNamespace(), // FIXME
 	}
 	t, err := k.tasks.NewTask(config)
 	if err != nil {
@@ -714,7 +719,7 @@ func (k *Kernel) pauseTimeLocked() {
 		for _, it := range t.tg.timers {
 			it.PauseTimer()
 		}
-		if fdm := t.tr.FDMap; fdm != nil {
+		if fdm := t.fds; fdm != nil {
 			for _, desc := range fdm.files {
 				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.PauseTimer()
@@ -744,7 +749,7 @@ func (k *Kernel) resumeTimeLocked() {
 		for _, it := range t.tg.timers {
 			it.ResumeTimer()
 		}
-		if fdm := t.tr.FDMap; fdm != nil {
+		if fdm := t.fds; fdm != nil {
 			for _, desc := range fdm.files {
 				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.ResumeTimer()

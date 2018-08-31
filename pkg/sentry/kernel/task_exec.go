@@ -194,7 +194,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Unlock()
 
 	// Remove FDs with the CloseOnExec flag set.
-	t.FDMap().RemoveIf(func(file *fs.File, flags FDFlags) bool {
+	t.fds.RemoveIf(func(file *fs.File, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
 

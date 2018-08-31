@@ -213,6 +213,22 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		tc.Arch.StateData().Regs.Fs_base = uint64(opts.TLS)
 	}
 
+	var fsc *FSContext
+	if opts.NewFSContext {
+		fsc = t.fsc.Fork()
+	} else {
+		fsc = t.fsc
+		fsc.IncRef()
+	}
+
+	var fds *FDMap
+	if opts.NewFiles {
+		fds = t.fds.Fork()
+	} else {
+		fds = t.fds
+		fds.IncRef()
+	}
+
 	pidns := t.tg.pidns
 	if t.childPIDNamespace != nil {
 		pidns = t.childPIDNamespace
@@ -227,17 +243,21 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		}
 		tg = NewThreadGroup(pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
 	}
+
 	cfg := &TaskConfig{
-		Kernel:            t.k,
-		ThreadGroup:       tg,
-		TaskContext:       tc,
-		TaskResources:     t.tr.Fork(!opts.NewFiles, !opts.NewFSContext),
-		Niceness:          t.Niceness(),
-		Credentials:       creds.Fork(),
-		NetworkNamespaced: t.netns,
-		AllowedCPUMask:    t.CPUMask(),
-		UTSNamespace:      utsns,
-		IPCNamespace:      ipcns,
+		Kernel:                  t.k,
+		ThreadGroup:             tg,
+		SignalMask:              t.SignalMask(),
+		TaskContext:             tc,
+		FSContext:               fsc,
+		FDMap:                   fds,
+		Credentials:             creds.Fork(),
+		Niceness:                t.Niceness(),
+		NetworkNamespaced:       t.netns,
+		AllowedCPUMask:          t.CPUMask(),
+		UTSNamespace:            utsns,
+		IPCNamespace:            ipcns,
+		AbstractSocketNamespace: t.abstractSockets,
 	}
 	if opts.NewThreadGroup {
 		cfg.Parent = t
@@ -435,15 +455,17 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	if opts.NewNetworkNamespace {
 		if !haveCapSysAdmin {
+			t.mu.Unlock()
 			return syserror.EPERM
 		}
 		t.netns = true
 	}
 	if opts.NewUTSNamespace {
 		if !haveCapSysAdmin {
+			t.mu.Unlock()
 			return syserror.EPERM
 		}
 		// Note that this must happen after NewUserNamespace, so the
@@ -452,21 +474,29 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 	}
 	if opts.NewIPCNamespace {
 		if !haveCapSysAdmin {
+			t.mu.Unlock()
 			return syserror.EPERM
 		}
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"
 		t.ipcns = NewIPCNamespace(t.creds.UserNamespace)
 	}
+	var oldfds *FDMap
 	if opts.NewFiles {
-		oldFDMap := t.tr.FDMap
-		t.tr.FDMap = oldFDMap.Fork()
-		oldFDMap.DecRef()
+		oldfds = t.fds
+		t.fds = oldfds.Fork()
 	}
+	var oldfsc *FSContext
 	if opts.NewFSContext {
-		oldFS := t.tr.FSContext
-		t.tr.FSContext = oldFS.Fork()
-		oldFS.DecRef()
+		oldfsc = t.fsc
+		t.fsc = oldfsc.Fork()
+	}
+	t.mu.Unlock()
+	if oldfds != nil {
+		oldfds.DecRef()
+	}
+	if oldfsc != nil {
+		oldfsc.DecRef()
 	}
 	return nil
 }

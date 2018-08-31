@@ -63,7 +63,7 @@ func (t *Task) DebugDumpState() {
 	if mm := t.MemoryManager(); mm != nil {
 		t.Debugf("Mappings:\n%s", mm)
 	}
-	t.Debugf("FDMap:\n%s", t.FDMap())
+	t.Debugf("FDMap:\n%s", t.fds)
 }
 
 // debugDumpRegisters logs register state at log level debug.

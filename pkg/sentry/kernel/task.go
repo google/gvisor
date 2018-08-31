@@ -99,6 +99,19 @@ type Task struct {
 	// ThreadGroup.signalHandlers.
 	pendingSignals pendingSignals
 
+	// signalMask is the set of signals whose delivery is currently blocked.
+	//
+	// signalMask is accessed using atomic memory operations, and is protected
+	// by the signal mutex (such that reading signalMask is safe if either the
+	// signal mutex is locked or if atomic memory operations are used, while
+	// writing signalMask requires both). signalMask is owned by the task
+	// goroutine.
+	signalMask linux.SignalSet
+
+	// FIXME: An equivalent to task_struct::real_blocked is needed
+	// to prevent signals that are ignored, but transiently unblocked by
+	// sigtimedwait(2), from being dropped in Task.sendSignalTimerLocked.
+
 	// If haveSavedSignalMask is true, savedSignalMask is the signal mask that
 	// should be applied after the task has either delivered one signal to a
 	// user handler or is about to resume execution in the untrusted
@@ -182,25 +195,30 @@ type Task struct {
 	// syscallRestartBlock is exclusive to the task goroutine.
 	syscallRestartBlock SyscallRestartBlock
 
-	// mu protects some of the following fields.
-	mu sync.Mutex `state:"nosave"`
-
-	// tc and tr form the majority of the task's data.
-	//
-	// tc and tr are protected by mu. tc and tr are owned by the task
-	// goroutine. tr.signalMask is protected by the signal mutex and must be
-	// written using atomic memory operations (such that reading tr.signalMask
-	// is safe if the signal mutex is locked or if atomic memory operations are
-	// used), but is also owned by the task goroutine.
-	tc TaskContext
-	tr TaskResources
-
 	// p provides the mechanism by which the task runs code in userspace. The p
 	// interface object is immutable.
 	p platform.Context `state:"nosave"`
 
 	// k is the Kernel that this task belongs to. The k pointer is immutable.
 	k *Kernel
+
+	// mu protects some of the following fields.
+	mu sync.Mutex `state:"nosave"`
+
+	// tc holds task data provided by the ELF loader.
+	//
+	// tc is protected by mu, and is owned by the task goroutine.
+	tc TaskContext
+
+	// fsc is the task's filesystem context.
+	//
+	// fsc is protected by mu, and is owned by the task goroutine.
+	fsc *FSContext
+
+	// fds is the task's file descriptor table.
+	//
+	// fds is protected by mu, and is owned by the task goroutine.
+	fds *FDMap
 
 	// If vforkParent is not nil, it is the task that created this task with
 	// vfork() or clone(CLONE_VFORK), and should have its vforkStop ended when
@@ -350,6 +368,11 @@ type Task struct {
 	//
 	// ipcns is protected by mu.
 	ipcns *IPCNamespace
+
+	// abstractSockets tracks abstract sockets that are in use.
+	//
+	// abstractSockets is protected by mu.
+	abstractSockets *AbstractSocketNamespace
 
 	// parentDeathSignal is sent to this task's thread group when its parent exits.
 	//
@@ -518,29 +541,6 @@ func (t *Task) FutexWaiter() *futex.Waiter {
 	return t.futexWaiter
 }
 
-// TaskContext returns t's TaskContext.
-//
-// Precondition: The caller must be running on the task goroutine, or t.mu must
-// be locked.
-func (t *Task) TaskContext() *TaskContext {
-	return &t.tc
-}
-
-// TaskResources returns t's TaskResources.
-//
-// Precondition: The caller must be running on the task goroutine, or t.mu must
-// be locked.
-func (t *Task) TaskResources() *TaskResources {
-	return &t.tr
-}
-
-// WithMuLocked executes f with t.mu locked.
-func (t *Task) WithMuLocked(f func(*Task)) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	f(t)
-}
-
 // Kernel returns the Kernel containing t.
 func (t *Task) Kernel() *Kernel {
 	return t.k
@@ -572,7 +572,7 @@ func (t *Task) Value(key interface{}) interface{} {
 	case context.CtxThreadGroupID:
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
-		return t.FSContext().RootDirectory()
+		return t.fsc.RootDirectory()
 	case inet.CtxStack:
 		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:
@@ -618,4 +618,63 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 	// accidentally reuse it.
 	t.syscallRestartBlock = nil
 	return r
+}
+
+// IsChrooted returns true if the root directory of t's FSContext is not the
+// root directory of t's MountNamespace.
+//
+// Preconditions: The caller must be running on the task goroutine, or t.mu
+// must be locked.
+func (t *Task) IsChrooted() bool {
+	realRoot := t.k.mounts.Root()
+	defer realRoot.DecRef()
+	root := t.fsc.RootDirectory()
+	if root != nil {
+		defer root.DecRef()
+	}
+	return root != realRoot
+}
+
+// TaskContext returns t's TaskContext.
+//
+// Precondition: The caller must be running on the task goroutine, or t.mu must
+// be locked.
+func (t *Task) TaskContext() *TaskContext {
+	return &t.tc
+}
+
+// FSContext returns t's FSContext. FSContext does not take an additional
+// reference on the returned FSContext.
+//
+// Precondition: The caller must be running on the task goroutine, or t.mu must
+// be locked.
+func (t *Task) FSContext() *FSContext {
+	return t.fsc
+}
+
+// FDMap returns t's FDMap. FDMap does not take an additional reference on the
+// returned FDMap.
+//
+// Precondition: The caller must be running on the task goroutine, or t.mu must
+// be locked.
+func (t *Task) FDMap() *FDMap {
+	return t.fds
+}
+
+// WithMuLocked executes f with t.mu locked.
+func (t *Task) WithMuLocked(f func(*Task)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	f(t)
+}
+
+// MountNamespace returns t's MountNamespace. MountNamespace does not take an
+// additional reference on the returned MountNamespace.
+func (t *Task) MountNamespace() *fs.MountNamespace {
+	return t.k.mounts
+}
+
+// AbstractSockets returns t's AbstractSocketNamespace.
+func (t *Task) AbstractSockets() *AbstractSocketNamespace {
+	return t.abstractSockets
 }

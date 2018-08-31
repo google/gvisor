@@ -124,10 +124,10 @@ var StopSignals = linux.MakeSignalSet(linux.SIGSTOP, linux.SIGTSTP, linux.SIGTTI
 //
 // Preconditions: t.tg.signalHandlers.mu must be locked.
 func (t *Task) dequeueSignalLocked() *arch.SignalInfo {
-	if info := t.pendingSignals.dequeue(t.tr.SignalMask); info != nil {
+	if info := t.pendingSignals.dequeue(t.signalMask); info != nil {
 		return info
 	}
-	return t.tg.pendingSignals.dequeue(t.tr.SignalMask)
+	return t.tg.pendingSignals.dequeue(t.signalMask)
 }
 
 // TakeSignal returns a pending signal not blocked by mask. Signal handlers are
@@ -252,7 +252,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	// handler should run with the current mask, but sigreturn should restore
 	// the saved one.
 	st := &arch.Stack{t.Arch(), t.MemoryManager(), sp}
-	mask := t.tr.SignalMask
+	mask := t.signalMask
 	if t.haveSavedSignalMask {
 		mask = t.savedSignalMask
 	}
@@ -262,7 +262,7 @@ func (t *Task) deliverSignalToHandler(info *arch.SignalInfo, act arch.SignalAct)
 	t.haveSavedSignalMask = false
 
 	// Add our signal mask.
-	newMask := t.tr.SignalMask | act.Mask
+	newMask := t.signalMask | act.Mask
 	if !act.IsNoDefer() {
 		newMask |= linux.SignalSetOf(linux.Signal(info.Signo))
 	}
@@ -431,7 +431,7 @@ func (t *Task) sendSignalTimerLocked(info *arch.SignalInfo, group bool, timer *I
 	// Linux's kernel/signal.c:__send_signal() => prepare_signal() =>
 	// sig_ignored().
 	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
-	if linux.SignalSetOf(sig)&t.tr.SignalMask == 0 && ignored && !t.hasTracer() {
+	if linux.SignalSetOf(sig)&t.signalMask == 0 && ignored && !t.hasTracer() {
 		t.Debugf("Discarding ignored signal %d", sig)
 		if timer != nil {
 			timer.signalRejectedLocked()
@@ -515,7 +515,7 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 // Preconditions: The signal mutex must be locked.
 func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	// - Do not choose tasks that are blocking the signal.
-	if linux.SignalSetOf(sig)&t.tr.SignalMask != 0 {
+	if linux.SignalSetOf(sig)&t.signalMask != 0 {
 		return false
 	}
 	// - No need to check Task.exitState, as the exit path sets every bit in the
@@ -564,21 +564,21 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 }
 
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
-	blocked := linux.SignalSetOf(sig)&t.tr.SignalMask != 0
+	blocked := linux.SignalSetOf(sig)&t.signalMask != 0
 	act := t.tg.signalHandlers.actions[sig]
 	ignored := act.Handler == arch.SignalActIgnore
 	if blocked || ignored || unconditional {
 		act.Handler = arch.SignalActDefault
 		t.tg.signalHandlers.actions[sig] = act
 		if blocked {
-			t.setSignalMaskLocked(t.tr.SignalMask &^ linux.SignalSetOf(sig))
+			t.setSignalMaskLocked(t.signalMask &^ linux.SignalSetOf(sig))
 		}
 	}
 }
 
 // SignalMask returns a copy of t's signal mask.
 func (t *Task) SignalMask() linux.SignalSet {
-	return linux.SignalSet(atomic.LoadUint64((*uint64)(&t.tr.SignalMask)))
+	return linux.SignalSet(atomic.LoadUint64((*uint64)(&t.signalMask)))
 }
 
 // SetSignalMask sets t's signal mask.
@@ -595,8 +595,8 @@ func (t *Task) SetSignalMask(mask linux.SignalSet) {
 
 // Preconditions: The signal mutex must be locked.
 func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
-	oldMask := t.tr.SignalMask
-	atomic.StoreUint64((*uint64)(&t.tr.SignalMask), uint64(mask))
+	oldMask := t.signalMask
+	atomic.StoreUint64((*uint64)(&t.signalMask), uint64(mask))
 
 	// If the new mask blocks any signals that were not blocked by the old
 	// mask, and at least one such signal is pending in tg.pendingSignals, and
@@ -1076,7 +1076,7 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 	t.tg.signalHandlers.mu.Lock()
 	t.tg.pidns.owner.mu.Unlock()
 	// If the signal is masked, re-queue it.
-	if linux.SignalSetOf(sig)&t.tr.SignalMask != 0 {
+	if linux.SignalSetOf(sig)&t.signalMask != 0 {
 		t.sendSignalLocked(info, false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 		return (*runInterrupt)(nil)

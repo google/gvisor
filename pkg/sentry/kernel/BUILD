@@ -95,7 +95,6 @@ go_library(
         "task_list.go",
         "task_log.go",
         "task_net.go",
-        "task_resources.go",
         "task_run.go",
         "task_sched.go",
         "task_signals.go",

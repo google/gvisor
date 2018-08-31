@@ -992,9 +992,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if addr != linux.SignalSetSize {
 			return syserror.EINVAL
 		}
-		target.mu.Lock()
-		defer target.mu.Unlock()
-		_, err := t.CopyOut(data, target.tr.SignalMask)
+		_, err := t.CopyOut(data, target.SignalMask())
 		return err
 
 	case linux.PTRACE_SETSIGMASK:
