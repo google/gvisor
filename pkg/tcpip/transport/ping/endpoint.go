@@ -56,7 +56,6 @@ type endpoint struct {
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack `state:"manual"`
 	netProto    tcpip.NetworkProtocolNumber
-	transProto  tcpip.TransportProtocolNumber
 	waiterQueue *waiter.Queue
 
 	// The following fields are used to manage the receive queue, and are
@@ -82,11 +81,10 @@ type endpoint struct {
 	route         stack.Route `state:"manual"`
 }
 
-func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
+func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	return &endpoint{
 		stack:         stack,
 		netProto:      netProto,
-		transProto:    transProto,
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
@@ -100,7 +98,7 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id)
+		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, ProtocolNumber4, e.id)
 	}
 
 	// Close the receive list and drain it.
@@ -299,7 +297,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 		err = sendPing4(route, e.id.LocalPort, v)
 
 	case header.IPv6ProtocolNumber:
-		err = sendPing6(route, e.id.LocalPort, v)
+		// TODO: Support IPv6.
 	}
 
 	return uintptr(len(v)), err
@@ -385,30 +383,6 @@ func sendPing4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
 	return r.WritePacket(&hdr, data, header.ICMPv4ProtocolNumber)
-}
-
-func sendPing6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
-	if len(data) < header.ICMPv6EchoMinimumSize {
-		return tcpip.ErrInvalidEndpointState
-	}
-
-	// Set the ident. Sequence number is provided by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv6MinimumSize:], ident)
-
-	hdr := buffer.NewPrependable(header.ICMPv6EchoMinimumSize + int(r.MaxHeaderLength()))
-
-	icmpv6 := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
-	copy(icmpv6, data)
-	data = data[header.ICMPv6EchoMinimumSize:]
-
-	if icmpv6.Type() != header.ICMPv6EchoRequest || icmpv6.Code() != 0 {
-		return tcpip.ErrInvalidEndpointState
-	}
-
-	icmpv6.SetChecksum(0)
-	icmpv6.SetChecksum(^header.Checksum(icmpv6, header.Checksum(data, 0)))
-
-	return r.WritePacket(&hdr, data, header.ICMPv6ProtocolNumber)
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
@@ -534,14 +508,14 @@ func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.Networ
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber4, id, e)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
 	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber4, id, e)
 		switch err {
 		case nil:
 			return true, nil
@@ -590,7 +564,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error
 	if commit != nil {
 		if err := commit(); err != nil {
 			// Unregister, the commit failed.
-			e.stack.UnregisterTransportEndpoint(addr.NIC, netProtos, e.transProto, id)
+			e.stack.UnregisterTransportEndpoint(addr.NIC, netProtos, ProtocolNumber4, id)
 			return err
 		}
 	}

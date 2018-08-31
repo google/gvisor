@@ -71,7 +71,7 @@ func (p *protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtoco
 	if netProto != p.netProto() {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-	return newEndpoint(stack, netProto, p.number, waiterQueue), nil
+	return newEndpoint(stack, netProto, waiterQueue), nil
 }
 
 // MinimumPacketSize returns the minimum valid ping packet size.
@@ -87,14 +87,8 @@ func (p *protocol) MinimumPacketSize() int {
 
 // ParsePorts returns the source and destination ports stored in the given ping
 // packet.
-func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
-	switch p.number {
-	case ProtocolNumber4:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv4MinimumSize:]), nil
-	case ProtocolNumber6:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv6MinimumSize:]), nil
-	}
-	panic(fmt.Sprint("unknown protocol number: ", p.number))
+func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
+	return 0, binary.BigEndian.Uint16(v[header.ICMPv4MinimumSize:]), nil
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
@@ -118,7 +112,5 @@ func init() {
 		return &protocol{ProtocolNumber4}
 	})
 
-	stack.RegisterTransportProtocolFactory(ProtocolName6, func() stack.TransportProtocol {
-		return &protocol{ProtocolNumber6}
-	})
+	// TODO: Support IPv6.
 }
