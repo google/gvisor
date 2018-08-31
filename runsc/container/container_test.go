@@ -744,8 +744,8 @@ func TestUnixDomainSockets(t *testing.T) {
 		spec.Mounts = []specs.Mount{
 			specs.Mount{
 				Type:        "bind",
-				Destination: "/tmp",
-				Source:      "/tmp",
+				Destination: dir,
+				Source:      dir,
 			},
 		}
 
