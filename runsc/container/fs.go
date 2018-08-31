@@ -117,6 +117,12 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		if err := syscall.Mount(src, dst, m.Type, uintptr(flags), ""); err != nil {
 			return fmt.Errorf("failed to mount src: %q, dst: %q, flags: %#x, err: %v", src, dst, flags, err)
 		}
+		// Make the mount a slave, so that for recursive bind mount, umount won't
+		// propagate to the source.
+		flags = syscall.MS_SLAVE | syscall.MS_REC
+		if err := syscall.Mount("", dst, "", uintptr(flags), ""); err != nil {
+			return fmt.Errorf("failed to rslave mount dst: %q, flags: %#x, err: %v", dst, flags, err)
+		}
 	}
 
 	// Remount root as readonly after setup is done, if requested.
