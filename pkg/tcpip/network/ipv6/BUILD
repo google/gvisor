@@ -1,6 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "ipv6",
@@ -17,5 +17,22 @@ go_library(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "ipv6_test",
+    size = "small",
+    srcs = ["icmp_test.go"],
+    embed = [":ipv6"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/ping",
+        "//pkg/waiter",
     ],
 )

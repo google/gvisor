@@ -165,7 +165,7 @@ func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.
 
 	// Set up cache if link address resolution exists for this protocol.
 	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
-		if linkRes := n.stack.linkAddrResolvers[protocol]; linkRes != nil {
+		if _, ok := n.stack.linkAddrResolvers[protocol]; ok {
 			ref.linkCache = n.stack
 		}
 	}

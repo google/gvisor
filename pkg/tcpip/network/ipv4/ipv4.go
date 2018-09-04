@@ -44,6 +44,10 @@ const (
 
 	// buckets is the number of identifier buckets.
 	buckets = 2048
+
+	// defaultIPv4TTL is the defautl TTL for IPv4 Packets egressed by
+	// Netstack.
+	defaultIPv4TTL = 255
 )
 
 type address [header.IPv4AddressSize]byte
@@ -67,7 +71,7 @@ func newEndpoint(nicid tcpip.NICID, addr tcpip.Address, dispatcher stack.Transpo
 		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 	}
 	copy(e.address[:], addr)
-	e.id = stack.NetworkEndpointID{tcpip.Address(e.address[:])}
+	e.id = stack.NetworkEndpointID{LocalAddress: tcpip.Address(e.address[:])}
 
 	go e.echoReplier()
 
@@ -115,7 +119,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		IHL:         header.IPv4MinimumSize,
 		TotalLength: length,
 		ID:          uint16(id),
-		TTL:         65,
+		TTL:         defaultIPv4TTL,
 		Protocol:    uint8(protocol),
 		SrcAddr:     tcpip.Address(e.address[:]),
 		DstAddr:     r.RemoteAddress,

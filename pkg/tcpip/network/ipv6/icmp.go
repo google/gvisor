@@ -17,6 +17,7 @@ package ipv6
 import (
 	"encoding/binary"
 
+	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
@@ -86,5 +87,139 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 		case header.ICMPv6PortUnreachable:
 			e.handleControl(stack.ControlPortUnreachable, 0, vv)
 		}
+
+	case header.ICMPv6NeighborSolicit:
+		if len(v) < header.ICMPv6NeighborSolicitMinimumSize {
+			return
+		}
+		targetAddr := tcpip.Address(v[8 : 8+16])
+		if e.linkAddrCache.CheckLocalAddress(e.nicid, ProtocolNumber, targetAddr) == 0 {
+			// We don't have a useful answer; the best we can do is ignore the request.
+			return
+		}
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
+		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+		pkt.SetType(header.ICMPv6NeighborAdvert)
+		pkt[icmpV6FlagOffset] = ndpSolicitedFlag | ndpOverrideFlag
+		copy(pkt[icmpV6OptOffset-len(targetAddr):], targetAddr)
+		pkt[icmpV6OptOffset] = ndpOptDstLinkAddr
+		pkt[icmpV6LengthOffset] = 1
+		copy(pkt[icmpV6LengthOffset+1:], r.LocalLinkAddress[:])
+		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, nil))
+		r.WritePacket(&hdr, nil, header.ICMPv6ProtocolNumber)
+
+		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
+
+	case header.ICMPv6NeighborAdvert:
+		if len(v) < header.ICMPv6NeighborAdvertSize {
+			return
+		}
+		targetAddr := tcpip.Address(v[8 : 8+16])
+		e.linkAddrCache.AddLinkAddress(e.nicid, targetAddr, r.RemoteLinkAddress)
+		if targetAddr != r.RemoteAddress {
+			e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
+		}
+
+	case header.ICMPv6EchoRequest:
+		if len(v) < header.ICMPv6EchoMinimumSize {
+			return
+		}
+		vv.TrimFront(header.ICMPv6EchoMinimumSize)
+		data := vv.ToView()
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
+		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
+		copy(pkt, h)
+		pkt.SetType(header.ICMPv6EchoReply)
+		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, data))
+		r.WritePacket(&hdr, data, header.ICMPv6ProtocolNumber)
+
+	case header.ICMPv6EchoReply:
+		if len(v) < header.ICMPv6EchoMinimumSize {
+			return
+		}
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv6ProtocolNumber, vv)
+
 	}
+}
+
+const (
+	ndpSolicitedFlag = 1 << 6
+	ndpOverrideFlag  = 1 << 5
+
+	ndpOptSrcLinkAddr = 1
+	ndpOptDstLinkAddr = 2
+
+	icmpV6FlagOffset   = 4
+	icmpV6OptOffset    = 24
+	icmpV6LengthOffset = 25
+)
+
+// solicitedNodeAddr computes the solicited-node multicast address.
+// This is used for NDP. Described in RFC 4291.
+func solicitedNodeAddr(addr tcpip.Address) tcpip.Address {
+	const solicitedNodeMulticastPrefix = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff"
+	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
+}
+
+var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+
+var _ stack.LinkAddressResolver = (*protocol)(nil)
+
+// LinkAddressProtocol implements stack.LinkAddressResolver.
+func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
+	return header.IPv6ProtocolNumber
+}
+
+// LinkAddressRequest implements stack.LinkAddressResolver.
+func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
+	snaddr := solicitedNodeAddr(addr)
+	r := &stack.Route{
+		LocalAddress:      localAddr,
+		RemoteAddress:     snaddr,
+		RemoteLinkAddress: broadcastMAC,
+	}
+	hdr := buffer.NewPrependable(int(linkEP.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6NeighborAdvertSize)
+	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
+	pkt.SetType(header.ICMPv6NeighborSolicit)
+	copy(pkt[icmpV6OptOffset-len(addr):], addr)
+	pkt[icmpV6OptOffset] = ndpOptSrcLinkAddr
+	pkt[icmpV6LengthOffset] = 1
+	copy(pkt[icmpV6LengthOffset+1:], linkEP.LinkAddress())
+	pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, nil))
+
+	length := uint16(hdr.UsedLength())
+	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+	ip.Encode(&header.IPv6Fields{
+		PayloadLength: length,
+		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+		HopLimit:      defaultIPv6HopLimit,
+		SrcAddr:       r.LocalAddress,
+		DstAddr:       r.RemoteAddress,
+	})
+
+	return linkEP.WritePacket(r, &hdr, nil, ProtocolNumber)
+}
+
+// ResolveStaticAddress implements stack.LinkAddressResolver.
+func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
+	return "", false
+}
+
+func icmpChecksum(h header.ICMPv6, src, dst tcpip.Address, data []byte) uint16 {
+	// Calculate the IPv6 pseudo-header upper-layer checksum.
+	xsum := header.Checksum([]byte(src), 0)
+	xsum = header.Checksum([]byte(dst), xsum)
+	var upperLayerLength [4]byte
+	binary.BigEndian.PutUint32(upperLayerLength[:], uint32(len(h)+len(data)))
+	xsum = header.Checksum(upperLayerLength[:], xsum)
+	xsum = header.Checksum([]byte{0, 0, 0, uint8(header.ICMPv6ProtocolNumber)}, xsum)
+	xsum = header.Checksum(data, xsum)
+
+	// h[2:4] is the checksum itself, set it aside to avoid checksumming the checksum.
+	h2, h3 := h[2], h[3]
+	h[2], h[3] = 0, 0
+	xsum = ^header.Checksum(h, xsum)
+	h[2], h[3] = h2, h3
+
+	return xsum
 }
