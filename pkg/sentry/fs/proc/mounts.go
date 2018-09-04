@@ -173,7 +173,7 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 
 	var buf bytes.Buffer
 	forEachMountSource(mf.t, func(mountPath string, m *fs.MountSource) {
-		// Format (tab-separated):
+		// Format:
 		// <special device or remote filesystem> <mount point> <filesystem type> <mount options> <needs dump> <fsck order>
 		//
 		// We use the filesystem name as the first field, since there
@@ -191,7 +191,7 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 		if m.Filesystem != nil {
 			name = m.Filesystem.Name()
 		}
-		fmt.Fprintf(&buf, "%s\t%s\t%s\t%s\t%d\t%d\n", "none", mountPath, name, opts, 0, 0)
+		fmt.Fprintf(&buf, "%s %s %s %s %d %d\n", "none", mountPath, name, opts, 0, 0)
 	})
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountsFile)(nil)}}, 0
