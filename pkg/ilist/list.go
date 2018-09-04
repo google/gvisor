@@ -21,11 +21,33 @@ package ilist
 // N.B. When substituted in a template instantiation, Linker doesn't need to
 // be an interface, and in most cases won't be.
 type Linker interface {
-	Next() Linker
-	Prev() Linker
-	SetNext(Linker)
-	SetPrev(Linker)
+	Next() Element
+	Prev() Element
+	SetNext(Element)
+	SetPrev(Element)
 }
+
+// Element the item that is used at the API level.
+//
+// N.B. Like Linker, this is unlikely to be an interface in most cases.
+type Element interface {
+	Linker
+}
+
+// ElementMapper provides an identity mapping by default.
+//
+// This can be replaced to provide a struct that maps elements to linker
+// objects, if they are not the same. An ElementMapper is not typically
+// required if: Linker is left as is, Element is left as is, or Linker and
+// Element are the same type.
+type ElementMapper struct{}
+
+// linkerFor maps an Element to a Linker.
+//
+// This default implementation should be inlined.
+//
+//go:nosplit
+func (ElementMapper) linkerFor(elem Element) Linker { return elem }
 
 // List is an intrusive list. Entries can be added to or removed from the list
 // in O(1) time and with no additional memory allocations.
@@ -39,8 +61,8 @@ type Linker interface {
 //
 // +stateify savable
 type List struct {
-	head Linker
-	tail Linker
+	head Element
+	tail Element
 }
 
 // Reset resets list l to the empty state.
@@ -55,22 +77,22 @@ func (l *List) Empty() bool {
 }
 
 // Front returns the first element of list l or nil.
-func (l *List) Front() Linker {
+func (l *List) Front() Element {
 	return l.head
 }
 
 // Back returns the last element of list l or nil.
-func (l *List) Back() Linker {
+func (l *List) Back() Element {
 	return l.tail
 }
 
 // PushFront inserts the element e at the front of list l.
-func (l *List) PushFront(e Linker) {
-	e.SetNext(l.head)
-	e.SetPrev(nil)
+func (l *List) PushFront(e Element) {
+	ElementMapper{}.linkerFor(e).SetNext(l.head)
+	ElementMapper{}.linkerFor(e).SetPrev(nil)
 
 	if l.head != nil {
-		l.head.SetPrev(e)
+		ElementMapper{}.linkerFor(l.head).SetPrev(e)
 	} else {
 		l.tail = e
 	}
@@ -79,12 +101,12 @@ func (l *List) PushFront(e Linker) {
 }
 
 // PushBack inserts the element e at the back of list l.
-func (l *List) PushBack(e Linker) {
-	e.SetNext(nil)
-	e.SetPrev(l.tail)
+func (l *List) PushBack(e Element) {
+	ElementMapper{}.linkerFor(e).SetNext(nil)
+	ElementMapper{}.linkerFor(e).SetPrev(l.tail)
 
 	if l.tail != nil {
-		l.tail.SetNext(e)
+		ElementMapper{}.linkerFor(l.tail).SetNext(e)
 	} else {
 		l.head = e
 	}
@@ -98,8 +120,8 @@ func (l *List) PushBackList(m *List) {
 		l.head = m.head
 		l.tail = m.tail
 	} else if m.head != nil {
-		l.tail.SetNext(m.head)
-		m.head.SetPrev(l.tail)
+		ElementMapper{}.linkerFor(l.tail).SetNext(m.head)
+		ElementMapper{}.linkerFor(m.head).SetPrev(l.tail)
 
 		l.tail = m.tail
 	}
@@ -109,46 +131,46 @@ func (l *List) PushBackList(m *List) {
 }
 
 // InsertAfter inserts e after b.
-func (l *List) InsertAfter(b, e Linker) {
-	a := b.Next()
-	e.SetNext(a)
-	e.SetPrev(b)
-	b.SetNext(e)
+func (l *List) InsertAfter(b, e Element) {
+	a := ElementMapper{}.linkerFor(b).Next()
+	ElementMapper{}.linkerFor(e).SetNext(a)
+	ElementMapper{}.linkerFor(e).SetPrev(b)
+	ElementMapper{}.linkerFor(b).SetNext(e)
 
 	if a != nil {
-		a.SetPrev(e)
+		ElementMapper{}.linkerFor(a).SetPrev(e)
 	} else {
 		l.tail = e
 	}
 }
 
 // InsertBefore inserts e before a.
-func (l *List) InsertBefore(a, e Linker) {
-	b := a.Prev()
-	e.SetNext(a)
-	e.SetPrev(b)
-	a.SetPrev(e)
+func (l *List) InsertBefore(a, e Element) {
+	b := ElementMapper{}.linkerFor(a).Prev()
+	ElementMapper{}.linkerFor(e).SetNext(a)
+	ElementMapper{}.linkerFor(e).SetPrev(b)
+	ElementMapper{}.linkerFor(a).SetPrev(e)
 
 	if b != nil {
-		b.SetNext(e)
+		ElementMapper{}.linkerFor(b).SetNext(e)
 	} else {
 		l.head = e
 	}
 }
 
 // Remove removes e from l.
-func (l *List) Remove(e Linker) {
-	prev := e.Prev()
-	next := e.Next()
+func (l *List) Remove(e Element) {
+	prev := ElementMapper{}.linkerFor(e).Prev()
+	next := ElementMapper{}.linkerFor(e).Next()
 
 	if prev != nil {
-		prev.SetNext(next)
+		ElementMapper{}.linkerFor(prev).SetNext(next)
 	} else {
 		l.head = next
 	}
 
 	if next != nil {
-		next.SetPrev(prev)
+		ElementMapper{}.linkerFor(next).SetPrev(prev)
 	} else {
 		l.tail = prev
 	}
@@ -160,26 +182,26 @@ func (l *List) Remove(e Linker) {
 //
 // +stateify savable
 type Entry struct {
-	next Linker
-	prev Linker
+	next Element
+	prev Element
 }
 
 // Next returns the entry that follows e in the list.
-func (e *Entry) Next() Linker {
+func (e *Entry) Next() Element {
 	return e.next
 }
 
 // Prev returns the entry that precedes e in the list.
-func (e *Entry) Prev() Linker {
+func (e *Entry) Prev() Element {
 	return e.prev
 }
 
 // SetNext assigns 'entry' as the entry that follows e in the list.
-func (e *Entry) SetNext(entry Linker) {
-	e.next = entry
+func (e *Entry) SetNext(elem Element) {
+	e.next = elem
 }
 
 // SetPrev assigns 'entry' as the entry that precedes e in the list.
-func (e *Entry) SetPrev(entry Linker) {
-	e.prev = entry
+func (e *Entry) SetPrev(elem Element) {
+	e.prev = elem
 }

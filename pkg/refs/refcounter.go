@@ -20,8 +20,6 @@ import (
 	"reflect"
 	"sync"
 	"sync/atomic"
-
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 )
 
 // RefCounter is the interface to be implemented by objects that are reference
@@ -61,7 +59,7 @@ type WeakRefUser interface {
 //
 // +stateify savable
 type WeakRef struct {
-	ilist.Entry `state:"nosave"`
+	weakRefEntry `state:"nosave"`
 
 	// obj is an atomic value that points to the refCounter.
 	obj atomic.Value `state:".(savedReference)"`
@@ -195,7 +193,7 @@ type AtomicRefCount struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// weakRefs is our collection of weak references.
-	weakRefs ilist.List `state:"nosave"`
+	weakRefs weakRefList `state:"nosave"`
 }
 
 // ReadRefs returns the current number of references. The returned count is
@@ -276,7 +274,7 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 		// return false due to the reference count check.
 		r.mu.Lock()
 		for !r.weakRefs.Empty() {
-			w := r.weakRefs.Front().(*WeakRef)
+			w := r.weakRefs.Front()
 			// Capture the callback because w cannot be touched
 			// after it's zapped -- the owner is free it reuse it
 			// after that.

@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "waiter",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*waiter",
         "Linker": "*waiter",
     },
 )

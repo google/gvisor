@@ -67,6 +67,7 @@ go_template_instance(
     prefix = "io",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*ioResult",
         "Linker": "*ioResult",
     },
 )

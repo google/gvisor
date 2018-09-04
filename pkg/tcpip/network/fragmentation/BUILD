@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "reassembler",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*reassembler",
         "Linker": "*reassembler",
     },
 )

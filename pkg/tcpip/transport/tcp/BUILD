@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "segment",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*segment",
         "Linker": "*segment",
     },
 )

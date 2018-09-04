@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "pingPacket",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*pingPacket",
         "Linker": "*pingPacket",
     },
 )

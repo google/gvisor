@@ -28,6 +28,7 @@ go_template_instance(
     prefix = "direct",
     template = ":generic_list",
     types = {
+        "Element": "*direct",
         "Linker": "*direct",
     },
 )
@@ -47,6 +48,10 @@ go_template(
     srcs = [
         "list.go",
     ],
-    opt_types = ["Linker"],
+    opt_types = [
+        "Element",
+        "ElementMapper",
+        "Linker",
+    ],
     visibility = ["//visibility:public"],
 )

@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "pendingSignal",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*pendingSignal",
         "Linker": "*pendingSignal",
     },
 )
@@ -21,6 +22,7 @@ go_template_instance(
     prefix = "processGroup",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*ProcessGroup",
         "Linker": "*ProcessGroup",
     },
 )
@@ -43,6 +45,7 @@ go_template_instance(
     prefix = "session",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*Session",
         "Linker": "*Session",
     },
 )
@@ -54,6 +57,7 @@ go_template_instance(
     prefix = "task",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*Task",
         "Linker": "*Task",
     },
 )

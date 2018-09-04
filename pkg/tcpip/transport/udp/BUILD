@@ -10,6 +10,7 @@ go_template_instance(
     prefix = "udpPacket",
     template = "//pkg/ilist:generic_list",
     types = {
+        "Element": "*udpPacket",
         "Linker": "*udpPacket",
     },
 )
