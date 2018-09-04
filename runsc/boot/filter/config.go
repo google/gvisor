@@ -55,7 +55,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(0),
 		},
 	},
-	syscall.SYS_EPOLL_WAIT: {},
 	syscall.SYS_EVENTFD2: []seccomp.Rule{
 		{
 			seccomp.AllowValue(0),
