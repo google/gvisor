@@ -129,7 +129,10 @@ func (c *cubicState) Update(packetsAcked int) {
 			return
 		}
 	} else {
-		c.s.sndCwnd = c.getCwnd(packetsAcked, c.s.sndCwnd, c.s.srtt)
+		c.s.rtt.Lock()
+		srtt := c.s.rtt.srtt
+		c.s.rtt.Unlock()
+		c.s.sndCwnd = c.getCwnd(packetsAcked, c.s.sndCwnd, srtt)
 	}
 }
 

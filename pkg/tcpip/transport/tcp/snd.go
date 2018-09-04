@@ -16,6 +16,7 @@ package tcp
 
 import (
 	"math"
+	"sync"
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
@@ -116,11 +117,10 @@ type sender struct {
 	resendTimer timer       `state:"nosave"`
 	resendWaker sleep.Waker `state:"nosave"`
 
-	// srtt, rttvar & rto are the "smoothed round-trip time", "round-trip
-	// time variation" and "retransmit timeout", as defined in section 2 of
-	// RFC 6298.
-	srtt       time.Duration
-	rttvar     time.Duration
+	// rtt.srtt, rtt.rttvar, and rto are the "smoothed round-trip time",
+	// "round-trip time variation" and "retransmit timeout", as defined in
+	// section 2 of RFC 6298.
+	rtt        rtt
 	rto        time.Duration
 	srttInited bool
 
@@ -137,6 +137,17 @@ type sender struct {
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
+}
+
+// rtt is a synchronization wrapper used to appease stateify. See the comment
+// in sender, where it is used.
+//
+// +stateify savable
+type rtt struct {
+	sync.Mutex `state:"nosave"`
+
+	srtt   time.Duration
+	rttvar time.Duration
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
@@ -265,20 +276,22 @@ func (s *sender) sendAck() {
 // updateRTO updates the retransmit timeout when a new roud-trip time is
 // available. This is done in accordance with section 2 of RFC 6298.
 func (s *sender) updateRTO(rtt time.Duration) {
+	s.rtt.Lock()
 	if !s.srttInited {
-		s.rttvar = rtt / 2
-		s.srtt = rtt
+		s.rtt.rttvar = rtt / 2
+		s.rtt.srtt = rtt
 		s.srttInited = true
 	} else {
-		diff := s.srtt - rtt
+		diff := s.rtt.srtt - rtt
 		if diff < 0 {
 			diff = -diff
 		}
-		s.rttvar = (3*s.rttvar + diff) / 4
-		s.srtt = (7*s.srtt + rtt) / 8
+		s.rtt.rttvar = (3*s.rtt.rttvar + diff) / 4
+		s.rtt.srtt = (7*s.rtt.srtt + rtt) / 8
 	}
 
-	s.rto = s.srtt + 4*s.rttvar
+	s.rto = s.rtt.srtt + 4*s.rtt.rttvar
+	s.rtt.Unlock()
 	if s.rto < minRTO {
 		s.rto = minRTO
 	}

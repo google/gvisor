@@ -430,7 +430,10 @@ type TimestampOption int
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //
 // TODO: Add and populate stat fields.
-type TCPInfoOption struct{}
+type TCPInfoOption struct {
+	RTT    time.Duration
+	RTTVar time.Duration
+}
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the

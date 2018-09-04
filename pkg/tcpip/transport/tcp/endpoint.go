@@ -788,6 +788,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 	case *tcpip.TCPInfoOption:
 		*o = tcpip.TCPInfoOption{}
+		e.mu.RLock()
+		snd := e.snd
+		e.mu.RUnlock()
+		if snd != nil {
+			snd.rtt.Lock()
+			o.RTT = snd.rtt.srtt
+			o.RTTVar = snd.rtt.rttvar
+			snd.rtt.Unlock()
+		}
+
 		return nil
 	}
 
@@ -1463,13 +1473,15 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		RTTMeasureSeqNum: e.snd.rttMeasureSeqNum,
 		RTTMeasureTime:   e.snd.rttMeasureTime,
 		Closed:           e.snd.closed,
-		SRTT:             e.snd.srtt,
 		RTO:              e.snd.rto,
 		SRTTInited:       e.snd.srttInited,
 		MaxPayloadSize:   e.snd.maxPayloadSize,
 		SndWndScale:      e.snd.sndWndScale,
 		MaxSentAck:       e.snd.maxSentAck,
 	}
+	e.snd.rtt.Lock()
+	s.Sender.SRTT = e.snd.rtt.srtt
+	e.snd.rtt.Unlock()
 
 	if cubic, ok := e.snd.cc.(*cubicState); ok {
 		s.Sender.Cubic = stack.TCPCubicState{
