@@ -113,6 +113,12 @@ func TestSpecInvalid(t *testing.T) {
 				Process: &specs.Process{
 					Args: []string{"/bin/true"},
 				},
+				Mounts: []specs.Mount{
+					{
+						Source:      "src",
+						Destination: "/dst",
+					},
+				},
 			},
 			error: "",
 		},
@@ -196,6 +202,22 @@ func TestSpecInvalid(t *testing.T) {
 				Windows: &specs.Windows{},
 			},
 			error: "is not supported",
+		},
+		{
+			name: "relative mount destination",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Mounts: []specs.Mount{
+					{
+						Source:      "src",
+						Destination: "dst",
+					},
+				},
+			},
+			error: "must be an absolute path",
 		},
 	} {
 		err := ValidateSpec(&test.spec)

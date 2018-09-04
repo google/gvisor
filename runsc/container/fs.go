@@ -78,9 +78,6 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 			continue
 		}
 		src := m.Source
-		if !filepath.IsAbs(src) {
-			src = filepath.Join(bundleDir, src)
-		}
 		srcfi, err := os.Stat(src)
 		if err != nil {
 			return fmt.Errorf("failed to stat() mount source: %v", err)
@@ -130,9 +127,6 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		log.Infof("Remounting root as readonly: %q", spec.Root.Path)
 		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
 		src := spec.Root.Path
-		if !filepath.IsAbs(src) {
-			src = filepath.Join(bundleDir, src)
-		}
 		if err := syscall.Mount(src, src, "bind", flags, ""); err != nil {
 			return fmt.Errorf("failed to remount root as readonly with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
 		}

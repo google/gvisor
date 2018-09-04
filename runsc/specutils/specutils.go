@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -83,6 +84,12 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("Seccomp spec is being ignored")
 	}
 
+	for i, m := range spec.Mounts {
+		if !path.IsAbs(m.Destination) {
+			return fmt.Errorf("Spec.Mounts[%d] Mount.Destination must be an absolute path: %v", i, m)
+		}
+	}
+
 	// Two annotations are use by containerd to support multi-container pods.
 	//   "io.kubernetes.cri.container-type"
 	//   "io.kubernetes.cri.sandbox-id"
@@ -105,7 +112,18 @@ func ValidateSpec(spec *specs.Spec) error {
 	return nil
 }
 
+// absPath turns the given path into an absolute path (if it is not already
+// absolute) by prepending the base path.
+func absPath(base, rel string) string {
+	if filepath.IsAbs(rel) {
+		return rel
+	}
+	return filepath.Join(base, rel)
+}
+
 // ReadSpec reads an OCI runtime spec from the given bundle directory.
+// ReadSpec also normalizes all potential relative paths into absolute
+// path, e.g. spec.Root.Path, mount.Source.
 func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	// The spec file must be in "config.json" inside the bundle directory.
 	specFile := filepath.Join(bundleDir, "config.json")
@@ -119,6 +137,14 @@ func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	}
 	if err := ValidateSpec(&spec); err != nil {
 		return nil, err
+	}
+	// Turn any relative paths in the spec to absolute by prepending the bundleDir.
+	spec.Root.Path = absPath(bundleDir, spec.Root.Path)
+	for i := range spec.Mounts {
+		m := &spec.Mounts[i]
+		if m.Source != "" {
+			m.Source = absPath(bundleDir, m.Source)
+		}
 	}
 	return &spec, nil
 }

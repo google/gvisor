@@ -93,14 +93,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 	specutils.LogSpec(spec)
 
-	// Turn any relative paths in the spec to absolute by prepending the bundleDir.
-	spec.Root.Path = absPath(b.bundleDir, spec.Root.Path)
-	for _, m := range spec.Mounts {
-		if m.Source != "" {
-			m.Source = absPath(b.bundleDir, m.Source)
-		}
-	}
-
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 

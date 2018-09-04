@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"os"
-	"path"
 	"sync"
 	"syscall"
 
@@ -108,7 +107,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	syscall.Umask(0)
 
 	// Find what path is going to be served by this gofer.
-	root := absPath(g.bundleDir, spec.Root.Path)
+	root := spec.Root.Path
 	if err := syscall.Chroot(root); err != nil {
 		Fatalf("failed to chroot to %q: %v", root, err)
 	}
@@ -131,9 +130,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	mountIdx := 1 // first one is the root
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
-			if !path.IsAbs(m.Destination) {
-				Fatalf("destination must be absolute path: %v", m.Destination)
-			}
 			cfg := fsgofer.Config{
 				ROMount:          isReadonlyMount(m.Options),
 				PanicOnWrite:     g.panicOnWrite,

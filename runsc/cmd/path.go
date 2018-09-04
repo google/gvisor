@@ -16,17 +16,7 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 )
-
-// absPath turns the given path into an absolute path (if it is not already
-// absolute) by prepending the base path.
-func absPath(base, rel string) string {
-	if filepath.IsAbs(rel) {
-		return rel
-	}
-	return filepath.Join(base, rel)
-}
 
 // getwdOrDie returns the current working directory and dies if it cannot.
 func getwdOrDie() string {
