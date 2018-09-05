@@ -213,6 +213,11 @@ type Config struct {
 	// PanicSignal register signal handling that panics. Usually set to
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
 	PanicSignal int
+
+	// TestOnlyAllowRunAsCurrentUser should only be used in tests. It
+	// allows runsc to start the sandbox process as the current user if we
+	// do not have capability to set uid/gid to another user.
+	TestOnlyAllowRunAsCurrentUser bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.

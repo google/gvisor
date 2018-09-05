@@ -179,14 +179,15 @@ here:
 `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc.sha512`
 
 **It is important to copy this binary to some place that is accessible to all
-users**, since `runsc` executes itself as user `nobody` to avoid unnecessary
-privileges. The `/usr/local/bin` directory is a good choice.
+users, and make is executable to all users**, since `runsc` executes itself as
+user `nobody` to avoid unnecessary privileges. The `/usr/local/bin` directory is
+a good place to put the `runsc` binary.
 
 ```
 wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
 sha512sum -c runsc.sha512
-chmod +x runsc
+chmod a+x runsc
 sudo mv runsc /usr/local/bin
 ```
 

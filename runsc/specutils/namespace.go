@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 )
@@ -201,4 +202,17 @@ func SetUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
 			Size:        int(idMap.Size),
 		})
 	}
+}
+
+// CanSetUIDGID returns true if the user has SETUID and SETGID capabilities.
+func CanSetUIDGID() bool {
+	caps, err := capability.NewPid2(os.Getpid())
+	if err != nil {
+		return false
+	}
+	if err := caps.Load(); err != nil {
+		return false
+	}
+	return caps.Get(capability.EFFECTIVE, capability.CAP_SETUID) &&
+		caps.Get(capability.EFFECTIVE, capability.CAP_SETGID)
 }

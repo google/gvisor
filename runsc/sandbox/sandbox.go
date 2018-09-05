@@ -373,8 +373,8 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// User namespace depends on the following options:
 	//   - Host network/filesystem: requires to run inside the user namespace
 	//       specified in the spec or the current namespace if none is configured.
-	//   - Gofer: when using a Gofer, the sandbox process can run isolated in an
-	//       empty namespace.
+	//   - Gofer: when using a Gofer, the sandbox process can run isolated in a
+	//       new user namespace with only the "nobody" user and group.
 	if conf.Network == boot.NetworkHost || conf.FileAccess == boot.FileAccessDirect {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
@@ -391,6 +391,34 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	} else {
 		log.Infof("Sandbox will be started in new user namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
+
+		if conf.TestOnlyAllowRunAsCurrentUser {
+			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
+		} else if specutils.CanSetUIDGID() {
+			// If we have CAP_SETUID and CAP_SETGID, then we can also run
+			// as user nobody.
+
+			// Map nobody in the new namespace to nobody in the parent namespace.
+			const nobody = 65534
+			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{
+				ContainerID: int(nobody),
+				HostID:      int(nobody),
+				Size:        int(1),
+			}}
+			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{{
+				ContainerID: int(nobody),
+				HostID:      int(nobody),
+				Size:        int(1),
+			}}
+
+			// Set credentials to run as user and group nobody.
+			cmd.SysProcAttr.Credential = &syscall.Credential{
+				Uid: nobody,
+				Gid: nobody,
+			}
+		} else {
+			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
+		}
 	}
 
 	// Log the fds we are donating to the sandbox process.
@@ -399,6 +427,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
+	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return err
 	}
