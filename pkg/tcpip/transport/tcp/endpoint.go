@@ -51,6 +51,7 @@ const (
 	notifyMTUChanged
 	notifyDrain
 	notifyReset
+	notifyKeepaliveChanged
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
@@ -211,6 +212,12 @@ type endpoint struct {
 	// goroutine what it was notified; this is only accessed atomically.
 	notifyFlags uint32 `state:"nosave"`
 
+	// keepalive manages TCP keepalive state. When the connection is idle
+	// (no data sent or received) for keepaliveIdle, we start sending
+	// keepalives every keepalive.interval. If we send keepalive.count
+	// without hearing a response, the connection is closed.
+	keepalive keepalive
+
 	// acceptedChan is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
@@ -236,6 +243,21 @@ type endpoint struct {
 	connectingAddress tcpip.Address
 }
 
+// keepalive is a synchronization wrapper used to appease stateify. See the
+// comment in endpoint, where it is used.
+//
+// +stateify savable
+type keepalive struct {
+	sync.Mutex `state:"nosave"`
+	enabled    bool
+	idle       time.Duration
+	interval   time.Duration
+	count      int
+	unacked    int
+	timer      timer       `state:"nosave"`
+	waker      sleep.Waker `state:"nosave"`
+}
+
 func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	e := &endpoint{
 		stack:       stack,
@@ -246,6 +268,12 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		sndMTU:      int(math.MaxInt32),
 		noDelay:     false,
 		reuseAddr:   true,
+		keepalive: keepalive{
+			// Linux defaults.
+			idle:     2 * time.Hour,
+			interval: 75 * time.Second,
+			count:    9,
+		},
 	}
 
 	var ss SendBufferSizeOption
@@ -696,6 +724,31 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 
 		e.v6only = v != 0
+
+	case tcpip.KeepaliveEnabledOption:
+		e.keepalive.Lock()
+		e.keepalive.enabled = v != 0
+		e.keepalive.Unlock()
+		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+
+	case tcpip.KeepaliveIdleOption:
+		e.keepalive.Lock()
+		e.keepalive.idle = time.Duration(v)
+		e.keepalive.Unlock()
+		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+
+	case tcpip.KeepaliveIntervalOption:
+		e.keepalive.Lock()
+		e.keepalive.interval = time.Duration(v)
+		e.keepalive.Unlock()
+		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+
+	case tcpip.KeepaliveCountOption:
+		e.keepalive.Lock()
+		e.keepalive.count = int(v)
+		e.keepalive.Unlock()
+		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+
 	}
 
 	return nil
@@ -799,6 +852,32 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 
 		return nil
+
+	case *tcpip.KeepaliveEnabledOption:
+		e.keepalive.Lock()
+		v := e.keepalive.enabled
+		e.keepalive.Unlock()
+
+		*o = 0
+		if v {
+			*o = 1
+		}
+
+	case *tcpip.KeepaliveIdleOption:
+		e.keepalive.Lock()
+		*o = tcpip.KeepaliveIdleOption(e.keepalive.idle)
+		e.keepalive.Unlock()
+
+	case *tcpip.KeepaliveIntervalOption:
+		e.keepalive.Lock()
+		*o = tcpip.KeepaliveIntervalOption(e.keepalive.interval)
+		e.keepalive.Unlock()
+
+	case *tcpip.KeepaliveCountOption:
+		e.keepalive.Lock()
+		*o = tcpip.KeepaliveCountOption(e.keepalive.count)
+		e.keepalive.Unlock()
+
 	}
 
 	return tcpip.ErrUnknownProtocolOption

@@ -827,7 +827,54 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 		e.snd.sendAck()
 	}
 
+	e.resetKeepaliveTimer(true)
+
 	return nil
+}
+
+// keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
+// keepalive packets periodically when the connection is idle. If we don't hear
+// from the other side after a number of tries, we terminate the connection.
+func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
+	e.keepalive.Lock()
+	if !e.keepalive.enabled || !e.keepalive.timer.checkExpiration() {
+		e.keepalive.Unlock()
+		return nil
+	}
+
+	if e.keepalive.unacked >= e.keepalive.count {
+		e.keepalive.Unlock()
+		return tcpip.ErrConnectionReset
+	}
+
+	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with
+	// seg.seq = snd.nxt-1.
+	e.keepalive.unacked++
+	e.keepalive.Unlock()
+	e.snd.sendSegment(nil, flagAck, e.snd.sndNxt-1)
+	e.resetKeepaliveTimer(false)
+	return nil
+}
+
+// resetKeepaliveTimer restarts or stops the keepalive timer, depending on
+// whether it is enabled for this endpoint.
+func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
+	e.keepalive.Lock()
+	defer e.keepalive.Unlock()
+	if receivedData {
+		e.keepalive.unacked = 0
+	}
+	// Start the keepalive timer IFF it's enabled and there is no pending
+	// data to send.
+	if !e.keepalive.enabled || e.snd == nil || e.snd.sndUna != e.snd.sndNxt {
+		e.keepalive.timer.disable()
+		return
+	}
+	if e.keepalive.unacked > 0 {
+		e.keepalive.timer.enable(e.keepalive.interval)
+	} else {
+		e.keepalive.timer.enable(e.keepalive.idle)
+	}
 }
 
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
@@ -892,6 +939,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		e.rcvListMu.Unlock()
 	}
 
+	e.keepalive.timer.init(&e.keepalive.waker)
+	defer e.keepalive.timer.cleanup()
+
 	// Tell waiters that the endpoint is connected and writable.
 	e.mu.Lock()
 	e.state = stateConnected
@@ -938,6 +988,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			},
 		},
 		{
+			w: &e.keepalive.waker,
+			f: e.keepaliveTimerExpired,
+		},
+		{
 			w: &e.notificationWaker,
 			f: func() *tcpip.Error {
 				n := e.fetchNotifications()
@@ -980,6 +1034,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 					}
 					close(e.drainDone)
 					<-e.undrain
+				}
+
+				if n&notifyKeepaliveChanged != 0 {
+					e.resetKeepaliveTimer(true)
 				}
 
 				return nil

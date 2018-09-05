@@ -435,6 +435,24 @@ type TCPInfoOption struct {
 	RTTVar time.Duration
 }
 
+// KeepaliveEnabledOption is used by SetSockOpt/GetSockOpt to specify whether
+// TCP keepalive is enabled for this socket.
+type KeepaliveEnabledOption int
+
+// KeepaliveIdleOption is used by SetSockOpt/GetSockOpt to specify the time a
+// connection must remain idle before the first TCP keepalive packet is sent.
+// Once this time is reached, KeepaliveIntervalOption is used instead.
+type KeepaliveIdleOption time.Duration
+
+// KeepaliveIntervalOption is used by SetSockOpt/GetSockOpt to specify the
+// interval between sending TCP keepalive packets.
+type KeepaliveIntervalOption time.Duration
+
+// KeepaliveCountOption is used by SetSockOpt/GetSockOpt to specify the number
+// of un-ACKed TCP keepalives that will be sent before the connection is
+// closed.
+type KeepaliveCountOption int
+
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination adddress in the row.

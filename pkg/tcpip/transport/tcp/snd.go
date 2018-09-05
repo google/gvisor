@@ -435,6 +435,10 @@ func (s *sender) sendData() {
 	if !s.resendTimer.enabled() && s.sndUna != s.sndNxt {
 		s.resendTimer.enable(s.rto)
 	}
+	// If we have no more pending data, start the keepalive timer.
+	if s.sndUna == s.sndNxt {
+		s.ep.resetKeepaliveTimer(false)
+	}
 }
 
 func (s *sender) enterFastRecovery() {

@@ -3275,3 +3275,115 @@ func enableCUBIC(t *testing.T, c *context.Context) {
 		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, %v = %v", opt, err)
 	}
 }
+
+func TestKeepalive(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, nil)
+
+	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
+	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(10 * time.Millisecond))
+	c.EP.SetSockOpt(tcpip.KeepaliveCountOption(5))
+	c.EP.SetSockOpt(tcpip.KeepaliveEnabledOption(1))
+
+	// 5 unacked keepalives are sent. ACK each one, and check that the
+	// connection stays alive after 5.
+	for i := 0; i < 10; i++ {
+		b := c.GetPacket()
+		checker.IPv4(t, b,
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(c.IRS)),
+				checker.AckNum(uint32(790)),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+
+		// Acknowledge the keepalive.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  790,
+			AckNum:  c.IRS,
+			RcvWnd:  30000,
+		})
+	}
+
+	// Check that the connection is still alive.
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
+	}
+
+	// Send some data and wait before ACKing it. Keepalives should be disabled
+	// during this period.
+	view := buffer.NewView(3)
+	if _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	next := uint32(c.IRS) + 1
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(len(view)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(next),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	// Wait for the packet to be retransmitted. Verify that no keepalives
+	// were sent.
+	checker.IPv4(t, c.GetPacket(),
+		checker.PayloadLen(len(view)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(next),
+			checker.AckNum(790),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagPsh),
+		),
+	)
+	c.CheckNoPacket("Keepalive packet received while unACKed data is pending")
+
+	next += uint32(len(view))
+
+	// Send ACK. Keepalives should start sending again.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  seqnum.Value(next),
+		RcvWnd:  30000,
+	})
+
+	// Now receive 5 keepalives, but don't ACK them. The connection
+	// should be reset after 5.
+	for i := 0; i < 5; i++ {
+		b := c.GetPacket()
+		checker.IPv4(t, b,
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(next-1)),
+				checker.AckNum(uint32(790)),
+				checker.TCPFlags(header.TCPFlagAck),
+			),
+		)
+	}
+
+	// The connection should be terminated after 5 unacked keepalives.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(next)),
+			checker.AckNum(uint32(790)),
+			checker.TCPFlags(header.TCPFlagAck|header.TCPFlagRst),
+		),
+	)
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrConnectionReset)
+	}
+}
