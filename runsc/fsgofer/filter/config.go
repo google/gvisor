@@ -105,6 +105,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_GETTIMEOFDAY: {},
 	syscall.SYS_LINKAT:       {},
 	syscall.SYS_LSEEK:        {},
+	syscall.SYS_MADVISE:      {},
 	syscall.SYS_MKDIRAT:      {},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
