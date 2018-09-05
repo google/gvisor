@@ -20,33 +20,41 @@ import (
 	"sync"
 	"testing"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
+
+func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
+	var specs []*specs.Spec
+	var ids []string
+	rootID := testutil.UniqueContainerID()
+
+	for i, cmd := range cmds {
+		spec := testutil.NewSpecWithArgs(cmd...)
+		if i == 0 {
+			spec.Annotations = map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+			}
+			ids = append(ids, rootID)
+		} else {
+			spec.Annotations = map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+				specutils.ContainerdSandboxIDAnnotation:     rootID,
+			}
+			ids = append(ids, testutil.UniqueContainerID())
+		}
+		specs = append(specs, spec)
+	}
+	return specs, ids
+}
 
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
-
-		containerIDs := []string{
-			testutil.UniqueContainerID(),
-			testutil.UniqueContainerID(),
-		}
-		containerAnnotations := []map[string]string{
-			// The first container creates a sandbox.
-			map[string]string{
-				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
-			},
-			// The second container creates a container within the first
-			// container's sandbox.
-			map[string]string{
-				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
-				specutils.ContainerdSandboxIDAnnotation:     containerIDs[0],
-			},
-		}
 
 		rootDir, err := testutil.SetupRootDir()
 		if err != nil {
@@ -55,16 +63,16 @@ func TestMultiContainerSanity(t *testing.T) {
 		defer os.RemoveAll(rootDir)
 
 		// Setup the containers.
-		containers := make([]*Container, 0, len(containerIDs))
-		for i, annotations := range containerAnnotations {
-			spec := testutil.NewSpecWithArgs("sleep", "100")
-			spec.Annotations = annotations
+		sleep := []string{"sleep", "100"}
+		specs, ids := createSpecs(sleep, sleep)
+		var containers []*Container
+		for i, spec := range specs {
 			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
 			}
 			defer os.RemoveAll(bundleDir)
-			cont, err := Create(containerIDs[i], spec, conf, bundleDir, "", "")
+			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
 			if err != nil {
 				t.Fatalf("error creating container: %v", err)
 			}
@@ -75,24 +83,11 @@ func TestMultiContainerSanity(t *testing.T) {
 			containers = append(containers, cont)
 		}
 
-		expectedPL := []*control.Process{
-			{
-				UID:  0,
-				PID:  1,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
-			},
-			{
-				UID:  0,
-				PID:  2,
-				PPID: 0,
-				C:    0,
-				Cmd:  "sleep",
-			},
-		}
-
 		// Check via ps that multiple processes are running.
+		expectedPL := []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+			{PID: 2, Cmd: "sleep"},
+		}
 		if err := waitForProcessList(containers[0], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
@@ -100,50 +95,28 @@ func TestMultiContainerSanity(t *testing.T) {
 }
 
 func TestMultiContainerWait(t *testing.T) {
-	t.Skip("Test is flakey.") // TODO: Remove.
-	containerIDs := []string{
-		testutil.UniqueContainerID(),
-		testutil.UniqueContainerID(),
-	}
-	containerAnnotations := []map[string]string{
-		// The first container creates a sandbox.
-		map[string]string{
-			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
-		},
-		// The second container creates a container within the first
-		// container's sandbox.
-		map[string]string{
-			specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
-			specutils.ContainerdSandboxIDAnnotation:     containerIDs[0],
-		},
-	}
-	args := [][]string{
-		// The first container should run the entire duration of the
-		// test.
-		{"sleep", "100"},
-		// We'll wait on the second container, which is much shorter
-		// lived.
-		{"sleep", "1"},
-	}
-
 	rootDir, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 
+	// The first container should run the entire duration of the test.
+	cmd1 := []string{"sleep", "100"}
+	// We'll wait on the second container, which is much shorter lived.
+	cmd2 := []string{"sleep", "1"}
+	specs, ids := createSpecs(cmd1, cmd2)
+
 	// Setup the containers.
-	containers := make([]*Container, 0, len(containerIDs))
-	for i, annotations := range containerAnnotations {
-		spec := testutil.NewSpecWithArgs(args[i][0], args[i][1])
-		spec.Annotations = annotations
+	var containers []*Container
+	for i, spec := range specs {
 		conf := testutil.TestConfig()
 		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
 		}
 		defer os.RemoveAll(bundleDir)
-		cont, err := Create(containerIDs[i], spec, conf, bundleDir, "", "")
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -154,24 +127,11 @@ func TestMultiContainerWait(t *testing.T) {
 		containers = append(containers, cont)
 	}
 
-	expectedPL := []*control.Process{
-		{
-			UID:  0,
-			PID:  1,
-			PPID: 0,
-			C:    0,
-			Cmd:  "sleep",
-		},
-		{
-			UID:  0,
-			PID:  2,
-			PPID: 0,
-			C:    0,
-			Cmd:  "sleep",
-		},
-	}
-
 	// Check via ps that multiple processes are running.
+	expectedPL := []*control.Process{
+		{PID: 1, Cmd: "sleep"},
+		{PID: 2, Cmd: "sleep"},
+	}
 	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
@@ -180,41 +140,42 @@ func TestMultiContainerWait(t *testing.T) {
 	wg := sync.WaitGroup{}
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
-		go func() {
+		go func(c *Container) {
 			defer wg.Done()
-			if ws, err := containers[1].Wait(); err != nil {
-				t.Errorf("failed to wait for process %q: %v", strings.Join(containers[1].Spec.Process.Args, " "), err)
+			if ws, err := c.Wait(); err != nil {
+				t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
 			} else if es := ws.ExitStatus(); es != 0 {
-				t.Errorf("process %q exited with non-zero status %d", strings.Join(containers[1].Spec.Process.Args, " "), es)
+				t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
 			}
-			if _, err := containers[1].Wait(); err == nil {
-				t.Errorf("wait for stopped process %q should fail", strings.Join(containers[1].Spec.Process.Args, " "))
+			if _, err := c.Wait(); err == nil {
+				t.Errorf("wait for stopped process %s should fail", c.Spec.Process.Args)
 			}
-
-			// After Wait returns, ensure that the root container is running and
-			// the child has finished.
-			if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
-				t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
-			}
-		}()
+		}(containers[1])
 	}
 
 	// Also wait via PID.
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
-		go func() {
+		go func(c *Container) {
 			defer wg.Done()
 			const pid = 2
-			if ws, err := containers[0].WaitPID(pid); err != nil {
+			if ws, err := c.WaitPID(pid); err != nil {
 				t.Errorf("failed to wait for PID %d: %v", pid, err)
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("PID %d exited with non-zero status %d", pid, es)
 			}
-			if _, err := containers[0].WaitPID(pid); err == nil {
+			if _, err := c.WaitPID(pid); err == nil {
 				t.Errorf("wait for stopped PID %d should fail", pid)
 			}
-		}()
+			// TODO: use 'container[1]' when PID namespace is supported.
+		}(containers[0])
 	}
 
 	wg.Wait()
+
+	// After Wait returns, ensure that the root container is running and
+	// the child has finished.
+	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
+	}
 }

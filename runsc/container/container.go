@@ -517,6 +517,7 @@ func (c *Container) Destroy() error {
 			log.Warningf("Failed to destroy sandbox %q: %v", c.Sandbox.ID, err)
 		}
 	}
+	c.Status = Stopped
 	c.Sandbox = nil
 
 	if c.GoferPid != 0 {
@@ -536,15 +537,11 @@ func (c *Container) Destroy() error {
 		return fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
 	}
 
-	c.Status = Stopped
 	return nil
 }
 
 // IsRunning returns true if the sandbox or gofer process is running.
 func (c *Container) IsRunning() bool {
-	if c.Status == Stopped {
-		return false
-	}
 	if c.Sandbox != nil && c.Sandbox.IsRunning() {
 		return true
 	}
