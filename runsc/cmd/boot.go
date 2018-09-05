@@ -32,8 +32,11 @@ import (
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
 type Boot struct {
-	// bundleDir is the path to the bundle directory.
+	// bundleDir is the directory containing the OCI spec.
 	bundleDir string
+
+	// specFD is the file descriptor that the spec will be read from.
+	specFD int
 
 	// controllerFD is the file descriptor of a stream socket for the
 	// control server that is donated to this process.
@@ -69,6 +72,7 @@ func (*Boot) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
+	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
@@ -78,7 +82,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if b.bundleDir == "" || b.controllerFD == -1 || f.NArg() != 0 {
+	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -86,8 +90,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
 	debug.SetTraceback("all")
 
-	// Get the spec from the bundleDir.
-	spec, err := specutils.ReadSpec(b.bundleDir)
+	// Get the spec from the specFD.
+	specFile := os.NewFile(uintptr(b.specFD), "spec file")
+	defer specFile.Close()
+	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile)
 	if err != nil {
 		Fatalf("error reading spec: %v", err)
 	}
@@ -123,6 +129,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 				args = append(args, arg)
 			}
 		}
+
+		// Note that we've already read the spec from the spec FD, and
+		// we will read it again after the exec call. This works
+		// because the ReadSpecFromFile function seeks to the beginning
+		// of the file before reading.
 		if err := setCapsAndCallSelf(args, caps); err != nil {
 			Fatalf("%v", err)
 		}

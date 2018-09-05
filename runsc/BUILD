@@ -16,6 +16,7 @@ go_binary(
         "//pkg/log",
         "//runsc/boot",
         "//runsc/cmd",
+        "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
     ],
 )
@@ -45,6 +46,7 @@ go_binary(
         "//pkg/log",
         "//runsc/boot",
         "//runsc/cmd",
+        "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
     ],
 )
