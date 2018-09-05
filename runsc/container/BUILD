@@ -38,6 +38,7 @@ go_test(
     srcs = [
         "container_test.go",
         "fs_test.go",
+        "multi_container_test.go",
     ],
     data = [
         ":uds_test_app",
