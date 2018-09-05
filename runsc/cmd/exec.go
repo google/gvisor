@@ -140,16 +140,6 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 
-	// Get the executable path, which is a bit tricky because we have to
-	// inspect the environment PATH which is relative to the root path.
-	// If the user is overriding environment variables, PATH may have been
-	// overwritten.
-	rootPath := c.Spec.Root.Path
-	e.Filename, err = specutils.GetExecutablePath(e.Argv[0], rootPath, e.Envv)
-	if err != nil {
-		Fatalf("error getting executable path: %v", err)
-	}
-
 	ws, err := c.Execute(e)
 	if err != nil {
 		Fatalf("error getting processes for container: %v", err)

@@ -521,7 +521,6 @@ func TestExec(t *testing.T) {
 		execArgs := control.ExecArgs{
 			Filename:         "/bin/sleep",
 			Argv:             []string{"sleep", "5"},
-			Envv:             []string{"PATH=" + os.Getenv("PATH")},
 			WorkingDirectory: "/",
 			KUID:             uid,
 		}
@@ -889,7 +888,6 @@ func TestPauseResume(t *testing.T) {
 		execArgs := control.ExecArgs{
 			Filename:         "/bin/bash",
 			Argv:             []string{"bash", "-c", script},
-			Envv:             []string{"PATH=" + os.Getenv("PATH")},
 			WorkingDirectory: "/",
 			KUID:             uid,
 		}
@@ -1070,7 +1068,6 @@ func TestCapabilities(t *testing.T) {
 		execArgs := control.ExecArgs{
 			Filename:         exePath,
 			Argv:             []string{exePath},
-			Envv:             []string{"PATH=" + os.Getenv("PATH")},
 			WorkingDirectory: "/",
 			KUID:             uid,
 			KGID:             gid,

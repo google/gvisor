@@ -701,13 +701,13 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 	return nil
 }
 
-// GetExecutablePathInternal traverses the *container's* filesystem to resolve
-// exec's absolute path. For example, if the container is being served files by
-// the fsgofer serving /foo/bar as the container root, it will search within
+// getExecutablePath traverses the *container's* filesystem to resolve exec's
+// absolute path. For example, if the container is being served files by the
+// fsgofer serving /foo/bar as the container root, it will search within
 // /foo/bar, not the host root.
 // TODO: Unit test this.
-func GetExecutablePathInternal(ctx context.Context, procArgs *kernel.CreateProcessArgs) (string, error) {
-	exec := filepath.Clean(procArgs.Filename)
+func getExecutablePath(ctx context.Context, mns *fs.MountNamespace, filename string, env []string) (string, error) {
+	exec := filepath.Clean(filename)
 
 	// Don't search PATH if exec is a path to a file (absolute or relative).
 	if strings.IndexByte(exec, '/') >= 0 {
@@ -716,31 +716,52 @@ func GetExecutablePathInternal(ctx context.Context, procArgs *kernel.CreateProce
 
 	// Search the PATH for a file whose name matches the one we are looking
 	// for.
-	pathDirs := specutils.GetPath(procArgs.Envv)
+	pathDirs := specutils.GetPath(env)
 	for _, p := range pathDirs {
-		// Walk to the end of the path.
-		curDir := procArgs.Root
-		for _, pc := range strings.Split(p, "/") {
-			var err error
-			if curDir, err = curDir.Walk(ctx, curDir, pc); err != nil {
-				break
-			}
-		}
-		if curDir == nil {
+		// Try to find the binary inside path p.
+		binPath := path.Join(p, filename)
+		root := fs.RootFromContext(ctx)
+		defer root.DecRef()
+		d, err := mns.FindInode(ctx, root, nil, binPath, linux.MaxSymlinkTraversals)
+		if err == syserror.ENOENT || err == syserror.EACCES {
 			continue
 		}
-		// Check for the executable in the path directory.
-		dirent, err := curDir.Walk(ctx, curDir, exec)
 		if err != nil {
-			continue
+			return "", fmt.Errorf("FindInode(%q) failed: %v", binPath, err)
 		}
-		// Check whether we can read and execute the file in question.
-		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Read: true, Execute: true}); err != nil {
-			log.Infof("Found executable at %q, but user cannot execute it: %v", path.Join(p, exec), err)
+		defer d.DecRef()
+
+		// Check whether we can read and execute the found file.
+		if err := d.Inode.CheckPermission(ctx, fs.PermMask{Read: true, Execute: true}); err != nil {
+			log.Infof("Found executable at %q, but user cannot execute it: %v", binPath, err)
 			continue
 		}
 		return path.Join("/", p, exec), nil
 	}
 
-	return "", fmt.Errorf("could not find executable %s in path %v", exec, pathDirs)
+	return "", fmt.Errorf("could not find executable %q in path %v", exec, pathDirs)
+}
+
+// setExecutablePath sets the procArgs.Filename by searching the PATH for an
+// executable matching the procArgs.Argv[0].
+func setExecutablePath(ctx context.Context, mns *fs.MountNamespace, procArgs *kernel.CreateProcessArgs) error {
+	if procArgs.Filename != "" {
+		// Sanity check.
+		if !path.IsAbs(procArgs.Filename) {
+			return fmt.Errorf("filename must be absolute: %q", procArgs.Filename)
+		}
+		// Nothing to set.
+		return nil
+	}
+
+	if len(procArgs.Argv) == 0 {
+		return fmt.Errorf("Argv must not be empty")
+	}
+
+	f, err := getExecutablePath(ctx, mns, procArgs.Argv[0], procArgs.Envv)
+	if err != nil {
+		return err
+	}
+	procArgs.Filename = f
+	return nil
 }

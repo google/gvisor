@@ -164,10 +164,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{}, /* winsize struct */
 		},
 	},
-	syscall.SYS_LSEEK: {},
-	// TODO: Remove SYS_LSTAT when executable lookup moves
-	// into the gofer.
-	syscall.SYS_LSTAT:   {},
+	syscall.SYS_LSEEK:   {},
 	syscall.SYS_MADVISE: {},
 	syscall.SYS_MINCORE: {},
 	syscall.SYS_MMAP: []seccomp.Rule{

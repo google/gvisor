@@ -271,16 +271,8 @@ func newProcess(spec *specs.Spec, creds *auth.Credentials, utsns *kernel.UTSName
 		return kernel.CreateProcessArgs{}, fmt.Errorf("error creating limits: %v", err)
 	}
 
-	// Get the executable path, which is a bit tricky because we have to
-	// inspect the environment PATH which is relative to the root path.
-	exec, err := specutils.GetExecutablePath(spec.Process.Args[0], spec.Root.Path, spec.Process.Env)
-	if err != nil {
-		return kernel.CreateProcessArgs{}, fmt.Errorf("error getting executable path: %v", err)
-	}
-
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
-		Filename:             exec,
 		Argv:                 spec.Process.Args,
 		Envv:                 spec.Process.Env,
 		WorkingDirectory:     spec.Process.Cwd, // Defaults to '/' if empty.
@@ -365,7 +357,7 @@ func (l *Loader) run() error {
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
-		err := setFileSystemForProcess(
+		if err := setFileSystemForProcess(
 			&l.rootProcArgs,
 			l.spec,
 			l.conf,
@@ -374,10 +366,16 @@ func (l *Loader) run() error {
 			l.rootProcArgs.Credentials,
 			l.rootProcArgs.Limits,
 			l.k,
-			"" /* CID, which isn't needed for the root container */)
-		if err != nil {
+			"" /* CID, which isn't needed for the root container */); err != nil {
 			return err
 		}
+
+		rootCtx := l.rootProcArgs.NewContext(l.k)
+		rootMns := l.k.RootMountNamespace()
+		if err := setExecutablePath(rootCtx, rootMns, &l.rootProcArgs); err != nil {
+			return fmt.Errorf("error setting executable path for %+v: %v", l.rootProcArgs, err)
+		}
+
 		// Create the root container init task.
 		if _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
 			return fmt.Errorf("failed to create init process: %v", err)
@@ -443,7 +441,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		ioFDs = append(ioFDs, fd)
 	}
 
-	err = setFileSystemForProcess(
+	if err := setFileSystemForProcess(
 		&procArgs,
 		spec,
 		conf,
@@ -452,13 +450,14 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		creds,
 		procArgs.Limits,
 		k,
-		cid)
-	if err != nil {
+		cid); err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}
 
-	if procArgs.Filename, err = GetExecutablePathInternal(procArgs.NewContext(k), &procArgs); err != nil {
-		return 0, err
+	ctx := procArgs.NewContext(l.k)
+	mns := k.RootMountNamespace()
+	if err := setExecutablePath(ctx, mns, &procArgs); err != nil {
+		return 0, fmt.Errorf("error setting executable path for %+v: %v", procArgs, err)
 	}
 
 	tg, err := l.k.CreateProcess(procArgs)

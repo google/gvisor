@@ -228,6 +228,16 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 // Execute runs a command on a created or running sandbox.
 func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) error {
 	log.Debugf("containerManager.Execute: %+v", *e)
+
+	if e.Filename == "" {
+		rootCtx := cm.l.rootProcArgs.NewContext(cm.l.k)
+		rootMns := cm.l.k.RootMountNamespace()
+		var err error
+		if e.Filename, err = getExecutablePath(rootCtx, rootMns, e.Argv[0], e.Envv); err != nil {
+			return fmt.Errorf("error getting executable path for %q: %v", e.Argv[0], err)
+		}
+	}
+
 	proc := control.Proc{Kernel: cm.l.k}
 	if err := proc.Exec(e, waitStatus); err != nil {
 		return fmt.Errorf("error executing: %+v: %v", e, err)
