@@ -15,7 +15,9 @@
 package container
 
 import (
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -177,5 +179,61 @@ func TestMultiContainerWait(t *testing.T) {
 	// the child has finished.
 	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
+	}
+}
+
+// TestMultiContainerMount tests that bind mounts can be used with multiple
+// containers.
+func TestMultiContainerMount(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	cmd1 := []string{"sleep", "100"}
+
+	// 'src != dst' ensures that 'dst' doesn't exist in the host and must be
+	// properly mapped inside the container to work.
+	src, err := ioutil.TempDir(testutil.TmpDir(), "container")
+	if err != nil {
+		t.Fatal("ioutil.TempDir failed:", err)
+	}
+	dst := src + ".dst"
+	cmd2 := []string{"touch", filepath.Join(dst, "file")}
+
+	sps, ids := createSpecs(cmd1, cmd2)
+	sps[1].Mounts = append(sps[1].Mounts, specs.Mount{
+		Source:      src,
+		Destination: dst,
+		Type:        "bind",
+	})
+
+	// Setup the containers.
+	var containers []*Container
+	for i, spec := range sps {
+		conf := testutil.TestConfig()
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		containers = append(containers, cont)
+	}
+
+	ws, err := containers[1].Wait()
+	if err != nil {
+		t.Error("error waiting on container:", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Error("container failed, waitStatus:", ws)
 	}
 }

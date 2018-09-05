@@ -685,11 +685,6 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 	// Mount all submounts.
 	mounts := compileMounts(spec)
 	for _, m := range mounts {
-		// TODO: Enable bind mounts in child containers.
-		if m.Type == bind {
-			log.Infof("Bind mounts in child containers are not yet supported: %+v", m)
-			continue
-		}
 		dest := filepath.Join(containerRoot, m.Destination)
 		if err := mountSubmount(rootCtx, conf, k.RootMountNamespace(), fds, m, mounts, dest); err != nil {
 			return fmt.Errorf("error mounting filesystem for container: %v", err)

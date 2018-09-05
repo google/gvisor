@@ -28,11 +28,6 @@ import (
 
 // createFDMap creates an fd map that contains stdin, stdout, and stderr. If
 // console is true, then ioctl calls will be passed through to the host fd.
-//
-// TODO: We currently arn't passing any FDs in to the sandbox, so
-// there's not much else for this function to do.  It will get more complicated
-// when gofers enter the picture.  Also the LISTEN_FDS environment variable
-// allows passing arbitrary FDs to the sandbox, which we do not yet support.
 func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, console bool) (*kernel.FDMap, error) {
 	fdm := k.NewFDMap()
 	defer fdm.DecRef()

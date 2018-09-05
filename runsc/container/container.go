@@ -520,17 +520,8 @@ func (c *Container) Destroy() error {
 	c.Status = Stopped
 	c.Sandbox = nil
 
-	if c.GoferPid != 0 {
-		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
-		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
-			log.Warningf("error sending signal %d to pid %d: %v", syscall.SIGKILL, c.GoferPid, err)
-		} else {
-			c.GoferPid = 0
-		}
-	}
-
-	if err := destroyFS(c.Spec); err != nil {
-		return fmt.Errorf("error destroying container fs: %v", err)
+	if err := c.destroyGofer(); err != nil {
+		return fmt.Errorf("error destroying gofer: %v", err)
 	}
 
 	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
@@ -538,6 +529,26 @@ func (c *Container) Destroy() error {
 	}
 
 	return nil
+}
+
+func (c *Container) destroyGofer() error {
+	if c.GoferPid != 0 {
+		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
+		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+			log.Warningf("error sending signal %d to pid %d: %v", syscall.SIGKILL, c.GoferPid, err)
+		}
+	}
+
+	// Gofer process may take some time to teardown. Retry in case of failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+	err := backoff.Retry(func() error { return destroyFS(c.Spec) }, b)
+	if err == nil {
+		// Success!
+		c.GoferPid = 0
+	}
+	return err
 }
 
 // IsRunning returns true if the sandbox or gofer process is running.
@@ -549,8 +560,9 @@ func (c *Container) IsRunning() bool {
 		// Send a signal 0 to the gofer process.
 		if err := syscall.Kill(c.GoferPid, 0); err == nil {
 			log.Warningf("Found orphan gofer process, pid: %d", c.GoferPid)
-			// Attempt to kill gofer if it's orphan.
-			syscall.Kill(c.GoferPid, syscall.SIGKILL)
+			if err := c.destroyGofer(); err != nil {
+				log.Warningf("Error destroying gofer: %v", err)
+			}
 
 			// Don't wait for gofer to die. Return 'running' and hope gofer is dead
 			// next time around.
