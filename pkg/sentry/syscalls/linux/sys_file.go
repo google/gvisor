@@ -136,7 +136,8 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 		return 0, err
 	}
 
-	err = fileOpOn(t, dirFD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	resolve := flags&linux.O_NOFOLLOW == 0
+	err = fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
 		// First check a few things about the filesystem before trying to get the file
 		// reference.
 		//
@@ -145,6 +146,10 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 		// files an extra time just to check permissions.
 		if err := d.Inode.CheckPermission(t, flagsToPermissions(flags)); err != nil {
 			return err
+		}
+
+		if fs.IsSymlink(d.Inode.StableAttr) && !resolve {
+			return syserror.ELOOP
 		}
 
 		fileFlags := linuxToFlags(flags)
