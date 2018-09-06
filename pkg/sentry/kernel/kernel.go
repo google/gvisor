@@ -553,10 +553,18 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 	case auth.CtxCredentials:
 		return ctx.args.Credentials
 	case fs.CtxRoot:
-		if ctx.k.mounts == nil {
-			return nil
+		if ctx.args.Root != nil {
+			// Take a refernce on the root dirent that will be
+			// given to the caller.
+			ctx.args.Root.IncRef()
+			return ctx.args.Root
 		}
-		return ctx.k.mounts.Root()
+		if ctx.k.mounts != nil {
+			// MountNamespace.Root() will take a reference on the
+			// root dirent for us.
+			return ctx.k.mounts.Root()
+		}
+		return nil
 	case ktime.CtxRealtimeClock:
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:
