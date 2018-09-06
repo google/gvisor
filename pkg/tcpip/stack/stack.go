@@ -623,13 +623,38 @@ func (s *Stack) AddSubnet(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[id]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
+	if nic, ok := s.nics[id]; ok {
+		nic.AddSubnet(protocol, subnet)
+		return nil
 	}
 
-	nic.AddSubnet(protocol, subnet)
-	return nil
+	return tcpip.ErrUnknownNICID
+}
+
+// RemoveSubnet removes the subnet range from the specified NIC.
+func (s *Stack) RemoveSubnet(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		nic.RemoveSubnet(subnet)
+		return nil
+	}
+
+	return tcpip.ErrUnknownNICID
+}
+
+// ContainsSubnet reports whether the specified NIC contains the specified
+// subnet.
+func (s *Stack) ContainsSubnet(id tcpip.NICID, subnet tcpip.Subnet) (bool, *tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		return nic.ContainsSubnet(subnet), nil
+	}
+
+	return false, tcpip.ErrUnknownNICID
 }
 
 // RemoveAddress removes an existing network-layer address from the specified
@@ -638,12 +663,26 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic := s.nics[id]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
+	if nic, ok := s.nics[id]; ok {
+		return nic.RemoveAddress(addr)
 	}
 
-	return nic.RemoveAddress(addr)
+	return tcpip.ErrUnknownNICID
+}
+
+// GetMainNICAddress returns the first primary address (and the subnet that
+// contains it) for the given NIC and protocol. Returns an arbitrary endpoint's
+// address if no primary addresses exist. Returns an error if the NIC doesn't
+// exist or has no endpoints.
+func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.Address, tcpip.Subnet, *tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if nic, ok := s.nics[id]; ok {
+		return nic.getMainNICAddress(protocol)
+	}
+
+	return "", tcpip.Subnet{}, tcpip.ErrUnknownNICID
 }
 
 // FindRoute creates a route to the given destination address, leaving through

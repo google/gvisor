@@ -82,6 +82,52 @@ func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Unlock()
 }
 
+func (n *NIC) getMainNICAddress(protocol tcpip.NetworkProtocolNumber) (tcpip.Address, tcpip.Subnet, *tcpip.Error) {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	var r *referencedNetworkEndpoint
+
+	// Check for a primary endpoint.
+	if list, ok := n.primary[protocol]; ok {
+		for e := list.Front(); e != nil; e = e.Next() {
+			ref := e.(*referencedNetworkEndpoint)
+			if ref.holdsInsertRef && ref.tryIncRef() {
+				r = ref
+				break
+			}
+		}
+
+	}
+
+	// If no primary endpoints then check for other endpoints.
+	if r == nil {
+		for _, ref := range n.endpoints {
+			if ref.holdsInsertRef && ref.tryIncRef() {
+				r = ref
+				break
+			}
+		}
+	}
+
+	if r == nil {
+		return "", tcpip.Subnet{}, tcpip.ErrNoLinkAddress
+	}
+
+	address := r.ep.ID().LocalAddress
+	r.decRef()
+
+	// Find the least-constrained matching subnet for the address, if one
+	// exists, and return it.
+	var subnet tcpip.Subnet
+	for _, s := range n.subnets {
+		if s.Contains(address) && !subnet.Contains(s.ID()) {
+			subnet = s
+		}
+	}
+	return address, subnet, nil
+}
+
 // primaryEndpoint returns the primary endpoint of n for the given network
 // protocol.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedNetworkEndpoint {
@@ -214,6 +260,29 @@ func (n *NIC) AddSubnet(protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subne
 	n.mu.Lock()
 	n.subnets = append(n.subnets, subnet)
 	n.mu.Unlock()
+}
+
+// RemoveSubnet removes the given subnet from n.
+func (n *NIC) RemoveSubnet(subnet tcpip.Subnet) {
+	n.mu.Lock()
+
+	for i, sub := range n.subnets {
+		if sub == subnet {
+			n.subnets = append(n.subnets[:i], n.subnets[i+1:]...)
+		}
+	}
+
+	n.mu.Unlock()
+}
+
+// ContainsSubnet reports whether this NIC contains the given subnet.
+func (n *NIC) ContainsSubnet(subnet tcpip.Subnet) bool {
+	for _, s := range n.Subnets() {
+		if s == subnet {
+			return true
+		}
+	}
+	return false
 }
 
 // Subnets returns the Subnets associated with this NIC.
