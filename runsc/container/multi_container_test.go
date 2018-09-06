@@ -15,11 +15,13 @@
 package container
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -236,4 +238,102 @@ func TestMultiContainerMount(t *testing.T) {
 	if !ws.Exited() || ws.ExitStatus() != 0 {
 		t.Error("container failed, waitStatus:", ws)
 	}
+}
+
+// TestMultiContainerSignal checks that it is possible to signal individual
+// containers without killing the entire sandbox.
+func TestMultiContainerSignal(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		specs, ids := createSpecs(sleep, sleep)
+		var containers []*Container
+		for i, spec := range specs {
+			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(bundleDir)
+			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			containers = append(containers, cont)
+		}
+
+		// Check via ps that multiple processes are running.
+		expectedPL := []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+			{PID: 2, Cmd: "sleep"},
+		}
+
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
+		// Kill process 2.
+		if err := containers[1].Signal(syscall.SIGKILL); err != nil {
+			t.Errorf("failed to kill process 2: %v", err)
+		}
+
+		// Make sure process 1 is still running.
+		if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
+		// Now that process 2 is gone, ensure we get an error trying to
+		// signal it again.
+		if err := containers[1].Signal(syscall.SIGKILL); err == nil {
+			t.Errorf("container %q shouldn't exist, but we were able to signal it", containers[1].ID)
+		}
+
+		// Kill process 1.
+		if err := containers[0].Signal(syscall.SIGKILL); err != nil {
+			t.Errorf("failed to kill process 1: %v", err)
+		}
+
+		if err := waitForSandboxExit(containers[0]); err != nil {
+			t.Errorf("failed to exit sandbox: %v", err)
+		}
+
+		// The sentry should be gone, so signaling should yield an
+		// error.
+		if err := containers[0].Signal(syscall.SIGKILL); err == nil {
+			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
+		}
+	}
+}
+
+// waitForSandboxExit waits until both the sandbox and gofer processes of the
+// container have exited.
+func waitForSandboxExit(container *Container) error {
+	goferProc, _ := os.FindProcess(container.GoferPid)
+	state, err := goferProc.Wait()
+	if err != nil {
+		return err
+	}
+	if !state.Exited() {
+		return fmt.Errorf("gofer with PID %d failed to exit", container.GoferPid)
+	}
+	sandboxProc, _ := os.FindProcess(container.Sandbox.Pid)
+	state, err = sandboxProc.Wait()
+	if err != nil {
+		return err
+	}
+	if !state.Exited() {
+		return fmt.Errorf("sandbox with PID %d failed to exit", container.Sandbox.Pid)
+	}
+	return nil
 }
