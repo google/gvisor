@@ -55,6 +55,7 @@ go_test(
     name = "host_test",
     size = "small",
     srcs = [
+        "descriptor_test.go",
         "fs_test.go",
         "inode_test.go",
         "socket_test.go",

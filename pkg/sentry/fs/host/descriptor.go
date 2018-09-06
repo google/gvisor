@@ -31,9 +31,9 @@ type descriptor struct {
 	// donated is true if the host fd was donated by another process.
 	donated bool
 
-	// If origFD >= 0, it is the host fd that this file was
-	// originally created from, which must be available at time
-	// of restore. Only valid if donated is true.
+	// If origFD >= 0, it is the host fd that this file was originally created
+	// from, which must be available at time of restore. The FD can be closed
+	// after descriptor is created. Only set if donated is true.
 	origFD int
 
 	// wouldBlock is true if value (below) points to a file that can

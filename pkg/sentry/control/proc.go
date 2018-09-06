@@ -119,6 +119,10 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 			return err
 		}
 		defer file.DecRef()
+
+		// We're done with this file.
+		f.Close()
+
 		if err := fdm.NewFDAt(kdefs.FD(appFD), file, kernel.FDFlags{}, l); err != nil {
 			return err
 		}
