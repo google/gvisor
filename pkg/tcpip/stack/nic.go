@@ -266,11 +266,14 @@ func (n *NIC) AddSubnet(protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subne
 func (n *NIC) RemoveSubnet(subnet tcpip.Subnet) {
 	n.mu.Lock()
 
-	for i, sub := range n.subnets {
-		if sub == subnet {
-			n.subnets = append(n.subnets[:i], n.subnets[i+1:]...)
+	// Use the same underlying array.
+	tmp := n.subnets[:0]
+	for _, sub := range n.subnets {
+		if sub != subnet {
+			tmp = append(tmp, sub)
 		}
 	}
+	n.subnets = tmp
 
 	n.mu.Unlock()
 }
@@ -369,33 +372,34 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 	id := NetworkEndpointID{dst}
 
 	n.mu.RLock()
-	ref := n.endpoints[id]
-	if ref != nil && !ref.tryIncRef() {
+	ref, ok := n.endpoints[id]
+	if ok && !ref.tryIncRef() {
 		ref = nil
 	}
-	promiscuous := n.promiscuous
-	subnets := n.subnets
-	n.mu.RUnlock()
-
-	if ref == nil {
+	if ref != nil {
+		n.mu.RUnlock()
+	} else {
+		promiscuous := n.promiscuous
 		// Check if the packet is for a subnet this NIC cares about.
 		if !promiscuous {
-			for _, sn := range subnets {
+			for _, sn := range n.subnets {
 				if sn.Contains(dst) {
 					promiscuous = true
 					break
 				}
 			}
 		}
+		n.mu.RUnlock()
 		if promiscuous {
 			// Try again with the lock in exclusive mode. If we still can't
 			// get the endpoint, create a new "temporary" one. It will only
 			// exist while there's a route through it.
 			n.mu.Lock()
-			ref = n.endpoints[id]
-			if ref == nil || !ref.tryIncRef() {
-				ref, _ = n.addAddressLocked(protocol, dst, true)
-				if ref != nil {
+			ref, ok = n.endpoints[id]
+			if !ok || !ref.tryIncRef() {
+				var err *tcpip.Error
+				ref, err = n.addAddressLocked(protocol, dst, true)
+				if err == nil {
 					ref.holdsInsertRef = false
 				}
 			}
