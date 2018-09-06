@@ -38,6 +38,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
@@ -336,8 +337,8 @@ func TestLifecycle(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Wait a bit to ensure that we've started waiting on the container
-		// before we signal.
+		// Wait a bit to ensure that we've started waiting on the
+		// container before we signal.
 		<-ch
 		time.Sleep(100 * time.Millisecond)
 		// Send the container a SIGTERM which will cause it to stop.
@@ -347,11 +348,11 @@ func TestLifecycle(t *testing.T) {
 		// Wait for it to die.
 		wg.Wait()
 
-		// The sandbox process should have exited by now, but it is a zombie.
-		// In normal runsc usage, it will be parented to init, and init will
-		// reap the sandbox. However, in this case the test runner is the
-		// parent and will not reap the sandbox process, so we must do it
-		// ourselves.
+		// The sandbox process should have exited by now, but it is a
+		// zombie. In normal runsc usage, it will be parented to init,
+		// and init will reap the sandbox. However, in this case the
+		// test runner is the parent and will not reap the sandbox
+		// process, so we must do it ourselves.
 		p, _ := os.FindProcess(s.Sandbox.Pid)
 		p.Wait()
 		g, _ := os.FindProcess(s.GoferPid)
@@ -1545,6 +1546,133 @@ func TestGoferExits(t *testing.T) {
 	if c.IsRunning() {
 		t.Errorf("container shouldn't be running, container: %+v", c)
 	}
+}
+
+// TestMultiContainerSignal checks that it is possible to signal individual
+// containers without killing the entire sandbox.
+func TestMultiContainerSignal(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		containerIDs := []string{
+			testutil.UniqueContainerID(),
+			testutil.UniqueContainerID(),
+		}
+		containerAnnotations := []map[string]string{
+			// The first container creates a sandbox.
+			map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeSandbox,
+			},
+			// The second container creates a container within the first
+			// container's sandbox.
+			map[string]string{
+				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
+				specutils.ContainerdSandboxIDAnnotation:     containerIDs[0],
+			},
+		}
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+
+		// Setup the containers.
+		containers := make([]*Container, 0, len(containerIDs))
+		for i, annotations := range containerAnnotations {
+			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec.Annotations = annotations
+			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(bundleDir)
+			cont, err := Create(containerIDs[i], spec, conf, bundleDir, "", "")
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			containers = append(containers, cont)
+		}
+
+		expectedPL := []*control.Process{
+			{
+				UID:  0,
+				PID:  1,
+				PPID: 0,
+				C:    0,
+				Cmd:  "sleep",
+			},
+			{
+				UID:  0,
+				PID:  2,
+				PPID: 0,
+				C:    0,
+				Cmd:  "sleep",
+			},
+		}
+
+		// Check via ps that multiple processes are running.
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
+		// Kill process 2.
+		if err := containers[1].Signal(syscall.SIGKILL); err != nil {
+			t.Errorf("failed to kill process 2: %v", err)
+		}
+
+		// Make sure process 1 is still running.
+		if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
+		// Now that process 2 is gone, ensure we get an error trying to
+		// signal it again.
+		if err := containers[1].Signal(syscall.SIGKILL); err == nil {
+			t.Errorf("container %q shouldn't exist, but we were able to signal it", containers[1].ID)
+		}
+
+		// Kill process 1.
+		if err := containers[0].Signal(syscall.SIGKILL); err != nil {
+			t.Errorf("failed to kill process 1: %v", err)
+		}
+
+		if err := waitForSandboxExit(containers[0]); err != nil {
+			t.Errorf("failed to exit sandbox: %v", err)
+		}
+
+		// The sentry should be gone, so signaling should yield an
+		// error.
+		if err := containers[0].Signal(syscall.SIGKILL); err == nil {
+			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
+		}
+	}
+}
+
+// waitForSandboxExit waits until both the sandbox and gofer processes of the
+// container have exited.
+func waitForSandboxExit(container *Container) error {
+	goferProc, _ := os.FindProcess(container.GoferPid)
+	state, err := goferProc.Wait()
+	if err != nil {
+		return err
+	}
+	if !state.Exited() {
+		return fmt.Errorf("gofer with PID %d failed to exit", container.GoferPid)
+	}
+	sandboxProc, _ := os.FindProcess(container.Sandbox.Pid)
+	state, err = sandboxProc.Wait()
+	if err != nil {
+		return err
+	}
+	if !state.Exited() {
+		return fmt.Errorf("sandbox with PID %d failed to exit", container.Sandbox.Pid)
+	}
+	return nil
 }
 
 func TestMain(m *testing.M) {

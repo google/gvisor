@@ -31,6 +31,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
@@ -575,4 +576,20 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))
 	}
+}
+
+func (l *Loader) signal(cid string, signo int32) error {
+	l.mu.Lock()
+	tgid, ok := l.containerRootTGIDs[cid]
+	l.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("failed to signal container %q: no such container", cid)
+	}
+
+	// The thread group ID of a process is the leading task's thread ID.
+	t := l.k.TaskSet().Root.TaskWithID(tgid)
+	if t == nil {
+		return fmt.Errorf("cannot signal: no task with ID %d", tgid)
+	}
+	return t.SendSignal(&arch.SignalInfo{Signo: signo})
 }

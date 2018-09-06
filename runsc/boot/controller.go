@@ -22,7 +22,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -387,13 +386,5 @@ type SignalArgs struct {
 // Signal sends a signal to the init process of the container.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal")
-	// TODO: Use the cid and send the signal to the init
-	// process in theat container. Currently we just signal PID 1 in the
-	// sandbox.
-	si := arch.SignalInfo{Signo: args.Signo}
-	t := cm.l.k.TaskSet().Root.TaskWithID(1)
-	if t == nil {
-		return fmt.Errorf("cannot signal: no task with id 1")
-	}
-	return t.SendSignal(&si)
+	return cm.l.signal(args.CID, args.Signo)
 }

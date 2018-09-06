@@ -427,6 +427,7 @@ func (c *Container) Signal(sig syscall.Signal) error {
 		log.Warningf("container %q not running, not sending signal %v", c.ID, sig)
 		return nil
 	}
+	// TODO: Query the container for its state, then save it.
 	return c.Sandbox.Signal(c.ID, sig)
 }
 
