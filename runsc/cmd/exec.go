@@ -115,14 +115,20 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("error loading sandbox: %v", err)
 	}
 
+	// Replace empty settings with defaults from container.
 	if e.WorkingDirectory == "" {
 		e.WorkingDirectory = c.Spec.Process.Cwd
 	}
-
 	if e.Envv == nil {
 		e.Envv, err = resolveEnvs(c.Spec.Process.Env, ex.env)
 		if err != nil {
 			Fatalf("error getting environment variables: %v", err)
+		}
+	}
+	if e.Capabilities == nil {
+		e.Capabilities, err = specutils.Capabilities(c.Spec.Process.Capabilities)
+		if err != nil {
+			Fatalf("error creating capabilities: %v", err)
 		}
 	}
 
@@ -265,9 +271,13 @@ func (ex *Exec) argsFromCLI(argv []string) (*control.ExecArgs, error) {
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
 	}
 
-	caps, err := capabilities(ex.caps)
-	if err != nil {
-		return nil, fmt.Errorf("capabilities error: %v", err)
+	var caps *auth.TaskCapabilities
+	if len(ex.caps) > 0 {
+		var err error
+		caps, err = capabilities(ex.caps)
+		if err != nil {
+			return nil, fmt.Errorf("capabilities error: %v", err)
+		}
 	}
 
 	return &control.ExecArgs{
@@ -299,9 +309,13 @@ func (ex *Exec) argsFromProcessFile() (*control.ExecArgs, error) {
 // to ExecArgs.
 func argsFromProcess(p *specs.Process) (*control.ExecArgs, error) {
 	// Create capabilities.
-	caps, err := specutils.Capabilities(p.Capabilities)
-	if err != nil {
-		return nil, fmt.Errorf("error creating capabilities: %v", err)
+	var caps *auth.TaskCapabilities
+	if p.Capabilities != nil {
+		var err error
+		caps, err = specutils.Capabilities(p.Capabilities)
+		if err != nil {
+			return nil, fmt.Errorf("error creating capabilities: %v", err)
+		}
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.

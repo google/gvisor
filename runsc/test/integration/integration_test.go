@@ -179,7 +179,7 @@ func TestConnectToSelf(t *testing.T) {
 	if want := "server\n"; reply != want {
 		t.Errorf("Error on server, want: %q, got: %q", want, reply)
 	}
-	if err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
+	if _, err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
 		t.Fatal("docker.WaitForOutput(client) timeout:", err)
 	}
 }

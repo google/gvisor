@@ -44,7 +44,7 @@ func TestHelloWorld(t *testing.T) {
 	}
 	defer d.CleanUp()
 
-	if err := d.WaitForOutput("Hello from Docker!", 5*time.Second); err != nil {
+	if _, err := d.WaitForOutput("Hello from Docker!", 5*time.Second); err != nil {
 		t.Fatalf("docker didn't say hello: %v", err)
 	}
 }
@@ -160,7 +160,7 @@ func TestMysql(t *testing.T) {
 	defer d.CleanUp()
 
 	// Wait until it's up and running.
-	if err := d.WaitForOutput("port: 3306  MySQL Community Server", 3*time.Minute); err != nil {
+	if _, err := d.WaitForOutput("port: 3306  MySQL Community Server", 3*time.Minute); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 
@@ -184,10 +184,10 @@ func TestMysql(t *testing.T) {
 	defer client.CleanUp()
 
 	// Ensure file executed to the end and shutdown mysql.
-	if err := client.WaitForOutput("--------------\nshutdown\n--------------", 15*time.Second); err != nil {
+	if _, err := client.WaitForOutput("--------------\nshutdown\n--------------", 15*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
-	if err := d.WaitForOutput("mysqld: Shutdown complete", 30*time.Second); err != nil {
+	if _, err := d.WaitForOutput("mysqld: Shutdown complete", 30*time.Second); err != nil {
 		t.Fatalf("docker.WaitForOutput() timeout: %v", err)
 	}
 }

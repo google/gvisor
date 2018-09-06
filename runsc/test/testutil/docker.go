@@ -218,20 +218,20 @@ func (d *Docker) FindPort(sandboxPort int) (int, error) {
 
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches
 // for the given pattern.
-func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) error {
+func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, error) {
 	re := regexp.MustCompile(pattern)
 	var out string
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
 		var err error
 		out, err = do("logs", d.Name)
 		if err != nil {
-			return err
+			return "", err
 		}
-		if re.MatchString(out) {
+		if match := re.FindString(out); match != "" {
 			// Success!
-			return nil
+			return match, nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
+	return "", fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
 }

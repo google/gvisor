@@ -6,6 +6,7 @@ go_test(
     name = "integration_test",
     size = "large",
     srcs = [
+        "exec_test.go",
         "integration_test.go",
     ],
     embed = [":integration"],
