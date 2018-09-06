@@ -76,8 +76,8 @@ func (d *Delete) execute(ids []string, conf *boot.Config) error {
 			}
 			return fmt.Errorf("error loading container %q: %v", id, err)
 		}
-		if !d.force && (c.Status == container.Running) {
-			return fmt.Errorf("cannot stop running container without --force flag")
+		if !d.force && c.Status != container.Created && c.Status != container.Stopped {
+			return fmt.Errorf("cannot delete container that is not stopped without --force flag")
 		}
 		if err := c.Destroy(); err != nil {
 			return fmt.Errorf("error destroying container: %v", err)
