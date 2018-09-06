@@ -118,7 +118,7 @@ func NewWithFile(lower tcpip.LinkEndpointID, file *os.File, snapLen uint32) (tcp
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("recv", protocol, vv.First(), nil)
+		logPacket("recv", protocol, vv.First())
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		vs := vv.Views()
@@ -188,19 +188,19 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and forwards
 // the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, hdr.UsedBytes(), payload)
+		logPacket("send", protocol, hdr.UsedBytes())
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		hdrBuf := hdr.UsedBytes()
-		length := len(hdrBuf) + len(payload)
+		length := len(hdrBuf) + payload.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)
 		}
 
 		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
-		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(hdr.UsedLength()+len(payload)))); err != nil {
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+payload.Size()))); err != nil {
 			panic(err)
 		}
 		if len(hdrBuf) > length {
@@ -211,12 +211,18 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		}
 		length -= len(hdrBuf)
 		if length > 0 {
-			p := payload
-			if len(p) > length {
-				p = p[:length]
-			}
-			if _, err := buf.Write(p); err != nil {
-				panic(err)
+			for _, v := range payload.Views() {
+				if len(v) > length {
+					v = v[:length]
+				}
+				n, err := buf.Write(v)
+				if err != nil {
+					panic(err)
+				}
+				length -= n
+				if length == 0 {
+					break
+				}
 			}
 		}
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
@@ -226,7 +232,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 	return e.lower.WritePacket(r, hdr, payload, protocol)
 }
 
-func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b, plb []byte) {
+func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")

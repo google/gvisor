@@ -70,7 +70,8 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) 
 	if err != nil {
 		return 0, err
 	}
-	if err := f.route.WritePacket(&hdr, v, fakeTransNumber); err != nil {
+	vv := buffer.NewVectorisedView(len(v), []buffer.View{v})
+	if err := f.route.WritePacket(&hdr, vv, fakeTransNumber); err != nil {
 		return 0, err
 	}
 

@@ -65,7 +65,7 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 	return e.linkAddr
 }
 
-func (e *countedEndpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *countedEndpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	e.writeCount++
 	return nil
 }
@@ -75,21 +75,21 @@ func TestWaitWrite(t *testing.T) {
 	_, wep := New(stack.RegisterLinkEndpoint(ep))
 
 	// Write and check that it goes through.
-	wep.WritePacket(nil, nil, nil, 0)
+	wep.WritePacket(nil, nil, buffer.VectorisedView{}, 0)
 	if want := 1; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on dispatches, then try to write. It must go through.
 	wep.WaitDispatch()
-	wep.WritePacket(nil, nil, nil, 0)
+	wep.WritePacket(nil, nil, buffer.VectorisedView{}, 0)
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}
 
 	// Wait on writes, then try to write. It must not go through.
 	wep.WaitWrite()
-	wep.WritePacket(nil, nil, nil, 0)
+	wep.WritePacket(nil, nil, buffer.VectorisedView{}, 0)
 	if want := 2; ep.writeCount != want {
 		t.Fatalf("Unexpected writeCount: got=%v, want=%v", ep.writeCount, want)
 	}

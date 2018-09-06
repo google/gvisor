@@ -152,7 +152,7 @@ func (vv *VectorisedView) Size() int {
 	return vv.size
 }
 
-// ToView returns the a single view containing the content of the vectorised view.
+// ToView returns a single view containing the content of the vectorised view.
 func (vv *VectorisedView) ToView() View {
 	v := make([]byte, vv.size)
 	u := v

@@ -328,7 +328,8 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 		return 0, err
 	}
 
-	if err := sendUDP(route, v, e.id.LocalPort, dstPort); err != nil {
+	vv := buffer.NewVectorisedView(len(v), []buffer.View{v})
+	if err := sendUDP(route, vv, e.id.LocalPort, dstPort); err != nil {
 		return 0, err
 	}
 	return uintptr(len(v)), nil
@@ -426,14 +427,14 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the
 // provided identity.
-func sendUDP(r *stack.Route, data buffer.View, localPort, remotePort uint16) *tcpip.Error {
+func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16) *tcpip.Error {
 	// Allocate a buffer for the UDP header.
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
 	// Initialize the header.
 	udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 
-	length := uint16(hdr.UsedLength()) + uint16(len(data))
+	length := uint16(hdr.UsedLength() + data.Size())
 	udp.Encode(&header.UDPFields{
 		SrcPort: localPort,
 		DstPort: remotePort,
@@ -443,10 +444,9 @@ func sendUDP(r *stack.Route, data buffer.View, localPort, remotePort uint16) *tc
 	// Only calculate the checksum if offloading isn't supported.
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
-		if data != nil {
-			xsum = header.Checksum(data, xsum)
+		for _, v := range data.Views() {
+			xsum = header.Checksum(v, xsum)
 		}
-
 		udp.SetChecksum(^udp.CalculateChecksum(xsum, length))
 	}
 

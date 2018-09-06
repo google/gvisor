@@ -166,7 +166,7 @@ func (h *handshake) checkAck(s *segment) bool {
 		// incoming segment acknowledges something not yet sent. The
 		// connection remains in the same state.
 		ack := s.sequenceNumber.Add(s.logicalLen())
-		h.ep.sendRaw(nil, flagRst|flagAck, s.ackNumber, ack, 0)
+		h.ep.sendRaw(buffer.VectorisedView{}, flagRst|flagAck, s.ackNumber, ack, 0)
 		return false
 	}
 
@@ -214,7 +214,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	// and the handshake is completed.
 	if s.flagIsSet(flagAck) {
 		h.state = handshakeCompleted
-		h.ep.sendRaw(nil, flagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
+		h.ep.sendRaw(buffer.VectorisedView{}, flagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
 		return nil
 	}
 
@@ -263,7 +263,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		if s.flagIsSet(flagAck) {
 			seq = s.ackNumber
 		}
-		h.ep.sendRaw(nil, flagRst|flagAck, seq, ack, 0)
+		h.ep.sendRaw(buffer.VectorisedView{}, flagRst|flagAck, seq, ack, 0)
 
 		if !h.active {
 			return tcpip.ErrInvalidEndpointState
@@ -563,14 +563,14 @@ func sendSynTCP(r *stack.Route, id stack.TransportEndpointID, flags byte, seq, a
 	}
 
 	options := makeSynOptions(opts)
-	err := sendTCPWithOptions(r, id, nil, flags, seq, ack, rcvWnd, options)
+	err := sendTCPWithOptions(r, id, buffer.VectorisedView{}, flags, seq, ack, rcvWnd, options)
 	putOptions(options)
 	return err
 }
 
 // sendTCPWithOptions sends a TCP segment with the provided options via the
 // provided network endpoint and under the provided identity.
-func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffer.View, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte) *tcpip.Error {
+func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte) *tcpip.Error {
 	optLen := len(opts)
 	// Allocate a buffer for the TCP header.
 	hdr := buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen)
@@ -594,11 +594,10 @@ func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffe
 
 	// Only calculate the checksum if offloading isn't supported.
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
-		length := uint16(hdr.UsedLength())
+		length := uint16(hdr.UsedLength() + data.Size())
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
-		if data != nil {
-			length += uint16(len(data))
-			xsum = header.Checksum(data, xsum)
+		for _, v := range data.Views() {
+			xsum = header.Checksum(v, xsum)
 		}
 
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
@@ -614,7 +613,7 @@ func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffe
 
 // sendTCP sends a TCP segment via the provided network endpoint and under the
 // provided identity.
-func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.View, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
+func sendTCP(r *stack.Route, id stack.TransportEndpointID, payload buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
 	// Allocate a buffer for the TCP header.
 	hdr := buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()))
 
@@ -636,11 +635,10 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.View, fla
 
 	// Only calculate the checksum if offloading isn't supported.
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
-		length := uint16(hdr.UsedLength())
+		length := uint16(hdr.UsedLength() + payload.Size())
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
-		if data != nil {
-			length += uint16(len(data))
-			xsum = header.Checksum(data, xsum)
+		for _, v := range payload.Views() {
+			xsum = header.Checksum(v, xsum)
 		}
 
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
@@ -651,7 +649,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.View, fla
 		r.Stats().TCP.ResetsSent.Increment()
 	}
 
-	return r.WritePacket(&hdr, data, ProtocolNumber)
+	return r.WritePacket(&hdr, payload, ProtocolNumber)
 }
 
 // makeOptions makes an options slice.
@@ -694,7 +692,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 }
 
 // sendRaw sends a TCP segment to the endpoint's peer.
-func (e *endpoint) sendRaw(data buffer.View, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
+func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.state == stateConnected && e.rcv.pendingBufSize > 0 && (flags&flagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
@@ -751,7 +749,7 @@ func (e *endpoint) handleClose() *tcpip.Error {
 // state with the given error code. This method must only be called from the
 // protocol goroutine.
 func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
-	e.sendRaw(nil, flagAck|flagRst, e.snd.sndUna, e.rcv.rcvNxt, 0)
+	e.sendRaw(buffer.VectorisedView{}, flagAck|flagRst, e.snd.sndUna, e.rcv.rcvNxt, 0)
 
 	e.state = stateError
 	e.hardError = err
@@ -851,7 +849,7 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 	// seg.seq = snd.nxt-1.
 	e.keepalive.unacked++
 	e.keepalive.Unlock()
-	e.snd.sendSegment(nil, flagAck, e.snd.sndNxt-1)
+	e.snd.sendSegment(buffer.VectorisedView{}, flagAck, e.snd.sndNxt-1)
 	e.resetKeepaliveTimer(false)
 	return nil
 }

@@ -152,13 +152,14 @@ func TestWritePacket(t *testing.T) {
 					b[i] = uint8(rand.Intn(256))
 				}
 
-				// Buiild payload and write.
-				payload := make([]byte, plen)
+				// Build payload and write.
+				payload := make(buffer.View, plen)
 				for i := range payload {
 					payload[i] = uint8(rand.Intn(256))
 				}
 				want := append(hdr.UsedBytes(), payload...)
-				if err := c.ep.WritePacket(r, &hdr, payload, proto); err != nil {
+				vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
+				if err := c.ep.WritePacket(r, &hdr, vv, proto); err != nil {
 					t.Fatalf("WritePacket failed: %v", err)
 				}
 

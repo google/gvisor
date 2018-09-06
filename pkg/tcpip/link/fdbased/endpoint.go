@@ -161,10 +161,12 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if e.handleLocal && r.LocalAddress != "" && r.LocalAddress == r.RemoteAddress {
-		hdrView := hdr.View()
-		vv := buffer.NewVectorisedView(len(hdrView)+len(payload), []buffer.View{hdrView, payload})
+		views := make([]buffer.View, 1, 1+len(payload.Views()))
+		views[0] = hdr.View()
+		views = append(views, payload.Views()...)
+		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
 		e.dispatcher.DeliverNetworkPacket(e, r.RemoteLinkAddress, protocol, &vv)
 		return nil
 	}
@@ -178,11 +180,11 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		})
 	}
 
-	if len(payload) == 0 {
+	if payload.Size() == 0 {
 		return rawfile.NonBlockingWrite(e.fd, hdr.UsedBytes())
 	}
 
-	return rawfile.NonBlockingWrite2(e.fd, hdr.UsedBytes(), payload)
+	return rawfile.NonBlockingWrite2(e.fd, hdr.UsedBytes(), payload.ToView())
 }
 
 func (e *endpoint) capViews(n int, buffers []int) int {

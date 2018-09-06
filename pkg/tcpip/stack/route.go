@@ -129,7 +129,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(hdr *buffer.Prependable, payload buffer.View, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
+func (r *Route) WritePacket(hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
 	err := r.ref.ep.WritePacket(r, hdr, payload, protocol)
 	if err == tcpip.ErrNoRoute {
 		r.Stats().IP.OutgoingPacketErrors.Increment()

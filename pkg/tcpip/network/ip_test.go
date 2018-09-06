@@ -66,7 +66,7 @@ type testObject struct {
 // checkValues verifies that the transport protocol, data contents, src & dst
 // addresses of a packet match what's expected. If any field doesn't match, the
 // test fails.
-func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv *buffer.VectorisedView, srcAddr, dstAddr tcpip.Address) {
+func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView, srcAddr, dstAddr tcpip.Address) {
 	v := vv.ToView()
 	if protocol != t.protocol {
 		t.t.Errorf("protocol = %v, want %v", protocol, t.protocol)
@@ -95,7 +95,7 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv *buf
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
 func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, vv *buffer.VectorisedView) {
-	t.checkValues(protocol, vv, r.RemoteAddress, r.LocalAddress)
+	t.checkValues(protocol, *vv, r.RemoteAddress, r.LocalAddress)
 	t.dataCalls++
 }
 
@@ -103,7 +103,7 @@ func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.Trans
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
 func (t *testObject) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ stack.ControlType, extra uint32, vv *buffer.VectorisedView) {
-	t.checkValues(trans, vv, remote, local)
+	t.checkValues(trans, *vv, remote, local)
 	if typ != t.typ {
 		t.t.Errorf("typ = %v, want %v", typ, t.typ)
 	}
@@ -145,7 +145,7 @@ func (*testObject) LinkAddress() tcpip.LinkAddress {
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -162,9 +162,7 @@ func (t *testObject) WritePacket(_ *stack.Route, hdr *buffer.Prependable, payloa
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 	}
-	var views [1]buffer.View
-	vv := payload.ToVectorisedView(views)
-	t.checkValues(prot, &vv, srcAddr, dstAddr)
+	t.checkValues(prot, payload, srcAddr, dstAddr)
 	return nil
 }
 
@@ -223,7 +221,8 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, &hdr, payload, 123); err != nil {
+	vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
+	if err := ep.WritePacket(&r, &hdr, vv, 123); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -461,7 +460,8 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, &hdr, payload, 123); err != nil {
+	vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
+	if err := ep.WritePacket(&r, &hdr, vv, 123); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }

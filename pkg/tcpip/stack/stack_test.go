@@ -105,7 +105,7 @@ func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return f.linkEP.Capabilities()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.View, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
 
@@ -269,8 +269,7 @@ func sendTo(t *testing.T, s *stack.Stack, addr tcpip.Address) {
 	defer r.Release()
 
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	err = r.WritePacket(&hdr, nil, fakeTransNumber)
-	if err != nil {
+	if err := r.WritePacket(&hdr, buffer.VectorisedView{}, fakeTransNumber); err != nil {
 		t.Errorf("WritePacket failed: %v", err)
 		return
 	}

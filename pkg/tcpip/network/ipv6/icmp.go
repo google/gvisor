@@ -62,6 +62,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, vv)
 }
 
+// TODO: take buffer.VectorisedView by value.
 func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 	v := vv.First()
 	if len(v) < header.ICMPv6MinimumSize {
@@ -105,8 +106,8 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 		pkt[icmpV6OptOffset] = ndpOptDstLinkAddr
 		pkt[icmpV6LengthOffset] = 1
 		copy(pkt[icmpV6LengthOffset+1:], r.LocalLinkAddress[:])
-		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, nil))
-		r.WritePacket(&hdr, nil, header.ICMPv6ProtocolNumber)
+		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+		r.WritePacket(&hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber)
 
 		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
 
@@ -125,13 +126,12 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 			return
 		}
 		vv.TrimFront(header.ICMPv6EchoMinimumSize)
-		data := vv.ToView()
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
-		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, data))
-		r.WritePacket(&hdr, data, header.ICMPv6ProtocolNumber)
+		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, *vv))
+		r.WritePacket(&hdr, *vv, header.ICMPv6ProtocolNumber)
 
 	case header.ICMPv6EchoReply:
 		if len(v) < header.ICMPv6EchoMinimumSize {
@@ -185,7 +185,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	pkt[icmpV6OptOffset] = ndpOptSrcLinkAddr
 	pkt[icmpV6LengthOffset] = 1
 	copy(pkt[icmpV6LengthOffset+1:], linkEP.LinkAddress())
-	pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, nil))
+	pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	length := uint16(hdr.UsedLength())
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
@@ -197,7 +197,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 		DstAddr:       r.RemoteAddress,
 	})
 
-	return linkEP.WritePacket(r, &hdr, nil, ProtocolNumber)
+	return linkEP.WritePacket(r, &hdr, buffer.VectorisedView{}, ProtocolNumber)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
@@ -205,15 +205,17 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 	return "", false
 }
 
-func icmpChecksum(h header.ICMPv6, src, dst tcpip.Address, data []byte) uint16 {
+func icmpChecksum(h header.ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
 	// Calculate the IPv6 pseudo-header upper-layer checksum.
 	xsum := header.Checksum([]byte(src), 0)
 	xsum = header.Checksum([]byte(dst), xsum)
 	var upperLayerLength [4]byte
-	binary.BigEndian.PutUint32(upperLayerLength[:], uint32(len(h)+len(data)))
+	binary.BigEndian.PutUint32(upperLayerLength[:], uint32(len(h)+vv.Size()))
 	xsum = header.Checksum(upperLayerLength[:], xsum)
 	xsum = header.Checksum([]byte{0, 0, 0, uint8(header.ICMPv6ProtocolNumber)}, xsum)
-	xsum = header.Checksum(data, xsum)
+	for _, v := range vv.Views() {
+		xsum = header.Checksum(v, xsum)
+	}
 
 	// h[2:4] is the checksum itself, set it aside to avoid checksumming the checksum.
 	h2, h3 := h[2], h[3]

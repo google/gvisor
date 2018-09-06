@@ -270,7 +270,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 
 // sendAck sends an ACK segment.
 func (s *sender) sendAck() {
-	s.sendSegment(nil, flagAck, s.sndNxt)
+	s.sendSegment(buffer.VectorisedView{}, flagAck, s.sndNxt)
 }
 
 // updateRTO updates the retransmit timeout when a new roud-trip time is
@@ -305,7 +305,7 @@ func (s *sender) resendSegment() {
 
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
-		s.sendSegment(&seg.data, seg.flags, seg.sequenceNumber)
+		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
 	}
 }
 
@@ -419,7 +419,7 @@ func (s *sender) sendData() {
 			segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 		}
 
-		s.sendSegment(&seg.data, seg.flags, seg.sequenceNumber)
+		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
 
 		// Update sndNxt if we actually sent new data (as opposed to
 		// retransmitting some previously sent data).
@@ -642,7 +642,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 // sendSegment sends a new segment containing the given payload, flags and
 // sequence number.
-func (s *sender) sendSegment(data *buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
+func (s *sender) sendSegment(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
 	s.lastSendTime = time.Now()
 	if seq == s.rttMeasureSeqNum {
 		s.rttMeasureTime = s.lastSendTime
@@ -653,13 +653,5 @@ func (s *sender) sendSegment(data *buffer.VectorisedView, flags byte, seq seqnum
 	// Remember the max sent ack.
 	s.maxSentAck = rcvNxt
 
-	if data == nil {
-		return s.ep.sendRaw(nil, flags, seq, rcvNxt, rcvWnd)
-	}
-
-	if len(data.Views()) > 1 {
-		panic("send path does not support views with multiple buffers")
-	}
-
-	return s.ep.sendRaw(data.First(), flags, seq, rcvNxt, rcvWnd)
+	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
 }
