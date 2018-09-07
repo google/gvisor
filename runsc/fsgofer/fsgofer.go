@@ -117,17 +117,9 @@ func NewAttachPoint(prefix string, c Config) p9.Attacher {
 }
 
 // Attach implements p9.Attacher.
-func (a *attachPoint) Attach(appPath string) (p9.File, error) {
-	// Only proceed if 'appPath' is valid.
-	if !path.IsAbs(appPath) {
-		return nil, fmt.Errorf("invalid path %q", appPath)
-	}
-	if path.Clean(appPath) != appPath {
-		return nil, fmt.Errorf("invalid path %q", appPath)
-	}
-
-	root := path.Join(a.prefix, appPath)
-	fi, err := os.Stat(root)
+func (a *attachPoint) Attach() (p9.File, error) {
+	// Sanity check the prefix.
+	fi, err := os.Stat(a.prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -136,14 +128,15 @@ func (a *attachPoint) Attach(appPath string) (p9.File, error) {
 		mode = os.O_RDONLY
 	}
 
-	f, err := os.OpenFile(root, mode|openFlags, 0)
+	// Open the root directory.
+	f, err := os.OpenFile(a.prefix, mode|openFlags, 0)
 	if err != nil {
-		return nil, fmt.Errorf("unable to open file %q, err: %v", root, err)
+		return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
 	}
 	stat, err := stat(int(f.Fd()))
 	if err != nil {
 		f.Close()
-		return nil, fmt.Errorf("failed to stat file %q, err: %v", root, err)
+		return nil, fmt.Errorf("failed to stat file %q, err: %v", a.prefix, err)
 	}
 
 	a.attachedMu.Lock()
@@ -154,7 +147,7 @@ func (a *attachPoint) Attach(appPath string) (p9.File, error) {
 	}
 	a.attached = true
 
-	return newLocalFile(a, f, root, stat)
+	return newLocalFile(a, f, a.prefix, stat)
 }
 
 // makeQID returns a unique QID for the given stat buffer.

@@ -70,8 +70,8 @@ func (l *local) info() (p9.QID, os.FileInfo, error) {
 }
 
 // Attach implements p9.Attacher.Attach.
-func (l *local) Attach(name string) (p9.File, error) {
-	return &local{path: path.Clean(name)}, nil
+func (l *local) Attach() (p9.File, error) {
+	return &local{path: "/"}, nil
 }
 
 // Walk implements p9.File.Walk.

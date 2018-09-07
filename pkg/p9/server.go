@@ -97,6 +97,9 @@ type fidRef struct {
 	// This is updated in handlers.go.
 	opened bool
 
+	// walkable indicates this fidRef may be walked.
+	walkable bool
+
 	// openFlags is the mode used in the open.
 	//
 	// This is updated in handlers.go.

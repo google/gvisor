@@ -20,10 +20,13 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 )
 
-// Attacher is provided by the user.
+// Attacher is provided by the server.
 type Attacher interface {
 	// Attach returns a new File.
-	Attach(attachName string) (File, error)
+	//
+	// The client-side attach will be translate to a series of walks from
+	// the file returned by this Attach call.
+	Attach() (File, error)
 }
 
 // File is a set of operations corresponding to a single node.

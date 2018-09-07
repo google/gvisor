@@ -17,6 +17,7 @@ package p9
 import (
 	"io"
 	"os"
+	"path"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -94,39 +95,6 @@ func isSafeName(name string) bool {
 }
 
 // handle implements handler.handle.
-func (t *Twalk) handle(cs *connState) message {
-	// Check the names.
-	for _, name := range t.Names {
-		if !isSafeName(name) {
-			return newErr(syscall.EINVAL)
-		}
-	}
-
-	// Lookup the FID.
-	ref, ok := cs.LookupFID(t.FID)
-	if !ok {
-		return newErr(syscall.EBADF)
-	}
-	defer ref.DecRef()
-
-	// Has it been opened already?
-	if _, opened := ref.OpenFlags(); opened {
-		return newErr(syscall.EBUSY)
-	}
-
-	// Do the walk.
-	qids, sf, err := ref.file.Walk(t.Names)
-	if err != nil {
-		return newErr(err)
-	}
-
-	// Install the new FID.
-	cs.InsertFID(t.NewFID, &fidRef{file: sf})
-
-	return &Rwalk{QIDs: qids}
-}
-
-// handle implements handler.handle.
 func (t *Tclunk) handle(cs *connState) message {
 	if !cs.DeleteFID(t.FID) {
 		return newErr(syscall.EBADF)
@@ -175,14 +143,57 @@ func (t *Tattach) handle(cs *connState) message {
 		return newErr(syscall.EINVAL)
 	}
 
-	// Do the attach.
-	sf, err := cs.server.attacher.Attach(t.Auth.AttachName)
+	// Must provide an absolute path.
+	if path.IsAbs(t.Auth.AttachName) {
+		// Trim off the leading / if the path is absolute. We always
+		// treat attach paths as absolute and call attach with the root
+		// argument on the server file for clarity.
+		t.Auth.AttachName = t.Auth.AttachName[1:]
+	}
+
+	// Do the attach on the root.
+	sf, err := cs.server.attacher.Attach()
 	if err != nil {
 		return newErr(err)
 	}
-	cs.InsertFID(t.FID, &fidRef{file: sf})
+	_, valid, attr, err := sf.GetAttr(AttrMaskAll())
+	if err != nil {
+		sf.Close() // Drop file.
+		return newErr(err)
+	}
+	if !valid.Mode {
+		sf.Close() // Drop file.
+		return newErr(syscall.EINVAL)
+	}
 
-	// Return an empty QID.
+	// Build a transient reference.
+	root := &fidRef{
+		file:     sf,
+		refs:     1,
+		walkable: attr.Mode.IsDir(),
+	}
+	defer root.DecRef()
+
+	// Attach the root?
+	if len(t.Auth.AttachName) == 0 {
+		cs.InsertFID(t.FID, root)
+		return &Rattach{}
+	}
+
+	// We want the same traversal checks to apply on attach, so always
+	// attach at the root and use the regular walk paths.
+	names := strings.Split(t.Auth.AttachName, "/")
+	_, target, _, attr, err := doWalk(cs, root, names)
+	if err != nil {
+		return newErr(err)
+	}
+
+	// Insert the FID.
+	cs.InsertFID(t.FID, &fidRef{
+		file:     target,
+		walkable: attr.Mode.IsDir(),
+	})
+
 	return &Rattach{}
 }
 
@@ -678,15 +689,104 @@ func (t *Tflushf) handle(cs *connState) message {
 	return &Rflushf{}
 }
 
-// handle implements handler.handle.
-func (t *Twalkgetattr) handle(cs *connState) message {
+// walkOne walks zero or one path elements.
+//
+// The slice passed as qids is append and returned.
+func walkOne(qids []QID, from File, names []string) ([]QID, File, AttrMask, Attr, error) {
+	if len(names) > 1 {
+		// We require exactly zero or one elements.
+		return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+	}
+	var localQIDs []QID
+	localQIDs, sf, valid, attr, err := from.WalkGetAttr(names)
+	if err == syscall.ENOSYS {
+		localQIDs, sf, err = from.Walk(names)
+		if err != nil {
+			// No way to walk this element.
+			return nil, nil, AttrMask{}, Attr{}, err
+		}
+		// Need a manual getattr.
+		_, valid, attr, err = sf.GetAttr(AttrMaskAll())
+		if err != nil {
+			// Don't leak the file.
+			sf.Close()
+		}
+	}
+	if err != nil {
+		// Error walking, don't return anything.
+		return nil, nil, AttrMask{}, Attr{}, err
+	}
+	if len(localQIDs) != 1 {
+		// Expected a single QID.
+		sf.Close()
+		return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+	}
+	return append(qids, localQIDs...), sf, valid, attr, nil
+}
+
+// doWalk walks from a given fidRef.
+//
+// This enforces that all intermediate nodes are walkable (directories).
+func doWalk(cs *connState, ref *fidRef, names []string) (qids []QID, sf File, valid AttrMask, attr Attr, err error) {
 	// Check the names.
-	for _, name := range t.Names {
+	for _, name := range names {
 		if !isSafeName(name) {
-			return newErr(syscall.EINVAL)
+			err = syscall.EINVAL
+			return
 		}
 	}
 
+	// Has it been opened already?
+	if _, opened := ref.OpenFlags(); opened {
+		err = syscall.EBUSY
+		return
+	}
+
+	// Is this an empty list? Handle specially. We don't actually need to
+	// validate anything since this is always permitted.
+	if len(names) == 0 {
+		return walkOne(nil, ref.file, nil)
+	}
+
+	// Is it walkable?
+	if !ref.walkable {
+		err = syscall.EINVAL
+		return
+	}
+
+	from := ref.file // Start at the passed ref.
+
+	// Do the walk, one element at a time.
+	for i := 0; i < len(names); i++ {
+		qids, sf, valid, attr, err = walkOne(qids, from, names[i:i+1])
+
+		// Close the intermediate file. Note that we don't close the
+		// first file because in that case we are walking from the
+		// existing reference.
+		if i > 0 {
+			from.Close()
+		}
+		from = sf // Use the new file.
+
+		// Was there an error walking?
+		if err != nil {
+			return nil, nil, AttrMask{}, Attr{}, err
+		}
+
+		// We won't allow beyond past symlinks; stop here if this isn't
+		// a proper directory and we have additional paths to walk.
+		if !valid.Mode || (!attr.Mode.IsDir() && i < len(names)-1) {
+			from.Close() // Not using the file object.
+			return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
+		}
+	}
+
+	// Success.
+	return qids, sf, valid, attr, nil
+}
+
+// handle implements handler.handle.
+func (t *Twalk) handle(cs *connState) message {
 	// Lookup the FID.
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -694,26 +794,41 @@ func (t *Twalkgetattr) handle(cs *connState) message {
 	}
 	defer ref.DecRef()
 
-	// Has it been opened already?
-	if _, opened := ref.OpenFlags(); opened {
-		return newErr(syscall.EBUSY)
-	}
-
 	// Do the walk.
-	qids, sf, valid, attr, err := ref.file.WalkGetAttr(t.Names)
-	if err == syscall.ENOSYS {
-		qids, sf, err = ref.file.Walk(t.Names)
-		if err != nil {
-			return newErr(err)
-		}
-		_, valid, attr, err = sf.GetAttr(AttrMaskAll())
-	}
+	qids, sf, _, attr, err := doWalk(cs, ref, t.Names)
 	if err != nil {
 		return newErr(err)
 	}
 
 	// Install the new FID.
-	cs.InsertFID(t.NewFID, &fidRef{file: sf})
+	cs.InsertFID(t.NewFID, &fidRef{
+		file:     sf,
+		walkable: attr.Mode.IsDir(),
+	})
+
+	return &Rwalk{QIDs: qids}
+}
+
+// handle implements handler.handle.
+func (t *Twalkgetattr) handle(cs *connState) message {
+	// Lookup the FID.
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(syscall.EBADF)
+	}
+	defer ref.DecRef()
+
+	// Do the walk.
+	qids, sf, valid, attr, err := doWalk(cs, ref, t.Names)
+	if err != nil {
+		return newErr(err)
+	}
+
+	// Install the new FID.
+	cs.InsertFID(t.NewFID, &fidRef{
+		file:     sf,
+		walkable: attr.Mode.IsDir(),
+	})
 
 	return &Rwalkgetattr{QIDs: qids, Valid: valid, Attr: attr}
 }

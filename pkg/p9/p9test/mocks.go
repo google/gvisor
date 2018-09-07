@@ -71,7 +71,8 @@ type WalkGetAttrMock struct {
 
 // WalkGetAttr implements p9.File.WalkGetAttr.
 func (w *WalkGetAttrMock) WalkGetAttr(names []string) ([]p9.QID, p9.File, p9.AttrMask, p9.Attr, error) {
-	w.Called, w.Names = true, names
+	w.Called = true
+	w.Names = append(w.Names, names...)
 	return w.QIDs, w.File, w.Valid, w.Attr, w.Err
 }
 
@@ -300,17 +301,14 @@ func (r *ReadlinkMock) Readlink() (string, error) {
 type AttachMock struct {
 	Called bool
 
-	// Args.
-	AttachName string
-
 	// Return.
 	File p9.File
 	Err  error
 }
 
 // Attach implements p9.Attacher.Attach.
-func (a *AttachMock) Attach(attachName string) (p9.File, error) {
-	a.Called, a.AttachName = true, attachName
+func (a *AttachMock) Attach() (p9.File, error) {
+	a.Called = true
 	return a.File, a.Err
 }
 
@@ -329,7 +327,8 @@ type WalkMock struct {
 
 // Walk implements p9.File.Walk.
 func (w *WalkMock) Walk(names []string) ([]p9.QID, p9.File, error) {
-	w.Called, w.Names = true, names
+	w.Called = true
+	w.Names = append(w.Names, names...)
 	return w.QIDs, w.File, w.Err
 }
 

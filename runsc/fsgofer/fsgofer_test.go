@@ -19,7 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	"strings"
 	"syscall"
 	"testing"
 
@@ -88,9 +87,9 @@ func runCustom(t *testing.T, types []fileType, confs []Config, test func(*testin
 			defer os.RemoveAll(path)
 
 			a := NewAttachPoint(path, c)
-			root, err := a.Attach("/")
+			root, err := a.Attach()
 			if err != nil {
-				t.Fatalf("Attach(%q) failed, err: %v", "/", err)
+				t.Fatalf("Attach failed, err: %v", err)
 			}
 
 			_, file, err := root.Walk([]string{name})
@@ -115,9 +114,9 @@ func setup(ft fileType) (string, string, error) {
 
 	// First attach with writable configuration to setup tree.
 	a := NewAttachPoint(path, Config{})
-	root, err := a.Attach("/")
+	root, err := a.Attach()
 	if err != nil {
-		return "", "", fmt.Errorf("Attach(%q) failed, err: %v", "/", err)
+		return "", "", fmt.Errorf("Attach failed, err: %v", err)
 	}
 	defer root.Close()
 
@@ -618,9 +617,9 @@ func TestAttachFile(t *testing.T) {
 	}
 
 	a := NewAttachPoint(path, conf)
-	root, err := a.Attach("/")
+	root, err := a.Attach()
 	if err != nil {
-		t.Fatalf("Attach(%q) failed, err: %v", "/", err)
+		t.Fatalf("Attach failed, err: %v", err)
 	}
 
 	if _, _, _, err := root.Open(p9.ReadWrite); err != nil {
@@ -649,31 +648,6 @@ func TestAttachFile(t *testing.T) {
 	}
 }
 
-func TestAttachError(t *testing.T) {
-	conf := Config{ROMount: false}
-	root, err := ioutil.TempDir("", "root-")
-	if err != nil {
-		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
-	}
-	defer os.RemoveAll(root)
-	a := NewAttachPoint(root, conf)
-
-	c := path.Join(root, "test")
-	if err := os.Mkdir(c, 0700); err != nil {
-		t.Fatalf("os.Create(%q) failed, err: %v", c, err)
-	}
-
-	for _, p := range []string{"test", "/test/../", "/test/./", "/test//"} {
-		_, err := a.Attach(p)
-		if err == nil {
-			t.Fatalf("Attach(%q) should have failed", p)
-		}
-		if want := "invalid path"; !strings.Contains(err.Error(), want) {
-			t.Fatalf("Attach(%q) wrong error, got: %v, wanted: %v", p, err, want)
-		}
-	}
-}
-
 func TestDoubleAttachError(t *testing.T) {
 	conf := Config{ROMount: false}
 	root, err := ioutil.TempDir("", "root-")
@@ -683,10 +657,10 @@ func TestDoubleAttachError(t *testing.T) {
 	defer os.RemoveAll(root)
 	a := NewAttachPoint(root, conf)
 
-	if _, err := a.Attach("/"); err != nil {
-		t.Fatalf("Attach(%q) failed: %v", "/", err)
+	if _, err := a.Attach(); err != nil {
+		t.Fatalf("Attach failed: %v", err)
 	}
-	if _, err := a.Attach("/"); err == nil {
-		t.Fatalf("Attach(%q) should have failed", "test")
+	if _, err := a.Attach(); err == nil {
+		t.Fatalf("Attach should have failed, got %v want non-nil", err)
 	}
 }

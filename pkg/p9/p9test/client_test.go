@@ -50,8 +50,16 @@ func TestDonateFD(t *testing.T) {
 
 	// Craft attacher to attach to the mocked file which will return our
 	// temporary file.
-	fileMock := &FileMock{OpenMock: OpenMock{File: f}}
-	attacher := &AttachMock{File: fileMock}
+	fileMock := &FileMock{
+		OpenMock: OpenMock{File: f},
+		GetAttrMock: GetAttrMock{
+			// The mode must be valid always.
+			Valid: p9.AttrMask{Mode: true},
+		},
+	}
+	attacher := &AttachMock{
+		File: fileMock,
+	}
 
 	// Make socket pair.
 	serverSocket, clientSocket, err := unet.SocketPair(false)
@@ -139,14 +147,13 @@ func TestClient(t *testing.T) {
 				a.Called = false
 				a.File = sf
 				a.Err = nil
+				// The attached root must have a valid mode.
+				sf.GetAttrMock.Attr = p9.Attr{Mode: p9.ModeDirectory}
+				sf.GetAttrMock.Valid = p9.AttrMask{Mode: true}
 				var err error
-				sfFile, err = c.Attach("foo")
+				sfFile, err = c.Attach("")
 				if !a.Called {
 					t.Errorf("Attach never Called?")
-				}
-				if a.AttachName != "foo" {
-					// This wasn't carried through?
-					t.Errorf("attachName got %v wanted foo", a.AttachName)
 				}
 				return err
 			},
@@ -155,6 +162,8 @@ func TestClient(t *testing.T) {
 			name: "bad-walk",
 			want: sentinelErr,
 			fn: func(c *p9.Client) error {
+				// Walk only called when WalkGetAttr not available.
+				sf.WalkGetAttrMock.Err = syscall.ENOSYS
 				sf.WalkMock.File = d
 				sf.WalkMock.Err = sentinelErr
 				_, _, err := sfFile.Walk([]string{"foo", "bar"})
@@ -164,21 +173,39 @@ func TestClient(t *testing.T) {
 		{
 			name: "walk-to-dir",
 			fn: func(c *p9.Client) error {
+				// Walk only called when WalkGetAttr not available.
+				sf.WalkGetAttrMock.Err = syscall.ENOSYS
 				sf.WalkMock.Called = false
+				sf.WalkMock.Names = nil
 				sf.WalkMock.File = d
 				sf.WalkMock.Err = nil
 				sf.WalkMock.QIDs = []p9.QID{{Type: 1}}
+				// All intermediate values must be directories.
+				d.WalkGetAttrMock.Err = syscall.ENOSYS
+				d.WalkMock.Called = false
+				d.WalkMock.Names = nil
+				d.WalkMock.File = d // Walk to self.
+				d.WalkMock.Err = nil
+				d.WalkMock.QIDs = []p9.QID{{Type: 1}}
+				d.GetAttrMock.Attr = p9.Attr{Mode: p9.ModeDirectory}
+				d.GetAttrMock.Valid = p9.AttrMask{Mode: true}
 				var qids []p9.QID
 				var err error
 				qids, _, err = sfFile.Walk([]string{"foo", "bar"})
 				if !sf.WalkMock.Called {
 					t.Errorf("Walk never Called?")
 				}
-				if !reflect.DeepEqual(sf.WalkMock.Names, []string{"foo", "bar"}) {
-					t.Errorf("got names %v wanted []{foo, bar}", sf.WalkMock.Names)
+				if !d.GetAttrMock.Called {
+					t.Errorf("GetAttr never Called?")
 				}
-				if len(qids) != 1 || qids[0].Type != 1 {
-					t.Errorf("got qids %v wanted []{{Type: 1}}", qids)
+				if !reflect.DeepEqual(sf.WalkMock.Names, []string{"foo"}) {
+					t.Errorf("got names %v wanted []{foo}", sf.WalkMock.Names)
+				}
+				if !reflect.DeepEqual(d.WalkMock.Names, []string{"bar"}) {
+					t.Errorf("got names %v wanted []{bar}", d.WalkMock.Names)
+				}
+				if len(qids) != 2 || qids[len(qids)-1].Type != 1 {
+					t.Errorf("got qids %v wanted []{..., {Type: 1}}", qids)
 				}
 				return err
 			},
@@ -187,11 +214,20 @@ func TestClient(t *testing.T) {
 			name: "walkgetattr-to-dir",
 			fn: func(c *p9.Client) error {
 				sf.WalkGetAttrMock.Called = false
+				sf.WalkGetAttrMock.Names = nil
 				sf.WalkGetAttrMock.File = d
 				sf.WalkGetAttrMock.Err = nil
 				sf.WalkGetAttrMock.QIDs = []p9.QID{{Type: 1}}
-				sf.WalkGetAttrMock.Attr = p9.Attr{UID: 1}
+				sf.WalkGetAttrMock.Attr = p9.Attr{Mode: p9.ModeDirectory, UID: 1}
 				sf.WalkGetAttrMock.Valid = p9.AttrMask{Mode: true}
+				// See above.
+				d.WalkGetAttrMock.Called = false
+				d.WalkGetAttrMock.Names = nil
+				d.WalkGetAttrMock.File = d // Walk to self.
+				d.WalkGetAttrMock.Err = nil
+				d.WalkGetAttrMock.QIDs = []p9.QID{{Type: 1}}
+				d.WalkGetAttrMock.Attr = p9.Attr{Mode: p9.ModeDirectory, UID: 1}
+				d.WalkGetAttrMock.Valid = p9.AttrMask{Mode: true}
 				var qids []p9.QID
 				var err error
 				var mask p9.AttrMask
@@ -200,11 +236,14 @@ func TestClient(t *testing.T) {
 				if !sf.WalkGetAttrMock.Called {
 					t.Errorf("Walk never Called?")
 				}
-				if !reflect.DeepEqual(sf.WalkGetAttrMock.Names, []string{"foo", "bar"}) {
-					t.Errorf("got names %v wanted []{foo, bar}", sf.WalkGetAttrMock.Names)
+				if !reflect.DeepEqual(sf.WalkGetAttrMock.Names, []string{"foo"}) {
+					t.Errorf("got names %v wanted []{foo}", sf.WalkGetAttrMock.Names)
 				}
-				if len(qids) != 1 || qids[0].Type != 1 {
-					t.Errorf("got qids %v wanted []{{Type: 1}}", qids)
+				if !reflect.DeepEqual(d.WalkGetAttrMock.Names, []string{"bar"}) {
+					t.Errorf("got names %v wanted []{bar}", d.WalkGetAttrMock.Names)
+				}
+				if len(qids) != 2 || qids[len(qids)-1].Type != 1 {
+					t.Errorf("got qids %v wanted []{..., {Type: 1}}", qids)
 				}
 				if !reflect.DeepEqual(attr, sf.WalkGetAttrMock.Attr) {
 					t.Errorf("got attrs %s wanted %s", attr, sf.WalkGetAttrMock.Attr)
