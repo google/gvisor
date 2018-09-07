@@ -90,17 +90,18 @@ type Kernel struct {
 	platform.Platform `state:"nosave"`
 
 	// See InitKernelArgs for the meaning of these fields.
-	featureSet        *cpuid.FeatureSet
-	timekeeper        *Timekeeper
-	tasks             *TaskSet
-	rootUserNamespace *auth.UserNamespace
-	networkStack      inet.Stack `state:"nosave"`
-	applicationCores  uint
-	useHostCores      bool
-	extraAuxv         []arch.AuxEntry
-	vdso              *loader.VDSO
-	rootUTSNamespace  *UTSNamespace
-	rootIPCNamespace  *IPCNamespace
+	featureSet                  *cpuid.FeatureSet
+	timekeeper                  *Timekeeper
+	tasks                       *TaskSet
+	rootUserNamespace           *auth.UserNamespace
+	networkStack                inet.Stack `state:"nosave"`
+	applicationCores            uint
+	useHostCores                bool
+	extraAuxv                   []arch.AuxEntry
+	vdso                        *loader.VDSO
+	rootUTSNamespace            *UTSNamespace
+	rootIPCNamespace            *IPCNamespace
+	rootAbstractSocketNamespace *AbstractSocketNamespace
 
 	// mounts holds the state of the virtual filesystem. mounts is initially
 	// nil, and must be set by calling Kernel.SetRootMountNamespace before
@@ -201,11 +202,14 @@ type InitKernelArgs struct {
 	// Vdso holds the VDSO and its parameter page.
 	Vdso *loader.VDSO
 
-	// RootUTSNamespace is the root UTS namepsace.
+	// RootUTSNamespace is the root UTS namespace.
 	RootUTSNamespace *UTSNamespace
 
-	// RootIPCNamespace is the root IPC namepsace.
+	// RootIPCNamespace is the root IPC namespace.
 	RootIPCNamespace *IPCNamespace
+
+	// RootAbstractSocketNamespace is the root Abstract Socket namespace.
+	RootAbstractSocketNamespace *AbstractSocketNamespace
 }
 
 // Init initialize the Kernel with no tasks.
@@ -231,6 +235,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootUserNamespace = args.RootUserNamespace
 	k.rootUTSNamespace = args.RootUTSNamespace
 	k.rootIPCNamespace = args.RootIPCNamespace
+	k.rootAbstractSocketNamespace = args.RootAbstractSocketNamespace
 	k.networkStack = args.NetworkStack
 	k.applicationCores = args.ApplicationCores
 	if args.UseHostCores {
@@ -509,6 +514,9 @@ type CreateProcessArgs struct {
 	// IPCNamespace is the initial IPC namespace.
 	IPCNamespace *IPCNamespace
 
+	// AbstractSocketNamespace is the initial Abstract Socket namespace.
+	AbstractSocketNamespace *AbstractSocketNamespace
+
 	// Root optionally contains the dirent that serves as the root for the
 	// process. If nil, the mount namespace's root is used as the process'
 	// root.
@@ -651,7 +659,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 		AllowedCPUMask:          sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:            args.UTSNamespace,
 		IPCNamespace:            args.IPCNamespace,
-		AbstractSocketNamespace: NewAbstractSocketNamespace(), // FIXME
+		AbstractSocketNamespace: args.AbstractSocketNamespace,
 	}
 	t, err := k.tasks.NewTask(config)
 	if err != nil {
@@ -837,6 +845,11 @@ func (k *Kernel) RootUTSNamespace() *UTSNamespace {
 // RootIPCNamespace returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
 	return k.rootIPCNamespace
+}
+
+// RootAbstractSocketNamespace returns the root AbstractSocketNamespace.
+func (k *Kernel) RootAbstractSocketNamespace() *AbstractSocketNamespace {
+	return k.rootAbstractSocketNamespace
 }
 
 // RootMountNamespace returns the MountNamespace.

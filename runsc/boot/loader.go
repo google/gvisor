@@ -143,6 +143,19 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
 
+	if err := enableStrace(conf); err != nil {
+		return nil, fmt.Errorf("failed to enable strace: %v", err)
+	}
+
+	// Create an empty network stack because the network namespace may be empty at
+	// this point. Netns is configured before Run() is called. Netstack is
+	// configured using a control uRPC message. Host network is configured inside
+	// Run().
+	networkStack, err := newEmptyNetworkStack(conf, k)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create network: %v", err)
+	}
+
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
@@ -163,26 +176,6 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		caps,
 		auth.NewRootUserNamespace())
 
-	// Create user namespace.
-	// TODO: Not clear what domain name should be here.  It is
-	// not configurable from runtime spec.
-	utsns := kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace)
-
-	ipcns := kernel.NewIPCNamespace(creds.UserNamespace)
-
-	if err := enableStrace(conf); err != nil {
-		return nil, fmt.Errorf("failed to enable strace: %v", err)
-	}
-
-	// Create an empty network stack because the network namespace may be empty at
-	// this point. Netns is configured before Run() is called. Netstack is
-	// configured using a control uRPC message. Host network is configured inside
-	// Run().
-	networkStack, err := newEmptyNetworkStack(conf, k)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create network: %v", err)
-	}
-
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
@@ -191,10 +184,11 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		RootUserNamespace: creds.UserNamespace,
 		NetworkStack:      networkStack,
 		// TODO: use number of logical processors from cgroups.
-		ApplicationCores: uint(runtime.NumCPU()),
-		Vdso:             vdso,
-		RootUTSNamespace: utsns,
-		RootIPCNamespace: ipcns,
+		ApplicationCores:            uint(runtime.NumCPU()),
+		Vdso:                        vdso,
+		RootUTSNamespace:            kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace),
+		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
+		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 	}); err != nil {
 		return nil, fmt.Errorf("error initializing kernel: %v", err)
 	}
@@ -244,7 +238,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 		log.Infof("Panic signal set to %v(%d)", ps, conf.PanicSignal)
 	}
 
-	procArgs, err := newProcess(spec, creds, utsns, ipcns, k)
+	procArgs, err := newProcess(spec, creds, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root process: %v", err)
 	}
@@ -265,7 +259,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 }
 
 // newProcess creates a process that can be run with kernel.CreateProcess.
-func newProcess(spec *specs.Spec, creds *auth.Credentials, utsns *kernel.UTSNamespace, ipcns *kernel.IPCNamespace, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
+func newProcess(spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -274,15 +268,16 @@ func newProcess(spec *specs.Spec, creds *auth.Credentials, utsns *kernel.UTSName
 
 	// Create the process arguments.
 	procArgs := kernel.CreateProcessArgs{
-		Argv:                 spec.Process.Args,
-		Envv:                 spec.Process.Env,
-		WorkingDirectory:     spec.Process.Cwd, // Defaults to '/' if empty.
-		Credentials:          creds,
-		Umask:                0022,
-		Limits:               ls,
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		UTSNamespace:         utsns,
-		IPCNamespace:         ipcns,
+		Argv:                    spec.Process.Args,
+		Envv:                    spec.Process.Env,
+		WorkingDirectory:        spec.Process.Cwd, // Defaults to '/' if empty.
+		Credentials:             creds,
+		Umask:                   0022,
+		Limits:                  ls,
+		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
+		UTSNamespace:            k.RootUTSNamespace(),
+		IPCNamespace:            k.RootIPCNamespace(),
+		AbstractSocketNamespace: k.RootAbstractSocketNamespace(),
 	}
 	return procArgs, nil
 }
@@ -421,12 +416,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	// TODO New containers should be started in new PID namespaces
 	// when indicated by the spec.
 
-	procArgs, err := newProcess(
-		spec,
-		creds,
-		l.k.RootUTSNamespace(),
-		l.k.RootIPCNamespace(),
-		l.k)
+	procArgs, err := newProcess(spec, creds, l.k)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create new process: %v", err)
 	}

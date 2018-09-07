@@ -95,17 +95,18 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		proc.Kernel.RootUserNamespace())
 
 	initArgs := kernel.CreateProcessArgs{
-		Filename:             args.Filename,
-		Argv:                 args.Argv,
-		Envv:                 args.Envv,
-		WorkingDirectory:     args.WorkingDirectory,
-		Credentials:          creds,
-		FDMap:                fdm,
-		Umask:                0022,
-		Limits:               l,
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		UTSNamespace:         proc.Kernel.RootUTSNamespace(),
-		IPCNamespace:         proc.Kernel.RootIPCNamespace(),
+		Filename:                args.Filename,
+		Argv:                    args.Argv,
+		Envv:                    args.Envv,
+		WorkingDirectory:        args.WorkingDirectory,
+		Credentials:             creds,
+		FDMap:                   fdm,
+		Umask:                   0022,
+		Limits:                  l,
+		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
+		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
+		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
+		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
 	mounter := fs.FileOwnerFromContext(ctx)
