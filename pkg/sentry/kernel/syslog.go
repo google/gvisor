@@ -86,14 +86,18 @@ func (s *syslog) Log() []byte {
 		return m
 	}
 
-	time := 0.0
+	const format = "<6>[%11.6f] %s\n"
+
+	s.msg = append(s.msg, []byte(fmt.Sprintf(format, 0.0, "Starting gVisor..."))...)
+
+	time := 0.1
 	for i := 0; i < 10; i++ {
 		time += rand.Float64() / 2
-		s.msg = append(s.msg, []byte(fmt.Sprintf("<6>[%11.6f] %s\n", time, selectMessage()))...)
+		s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, selectMessage()))...)
 	}
 
 	time += rand.Float64() / 2
-	s.msg = append(s.msg, []byte(fmt.Sprintf("<6>[%11.6f] Ready!\n", time))...)
+	s.msg = append(s.msg, []byte(fmt.Sprintf(format, time, "Ready!"))...)
 
 	// Return a copy.
 	o := make([]byte, len(s.msg))
