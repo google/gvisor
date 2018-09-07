@@ -84,6 +84,10 @@ type Loader struct {
 	// spec is the base configuration for the root container.
 	spec *specs.Spec
 
+	// startSignalForwarding enables forwarding of signals to the sandboxed
+	// container. It should be called after the init process is loaded.
+	startSignalForwarding func() func()
+
 	// stopSignalForwarding disables forwarding of signals to the sandboxed
 	// container. It should be called when a sandbox is destroyed.
 	stopSignalForwarding func()
@@ -226,7 +230,7 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	}
 	// Ensure that signals received are forwarded to the emulated kernel.
 	ps := syscall.Signal(conf.PanicSignal)
-	stopSignalForwarding := sighandling.PrepareForwarding(k, ps)()
+	startSignalForwarding := sighandling.PrepareForwarding(k, ps)
 	if conf.PanicSignal != -1 {
 		// Panics if the sentry receives 'conf.PanicSignal'.
 		panicChan := make(chan os.Signal, 1)
@@ -244,15 +248,15 @@ func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console 
 	}
 
 	l := &Loader{
-		k:                    k,
-		ctrl:                 ctrl,
-		conf:                 conf,
-		console:              console,
-		watchdog:             watchdog,
-		ioFDs:                ioFDs,
-		spec:                 spec,
-		stopSignalForwarding: stopSignalForwarding,
-		rootProcArgs:         procArgs,
+		k:                     k,
+		ctrl:                  ctrl,
+		conf:                  conf,
+		console:               console,
+		watchdog:              watchdog,
+		ioFDs:                 ioFDs,
+		spec:                  spec,
+		startSignalForwarding: startSignalForwarding,
+		rootProcArgs:          procArgs,
 	}
 	ctrl.manager.l = l
 	return l, nil
@@ -291,7 +295,9 @@ func (l *Loader) Destroy() {
 	if l.ctrl != nil {
 		l.ctrl.srv.Stop()
 	}
-	l.stopSignalForwarding()
+	if l.stopSignalForwarding != nil {
+		l.stopSignalForwarding()
+	}
 	l.watchdog.Stop()
 }
 
@@ -379,6 +385,9 @@ func (l *Loader) run() error {
 		// CreateProcess takes a reference on FDMap if successful.
 		l.rootProcArgs.FDMap.DecRef()
 	}
+
+	// Start signal forwarding only after an init process is created.
+	l.stopSignalForwarding = l.startSignalForwarding()
 
 	log.Infof("Process should have started...")
 	l.watchdog.Start()
