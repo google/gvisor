@@ -241,7 +241,7 @@ func configs(opts ...configOption) []*boot.Config {
 			}
 			c.Platform = boot.PlatformKVM
 		case nonExclusiveFS:
-			c.FileAccess = boot.FileAccessProxy
+			c.FileAccess = boot.FileAccessShared
 		default:
 			panic(fmt.Sprintf("unknown config option %v", o))
 
@@ -1368,10 +1368,10 @@ func TestAbbreviatedIDs(t *testing.T) {
 // Check that modifications to a volume mount are propigated into and out of
 // the sandbox.
 func TestContainerVolumeContentsShared(t *testing.T) {
-	// Only run this test with shared proxy, since that is the only
+	// Only run this test with shared file access, since that is the only
 	// behavior it is testing.
 	conf := testutil.TestConfig()
-	conf.FileAccess = boot.FileAccessProxy
+	conf.FileAccess = boot.FileAccessShared
 	t.Logf("Running test with conf: %+v", conf)
 
 	// Main process just sleeps. We will use "exec" to probe the state of

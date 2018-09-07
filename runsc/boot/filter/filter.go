@@ -30,7 +30,6 @@ import (
 // Options are seccomp filter related options.
 type Options struct {
 	Platform     platform.Platform
-	WhitelistFS  bool
 	HostNetwork  bool
 	ControllerFD int
 }
@@ -44,10 +43,6 @@ func Install(opt Options) error {
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
-	if opt.WhitelistFS {
-		Report("direct file access allows unrestricted file access!")
-		s.Merge(whitelistFSFilters())
-	}
 	if opt.HostNetwork {
 		Report("host networking enabled: syscall filters less restrictive!")
 		s.Merge(hostInetFilters())

@@ -85,8 +85,11 @@ go_test(
     deps = [
         "//pkg/control/server",
         "//pkg/log",
+        "//pkg/p9",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
+        "//pkg/unet",
+        "//runsc/fsgofer",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
     ],
 )

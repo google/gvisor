@@ -60,28 +60,23 @@ func (p PlatformType) String() string {
 type FileAccessType int
 
 const (
-	// FileAccessProxy sends IO requests to a Gofer process that validates the
+	// FileAccessShared sends IO requests to a Gofer process that validates the
 	// requests and forwards them to the host.
-	FileAccessProxy FileAccessType = iota
+	FileAccessShared FileAccessType = iota
 
-	// FileAccessProxyExclusive is the same as FileAccessProxy, but enables
+	// FileAccessExclusive is the same as FileAccessShared, but enables
 	// extra caching for improved performance. It should only be used if
 	// the sandbox has exclusive access to the filesystem.
-	FileAccessProxyExclusive
-
-	// FileAccessDirect connects the sandbox directly to the host filesystem.
-	FileAccessDirect
+	FileAccessExclusive
 )
 
 // MakeFileAccessType converts type from string.
 func MakeFileAccessType(s string) (FileAccessType, error) {
 	switch s {
-	case "proxy-shared":
-		return FileAccessProxy, nil
-	case "proxy-exclusive":
-		return FileAccessProxyExclusive, nil
-	case "direct":
-		return FileAccessDirect, nil
+	case "shared":
+		return FileAccessShared, nil
+	case "exclusive":
+		return FileAccessExclusive, nil
 	default:
 		return 0, fmt.Errorf("invalid file access type %q", s)
 	}
@@ -89,12 +84,10 @@ func MakeFileAccessType(s string) (FileAccessType, error) {
 
 func (f FileAccessType) String() string {
 	switch f {
-	case FileAccessProxy:
-		return "proxy-shared"
-	case FileAccessProxyExclusive:
-		return "proxy-exclusive"
-	case FileAccessDirect:
-		return "direct"
+	case FileAccessShared:
+		return "shared"
+	case FileAccessExclusive:
+		return "exclusive"
 	default:
 		return fmt.Sprintf("unknown(%d)", f)
 	}

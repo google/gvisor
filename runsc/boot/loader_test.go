@@ -20,14 +20,18 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 )
 
 func init() {
@@ -39,7 +43,6 @@ func testConfig() *Config {
 	return &Config{
 		RootDir:        "unused_root_dir",
 		Network:        NetworkNone,
-		FileAccess:     FileAccessDirect,
 		DisableSeccomp: true,
 	}
 }
@@ -58,23 +61,62 @@ func testSpec() *specs.Spec {
 	}
 }
 
-func createLoader() (*Loader, error) {
+// startGofer starts a new gofer routine serving 'root' path. It returns the
+// sandbox side of the connection, and a function that when called will stop the
+// gofer.
+func startGofer(root string) (int, func(), error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return 0, nil, err
+	}
+	sandboxEnd, goferEnd := fds[0], fds[1]
+
+	socket, err := unet.NewSocket(goferEnd)
+	if err != nil {
+		syscall.Close(sandboxEnd)
+		syscall.Close(goferEnd)
+		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
+	}
+	go func() {
+		at := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
+		s := p9.NewServer(at)
+		if err := s.Handle(socket); err != nil {
+			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
+		}
+	}()
+	// Closing the gofer FD will stop the gofer and exit goroutine above.
+	return sandboxEnd, func() { syscall.Close(goferEnd) }, nil
+}
+
+func createLoader() (*Loader, func(), error) {
 	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	conf := testConfig()
 	spec := testSpec()
-	return New(spec, conf, fd, nil, false)
+
+	sandEnd, cleanup, err := startGofer(spec.Root.Path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	l, err := New(spec, conf, fd, []int{sandEnd}, false)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return l, cleanup, nil
 }
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
-	s, err := createLoader()
+	s, cleanup, err := createLoader()
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
 	defer s.Destroy()
+	defer cleanup()
 
 	// Start a goroutine to read the start chan result, otherwise Run will
 	// block forever.
@@ -106,11 +148,12 @@ func TestRun(t *testing.T) {
 // TestStartSignal tests that the controller Start message will cause
 // WaitForStartSignal to return.
 func TestStartSignal(t *testing.T) {
-	s, err := createLoader()
+	s, cleanup, err := createLoader()
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
 	defer s.Destroy()
+	defer cleanup()
 
 	// We aren't going to wait on this application, so the control server
 	// needs to be shut down manually.
@@ -330,7 +373,14 @@ func TestCreateMountNamespace(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
 			ctx := contexttest.Context(t)
-			mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, nil)
+
+			sandEnd, cleanup, err := startGofer(tc.spec.Root.Path)
+			if err != nil {
+				t.Fatalf("failed to create gofer: %v", err)
+			}
+			defer cleanup()
+
+			mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, []int{sandEnd})
 			if err != nil {
 				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 			}
@@ -352,7 +402,6 @@ func TestRestoreEnvironment(t *testing.T) {
 	testCases := []struct {
 		name          string
 		spec          *specs.Spec
-		fileAccess    FileAccessType
 		ioFDs         []int
 		errorExpected bool
 		expectedRenv  fs.RestoreEnvironment
@@ -375,7 +424,6 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -430,7 +478,6 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0, 1},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -489,7 +536,6 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 				},
 			},
-			fileAccess:    FileAccessProxy,
 			ioFDs:         []int{0},
 			errorExpected: false,
 			expectedRenv: fs.RestoreEnvironment{
@@ -534,48 +580,10 @@ func TestRestoreEnvironment(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "whitelist error test",
-			spec: &specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/dev/fd-foo",
-						Type:        "bind",
-					},
-				},
-			},
-			fileAccess:    FileAccessDirect,
-			ioFDs:         []int{0, 1},
-			errorExpected: true,
-		},
-		{
-			name: "bad options test",
-			spec: &specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/dev/fd-foo",
-						Type:        "tmpfs",
-						Options:     []string{"invalid_option=true"},
-					},
-				},
-			},
-			fileAccess:    FileAccessDirect,
-			ioFDs:         []int{0},
-			errorExpected: true,
-		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
-			conf.FileAccess = tc.fileAccess
 			fds := &fdDispenser{fds: tc.ioFDs}
 			actualRenv, err := createRestoreEnvironment(tc.spec, conf, fds)
 			if !tc.errorExpected && err != nil {

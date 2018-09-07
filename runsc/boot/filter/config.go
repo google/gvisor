@@ -264,45 +264,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 }
 
-// whitelistFSFilters returns syscalls made by whitelistFS. Using WhitelistFS
-// is less secure because it runs inside the Sentry and must be able to perform
-// file operations that would otherwise be disabled by seccomp when a Gofer is
-// used. When whitelistFS is not used, openning new FD in the Sentry is
-// disallowed.
-func whitelistFSFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		syscall.SYS_ACCESS:          {},
-		syscall.SYS_FCHMOD:          {},
-		syscall.SYS_FSTAT:           {},
-		syscall.SYS_FSYNC:           {},
-		syscall.SYS_FTRUNCATE:       {},
-		syscall.SYS_GETCWD:          {},
-		syscall.SYS_GETDENTS:        {},
-		syscall.SYS_GETDENTS64:      {},
-		syscall.SYS_LSEEK:           {},
-		syscall.SYS_LSTAT:           {},
-		syscall.SYS_MKDIR:           {},
-		syscall.SYS_MKDIRAT:         {},
-		syscall.SYS_NEWFSTATAT:      {},
-		syscall.SYS_OPEN:            {},
-		syscall.SYS_OPENAT:          {},
-		syscall.SYS_PREAD64:         {},
-		syscall.SYS_PWRITE64:        {},
-		syscall.SYS_READ:            {},
-		syscall.SYS_READLINK:        {},
-		syscall.SYS_READLINKAT:      {},
-		syscall.SYS_RENAMEAT:        {},
-		syscall.SYS_STAT:            {},
-		syscall.SYS_SYMLINK:         {},
-		syscall.SYS_SYMLINKAT:       {},
-		syscall.SYS_SYNC_FILE_RANGE: {},
-		syscall.SYS_UNLINK:          {},
-		syscall.SYS_UNLINKAT:        {},
-		syscall.SYS_UTIMENSAT:       {},
-		syscall.SYS_WRITE:           {},
-	}
-}
-
 // hostInetFilters contains syscalls that are needed by sentry/socket/hostinet.
 func hostInetFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{

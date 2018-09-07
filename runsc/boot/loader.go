@@ -341,7 +341,6 @@ func (l *Loader) run() error {
 	} else {
 		opts := filter.Options{
 			Platform:     l.k.Platform,
-			WhitelistFS:  l.conf.FileAccess == FileAccessDirect,
 			HostNetwork:  l.conf.Network == NetworkHost,
 			ControllerFD: l.ctrl.srv.FD(),
 		}

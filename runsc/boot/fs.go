@@ -204,19 +204,12 @@ func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *f
 	)
 
 	switch conf.FileAccess {
-	case FileAccessProxy, FileAccessProxyExclusive:
+	case FileAccessShared, FileAccessExclusive:
 		fd := fds.remove()
 		log.Infof("Mounting root over 9P, ioFD: %d", fd)
 		hostFS := mustFindFilesystem("9p")
 		opts := p9MountOptions(conf, fd)
 		rootInode, err = hostFS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","))
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate root mount point: %v", err)
-		}
-
-	case FileAccessDirect:
-		hostFS := mustFindFilesystem("whitelistfs")
-		rootInode, err = hostFS.Mount(ctx, rootDevice, mf, "root="+spec.Root.Path+",dont_translate_ownership=true")
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate root mount point: %v", err)
 		}
@@ -289,13 +282,10 @@ func getMountNameAndOptions(conf *Config, m specs.Mount, fds *fdDispenser) (stri
 
 	case bind:
 		switch conf.FileAccess {
-		case FileAccessProxy, FileAccessProxyExclusive:
+		case FileAccessShared, FileAccessExclusive:
 			fd := fds.remove()
 			fsName = "9p"
 			opts = p9MountOptions(conf, fd)
-		case FileAccessDirect:
-			fsName = "whitelistfs"
-			opts = []string{"root=" + m.Source, "dont_translate_ownership=true"}
 		default:
 			err = fmt.Errorf("invalid file access type: %v", conf.FileAccess)
 		}
@@ -423,7 +413,7 @@ func p9MountOptions(conf *Config, fd int) []string {
 		"wfdno=" + strconv.Itoa(fd),
 		"privateunixsocket=true",
 	}
-	if conf.FileAccess == FileAccessProxy {
+	if conf.FileAccess == FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
 	return opts
@@ -503,9 +493,6 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 // createRestoreEnvironment builds a fs.RestoreEnvironment called renv by adding the mounts
 // to the environment.
 func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) (*fs.RestoreEnvironment, error) {
-	if conf.FileAccess == FileAccessDirect {
-		return nil, fmt.Errorf("host filesystem with whitelist not supported with S/R")
-	}
 	renv := &fs.RestoreEnvironment{
 		MountSources: make(map[string][]fs.MountArgs),
 	}

@@ -356,12 +356,8 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
 	}
 
-	if conf.FileAccess == boot.FileAccessDirect {
-		log.Infof("Sandbox will be started in the current mount namespace")
-	} else {
-		log.Infof("Sandbox will be started in new mount namespace")
-		nss = append(nss, specs.LinuxNamespace{Type: specs.MountNamespace})
-	}
+	log.Infof("Sandbox will be started in new mount namespace")
+	nss = append(nss, specs.LinuxNamespace{Type: specs.MountNamespace})
 
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
@@ -377,9 +373,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// User namespace depends on the following options:
 	//   - Host network/filesystem: requires to run inside the user namespace
 	//       specified in the spec or the current namespace if none is configured.
-	//   - Gofer: when using a Gofer, the sandbox process can run isolated in a
-	//       new user namespace with only the "nobody" user and group.
-	if conf.Network == boot.NetworkHost || conf.FileAccess == boot.FileAccessDirect {
+	if conf.Network == boot.NetworkHost {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)

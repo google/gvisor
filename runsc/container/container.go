@@ -615,11 +615,6 @@ func (c *Container) waitForStopped() error {
 }
 
 func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, error) {
-	if conf.FileAccess == boot.FileAccessDirect {
-		// Don't start a gofer. The sandbox will access host FS directly.
-		return nil, nil
-	}
-
 	if err := setupFS(spec, conf, bundleDir); err != nil {
 		return nil, fmt.Errorf("failed to setup mounts: %v", err)
 	}

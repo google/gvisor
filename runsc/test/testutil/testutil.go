@@ -109,7 +109,7 @@ func TestConfig() *boot.Config {
 		Network:        boot.NetworkNone,
 		Strace:         true,
 		MultiContainer: true,
-		FileAccess:     boot.FileAccessProxyExclusive,
+		FileAccess:     boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 	}
 }
