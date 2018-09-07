@@ -77,11 +77,6 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		if m.Type != "bind" || !specutils.IsSupportedDevMount(m) {
 			continue
 		}
-		src := m.Source
-		srcfi, err := os.Stat(src)
-		if err != nil {
-			return fmt.Errorf("failed to stat() mount source: %v", err)
-		}
 
 		// It's possible that 'm.Destination' follows symlinks inside the
 		// container.
@@ -90,30 +85,13 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 			return fmt.Errorf("failed to resolve symlinks: %v", err)
 		}
 
-		// Create mount point if it doesn't exits
-		if _, err := os.Stat(dst); os.IsNotExist(err) {
-			if srcfi.IsDir() {
-				if err := os.MkdirAll(dst, 0755); err != nil {
-					return fmt.Errorf("failed to make mount directory %q: %v", dst, err)
-				}
-			} else {
-				if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-					return fmt.Errorf("failed to make mount directory for file %q: %v", filepath.Dir(dst), err)
-				}
-				f, err := os.OpenFile(dst, os.O_CREATE, 0755)
-				if err != nil {
-					return fmt.Errorf("failed to open mount file %q: %v", dst, err)
-				}
-				f.Close()
-			}
-		}
-
 		flags := optionsToFlags(m.Options)
 		flags |= syscall.MS_BIND
-		log.Infof("Mounting src: %q, dst: %q, flags: %#x", src, dst, flags)
-		if err := syscall.Mount(src, dst, m.Type, uintptr(flags), ""); err != nil {
-			return fmt.Errorf("failed to mount src: %q, dst: %q, flags: %#x, err: %v", src, dst, flags, err)
+		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
+		if err := specutils.Mount(m.Source, dst, m.Type, flags); err != nil {
+			return fmt.Errorf("failed to mount %v: %v", m, err)
 		}
+
 		// Make the mount a slave, so that for recursive bind mount, umount won't
 		// propagate to the source.
 		flags = syscall.MS_SLAVE | syscall.MS_REC

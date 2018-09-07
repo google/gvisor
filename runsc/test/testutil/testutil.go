@@ -32,7 +32,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/syndtr/gocapability/capability"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -104,14 +103,14 @@ func FindFile(path string) (string, error) {
 // TestConfig return the default configuration to use in tests.
 func TestConfig() *boot.Config {
 	return &boot.Config{
-		Debug:                         true,
-		LogFormat:                     "text",
-		LogPackets:                    true,
-		Network:                       boot.NetworkNone,
-		Strace:                        true,
-		MultiContainer:                true,
-		FileAccess:                    boot.FileAccessProxyExclusive,
-		TestOnlyAllowRunAsCurrentUser: true,
+		Debug:          true,
+		LogFormat:      "text",
+		LogPackets:     true,
+		Network:        boot.NetworkNone,
+		Strace:         true,
+		MultiContainer: true,
+		FileAccess:     boot.FileAccessProxyExclusive,
+		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 	}
 }
 
@@ -238,14 +237,7 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 // RunAsRoot ensures the test runs with CAP_SYS_ADMIN. If need it will create
 // a new user namespace and reexecute the test as root inside of the namespace.
 func RunAsRoot(m *testing.M) {
-	caps, err := capability.NewPid2(os.Getpid())
-	if err != nil {
-		panic(err.Error())
-	}
-	if err := caps.Load(); err != nil {
-		panic(err.Error())
-	}
-	if caps.Get(capability.EFFECTIVE, capability.CAP_SYS_ADMIN) {
+	if specutils.HasCapSysAdmin() {
 		// Capability: check! Good to run.
 		os.Exit(m.Run())
 	}

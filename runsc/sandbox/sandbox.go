@@ -51,6 +51,10 @@ type Sandbox struct {
 	// Pid is the pid of the running sandbox (immutable). May be 0 is the sandbox
 	// is not running.
 	Pid int `json:"pid"`
+
+	// Chroot is the path to the chroot directory that the sandbox process
+	// is running in.
+	Chroot string `json:"chroot"`
 }
 
 // Create creates the sandbox process.
@@ -392,12 +396,11 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		log.Infof("Sandbox will be started in new user namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 
-		if conf.TestOnlyAllowRunAsCurrentUser {
+		// If we have CAP_SETUID and CAP_SETGID, then we can also run
+		// as user nobody.
+		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
 		} else if specutils.CanSetUIDGID() {
-			// If we have CAP_SETUID and CAP_SETGID, then we can also run
-			// as user nobody.
-
 			// Map nobody in the new namespace to nobody in the parent namespace.
 			const nobody = 65534
 			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{
@@ -418,6 +421,23 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			}
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
+		}
+
+		// If we have CAP_SYS_ADMIN, we can create an empty chroot and
+		// bind-mount the executable inside it.
+		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
+		} else if specutils.HasCapSysAdmin() {
+			log.Infof("Sandbox will be started in minimal chroot")
+			chroot, err := setUpChroot(conf.Platform)
+			if err != nil {
+				return fmt.Errorf("error setting up chroot: %v", err)
+			}
+			cmd.SysProcAttr.Chroot = chroot
+			cmd.Args[0] = "/runsc"
+			cmd.Path = "/runsc"
+		} else {
+			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
 		}
 	}
 
@@ -525,6 +545,11 @@ func (s *Sandbox) Destroy() error {
 		log.Debugf("Killing sandbox %q", s.ID)
 		signalProcess(s.Pid, unix.SIGKILL)
 	}
+
+	if s.Chroot != "" {
+		return tearDownChroot(s.Chroot)
+	}
+
 	return nil
 }
 

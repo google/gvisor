@@ -214,10 +214,11 @@ type Config struct {
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
 	PanicSignal int
 
-	// TestOnlyAllowRunAsCurrentUser should only be used in tests. It
-	// allows runsc to start the sandbox process as the current user if we
-	// do not have capability to set uid/gid to another user.
-	TestOnlyAllowRunAsCurrentUser bool
+	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
+	// tests. It allows runsc to start the sandbox process as the current
+	// user, and without chrooting the sandbox process. This can be
+	// necessary in test environments that have limited capabilities.
+	TestOnlyAllowRunAsCurrentUserWithoutChroot bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.

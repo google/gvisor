@@ -216,3 +216,15 @@ func CanSetUIDGID() bool {
 	return caps.Get(capability.EFFECTIVE, capability.CAP_SETUID) &&
 		caps.Get(capability.EFFECTIVE, capability.CAP_SETGID)
 }
+
+// HasCapSysAdmin returns true if the user has CAP_SYS_ADMIN capability.
+func HasCapSysAdmin() bool {
+	caps, err := capability.NewPid2(os.Getpid())
+	if err != nil {
+		return false
+	}
+	if err := caps.Load(); err != nil {
+		return false
+	}
+	return caps.Get(capability.EFFECTIVE, capability.CAP_SYS_ADMIN)
+}

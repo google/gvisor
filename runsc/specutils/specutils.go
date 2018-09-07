@@ -363,3 +363,44 @@ func DebugLogFile(logDir, subcommand string) (*os.File, error) {
 	filename := fmt.Sprintf("runsc.log.%s.%s", time.Now().Format("20060102-150405.000000"), subcommand)
 	return os.OpenFile(filepath.Join(logDir, filename), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
+
+// Mount creates the mount point and calls Mount with the given flags.
+func Mount(src, dst, typ string, flags uint32) error {
+	// Create the mount point inside. The type must be the same as the
+	// source (file or directory).
+	var isDir bool
+	if typ == "proc" {
+		// Special case, as there is no source directory for proc
+		// mounts.
+		isDir = true
+	} else if fi, err := os.Stat(src); err != nil {
+		return fmt.Errorf("Stat(%q) failed: %v", src, err)
+	} else {
+		isDir = fi.IsDir()
+	}
+
+	if isDir {
+		// Create the destination directory.
+		if err := os.MkdirAll(dst, 0777); err != nil {
+			return fmt.Errorf("Mkdir(%q) failed: %v", dst, err)
+		}
+	} else {
+		// Create the parent destination directory.
+		parent := path.Dir(dst)
+		if err := os.MkdirAll(parent, 0777); err != nil {
+			return fmt.Errorf("Mkdir(%q) failed: %v", parent, err)
+		}
+		// Create the destination file if it does not exist.
+		f, err := os.OpenFile(dst, syscall.O_CREAT, 0777)
+		if err != nil {
+			return fmt.Errorf("Open(%q) failed: %v", dst, err)
+		}
+		f.Close()
+	}
+
+	// Do the mount.
+	if err := syscall.Mount(src, dst, typ, uintptr(flags), ""); err != nil {
+		return fmt.Errorf("Mount(%q, %q, %d) failed: %v", src, dst, flags, err)
+	}
+	return nil
+}
