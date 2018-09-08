@@ -147,8 +147,7 @@ func TestNginx(t *testing.T) {
 	}
 }
 
-// TODO: Enable again when bug is fixed.
-func DISABLED_TestMysql(t *testing.T) {
+func TestMysql(t *testing.T) {
 	if err := testutil.Pull("mysql"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
