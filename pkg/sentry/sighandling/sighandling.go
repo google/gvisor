@@ -87,9 +87,8 @@ func forwardSignals(k *kernel.Kernel, sigchans []chan os.Signal, start, stop, do
 			//
 			// Otherwise ignore the signal.
 			//
-			// TODO: Convert Go's runtime.raise from
-			// tkill to tgkill so PrepareForwarding doesn't need to
-			// be called until after filter installation.
+			// TODO: Drop in Go 1.12, which uses tgkill
+			// in runtime.raise.
 			switch signal {
 			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:
 				dieFromSignal(signal)
