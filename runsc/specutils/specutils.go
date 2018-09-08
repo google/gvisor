@@ -163,18 +163,6 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) 
 	return &spec, nil
 }
 
-// GetPath returns the PATH as a slice of strings given the environemnt
-// variables.
-func GetPath(env []string) []string {
-	const prefix = "PATH="
-	for _, e := range env {
-		if strings.HasPrefix(e, prefix) {
-			return strings.Split(strings.TrimPrefix(e, prefix), ":")
-		}
-	}
-	return nil
-}
-
 // Capabilities takes in spec and returns a TaskCapabilities corresponding to
 // the spec.
 func Capabilities(specCaps *specs.LinuxCapabilities) (*auth.TaskCapabilities, error) {

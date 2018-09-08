@@ -54,6 +54,11 @@ type ExecArgs struct {
 	// Envv is a list of environment variables.
 	Envv []string `json:"envv"`
 
+	// Root defines the root directory for the new process. A reference on
+	// Root must be held for the lifetime of the ExecArgs. If Root is nil,
+	// it will default to the VFS root.
+	Root *fs.Dirent
+
 	// WorkingDirectory defines the working directory for the new process.
 	WorkingDirectory string `json:"wd"`
 
@@ -99,6 +104,7 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		Argv:                    args.Argv,
 		Envv:                    args.Envv,
 		WorkingDirectory:        args.WorkingDirectory,
+		Root:                    args.Root,
 		Credentials:             creds,
 		FDMap:                   fdm,
 		Umask:                   0022,
@@ -109,8 +115,18 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
-	mounter := fs.FileOwnerFromContext(ctx)
 
+	if initArgs.Filename == "" {
+		// Get the full path to the filename from the PATH env variable.
+		paths := fs.GetPath(initArgs.Envv)
+		f, err := proc.Kernel.RootMountNamespace().ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+		if err != nil {
+			return fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+		}
+		initArgs.Filename = f
+	}
+
+	mounter := fs.FileOwnerFromContext(ctx)
 	for appFD, f := range args.FilePayload.Files {
 		enableIoctl := args.StdioIsPty && appFD <= 2
 

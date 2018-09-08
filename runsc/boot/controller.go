@@ -224,21 +224,39 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	return nil
 }
 
+// ExecArgs contains arguments to Execute.
+type ExecArgs struct {
+	control.ExecArgs
+
+	// CID is the ID of the container to exec in.
+	CID string
+}
+
 // Execute runs a command on a created or running sandbox.
-func (cm *containerManager) Execute(e *control.ExecArgs, waitStatus *uint32) error {
+func (cm *containerManager) Execute(e *ExecArgs, waitStatus *uint32) error {
 	log.Debugf("containerManager.Execute: %+v", *e)
 
-	if e.Filename == "" {
-		rootCtx := cm.l.rootProcArgs.NewContext(cm.l.k)
-		rootMns := cm.l.k.RootMountNamespace()
-		var err error
-		if e.Filename, err = getExecutablePath(rootCtx, rootMns, e.Argv[0], e.Envv); err != nil {
-			return fmt.Errorf("error getting executable path for %q: %v", e.Argv[0], err)
-		}
+	// Get the container Root Dirent from the Task, since we must run this
+	// process with the same Root.
+	cm.l.mu.Lock()
+	tgid, ok := cm.l.containerRootTGIDs[e.CID]
+	cm.l.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("cannot exec in container %q: no such container", e.CID)
+	}
+	t := cm.l.k.TaskSet().Root.TaskWithID(kernel.ThreadID(tgid))
+	if t == nil {
+		return fmt.Errorf("cannot exec in container %q: no thread group with ID %d", e.CID, tgid)
+	}
+	t.WithMuLocked(func(t *kernel.Task) {
+		e.Root = t.FSContext().RootDirectory()
+	})
+	if e.Root != nil {
+		defer e.Root.DecRef()
 	}
 
 	proc := control.Proc{Kernel: cm.l.k}
-	if err := proc.Exec(e, waitStatus); err != nil {
+	if err := proc.Exec(&e.ExecArgs, waitStatus); err != nil {
 		return fmt.Errorf("error executing: %+v: %v", e, err)
 	}
 	return nil

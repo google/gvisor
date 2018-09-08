@@ -187,11 +187,16 @@ func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, 
 	}
 	defer conn.Close()
 
+	ea := &boot.ExecArgs{
+		ExecArgs: *e,
+		CID:      cid,
+	}
+
 	// Send a message to the sandbox control server to start the container.
 	var waitStatus uint32
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should execute in the context of that container.
-	if err := conn.Call(boot.ContainerExecute, e, &waitStatus); err != nil {
+	if err := conn.Call(boot.ContainerExecute, ea, &waitStatus); err != nil {
 		return 0, fmt.Errorf("error executing in sandbox: %v", err)
 	}
 
