@@ -36,7 +36,16 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	chrootDst := filepath.Join(chroot, dst)
 	log.Infof("Mounting %q at %q", src, chrootDst)
 
-	return specutils.Mount(src, chrootDst, typ, flags)
+	if err := specutils.Mount(src, chrootDst, typ, flags); err != nil {
+		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
+	}
+
+	// Make sure the mount is accessible to all users, since we will be
+	// running as nobody inside the chroot.
+	if err := os.Chmod(chrootDst, 0777); err != nil {
+		return fmt.Errorf("Chmod(%q) failed: %v", chroot, err)
+	}
+	return nil
 }
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc, proc
