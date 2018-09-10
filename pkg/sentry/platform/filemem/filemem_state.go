@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -126,6 +127,29 @@ func (f *FileMem) LoadFrom(r io.Reader) error {
 	if err := state.Load(r, &f.usage, nil); err != nil {
 		return err
 	}
+
+	// Try to map committed chunks concurrently: For any given chunk, either
+	// this loop or the following one will mmap the chunk first and cache it in
+	// f.mappings for the other, but this loop is likely to run ahead of the
+	// other since it doesn't do any work between mmaps. The rest of this
+	// function doesn't mutate f.usage, so it's safe to iterate concurrently.
+	mapperDone := make(chan struct{})
+	mapperCanceled := int32(0)
+	go func() { // S/R-SAFE: see comment
+		defer func() { close(mapperDone) }()
+		for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+			if atomic.LoadInt32(&mapperCanceled) != 0 {
+				return
+			}
+			if seg.Value().knownCommitted {
+				f.forEachMappingSlice(seg.Range(), func(s []byte) {})
+			}
+		}
+	}()
+	defer func() {
+		atomic.StoreInt32(&mapperCanceled, 1)
+		<-mapperDone
+	}()
 
 	// Load committed pages.
 	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
