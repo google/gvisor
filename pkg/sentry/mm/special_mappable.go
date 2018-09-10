@@ -138,10 +138,15 @@ func (m *SpecialMappable) Length() uint64 {
 // uses an ephemeral file created by mm/shmem.c:shmem_zero_setup(); we should
 // do the same to get non-zero device and inode IDs.
 func NewSharedAnonMappable(length uint64, p platform.Platform) (*SpecialMappable, error) {
-	if length == 0 || length != uint64(usermem.Addr(length).RoundDown()) {
+	if length == 0 {
 		return nil, syserror.EINVAL
 	}
-	fr, err := p.Memory().Allocate(length, usage.Anonymous)
+	alignedLen, ok := usermem.Addr(length).RoundUp()
+	if !ok {
+		return nil, syserror.EINVAL
+	}
+
+	fr, err := p.Memory().Allocate(uint64(alignedLen), usage.Anonymous)
 	if err != nil {
 		return nil, err
 	}
