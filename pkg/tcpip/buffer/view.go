@@ -154,13 +154,11 @@ func (vv *VectorisedView) Size() int {
 
 // ToView returns a single view containing the content of the vectorised view.
 func (vv *VectorisedView) ToView() View {
-	v := make([]byte, vv.size)
-	u := v
-	for i := range vv.views {
-		n := copy(u, vv.views[i])
-		u = u[n:]
+	u := make([]byte, 0, vv.size)
+	for _, v := range vv.views {
+		u = append(u, v...)
 	}
-	return v
+	return u
 }
 
 // Views returns the slice containing the all views.
