@@ -42,6 +42,9 @@ type Boot struct {
 	// control server that is donated to this process.
 	controllerFD int
 
+	// deviceFD is the file descriptor for the platform device file.
+	deviceFD int
+
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs intFlags
 
@@ -74,6 +77,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&b.bundleDir, "bundle", "", "required path to the root of the bundle directory")
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
+	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
@@ -134,7 +138,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	l, err := boot.New(spec, conf, b.controllerFD, b.ioFDs.GetArray(), b.console)
+	l, err := boot.New(spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.console)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}

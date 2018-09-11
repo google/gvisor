@@ -17,6 +17,7 @@ package boot
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -287,7 +288,8 @@ func (cm *containerManager) WaitForLoader(_, _ *struct{}) error {
 
 // RestoreOpts contains options related to restoring a container's file system.
 type RestoreOpts struct {
-	// FilePayload contains the state file to be restored.
+	// FilePayload contains the state file to be restored, followed by the
+	// platform device file if necessary.
 	urpc.FilePayload
 
 	// SandboxID contains the ID of the sandbox.
@@ -300,16 +302,28 @@ type RestoreOpts struct {
 // signal to start.
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
-	if len(o.FilePayload.Files) != 1 {
-		return fmt.Errorf("exactly one file must be provided")
+
+	var specFile, deviceFile *os.File
+	switch numFiles := len(o.FilePayload.Files); numFiles {
+	case 2:
+		// The device file is donated to the platform, so don't Close
+		// it here.
+		deviceFile = o.FilePayload.Files[1]
+		fallthrough
+	case 1:
+		specFile = o.FilePayload.Files[0]
+		defer specFile.Close()
+	case 0:
+		return fmt.Errorf("at least one file must be passed to Restore")
+	default:
+		return fmt.Errorf("at most two files may be passed to Restore")
 	}
-	defer o.FilePayload.Files[0].Close()
 
 	// Destroy the old kernel and create a new kernel.
 	cm.l.k.Pause()
 	cm.l.k.Destroy()
 
-	p, err := createPlatform(cm.l.conf)
+	p, err := createPlatform(cm.l.conf, int(deviceFile.Fd()))
 	if err != nil {
 		return fmt.Errorf("error creating platform: %v", err)
 	}

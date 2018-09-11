@@ -122,9 +122,9 @@ func init() {
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(spec *specs.Spec, conf *Config, controllerFD int, ioFDs []int, console bool) (*Loader, error) {
+func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, ioFDs []int, console bool) (*Loader, error) {
 	// Create kernel and platform.
-	p, err := createPlatform(conf)
+	p, err := createPlatform(conf, deviceFD)
 	if err != nil {
 		return nil, fmt.Errorf("error creating platform: %v", err)
 	}
@@ -301,14 +301,17 @@ func (l *Loader) Destroy() {
 	l.watchdog.Stop()
 }
 
-func createPlatform(conf *Config) (platform.Platform, error) {
+func createPlatform(conf *Config, deviceFD int) (platform.Platform, error) {
 	switch conf.Platform {
 	case PlatformPtrace:
 		log.Infof("Platform: ptrace")
 		return ptrace.New()
 	case PlatformKVM:
 		log.Infof("Platform: kvm")
-		return kvm.New()
+		if deviceFD < 0 {
+			return nil, fmt.Errorf("kvm device fd must be provided")
+		}
+		return kvm.New(os.NewFile(uintptr(deviceFD), "kvm device"))
 	default:
 		return nil, fmt.Errorf("invalid platform %v", conf.Platform)
 	}

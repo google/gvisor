@@ -22,7 +22,6 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
@@ -39,18 +38,12 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	if err := specutils.Mount(src, chrootDst, typ, flags); err != nil {
 		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
 	}
-
-	// Make sure the mount is accessible to all users, since we will be
-	// running as nobody inside the chroot.
-	if err := os.Chmod(chrootDst, 0777); err != nil {
-		return fmt.Errorf("Chmod(%q) failed: %v", chroot, err)
-	}
 	return nil
 }
 
-// setUpChroot creates an empty directory with runsc mounted at /runsc, proc
-// mounted at /proc, and any dev files needed for the platform.
-func setUpChroot(platform boot.PlatformType) (string, error) {
+// setUpChroot creates an empty directory with runsc mounted at /runsc and proc
+// mounted at /proc.
+func setUpChroot() (string, error) {
 	// Create the chroot directory and make it accessible to all users.
 	chroot, err := ioutil.TempDir("", "runsc-sandbox-chroot-")
 	if err != nil {
@@ -75,18 +68,6 @@ func setUpChroot(platform boot.PlatformType) (string, error) {
 		return "", fmt.Errorf("error mounting runsc in chroot: %v", err)
 	}
 
-	// Mount dev files needed for platform.
-	var devMount string
-	switch platform {
-	case boot.PlatformKVM:
-		devMount = "/dev/kvm"
-	}
-	if devMount != "" {
-		if err := mountInChroot(chroot, devMount, devMount, "bind", syscall.MS_BIND); err != nil {
-			return "", fmt.Errorf("error mounting platform device in chroot: %v", err)
-		}
-	}
-
 	return chroot, nil
 }
 
@@ -103,21 +84,6 @@ func tearDownChroot(chroot string) error {
 	exe := filepath.Join(chroot, chrootBinPath)
 	if err := syscall.Unmount(exe, 0); err != nil {
 		return fmt.Errorf("error unmounting %q: %v", exe, err)
-	}
-
-	// Unmount platform dev files.
-	devFiles := []string{"dev/kvm"}
-	for _, f := range devFiles {
-		devPath := filepath.Join(chroot, f)
-		if _, err := os.Stat(devPath); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return fmt.Errorf("Stat(%q) failed: %v", devPath, err)
-		}
-		if err := syscall.Unmount(devPath, 0); err != nil {
-			return fmt.Errorf("error unmounting %q: %v", devPath, err)
-		}
 	}
 
 	// Remove chroot directory.

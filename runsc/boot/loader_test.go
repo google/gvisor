@@ -101,7 +101,7 @@ func createLoader() (*Loader, func(), error) {
 		return nil, nil, err
 	}
 
-	l, err := New(spec, conf, fd, []int{sandEnd}, false)
+	l, err := New(spec, conf, fd, -1 /* device fd */, []int{sandEnd}, false)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

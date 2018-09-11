@@ -18,6 +18,7 @@ go_library(
         "//pkg/control/server",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/platform/kvm",
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/console",

@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/console"
@@ -138,6 +139,14 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f str
 			Files: []*os.File{rf},
 		},
 		SandboxID: s.ID,
+	}
+
+	// If the platform needs a device fd we must pass it in.
+	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+		return err
+	} else if deviceFile != nil {
+		defer deviceFile.Close()
+		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile)
 	}
 
 	conn, err := s.sandboxConnect()
@@ -315,6 +324,16 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nextFD++
 	}
 
+	// If the platform needs a device fd we must pass it in.
+	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+		return err
+	} else if deviceFile != nil {
+		defer deviceFile.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
+		cmd.Args = append(cmd.Args, "--device-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
 	// Sandbox stdio defaults to current process stdio.
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -428,7 +447,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
 		} else if specutils.HasCapSysAdmin() {
 			log.Infof("Sandbox will be started in minimal chroot")
-			chroot, err := setUpChroot(conf.Platform)
+			chroot, err := setUpChroot()
 			if err != nil {
 				return fmt.Errorf("error setting up chroot: %v", err)
 			}
@@ -659,4 +678,23 @@ func signalProcess(pid int, sig syscall.Signal) error {
 		return fmt.Errorf("error sending signal %d to pid %d: %v", sig, pid, err)
 	}
 	return nil
+}
+
+// deviceFileForPlatform opens the device file for the given platform. If the
+// platform does not need a device file, then nil is returned.
+func deviceFileForPlatform(p boot.PlatformType) (*os.File, error) {
+	var (
+		f   *os.File
+		err error
+	)
+	switch p {
+	case boot.PlatformKVM:
+		f, err = kvm.OpenDevice()
+	default:
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error opening device file for platform %q: %v", p, err)
+	}
+	return f, err
 }
