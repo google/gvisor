@@ -98,9 +98,8 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(0),
 		},
 	},
-	syscall.SYS_GETDENTS64: {},
-	syscall.SYS_GETPID:     {},
-	unix.SYS_GETRANDOM:     {},
+	syscall.SYS_GETPID: {},
+	unix.SYS_GETRANDOM: {},
 	syscall.SYS_GETSOCKOPT: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
