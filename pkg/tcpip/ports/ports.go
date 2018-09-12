@@ -27,7 +27,7 @@ const (
 	// firstEphemeral is the first ephemeral port.
 	firstEphemeral uint16 = 16000
 
-	anyIPAddress = tcpip.Address("")
+	anyIPAddress tcpip.Address = ""
 )
 
 type portDescriptor struct {
@@ -95,14 +95,14 @@ func (s *PortManager) PickEphemeralPort(testPort func(p uint16) (bool, *tcpip.Er
 // reserved by another endpoint. If port is zero, ReservePort will search for
 // an unreserved ephemeral port and reserve it, returning its value in the
 // "port" return value.
-func (s *PortManager) ReservePort(network []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) (reservedPort uint16, err *tcpip.Error) {
+func (s *PortManager) ReservePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) (reservedPort uint16, err *tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// If a port is specified, just try to reserve it for all network
 	// protocols.
 	if port != 0 {
-		if !s.reserveSpecificPort(network, transport, addr, port) {
+		if !s.reserveSpecificPort(networks, transport, addr, port) {
 			return 0, tcpip.ErrPortInUse
 		}
 		return port, nil
@@ -110,16 +110,15 @@ func (s *PortManager) ReservePort(network []tcpip.NetworkProtocolNumber, transpo
 
 	// A port wasn't specified, so try to find one.
 	return s.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
-		return s.reserveSpecificPort(network, transport, addr, p), nil
+		return s.reserveSpecificPort(networks, transport, addr, p), nil
 	})
 }
 
 // reserveSpecificPort tries to reserve the given port on all given protocols.
-func (s *PortManager) reserveSpecificPort(network []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) bool {
+func (s *PortManager) reserveSpecificPort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) bool {
 	// Check that the port is available on all network protocols.
-	desc := portDescriptor{0, transport, port}
-	for _, n := range network {
-		desc.network = n
+	for _, network := range networks {
+		desc := portDescriptor{network, transport, port}
 		if addrs, ok := s.allocatedPorts[desc]; ok {
 			if !addrs.isAvailable(addr) {
 				return false
@@ -128,8 +127,8 @@ func (s *PortManager) reserveSpecificPort(network []tcpip.NetworkProtocolNumber,
 	}
 
 	// Reserve port on all network protocols.
-	for _, n := range network {
-		desc.network = n
+	for _, network := range networks {
+		desc := portDescriptor{network, transport, port}
 		m, ok := s.allocatedPorts[desc]
 		if !ok {
 			m = make(bindAddresses)
@@ -143,12 +142,12 @@ func (s *PortManager) reserveSpecificPort(network []tcpip.NetworkProtocolNumber,
 
 // ReleasePort releases the reservation on a port/IP combination so that it can
 // be reserved by other endpoints.
-func (s *PortManager) ReleasePort(network []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) {
+func (s *PortManager) ReleasePort(networks []tcpip.NetworkProtocolNumber, transport tcpip.TransportProtocolNumber, addr tcpip.Address, port uint16) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for _, n := range network {
-		desc := portDescriptor{n, transport, port}
+	for _, network := range networks {
+		desc := portDescriptor{network, transport, port}
 		m := s.allocatedPorts[desc]
 		delete(m, addr)
 		if len(m) == 0 {

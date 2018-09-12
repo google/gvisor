@@ -112,7 +112,7 @@ func (c *testContext) cleanup() {
 	}
 }
 
-func (c *testContext) createV6Endpoint(v4only bool) {
+func (c *testContext) createV6Endpoint(v6only bool) {
 	var err *tcpip.Error
 	c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &c.wq)
 	if err != nil {
@@ -120,7 +120,7 @@ func (c *testContext) createV6Endpoint(v4only bool) {
 	}
 
 	var v tcpip.V6OnlyOption
-	if v4only {
+	if v6only {
 		v = 1
 	}
 	if err := c.ep.SetSockOpt(v); err != nil {
@@ -294,6 +294,76 @@ func testV4Read(c *testContext) {
 	if !bytes.Equal(payload, v) {
 		c.t.Fatalf("Bad payload: got %x, want %x", v, payload)
 	}
+}
+
+func TestBindEphemeralPort(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createV6Endpoint(false)
+
+	if err := c.ep.Bind(tcpip.FullAddress{}, nil); err != nil {
+		t.Fatalf("ep.Bind(...) failed: %v", err)
+	}
+}
+
+func TestBindReservedPort(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createV6Endpoint(false)
+
+	if err := c.ep.Connect(tcpip.FullAddress{Addr: testV6Addr, Port: testPort}); err != nil {
+		c.t.Fatalf("Connect failed: %v", err)
+	}
+
+	addr, err := c.ep.GetLocalAddress()
+	if err != nil {
+		t.Fatalf("GetLocalAddress failed: %v", err)
+	}
+
+	// We can't bind the address reserved by the connected endpoint above.
+	{
+		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &c.wq)
+		if err != nil {
+			t.Fatalf("NewEndpoint failed: %v", err)
+		}
+		defer ep.Close()
+		if got, want := ep.Bind(addr, nil), tcpip.ErrPortInUse; got != want {
+			t.Fatalf("got ep.Bind(...) = %v, want = %v", got, want)
+		}
+	}
+
+	func() {
+		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+		if err != nil {
+			t.Fatalf("NewEndpoint failed: %v", err)
+		}
+		defer ep.Close()
+		// We can't bind ipv4-any on the port reserved by the connected endpoint
+		// above, since the endpoint is dual-stack.
+		if got, want := ep.Bind(tcpip.FullAddress{Port: addr.Port}, nil), tcpip.ErrPortInUse; got != want {
+			t.Fatalf("got ep.Bind(...) = %v, want = %v", got, want)
+		}
+		// We can bind an ipv4 address on this port, though.
+		if err := ep.Bind(tcpip.FullAddress{Addr: stackAddr, Port: addr.Port}, nil); err != nil {
+			t.Fatalf("ep.Bind(...) failed: %v", err)
+		}
+	}()
+
+	// Once the connected endpoint releases its port reservation, we are able to
+	// bind ipv4-any once again.
+	c.ep.Close()
+	func() {
+		ep, err := c.s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &c.wq)
+		if err != nil {
+			t.Fatalf("NewEndpoint failed: %v", err)
+		}
+		defer ep.Close()
+		if err := ep.Bind(tcpip.FullAddress{Port: addr.Port}, nil); err != nil {
+			t.Fatalf("ep.Bind(...) failed: %v", err)
+		}
+	}()
 }
 
 func TestV4ReadOnV6(t *testing.T) {

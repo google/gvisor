@@ -94,7 +94,12 @@ func (e *endpoint) afterLoad() {
 		}
 	}
 
-	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, e.id)
+	// Our saved state had a port, but we don't actually have a
+	// reservation. We need to remove the port from our state, but still
+	// pass it to the reservation machinery.
+	id := e.id
+	e.id.LocalPort = 0
+	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
 	if err != nil {
 		panic(*err)
 	}

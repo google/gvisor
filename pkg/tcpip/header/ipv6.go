@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"strings"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 )
@@ -190,12 +191,5 @@ func IsV4MappedAddress(addr tcpip.Address) bool {
 		return false
 	}
 
-	const prefix = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff"
-	for i := 0; i < len(prefix); i++ {
-		if prefix[i] != addr[i] {
-			return false
-		}
-	}
-
-	return true
+	return strings.HasPrefix(string(addr), "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff")
 }
