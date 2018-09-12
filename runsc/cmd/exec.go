@@ -45,12 +45,13 @@ type Exec struct {
 	cwd string
 	env stringSlice
 	// user contains the UID and GID with which to run the new process.
-	user        user
-	extraKGIDs  stringSlice
-	caps        stringSlice
-	detach      bool
-	processPath string
-	pidFile     string
+	user            user
+	extraKGIDs      stringSlice
+	caps            stringSlice
+	detach          bool
+	processPath     string
+	pidFile         string
+	internalPidFile string
 
 	// consoleSocket is the path to an AF_UNIX socket which will receive a
 	// file descriptor referencing the master end of the console's
@@ -97,6 +98,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&ex.detach, "detach", false, "detach from the container's process")
 	f.StringVar(&ex.processPath, "process", "", "path to the process.json")
 	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
+	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 }
 
@@ -146,9 +148,24 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 
-	ws, err := c.Execute(e)
+	// Start the new process and get it pid.
+	pid, err := c.Execute(e)
 	if err != nil {
 		Fatalf("error getting processes for container: %v", err)
+	}
+
+	// Write the sandbox-internal pid if required.
+	if ex.internalPidFile != "" {
+		pidStr := []byte(strconv.Itoa(int(pid)))
+		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
+			Fatalf("error writing internal pid file %q: %v", ex.internalPidFile, err)
+		}
+	}
+
+	// Wait for the process to exit.
+	ws, err := c.WaitPID(pid)
+	if err != nil {
+		Fatalf("error waiting on pid %d: %v", pid, err)
 	}
 	*waitStatus = ws
 	return subcommands.ExitSuccess

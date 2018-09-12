@@ -41,9 +41,9 @@ const (
 	// container used by "runsc events".
 	ContainerEvent = "containerManager.Event"
 
-	// ContainerExecute is the URPC endpoint for executing a command in a
+	// ContainerExecuteAsync is the URPC endpoint for executing a command in a
 	// container..
-	ContainerExecute = "containerManager.Execute"
+	ContainerExecuteAsync = "containerManager.ExecuteAsync"
 
 	// ContainerPause pauses the container.
 	ContainerPause = "containerManager.Pause"
@@ -233,33 +233,40 @@ type ExecArgs struct {
 	CID string
 }
 
-// Execute runs a command on a created or running sandbox.
-func (cm *containerManager) Execute(e *ExecArgs, waitStatus *uint32) error {
-	log.Debugf("containerManager.Execute: %+v", *e)
+// ExecuteAsync starts running a command on a created or running sandbox. It
+// returns the pid of the new process.
+func (cm *containerManager) ExecuteAsync(args *ExecArgs, pid *int32) error {
+	log.Debugf("containerManager.ExecuteAsync: %+v", args)
 
 	// Get the container Root Dirent from the Task, since we must run this
 	// process with the same Root.
 	cm.l.mu.Lock()
-	tgid, ok := cm.l.containerRootTGIDs[e.CID]
+	tgid, ok := cm.l.containerRootTGIDs[args.CID]
 	cm.l.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("cannot exec in container %q: no such container", e.CID)
+		return fmt.Errorf("cannot exec in container %q: no such container", args.CID)
 	}
 	t := cm.l.k.TaskSet().Root.TaskWithID(kernel.ThreadID(tgid))
 	if t == nil {
-		return fmt.Errorf("cannot exec in container %q: no thread group with ID %d", e.CID, tgid)
+		return fmt.Errorf("cannot exec in container %q: no thread group with ID %d", args.CID, tgid)
 	}
 	t.WithMuLocked(func(t *kernel.Task) {
-		e.Root = t.FSContext().RootDirectory()
+		args.Root = t.FSContext().RootDirectory()
 	})
-	if e.Root != nil {
-		defer e.Root.DecRef()
+	if args.Root != nil {
+		defer args.Root.DecRef()
 	}
 
+	// Start the process.
 	proc := control.Proc{Kernel: cm.l.k}
-	if err := proc.Exec(&e.ExecArgs, waitStatus); err != nil {
-		return fmt.Errorf("error executing: %+v: %v", e, err)
+	newTG, err := control.ExecAsync(&proc, &args.ExecArgs)
+	if err != nil {
+		return fmt.Errorf("error executing: %+v: %v", args, err)
 	}
+
+	// Return the pid of the newly-created process.
+	ts := cm.l.k.TaskSet()
+	*pid = int32(ts.Root.IDOfThreadGroup(newTG))
 	return nil
 }
 

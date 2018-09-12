@@ -187,8 +187,9 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	return pl, nil
 }
 
-// Execute runs the specified command in the container.
-func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, error) {
+// Execute runs the specified command in the container. It returns the pid of
+// the newly created process.
+func (s *Sandbox) Execute(cid string, args *control.ExecArgs) (int32, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", cid, s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -196,20 +197,14 @@ func (s *Sandbox) Execute(cid string, e *control.ExecArgs) (syscall.WaitStatus, 
 	}
 	defer conn.Close()
 
-	ea := &boot.ExecArgs{
-		ExecArgs: *e,
-		CID:      cid,
-	}
+	rpcArgs := &boot.ExecArgs{ExecArgs: *args, CID: cid}
 
 	// Send a message to the sandbox control server to start the container.
-	var waitStatus uint32
-	// TODO: Pass in the container id (cid) here. The sandbox
-	// should execute in the context of that container.
-	if err := conn.Call(boot.ContainerExecute, ea, &waitStatus); err != nil {
+	var pid int32
+	if err := conn.Call(boot.ContainerExecuteAsync, rpcArgs, &pid); err != nil {
 		return 0, fmt.Errorf("error executing in sandbox: %v", err)
 	}
-
-	return syscall.WaitStatus(waitStatus), nil
+	return pid, nil
 }
 
 // Event retrieves stats about the sandbox such as memory and CPU utilization.

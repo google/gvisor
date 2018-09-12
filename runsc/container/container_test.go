@@ -49,11 +49,11 @@ func init() {
 }
 
 // waitForProcessList waits for the given process list to show up in the container.
-func waitForProcessList(s *Container, expected []*control.Process) error {
+func waitForProcessList(cont *Container, expected []*control.Process) error {
 	var got []*control.Process
 	for start := time.Now(); time.Now().Sub(start) < 10*time.Second; {
 		var err error
-		got, err = s.Processes()
+		got, err = cont.Processes()
 		if err != nil {
 			return fmt.Errorf("error getting process data from container: %v", err)
 		}
@@ -485,12 +485,12 @@ func TestExec(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
-		defer s.Destroy()
-		if err := s.Start(conf); err != nil {
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
 
@@ -513,11 +513,11 @@ func TestExec(t *testing.T) {
 		}
 
 		// Verify that "sleep 100" is running.
-		if err := waitForProcessList(s, expectedPL[:1]); err != nil {
+		if err := waitForProcessList(cont, expectedPL[:1]); err != nil {
 			t.Error(err)
 		}
 
-		execArgs := control.ExecArgs{
+		args := &control.ExecArgs{
 			Filename:         "/bin/sleep",
 			Argv:             []string{"sleep", "5"},
 			WorkingDirectory: "/",
@@ -528,17 +528,19 @@ func TestExec(t *testing.T) {
 		// First, start running exec (whick blocks).
 		status := make(chan error, 1)
 		go func() {
-			exitStatus, err := s.Execute(&execArgs)
+			exitStatus, err := cont.executeSync(args)
 			if err != nil {
+				log.Debugf("error executing: %v", err)
 				status <- err
 			} else if exitStatus != 0 {
+				log.Debugf("bad status: %d", exitStatus)
 				status <- fmt.Errorf("failed with exit status: %v", exitStatus)
 			} else {
 				status <- nil
 			}
 		}()
 
-		if err := waitForProcessList(s, expectedPL); err != nil {
+		if err := waitForProcessList(cont, expectedPL); err != nil {
 			t.Fatal(err)
 		}
 
@@ -548,7 +550,7 @@ func TestExec(t *testing.T) {
 			t.Fatalf("container timed out waiting for exec to finish.")
 		case st := <-status:
 			if st != nil {
-				t.Errorf("container failed to exec %v: %v", execArgs, err)
+				t.Errorf("container failed to exec %v: %v", args, err)
 			}
 		}
 	}
@@ -884,15 +886,18 @@ func TestPauseResume(t *testing.T) {
 		}
 
 		script := fmt.Sprintf("while [[ -f %q ]]; do sleep 0.1; done", lock.Name())
-		execArgs := control.ExecArgs{
+		args := &control.ExecArgs{
 			Filename:         "/bin/bash",
 			Argv:             []string{"bash", "-c", script},
 			WorkingDirectory: "/",
 			KUID:             uid,
 		}
 
-		// First, start running exec (which blocks).
-		go cont.Execute(&execArgs)
+		// First, start running exec.
+		_, err = cont.Execute(args)
+		if err != nil {
+			t.Fatalf("error executing: %v", err)
+		}
 
 		// Verify that "sleep 5" is running.
 		if err := waitForProcessList(cont, expectedPL); err != nil {
@@ -1022,12 +1027,12 @@ func TestCapabilities(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
-		defer s.Destroy()
-		if err := s.Start(conf); err != nil {
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
 
@@ -1048,7 +1053,7 @@ func TestCapabilities(t *testing.T) {
 				Cmd:  "exe",
 			},
 		}
-		if err := waitForProcessList(s, expectedPL[:1]); err != nil {
+		if err := waitForProcessList(cont, expectedPL[:1]); err != nil {
 			t.Fatalf("Failed to wait for sleep to start, err: %v", err)
 		}
 
@@ -1064,7 +1069,7 @@ func TestCapabilities(t *testing.T) {
 		// Need to traverse the intermediate directory.
 		os.Chmod(rootDir, 0755)
 
-		execArgs := control.ExecArgs{
+		args := &control.ExecArgs{
 			Filename:         exePath,
 			Argv:             []string{exePath},
 			WorkingDirectory: "/",
@@ -1074,17 +1079,17 @@ func TestCapabilities(t *testing.T) {
 		}
 
 		// "exe" should fail because we don't have the necessary permissions.
-		if _, err := s.Execute(&execArgs); err == nil {
+		if _, err := cont.executeSync(args); err == nil {
 			t.Fatalf("container executed without error, but an error was expected")
 		}
 
 		// Now we run with the capability enabled and should succeed.
-		execArgs.Capabilities = &auth.TaskCapabilities{
+		args.Capabilities = &auth.TaskCapabilities{
 			EffectiveCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 		}
 		// "exe" should not fail this time.
-		if _, err := s.Execute(&execArgs); err != nil {
-			t.Fatalf("container failed to exec %v: %v", execArgs, err)
+		if _, err := cont.executeSync(args); err != nil {
+			t.Fatalf("container failed to exec %v: %v", args, err)
 		}
 	}
 }
@@ -1404,11 +1409,11 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	filename := filepath.Join(dir, "file")
 
 	// File does not exist yet. Reading from the sandbox should fail.
-	execArgsTestFile := control.ExecArgs{
+	argsTestFile := &control.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", filename},
 	}
-	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+	if ws, err := c.executeSync(argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", ws.ExitStatus(), err)
@@ -1420,7 +1425,7 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	}
 
 	// Now we should be able to test the file from within the sandbox.
-	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+	if ws, err := c.executeSync(argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("test %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -1433,18 +1438,18 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	}
 
 	// File should no longer exist at the old path within the sandbox.
-	if ws, err := c.Execute(&execArgsTestFile); err != nil {
+	if ws, err := c.executeSync(argsTestFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", filename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", filename, ws.ExitStatus())
 	}
 
 	// We should be able to test the new filename from within the sandbox.
-	execArgsTestNewFile := control.ExecArgs{
+	argsTestNewFile := &control.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", newFilename},
 	}
-	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
+	if ws, err := c.executeSync(argsTestNewFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("test %q exited with code %v, wanted zero", newFilename, ws.ExitStatus())
@@ -1456,20 +1461,20 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	}
 
 	// Renamed file should no longer exist at the old path within the sandbox.
-	if ws, err := c.Execute(&execArgsTestNewFile); err != nil {
+	if ws, err := c.executeSync(argsTestNewFile); err != nil {
 		t.Fatalf("unexpected error testing file %q: %v", newFilename, err)
 	} else if ws.ExitStatus() == 0 {
 		t.Errorf("test %q exited with code %v, wanted not zero", newFilename, ws.ExitStatus())
 	}
 
 	// Now create the file from WITHIN the sandbox.
-	execArgsTouch := control.ExecArgs{
+	argsTouch := &control.ExecArgs{
 		Filename: "/usr/bin/touch",
 		Argv:     []string{"touch", filename},
 		KUID:     auth.KUID(os.Getuid()),
 		KGID:     auth.KGID(os.Getgid()),
 	}
-	if ws, err := c.Execute(&execArgsTouch); err != nil {
+	if ws, err := c.executeSync(argsTouch); err != nil {
 		t.Fatalf("unexpected error touching file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("touch %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -1486,11 +1491,11 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	}
 
 	// Delete the file from within the sandbox.
-	execArgsRemove := control.ExecArgs{
+	argsRemove := &control.ExecArgs{
 		Filename: "/bin/rm",
 		Argv:     []string{"rm", filename},
 	}
-	if ws, err := c.Execute(&execArgsRemove); err != nil {
+	if ws, err := c.executeSync(argsRemove); err != nil {
 		t.Fatalf("unexpected error removing file %q: %v", filename, err)
 	} else if ws.ExitStatus() != 0 {
 		t.Errorf("remove %q exited with code %v, wanted zero", filename, ws.ExitStatus())
@@ -1545,6 +1550,19 @@ func TestGoferExits(t *testing.T) {
 	if c.IsRunning() {
 		t.Errorf("container shouldn't be running, container: %+v", c)
 	}
+}
+
+// executeSync synchronously executes a new process.
+func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
+	pid, err := cont.Execute(args)
+	if err != nil {
+		return 0, fmt.Errorf("error executing: %v", err)
+	}
+	ws, err := cont.WaitPID(pid)
+	if err != nil {
+		return 0, fmt.Errorf("error waiting: %v", err)
+	}
+	return ws, nil
 }
 
 func TestMain(m *testing.M) {

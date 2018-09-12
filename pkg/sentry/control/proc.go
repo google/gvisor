@@ -87,6 +87,24 @@ type ExecArgs struct {
 
 // Exec runs a new task.
 func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
+	newTG, err := proc.execAsync(args)
+	if err != nil {
+		return err
+	}
+
+	// Wait for completion.
+	newTG.WaitExited()
+	*waitStatus = newTG.ExitStatus().Status()
+	return nil
+}
+
+// ExecAsync runs a new task, but doesn't wait for it to finish. It is defined
+// as a function rather than a method to avoid exposing execAsync as an RPC.
+func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, error) {
+	return proc.execAsync(args)
+}
+
+func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
 	// Import file descriptors.
 	l := limits.NewLimitSet()
 	fdm := proc.Kernel.NewFDMap()
@@ -121,7 +139,7 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		paths := fs.GetPath(initArgs.Envv)
 		f, err := proc.Kernel.RootMountNamespace().ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 		if err != nil {
-			return fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+			return nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
 		}
 		initArgs.Filename = f
 	}
@@ -133,7 +151,7 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		// Import the given file FD. This dups the FD as well.
 		file, err := host.ImportFile(ctx, int(f.Fd()), mounter, enableIoctl)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defer file.DecRef()
 
@@ -141,20 +159,11 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 		f.Close()
 
 		if err := fdm.NewFDAt(kdefs.FD(appFD), file, kernel.FDFlags{}, l); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	// Start the new task.
-	newTG, err := proc.Kernel.CreateProcess(initArgs)
-	if err != nil {
-		return err
-	}
-
-	// Wait for completion.
-	newTG.WaitExited()
-	*waitStatus = newTG.ExitStatus().Status()
-	return nil
+	return proc.Kernel.CreateProcess(initArgs)
 }
 
 // PsArgs is the set of arguments to ps.

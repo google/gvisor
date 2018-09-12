@@ -353,13 +353,14 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	return c.Wait()
 }
 
-// Execute runs the specified command in the container.
-func (c *Container) Execute(e *control.ExecArgs) (syscall.WaitStatus, error) {
-	log.Debugf("Execute in container %q, args: %+v", c.ID, e)
+// Execute runs the specified command in the container. It returns the pid of
+// the newly created process.
+func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
+	log.Debugf("Execute in container %q, args: %+v", c.ID, args)
 	if c.Status != Created && c.Status != Running {
 		return 0, fmt.Errorf("cannot exec in container in state %s", c.Status)
 	}
-	return c.Sandbox.Execute(c.ID, e)
+	return c.Sandbox.Execute(c.ID, args)
 }
 
 // Event returns events for the container.
