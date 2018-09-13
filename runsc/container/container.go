@@ -136,13 +136,17 @@ func Load(rootDir, id string) (*Container, error) {
 	// This is inherently racey.
 	if c.Status == Running || c.Status == Created {
 		// Check if the sandbox process is still running.
-		if c.IsRunning() {
-			// TODO: Send a message into the sandbox to
-			// see if this particular container is still running.
-		} else {
+		if !c.Sandbox.IsRunning() {
 			// Sandbox no longer exists, so this container definitely does not exist.
 			c.Status = Stopped
 			c.Sandbox = nil
+		} else if c.Status == Running {
+			// Container state should reflect the actual state of
+			// the application, so we don't consider gofer process
+			// here.
+			if err := c.Signal(syscall.Signal(0)); err != nil {
+				c.Status = Stopped
+			}
 		}
 	}
 
@@ -382,10 +386,12 @@ func (c *Container) Pid() int {
 }
 
 // Wait waits for the container to exit, and returns its WaitStatus.
+// Call to wait on a stopped container is needed to retrieve the exit status
+// and wait returns immediately.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container %q", c.ID)
-	if c.Status == Stopped {
-		return 0, fmt.Errorf("container is stopped")
+	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
+		return 0, fmt.Errorf("container sandbox is not running")
 	}
 	return c.Sandbox.Wait(c.ID)
 }
@@ -394,8 +400,8 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in sandbox %q", pid, c.Sandbox.ID)
-	if c.Status == Stopped {
-		return 0, fmt.Errorf("container is stopped")
+	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
+		return 0, fmt.Errorf("container sandbox is not running")
 	}
 	return c.Sandbox.WaitPID(pid, c.Sandbox.ID)
 }
@@ -404,29 +410,19 @@ func (c *Container) WaitRootPID(pid int32) (syscall.WaitStatus, error) {
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in container %q", pid, c.ID)
-	if c.Status == Stopped {
-		return 0, fmt.Errorf("container is stopped")
+	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
+		return 0, fmt.Errorf("container sandbox is not running")
 	}
-	ws, err := c.Sandbox.WaitPID(pid, c.ID)
-	if err != nil {
-		return 0, err
-	}
-	if c.Sandbox.IsRootContainer(c.ID) {
-		// If waiting for the root, give some time for the sandbox process to exit
-		// to prevent races with resources that might still be in use.
-		if err := c.waitForStopped(); err != nil {
-			return 0, err
-		}
-	}
-	return ws, nil
+	return c.Sandbox.WaitPID(pid, c.ID)
 }
 
 // Signal sends the signal to the container.
+// Signal returns an error if the container is already stopped.
+// TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal) error {
 	log.Debugf("Signal container %q", c.ID)
 	if c.Status == Stopped {
-		log.Warningf("container %q not running, not sending signal %v", c.ID, sig)
-		return nil
+		return fmt.Errorf("container sandbox is stopped")
 	}
 	// TODO: Query the container for its state, then save it.
 	return c.Sandbox.Signal(c.ID, sig)
@@ -437,8 +433,7 @@ func (c *Container) Signal(sig syscall.Signal) error {
 func (c *Container) Checkpoint(f *os.File) error {
 	log.Debugf("Checkpoint container %q", c.ID)
 	if c.Status == Stopped {
-		log.Warningf("container %q not running, not checkpointing", c.ID)
-		return nil
+		return fmt.Errorf("container sandbox is stopped")
 	}
 	return c.Sandbox.Checkpoint(c.ID, f)
 }
@@ -496,93 +491,36 @@ func (c *Container) Processes() ([]*control.Process, error) {
 }
 
 // Destroy frees all resources associated with the container.
+// Destroy returns error if any step fails, and the function can be safely retried.
 func (c *Container) Destroy() error {
 	log.Debugf("Destroy container %q", c.ID)
 
-	// First stop the container.
-	if c.Sandbox != nil {
-		if err := c.Sandbox.Stop(c.ID); err != nil {
-			return err
-		}
+	if err := c.stop(); err != nil {
+		return fmt.Errorf("error stopping container: %v", err)
 	}
 
-	// "If any poststop hook fails, the runtime MUST log a warning, but the
-	// remaining hooks and lifecycle continue as if the hook had succeeded" -OCI spec.
-	if c.Spec.Hooks != nil && (c.Status == Created || c.Status == Running) {
-		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
-	}
-
-	// If we are the first container in the sandbox, take the sandbox down
-	// as well.
-	if c.Sandbox != nil && c.Sandbox.IsRootContainer(c.ID) {
-		if err := c.Sandbox.Destroy(); err != nil {
-			log.Warningf("Failed to destroy sandbox %q: %v", c.Sandbox.ID, err)
-		}
-	}
-	c.Status = Stopped
-	c.Sandbox = nil
-
-	if err := c.destroyGofer(); err != nil {
-		return fmt.Errorf("error destroying gofer: %v", err)
+	if err := destroyFS(c.Spec); err != nil {
+		return fmt.Errorf("error destroying container fs: %v", err)
 	}
 
 	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
 	}
 
+	// "If any poststop hook fails, the runtime MUST log a warning, but the
+	// remaining hooks and lifecycle continue as if the hook had succeeded" -OCI spec.
+	// Based on the OCI, "The post-stop hooks MUST be called after the container is
+	// deleted but before the delete operation returns"
+	// Run it here to:
+	// 1) Conform to the OCI.
+	// 2) Make sure it only runs once, because the root has been deleted, the container
+	// can't be loaded again.
+	if c.Spec.Hooks != nil {
+		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
+	}
+
+	c.Status = Stopped
 	return nil
-}
-
-func (c *Container) destroyGofer() error {
-	if c.GoferPid != 0 {
-		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
-		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
-			log.Warningf("error sending signal %d to pid %d: %v", syscall.SIGKILL, c.GoferPid, err)
-		}
-	}
-
-	// Gofer process may take some time to teardown. Retry in case of failure.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
-	err := backoff.Retry(func() error { return destroyFS(c.Spec) }, b)
-	if err == nil {
-		// Success!
-		c.GoferPid = 0
-	}
-	return err
-}
-
-// IsRunning returns true if the sandbox or gofer process is running.
-func (c *Container) IsRunning() bool {
-	if c.Sandbox != nil && c.Sandbox.IsRunning() {
-		return true
-	}
-	if c.GoferPid != 0 {
-		// Send a signal 0 to the gofer process.
-		if err := syscall.Kill(c.GoferPid, 0); err == nil {
-			log.Warningf("Found orphan gofer process, pid: %d", c.GoferPid)
-			if err := c.destroyGofer(); err != nil {
-				log.Warningf("Error destroying gofer: %v", err)
-			}
-
-			// Don't wait for gofer to die. Return 'running' and hope gofer is dead
-			// next time around.
-			return true
-		}
-	}
-	return false
-}
-
-// DestroyAndWait frees all resources associated with the container
-// and waits for destroy to finish before returning.
-//
-// TODO: This only works for single container.
-func (c *Container) DestroyAndWait() error {
-	if err := c.Destroy(); err != nil {
-		return fmt.Errorf("error destroying container %v: %v", c, err)
-	}
-	return c.waitForStopped()
 }
 
 // save saves the container metadata to a file.
@@ -602,13 +540,49 @@ func (c *Container) save() error {
 	return nil
 }
 
+// stop stops the container (for regular containers) or the sandbox (for
+// root containers), and waits for the container or sandbox and the gofer
+// to stop. If any of them doesn't stop before timeout, an error is returned.
+func (c *Container) stop() error {
+	if c.Sandbox != nil && c.Sandbox.IsRunning() {
+		log.Debugf("Killing container %q", c.ID)
+		if c.Sandbox.IsRootContainer(c.ID) {
+			if err := c.Sandbox.Destroy(); err != nil {
+				return fmt.Errorf("error destroying sandbox %q: %v", c.Sandbox.ID, err)
+			}
+		} else {
+			if err := c.Signal(syscall.SIGKILL); err != nil {
+				// The container may already be stopped, log the error.
+				log.Warningf("Error sending signal %d to container %q: %v", syscall.SIGKILL, c.ID, err)
+			}
+		}
+	}
+
+	// Try killing gofer if it does not exit with container.
+	if c.GoferPid != 0 {
+		log.Debugf("Killing gofer for container %q, PID: %d", c.ID, c.GoferPid)
+		if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+			// The gofer may already be stopped, log the error.
+			log.Warningf("Error sending signal %d to gofer %d: %v", syscall.SIGKILL, c.GoferPid, err)
+		}
+	}
+	return c.waitForStopped()
+}
+
 func (c *Container) waitForStopped() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if !c.IsRunning() {
-			return fmt.Errorf("container is still running")
+		if c.Sandbox != nil && c.Sandbox.IsRunning() {
+			if err := c.Signal(syscall.Signal(0)); err == nil {
+				return fmt.Errorf("container is still running")
+			}
+		}
+		if c.GoferPid != 0 {
+			if err := syscall.Kill(c.GoferPid, 0); err == nil {
+				return fmt.Errorf("gofer is still running")
+			}
 		}
 		return nil
 	}

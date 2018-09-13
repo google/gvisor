@@ -16,6 +16,7 @@
 package sandbox
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,8 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/control/client"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -543,20 +544,18 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 	return s.ID == cid
 }
 
-// Stop stops the container in the sandbox.
-func (s *Sandbox) Stop(cid string) error {
-	// TODO: This should stop the container with the given ID
-	// in the sandbox.
-	return nil
-}
-
 // Destroy frees all resources associated with the sandbox.
+// Destroy returns error if any step fails, and the function can be safely retried.
 func (s *Sandbox) Destroy() error {
 	log.Debugf("Destroy sandbox %q", s.ID)
 	if s.Pid != 0 {
-		// TODO: Too harsh?
 		log.Debugf("Killing sandbox %q", s.ID)
-		signalProcess(s.Pid, unix.SIGKILL)
+		if err := syscall.Kill(s.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+			return fmt.Errorf("error killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
+		}
+		if err := s.waitForStopped(); err != nil {
+			return fmt.Errorf("error waiting sandbox %q stop: %v", s.ID, err)
+		}
 	}
 
 	if s.Chroot != "" {
@@ -641,7 +640,7 @@ func (s *Sandbox) Resume(cid string) error {
 func (s *Sandbox) IsRunning() bool {
 	if s.Pid != 0 {
 		// Send a signal 0 to the sandbox process.
-		if err := signalProcess(s.Pid, 0); err == nil {
+		if err := syscall.Kill(s.Pid, 0); err == nil {
 			// Succeeded, process is running.
 			return true
 		}
@@ -665,14 +664,17 @@ func (s *Sandbox) Stacks() (string, error) {
 	return stacks, nil
 }
 
-// signalProcess sends a signal to the host process (i.e. a sandbox or gofer
-// process). Sandbox.Signal should be used to send a signal to a process
-// running inside the sandbox.
-func signalProcess(pid int, sig syscall.Signal) error {
-	if err := syscall.Kill(pid, sig); err != nil {
-		return fmt.Errorf("error sending signal %d to pid %d: %v", sig, pid, err)
+func (s *Sandbox) waitForStopped() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+	op := func() error {
+		if s.IsRunning() {
+			return fmt.Errorf("sandbox is still running")
+		}
+		return nil
 	}
-	return nil
+	return backoff.Retry(op, b)
 }
 
 // deviceFileForPlatform opens the device file for the given platform. If the

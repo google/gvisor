@@ -95,10 +95,10 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 
-	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
-	if !c.IsRunning() {
-		Fatalf("sandbox %q is not running", c.Sandbox.ID)
+	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
+		Fatalf("container sandbox is not running")
 	}
+	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
 
 	if d.signal > 0 {
 		log.Infof("Sending signal %d to process: %d", d.signal, c.Sandbox.Pid)

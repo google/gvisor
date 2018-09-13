@@ -129,7 +129,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		log.Warningf("ignoring console socket since it cannot be restored")
 	}
 
-	if err := cont.DestroyAndWait(); err != nil {
+	if err := cont.Destroy(); err != nil {
 		Fatalf("error destroying container: %v", err)
 	}
 

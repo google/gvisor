@@ -16,7 +16,6 @@
 package boot
 
 import (
-	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -101,15 +100,15 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
-	// mu guards containerRootTGIDs.
+	// mu guards containerRootTGs.
 	mu sync.Mutex
 
-	// containerRootTGIDs maps container IDs to their root processes. It
+	// containerRootTGs maps container IDs to their root processes. It
 	// can be used to determine which process to manipulate when clients
 	// call methods on particular containers.
 	//
-	// containerRootTGIDs is guarded by mu.
-	containerRootTGIDs map[string]kernel.ThreadID
+	// containerRootTGs is guarded by mu.
+	containerRootTGs map[string]*kernel.ThreadGroup
 }
 
 func init() {
@@ -399,11 +398,11 @@ func (l *Loader) run() error {
 
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process.
-func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) (kernel.ThreadID, error) {
+func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
-		return 0, fmt.Errorf("error creating capabilities: %v", err)
+		return fmt.Errorf("error creating capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -429,7 +428,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	procArgs, err := newProcess(spec, creds, l.k)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create new process: %v", err)
+		return fmt.Errorf("failed to create new process: %v", err)
 	}
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
@@ -437,7 +436,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	for _, f := range files {
 		fd, err := syscall.Dup(int(f.Fd()))
 		if err != nil {
-			return 0, fmt.Errorf("failed to dup file: %v", err)
+			return fmt.Errorf("failed to dup file: %v", err)
 		}
 		f.Close()
 		ioFDs = append(ioFDs, fd)
@@ -453,24 +452,18 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		procArgs.Limits,
 		k,
 		cid); err != nil {
-		return 0, fmt.Errorf("failed to create new process: %v", err)
+		return fmt.Errorf("failed to create new process: %v", err)
 	}
 
 	ctx := procArgs.NewContext(l.k)
 	mns := k.RootMountNamespace()
 	if err := setExecutablePath(ctx, mns, &procArgs); err != nil {
-		return 0, fmt.Errorf("error setting executable path for %+v: %v", procArgs, err)
+		return fmt.Errorf("error setting executable path for %+v: %v", procArgs, err)
 	}
 
 	tg, err := l.k.CreateProcess(procArgs)
 	if err != nil {
-		return 0, fmt.Errorf("failed to create process in sentry: %v", err)
-	}
-
-	ts := l.k.TaskSet()
-	tgid := ts.Root.IDOfThreadGroup(tg)
-	if tgid == 0 {
-		return 0, errors.New("failed to get thread group ID of new process")
+		return fmt.Errorf("failed to create process in sentry: %v", err)
 	}
 
 	// CreateProcess takes a reference on FDMap if successful.
@@ -478,9 +471,9 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.containerRootTGIDs[cid] = tgid
+	l.containerRootTGs[cid] = tg
 
-	return tgid, nil
+	return nil
 }
 
 // TODO: Per-container namespaces must be supported for -pid.
@@ -490,53 +483,56 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for
 	// multiple clients to wait on the same container.
 	l.mu.Lock()
-	tgid, ok := l.containerRootTGIDs[cid]
+	tg, ok := l.containerRootTGs[cid]
 	if !ok {
 		defer l.mu.Unlock()
-		return fmt.Errorf("can't find process for container %q in %v", cid, l.containerRootTGIDs)
+		return fmt.Errorf("can't find process for container %q in %v", cid, l.containerRootTGs)
 	}
 	l.mu.Unlock()
 
 	// If the thread either has already exited or exits during waiting,
 	// consider the container exited.
+	// TODO: Multiple calls to waitContainer() should return
+	// the same exit status.
 	defer func() {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		// TODO: Containers don't map 1:1 with their root
 		// processes. Container exits should be managed explicitly
 		// rather than via PID.
-		delete(l.containerRootTGIDs, cid)
+		delete(l.containerRootTGs, cid)
 	}()
-	return l.wait(tgid, cid, waitStatus)
+	l.wait(tg, waitStatus)
+	return nil
 }
 
 func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
 	// TODO: Containers all currently share a PID namespace.
 	// When per-container PID namespaces are supported, wait should use cid
 	// to find the appropriate PID namespace.
-	if cid != l.sandboxID {
+	/*if cid != l.sandboxID {
 		return errors.New("non-sandbox PID namespaces are not yet implemented")
-	}
-	return l.wait(tgid, cid, waitStatus)
-}
-
-// wait waits for the process with TGID 'tgid' in a container's PID namespace
-// to exit.
-func (l *Loader) wait(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
+	}*/
+	// TODO: This won't work if the exec process already exited.
 	tg := l.k.TaskSet().Root.ThreadGroupWithID(kernel.ThreadID(tgid))
 	if tg == nil {
 		return fmt.Errorf("no thread group with ID %d", tgid)
 	}
+	l.wait(tg, waitStatus)
+	return nil
+}
+
+// wait waits for the process with TGID 'tgid' in a container's PID namespace
+// to exit.
+func (l *Loader) wait(tg *kernel.ThreadGroup, waitStatus *uint32) {
 	tg.WaitExited()
 	*waitStatus = tg.ExitStatus().Status()
-	return nil
 }
 
 func (l *Loader) setRootContainerID(cid string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	// The root container has PID 1.
-	l.containerRootTGIDs = map[string]kernel.ThreadID{cid: 1}
+	l.containerRootTGs = map[string]*kernel.ThreadGroup{cid: l.k.GlobalInit()}
 	l.sandboxID = cid
 }
 
@@ -579,18 +575,15 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 	}
 }
 
+// TODO: Support sending signal to all.
 func (l *Loader) signal(cid string, signo int32) error {
 	l.mu.Lock()
-	tgid, ok := l.containerRootTGIDs[cid]
+	tg, ok := l.containerRootTGs[cid]
 	l.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("failed to signal container %q: no such container", cid)
 	}
 
-	// The thread group ID of a process is the leading task's thread ID.
-	t := l.k.TaskSet().Root.TaskWithID(tgid)
-	if t == nil {
-		return fmt.Errorf("cannot signal: no task with ID %d", tgid)
-	}
-	return t.SendSignal(&arch.SignalInfo{Signo: signo})
+	si := arch.SignalInfo{Signo: signo}
+	return tg.Leader().SendSignal(&si)
 }

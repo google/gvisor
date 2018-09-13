@@ -200,6 +200,7 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	if err := s.Start(conf); err != nil {
 		return fmt.Errorf("error starting container: %v", err)
 	}
+
 	ws, err := s.Wait()
 	if err != nil {
 		return fmt.Errorf("error waiting on container: %v", err)
@@ -249,6 +250,35 @@ func configs(opts ...configOption) []*boot.Config {
 		cs = append(cs, c)
 	}
 	return cs
+}
+
+// In normal runsc usage, sandbox processes will be parented to
+// init and init will reap the them. However, in the test environment
+// the test runner is the parent and will not reap the sandbox
+// processes, so we must do it ourselves, or else they will left
+// as zombies.
+// The function returns a wait group, and the caller can reap
+// children synchronously by waiting on the wait group.
+func reapChildren(c *Container) (*sync.WaitGroup, error) {
+	var wg sync.WaitGroup
+	p, err := os.FindProcess(c.Sandbox.Pid)
+	if err != nil {
+		return nil, fmt.Errorf("error finding sandbox process: %v", err)
+	}
+	g, err := os.FindProcess(c.GoferPid)
+	if err != nil {
+		return nil, fmt.Errorf("error finding gofer process: %v", err)
+	}
+	wg.Add(2)
+	go func() {
+		p.Wait()
+		wg.Done()
+	}()
+	go func() {
+		g.Wait()
+		wg.Done()
+	}()
+	return &wg, nil
 }
 
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
@@ -306,6 +336,7 @@ func TestLifecycle(t *testing.T) {
 		if err := s.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
+
 		// Load the container from disk and check the status.
 		s, err = Load(rootDir, id)
 		if err != nil {
@@ -352,10 +383,11 @@ func TestLifecycle(t *testing.T) {
 		// and init will reap the sandbox. However, in this case the
 		// test runner is the parent and will not reap the sandbox
 		// process, so we must do it ourselves.
-		p, _ := os.FindProcess(s.Sandbox.Pid)
-		p.Wait()
-		g, _ := os.FindProcess(s.GoferPid)
-		g.Wait()
+		reapWg, err := reapChildren(s)
+		if err != nil {
+			t.Fatalf("error reaping children: %v", err)
+		}
+		reapWg.Wait()
 
 		// Load the container from disk and check the status.
 		s, err = Load(rootDir, id)
@@ -1164,6 +1196,11 @@ func TestConsoleSocket(t *testing.T) {
 			t.Errorf("fd is not a terminal (ioctl TGGETS got %v)", err)
 		}
 
+		// Reap the sandbox process.
+		if _, err := reapChildren(s); err != nil {
+			t.Fatalf("error reaping children: %v", err)
+		}
+
 		// Shut it down.
 		if err := s.Destroy(); err != nil {
 			t.Fatalf("error destroying container: %v", err)
@@ -1259,6 +1296,7 @@ func TestReadonlyRoot(t *testing.T) {
 		if err := s.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
+
 		ws, err := s.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
@@ -1302,6 +1340,7 @@ func TestReadonlyMount(t *testing.T) {
 		if err := s.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
+
 		ws, err := s.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
@@ -1547,8 +1586,9 @@ func TestGoferExits(t *testing.T) {
 	if _, err := gofer.Wait(); err != nil {
 		t.Fatalf("error waiting for gofer process: %v", err)
 	}
-	if c.IsRunning() {
-		t.Errorf("container shouldn't be running, container: %+v", c)
+
+	if err := c.waitForStopped(); err != nil {
+		t.Errorf("container is not stopped: %v", err)
 	}
 }
 

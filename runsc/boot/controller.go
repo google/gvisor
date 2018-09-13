@@ -161,8 +161,11 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.StartRoot")
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
+	if err := <-cm.startResultChan; err != nil {
+		return fmt.Errorf("failed to start sandbox: %v", err)
+	}
 	cm.l.setRootContainerID(*cid)
-	return <-cm.startResultChan
+	return nil
 }
 
 // Processes retrieves information about processes running in the sandbox.
@@ -216,11 +219,11 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		return fmt.Errorf("start arguments must contain at least one file for the container root")
 	}
 
-	tgid, err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
+	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
 		return err
 	}
-	log.Debugf("Container %q started with root PID of %d", args.CID, tgid)
+	log.Debugf("Container %q started", args.CID)
 
 	return nil
 }
@@ -241,16 +244,12 @@ func (cm *containerManager) ExecuteAsync(args *ExecArgs, pid *int32) error {
 	// Get the container Root Dirent from the Task, since we must run this
 	// process with the same Root.
 	cm.l.mu.Lock()
-	tgid, ok := cm.l.containerRootTGIDs[args.CID]
+	tg, ok := cm.l.containerRootTGs[args.CID]
 	cm.l.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("cannot exec in container %q: no such container", args.CID)
 	}
-	t := cm.l.k.TaskSet().Root.TaskWithID(kernel.ThreadID(tgid))
-	if t == nil {
-		return fmt.Errorf("cannot exec in container %q: no thread group with ID %d", args.CID, tgid)
-	}
-	t.WithMuLocked(func(t *kernel.Task) {
+	tg.Leader().WithMuLocked(func(t *kernel.Task) {
 		args.Root = t.FSContext().RootDirectory()
 	})
 	if args.Root != nil {
@@ -378,12 +377,15 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 	cm.l.watchdog = watchdog
 	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
-	cm.l.setRootContainerID(o.SandboxID)
 	cm.l.restore = true
 
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
-	return <-cm.startResultChan
+	if err := <-cm.startResultChan; err != nil {
+		return fmt.Errorf("failed to start sandbox: %v", err)
+	}
+	cm.l.setRootContainerID(o.SandboxID)
+	return nil
 }
 
 // Resume unpauses a container.
@@ -423,6 +425,7 @@ type SignalArgs struct {
 }
 
 // Signal sends a signal to the init process of the container.
+// TODO: Send signal to exec process.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal")
 	return cm.l.signal(args.CID, args.Signo)
