@@ -94,5 +94,8 @@ func (m *MemoryEvents) emit() {
 	snapshot, _ := usage.MemoryAccounting.Copy()
 	total := totalPlatform + snapshot.Mapped
 
-	eventchannel.Emit(&pb.MemoryUsageEvent{Total: total})
+	eventchannel.Emit(&pb.MemoryUsageEvent{
+		Mapped: snapshot.Mapped,
+		Total:  total,
+	})
 }

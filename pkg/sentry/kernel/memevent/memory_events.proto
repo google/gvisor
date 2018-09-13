@@ -22,4 +22,8 @@ message MemoryUsageEvent {
   // The total memory usage of the sandboxed application in bytes, calculated
   // using the 'fast' method.
   uint64 total = 1;
+
+  // Memory used to back memory-mapped regions for files in the application, in
+  // bytes. This corresponds to the usage.MemoryKind.Mapped memory type.
+  uint64 mapped = 2;
 }
