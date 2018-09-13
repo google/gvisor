@@ -86,6 +86,22 @@ func DstAddr(addr tcpip.Address) NetworkChecker {
 	}
 }
 
+// TTL creates a checker that checks the TTL (ipv4) or HopLimit (ipv6).
+func TTL(ttl uint8) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		var v uint8
+		switch ip := h[0].(type) {
+		case header.IPv4:
+			v = ip.TTL()
+		case header.IPv6:
+			v = ip.HopLimit()
+		}
+		if v != ttl {
+			t.Fatalf("Bad TTL, got %v, want %v", v, ttl)
+		}
+	}
+}
+
 // PayloadLen creates a checker that checks the payload length.
 func PayloadLen(plen int) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {

@@ -62,7 +62,6 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, vv)
 }
 
-// TODO: take buffer.VectorisedView by value.
 func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 	v := vv.First()
 	if len(v) < header.ICMPv6MinimumSize {
@@ -107,7 +106,7 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 		pkt[icmpV6LengthOffset] = 1
 		copy(pkt[icmpV6LengthOffset+1:], r.LocalLinkAddress[:])
 		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
-		r.WritePacket(&hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber)
+		r.WritePacket(&hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
 		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
 
@@ -131,7 +130,7 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
 		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, *vv))
-		r.WritePacket(&hdr, *vv, header.ICMPv6ProtocolNumber)
+		r.WritePacket(&hdr, *vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
 	case header.ICMPv6EchoReply:
 		if len(v) < header.ICMPv6EchoMinimumSize {

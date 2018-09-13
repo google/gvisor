@@ -43,15 +43,17 @@ const (
 	defaultIPv6HopLimit = 255
 )
 
-type address [header.IPv6AddressSize]byte
-
 type endpoint struct {
 	nicid         tcpip.NICID
 	id            stack.NetworkEndpointID
-	address       address
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	dispatcher    stack.TransportDispatcher
+}
+
+// DefaultTTL is the default hop limit for this endpoint.
+func (e *endpoint) DefaultTTL() uint8 {
+	return 255
 }
 
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
@@ -82,14 +84,14 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
 	length := uint16(hdr.UsedLength() + payload.Size())
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
 		NextHeader:    uint8(protocol),
-		HopLimit:      defaultIPv6HopLimit,
-		SrcAddr:       tcpip.Address(e.address[:]),
+		HopLimit:      ttl,
+		SrcAddr:       e.id.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})
 	r.Stats().IP.PacketsSent.Increment()
@@ -149,15 +151,13 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 
 // NewEndpoint creates a new ipv6 endpoint.
 func (p *protocol) NewEndpoint(nicid tcpip.NICID, addr tcpip.Address, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
-	e := &endpoint{
+	return &endpoint{
 		nicid:         nicid,
+		id:            stack.NetworkEndpointID{LocalAddress: addr},
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
-	}
-	copy(e.address[:], addr)
-	e.id = stack.NetworkEndpointID{LocalAddress: tcpip.Address(e.address[:])}
-	return e, nil
+	}, nil
 }
 
 // SetOption implements NetworkProtocol.SetOption.

@@ -93,6 +93,12 @@ const (
 
 	// IPv4Version is the version of the ipv4 protocol.
 	IPv4Version = 4
+
+	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
+	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
+
+	// IPv4Any is the non-routable IPv4 "any" meta address.
+	IPv4Any tcpip.Address = "\x00\x00\x00\x00"
 )
 
 // Flags that may be set in an IPv4 packet.
@@ -258,4 +264,14 @@ func (b IPv4) IsValid(pktSize int) bool {
 	}
 
 	return true
+}
+
+// IsV4MulticastAddress determines if the provided address is an IPv4 multicast
+// address (range 224.0.0.0 to 239.255.255.255). The four most significant bits
+// will be 1110 = 0xe0.
+func IsV4MulticastAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv4AddressSize {
+		return false
+	}
+	return (addr[0] & 0xf0) == 0xe0
 }

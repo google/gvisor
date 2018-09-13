@@ -121,5 +121,5 @@ func sendPing4(r *stack.Route, code byte, data buffer.View) *tcpip.Error {
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
 	vv := buffer.NewVectorisedView(len(data), []buffer.View{data})
-	return r.WritePacket(&hdr, vv, header.ICMPv4ProtocolNumber)
+	return r.WritePacket(&hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
 }

@@ -70,18 +70,23 @@ type endpoint struct {
 	rcvTimestamp  bool
 
 	// The following fields are protected by the mu mutex.
-	mu         sync.RWMutex `state:"nosave"`
-	sndBufSize int
-	id         stack.TransportEndpointID
-	state      endpointState
-	bindNICID  tcpip.NICID
-	regNICID   tcpip.NICID
-	route      stack.Route `state:"manual"`
-	dstPort    uint16
-	v6only     bool
+	mu           sync.RWMutex `state:"nosave"`
+	sndBufSize   int
+	id           stack.TransportEndpointID
+	state        endpointState
+	bindNICID    tcpip.NICID
+	regNICID     tcpip.NICID
+	route        stack.Route `state:"manual"`
+	dstPort      uint16
+	v6only       bool
+	multicastTTL uint8
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
+
+	// multicastMemberships that need to be remvoed when the endpoint is
+	// closed. Protected by the mu mutex.
+	multicastMemberships []multicastMembership
 
 	// effectiveNetProtos contains the network protocols actually in use. In
 	// most cases it will only contain "netProto", but in cases like IPv6
@@ -92,11 +97,29 @@ type endpoint struct {
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 }
 
+type multicastMembership struct {
+	nicID         tcpip.NICID
+	multicastAddr tcpip.Address
+}
+
 func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	return &endpoint{
-		stack:         stack,
-		netProto:      netProto,
-		waiterQueue:   waiterQueue,
+		stack:       stack,
+		netProto:    netProto,
+		waiterQueue: waiterQueue,
+		// RFC 1075 section 5.4 recommends a TTL of 1 for membership
+		// requests.
+		//
+		// RFC 5135 4.2.1 appears to assume that IGMP messages have a
+		// TTL of 1.
+		//
+		// RFC 5135 Appendix A defines TTL=1: A multicast source that
+		// wants its traffic to not traverse a router (e.g., leave a
+		// home network) may find it useful to send traffic with IP
+		// TTL=1.
+		//
+		// Linux defaults to TTL=1.
+		multicastTTL:  1,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
 	}
@@ -134,6 +157,11 @@ func (e *endpoint) Close() {
 		e.stack.UnregisterTransportEndpoint(e.regNICID, e.effectiveNetProtos, ProtocolNumber, e.id)
 		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
 	}
+
+	for _, mem := range e.multicastMemberships {
+		e.stack.LeaveGroup(e.netProto, mem.nicID, mem.multicastAddr)
+	}
+	e.multicastMemberships = nil
 
 	// Close the receive list and drain it.
 	e.rcvMu.Lock()
@@ -329,8 +357,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 		return 0, err
 	}
 
+	ttl := route.DefaultTTL()
+	if header.IsV4MulticastAddress(route.RemoteAddress) || header.IsV6MulticastAddress(route.RemoteAddress) {
+		ttl = e.multicastTTL
+	}
+
 	vv := buffer.NewVectorisedView(len(v), []buffer.View{v})
-	if err := sendUDP(route, vv, e.id.LocalPort, dstPort); err != nil {
+	if err := sendUDP(route, vv, e.id.LocalPort, dstPort, ttl); err != nil {
 		return 0, err
 	}
 	return uintptr(len(v)), nil
@@ -365,6 +398,56 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.rcvMu.Lock()
 		e.rcvTimestamp = v != 0
 		e.rcvMu.Unlock()
+
+	case tcpip.MulticastTTLOption:
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.multicastTTL = uint8(v)
+
+	case tcpip.AddMembershipOption:
+		nicID := v.NIC
+		if v.InterfaceAddr != header.IPv4Any {
+			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+		}
+		if nicID == 0 {
+			return tcpip.ErrNoRoute
+		}
+
+		// TODO: check that v.MulticastAddr is a multicast address.
+		if err := e.stack.JoinGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+			return err
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+
+		e.multicastMemberships = append(e.multicastMemberships, multicastMembership{nicID, v.MulticastAddr})
+
+	case tcpip.RemoveMembershipOption:
+		nicID := v.NIC
+		if v.InterfaceAddr != header.IPv4Any {
+			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+		}
+		if nicID == 0 {
+			return tcpip.ErrNoRoute
+		}
+
+		// TODO: check that v.MulticastAddr is a multicast address.
+		if err := e.stack.LeaveGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+			return err
+		}
+
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		for i, mem := range e.multicastMemberships {
+			if mem.nicID == nicID && mem.multicastAddr == v.MulticastAddr {
+				// Only remove the first match, so that each added membership above is
+				// paired with exactly 1 removal.
+				e.multicastMemberships[i] = e.multicastMemberships[len(e.multicastMemberships)-1]
+				e.multicastMemberships = e.multicastMemberships[:len(e.multicastMemberships)-1]
+				break
+			}
+		}
 	}
 	return nil
 }
@@ -421,6 +504,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			*o = 1
 		}
 		e.rcvMu.Unlock()
+
+	case *tcpip.MulticastTTLOption:
+		e.mu.Lock()
+		*o = tcpip.MulticastTTLOption(e.multicastTTL)
+		e.mu.Unlock()
+		return nil
 	}
 
 	return tcpip.ErrUnknownProtocolOption
@@ -428,7 +517,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the
 // provided identity.
-func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16) *tcpip.Error {
+func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8) *tcpip.Error {
 	// Allocate a buffer for the UDP header.
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
@@ -454,7 +543,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	// Track count of packets sent.
 	r.Stats().UDP.PacketsSent.Increment()
 
-	return r.WritePacket(&hdr, data, ProtocolNumber)
+	return r.WritePacket(&hdr, data, ProtocolNumber, ttl)
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
@@ -581,7 +670,9 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.state != stateConnected {
+	// A socket in the bound state can still receive multicast messages,
+	// so we need to notify waiters on shutdown.
+	if e.state != stateBound && e.state != stateConnected {
 		return tcpip.ErrNotConnected
 	}
 

@@ -563,14 +563,14 @@ func sendSynTCP(r *stack.Route, id stack.TransportEndpointID, flags byte, seq, a
 	}
 
 	options := makeSynOptions(opts)
-	err := sendTCPWithOptions(r, id, buffer.VectorisedView{}, flags, seq, ack, rcvWnd, options)
+	err := sendTCP(r, id, buffer.VectorisedView{}, r.DefaultTTL(), flags, seq, ack, rcvWnd, options)
 	putOptions(options)
 	return err
 }
 
-// sendTCPWithOptions sends a TCP segment with the provided options via the
-// provided network endpoint and under the provided identity.
-func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte) *tcpip.Error {
+// sendTCP sends a TCP segment with the provided options via the provided
+// network endpoint and under the provided identity.
+func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte) *tcpip.Error {
 	optLen := len(opts)
 	// Allocate a buffer for the TCP header.
 	hdr := buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen)
@@ -608,48 +608,7 @@ func sendTCPWithOptions(r *stack.Route, id stack.TransportEndpointID, data buffe
 		r.Stats().TCP.ResetsSent.Increment()
 	}
 
-	return r.WritePacket(&hdr, data, ProtocolNumber)
-}
-
-// sendTCP sends a TCP segment via the provided network endpoint and under the
-// provided identity.
-func sendTCP(r *stack.Route, id stack.TransportEndpointID, payload buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
-	// Allocate a buffer for the TCP header.
-	hdr := buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()))
-
-	if rcvWnd > 0xffff {
-		rcvWnd = 0xffff
-	}
-
-	// Initialize the header.
-	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize))
-	tcp.Encode(&header.TCPFields{
-		SrcPort:    id.LocalPort,
-		DstPort:    id.RemotePort,
-		SeqNum:     uint32(seq),
-		AckNum:     uint32(ack),
-		DataOffset: header.TCPMinimumSize,
-		Flags:      flags,
-		WindowSize: uint16(rcvWnd),
-	})
-
-	// Only calculate the checksum if offloading isn't supported.
-	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
-		length := uint16(hdr.UsedLength() + payload.Size())
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
-		for _, v := range payload.Views() {
-			xsum = header.Checksum(v, xsum)
-		}
-
-		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
-	}
-
-	r.Stats().TCP.SegmentsSent.Increment()
-	if (flags & flagRst) != 0 {
-		r.Stats().TCP.ResetsSent.Increment()
-	}
-
-	return r.WritePacket(&hdr, payload, ProtocolNumber)
+	return r.WritePacket(&hdr, data, ProtocolNumber, ttl)
 }
 
 // makeOptions makes an options slice.
@@ -698,12 +657,7 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
-	if len(options) > 0 {
-		err := sendTCPWithOptions(&e.route, e.id, data, flags, seq, ack, rcvWnd, options)
-		putOptions(options)
-		return err
-	}
-	err := sendTCP(&e.route, e.id, data, flags, seq, ack, rcvWnd)
+	err := sendTCP(&e.route, e.id, data, e.route.DefaultTTL(), flags, seq, ack, rcvWnd, options)
 	putOptions(options)
 	return err
 }

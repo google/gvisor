@@ -1,6 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "ipv4",
@@ -19,5 +19,21 @@ go_library(
         "//pkg/tcpip/network/fragmentation",
         "//pkg/tcpip/network/hash",
         "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "ipv4_test",
+    size = "small",
+    srcs = ["ipv4_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
     ],
 )

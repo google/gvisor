@@ -43,6 +43,25 @@ type NIC struct {
 	subnets     []tcpip.Subnet
 }
 
+// PrimaryEndpointBehavior is an enumeration of an endpoint's primacy behavior.
+type PrimaryEndpointBehavior int
+
+const (
+	// CanBePrimaryEndpoint indicates the endpoint can be used as a primary
+	// endpoint for new connections with no local address. This is the
+	// default when calling NIC.AddAddress.
+	CanBePrimaryEndpoint PrimaryEndpointBehavior = iota
+
+	// FirstPrimaryEndpoint indicates the endpoint should be the first
+	// primary endpoint considered. If there are multiple endpoints with
+	// this behavior, the most recently-added one will be first.
+	FirstPrimaryEndpoint
+
+	// NeverPrimaryEndpoint indicates the endpoint should never be a
+	// primary endpoint.
+	NeverPrimaryEndpoint
+)
+
 func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint) *NIC {
 	return &NIC{
 		stack:     stack,
@@ -141,6 +160,11 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 
 	for e := list.Front(); e != nil; e = e.Next() {
 		r := e.(*referencedNetworkEndpoint)
+		// TODO: allow broadcast address when SO_BROADCAST is set.
+		switch r.ep.ID().LocalAddress {
+		case header.IPv4Broadcast, header.IPv4Any:
+			continue
+		}
 		if r.tryIncRef() {
 			return r
 		}
@@ -150,7 +174,7 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 }
 
 // findEndpoint finds the endpoint, if any, with the given address.
-func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.Address) *referencedNetworkEndpoint {
+func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior) *referencedNetworkEndpoint {
 	id := NetworkEndpointID{address}
 
 	n.mu.RLock()
@@ -171,7 +195,7 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 	n.mu.Lock()
 	ref = n.endpoints[id]
 	if ref == nil || !ref.tryIncRef() {
-		ref, _ = n.addAddressLocked(protocol, address, true)
+		ref, _ = n.addAddressLocked(protocol, address, peb, true)
 		if ref != nil {
 			ref.holdsInsertRef = false
 		}
@@ -180,7 +204,7 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 	return ref
 }
 
-func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, replace bool) (*referencedNetworkEndpoint, *tcpip.Error) {
+func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior, replace bool) (*referencedNetworkEndpoint, *tcpip.Error) {
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
@@ -224,7 +248,12 @@ func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.
 		n.primary[protocol] = l
 	}
 
-	l.PushBack(ref)
+	switch peb {
+	case CanBePrimaryEndpoint:
+		l.PushBack(ref)
+	case FirstPrimaryEndpoint:
+		l.PushFront(ref)
+	}
 
 	return ref, nil
 }
@@ -232,9 +261,15 @@ func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.
 // AddAddress adds a new address to n, so that it starts accepting packets
 // targeted at the given address (and network protocol).
 func (n *NIC) AddAddress(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
+	return n.AddAddressWithOptions(protocol, addr, CanBePrimaryEndpoint)
+}
+
+// AddAddressWithOptions is the same as AddAddress, but allows you to specify
+// whether the new endpoint can be primary or not.
+func (n *NIC) AddAddressWithOptions(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addAddressLocked(protocol, addr, false)
+	_, err := n.addAddressLocked(protocol, addr, peb, false)
 	n.mu.Unlock()
 
 	return err
@@ -319,7 +354,11 @@ func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 	}
 
 	delete(n.endpoints, id)
-	n.primary[r.protocol].Remove(r)
+	wasInList := r.Next() != nil || r.Prev() != nil || r == n.primary[r.protocol].Front()
+	if wasInList {
+		n.primary[r.protocol].Remove(r)
+	}
+
 	r.ep.Close()
 }
 
@@ -398,7 +437,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 			ref, ok = n.endpoints[id]
 			if !ok || !ref.tryIncRef() {
 				var err *tcpip.Error
-				ref, err = n.addAddressLocked(protocol, dst, true)
+				ref, err = n.addAddressLocked(protocol, dst, CanBePrimaryEndpoint, true)
 				if err == nil {
 					ref.holdsInsertRef = false
 				}

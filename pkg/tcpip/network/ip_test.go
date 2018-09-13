@@ -222,7 +222,7 @@ func TestIPv4Send(t *testing.T) {
 		t.Fatalf("could not find route: %v", err)
 	}
 	vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
-	if err := ep.WritePacket(&r, &hdr, vv, 123); err != nil {
+	if err := ep.WritePacket(&r, &hdr, vv, 123, 123); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -461,7 +461,7 @@ func TestIPv6Send(t *testing.T) {
 		t.Fatalf("could not find route: %v", err)
 	}
 	vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
-	if err := ep.WritePacket(&r, &hdr, vv, 123); err != nil {
+	if err := ep.WritePacket(&r, &hdr, vv, 123, 123); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }

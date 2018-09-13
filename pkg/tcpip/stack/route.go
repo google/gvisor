@@ -129,12 +129,17 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
-	err := r.ref.ep.WritePacket(r, hdr, payload, protocol)
+func (r *Route) WritePacket(hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
+	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl)
 	if err == tcpip.ErrNoRoute {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	}
 	return err
+}
+
+// DefaultTTL returns the default TTL of the underlying network endpoint.
+func (r *Route) DefaultTTL() uint8 {
+	return r.ref.ep.DefaultTTL()
 }
 
 // MTU returns the MTU of the underlying network endpoint.

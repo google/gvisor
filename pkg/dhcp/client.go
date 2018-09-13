@@ -119,10 +119,10 @@ func (c *Client) Config() Config {
 // If the server sets a lease limit a timer is set to automatically
 // renew it.
 func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg Config, reterr error) {
-	if err := c.stack.AddAddress(c.nicid, ipv4.ProtocolNumber, "\xff\xff\xff\xff"); err != nil && err != tcpip.ErrDuplicateAddress {
+	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, "\xff\xff\xff\xff", stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
 		return Config{}, fmt.Errorf("dhcp: %v", err)
 	}
-	if err := c.stack.AddAddress(c.nicid, ipv4.ProtocolNumber, "\x00\x00\x00\x00"); err != nil && err != tcpip.ErrDuplicateAddress {
+	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, "\x00\x00\x00\x00", stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
 		return Config{}, fmt.Errorf("dhcp: %v", err)
 	}
 	defer c.stack.RemoveAddress(c.nicid, "\xff\xff\xff\xff")
@@ -237,7 +237,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 
 	// DHCPREQUEST
 	addr := tcpip.Address(h.yiaddr())
-	if err := c.stack.AddAddress(c.nicid, ipv4.ProtocolNumber, addr); err != nil {
+	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, addr, stack.FirstPrimaryEndpoint); err != nil {
 		if err != tcpip.ErrDuplicateAddress {
 			return Config{}, fmt.Errorf("adding address: %v", err)
 		}

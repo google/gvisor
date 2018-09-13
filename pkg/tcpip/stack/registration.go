@@ -124,6 +124,10 @@ type TransportDispatcher interface {
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
+	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6)
+	// for this endpoint.
+	DefaultTTL() uint8
+
 	// MTU is the maximum transmission unit for this endpoint. This is
 	// generally calculated as the MTU of the underlying data link endpoint
 	// minus the network endpoint max header length.
@@ -141,7 +145,7 @@ type NetworkEndpoint interface {
 
 	// WritePacket writes a packet to the given destination address and
 	// protocol.
-	WritePacket(r *Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error
+	WritePacket(r *Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID

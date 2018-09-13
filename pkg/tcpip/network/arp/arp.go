@@ -51,6 +51,11 @@ type endpoint struct {
 	linkAddrCache stack.LinkAddressCache
 }
 
+// DefaultTTL is unused for ARP. It implements stack.NetworkEndpoint.
+func (e *endpoint) DefaultTTL() uint8 {
+	return 0
+}
+
 func (e *endpoint) MTU() uint32 {
 	lmtu := e.linkEP.MTU()
 	return lmtu - uint32(e.MaxHeaderLength())
@@ -74,7 +79,7 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 func (e *endpoint) Close() {}
 
-func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
