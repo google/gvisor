@@ -224,6 +224,16 @@ func itimerval(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
 }
 
+func itimerspec(t *kernel.Task, addr usermem.Addr) string {
+	if addr == 0 {
+		return "null"
+	}
+
+	interval := timespec(t, addr)
+	value := timespec(t, addr+usermem.Addr(binary.Size(linux.Timespec{})))
+	return fmt.Sprintf("%#x {interval=%s, value=%s}", addr, interval, value)
+}
+
 func stringVector(t *kernel.Task, addr usermem.Addr) string {
 	vec, err := t.CopyInVector(addr, slinux.ExecMaxElemSize, slinux.ExecMaxTotalSize)
 	if err != nil {
@@ -296,6 +306,8 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, utimensTimespec(t, args[arg].Pointer()))
 		case ItimerVal:
 			output = append(output, itimerval(t, args[arg].Pointer()))
+		case ItimerSpec:
+			output = append(output, itimerspec(t, args[arg].Pointer()))
 		case Timeval:
 			output = append(output, timeval(t, args[arg].Pointer()))
 		case Utimbuf:
@@ -362,6 +374,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = timespec(t, args[arg].Pointer())
 		case PostItimerVal:
 			output[arg] = itimerval(t, args[arg].Pointer())
+		case PostItimerSpec:
+			output[arg] = itimerspec(t, args[arg].Pointer())
 		case Timeval:
 			output[arg] = timeval(t, args[arg].Pointer())
 		case Rusage:

@@ -132,9 +132,16 @@ const (
 	// ItimerVal is a pointer to a struct itimerval.
 	ItimerVal
 
-	// ItimerVal is a pointer to a struct itimerval, formatted after
+	// PostItimerVal is a pointer to a struct itimerval, formatted after
 	// syscall execution.
 	PostItimerVal
+
+	// ItimerSpec is a pointer to a struct itimerspec.
+	ItimerSpec
+
+	// PostItimerSpec is a pointer to a struct itimerspec, formatted after
+	// syscall execution.
+	PostItimerSpec
 
 	// Timeval is a pointer to a struct timeval, formatted before and after
 	// syscall execution.
