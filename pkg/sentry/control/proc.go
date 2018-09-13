@@ -132,6 +132,11 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 	}
+	if initArgs.Root != nil {
+		// initArgs must hold a reference on Root. This ref is dropped
+		// in CreateProcess.
+		initArgs.Root.IncRef()
+	}
 	ctx := initArgs.NewContext(proc.Kernel)
 
 	if initArgs.Filename == "" {
