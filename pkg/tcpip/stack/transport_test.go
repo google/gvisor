@@ -70,8 +70,7 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) 
 	if err != nil {
 		return 0, err
 	}
-	vv := buffer.NewVectorisedView(len(v), []buffer.View{v})
-	if err := f.route.WritePacket(&hdr, vv, fakeTransNumber, 123); err != nil {
+	if err := f.route.WritePacket(&hdr, buffer.View(v).ToVectorisedView(), fakeTransNumber, 123); err != nil {
 		return 0, err
 	}
 
@@ -149,12 +148,12 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Erro
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(*stack.Route, stack.TransportEndpointID, *buffer.VectorisedView) {
+func (f *fakeTransportEndpoint) HandlePacket(*stack.Route, stack.TransportEndpointID, buffer.VectorisedView) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
 }
 
-func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, *buffer.VectorisedView) {
+func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, stack.ControlType, uint32, buffer.VectorisedView) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }
@@ -193,7 +192,7 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, *buffer.VectorisedView) bool {
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.VectorisedView) bool {
 	return true
 }
 
@@ -245,15 +244,13 @@ func TestTransportReceive(t *testing.T) {
 
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
-	var views [1]buffer.View
 	// Create buffer that will hold the packet.
 	buf := buffer.NewView(30)
 
 	// Make sure packet with wrong protocol is not delivered.
 	buf[0] = 1
 	buf[2] = 0
-	vv := buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -262,8 +259,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 3
 	buf[2] = byte(fakeTransNumber)
-	vv = buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
 	}
@@ -272,8 +268,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[0] = 1
 	buf[1] = 2
 	buf[2] = byte(fakeTransNumber)
-	vv = buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
 	}
@@ -305,7 +300,6 @@ func TestTransportControlReceive(t *testing.T) {
 
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
-	var views [1]buffer.View
 	// Create buffer that will hold the control packet.
 	buf := buffer.NewView(2*fakeNetHeaderLen + 30)
 
@@ -318,8 +312,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 0
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = 0
-	vv := buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -328,8 +321,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 3
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	vv = buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
 	}
@@ -338,8 +330,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+0] = 2
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
-	vv = buf.ToVectorisedView(views)
-	linkEP.Inject(fakeNetNumber, &vv)
+	linkEP.Inject(fakeNetNumber, buf.ToVectorisedView())
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)
 	}

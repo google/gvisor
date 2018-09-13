@@ -133,7 +133,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, vv *buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 	h := header.IPv4(vv.First())
 	if !h.IsValid(vv.Size()) {
 		return
@@ -148,11 +148,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv *buffer.VectorisedView) {
 	if more || h.FragmentOffset() != 0 {
 		// The packet is a fragment, let's try to reassemble it.
 		last := h.FragmentOffset() + uint16(vv.Size()) - 1
-		tt, ready := e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
+		var ready bool
+		vv, ready = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
 		if !ready {
 			return
 		}
-		vv = &tt
 	}
 	p := h.TransportProtocol()
 	if p == header.ICMPv4ProtocolNumber {

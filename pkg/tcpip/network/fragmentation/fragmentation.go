@@ -82,7 +82,7 @@ func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout t
 
 // Process processes an incoming fragment beloning to an ID
 // and returns a complete packet when all the packets belonging to that ID have been received.
-func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv *buffer.VectorisedView) (buffer.VectorisedView, bool) {
+func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool) {
 	f.mu.Lock()
 	r, ok := f.reassemblers[id]
 	if ok && r.tooOld(f.timeout) {

@@ -77,7 +77,7 @@ func (e *endpoint) WritePacket(_ *stack.Route, hdr *buffer.Prependable, payload 
 	views[0] = hdr.View()
 	views = append(views, payload.Views()...)
 	vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-	e.dispatcher.DeliverNetworkPacket(e, "", protocol, &vv)
+	e.dispatcher.DeliverNetworkPacket(e, "", protocol, vv)
 
 	return nil
 }

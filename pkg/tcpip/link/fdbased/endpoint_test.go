@@ -77,7 +77,7 @@ func (c *context) cleanup() {
 	syscall.Close(c.fds[1])
 }
 
-func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
+func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
 	c.ch <- packetInfo{remoteLinkAddr, protocol, vv.ToView()}
 }
 
@@ -158,8 +158,7 @@ func TestWritePacket(t *testing.T) {
 					payload[i] = uint8(rand.Intn(256))
 				}
 				want := append(hdr.UsedBytes(), payload...)
-				vv := buffer.NewVectorisedView(len(payload), []buffer.View{payload})
-				if err := c.ep.WritePacket(r, &hdr, vv, proto); err != nil {
+				if err := c.ep.WritePacket(r, &hdr, payload.ToVectorisedView(), proto); err != nil {
 					t.Fatalf("WritePacket failed: %v", err)
 				}
 

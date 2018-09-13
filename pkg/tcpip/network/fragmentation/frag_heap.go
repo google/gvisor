@@ -23,7 +23,7 @@ import (
 
 type fragment struct {
 	offset uint16
-	vv     *buffer.VectorisedView
+	vv     buffer.VectorisedView
 }
 
 type fragHeap []fragment
@@ -60,7 +60,7 @@ func (h *fragHeap) reassemble() (buffer.VectorisedView, error) {
 	size := curr.vv.Size()
 
 	if curr.offset != 0 {
-		return buffer.NewVectorisedView(0, nil), fmt.Errorf("offset of the first packet is != 0 (%d)", curr.offset)
+		return buffer.VectorisedView{}, fmt.Errorf("offset of the first packet is != 0 (%d)", curr.offset)
 	}
 
 	for h.Len() > 0 {
@@ -68,7 +68,7 @@ func (h *fragHeap) reassemble() (buffer.VectorisedView, error) {
 		if int(curr.offset) < size {
 			curr.vv.TrimFront(size - int(curr.offset))
 		} else if int(curr.offset) > size {
-			return buffer.NewVectorisedView(0, nil), fmt.Errorf("packet has a hole, expected offset %d, got %d", size, curr.offset)
+			return buffer.VectorisedView{}, fmt.Errorf("packet has a hole, expected offset %d, got %d", size, curr.offset)
 		}
 		size += curr.vv.Size()
 		views = append(views, curr.vv.Views()...)

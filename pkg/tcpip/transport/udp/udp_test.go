@@ -204,9 +204,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers) {
 	u.SetChecksum(^u.CalculateChecksum(xsum, length))
 
 	// Inject packet.
-	var views [1]buffer.View
-	vv := buf.ToVectorisedView(views)
-	c.linkEP.Inject(ipv6.ProtocolNumber, &vv)
+	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
 }
 
 func (c *testContext) sendPacket(payload []byte, h *headers) {
@@ -245,9 +243,7 @@ func (c *testContext) sendPacket(payload []byte, h *headers) {
 	u.SetChecksum(^u.CalculateChecksum(xsum, length))
 
 	// Inject packet.
-	var views [1]buffer.View
-	vv := buf.ToVectorisedView(views)
-	c.linkEP.Inject(ipv4.ProtocolNumber, &vv)
+	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())
 }
 
 func newPayload() []byte {

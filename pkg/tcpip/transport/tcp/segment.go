@@ -60,7 +60,7 @@ type segment struct {
 	options       []byte `state:".([]byte)"`
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, vv *buffer.VectorisedView) *segment {
+func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,

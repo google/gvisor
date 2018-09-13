@@ -165,7 +165,7 @@ func (c *testContext) routePackets(ch <-chan channel.PacketInfo, ep *channel.End
 		views := []buffer.View{pkt.Header, pkt.Payload}
 		size := len(pkt.Header) + len(pkt.Payload)
 		vv := buffer.NewVectorisedView(size, views)
-		ep.InjectLinkAddr(pkt.Proto, ep.LinkAddress(), &vv)
+		ep.InjectLinkAddr(pkt.Proto, ep.LinkAddress(), vv)
 	}
 }
 

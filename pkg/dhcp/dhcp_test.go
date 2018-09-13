@@ -42,11 +42,7 @@ func createStack(t *testing.T) *stack.Stack {
 
 	go func() {
 		for pkt := range linkEP.C {
-			v := make(buffer.View, len(pkt.Header)+len(pkt.Payload))
-			copy(v, pkt.Header)
-			copy(v[len(pkt.Header):], pkt.Payload)
-			vv := v.ToVectorisedView([1]buffer.View{})
-			linkEP.Inject(pkt.Proto, &vv)
+			linkEP.Inject(pkt.Proto, buffer.NewVectorisedView(len(pkt.Header)+len(pkt.Payload), []buffer.View{pkt.Header, pkt.Payload}))
 		}
 	}()
 

@@ -27,7 +27,7 @@ import (
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer.VectorisedView) {
+func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
 	h := header.IPv4(vv.First())
 
 	// We don't use IsValid() here because ICMP only requires that the IP
@@ -55,7 +55,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, vv)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
+func (e *endpoint) handleICMP(r *stack.Route, vv buffer.VectorisedView) {
 	v := vv.First()
 	if len(v) < header.ICMPv4MinimumSize {
 		return
@@ -120,6 +120,5 @@ func sendPing4(r *stack.Route, code byte, data buffer.View) *tcpip.Error {
 	data = data[header.ICMPv4EchoMinimumSize-header.ICMPv4MinimumSize:]
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
-	vv := buffer.NewVectorisedView(len(data), []buffer.View{data})
-	return r.WritePacket(&hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(&hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
 }

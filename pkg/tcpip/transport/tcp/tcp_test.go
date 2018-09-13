@@ -2668,11 +2668,11 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 		AckNum:  c.IRS.Add(1),
 		RcvWnd:  30000,
 	})
-	tcpbuf := vv.ByteSlice()[0][header.IPv4MinimumSize:]
+	tcpbuf := vv.First()[header.IPv4MinimumSize:]
 	// 12 is the TCP header data offset.
 	tcpbuf[12] = ((header.TCPMinimumSize - 1) / 4) << 4
 
-	c.SendSegment(&vv)
+	c.SendSegment(vv)
 
 	if got := stats.TCP.InvalidSegmentsReceived.Value(); got != want {
 		t.Errorf("got stats.TCP.InvalidSegmentsReceived.Value() = %v, want = %v", got, want)

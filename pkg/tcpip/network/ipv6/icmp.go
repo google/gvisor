@@ -27,7 +27,7 @@ import (
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer.VectorisedView) {
+func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
 	h := header.IPv6(vv.First())
 
 	// We don't use IsValid() here because ICMP only requires that up to
@@ -62,7 +62,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv *buffer
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, vv)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
+func (e *endpoint) handleICMP(r *stack.Route, vv buffer.VectorisedView) {
 	v := vv.First()
 	if len(v) < header.ICMPv6MinimumSize {
 		return
@@ -129,8 +129,8 @@ func (e *endpoint) handleICMP(r *stack.Route, vv *buffer.VectorisedView) {
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
-		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, *vv))
-		r.WritePacket(&hdr, *vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
+		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, vv))
+		r.WritePacket(&hdr, vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
 	case header.ICMPv6EchoReply:
 		if len(v) < header.ICMPv6EchoMinimumSize {

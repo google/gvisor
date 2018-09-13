@@ -57,7 +57,6 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(*tcpip.Error)
 
-	vv         *buffer.VectorisedView
 	iovecs     []syscall.Iovec
 	views      []buffer.View
 	dispatcher stack.NetworkDispatcher
@@ -118,8 +117,6 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		iovecs:      make([]syscall.Iovec, len(BufConfig)),
 		handleLocal: opts.HandleLocal,
 	}
-	vv := buffer.NewVectorisedView(0, e.views)
-	e.vv = &vv
 	return stack.RegisterLinkEndpoint(e)
 }
 
@@ -167,7 +164,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 		views[0] = hdr.View()
 		views = append(views, payload.Views()...)
 		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-		e.dispatcher.DeliverNetworkPacket(e, r.RemoteLinkAddress, protocol, &vv)
+		e.dispatcher.DeliverNetworkPacket(e, r.RemoteLinkAddress, protocol, vv)
 		return nil
 	}
 	if e.hdrSize > 0 {
@@ -246,11 +243,10 @@ func (e *endpoint) dispatch(largeV buffer.View) (bool, *tcpip.Error) {
 	}
 
 	used := e.capViews(n, BufConfig)
-	e.vv.SetViews(e.views[:used])
-	e.vv.SetSize(n)
-	e.vv.TrimFront(e.hdrSize)
+	vv := buffer.NewVectorisedView(n, e.views[:used])
+	vv.TrimFront(e.hdrSize)
 
-	e.dispatcher.DeliverNetworkPacket(e, addr, p, e.vv)
+	e.dispatcher.DeliverNetworkPacket(e, addr, p, vv)
 
 	// Prepare e.views for another packet: release used views.
 	for i := 0; i < used; i++ {
@@ -290,7 +286,7 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // Inject injects an inbound packet.
-func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
+func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
 	e.dispatcher.DeliverNetworkPacket(e, "", protocol, vv)
 }
 

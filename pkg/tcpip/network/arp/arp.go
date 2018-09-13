@@ -83,7 +83,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr *buffer.Prependable, payload 
 	return tcpip.ErrNotSupported
 }
 
-func (e *endpoint) HandlePacket(r *stack.Route, vv *buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 	v := vv.First()
 	h := header.ARP(v)
 	if !h.IsValid() {

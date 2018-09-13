@@ -48,7 +48,7 @@ const (
 
 type transportProtocolState struct {
 	proto          TransportProtocol
-	defaultHandler func(*Route, TransportEndpointID, *buffer.VectorisedView) bool
+	defaultHandler func(*Route, TransportEndpointID, buffer.VectorisedView) bool
 }
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
@@ -428,7 +428,7 @@ func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber,
 //
 // It must be called only during initialization of the stack. Changing it as the
 // stack is operating is not supported.
-func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(*Route, TransportEndpointID, *buffer.VectorisedView) bool) {
+func (s *Stack) SetTransportProtocolHandler(p tcpip.TransportProtocolNumber, h func(*Route, TransportEndpointID, buffer.VectorisedView) bool) {
 	state := s.transportProtocols[p]
 	if state != nil {
 		state.defaultHandler = h

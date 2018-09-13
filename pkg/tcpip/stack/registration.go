@@ -64,11 +64,11 @@ const (
 type TransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint.
-	HandlePacket(r *Route, id TransportEndpointID, vv *buffer.VectorisedView)
+	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
 
 	// HandleControlPacket is called by the stack when new control (e.g.,
 	// ICMP) packets arrive to this transport endpoint.
-	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv *buffer.VectorisedView)
+	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView)
 }
 
 // TransportProtocol is the interface that needs to be implemented by transport
@@ -95,7 +95,7 @@ type TransportProtocol interface {
 	//
 	// The return value indicates whether the packet was well-formed (for
 	// stats purposes only).
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, vv *buffer.VectorisedView) bool
+	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) bool
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -114,11 +114,11 @@ type TransportProtocol interface {
 type TransportDispatcher interface {
 	// DeliverTransportPacket delivers packets to the appropriate
 	// transport protocol endpoint.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv *buffer.VectorisedView)
+	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView)
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
-	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv *buffer.VectorisedView)
+	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView)
 }
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
@@ -155,7 +155,7 @@ type NetworkEndpoint interface {
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint.
-	HandlePacket(r *Route, vv *buffer.VectorisedView)
+	HandlePacket(r *Route, vv buffer.VectorisedView)
 
 	// Close is called when the endpoint is reomved from a stack.
 	Close()
@@ -196,7 +196,7 @@ type NetworkProtocol interface {
 type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol
 	// endpoint and hands the packet over for further processing.
-	DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView)
+	DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities

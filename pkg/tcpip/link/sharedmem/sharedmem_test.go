@@ -129,7 +129,7 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
+func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
 		addr:  remoteAddr,
@@ -270,8 +270,7 @@ func TestSimpleSend(t *testing.T) {
 		randomFill(buf)
 
 		proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-		vv := buffer.NewVectorisedView(len(buf), []buffer.View{buf})
-		if err := c.ep.WritePacket(&r, &hdr, vv, proto); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), proto); err != nil {
 			t.Fatalf("WritePacket failed: %v", err)
 		}
 
@@ -330,7 +329,6 @@ func TestFillTxQueue(t *testing.T) {
 	}
 
 	buf := buffer.NewView(100)
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{buf})
 
 	// Each packet is uses no more than 40 bytes, so write that many packets
 	// until the tx queue if full.
@@ -338,7 +336,7 @@ func TestFillTxQueue(t *testing.T) {
 	for i := queuePipeSize / 40; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
 
-		if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -353,7 +351,7 @@ func TestFillTxQueue(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != want {
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
 }
@@ -374,12 +372,11 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	}
 
 	buf := buffer.NewView(100)
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{buf})
 
 	// Send two packets so that the id slice has at least two slots.
 	for i := 2; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 	}
@@ -399,7 +396,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	ids := make(map[uint64]struct{})
 	for i := queuePipeSize / 40; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -414,7 +411,7 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != want {
+	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
 }
@@ -431,14 +428,13 @@ func TestFillTxMemory(t *testing.T) {
 	}
 
 	buf := buffer.NewView(100)
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{buf})
 
 	// Each packet is uses up one buffer, so write as many as possible until
 	// we fill the memory.
 	ids := make(map[uint64]struct{})
 	for i := queueDataSize / bufferSize; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -454,7 +450,7 @@ func TestFillTxMemory(t *testing.T) {
 
 	// Next attempt to write must fail.
 	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber)
+	err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber)
 	if want := tcpip.ErrWouldBlock; err != want {
 		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
 	}
@@ -474,13 +470,12 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	}
 
 	buf := buffer.NewView(100)
-	vv := buffer.NewVectorisedView(len(buf), []buffer.View{buf})
 
 	// Each packet is uses up one buffer, so write as many as possible
 	// until there is only one buffer left.
 	for i := queueDataSize/bufferSize - 1; i > 0; i-- {
 		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-		if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
 			t.Fatalf("WritePacket failed unexpectedly: %v", err)
 		}
 
@@ -490,20 +485,26 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	}
 
 	// Attempt to write a two-buffer packet. It must fail.
-	hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	uu := buffer.NewVectorisedView(bufferSize, []buffer.View{buffer.NewView(bufferSize)})
-	if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, uu, header.IPv4ProtocolNumber); err != want {
-		t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+	{
+		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
+		uu := buffer.NewView(bufferSize).ToVectorisedView()
+		if want, err := tcpip.ErrWouldBlock, c.ep.WritePacket(&r, &hdr, uu, header.IPv4ProtocolNumber); err != want {
+			t.Fatalf("WritePacket return unexpected result: got %v, want %v", err, want)
+		}
 	}
 
 	// Attempt to write the one-buffer packet again. It must succeed.
-	hdr = buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
-	if err := c.ep.WritePacket(&r, &hdr, vv, header.IPv4ProtocolNumber); err != nil {
-		t.Fatalf("WritePacket failed unexpectedly: %v", err)
+	{
+		hdr := buffer.NewPrependable(int(c.ep.MaxHeaderLength()))
+		if err := c.ep.WritePacket(&r, &hdr, buf.ToVectorisedView(), header.IPv4ProtocolNumber); err != nil {
+			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		}
 	}
 }
 
 func pollPull(t *testing.T, p *pipe.Rx, to <-chan time.Time, errStr string) []byte {
+	t.Helper()
+
 	for {
 		b := p.Pull()
 		if b != nil {
@@ -513,7 +514,7 @@ func pollPull(t *testing.T, p *pipe.Rx, to <-chan time.Time, errStr string) []by
 		select {
 		case <-time.After(10 * time.Millisecond):
 		case <-to:
-			t.Fatalf(errStr)
+			t.Fatal(errStr)
 		}
 	}
 }

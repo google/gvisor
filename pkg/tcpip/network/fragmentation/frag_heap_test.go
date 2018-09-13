@@ -25,7 +25,7 @@ import (
 var reassambleTestCases = []struct {
 	comment string
 	in      []fragment
-	want    *buffer.VectorisedView
+	want    buffer.VectorisedView
 }{
 	{
 		comment: "Non-overlapping in-order",
@@ -87,21 +87,25 @@ var reassambleTestCases = []struct {
 
 func TestReassamble(t *testing.T) {
 	for _, c := range reassambleTestCases {
-		h := (fragHeap)(make([]fragment, 0, 8))
-		heap.Init(&h)
-		for _, f := range c.in {
-			heap.Push(&h, f)
-		}
-		got, _ := h.reassemble()
-
-		if !reflect.DeepEqual(got, *c.want) {
-			t.Errorf("Test \"%s\" reassembling failed. Got %v. Want %v", c.comment, got, *c.want)
-		}
+		t.Run(c.comment, func(t *testing.T) {
+			h := make(fragHeap, 0, 8)
+			heap.Init(&h)
+			for _, f := range c.in {
+				heap.Push(&h, f)
+			}
+			got, err := h.reassemble()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("got reassemble(%+v) = %v, want = %v", c.in, got, c.want)
+			}
+		})
 	}
 }
 
 func TestReassambleFailsForNonZeroOffset(t *testing.T) {
-	h := (fragHeap)(make([]fragment, 0, 8))
+	h := make(fragHeap, 0, 8)
 	heap.Init(&h)
 	heap.Push(&h, fragment{offset: 1, vv: vv(1, "0")})
 	_, err := h.reassemble()
@@ -111,7 +115,7 @@ func TestReassambleFailsForNonZeroOffset(t *testing.T) {
 }
 
 func TestReassambleFailsForHoles(t *testing.T) {
-	h := (fragHeap)(make([]fragment, 0, 8))
+	h := make(fragHeap, 0, 8)
 	heap.Init(&h)
 	heap.Push(&h, fragment{offset: 0, vv: vv(1, "0")})
 	heap.Push(&h, fragment{offset: 2, vv: vv(1, "1")})

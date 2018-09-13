@@ -227,8 +227,6 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 	// Read in a loop until a stop is requested.
 	var rxb []queue.RxBuffer
-	views := []buffer.View{nil}
-	vv := buffer.NewVectorisedView(0, views)
 	for atomic.LoadUint32(&e.stopRequested) == 0 {
 		var n uint32
 		rxb, n = e.rx.postAndReceive(rxb, &e.stopRequested)
@@ -250,9 +248,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 		// Send packet up the stack.
 		eth := header.Ethernet(b)
-		views[0] = b[header.EthernetMinimumSize:]
-		vv.SetSize(int(n) - header.EthernetMinimumSize)
-		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.Type(), &vv)
+		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView())
 	}
 
 	// Clean state.

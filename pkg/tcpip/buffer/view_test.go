@@ -20,22 +20,33 @@ import (
 	"testing"
 )
 
+// copy returns a deep-copy of the vectorised view.
+func (vv VectorisedView) copy() VectorisedView {
+	uu := VectorisedView{
+		views: make([]View, 0, len(vv.views)),
+		size:  vv.size,
+	}
+	for _, v := range vv.views {
+		uu.views = append(uu.views, append(View(nil), v...))
+	}
+	return uu
+}
+
 // vv is an helper to build VectorisedView from different strings.
-func vv(size int, pieces ...string) *VectorisedView {
+func vv(size int, pieces ...string) VectorisedView {
 	views := make([]View, len(pieces))
 	for i, p := range pieces {
 		views[i] = []byte(p)
 	}
 
-	vv := NewVectorisedView(size, views)
-	return &vv
+	return NewVectorisedView(size, views)
 }
 
 var capLengthTestCases = []struct {
 	comment string
-	in      *VectorisedView
+	in      VectorisedView
 	length  int
-	want    *VectorisedView
+	want    VectorisedView
 }{
 	{
 		comment: "Simple case",
@@ -88,9 +99,9 @@ func TestCapLength(t *testing.T) {
 
 var trimFrontTestCases = []struct {
 	comment string
-	in      *VectorisedView
+	in      VectorisedView
 	count   int
-	want    *VectorisedView
+	want    VectorisedView
 }{
 	{
 		comment: "Simple case",
@@ -149,7 +160,7 @@ func TestTrimFront(t *testing.T) {
 
 var toViewCases = []struct {
 	comment string
-	in      *VectorisedView
+	in      VectorisedView
 	want    View
 }{
 	{
@@ -181,7 +192,7 @@ func TestToView(t *testing.T) {
 
 var toCloneCases = []struct {
 	comment  string
-	inView   *VectorisedView
+	inView   VectorisedView
 	inBuffer []View
 }{
 	{
@@ -213,10 +224,12 @@ var toCloneCases = []struct {
 
 func TestToClone(t *testing.T) {
 	for _, c := range toCloneCases {
-		got := c.inView.Clone(c.inBuffer)
-		if !reflect.DeepEqual(&got, c.inView) {
-			t.Errorf("Test \"%s\" failed when calling Clone(%v) on %v. Got %v. Want %v",
-				c.comment, c.inBuffer, c.inView, got, c.inView)
-		}
+		t.Run(c.comment, func(t *testing.T) {
+			got := c.inView.Clone(c.inBuffer)
+			if !reflect.DeepEqual(got, c.inView) {
+				t.Fatalf("got (%+v).Clone(%+v) = %+v, want = %+v",
+					c.inView, c.inBuffer, got, c.inView)
+			}
+		})
 	}
 }

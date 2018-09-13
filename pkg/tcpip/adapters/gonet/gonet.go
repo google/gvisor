@@ -350,8 +350,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 	default:
 	}
 
-	v := buffer.NewView(len(b))
-	copy(v, b)
+	v := buffer.NewViewFromBytes(b)
 
 	// We must handle two soft failure conditions simultaneously:
 	//  1. Write may write nothing and return tcpip.ErrWouldBlock.

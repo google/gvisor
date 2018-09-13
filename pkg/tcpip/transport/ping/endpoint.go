@@ -384,8 +384,7 @@ func sendPing4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv4.SetChecksum(0)
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
-	vv := buffer.NewVectorisedView(len(data), []buffer.View{data})
-	return r.WritePacket(&hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(&hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
 }
 
 func sendPing6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
@@ -409,8 +408,7 @@ func sendPing6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv6.SetChecksum(0)
 	icmpv6.SetChecksum(^header.Checksum(icmpv6, header.Checksum(data, 0)))
 
-	vv := buffer.NewVectorisedView(len(data), []buffer.View{data})
-	return r.WritePacket(&hdr, vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(&hdr, data.ToVectorisedView(), header.ICMPv6ProtocolNumber, r.DefaultTTL())
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
@@ -675,7 +673,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv *buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
@@ -711,5 +709,5 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, vv *buffer.VectorisedView) {
+func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
 }

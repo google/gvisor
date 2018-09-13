@@ -66,15 +66,13 @@ func (e *Endpoint) Drain() int {
 }
 
 // Inject injects an inbound packet.
-func (e *Endpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv *buffer.VectorisedView) {
-	uu := vv.Clone(nil)
-	e.dispatcher.DeliverNetworkPacket(e, "", protocol, &uu)
+func (e *Endpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+	e.InjectLinkAddr(protocol, "", vv)
 }
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
-func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, vv *buffer.VectorisedView) {
-	uu := vv.Clone(nil)
-	e.dispatcher.DeliverNetworkPacket(e, remoteLinkAddr, protocol, &uu)
+func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, vv buffer.VectorisedView) {
+	e.dispatcher.DeliverNetworkPacket(e, remoteLinkAddr, protocol, vv.Clone(nil))
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets

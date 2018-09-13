@@ -96,54 +96,54 @@ func TestDirectRequest(t *testing.T) {
 	copy(h.HardwareAddressSender(), senderMAC)
 	copy(h.ProtocolAddressSender(), senderIPv4)
 
-	// stackAddr1
-	copy(h.ProtocolAddressTarget(), stackAddr1)
-	vv := v.ToVectorisedView([1]buffer.View{})
-	c.linkEP.Inject(arp.ProtocolNumber, &vv)
-	pkt := <-c.linkEP.C
-	if pkt.Proto != arp.ProtocolNumber {
-		t.Fatalf("stackAddr1: expected ARP response, got network protocol number %v", pkt.Proto)
-	}
-	rep := header.ARP(pkt.Header)
-	if !rep.IsValid() {
-		t.Fatalf("stackAddr1: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
-	}
-	if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr1 {
-		t.Errorf("stackAddr1: expected sender to be set")
-	}
-	if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
-		t.Errorf("stackAddr1: expected sender to be stackLinkAddr, got %q", got)
+	inject := func(addr tcpip.Address) {
+		copy(h.ProtocolAddressTarget(), addr)
+		c.linkEP.Inject(arp.ProtocolNumber, v.ToVectorisedView())
 	}
 
-	// stackAddr2
-	copy(h.ProtocolAddressTarget(), stackAddr2)
-	vv = v.ToVectorisedView([1]buffer.View{})
-	c.linkEP.Inject(arp.ProtocolNumber, &vv)
-	pkt = <-c.linkEP.C
-	if pkt.Proto != arp.ProtocolNumber {
-		t.Fatalf("stackAddr2: expected ARP response, got network protocol number %v", pkt.Proto)
-	}
-	rep = header.ARP(pkt.Header)
-	if !rep.IsValid() {
-		t.Fatalf("stackAddr2: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
-	}
-	if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr2 {
-		t.Errorf("stackAddr2: expected sender to be set")
-	}
-	if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
-		t.Errorf("stackAddr2: expected sender to be stackLinkAddr, got %q", got)
+	inject(stackAddr1)
+	{
+		pkt := <-c.linkEP.C
+		if pkt.Proto != arp.ProtocolNumber {
+			t.Fatalf("stackAddr1: expected ARP response, got network protocol number %v", pkt.Proto)
+		}
+		rep := header.ARP(pkt.Header)
+		if !rep.IsValid() {
+			t.Fatalf("stackAddr1: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
+		}
+		if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr1 {
+			t.Errorf("stackAddr1: expected sender to be set")
+		}
+		if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
+			t.Errorf("stackAddr1: expected sender to be stackLinkAddr, got %q", got)
+		}
 	}
 
-	// stackAddrBad
-	copy(h.ProtocolAddressTarget(), stackAddrBad)
-	vv = v.ToVectorisedView([1]buffer.View{})
-	c.linkEP.Inject(arp.ProtocolNumber, &vv)
+	inject(stackAddr2)
+	{
+		pkt := <-c.linkEP.C
+		if pkt.Proto != arp.ProtocolNumber {
+			t.Fatalf("stackAddr2: expected ARP response, got network protocol number %v", pkt.Proto)
+		}
+		rep := header.ARP(pkt.Header)
+		if !rep.IsValid() {
+			t.Fatalf("stackAddr2: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
+		}
+		if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr2 {
+			t.Errorf("stackAddr2: expected sender to be set")
+		}
+		if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
+			t.Errorf("stackAddr2: expected sender to be stackLinkAddr, got %q", got)
+		}
+	}
+
+	inject(stackAddrBad)
 	select {
 	case pkt := <-c.linkEP.C:
 		t.Errorf("stackAddrBad: unexpected packet sent, Proto=%v", pkt.Proto)
 	case <-time.After(100 * time.Millisecond):
-		// Sleep tests are gross, but this will only
-		// potentially fail flakily if there's a bugj
-		// If there is no bug this will reliably succeed.
+		// Sleep tests are gross, but this will only potentially flake
+		// if there's a bug. If there is no bug this will reliably
+		// succeed.
 	}
 }
