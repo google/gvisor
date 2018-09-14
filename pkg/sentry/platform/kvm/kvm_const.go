@@ -25,6 +25,7 @@ const (
 	_KVM_SET_TSS_ADDR           = 0xae47
 	_KVM_RUN                    = 0xae80
 	_KVM_NMI                    = 0xae9a
+	_KVM_CHECK_EXTENSION        = 0xae03
 	_KVM_INTERRUPT              = 0x4004ae86
 	_KVM_SET_MSRS               = 0x4008ae89
 	_KVM_SET_USER_MEMORY_REGION = 0x4020ae46
@@ -49,9 +50,14 @@ const (
 	_KVM_EXIT_INTERNAL_ERROR  = 0x11
 )
 
+// KVM capability options.
+const (
+	_KVM_CAP_MAX_VCPUS = 0x42
+)
+
 // KVM limits.
 const (
-	_KVM_NR_VCPUS         = 0x100
+	_KVM_NR_VCPUS         = 0xff
 	_KVM_NR_INTERRUPTS    = 0x100
 	_KVM_NR_CPUID_ENTRIES = 0x100
 )

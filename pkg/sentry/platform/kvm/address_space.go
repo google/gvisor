@@ -26,31 +26,26 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-type vCPUBitArray [(_KVM_NR_VCPUS + 63) / 64]uint64
-
 // dirtySet tracks vCPUs for invalidation.
 type dirtySet struct {
-	vCPUs vCPUBitArray
+	vCPUs []uint64
 }
 
 // forEach iterates over all CPUs in the dirty set.
 func (ds *dirtySet) forEach(m *machine, fn func(c *vCPU)) {
-	var localSet vCPUBitArray
-	for index := 0; index < len(ds.vCPUs); index++ {
-		// Clear the dirty set, copy to the local one.
-		localSet[index] = atomic.SwapUint64(&ds.vCPUs[index], 0)
-	}
-
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	for _, c := range m.vCPUs {
-		index := uint64(c.id) / 64
-		bit := uint64(1) << uint(c.id%64)
-
-		// Call the function if it was set.
-		if localSet[index]&bit != 0 {
-			fn(c)
+	for index := range ds.vCPUs {
+		mask := atomic.SwapUint64(&ds.vCPUs[index], 0)
+		if mask != 0 {
+			for bit := 0; bit < 64; bit++ {
+				if mask&(1<<uint64(bit)) == 0 {
+					continue
+				}
+				id := 64*index + bit
+				fn(m.vCPUsByID[id])
+			}
 		}
 	}
 }
@@ -92,7 +87,7 @@ type addressSpace struct {
 	pageTables *pagetables.PageTables
 
 	// dirtySet is the set of dirty vCPUs.
-	dirtySet dirtySet
+	dirtySet *dirtySet
 
 	// files contains files mapped in the host address space.
 	//

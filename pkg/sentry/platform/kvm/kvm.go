@@ -143,6 +143,7 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 		filemem:    k.FileMem,
 		machine:    k.machine,
 		pageTables: pageTables,
+		dirtySet:   k.machine.newDirtySet(),
 	}, nil, nil
 }
 
