@@ -145,7 +145,7 @@ type NetworkEndpoint interface {
 
 	// WritePacket writes a packet to the given destination address and
 	// protocol.
-	WritePacket(r *Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error
+	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID
@@ -238,7 +238,7 @@ type LinkEndpoint interface {
 
 	// WritePacket writes a packet with the given protocol through the given
 	// route.
-	WritePacket(r *Route, hdr *buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
+	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
 
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.

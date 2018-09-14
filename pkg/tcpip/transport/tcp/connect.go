@@ -608,7 +608,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		r.Stats().TCP.ResetsSent.Increment()
 	}
 
-	return r.WritePacket(&hdr, data, ProtocolNumber, ttl)
+	return r.WritePacket(hdr, data, ProtocolNumber, ttl)
 }
 
 // makeOptions makes an options slice.

@@ -158,7 +158,7 @@ func TestWritePacket(t *testing.T) {
 					payload[i] = uint8(rand.Intn(256))
 				}
 				want := append(hdr.UsedBytes(), payload...)
-				if err := c.ep.WritePacket(r, &hdr, payload.ToVectorisedView(), proto); err != nil {
+				if err := c.ep.WritePacket(r, hdr, payload.ToVectorisedView(), proto); err != nil {
 					t.Fatalf("WritePacket failed: %v", err)
 				}
 
