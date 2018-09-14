@@ -151,13 +151,13 @@ func (t *testObject) WritePacket(_ *stack.Route, hdr buffer.Prependable, payload
 	var dstAddr tcpip.Address
 
 	if t.v4 {
-		h := header.IPv4(hdr.UsedBytes())
+		h := header.IPv4(hdr.View())
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 
 	} else {
-		h := header.IPv6(hdr.UsedBytes())
+		h := header.IPv6(hdr.View())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()

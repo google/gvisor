@@ -190,10 +190,10 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, hdr.UsedBytes())
+		logPacket("send", protocol, hdr.View())
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
-		hdrBuf := hdr.UsedBytes()
+		hdrBuf := hdr.View()
 		length := len(hdrBuf) + payload.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)

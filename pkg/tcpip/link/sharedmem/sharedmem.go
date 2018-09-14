@@ -196,7 +196,7 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 	v := payload.ToView()
 	// Transmit the packet.
 	e.mu.Lock()
-	ok := e.tx.transmit(hdr.UsedBytes(), v)
+	ok := e.tx.transmit(hdr.View(), v)
 	e.mu.Unlock()
 
 	if !ok {

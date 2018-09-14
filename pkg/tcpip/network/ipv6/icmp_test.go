@@ -187,7 +187,7 @@ func TestLinkResolution(t *testing.T) {
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 	pkt.SetType(header.ICMPv6EchoRequest)
 	pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
-	payload := tcpip.SlicePayload(hdr.UsedBytes())
+	payload := tcpip.SlicePayload(hdr.View())
 
 	// We can't send our payload directly over the route because that
 	// doesn't provoke NDP discovery.

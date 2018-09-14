@@ -17,6 +17,7 @@
 package fdbased
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -157,7 +158,7 @@ func TestWritePacket(t *testing.T) {
 				for i := range payload {
 					payload[i] = uint8(rand.Intn(256))
 				}
-				want := append(hdr.UsedBytes(), payload...)
+				want := append(hdr.View(), payload...)
 				if err := c.ep.WritePacket(r, hdr, payload.ToVectorisedView(), proto); err != nil {
 					t.Fatalf("WritePacket failed: %v", err)
 				}
@@ -188,7 +189,7 @@ func TestWritePacket(t *testing.T) {
 				if len(b) != len(want) {
 					t.Fatalf("Read returned %v bytes, want %v", len(b), len(want))
 				}
-				if !reflect.DeepEqual(b, want) {
+				if !bytes.Equal(b, want) {
 					t.Fatalf("Read returned %x, want %x", b, want)
 				}
 			})

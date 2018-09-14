@@ -178,10 +178,10 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 	}
 
 	if payload.Size() == 0 {
-		return rawfile.NonBlockingWrite(e.fd, hdr.UsedBytes())
+		return rawfile.NonBlockingWrite(e.fd, hdr.View())
 	}
 
-	return rawfile.NonBlockingWrite2(e.fd, hdr.UsedBytes(), payload.ToView())
+	return rawfile.NonBlockingWrite2(e.fd, hdr.View(), payload.ToView())
 }
 
 func (e *endpoint) capViews(n int, buffers []int) int {
