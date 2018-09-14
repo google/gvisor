@@ -140,6 +140,10 @@ const (
 	SO_TYPE        = 3
 )
 
+// SockAddrMax is the maximum size of a struct sockaddr, from
+// uapi/linux/socket.h.
+const SockAddrMax = 128
+
 // SockAddrInt is struct sockaddr_in, from uapi/linux/in.h.
 type SockAddrInet struct {
 	Family uint16

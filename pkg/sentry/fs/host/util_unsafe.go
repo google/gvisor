@@ -23,6 +23,9 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 )
 
+// NulByte is a single NUL byte. It is passed to readlinkat as an empty string.
+var NulByte byte = '\x00'
+
 func createLink(fd int, name string, linkName string) error {
 	namePtr, err := syscall.BytePtrFromString(name)
 	if err != nil {
@@ -50,7 +53,7 @@ func readLink(fd int) (string, error) {
 		n, _, errno := syscall.Syscall6(
 			syscall.SYS_READLINKAT,
 			uintptr(fd),
-			uintptr(unsafe.Pointer(syscall.StringBytePtr(""))),
+			uintptr(unsafe.Pointer(&NulByte)), // ""
 			uintptr(unsafe.Pointer(&b[0])),
 			uintptr(l),
 			0, 0)
