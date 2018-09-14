@@ -773,6 +773,11 @@ func (d *Dirent) CreateHardLink(ctx context.Context, root *Dirent, target *Diren
 		return syscall.EXDEV
 	}
 
+	// Directories are never linkable. See fs/namei.c:vfs_link.
+	if IsDir(target.Inode.StableAttr) {
+		return syscall.EPERM
+	}
+
 	return d.genericCreate(ctx, root, name, func() error {
 		if err := d.Inode.CreateHardLink(ctx, d, target, name); err != nil {
 			return err

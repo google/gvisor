@@ -1122,15 +1122,32 @@ func Symlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 //
 // This corresponds to Linux's fs/namei.c:may_linkat.
 func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
+	// Linux will impose the following restrictions on hard links only if
+	// sysctl_protected_hardlinks is enabled. The kernel disables this
+	// setting by default for backward compatibility (see commit
+	// 561ec64ae67e), but also recommends that distributions enable it (and
+	// Debian does:
+	// https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=889098).
+	//
+	// gVisor currently behaves as though sysctl_protected_hardlinks is
+	// always enabled, and thus imposes the following restrictions on hard
+	// links.
+
 	// Technically Linux is more restrictive in 3.11.10 (requires CAP_FOWNER in
 	// root user namespace); this is from the later f2ca379642d7 "namei: permit
 	// linking with CAP_FOWNER in userns".
-	if !target.CheckOwnership(t) {
-		return syserror.EPERM
+	if target.CheckOwnership(t) {
+		// fs/namei.c:may_linkat: "Source inode owner (or CAP_FOWNER)
+		// can hardlink all they like."
+		return nil
 	}
 
-	// Check that the target is not a directory and that permissions are okay.
-	if fs.IsDir(target.StableAttr) || target.CheckPermission(t, fs.PermMask{Read: true, Write: true}) != nil {
+	// If we are not the owner, then the file must be regular and have
+	// Read+Write permissions.
+	if !fs.IsRegular(target.StableAttr) {
+		return syserror.EPERM
+	}
+	if target.CheckPermission(t, fs.PermMask{Read: true, Write: true}) != nil {
 		return syserror.EPERM
 	}
 
