@@ -108,9 +108,12 @@ type Task struct {
 	// goroutine.
 	signalMask linux.SignalSet
 
-	// FIXME: An equivalent to task_struct::real_blocked is needed
-	// to prevent signals that are ignored, but transiently unblocked by
-	// sigtimedwait(2), from being dropped in Task.sendSignalTimerLocked.
+	// If the task goroutine is currently executing Task.sigtimedwait,
+	// realSignalMask is the previous value of signalMask, which has temporarily
+	// been replaced by Task.sigtimedwait. Otherwise, realSignalMask is 0.
+	//
+	// realSignalMask is exclusive to the task goroutine.
+	realSignalMask linux.SignalSet
 
 	// If haveSavedSignalMask is true, savedSignalMask is the signal mask that
 	// should be applied after the task has either delivered one signal to a

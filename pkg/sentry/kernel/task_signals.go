@@ -19,6 +19,7 @@ package kernel
 import (
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
@@ -119,25 +120,11 @@ var UnblockableSignals = linux.MakeSignalSet(linux.SIGKILL, linux.SIGSTOP)
 // StopSignals is the set of signals whose default action is SignalActionStop.
 var StopSignals = linux.MakeSignalSet(linux.SIGSTOP, linux.SIGTSTP, linux.SIGTTIN, linux.SIGTTOU)
 
-// dequeueSignalLocked returns a pending unmasked signal. If there are no
-// pending unmasked signals, dequeueSignalLocked returns nil.
+// dequeueSignalLocked returns a pending signal that is *not* included in mask.
+// If there are no pending unmasked signals, dequeueSignalLocked returns nil.
 //
 // Preconditions: t.tg.signalHandlers.mu must be locked.
-func (t *Task) dequeueSignalLocked() *arch.SignalInfo {
-	if info := t.pendingSignals.dequeue(t.signalMask); info != nil {
-		return info
-	}
-	return t.tg.pendingSignals.dequeue(t.signalMask)
-}
-
-// TakeSignal returns a pending signal not blocked by mask. Signal handlers are
-// not affected. If there are no pending signals not blocked by mask,
-// TakeSignal returns a nil SignalInfo.
-func (t *Task) TakeSignal(mask linux.SignalSet) *arch.SignalInfo {
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-	t.tg.signalHandlers.mu.Lock()
-	defer t.tg.signalHandlers.mu.Unlock()
+func (t *Task) dequeueSignalLocked(mask linux.SignalSet) *arch.SignalInfo {
 	if info := t.pendingSignals.dequeue(mask); info != nil {
 		return info
 	}
@@ -294,6 +281,49 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 	return ctrlResume, nil
 }
 
+// Sigtimedwait implements the semantics of sigtimedwait(2).
+//
+// Preconditions: The caller must be running on the task goroutine. t.exitState
+// < TaskExitZombie.
+func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*arch.SignalInfo, error) {
+	// set is the set of signals we're interested in; invert it to get the set
+	// of signals to block.
+	mask := ^set &^ UnblockableSignals
+
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+	if info := t.dequeueSignalLocked(mask); info != nil {
+		return info, nil
+	}
+
+	if timeout == 0 {
+		return nil, syserror.EAGAIN
+	}
+
+	// Unblock signals we're waiting for. Remember the original signal mask so
+	// that Task.sendSignalTimerLocked doesn't discard ignored signals that
+	// we're temporarily unblocking.
+	t.realSignalMask = t.signalMask
+	t.setSignalMaskLocked(t.signalMask & mask)
+
+	// Wait for a timeout or new signal.
+	t.tg.signalHandlers.mu.Unlock()
+	_, err := t.BlockWithTimeout(nil, true, timeout)
+	t.tg.signalHandlers.mu.Lock()
+
+	// Restore the original signal mask.
+	t.setSignalMaskLocked(t.realSignalMask)
+	t.realSignalMask = 0
+
+	if info := t.dequeueSignalLocked(mask); info != nil {
+		return info, nil
+	}
+	if err == syserror.ETIMEDOUT {
+		return nil, syserror.EAGAIN
+	}
+	return nil, err
+}
+
 // SendSignal sends the given signal to t.
 //
 // The following errors may be returned:
@@ -431,7 +461,7 @@ func (t *Task) sendSignalTimerLocked(info *arch.SignalInfo, group bool, timer *I
 	// Linux's kernel/signal.c:__send_signal() => prepare_signal() =>
 	// sig_ignored().
 	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
-	if linux.SignalSetOf(sig)&t.signalMask == 0 && ignored && !t.hasTracer() {
+	if sigset := linux.SignalSetOf(sig); sigset&t.signalMask == 0 && sigset&t.realSignalMask == 0 && ignored && !t.hasTracer() {
 		t.Debugf("Discarding ignored signal %d", sig)
 		if timer != nil {
 			timer.signalRejectedLocked()
@@ -1010,7 +1040,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	}
 
 	// Are there signals pending?
-	if info := t.dequeueSignalLocked(); info != nil {
+	if info := t.dequeueSignalLocked(t.signalMask); info != nil {
 		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 && t.tg.groupStopPhase == groupStopNone {
 			// Indicate that we've dequeued a stop signal before
 			// unlocking the signal mutex; initiateGroupStop will check

@@ -343,44 +343,6 @@ func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, syserror.ConvertIntr(t.Block(nil), kernel.ERESTARTNOHAND)
 }
 
-func sigtimedwait(t *kernel.Task, mask linux.SignalSet, timeout time.Duration) (*arch.SignalInfo, error) {
-	// Is it already pending?
-	if info := t.TakeSignal(^mask); info != nil {
-		return info, nil
-	}
-
-	// No signals available immediately and asked not to wait.
-	if timeout == 0 {
-		return nil, syserror.EAGAIN
-	}
-
-	// No signals available yet. Temporarily unblock the ones we are interested
-	// in then wait for either a timeout or a new signal.
-	oldmask := t.SignalMask()
-	t.SetSignalMask(oldmask &^ mask)
-	_, err := t.BlockWithTimeout(nil, true, timeout)
-	t.SetSignalMask(oldmask)
-
-	// How did the wait go?
-	switch err {
-	case syserror.ErrInterrupted:
-		if info := t.TakeSignal(^mask); info != nil {
-			// Got one of the signals we were waiting for.
-			return info, nil
-		}
-		// Got a signal we weren't waiting for.
-		return nil, syserror.EINTR
-	case syserror.ETIMEDOUT:
-		// Timed out and still no signals.
-		return nil, syserror.EAGAIN
-	default:
-		// Some other error? Shouldn't be possible. The event channel
-		// passed to BlockWithTimeout was nil, so the only two ways the
-		// block could've ended are a timeout or an interrupt.
-		panic("unreachable")
-	}
-}
-
 // RtSigpending implements linux syscall rt_sigpending(2).
 func RtSigpending(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
@@ -415,23 +377,18 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		timeout = time.Duration(math.MaxInt64)
 	}
 
-	si, err := sigtimedwait(t, mask, timeout)
+	si, err := t.Sigtimedwait(mask, timeout)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	if si != nil {
-		if siginfo != 0 {
-			si.FixSignalCodeForUser()
-			if _, err := t.CopyOut(siginfo, si); err != nil {
-				return 0, nil, err
-			}
+	if siginfo != 0 {
+		si.FixSignalCodeForUser()
+		if _, err := t.CopyOut(siginfo, si); err != nil {
+			return 0, nil, err
 		}
-		return uintptr(si.Signo), nil, nil
 	}
-
-	// sigtimedwait's not supposed to return nil si and err...
-	return 0, nil, nil
+	return uintptr(si.Signo), nil, nil
 }
 
 // RtSigqueueinfo implements linux syscall rt_sigqueueinfo(2).
