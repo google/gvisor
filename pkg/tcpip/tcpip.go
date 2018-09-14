@@ -123,16 +123,11 @@ func (e ErrSaveRejection) Error() string {
 // time, but never for netstack internal timekeeping.
 type Clock interface {
 	// NowNanoseconds returns the current real time as a number of
-	// nanoseconds since some epoch.
+	// nanoseconds since the Unix epoch.
 	NowNanoseconds() int64
-}
 
-// StdClock implements Clock with the time package.
-type StdClock struct{}
-
-// NowNanoseconds implements Clock.NowNanoseconds.
-func (*StdClock) NowNanoseconds() int64 {
-	return time.Now().UnixNano()
+	// NowMonotonic returns a monotonic time value.
+	NowMonotonic() int64
 }
 
 // Address is a byte slice cast as a string that represents the address of a

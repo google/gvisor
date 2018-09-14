@@ -943,11 +943,22 @@ func (k *Kernel) SetExitError(err error) {
 	}
 }
 
+var _ tcpip.Clock = (*Kernel)(nil)
+
 // NowNanoseconds implements tcpip.Clock.NowNanoseconds.
 func (k *Kernel) NowNanoseconds() int64 {
 	now, err := k.timekeeper.GetTime(sentrytime.Realtime)
 	if err != nil {
 		panic("Kernel.NowNanoseconds: " + err.Error())
+	}
+	return now
+}
+
+// NowMonotonic implements tcpip.Clock.NowMonotonic.
+func (k *Kernel) NowMonotonic() int64 {
+	now, err := k.timekeeper.GetTime(sentrytime.Monotonic)
+	if err != nil {
+		panic("Kernel.NowMonotonic: " + err.Error())
 	}
 	return now
 }
