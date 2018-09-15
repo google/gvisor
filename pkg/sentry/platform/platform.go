@@ -133,7 +133,8 @@ type Context interface {
 	// - ErrContextSignal: The Context was interrupted by a signal. The
 	// returned *arch.SignalInfo contains information about the signal. If
 	// arch.SignalInfo.Signo == SIGSEGV, the returned usermem.AccessType
-	// contains the access type of the triggering fault.
+	// contains the access type of the triggering fault. The caller owns
+	// the returned SignalInfo.
 	//
 	// - ErrContextInterrupt: The Context was interrupted by a call to
 	// Interrupt(). Switch() may return ErrContextInterrupt spuriously. In
