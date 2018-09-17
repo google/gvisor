@@ -121,7 +121,7 @@ type Locks struct {
 // Blocker is the interface used for blocking locks. Passing a nil Blocker
 // will be treated as non-blocking.
 type Blocker interface {
-	Block(C chan struct{}) error
+	Block(C <-chan struct{}) error
 }
 
 const (

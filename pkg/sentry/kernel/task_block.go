@@ -95,7 +95,7 @@ func (t *Task) BlockWithDeadline(C chan struct{}, haveDeadline bool, deadline kt
 // Most clients should use BlockWithDeadline or BlockWithTimeout instead.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) BlockWithTimer(C chan struct{}, tchan <-chan struct{}) error {
+func (t *Task) BlockWithTimer(C <-chan struct{}, tchan <-chan struct{}) error {
 	return t.block(C, tchan)
 }
 
@@ -104,13 +104,13 @@ func (t *Task) BlockWithTimer(C chan struct{}, tchan <-chan struct{}) error {
 // is interrupted.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) Block(C chan struct{}) error {
+func (t *Task) Block(C <-chan struct{}) error {
 	return t.block(C, nil)
 }
 
 // block blocks a task on one of many events.
 // N.B. defer is too expensive to be used here.
-func (t *Task) block(C chan struct{}, timerChan <-chan struct{}) error {
+func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	// Fast path if the request is already done.
 	select {
 	case <-C:
