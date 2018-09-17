@@ -408,53 +408,89 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remoteLinkAddr tcpip.Lin
 	}
 
 	src, dst := netProto.ParseAddresses(vv.First())
-	id := NetworkEndpointID{dst}
 
-	n.mu.RLock()
-	ref, ok := n.endpoints[id]
-	if ok && !ref.tryIncRef() {
-		ref = nil
-	}
-	if ref != nil {
-		n.mu.RUnlock()
-	} else {
-		promiscuous := n.promiscuous
-		// Check if the packet is for a subnet this NIC cares about.
-		if !promiscuous {
-			for _, sn := range n.subnets {
-				if sn.Contains(dst) {
-					promiscuous = true
-					break
-				}
-			}
-		}
-		n.mu.RUnlock()
-		if promiscuous {
-			// Try again with the lock in exclusive mode. If we still can't
-			// get the endpoint, create a new "temporary" one. It will only
-			// exist while there's a route through it.
-			n.mu.Lock()
-			ref, ok = n.endpoints[id]
-			if !ok || !ref.tryIncRef() {
-				var err *tcpip.Error
-				ref, err = n.addAddressLocked(protocol, dst, CanBePrimaryEndpoint, true)
-				if err == nil {
-					ref.holdsInsertRef = false
-				}
-			}
-			n.mu.Unlock()
-		}
-	}
-
-	if ref == nil {
-		n.stack.stats.IP.InvalidAddressesReceived.Increment()
+	if ref := n.getRef(protocol, dst); ref != nil {
+		r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
+		r.RemoteLinkAddress = remoteLinkAddr
+		ref.ep.HandlePacket(&r, vv)
+		ref.decRef()
 		return
 	}
 
-	r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
-	r.RemoteLinkAddress = remoteLinkAddr
-	ref.ep.HandlePacket(&r, vv)
-	ref.decRef()
+	// This NIC doesn't care about the packet. Find a NIC that cares about the
+	// packet and forward it to the NIC.
+	//
+	// TODO: Should we be forwarding the packet even if promiscuous?
+	if n.stack.Forwarding() {
+		r, err := n.stack.FindRoute(0, "", dst, protocol)
+		if err != nil {
+			n.stack.stats.IP.InvalidAddressesReceived.Increment()
+			return
+		}
+		defer r.Release()
+
+		r.LocalLinkAddress = n.linkEP.LinkAddress()
+		r.RemoteLinkAddress = remoteLinkAddr
+
+		// Found a NIC.
+		n := r.ref.nic
+		n.mu.RLock()
+		ref, ok := n.endpoints[NetworkEndpointID{dst}]
+		n.mu.RUnlock()
+		if ok && ref.tryIncRef() {
+			ref.ep.HandlePacket(&r, vv)
+			ref.decRef()
+		} else {
+			// n doesn't have a destination endpoint.
+			// Send the packet out of n.
+			hdr := buffer.NewPrependableFromView(vv.First())
+			vv.RemoveFirst()
+			n.linkEP.WritePacket(&r, hdr, vv, protocol)
+		}
+		return
+	}
+
+	n.stack.stats.IP.InvalidAddressesReceived.Increment()
+}
+
+func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
+	id := NetworkEndpointID{dst}
+
+	n.mu.RLock()
+	if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
+		n.mu.RUnlock()
+		return ref
+	}
+
+	promiscuous := n.promiscuous
+	// Check if the packet is for a subnet this NIC cares about.
+	if !promiscuous {
+		for _, sn := range n.subnets {
+			if sn.Contains(dst) {
+				promiscuous = true
+				break
+			}
+		}
+	}
+	n.mu.RUnlock()
+	if promiscuous {
+		// Try again with the lock in exclusive mode. If we still can't
+		// get the endpoint, create a new "temporary" one. It will only
+		// exist while there's a route through it.
+		n.mu.Lock()
+		if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
+			n.mu.Unlock()
+			return ref
+		}
+		ref, err := n.addAddressLocked(protocol, dst, CanBePrimaryEndpoint, true)
+		n.mu.Unlock()
+		if err == nil {
+			ref.holdsInsertRef = false
+			return ref
+		}
+	}
+
+	return nil
 }
 
 // DeliverTransportPacket delivers the packets to the appropriate transport

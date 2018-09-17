@@ -283,8 +283,9 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
-	mu   sync.RWMutex
-	nics map[tcpip.NICID]*NIC
+	mu         sync.RWMutex
+	nics       map[tcpip.NICID]*NIC
+	forwarding bool
 
 	// route is the route table passed in by the user via SetRouteTable(),
 	// it is used by FindRoute() to build a route for a specific
@@ -446,6 +447,22 @@ func (s *Stack) NowNanoseconds() int64 {
 // internally.
 func (s *Stack) Stats() tcpip.Stats {
 	return s.stats
+}
+
+// SetForwarding enables or disables the packet forwarding between NICs.
+func (s *Stack) SetForwarding(enable bool) {
+	// TODO: Expose via /proc/sys/net/ipv4/ip_forward.
+	s.mu.Lock()
+	s.forwarding = enable
+	s.mu.Unlock()
+}
+
+// Forwarding returns if the packet forwarding between NICs is enabled.
+func (s *Stack) Forwarding() bool {
+	// TODO: Expose via /proc/sys/net/ipv4/ip_forward.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.forwarding
 }
 
 // SetRouteTable assigns the route table to be used by this stack. It
