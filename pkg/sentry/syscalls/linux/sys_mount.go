@@ -46,13 +46,16 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 
-	// In Linux, a full page is always copied in regardless of null
-	// character placement, and the address is passed to each file system.
-	// Most file systems always treat this data as a string, though, and so
-	// do all of the ones we implement.
-	data, err := t.CopyInString(dataAddr, usermem.PageSize)
-	if err != nil {
-		return 0, nil, err
+	data := ""
+	if dataAddr != 0 {
+		// In Linux, a full page is always copied in regardless of null
+		// character placement, and the address is passed to each file system.
+		// Most file systems always treat this data as a string, though, and so
+		// do all of the ones we implement.
+		data, err = t.CopyInString(dataAddr, usermem.PageSize)
+		if err != nil {
+			return 0, nil, err
+		}
 	}
 
 	// Ignore magic value that was required before Linux 2.4.
