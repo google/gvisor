@@ -100,8 +100,8 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 }
 
 // Start starts running a non-root container inside the sandbox.
-func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, ioFiles []*os.File) error {
-	for _, f := range ioFiles {
+func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, goferFiles []*os.File) error {
+	for _, f := range goferFiles {
 		defer f.Close()
 	}
 
@@ -112,12 +112,15 @@ func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, ioFiles
 	}
 	defer sandboxConn.Close()
 
+	// The payload must container stdin/stdout/stderr followed by gofer
+	// files.
+	files := append([]*os.File{os.Stdin, os.Stdout, os.Stderr}, goferFiles...)
 	// Start running the container.
 	args := boot.StartArgs{
 		Spec:        spec,
 		Conf:        conf,
 		CID:         cid,
-		FilePayload: urpc.FilePayload{Files: ioFiles},
+		FilePayload: urpc.FilePayload{Files: files},
 	}
 	if err := sandboxConn.Call(boot.ContainerStart, &args, nil); err != nil {
 		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)

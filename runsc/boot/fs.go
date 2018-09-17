@@ -82,7 +82,7 @@ func (f *fdDispenser) empty() bool {
 
 // createMountNamespace creates a mount namespace containing the root filesystem
 // and all mounts. 'rootCtx' is used to walk directories to find mount points.
-func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec *specs.Spec, conf *Config, ioFDs []int) (*fs.MountNamespace, error) {
+func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec *specs.Spec, conf *Config, goferFDs []int) (*fs.MountNamespace, error) {
 	mounts := compileMounts(spec)
 	// Create a tmpfs mount where we create and mount a root filesystem for
 	// each child container.
@@ -90,7 +90,7 @@ func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec
 		Type:        tmpfs,
 		Destination: childContainersDir,
 	})
-	fds := &fdDispenser{fds: ioFDs}
+	fds := &fdDispenser{fds: goferFDs}
 	rootInode, err := createRootMount(rootCtx, spec, conf, fds, mounts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root mount: %v", err)
@@ -595,13 +595,13 @@ func subtargets(root string, mnts []specs.Mount) []string {
 
 // setFileSystemForProcess is used to set up the file system and amend the procArgs accordingly.
 // procArgs are passed by reference and the FDMap field is modified.
-func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, ioFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel, cid string) error {
+func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, stdioFDs, goferFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel, cid string) error {
 	ctx := procArgs.NewContext(k)
 
 	// Create the FD map, which will set stdin, stdout, and stderr.  If
 	// console is true, then ioctl calls will be passed through to the host
 	// fd.
-	fdm, err := createFDMap(ctx, k, ls, console)
+	fdm, err := createFDMap(ctx, k, ls, console, stdioFDs)
 	if err != nil {
 		return fmt.Errorf("error importing fds: %v", err)
 	}
@@ -625,7 +625,7 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 	mns := k.RootMountNamespace()
 	if mns == nil {
 		// Create the virtual filesystem.
-		mns, err := createMountNamespace(ctx, rootCtx, spec, conf, ioFDs)
+		mns, err := createMountNamespace(ctx, rootCtx, spec, conf, goferFDs)
 		if err != nil {
 			return fmt.Errorf("error creating mounts: %v", err)
 		}
@@ -637,7 +637,7 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 
 	// Create the container's root filesystem mount.
 	log.Infof("Creating new process in child container.")
-	fds := &fdDispenser{fds: append([]int{}, ioFDs...)}
+	fds := &fdDispenser{fds: append([]int{}, goferFDs...)}
 	rootInode, err := createRootMount(rootCtx, spec, conf, fds, nil)
 	if err != nil {
 		return fmt.Errorf("error creating filesystem for container: %v", err)

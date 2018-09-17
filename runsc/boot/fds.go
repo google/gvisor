@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -28,15 +27,19 @@ import (
 
 // createFDMap creates an fd map that contains stdin, stdout, and stderr. If
 // console is true, then ioctl calls will be passed through to the host fd.
-func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, console bool) (*kernel.FDMap, error) {
+func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, console bool, stdioFDs []int) (*kernel.FDMap, error) {
+	if len(stdioFDs) != 3 {
+		return nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
+	}
+
 	fdm := k.NewFDMap()
 	defer fdm.DecRef()
 
 	// Maps sandbox fd to host fd.
 	fdMap := map[int]int{
-		0: syscall.Stdin,
-		1: syscall.Stdout,
-		2: syscall.Stderr,
+		0: stdioFDs[0],
+		1: stdioFDs[1],
+		2: stdioFDs[2],
 	}
 	mounter := fs.FileOwnerFromContext(ctx)
 
