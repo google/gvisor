@@ -242,32 +242,11 @@ type ExecArgs struct {
 // returns the pid of the new process.
 func (cm *containerManager) ExecuteAsync(args *ExecArgs, pid *int32) error {
 	log.Debugf("containerManager.ExecuteAsync: %+v", args)
-
-	// Get the container Root Dirent from the Task, since we must run this
-	// process with the same Root.
-	cm.l.mu.Lock()
-	tg, ok := cm.l.containerRootTGs[args.CID]
-	cm.l.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("cannot exec in container %q: no such container", args.CID)
-	}
-	tg.Leader().WithMuLocked(func(t *kernel.Task) {
-		args.Root = t.FSContext().RootDirectory()
-	})
-	if args.Root != nil {
-		defer args.Root.DecRef()
-	}
-
-	// Start the process.
-	proc := control.Proc{Kernel: cm.l.k}
-	newTG, err := control.ExecAsync(&proc, &args.ExecArgs)
+	tgid, err := cm.l.executeAsync(&args.ExecArgs, args.CID)
 	if err != nil {
-		return fmt.Errorf("error executing: %+v: %v", args, err)
+		return err
 	}
-
-	// Return the pid of the newly-created process.
-	ts := cm.l.k.TaskSet()
-	*pid = int32(ts.Root.IDOfThreadGroup(newTG))
+	*pid = int32(tgid)
 	return nil
 }
 
@@ -409,12 +388,16 @@ type WaitPIDArgs struct {
 
 	// CID is the container ID.
 	CID string
+
+	// ClearStatus determines whether the exit status of the process should
+	// be cleared when WaitPID returns.
+	ClearStatus bool
 }
 
 // WaitPID waits for the process with PID 'pid' in the sandbox.
 func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait")
-	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
+	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, args.ClearStatus, waitStatus)
 }
 
 // SignalArgs are arguments to the Signal method.

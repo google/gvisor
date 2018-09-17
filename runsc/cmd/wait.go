@@ -88,14 +88,14 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		waitStatus = ws
 	// Wait on a PID in the root PID namespace.
 	case wt.rootPID != unsetPID:
-		ws, err := c.WaitRootPID(int32(wt.rootPID))
+		ws, err := c.WaitRootPID(int32(wt.rootPID), true /* clearStatus */)
 		if err != nil {
 			Fatalf("error waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
 		}
 		waitStatus = ws
 	// Wait on a PID in the container's PID namespace.
 	case wt.pid != unsetPID:
-		ws, err := c.WaitPID(int32(wt.pid))
+		ws, err := c.WaitPID(int32(wt.pid), true /* clearStatus */)
 		if err != nil {
 			Fatalf("error waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
 		}

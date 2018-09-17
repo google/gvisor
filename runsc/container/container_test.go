@@ -551,7 +551,7 @@ func TestExec(t *testing.T) {
 
 		args := &control.ExecArgs{
 			Filename:         "/bin/sleep",
-			Argv:             []string{"sleep", "5"},
+			Argv:             []string{"/bin/sleep", "5"},
 			WorkingDirectory: "/",
 			KUID:             uid,
 		}
@@ -1598,7 +1598,7 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
 	}
-	ws, err := cont.WaitPID(pid)
+	ws, err := cont.WaitPID(pid, true /* clearStatus */)
 	if err != nil {
 		return 0, fmt.Errorf("error waiting: %v", err)
 	}

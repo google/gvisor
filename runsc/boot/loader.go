@@ -31,6 +31,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
@@ -103,7 +104,7 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
-	// mu guards containerRootTGs.
+	// mu guards containerRootTGs and execProcesses.
 	mu sync.Mutex
 
 	// containerRootTGs maps container IDs to their root processes. It
@@ -111,7 +112,24 @@ type Loader struct {
 	// call methods on particular containers.
 	//
 	// containerRootTGs is guarded by mu.
+	//
+	// TODO: When containers are removed via `runsc delete`,
+	// containerRootTGs should be cleaned up.
 	containerRootTGs map[string]*kernel.ThreadGroup
+
+	// execProcesses maps each invocation of exec to the process it spawns.
+	//
+	// execProcesses is guardded by mu.
+	//
+	// TODO: When containers are removed via `runsc delete`,
+	// execProcesses should be cleaned up.
+	execProcesses map[execID]*kernel.ThreadGroup
+}
+
+// execID uniquely identifies a sentry process.
+type execID struct {
+	cid string
+	pid kernel.ThreadID
 }
 
 func init() {
@@ -385,13 +403,19 @@ func (l *Loader) run() error {
 		}
 
 		// Create the root container init task.
-		if _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
+		_, _, err := l.k.CreateProcess(l.rootProcArgs)
+		if err != nil {
 			return fmt.Errorf("failed to create init process: %v", err)
 		}
 
 		// CreateProcess takes a reference on FDMap if successful.
 		l.rootProcArgs.FDMap.DecRef()
 	}
+
+	if l.execProcesses != nil {
+		return fmt.Errorf("there shouldn't already be a cache of exec'd processes, but found: %v", l.execProcesses)
+	}
+	l.execProcesses = make(map[execID]*kernel.ThreadGroup)
 
 	// Start signal forwarding only after an init process is created.
 	l.stopSignalForwarding = l.startSignalForwarding()
@@ -467,7 +491,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		return fmt.Errorf("error setting executable path for %+v: %v", procArgs, err)
 	}
 
-	tg, err := l.k.CreateProcess(procArgs)
+	tg, _, err := l.k.CreateProcess(procArgs)
 	if err != nil {
 		return fmt.Errorf("failed to create process in sentry: %v", err)
 	}
@@ -480,6 +504,40 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	l.containerRootTGs[cid] = tg
 
 	return nil
+}
+
+func (l *Loader) executeAsync(args *control.ExecArgs, cid string) (kernel.ThreadID, error) {
+	// Get the container Root Dirent from the Task, since we must run this
+	// process with the same Root.
+	l.mu.Lock()
+	tg, ok := l.containerRootTGs[cid]
+	l.mu.Unlock()
+	if !ok {
+		return 0, fmt.Errorf("cannot exec in container %q: no such container", cid)
+	}
+	tg.Leader().WithMuLocked(func(t *kernel.Task) {
+		args.Root = t.FSContext().RootDirectory()
+	})
+	if args.Root != nil {
+		defer args.Root.DecRef()
+	}
+
+	// Start the process.
+	proc := control.Proc{Kernel: l.k}
+	tg, tgid, err := control.ExecAsync(&proc, args)
+	if err != nil {
+		return 0, fmt.Errorf("error executing: %+v: %v", args, err)
+	}
+
+	// Insert the process into execProcesses so that we can wait on it
+	// later.
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	eid := execID{cid: cid, pid: tgid}
+	l.execProcesses[eid] = tg
+	log.Debugf("updated execProcesses: %v", l.execProcesses)
+
+	return tgid, nil
 }
 
 // TODO: Per-container namespaces must be supported for -pid.
@@ -500,39 +558,59 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// consider the container exited.
 	// TODO: Multiple calls to waitContainer() should return
 	// the same exit status.
-	defer func() {
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		// TODO: Containers don't map 1:1 with their root
-		// processes. Container exits should be managed explicitly
-		// rather than via PID.
-		delete(l.containerRootTGs, cid)
-	}()
-	l.wait(tg, waitStatus)
+	ws := l.wait(tg)
+	*waitStatus = ws
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.containerRootTGs, cid)
+
 	return nil
 }
 
-func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
+func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, waitStatus *uint32) error {
 	// TODO: Containers all currently share a PID namespace.
 	// When per-container PID namespaces are supported, wait should use cid
 	// to find the appropriate PID namespace.
 	/*if cid != l.sandboxID {
 		return errors.New("non-sandbox PID namespaces are not yet implemented")
 	}*/
-	// TODO: This won't work if the exec process already exited.
-	tg := l.k.TaskSet().Root.ThreadGroupWithID(kernel.ThreadID(tgid))
+
+	// If the process was started via runsc exec, it will have an
+	// entry in l.execProcesses.
+	l.mu.Lock()
+	eid := execID{cid: cid, pid: tgid}
+	tg, ok := l.execProcesses[eid]
+	l.mu.Unlock()
+	if ok {
+		ws := l.wait(tg)
+		*waitStatus = ws
+		if clearStatus {
+			// Remove tg from the cache.
+			l.mu.Lock()
+			delete(l.execProcesses, eid)
+			log.Debugf("updated execProcesses (removal): %v", l.execProcesses)
+			l.mu.Unlock()
+		}
+		return nil
+	}
+
+	// This process wasn't created by runsc exec or start, so just find it
+	// by pid and hope it hasn't exited yet.
+	tg = l.k.TaskSet().Root.ThreadGroupWithID(kernel.ThreadID(tgid))
 	if tg == nil {
 		return fmt.Errorf("no thread group with ID %d", tgid)
 	}
-	l.wait(tg, waitStatus)
+	ws := l.wait(tg)
+	*waitStatus = ws
 	return nil
 }
 
 // wait waits for the process with TGID 'tgid' in a container's PID namespace
 // to exit.
-func (l *Loader) wait(tg *kernel.ThreadGroup, waitStatus *uint32) {
+func (l *Loader) wait(tg *kernel.ThreadGroup) uint32 {
 	tg.WaitExited()
-	*waitStatus = tg.ExitStatus().Status()
+	return tg.ExitStatus().Status()
 }
 
 func (l *Loader) setRootContainerID(cid string) {

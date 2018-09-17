@@ -49,6 +49,7 @@ type Exec struct {
 	extraKGIDs      stringSlice
 	caps            stringSlice
 	detach          bool
+	clearStatus     bool
 	processPath     string
 	pidFile         string
 	internalPidFile string
@@ -100,6 +101,9 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
 	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
+
+	// clear-status is expected to only be set when we fork due to --detach being set.
+	f.BoolVar(&ex.clearStatus, "clear-status", true, "clear the status of the exec'd process upon completion")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -163,7 +167,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	// Wait for the process to exit.
-	ws, err := c.WaitPID(pid)
+	ws, err := c.WaitPID(pid, ex.clearStatus)
 	if err != nil {
 		Fatalf("error waiting on pid %d: %v", pid, err)
 	}
@@ -194,10 +198,16 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 
 	// Add the rest of the args, excluding the "detach" flag.
 	for _, a := range os.Args[1:] {
-		if !strings.Contains(a, "detach") {
+		if strings.Contains(a, "detach") {
+			// Replace with the "clear-status" flag, which tells
+			// the new process it's a detached child and shouldn't
+			// clear the exit status of the sentry process.
+			args = append(args, "--clear-status=false")
+		} else {
 			args = append(args, a)
 		}
 	}
+
 	cmd := exec.Command(binPath, args...)
 
 	// Exec stdio defaults to current process stdio.

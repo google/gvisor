@@ -87,7 +87,7 @@ type ExecArgs struct {
 
 // Exec runs a new task.
 func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
-	newTG, err := proc.execAsync(args)
+	newTG, _, err := proc.execAsync(args)
 	if err != nil {
 		return err
 	}
@@ -100,11 +100,13 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 
 // ExecAsync runs a new task, but doesn't wait for it to finish. It is defined
 // as a function rather than a method to avoid exposing execAsync as an RPC.
-func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, error) {
+func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, error) {
 	return proc.execAsync(args)
 }
 
-func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
+// execAsync runs a new task, but doesn't wait for it to finish. It returns the
+// newly created thread group and its PID.
+func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, error) {
 	// Import file descriptors.
 	l := limits.NewLimitSet()
 	fdm := proc.Kernel.NewFDMap()
@@ -144,7 +146,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
 		paths := fs.GetPath(initArgs.Envv)
 		f, err := proc.Kernel.RootMountNamespace().ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 		if err != nil {
-			return nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+			return nil, 0, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
 		}
 		initArgs.Filename = f
 	}
@@ -156,7 +158,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
 		// Import the given file FD. This dups the FD as well.
 		file, err := host.ImportFile(ctx, int(f.Fd()), mounter, enableIoctl)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		defer file.DecRef()
 
@@ -164,7 +166,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, error) {
 		f.Close()
 
 		if err := fdm.NewFDAt(kdefs.FD(appFD), file, kernel.FDFlags{}, l); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
 

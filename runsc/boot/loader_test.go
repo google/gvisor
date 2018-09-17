@@ -111,11 +111,11 @@ func createLoader() (*Loader, func(), error) {
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
-	s, cleanup, err := createLoader()
+	l, cleanup, err := createLoader()
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
-	defer s.Destroy()
+	defer l.Destroy()
 	defer cleanup()
 
 	// Start a goroutine to read the start chan result, otherwise Run will
@@ -124,12 +124,13 @@ func TestRun(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		resultChanErr = <-s.ctrl.manager.startResultChan
+		resultChanErr = <-l.ctrl.manager.startResultChan
 		wg.Done()
 	}()
 
-	// Run the container..
-	if err := s.Run(); err != nil {
+	// Run the container.
+	l.setRootContainerID("foo")
+	if err := l.Run(); err != nil {
 		t.Errorf("error running container: %v", err)
 	}
 
@@ -140,7 +141,7 @@ func TestRun(t *testing.T) {
 	}
 
 	// Wait for the application to exit.  It should succeed.
-	if status := s.WaitExit(); status.Code != 0 || status.Signo != 0 {
+	if status := l.WaitExit(); status.Code != 0 || status.Signo != 0 {
 		t.Errorf("application exited with status %+v, want 0", status)
 	}
 }
@@ -148,24 +149,24 @@ func TestRun(t *testing.T) {
 // TestStartSignal tests that the controller Start message will cause
 // WaitForStartSignal to return.
 func TestStartSignal(t *testing.T) {
-	s, cleanup, err := createLoader()
+	l, cleanup, err := createLoader()
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
-	defer s.Destroy()
+	defer l.Destroy()
 	defer cleanup()
 
 	// We aren't going to wait on this application, so the control server
 	// needs to be shut down manually.
-	defer s.ctrl.srv.Stop()
+	defer l.ctrl.srv.Stop()
 
 	// Start a goroutine that calls WaitForStartSignal and writes to a
 	// channel when it returns.
 	waitFinished := make(chan struct{})
 	go func() {
-		s.WaitForStartSignal()
+		l.WaitForStartSignal()
 		// Pretend that Run() executed and returned no error.
-		s.ctrl.manager.startResultChan <- nil
+		l.ctrl.manager.startResultChan <- nil
 		waitFinished <- struct{}{}
 	}()
 
@@ -181,7 +182,7 @@ func TestStartSignal(t *testing.T) {
 
 	// Trigger the control server StartRoot method.
 	cid := "foo"
-	if err := s.ctrl.manager.StartRoot(&cid, nil); err != nil {
+	if err := l.ctrl.manager.StartRoot(&cid, nil); err != nil {
 		t.Errorf("error calling StartRoot: %v", err)
 	}
 

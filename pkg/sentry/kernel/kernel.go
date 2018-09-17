@@ -596,13 +596,13 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 //
 // CreateProcess has no analogue in Linux; it is used to create the initial
 // application task, as well as processes started by the control server.
-func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
+func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	log.Infof("EXEC: %v", args.Argv)
 
 	if k.mounts == nil {
-		return nil, fmt.Errorf("no kernel MountNamespace")
+		return nil, 0, fmt.Errorf("no kernel MountNamespace")
 	}
 
 	tg := NewThreadGroup(k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
@@ -622,7 +622,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 		var err error
 		wd, err = k.mounts.FindInode(ctx, root, nil, args.WorkingDirectory, args.MaxSymlinkTraversals)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
+			return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 		}
 		defer wd.DecRef()
 	}
@@ -630,10 +630,10 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 	if args.Filename == "" {
 		// Was anything provided?
 		if len(args.Argv) == 0 {
-			return nil, fmt.Errorf("no filename or command provided")
+			return nil, 0, fmt.Errorf("no filename or command provided")
 		}
 		if !filepath.IsAbs(args.Argv[0]) {
-			return nil, fmt.Errorf("'%s' is not an absolute path", args.Argv[0])
+			return nil, 0, fmt.Errorf("'%s' is not an absolute path", args.Argv[0])
 		}
 		args.Filename = args.Argv[0]
 	}
@@ -641,7 +641,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 	// Create a fresh task context.
 	tc, err := k.LoadTaskImage(ctx, k.mounts, root, wd, args.MaxSymlinkTraversals, args.Filename, args.Argv, args.Envv, k.featureSet)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Take a reference on the FDMap, which will be transferred to
@@ -663,17 +663,18 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, error) {
 	}
 	t, err := k.tasks.NewTask(config)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Success.
+	tgid := k.tasks.Root.IDOfThreadGroup(tg)
 	if k.started {
 		tid := k.tasks.Root.IDOfTask(t)
 		t.Start(tid)
 	} else if k.globalInit == nil {
 		k.globalInit = tg
 	}
-	return tg, nil
+	return tg, tgid, nil
 }
 
 // Start starts execution of all tasks in k.

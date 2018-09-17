@@ -163,16 +163,15 @@ func TestMultiContainerWait(t *testing.T) {
 		go func(c *Container) {
 			defer wg.Done()
 			const pid = 2
-			if ws, err := c.WaitPID(pid); err != nil {
+			if ws, err := c.WaitPID(pid, true /* clearStatus */); err != nil {
 				t.Errorf("failed to wait for PID %d: %v", pid, err)
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("PID %d exited with non-zero status %d", pid, es)
 			}
-			if _, err := c.WaitPID(pid); err == nil {
+			if _, err := c.WaitPID(pid, true /* clearStatus */); err == nil {
 				t.Errorf("wait for stopped PID %d should fail", pid)
 			}
-			// TODO: use 'container[1]' when PID namespace is supported.
-		}(containers[0])
+		}(containers[1])
 	}
 
 	wg.Wait()
@@ -181,6 +180,93 @@ func TestMultiContainerWait(t *testing.T) {
 	// the child has finished.
 	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
+	}
+}
+
+// TestExecWait ensures what we can wait containers and individual processes in the
+// sandbox that have already exited.
+func TestExecWait(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// The first container should run the entire duration of the test.
+	cmd1 := []string{"sleep", "100"}
+	// We'll wait on the second container, which is much shorter lived.
+	cmd2 := []string{"sleep", "1"}
+	specs, ids := createSpecs(cmd1, cmd2)
+
+	// Setup the containers.
+	var containers []*Container
+	for i, spec := range specs {
+		conf := testutil.TestConfig()
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		containers = append(containers, cont)
+	}
+
+	// Check via ps that multiple processes are running.
+	expectedPL := []*control.Process{
+		{PID: 1, Cmd: "sleep"},
+		{PID: 2, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		t.Fatalf("failed to wait for sleep to start: %v", err)
+	}
+
+	// Wait for the second container to finish.
+	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+		t.Fatalf("failed to wait for second container to stop: %v", err)
+	}
+
+	// Get the second container exit status.
+	if ws, err := containers[1].Wait(); err != nil {
+		t.Fatalf("failed to wait for process %s: %v", containers[1].Spec.Process.Args, err)
+	} else if es := ws.ExitStatus(); es != 0 {
+		t.Fatalf("process %s exited with non-zero status %d", containers[1].Spec.Process.Args, es)
+	}
+	if _, err := containers[1].Wait(); err == nil {
+		t.Fatalf("wait for stopped process %s should fail", containers[1].Spec.Process.Args)
+	}
+
+	// Execute another process in the first container.
+	args := &control.ExecArgs{
+		Filename:         "/bin/sleep",
+		Argv:             []string{"/bin/sleep", "1"},
+		WorkingDirectory: "/",
+		KUID:             0,
+	}
+	pid, err := containers[0].Execute(args)
+	if err != nil {
+		t.Fatalf("error executing: %v", err)
+	}
+
+	// Wait for the exec'd process to exit.
+	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+		t.Fatalf("failed to wait for second container to stop: %v", err)
+	}
+
+	// Get the exit status from the exec'd process.
+	if ws, err := containers[0].WaitPID(pid, true /* clearStatus */); err != nil {
+		t.Fatalf("failed to wait for process %+v with pid %d: %v", args, pid, err)
+	} else if es := ws.ExitStatus(); es != 0 {
+		t.Fatalf("process %+v exited with non-zero status %d", args, es)
+	}
+	if _, err := containers[0].WaitPID(pid, true /* clearStatus */); err == nil {
+		t.Fatalf("wait for stopped process %+v should fail", args)
 	}
 }
 
