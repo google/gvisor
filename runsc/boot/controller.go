@@ -186,10 +186,8 @@ type StartArgs struct {
 	// CID is the ID of the container to start.
 	CID string
 
-	// FilePayload contains, in order:
-	//   * stdin, stdout, and stderr.
-	//   * the file descriptor over which the sandbox will
-	//     request files from its root filesystem.
+	// FilePayload contains the file descriptor over which the sandbox will
+	// request files from its root filesystem.
 	urpc.FilePayload
 }
 
@@ -217,8 +215,8 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if path.Clean(args.CID) != args.CID {
 		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
 	}
-	if len(args.FilePayload.Files) < 4 {
-		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
+	if len(args.FilePayload.Files) == 0 {
+		return fmt.Errorf("start arguments must contain at least one file for the container root")
 	}
 
 	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
@@ -320,7 +318,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	fds := &fdDispenser{fds: cm.l.goferFDs}
+	fds := &fdDispenser{fds: cm.l.ioFDs}
 	renv, err := createRestoreEnvironment(cm.l.spec, cm.l.conf, fds)
 	if err != nil {
 		return fmt.Errorf("error creating RestoreEnvironment: %v", err)
