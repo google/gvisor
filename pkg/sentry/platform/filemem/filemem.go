@@ -233,6 +233,9 @@ func newFromFile(file *os.File) (*FileMem, error) {
 func New(name string) (*FileMem, error) {
 	fd, err := memutil.CreateMemFD(name, 0)
 	if err != nil {
+		if e, ok := err.(syscall.Errno); ok && e == syscall.ENOSYS {
+			return nil, fmt.Errorf("memfd_create(2) is not implemented. Check that you have Linux 3.17 or higher")
+		}
 		return nil, err
 	}
 	return newFromFile(os.NewFile(uintptr(fd), name))
