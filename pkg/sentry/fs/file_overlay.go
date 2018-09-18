@@ -163,6 +163,21 @@ func (f *overlayFileOperations) Seek(ctx context.Context, file *File, whence See
 
 // Readdir implements FileOperations.Readdir.
 func (f *overlayFileOperations) Readdir(ctx context.Context, file *File, serializer DentrySerializer) (int64, error) {
+	root := RootFromContext(ctx)
+	defer root.DecRef()
+	dirCtx := &DirCtx{
+		Serializer: serializer,
+		DirCursor:  &f.dirCursor,
+	}
+
+	// If the directory dirent is frozen, then DirentReaddir will calculate
+	// the children based off the frozen dirent tree. There is no need to
+	// call readdir on the upper/lower layers.
+	if file.Dirent.frozen {
+		return DirentReaddir(ctx, file.Dirent, f, root, dirCtx, file.Offset())
+	}
+
+	// Otherwise proceed with usual overlay readdir.
 	o := file.Dirent.Inode.overlay
 
 	o.copyMu.RLock()
@@ -174,13 +189,6 @@ func (f *overlayFileOperations) Readdir(ctx context.Context, file *File, seriali
 		return file.Offset(), err
 	}
 
-	root := RootFromContext(ctx)
-	defer root.DecRef()
-
-	dirCtx := &DirCtx{
-		Serializer: serializer,
-		DirCursor:  &f.dirCursor,
-	}
 	return DirentReaddir(ctx, file.Dirent, f, root, dirCtx, file.Offset())
 }
 

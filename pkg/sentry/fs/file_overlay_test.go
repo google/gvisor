@@ -174,6 +174,89 @@ func TestReaddirRevalidation(t *testing.T) {
 	}
 }
 
+// TestReaddirOverlayFrozen tests that calling Readdir on an overlay file with
+// a frozen dirent tree does not make Readdir calls to the underlying files.
+func TestReaddirOverlayFrozen(t *testing.T) {
+	ctx := contexttest.Context(t)
+
+	// Create an overlay with two directories, each with two files.
+	upper := newTestRamfsDir(ctx, []dirContent{{name: "upper-file1"}, {name: "upper-file2"}}, nil)
+	lower := newTestRamfsDir(ctx, []dirContent{{name: "lower-file1"}, {name: "lower-file2"}}, nil)
+	overlayInode := fs.NewTestOverlayDir(ctx, upper, lower, false)
+
+	// Set that overlay as the root.
+	root := fs.NewDirent(overlayInode, "root")
+	ctx = &rootContext{
+		Context: ctx,
+		root:    root,
+	}
+
+	// Check that calling Readdir on the root now returns all 4 files (2
+	// from each layer in the overlay).
+	rootFile, err := root.Inode.GetFile(ctx, root, fs.FileFlags{Read: true})
+	if err != nil {
+		t.Fatalf("root.Inode.GetFile failed: %v", err)
+	}
+	defer rootFile.DecRef()
+	ser := &fs.CollectEntriesSerializer{}
+	if err := rootFile.Readdir(ctx, ser); err != nil {
+		t.Fatalf("rootFile.Readdir failed: %v", err)
+	}
+	if got, want := ser.Order, []string{".", "..", "lower-file1", "lower-file2", "upper-file1", "upper-file2"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Readdir got names %v, want %v", got, want)
+	}
+
+	// Readdir should have been called on upper and lower.
+	upperDir := upper.InodeOperations.(*dir)
+	lowerDir := lower.InodeOperations.(*dir)
+	if !upperDir.ReaddirCalled {
+		t.Errorf("upperDir.ReaddirCalled got %v, want true", upperDir.ReaddirCalled)
+	}
+	if !lowerDir.ReaddirCalled {
+		t.Errorf("lowerDir.ReaddirCalled got %v, want true", lowerDir.ReaddirCalled)
+	}
+
+	// Reset.
+	upperDir.ReaddirCalled = false
+	lowerDir.ReaddirCalled = false
+
+	// Take references on "upper-file1" and "lower-file1", pinning them in
+	// the dirent tree.
+	for _, name := range []string{"upper-file1", "lower-file1"} {
+		if _, err := root.Walk(ctx, root, name); err != nil {
+			t.Fatalf("root.Walk(%q) failed: %v", name, err)
+		}
+		// Don't drop a reference on the returned dirent so that it
+		// will stay in the tree.
+	}
+
+	// Freeze the dirent tree.
+	root.Freeze()
+
+	// Seek back to the beginning of the file.
+	if _, err := rootFile.Seek(ctx, fs.SeekSet, 0); err != nil {
+		t.Fatalf("error seeking to beginning of directory: %v", err)
+	}
+
+	// Calling Readdir on the root now will return only the pinned
+	// children.
+	ser = &fs.CollectEntriesSerializer{}
+	if err := rootFile.Readdir(ctx, ser); err != nil {
+		t.Fatalf("rootFile.Readdir failed: %v", err)
+	}
+	if got, want := ser.Order, []string{".", "..", "lower-file1", "upper-file1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Readdir got names %v, want %v", got, want)
+	}
+
+	// Readdir should NOT have been called on upper or lower.
+	if upperDir.ReaddirCalled {
+		t.Errorf("upperDir.ReaddirCalled got %v, want false", upperDir.ReaddirCalled)
+	}
+	if lowerDir.ReaddirCalled {
+		t.Errorf("lowerDir.ReaddirCalled got %v, want false", lowerDir.ReaddirCalled)
+	}
+}
+
 type rootContext struct {
 	context.Context
 	root *fs.Dirent

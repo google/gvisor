@@ -372,10 +372,14 @@ func TestCacheFlush(t *testing.T) {
 type dir struct {
 	fs.InodeOperations
 
-	// list of negative child names.
+	// List of negative child names.
 	negative []string
+
+	// Whether DeprecatedReaddir has been called on this dir.
+	ReaddirCalled bool
 }
 
+// Getxattr implements InodeOperations.Getxattr.
 func (d *dir) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
 	for _, n := range d.negative {
 		if name == fs.XattrOverlayWhiteout(n) {
@@ -383,6 +387,12 @@ func (d *dir) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
 		}
 	}
 	return nil, syserror.ENOATTR
+}
+
+// DeprecatedReaddir implements InodeOperations.DeprecatedReaddir.
+func (d *dir) DeprecatedReaddir(ctx context.Context, dirctx *fs.DirCtx, offset int) (int, error) {
+	d.ReaddirCalled = true
+	return d.InodeOperations.DeprecatedReaddir(ctx, dirctx, offset)
 }
 
 type dirContent struct {
