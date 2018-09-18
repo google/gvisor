@@ -252,35 +252,6 @@ func configs(opts ...configOption) []*boot.Config {
 	return cs
 }
 
-// In normal runsc usage, sandbox processes will be parented to
-// init and init will reap the them. However, in the test environment
-// the test runner is the parent and will not reap the sandbox
-// processes, so we must do it ourselves, or else they will left
-// as zombies.
-// The function returns a wait group, and the caller can reap
-// children synchronously by waiting on the wait group.
-func reapChildren(c *Container) (*sync.WaitGroup, error) {
-	var wg sync.WaitGroup
-	p, err := os.FindProcess(c.Sandbox.Pid)
-	if err != nil {
-		return nil, fmt.Errorf("error finding sandbox process: %v", err)
-	}
-	g, err := os.FindProcess(c.GoferPid)
-	if err != nil {
-		return nil, fmt.Errorf("error finding gofer process: %v", err)
-	}
-	wg.Add(2)
-	go func() {
-		p.Wait()
-		wg.Done()
-	}()
-	go func() {
-		g.Wait()
-		wg.Done()
-	}()
-	return &wg, nil
-}
-
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
@@ -310,12 +281,14 @@ func TestLifecycle(t *testing.T) {
 		}
 		// Create the container.
 		id := testutil.UniqueContainerID()
-		if _, err := Create(id, spec, conf, bundleDir, "", ""); err != nil {
+		c, err := Create(id, spec, conf, bundleDir, "", "")
+		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
+		defer c.Destroy()
 
 		// Load the container from disk and check the status.
-		c, err := Load(rootDir, id)
+		c, err = Load(rootDir, id)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -377,17 +350,6 @@ func TestLifecycle(t *testing.T) {
 		}
 		// Wait for it to die.
 		wg.Wait()
-
-		// The sandbox process should have exited by now, but it is a
-		// zombie. In normal runsc usage, it will be parented to init,
-		// and init will reap the sandbox. However, in this case the
-		// test runner is the parent and will not reap the sandbox
-		// process, so we must do it ourselves.
-		reapWg, err := reapChildren(c)
-		if err != nil {
-			t.Fatalf("error reaping children: %v", err)
-		}
-		reapWg.Wait()
 
 		// Load the container from disk and check the status.
 		c, err = Load(rootDir, id)
@@ -1164,6 +1126,7 @@ func TestConsoleSocket(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
+		c.Destroy()
 
 		// Open the othe end of the socket.
 		sock, err := srv.Accept()
@@ -1194,11 +1157,6 @@ func TestConsoleSocket(t *testing.T) {
 		// Verify that the fd is a terminal.
 		if _, err := unix.IoctlGetTermios(fds[0], unix.TCGETS); err != nil {
 			t.Errorf("fd is not a terminal (ioctl TGGETS got %v)", err)
-		}
-
-		// Reap the sandbox process.
-		if _, err := reapChildren(c); err != nil {
-			t.Fatalf("error reaping children: %v", err)
 		}
 
 		// Shut it down.
@@ -1566,29 +1524,21 @@ func TestGoferExits(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
+	// Kill sandbox and expect gofer to exit on its own.
 	sandboxProc, err := os.FindProcess(c.Sandbox.Pid)
 	if err != nil {
 		t.Fatalf("error finding sandbox process: %v", err)
 	}
-	gofer, err := os.FindProcess(c.GoferPid)
-	if err != nil {
-		t.Fatalf("error finding sandbox process: %v", err)
-	}
-
-	// Kill sandbox and expect gofer to exit on its own.
 	if err := sandboxProc.Kill(); err != nil {
 		t.Fatalf("error killing sandbox process: %v", err)
 	}
-	if _, err := sandboxProc.Wait(); err != nil {
-		t.Fatalf("error waiting for sandbox process: %v", err)
-	}
 
-	if _, err := gofer.Wait(); err != nil {
-		t.Fatalf("error waiting for gofer process: %v", err)
-	}
-
-	if err := c.waitForStopped(); err != nil {
-		t.Errorf("container is not stopped: %v", err)
+	_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
+		cpid, err := syscall.Wait4(c.GoferPid, nil, 0, nil)
+		return uintptr(cpid), 0, err
+	})
+	if err != nil && err != syscall.ECHILD {
+		t.Errorf("error waiting for gofer to exit: %v", err)
 	}
 }
 
@@ -1606,5 +1556,8 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 }
 
 func TestMain(m *testing.M) {
-	testutil.RunAsRoot(m)
+	testutil.RunAsRoot()
+	stop := testutil.StartReaper()
+	defer stop()
+	os.Exit(m.Run())
 }

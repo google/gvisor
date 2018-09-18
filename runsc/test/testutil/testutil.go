@@ -24,10 +24,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"syscall"
-	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -236,10 +236,11 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 
 // RunAsRoot ensures the test runs with CAP_SYS_ADMIN. If need it will create
 // a new user namespace and reexecute the test as root inside of the namespace.
-func RunAsRoot(m *testing.M) {
+// This functionr returns when it's running as root. If it needs to create
+// another process, it will exit from there and not return.
+func RunAsRoot() {
 	if specutils.HasCapSysAdmin() {
-		// Capability: check! Good to run.
-		os.Exit(m.Run())
+		return
 	}
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
@@ -277,4 +278,40 @@ func RunAsRoot(m *testing.M) {
 		panic(fmt.Sprint("error running child process:", err.Error()))
 	}
 	os.Exit(0)
+}
+
+// StartReaper starts a gorouting that will reap all children processes created
+// by the tests. Caller must call the returned function to stop it.
+func StartReaper() func() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGCHLD)
+	stop := make(chan struct{})
+
+	go func() {
+		for {
+			select {
+			case <-ch:
+			case <-stop:
+				return
+			}
+			for {
+				cpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil)
+				if cpid < 1 {
+					break
+				}
+			}
+		}
+	}()
+	return func() { stop <- struct{}{} }
+}
+
+// RetryEintr retries the function until an error different than EINTR is
+// returned.
+func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
+	for {
+		r1, r2, err := f()
+		if err != syscall.EINTR {
+			return r1, r2, err
+		}
+	}
 }

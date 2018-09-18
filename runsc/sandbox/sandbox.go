@@ -59,7 +59,8 @@ type Sandbox struct {
 	Chroot string `json:"chroot"`
 }
 
-// Create creates the sandbox process.
+// Create creates the sandbox process. The caller must call Destroy() on the
+// sandbox.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 

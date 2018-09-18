@@ -198,7 +198,8 @@ func List(rootDir string) ([]string, error) {
 }
 
 // Create creates the container in a new Sandbox process, unless the metadata
-// indicates that an existing Sandbox should be used.
+// indicates that an existing Sandbox should be used. The caller must call
+// Destroy() on the container.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string) (*Container, error) {
 	log.Debugf("Create container %q in root dir: %s", id, conf.RootDir)
 	if err := validateID(id); err != nil {
@@ -295,14 +296,12 @@ func (c *Container) Start(conf *boot.Config) error {
 	// stop and destroy the container" -OCI spec.
 	if c.Spec.Hooks != nil {
 		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
-			c.Destroy()
 			return err
 		}
 	}
 
 	if specutils.ShouldCreateSandbox(c.Spec) || !conf.MultiContainer {
 		if err := c.Sandbox.StartRoot(c.Spec, conf); err != nil {
-			c.Destroy()
 			return err
 		}
 	} else {
@@ -312,7 +311,6 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 		if err := c.Sandbox.Start(c.Spec, conf, c.ID, ioFiles); err != nil {
-			c.Destroy()
 			return err
 		}
 	}
@@ -351,6 +349,8 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	if err != nil {
 		return 0, fmt.Errorf("error creating container: %v", err)
 	}
+	defer c.Destroy()
+
 	if err := c.Start(conf); err != nil {
 		return 0, fmt.Errorf("error starting container: %v", err)
 	}
@@ -420,7 +420,7 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // Signal returns an error if the container is already stopped.
 // TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal) error {
-	log.Debugf("Signal container %q", c.ID)
+	log.Debugf("Signal container %q: %v", c.ID, sig)
 	if c.Status == Stopped {
 		return fmt.Errorf("container sandbox is stopped")
 	}
@@ -490,8 +490,8 @@ func (c *Container) Processes() ([]*control.Process, error) {
 	return c.Sandbox.Processes(c.ID)
 }
 
-// Destroy frees all resources associated with the container.
-// Destroy returns error if any step fails, and the function can be safely retried.
+// Destroy frees all resources associated with the container. It fails fast and
+// is idempotent.
 func (c *Container) Destroy() error {
 	log.Debugf("Destroy container %q", c.ID)
 

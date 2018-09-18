@@ -15,7 +15,6 @@
 package container
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -379,6 +378,22 @@ func TestMultiContainerSignal(t *testing.T) {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 
+		// Destroy container and ensure container's gofer process has exited.
+		if err := containers[1].Destroy(); err != nil {
+			t.Errorf("failed to destroy container: %v", err)
+		}
+		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
+			cpid, err := syscall.Wait4(containers[1].GoferPid, nil, 0, nil)
+			return uintptr(cpid), 0, err
+		})
+		if err != nil && err != syscall.ECHILD {
+			t.Errorf("error waiting for gofer to exit: %v", err)
+		}
+		// Make sure process 1 is still running.
+		if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
 		// Now that process 2 is gone, ensure we get an error trying to
 		// signal it again.
 		if err := containers[1].Signal(syscall.SIGKILL); err == nil {
@@ -390,36 +405,26 @@ func TestMultiContainerSignal(t *testing.T) {
 			t.Errorf("failed to kill process 1: %v", err)
 		}
 
-		if err := waitForSandboxExit(containers[0]); err != nil {
-			t.Errorf("failed to exit sandbox: %v", err)
+		// Ensure that container's gofer and sandbox process are no more.
+		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
+			cpid, err := syscall.Wait4(containers[0].GoferPid, nil, 0, nil)
+			return uintptr(cpid), 0, err
+		})
+		if err != nil && err != syscall.ECHILD {
+			t.Errorf("error waiting for gofer to exit: %v", err)
 		}
 
-		// The sentry should be gone, so signaling should yield an
-		// error.
+		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
+			cpid, err := syscall.Wait4(containers[0].Sandbox.Pid, nil, 0, nil)
+			return uintptr(cpid), 0, err
+		})
+		if err != nil && err != syscall.ECHILD {
+			t.Errorf("error waiting for sandbox to exit: %v", err)
+		}
+
+		// The sentry should be gone, so signaling should yield an error.
 		if err := containers[0].Signal(syscall.SIGKILL); err == nil {
 			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
 		}
 	}
-}
-
-// waitForSandboxExit waits until both the sandbox and gofer processes of the
-// container have exited.
-func waitForSandboxExit(container *Container) error {
-	goferProc, _ := os.FindProcess(container.GoferPid)
-	state, err := goferProc.Wait()
-	if err != nil {
-		return err
-	}
-	if !state.Exited() {
-		return fmt.Errorf("gofer with PID %d failed to exit", container.GoferPid)
-	}
-	sandboxProc, _ := os.FindProcess(container.Sandbox.Pid)
-	state, err = sandboxProc.Wait()
-	if err != nil {
-		return err
-	}
-	if !state.Exited() {
-		return fmt.Errorf("sandbox with PID %d failed to exit", container.Sandbox.Pid)
-	}
-	return nil
 }
