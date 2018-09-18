@@ -71,7 +71,7 @@ go_proto_library(
 
 go_test(
     name = "state_test",
-    size = "small",
+    timeout = "long",
     srcs = ["state_test.go"],
     embed = [":state"],
 )
