@@ -42,6 +42,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/sighandling"
 	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
@@ -143,6 +144,9 @@ func init() {
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, console bool) (*Loader, error) {
+	if err := usage.Init(); err != nil {
+		return nil, fmt.Errorf("Error setting up memory usage: %v", err)
+	}
 	// Create kernel and platform.
 	p, err := createPlatform(conf, deviceFD)
 	if err != nil {

@@ -117,15 +117,16 @@ type MemoryLocked struct {
 	File *os.File
 }
 
-func newMemoryLocked() MemoryLocked {
-	name := "memory-usage"
+// Init initializes global 'MemoryAccounting'.
+func Init() error {
+	const name = "memory-usage"
 	fd, err := memutil.CreateMemFD(name, 0)
 	if err != nil {
-		panic("error creating usage file: " + err.Error())
+		return fmt.Errorf("error creating usage file: %v", err)
 	}
 	file := os.NewFile(uintptr(fd), name)
 	if err := file.Truncate(int64(RTMemoryStatsSize)); err != nil {
-		panic("error truncating usage file: " + err.Error())
+		return fmt.Errorf("error truncating usage file: %v", err)
 	}
 	// Note: We rely on the returned page being initially zeroed. This will
 	// always be the case for a newly mapped page from /dev/shm. If we obtain
@@ -133,13 +134,14 @@ func newMemoryLocked() MemoryLocked {
 	// explicitly zero the page.
 	mmap, err := syscall.Mmap(int(file.Fd()), 0, int(RTMemoryStatsSize), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
-		panic("error mapping usage file: " + err.Error())
+		return fmt.Errorf("error mapping usage file: %v", err)
 	}
 
-	return MemoryLocked{
+	MemoryAccounting = &MemoryLocked{
 		File:          file,
 		RTMemoryStats: RTMemoryStatsPointer(mmap),
 	}
+	return nil
 }
 
 // MemoryAccounting is the global memory stats.
@@ -147,7 +149,7 @@ func newMemoryLocked() MemoryLocked {
 // There is no need to save or restore the global memory accounting object,
 // because individual frame kinds are saved and charged only when they become
 // resident.
-var MemoryAccounting = newMemoryLocked()
+var MemoryAccounting *MemoryLocked
 
 func (m *MemoryLocked) incLocked(val uint64, kind MemoryKind) {
 	switch kind {
