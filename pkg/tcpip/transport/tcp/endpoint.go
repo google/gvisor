@@ -1000,23 +1000,26 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		// address/port for both local and remote (otherwise this
 		// endpoint would be trying to connect to itself).
 		sameAddr := e.id.LocalAddress == e.id.RemoteAddress
-		_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
+		if _, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
 			if sameAddr && p == e.id.RemotePort {
 				return false, nil
 			}
+			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p) {
+				return false, nil
+			}
 
-			e.id.LocalPort = p
-			err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e)
-			switch err {
+			id := e.id
+			id.LocalPort = p
+			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e) {
 			case nil:
+				e.id = id
 				return true, nil
 			case tcpip.ErrPortInUse:
 				return false, nil
 			default:
 				return false, err
 			}
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 	}
@@ -1217,7 +1220,7 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 // Bind binds the endpoint to a specific local port and optionally address.
-func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (retErr *tcpip.Error) {
+func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1245,7 +1248,6 @@ func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (ret
 		}
 	}
 
-	// Reserve the port.
 	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port)
 	if err != nil {
 		return err
@@ -1257,7 +1259,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (ret
 
 	// Any failures beyond this point must remove the port registration.
 	defer func() {
-		if retErr != nil {
+		if err != nil {
 			e.stack.ReleasePort(netProtos, ProtocolNumber, addr.Addr, port)
 			e.isPortReserved = false
 			e.effectiveNetProtos = nil

@@ -71,6 +71,8 @@ go_test(
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/ports",
         "//pkg/tcpip/seqnum",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp/testing/context",

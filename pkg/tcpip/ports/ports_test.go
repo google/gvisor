@@ -78,8 +78,8 @@ func TestPortReservation(t *testing.T) {
 		if err != test.want {
 			t.Fatalf("ReservePort(.., .., %s, %d) = %v, want %v", test.ip, test.port, err, test.want)
 		}
-		if test.port == 0 && (gotPort == 0 || gotPort < firstEphemeral) {
-			t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, firstEphemeral)
+		if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
+			t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
 		}
 	}
 
@@ -118,17 +118,17 @@ func TestPickEphemeralPort(t *testing.T) {
 		{
 			name: "only-port-16042-available",
 			f: func(port uint16) (bool, *tcpip.Error) {
-				if port == firstEphemeral+42 {
+				if port == FirstEphemeral+42 {
 					return true, nil
 				}
 				return false, nil
 			},
-			wantPort: firstEphemeral + 42,
+			wantPort: FirstEphemeral + 42,
 		},
 		{
 			name: "only-port-under-16000-available",
 			f: func(port uint16) (bool, *tcpip.Error) {
-				if port < firstEphemeral {
+				if port < FirstEphemeral {
 					return true, nil
 				}
 				return false, nil

@@ -28,6 +28,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/ports"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
@@ -3013,12 +3015,11 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	checkSendBufferSize(t, ep, tcp.DefaultBufferSize*30)
 }
 
-func TestSelfConnect(t *testing.T) {
-	// This test ensures that intentional self-connects work. In particular,
-	// it checks that if an endpoint binds to say 127.0.0.1:1000 then
-	// connects to 127.0.0.1:1000, then it will be connected to itself, and
-	// is able to send and receive data through the same endpoint.
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
+func makeStack() (*stack.Stack, *tcpip.Error) {
+	s := stack.New([]string{
+		ipv4.ProtocolName,
+		ipv6.ProtocolName,
+	}, []string{tcp.ProtocolName}, stack.Options{})
 
 	id := loopback.New()
 	if testing.Verbose() {
@@ -3026,11 +3027,19 @@ func TestSelfConnect(t *testing.T) {
 	}
 
 	if err := s.CreateNIC(1, id); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
+		return nil, err
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, context.StackAddr); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	for _, ct := range []struct {
+		number  tcpip.NetworkProtocolNumber
+		address tcpip.Address
+	}{
+		{ipv4.ProtocolNumber, context.StackAddr},
+		{ipv6.ProtocolNumber, context.StackV6Addr},
+	} {
+		if err := s.AddAddress(1, ct.number, ct.address); err != nil {
+			return nil, err
+		}
 	}
 
 	s.SetRouteTable([]tcpip.Route{
@@ -3040,7 +3049,26 @@ func TestSelfConnect(t *testing.T) {
 			Gateway:     "",
 			NIC:         1,
 		},
+		{
+			Destination: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			Mask:        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			Gateway:     "",
+			NIC:         1,
+		},
 	})
+
+	return s, nil
+}
+
+func TestSelfConnect(t *testing.T) {
+	// This test ensures that intentional self-connects work. In particular,
+	// it checks that if an endpoint binds to say 127.0.0.1:1000 then
+	// connects to 127.0.0.1:1000, then it will be connected to itself, and
+	// is able to send and receive data through the same endpoint.
+	s, err := makeStack()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
@@ -3092,6 +3120,154 @@ func TestSelfConnect(t *testing.T) {
 
 	if !bytes.Equal(data, rd) {
 		t.Fatalf("got data = %v, want = %v", rd, data)
+	}
+}
+
+func TestConnectAvoidsBoundPorts(t *testing.T) {
+	addressTypes := func(t *testing.T, network string) []string {
+		switch network {
+		case "ipv4":
+			return []string{"v4"}
+		case "ipv6":
+			return []string{"v6"}
+		case "dual":
+			return []string{"v6", "mapped"}
+		default:
+			t.Fatalf("unknown network: '%s'", network)
+		}
+
+		panic("unreachable")
+	}
+
+	address := func(t *testing.T, addressType string, isAny bool) tcpip.Address {
+		switch addressType {
+		case "v4":
+			if isAny {
+				return ""
+			}
+			return context.StackAddr
+		case "v6":
+			if isAny {
+				return ""
+			}
+			return context.StackV6Addr
+		case "mapped":
+			if isAny {
+				return context.V4MappedWildcardAddr
+			}
+			return context.StackV4MappedAddr
+		default:
+			t.Fatalf("unknown address type: '%s'", addressType)
+		}
+
+		panic("unreachable")
+	}
+	// This test ensures that Endpoint.Connect doesn't select already-bound ports.
+	networks := []string{"ipv4", "ipv6", "dual"}
+	for _, exhaustedNetwork := range networks {
+		t.Run(fmt.Sprintf("exhaustedNetwork=%s", exhaustedNetwork), func(t *testing.T) {
+			for _, exhaustedAddressType := range addressTypes(t, exhaustedNetwork) {
+				t.Run(fmt.Sprintf("exhaustedAddressType=%s", exhaustedAddressType), func(t *testing.T) {
+					for _, isAny := range []bool{false, true} {
+						t.Run(fmt.Sprintf("isAny=%t", isAny), func(t *testing.T) {
+							for _, candidateNetwork := range networks {
+								t.Run(fmt.Sprintf("candidateNetwork=%s", candidateNetwork), func(t *testing.T) {
+									for _, candidateAddressType := range addressTypes(t, candidateNetwork) {
+										t.Run(fmt.Sprintf("candidateAddressType=%s", candidateAddressType), func(t *testing.T) {
+											s, err := makeStack()
+											if err != nil {
+												t.Fatal(err)
+											}
+
+											var wq waiter.Queue
+											var eps []tcpip.Endpoint
+											defer func() {
+												for _, ep := range eps {
+													ep.Close()
+												}
+											}()
+											makeEP := func(network string) tcpip.Endpoint {
+												var networkProtocolNumber tcpip.NetworkProtocolNumber
+												switch network {
+												case "ipv4":
+													networkProtocolNumber = ipv4.ProtocolNumber
+												case "ipv6", "dual":
+													networkProtocolNumber = ipv6.ProtocolNumber
+												default:
+													t.Fatalf("unknown network: '%s'", network)
+												}
+												ep, err := s.NewEndpoint(tcp.ProtocolNumber, networkProtocolNumber, &wq)
+												if err != nil {
+													t.Fatalf("NewEndpoint failed: %v", err)
+												}
+												eps = append(eps, ep)
+												switch network {
+												case "ipv4":
+												case "ipv6":
+													if err := ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(1)) failed: %v", err)
+													}
+												case "dual":
+													if err := ep.SetSockOpt(tcpip.V6OnlyOption(0)); err != nil {
+														t.Fatalf("SetSockOpt(V6OnlyOption(0)) failed: %v", err)
+													}
+												default:
+													t.Fatalf("unknown network: '%s'", network)
+												}
+												return ep
+											}
+
+											var v4reserved, v6reserved bool
+											switch exhaustedAddressType {
+											case "v4", "mapped":
+												v4reserved = true
+											case "v6":
+												v6reserved = true
+												// Dual stack sockets bound to v6 any reserve on v4 as
+												// well.
+												if isAny {
+													switch exhaustedNetwork {
+													case "ipv6":
+													case "dual":
+														v4reserved = true
+													default:
+														t.Fatalf("unknown address type: '%s'", exhaustedNetwork)
+													}
+												}
+											default:
+												t.Fatalf("unknown address type: '%s'", exhaustedAddressType)
+											}
+											var collides bool
+											switch candidateAddressType {
+											case "v4", "mapped":
+												collides = v4reserved
+											case "v6":
+												collides = v6reserved
+											default:
+												t.Fatalf("unknown address type: '%s'", candidateAddressType)
+											}
+
+											for i := ports.FirstEphemeral; i <= math.MaxUint16; i++ {
+												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}, nil); err != nil {
+													t.Fatalf("Bind(%d) failed: %v", i, err)
+												}
+											}
+											want := tcpip.ErrConnectStarted
+											if collides {
+												want = tcpip.ErrNoPortAvailable
+											}
+											if err := makeEP(candidateNetwork).Connect(tcpip.FullAddress{Addr: address(t, candidateAddressType, false), Port: 31337}); err != want {
+												t.Fatalf("got ep.Connect(..) = %v, want = %v", err, want)
+											}
+										})
+									}
+								})
+							}
+						})
+					}
+				})
+			}
+		})
 	}
 }
 
