@@ -192,16 +192,16 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 	if err != nil {
 		return fmt.Errorf("error creating container: %v", err)
 	}
-	defer s.Destroy()
-	if err := s.Start(conf); err != nil {
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
 		return fmt.Errorf("error starting container: %v", err)
 	}
 
-	ws, err := s.Wait()
+	ws, err := c.Wait()
 	if err != nil {
 		return fmt.Errorf("error waiting on container: %v", err)
 	}
@@ -315,11 +315,11 @@ func TestLifecycle(t *testing.T) {
 		}
 
 		// Load the container from disk and check the status.
-		s, err := Load(rootDir, id)
+		c, err := Load(rootDir, id)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
-		if got, want := s.Status, Created; got != want {
+		if got, want := c.Status, Created; got != want {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
@@ -333,21 +333,21 @@ func TestLifecycle(t *testing.T) {
 		}
 
 		// Start the container.
-		if err := s.Start(conf); err != nil {
+		if err := c.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
 
 		// Load the container from disk and check the status.
-		s, err = Load(rootDir, id)
+		c, err = Load(rootDir, id)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
-		if got, want := s.Status, Running; got != want {
+		if got, want := c.Status, Running; got != want {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
 		// Verify that "sleep 100" is running.
-		if err := waitForProcessList(s, expectedPL); err != nil {
+		if err := waitForProcessList(c, expectedPL); err != nil {
 			t.Error(err)
 		}
 
@@ -357,7 +357,7 @@ func TestLifecycle(t *testing.T) {
 		ch := make(chan struct{})
 		go func() {
 			ch <- struct{}{}
-			ws, err := s.Wait()
+			ws, err := c.Wait()
 			if err != nil {
 				t.Fatalf("error waiting on container: %v", err)
 			}
@@ -372,7 +372,7 @@ func TestLifecycle(t *testing.T) {
 		<-ch
 		time.Sleep(100 * time.Millisecond)
 		// Send the container a SIGTERM which will cause it to stop.
-		if err := s.Signal(syscall.SIGTERM); err != nil {
+		if err := c.Signal(syscall.SIGTERM); err != nil {
 			t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
 		}
 		// Wait for it to die.
@@ -383,23 +383,23 @@ func TestLifecycle(t *testing.T) {
 		// and init will reap the sandbox. However, in this case the
 		// test runner is the parent and will not reap the sandbox
 		// process, so we must do it ourselves.
-		reapWg, err := reapChildren(s)
+		reapWg, err := reapChildren(c)
 		if err != nil {
 			t.Fatalf("error reaping children: %v", err)
 		}
 		reapWg.Wait()
 
 		// Load the container from disk and check the status.
-		s, err = Load(rootDir, id)
+		c, err = Load(rootDir, id)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
-		if got, want := s.Status, Stopped; got != want {
+		if got, want := c.Status, Stopped; got != want {
 			t.Errorf("container status got %v, want %v", got, want)
 		}
 
 		// Destroy the container.
-		if err := s.Destroy(); err != nil {
+		if err := c.Destroy(); err != nil {
 			t.Fatalf("error destroying container: %v", err)
 		}
 
@@ -1160,7 +1160,7 @@ func TestConsoleSocket(t *testing.T) {
 
 		// Create the container and pass the socket name.
 		id := testutil.UniqueContainerID()
-		s, err := Create(id, spec, conf, bundleDir, socketRelPath, "")
+		c, err := Create(id, spec, conf, bundleDir, socketRelPath, "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1197,12 +1197,12 @@ func TestConsoleSocket(t *testing.T) {
 		}
 
 		// Reap the sandbox process.
-		if _, err := reapChildren(s); err != nil {
+		if _, err := reapChildren(c); err != nil {
 			t.Fatalf("error reaping children: %v", err)
 		}
 
 		// Shut it down.
-		if err := s.Destroy(); err != nil {
+		if err := c.Destroy(); err != nil {
 			t.Fatalf("error destroying container: %v", err)
 		}
 
@@ -1288,16 +1288,16 @@ func TestReadonlyRoot(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
-		defer s.Destroy()
-		if err := s.Start(conf); err != nil {
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
 
-		ws, err := s.Wait()
+		ws, err := c.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
 		}
@@ -1332,16 +1332,16 @@ func TestReadonlyMount(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		s, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
-		defer s.Destroy()
-		if err := s.Start(conf); err != nil {
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
 			t.Fatalf("error starting container: %v", err)
 		}
 
-		ws, err := s.Wait()
+		ws, err := c.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
 		}
