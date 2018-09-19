@@ -92,7 +92,7 @@ type Container struct {
 	Status Status `json:"status"`
 
 	// GoferPid is the pid of the gofer running along side the sandbox. May
-	// be 0 if the gofer has been killed or it's not being used.
+	// be 0 if the gofer has been killed.
 	GoferPid int `json:"goferPid"`
 
 	// Sandbox is the sandbox this container is running in. It will be nil
@@ -138,14 +138,13 @@ func Load(rootDir, id string) (*Container, error) {
 		// Check if the sandbox process is still running.
 		if !c.Sandbox.IsRunning() {
 			// Sandbox no longer exists, so this container definitely does not exist.
-			c.Status = Stopped
-			c.Sandbox = nil
+			c.changeStatus(Stopped)
 		} else if c.Status == Running {
 			// Container state should reflect the actual state of
 			// the application, so we don't consider gofer process
 			// here.
 			if err := c.Signal(syscall.Signal(0)); err != nil {
-				c.Status = Stopped
+				c.changeStatus(Stopped)
 			}
 		}
 	}
@@ -265,7 +264,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		}
 		c.Sandbox = sb.Sandbox
 	}
-	c.Status = Created
+	c.changeStatus(Created)
 
 	// Save the metadata file.
 	if err := c.save(); err != nil {
@@ -322,7 +321,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		executeHooksBestEffort(c.Spec.Hooks.Poststart, c.State())
 	}
 
-	c.Status = Running
+	c.changeStatus(Running)
 	return c.save()
 }
 
@@ -338,7 +337,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
 		return err
 	}
-	c.Status = Running
+	c.changeStatus(Running)
 	return c.save()
 }
 
@@ -447,7 +446,7 @@ func (c *Container) Pause() error {
 		if err := c.Sandbox.Pause(c.ID); err != nil {
 			return fmt.Errorf("error pausing container: %v", err)
 		}
-		c.Status = Paused
+		c.changeStatus(Paused)
 		return c.save()
 	default:
 		return fmt.Errorf("container %q not created or running, not pausing", c.ID)
@@ -463,7 +462,7 @@ func (c *Container) Resume() error {
 		if err := c.Sandbox.Resume(c.ID); err != nil {
 			return fmt.Errorf("error resuming container: %v", err)
 		}
-		c.Status = Running
+		c.changeStatus(Running)
 		return c.save()
 	default:
 		return fmt.Errorf("container %q not paused, not resuming", c.ID)
@@ -519,7 +518,7 @@ func (c *Container) Destroy() error {
 		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
 
-	c.Status = Stopped
+	c.changeStatus(Stopped)
 	return nil
 }
 
@@ -583,6 +582,7 @@ func (c *Container) waitForStopped() error {
 			if err := syscall.Kill(c.GoferPid, 0); err == nil {
 				return fmt.Errorf("gofer is still running")
 			}
+			c.GoferPid = 0
 		}
 		return nil
 	}
@@ -651,4 +651,48 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	log.Infof("Gofer started, pid: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
 	return sandEnds, nil
+}
+
+// changeStatus transitions from one status to another ensuring that the
+// transition is valid.
+func (c *Container) changeStatus(s Status) {
+	switch s {
+	case Creating:
+		// Initial state, never transitions to it.
+		panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
+
+	case Created:
+		if c.Status != Creating {
+			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
+		}
+		if c.Sandbox == nil {
+			panic("sandbox cannot be nil")
+		}
+
+	case Paused:
+		if c.Status != Running {
+			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
+		}
+		if c.Sandbox == nil {
+			panic("sandbox cannot be nil")
+		}
+
+	case Running:
+		if c.Status != Created && c.Status != Paused {
+			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
+		}
+		if c.Sandbox == nil {
+			panic("sandbox cannot be nil")
+		}
+
+	case Stopped:
+		if c.Status != Created && c.Status != Running && c.Status != Stopped {
+			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
+		}
+		c.Sandbox = nil
+
+	default:
+		panic(fmt.Sprintf("invalid new state: %v", s))
+	}
+	c.Status = s
 }

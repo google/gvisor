@@ -378,12 +378,15 @@ func TestMultiContainerSignal(t *testing.T) {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 
+		// goferPid is reset when container is destroyed.
+		goferPid := containers[1].GoferPid
+
 		// Destroy container and ensure container's gofer process has exited.
 		if err := containers[1].Destroy(); err != nil {
 			t.Errorf("failed to destroy container: %v", err)
 		}
 		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
-			cpid, err := syscall.Wait4(containers[1].GoferPid, nil, 0, nil)
+			cpid, err := syscall.Wait4(goferPid, nil, 0, nil)
 			return uintptr(cpid), 0, err
 		})
 		if err != nil && err != syscall.ECHILD {
