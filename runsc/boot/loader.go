@@ -20,7 +20,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -201,15 +200,20 @@ func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, ioFDs []int
 		caps,
 		auth.NewRootUserNamespace())
 
+	// Get CPU numbers from spec.
+	cpuNum, err := specutils.CalculateCPUNumber(spec)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get cpus from spec: %v", err)
+	}
+
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
-		FeatureSet:        cpuid.HostFeatureSet(),
-		Timekeeper:        tk,
-		RootUserNamespace: creds.UserNamespace,
-		NetworkStack:      networkStack,
-		// TODO: use number of logical processors from cgroups.
-		ApplicationCores:            uint(runtime.NumCPU()),
+		FeatureSet:                  cpuid.HostFeatureSet(),
+		Timekeeper:                  tk,
+		RootUserNamespace:           creds.UserNamespace,
+		NetworkStack:                networkStack,
+		ApplicationCores:            uint(cpuNum),
 		Vdso:                        vdso,
 		RootUTSNamespace:            kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace),
 		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
