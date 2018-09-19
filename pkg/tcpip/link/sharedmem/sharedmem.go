@@ -187,11 +187,16 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	// Add the ethernet header here.
 	eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
-	eth.Encode(&header.EthernetFields{
+	ethHdr := &header.EthernetFields{
 		DstAddr: r.RemoteLinkAddress,
-		SrcAddr: e.addr,
 		Type:    protocol,
-	})
+	}
+	if r.LocalLinkAddress != "" {
+		ethHdr.SrcAddr = r.LocalLinkAddress
+	} else {
+		ethHdr.SrcAddr = e.addr
+	}
+	eth.Encode(ethHdr)
 
 	v := payload.ToView()
 	// Transmit the packet.
@@ -248,7 +253,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 		// Send packet up the stack.
 		eth := header.Ethernet(b)
-		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView())
+		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView())
 	}
 
 	// Clean state.

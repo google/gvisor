@@ -77,7 +77,11 @@ func (e *endpoint) WritePacket(_ *stack.Route, hdr buffer.Prependable, payload b
 	views[0] = hdr.View()
 	views = append(views, payload.Views()...)
 	vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-	e.dispatcher.DeliverNetworkPacket(e, "", protocol, vv)
+
+	// Because we're immediately turning around and writing the packet back to the
+	// rx path, we intentionally don't preserve the remote and local link
+	// addresses from the stack.Route we're passed.
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remoteLinkAddr */, "" /* localLinkAddr */, protocol, vv)
 
 	return nil
 }

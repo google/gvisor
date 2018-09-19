@@ -72,7 +72,7 @@ func (e *Endpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.Vector
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
 func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remoteLinkAddr tcpip.LinkAddress, vv buffer.VectorisedView) {
-	e.dispatcher.DeliverNetworkPacket(e, remoteLinkAddr, protocol, vv.Clone(nil))
+	e.dispatcher.DeliverNetworkPacket(e, remoteLinkAddr, "" /* localLinkAddr */, protocol, vv.Clone(nil))
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
