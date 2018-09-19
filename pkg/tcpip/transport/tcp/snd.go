@@ -286,8 +286,37 @@ func (s *sender) updateRTO(rtt time.Duration) {
 		if diff < 0 {
 			diff = -diff
 		}
-		s.rtt.rttvar = (3*s.rtt.rttvar + diff) / 4
-		s.rtt.srtt = (7*s.rtt.srtt + rtt) / 8
+		// Use RFC6298 standard algorithm to update rttvar and srtt when
+		// no timestamps are available.
+		if !s.ep.sendTSOk {
+			s.rtt.rttvar = (3*s.rtt.rttvar + diff) / 4
+			s.rtt.srtt = (7*s.rtt.srtt + rtt) / 8
+		} else {
+			// When we are taking RTT measurements of every ACK then
+			// we need to use a modified method as specified in
+			// https://tools.ietf.org/html/rfc7323#appendix-G
+			if s.outstanding == 0 {
+				s.rtt.Unlock()
+				return
+			}
+			// Netstack measures congestion window/inflight all in
+			// terms of packets and not bytes. This is similar to
+			// how linux also does cwnd and inflight. In practice
+			// this approximation works as expected.
+			expectedSamples := math.Ceil(float64(s.outstanding) / 2)
+
+			// alpha & beta values are the original values as recommended in
+			// https://tools.ietf.org/html/rfc6298#section-2.3.
+			const alpha = 0.125
+			const beta = 0.25
+
+			alphaPrime := alpha / expectedSamples
+			betaPrime := beta / expectedSamples
+			rttVar := (1-betaPrime)*s.rtt.rttvar.Seconds() + betaPrime*diff.Seconds()
+			srtt := (1-alphaPrime)*s.rtt.srtt.Seconds() + alphaPrime*rtt.Seconds()
+			s.rtt.rttvar = time.Duration(rttVar * float64(time.Second))
+			s.rtt.srtt = time.Duration(srtt * float64(time.Second))
+		}
 	}
 
 	s.rto = s.rtt.srtt + 4*s.rtt.rttvar
