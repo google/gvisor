@@ -55,18 +55,27 @@ go_test(
     name = "cmd_test",
     size = "small",
     srcs = [
+        "capability_test.go",
         "delete_test.go",
         "exec_test.go",
+    ],
+    data = [
+        "//runsc",
     ],
     embed = [":cmd"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel/auth",
         "//pkg/urpc",
         "//runsc/boot",
+        "//runsc/container",
+        "//runsc/specutils",
+        "//runsc/test/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
 )

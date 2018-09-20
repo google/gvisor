@@ -392,3 +392,13 @@ func Mount(src, dst, typ string, flags uint32) error {
 	}
 	return nil
 }
+
+// ContainsStr returns true if 'str' is inside 'strs'.
+func ContainsStr(strs []string, str string) bool {
+	for _, s := range strs {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}

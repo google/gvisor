@@ -428,13 +428,13 @@ func parseAndFilterOptions(opts []string, allowedKeys ...string) ([]string, erro
 		kv := strings.Split(o, "=")
 		switch len(kv) {
 		case 1:
-			if contains(allowedKeys, o) {
+			if specutils.ContainsStr(allowedKeys, o) {
 				out = append(out, o)
 				continue
 			}
 			log.Warningf("ignoring unsupported key %q", kv)
 		case 2:
-			if contains(allowedKeys, kv[0]) {
+			if specutils.ContainsStr(allowedKeys, kv[0]) {
 				out = append(out, o)
 				continue
 			}
@@ -538,15 +538,6 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 		}
 	}
 	return mf
-}
-
-func contains(strs []string, str string) bool {
-	for _, s := range strs {
-		if s == str {
-			return true
-		}
-	}
-	return false
 }
 
 func mustFindFilesystem(name string) fs.Filesystem {

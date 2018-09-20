@@ -31,6 +31,23 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
+var caps = []string{
+	"CAP_CHOWN",
+	"CAP_DAC_OVERRIDE",
+	"CAP_DAC_READ_SEARCH",
+	"CAP_FOWNER",
+	"CAP_FSETID",
+	"CAP_SYS_CHROOT",
+}
+
+// goferCaps is the minimal set of capabilities needed by the Gofer to operate
+// on files.
+var goferCaps = &specs.LinuxCapabilities{
+	Bounding:  caps,
+	Effective: caps,
+	Permitted: caps,
+}
+
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
@@ -72,25 +89,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	if g.applyCaps {
-		// Minimal set of capabilities needed by the Gofer to operate on files.
-		caps := []string{
-			"CAP_CHOWN",
-			"CAP_DAC_OVERRIDE",
-			"CAP_DAC_READ_SEARCH",
-			"CAP_FOWNER",
-			"CAP_FSETID",
-		}
-		lc := &specs.LinuxCapabilities{
-			Bounding:  caps,
-			Effective: caps,
-			Permitted: caps,
-		}
-
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
 		args = append(args, "--apply-caps=false")
-		if err := setCapsAndCallSelf(args, lc); err != nil {
+		if err := setCapsAndCallSelf(args, goferCaps); err != nil {
 			Fatalf("Unable to apply caps: %v", err)
 		}
 		panic("unreachable")

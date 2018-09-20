@@ -16,56 +16,67 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
+var allCapTypes = []capability.CapType{
+	capability.BOUNDS,
+	capability.EFFECTIVE,
+	capability.PERMITTED,
+	capability.INHERITABLE,
+	capability.AMBIENT,
+}
+
 // applyCaps applies the capabilities in the spec to the current thread.
 //
 // Note that it must be called with current thread locked.
 func applyCaps(caps *specs.LinuxCapabilities) error {
-	setter, err := capability.NewPid2(os.Getpid())
+	// Load current capabilities to trim the ones not permitted.
+	curCaps, err := capability.NewPid2(0)
 	if err != nil {
 		return err
 	}
-	if err := setter.Load(); err != nil {
+	if err := curCaps.Load(); err != nil {
 		return err
 	}
 
-	bounding, err := trimCaps(caps.Bounding, setter)
+	// Create an empty capability set to populate.
+	newCaps, err := capability.NewPid2(0)
 	if err != nil {
 		return err
 	}
-	setter.Set(capability.BOUNDS, bounding...)
 
-	effective, err := trimCaps(caps.Effective, setter)
-	if err != nil {
-		return err
+	for _, c := range allCapTypes {
+		if !newCaps.Empty(c) {
+			panic("unloaded capabilities must be empty")
+		}
+		set, err := trimCaps(getCaps(c, caps), curCaps)
+		if err != nil {
+			return err
+		}
+		newCaps.Set(c, set...)
 	}
-	setter.Set(capability.EFFECTIVE, effective...)
 
-	permitted, err := trimCaps(caps.Permitted, setter)
-	if err != nil {
-		return err
+	return newCaps.Apply(capability.CAPS | capability.BOUNDS | capability.AMBS)
+}
+
+func getCaps(which capability.CapType, caps *specs.LinuxCapabilities) []string {
+	switch which {
+	case capability.BOUNDS:
+		return caps.Bounding
+	case capability.EFFECTIVE:
+		return caps.Effective
+	case capability.PERMITTED:
+		return caps.Permitted
+	case capability.INHERITABLE:
+		return caps.Inheritable
+	case capability.AMBIENT:
+		return caps.Ambient
 	}
-	setter.Set(capability.PERMITTED, permitted...)
-
-	inheritable, err := trimCaps(caps.Inheritable, setter)
-	if err != nil {
-		return err
-	}
-	setter.Set(capability.INHERITABLE, inheritable...)
-
-	ambient, err := trimCaps(caps.Ambient, setter)
-	if err != nil {
-		return err
-	}
-	setter.Set(capability.AMBIENT, ambient...)
-
-	return setter.Apply(capability.CAPS | capability.BOUNDS | capability.AMBS)
+	panic(fmt.Sprint("invalid capability type:", which))
 }
 
 func trimCaps(names []string, setter capability.Capabilities) ([]capability.Cap, error) {
