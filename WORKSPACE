@@ -79,5 +79,5 @@ go_repository(
 go_repository(
     name = "com_github_syndtr_gocapability",
     importpath = "github.com/syndtr/gocapability",
-    commit = "33e07d32887e1e06b7c025f27ce52f62c7990bc0",
+    commit = "d98352740cb2c55f81556b63d4a1ec64c5a319c2",
 )
