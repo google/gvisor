@@ -315,6 +315,13 @@ func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 		return fmt.Errorf("error removing directory %q: %v", containerRoot, err)
 	}
 
+	// Flushing dirent references triggers many async close operations. We
+	// must wait for those to complete before returning, otherwise the
+	// caller may kill the gofer before they complete, causing a cascade of
+	// failing RPCs.
+	log.Infof("Waiting for async filesystem operations to complete")
+	fs.AsyncBarrier()
+
 	// We made it!
 	log.Debugf("Destroyed container %q", *cid)
 	return nil
