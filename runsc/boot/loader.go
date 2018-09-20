@@ -573,15 +573,8 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 
 	// If the thread either has already exited or exits during waiting,
 	// consider the container exited.
-	// TODO: Multiple calls to waitContainer() should return
-	// the same exit status.
 	ws := l.wait(tg)
 	*waitStatus = ws
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	delete(l.containerRootTGs, cid)
-
 	return nil
 }
 

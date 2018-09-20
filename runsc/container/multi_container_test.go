@@ -152,8 +152,8 @@ func TestMultiContainerWait(t *testing.T) {
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
 			}
-			if _, err := c.Wait(); err == nil {
-				t.Errorf("wait for stopped process %s should fail", c.Spec.Process.Args)
+			if _, err := c.Wait(); err != nil {
+				t.Errorf("wait for stopped container %s shouldn't fail: %v", c.Spec.Process.Args, err)
 			}
 		}(containers[1])
 	}
@@ -239,8 +239,8 @@ func TestExecWait(t *testing.T) {
 	} else if es := ws.ExitStatus(); es != 0 {
 		t.Fatalf("process %s exited with non-zero status %d", containers[1].Spec.Process.Args, es)
 	}
-	if _, err := containers[1].Wait(); err == nil {
-		t.Fatalf("wait for stopped process %s should fail", containers[1].Spec.Process.Args)
+	if _, err := containers[1].Wait(); err != nil {
+		t.Fatalf("wait for stopped container %s shouldn't fail: %v", containers[1].Spec.Process.Args, err)
 	}
 
 	// Execute another process in the first container.
