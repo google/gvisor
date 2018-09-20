@@ -139,6 +139,7 @@ func Load(rootDir, id string) (*Container, error) {
 		if !c.Sandbox.IsRunning() {
 			// Sandbox no longer exists, so this container definitely does not exist.
 			c.changeStatus(Stopped)
+			c.Sandbox = nil
 		} else if c.Status == Running {
 			// Container state should reflect the actual state of
 			// the application, so we don't consider gofer process
@@ -682,7 +683,6 @@ func (c *Container) changeStatus(s Status) {
 		if c.Status != Created && c.Status != Running && c.Status != Stopped {
 			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
 		}
-		c.Sandbox = nil
 
 	default:
 		panic(fmt.Sprintf("invalid new state: %v", s))
