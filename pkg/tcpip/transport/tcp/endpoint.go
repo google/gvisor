@@ -127,7 +127,7 @@ type endpoint struct {
 
 	// hardError is meaningful only when state is stateError, it stores the
 	// error to be returned when read/write syscalls are called and the
-	// endpoint is in this state.
+	// endpoint is in this state. hardError is protected by mu.
 	hardError *tcpip.Error `state:".(string)"`
 
 	// workerRunning specifies if a worker goroutine is running.
@@ -447,9 +447,10 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	bufUsed := e.rcvBufUsed
 	if s := e.state; s != stateConnected && s != stateClosed && bufUsed == 0 {
 		e.rcvListMu.Unlock()
+		he := e.hardError
 		e.mu.RUnlock()
 		if s == stateError {
-			return buffer.View{}, tcpip.ControlMessages{}, e.hardError
+			return buffer.View{}, tcpip.ControlMessages{}, he
 		}
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
