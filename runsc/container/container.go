@@ -544,16 +544,9 @@ func (c *Container) save() error {
 // to stop. If any of them doesn't stop before timeout, an error is returned.
 func (c *Container) stop() error {
 	if c.Sandbox != nil && c.Sandbox.IsRunning() {
-		log.Debugf("Killing container %q", c.ID)
-		if c.Sandbox.IsRootContainer(c.ID) {
-			if err := c.Sandbox.Destroy(); err != nil {
-				return fmt.Errorf("error destroying sandbox %q: %v", c.Sandbox.ID, err)
-			}
-		} else {
-			if err := c.Signal(syscall.SIGKILL); err != nil {
-				// The container may already be stopped, log the error.
-				log.Warningf("Error sending signal %d to container %q: %v", syscall.SIGKILL, c.ID, err)
-			}
+		log.Debugf("Destroying container %q", c.ID)
+		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
+			return fmt.Errorf("error destroying container %q: %v", c.ID, err)
 		}
 	}
 

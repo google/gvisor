@@ -666,6 +666,26 @@ func (s *Sandbox) Stacks() (string, error) {
 	return stacks, nil
 }
 
+// DestroyContainer destroys the given container. If it is the root container,
+// then the entire sandbox is destroyed.
+func (s *Sandbox) DestroyContainer(cid string) error {
+	if s.IsRootContainer(cid) {
+		log.Debugf("Destroying root container %q by destroying sandbox", cid)
+		return s.Destroy()
+	}
+
+	log.Debugf("Destroying container %q in sandbox %q", cid, s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := conn.Call(boot.ContainerDestroy, &cid, nil); err != nil {
+		return fmt.Errorf("error destroying container %q: %v", cid, err)
+	}
+	return nil
+}
+
 func (s *Sandbox) waitForStopped() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

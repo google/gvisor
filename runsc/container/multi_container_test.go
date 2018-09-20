@@ -17,6 +17,7 @@ package container
 import (
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
+	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
@@ -428,6 +430,74 @@ func TestMultiContainerSignal(t *testing.T) {
 		// The sentry should be gone, so signaling should yield an error.
 		if err := containers[0].Signal(syscall.SIGKILL); err == nil {
 			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
+		}
+	}
+}
+
+// TestMultiContainerDestroy checks that container are properly cleaned-up when
+// they are destroyed.
+func TestMultiContainerDestroy(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+
+		// Two containers that will run for a long time. We will
+		// destroy the second one.
+		specs, ids := createSpecs([]string{"sleep", "100"}, []string{"sleep", "100"})
+
+		// Setup the containers.
+		var containers []*Container
+		for i, spec := range specs {
+			conf := testutil.TestConfig()
+			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(bundleDir)
+			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer cont.Destroy()
+			if err := cont.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+			containers = append(containers, cont)
+		}
+
+		// Exec in the root container to check for the existence of the
+		// second containers root filesystem directory.
+		contDir := path.Join(boot.ChildContainersDir, containers[1].ID)
+		args := &control.ExecArgs{
+			Filename: "/usr/bin/test",
+			Argv:     []string{"test", "-d", contDir},
+		}
+		if ws, err := containers[0].executeSync(args); err != nil {
+			t.Fatalf("error executing %+v: %v", args, err)
+		} else if ws.ExitStatus() != 0 {
+			t.Errorf("exec 'test -f %q' got exit status %d, wanted 0", contDir, ws.ExitStatus())
+		}
+
+		// Destory the second container.
+		if err := containers[1].Destroy(); err != nil {
+			t.Fatalf("error destroying container: %v", err)
+		}
+
+		// Now the container dir should be gone.
+		if ws, err := containers[0].executeSync(args); err != nil {
+			t.Fatalf("error executing %+v: %v", args, err)
+		} else if ws.ExitStatus() == 0 {
+			t.Errorf("exec 'test -f %q' got exit status 0, wanted non-zero", contDir)
+		}
+
+		// Check that cont.Destroy is safe to call multiple times.
+		if err := containers[1].Destroy(); err != nil {
+			t.Errorf("error destroying container: %v", err)
 		}
 	}
 }

@@ -49,9 +49,9 @@ const (
 	// Device name for root mount.
 	rootDevice = "9pfs-/"
 
-	// childContainersDir is the directory where child container root
+	// ChildContainersDir is the directory where child container root
 	// filesystems are mounted.
-	childContainersDir = "/__runsc_containers__"
+	ChildContainersDir = "/__runsc_containers__"
 
 	// Filesystems that runsc supports.
 	bind     = "bind"
@@ -89,7 +89,7 @@ func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec
 		// each child container.
 		mounts = append(mounts, specs.Mount{
 			Type:        tmpfs,
-			Destination: childContainersDir,
+			Destination: ChildContainersDir,
 		})
 	}
 	fds := &fdDispenser{fds: ioFDs}
@@ -639,7 +639,7 @@ func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spe
 	// Make directories for submounts within the container.
 	rootDir := mns.Root()
 	defer rootDir.DecRef()
-	containerRoot := filepath.Join(childContainersDir, cid)
+	containerRoot := filepath.Join(ChildContainersDir, cid)
 	mkdirAll(ctx, mns, containerRoot)
 
 	// Mount the container's root filesystem to the newly created
