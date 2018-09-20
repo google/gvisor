@@ -78,8 +78,11 @@ type Loader struct {
 
 	watchdog *watchdog.Watchdog
 
-	// ioFDs are the FDs that attach the sandbox to the gofers.
-	ioFDs []int
+	// stdioFDs contains stdin, stdout, and stderr.
+	stdioFDs []int
+
+	// goferFDs are the FDs that attach the sandbox to the gofers.
+	goferFDs []int
 
 	// spec is the base configuration for the root container.
 	spec *specs.Spec
@@ -139,7 +142,7 @@ func init() {
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, ioFDs []int, console bool) (*Loader, error) {
+func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, console bool) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("Error setting up memory usage: %v", err)
 	}
@@ -278,7 +281,8 @@ func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, ioFDs []int
 		conf:                  conf,
 		console:               console,
 		watchdog:              watchdog,
-		ioFDs:                 ioFDs,
+		stdioFDs:              []int{syscall.Stdin, syscall.Stdout, syscall.Stderr},
+		goferFDs:              goferFDs,
 		spec:                  spec,
 		startSignalForwarding: startSignalForwarding,
 		rootProcArgs:          procArgs,
@@ -390,7 +394,8 @@ func (l *Loader) run() error {
 			&l.rootProcArgs,
 			l.spec,
 			l.conf,
-			l.ioFDs,
+			l.stdioFDs,
+			l.goferFDs,
 			l.console,
 			l.rootProcArgs.Credentials,
 			l.rootProcArgs.Limits,
@@ -474,17 +479,27 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		ioFDs = append(ioFDs, fd)
 	}
 
+	stdioFDs := ioFDs[:3]
+	goferFDs := ioFDs[3:]
 	if err := setFileSystemForProcess(
 		&procArgs,
 		spec,
 		conf,
-		ioFDs,
+		stdioFDs,
+		goferFDs,
 		false,
 		creds,
 		procArgs.Limits,
 		k,
 		cid); err != nil {
 		return fmt.Errorf("failed to create new process: %v", err)
+	}
+
+	// setFileSystemForProcess dup'd stdioFDs, so we can close them.
+	for i, fd := range stdioFDs {
+		if err := syscall.Close(fd); err != nil {
+			return fmt.Errorf("failed to close stdioFD #%d: %v", i, fd)
+		}
 	}
 
 	ctx := procArgs.NewContext(l.k)
