@@ -455,7 +455,7 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
-	if err := c.requireStatus("running", Running); err != nil {
+	if err := c.requireStatus("signal", Running); err != nil {
 		return err
 	}
 	// TODO: Query the container for its state, then save it.
