@@ -735,13 +735,11 @@ func TestUnixDomainSockets(t *testing.T) {
 			UID: uint32(os.Getuid()),
 			GID: uint32(os.Getgid()),
 		}
-		spec.Mounts = []specs.Mount{
-			specs.Mount{
-				Type:        "bind",
-				Destination: dir,
-				Source:      dir,
-			},
-		}
+		spec.Mounts = []specs.Mount{{
+			Type:        "bind",
+			Destination: dir,
+			Source:      dir,
+		}}
 
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {

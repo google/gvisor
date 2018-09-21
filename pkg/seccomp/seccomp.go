@@ -98,7 +98,7 @@ func buildProgram(rules SyscallRules, kill bool) ([]linux.BPFInstruction, error)
 // buildIndex builds a BST to quickly search through all syscalls that are whitelisted.
 func buildIndex(rules SyscallRules, program *bpf.ProgramBuilder) error {
 	syscalls := []uintptr{}
-	for sysno, _ := range rules {
+	for sysno := range rules {
 		syscalls = append(syscalls, sysno)
 	}
 

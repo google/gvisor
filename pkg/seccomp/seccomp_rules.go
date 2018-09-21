@@ -120,7 +120,7 @@ func (sr SyscallRules) Merge(rules SyscallRules) {
 				sr[sysno] = append(sr[sysno], Rule{})
 			}
 			if len(rs) == 0 {
-				rs = []Rule{Rule{}}
+				rs = []Rule{{}}
 			}
 			sr[sysno] = append(sr[sysno], rs...)
 		} else {

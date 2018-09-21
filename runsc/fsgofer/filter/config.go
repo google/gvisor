@@ -65,15 +65,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_FCHMOD:     {},
 	syscall.SYS_FCHOWNAT:   {},
 	syscall.SYS_FCNTL: []seccomp.Rule{
-		seccomp.Rule{
+		{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.F_GETFL),
 		},
-		seccomp.Rule{
+		{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.F_SETFL),
 		},
-		seccomp.Rule{
+		{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.F_GETFD),
 		},

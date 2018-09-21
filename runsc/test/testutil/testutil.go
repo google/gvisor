@@ -134,7 +134,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 			// This creates a writable mount inside the root. Also, when tmpdir points
 			// to "/tmp", it makes the the actual /tmp to be mounted and not a tmpfs
 			// inside the sentry.
-			specs.Mount{
+			{
 				Type:        "bind",
 				Destination: TmpDir(),
 				Source:      TmpDir(),

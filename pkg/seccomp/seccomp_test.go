@@ -368,19 +368,19 @@ func TestMerge(t *testing.T) {
 			name:  "empty both",
 			main:  nil,
 			merge: nil,
-			want:  []Rule{Rule{}, Rule{}},
+			want:  []Rule{{}, {}},
 		},
 		{
 			name:  "empty main",
 			main:  nil,
-			merge: []Rule{Rule{}},
-			want:  []Rule{Rule{}, Rule{}},
+			merge: []Rule{{}},
+			want:  []Rule{{}, {}},
 		},
 		{
 			name:  "empty merge",
-			main:  []Rule{Rule{}},
+			main:  []Rule{{}},
 			merge: nil,
-			want:  []Rule{Rule{}, Rule{}},
+			want:  []Rule{{}, {}},
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
