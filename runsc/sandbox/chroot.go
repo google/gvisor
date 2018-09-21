@@ -74,6 +74,8 @@ func setUpChroot() (string, error) {
 // tearDownChroot unmounts /proc and /runsc from the chroot before deleting the
 // directory.
 func tearDownChroot(chroot string) error {
+	log.Debugf("Removing chroot mounts %q", chroot)
+
 	// Unmount /proc.
 	proc := filepath.Join(chroot, "proc")
 	if err := syscall.Unmount(proc, 0); err != nil {

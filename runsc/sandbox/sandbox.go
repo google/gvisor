@@ -451,6 +451,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			if err != nil {
 				return fmt.Errorf("error setting up chroot: %v", err)
 			}
+			s.Chroot = chroot // Remember path so it can cleaned up.
 			cmd.SysProcAttr.Chroot = chroot
 			cmd.Args[0] = "/runsc"
 			cmd.Path = "/runsc"
@@ -549,9 +550,9 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 	return s.ID == cid
 }
 
-// Destroy frees all resources associated with the sandbox.
-// Destroy returns error if any step fails, and the function can be safely retried.
-func (s *Sandbox) Destroy() error {
+// Destroy frees all resources associated with the sandbox. It fails fast and
+// is idempotent.
+func (s *Sandbox) destroy() error {
 	log.Debugf("Destroy sandbox %q", s.ID)
 	if s.Pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
@@ -674,7 +675,12 @@ func (s *Sandbox) Stacks() (string, error) {
 func (s *Sandbox) DestroyContainer(cid string) error {
 	if s.IsRootContainer(cid) {
 		log.Debugf("Destroying root container %q by destroying sandbox", cid)
-		return s.Destroy()
+		return s.destroy()
+	}
+
+	if !s.IsRunning() {
+		// Sandbox isn't running anymore, container is already destroyed.
+		return nil
 	}
 
 	log.Debugf("Destroying container %q in sandbox %q", cid, s.ID)

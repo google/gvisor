@@ -95,8 +95,8 @@ type Container struct {
 	// be 0 if the gofer has been killed.
 	GoferPid int `json:"goferPid"`
 
-	// Sandbox is the sandbox this container is running in. It will be nil
-	// if the container is not in state Running or Created.
+	// Sandbox is the sandbox this container is running in. It's set when the
+	// container is created and reset when the sandbox is destroyed.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
 }
 
@@ -136,14 +136,12 @@ func Load(rootDir, id string) (*Container, error) {
 	// This is inherently racey.
 	if c.Status == Running || c.Status == Created {
 		// Check if the sandbox process is still running.
-		if !c.Sandbox.IsRunning() {
+		if !c.isSandboxRunning() {
 			// Sandbox no longer exists, so this container definitely does not exist.
 			c.changeStatus(Stopped)
-			c.Sandbox = nil
 		} else if c.Status == Running {
-			// Container state should reflect the actual state of
-			// the application, so we don't consider gofer process
-			// here.
+			// Container state should reflect the actual state of the application, so
+			// we don't consider gofer process here.
 			if err := c.Signal(syscall.Signal(0)); err != nil {
 				c.changeStatus(Stopped)
 			}
@@ -288,8 +286,8 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 // Start starts running the containerized process inside the sandbox.
 func (c *Container) Start(conf *boot.Config) error {
 	log.Debugf("Start container %q", c.ID)
-	if c.Status != Created {
-		return fmt.Errorf("cannot start container in state %s", c.Status)
+	if err := c.requireStatus("start", Created); err != nil {
+		return err
 	}
 
 	// "If any prestart hook fails, the runtime MUST generate an error,
@@ -330,11 +328,9 @@ func (c *Container) Start(conf *boot.Config) error {
 // to restore a container from its state file.
 func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile string) error {
 	log.Debugf("Restore container %q", c.ID)
-
-	if c.Status != Created {
-		return fmt.Errorf("cannot restore container in state %s", c.Status)
+	if err := c.requireStatus("restore", Created); err != nil {
+		return err
 	}
-
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
 		return err
 	}
@@ -361,8 +357,8 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 // the newly created process.
 func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 	log.Debugf("Execute in container %q, args: %+v", c.ID, args)
-	if c.Status != Created && c.Status != Running {
-		return 0, fmt.Errorf("cannot exec in container in state %s", c.Status)
+	if err := c.requireStatus("execute in", Created, Running); err != nil {
+		return 0, err
 	}
 	return c.Sandbox.Execute(c.ID, args)
 }
@@ -370,8 +366,8 @@ func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 // Event returns events for the container.
 func (c *Container) Event() (*boot.Event, error) {
 	log.Debugf("Getting events for container %q", c.ID)
-	if c.Status != Running && c.Status != Created {
-		return nil, fmt.Errorf("cannot get events for container in state: %s", c.Status)
+	if err := c.requireStatus("get events for", Created, Running, Paused); err != nil {
+		return nil, err
 	}
 	return c.Sandbox.Event(c.ID)
 }
@@ -379,7 +375,7 @@ func (c *Container) Event() (*boot.Event, error) {
 // Pid returns the Pid of the sandbox the container is running in, or -1 if the
 // container is not running.
 func (c *Container) Pid() int {
-	if c.Status != Running && c.Status != Created && c.Status != Paused {
+	if err := c.requireStatus("pid", Created, Running, Paused); err != nil {
 		return -1
 	}
 	return c.Sandbox.Pid
@@ -390,8 +386,8 @@ func (c *Container) Pid() int {
 // and wait returns immediately.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container %q", c.ID)
-	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
-		return 0, fmt.Errorf("container sandbox is not running")
+	if !c.isSandboxRunning() {
+		return 0, fmt.Errorf("container is not running")
 	}
 	return c.Sandbox.Wait(c.ID)
 }
@@ -400,8 +396,8 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in sandbox %q", pid, c.Sandbox.ID)
-	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
-		return 0, fmt.Errorf("container sandbox is not running")
+	if !c.isSandboxRunning() {
+		return 0, fmt.Errorf("container is not running")
 	}
 	return c.Sandbox.WaitPID(c.Sandbox.ID, pid, clearStatus)
 }
@@ -410,8 +406,8 @@ func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on pid %d in container %q", pid, c.ID)
-	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
-		return 0, fmt.Errorf("container sandbox is not running")
+	if !c.isSandboxRunning() {
+		return 0, fmt.Errorf("container is not running")
 	}
 	return c.Sandbox.WaitPID(c.ID, pid, clearStatus)
 }
@@ -421,8 +417,8 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
-	if c.Status == Stopped {
-		return fmt.Errorf("container sandbox is stopped")
+	if err := c.requireStatus("running", Running); err != nil {
+		return err
 	}
 	// TODO: Query the container for its state, then save it.
 	return c.Sandbox.Signal(c.ID, sig)
@@ -432,8 +428,8 @@ func (c *Container) Signal(sig syscall.Signal) error {
 // The statefile will be written to f, the file at the specified image-path.
 func (c *Container) Checkpoint(f *os.File) error {
 	log.Debugf("Checkpoint container %q", c.ID)
-	if c.Status == Stopped {
-		return fmt.Errorf("container sandbox is stopped")
+	if err := c.requireStatus("checkpoint", Created, Running, Paused); err != nil {
+		return err
 	}
 	return c.Sandbox.Checkpoint(c.ID, f)
 }
@@ -484,8 +480,8 @@ func (c *Container) State() specs.State {
 // Processes retrieves the list of processes and associated metadata inside a
 // container.
 func (c *Container) Processes() ([]*control.Process, error) {
-	if c.Status != Running && c.Status != Paused {
-		return nil, fmt.Errorf("cannot get processes of container %q because it isn't running. It is in state %v", c.ID, c.Status)
+	if err := c.requireStatus("get processes of", Running, Paused); err != nil {
+		return nil, err
 	}
 	return c.Sandbox.Processes(c.ID)
 }
@@ -544,11 +540,13 @@ func (c *Container) save() error {
 // root containers), and waits for the container or sandbox and the gofer
 // to stop. If any of them doesn't stop before timeout, an error is returned.
 func (c *Container) stop() error {
-	if c.Sandbox != nil && c.Sandbox.IsRunning() {
+	if c.Sandbox != nil {
 		log.Debugf("Destroying container %q", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
 			return fmt.Errorf("error destroying container %q: %v", c.ID, err)
 		}
+		// Only set sandbox to nil after it has been told to destroy the container.
+		c.Sandbox = nil
 	}
 
 	// Try killing gofer if it does not exit with container.
@@ -567,7 +565,7 @@ func (c *Container) waitForStopped() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if c.Sandbox != nil && c.Sandbox.IsRunning() {
+		if c.isSandboxRunning() {
 			if err := c.Signal(syscall.Signal(0)); err == nil {
 				return fmt.Errorf("container is still running")
 			}
@@ -688,4 +686,17 @@ func (c *Container) changeStatus(s Status) {
 		panic(fmt.Sprintf("invalid new state: %v", s))
 	}
 	c.Status = s
+}
+
+func (c *Container) isSandboxRunning() bool {
+	return c.Sandbox != nil && c.Sandbox.IsRunning()
+}
+
+func (c *Container) requireStatus(action string, statuses ...Status) error {
+	for _, s := range statuses {
+		if c.Status == s {
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot %s container %q in state %s", action, c.ID, c.Status)
 }
