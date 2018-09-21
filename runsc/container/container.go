@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/gofrs/flock"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
@@ -38,9 +39,16 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
-// metadataFilename is the name of the metadata file relative to the container
-// root directory that holds sandbox metadata.
-const metadataFilename = "meta.json"
+const (
+	// metadataFilename is the name of the metadata file relative to the
+	// container root directory that holds sandbox metadata.
+	metadataFilename = "meta.json"
+
+	// metadataLockFilename is the name of a lock file in the container
+	// root directory that is used to prevent concurrent modifications to
+	// the container state and metadata.
+	metadataLockFilename = "meta.lock"
+)
 
 // validateID validates the container id.
 func validateID(id string) error {
@@ -116,6 +124,15 @@ func Load(rootDir, id string) (*Container, error) {
 		return nil, err
 	}
 
+	// Lock the container metadata to prevent other runsc instances from
+	// writing to it while we are reading it.
+	unlock, err := lockContainerMetadata(cRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	// Read the container metadata file and create a new Container from it.
 	metaFile := filepath.Join(cRoot, metadataFilename)
 	metaBytes, err := ioutil.ReadFile(metaFile)
 	if err != nil {
@@ -204,9 +221,19 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		return nil, err
 	}
 
+	// Lock the container metadata file to prevent concurrent creations of
+	// containers with the same id.
 	containerRoot := filepath.Join(conf.RootDir, id)
-	if _, err := os.Stat(containerRoot); err == nil {
-		return nil, fmt.Errorf("container with id %q already exists: %q", id, containerRoot)
+	unlock, err := lockContainerMetadata(containerRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
+	// Check if the container already exists by looking for the metadata
+	// file.
+	if _, err := os.Stat(filepath.Join(containerRoot, metadataFilename)); err == nil {
+		return nil, fmt.Errorf("container with id %q already exists", id)
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("error looking for existing container in %q: %v", containerRoot, err)
 	}
@@ -286,6 +313,11 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 // Start starts running the containerized process inside the sandbox.
 func (c *Container) Start(conf *boot.Config) error {
 	log.Debugf("Start container %q", c.ID)
+	unlock, err := c.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := c.requireStatus("start", Created); err != nil {
 		return err
 	}
@@ -328,9 +360,15 @@ func (c *Container) Start(conf *boot.Config) error {
 // to restore a container from its state file.
 func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile string) error {
 	log.Debugf("Restore container %q", c.ID)
+	unlock, err := c.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if err := c.requireStatus("restore", Created); err != nil {
 		return err
 	}
+
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
 		return err
 	}
@@ -438,32 +476,41 @@ func (c *Container) Checkpoint(f *os.File) error {
 // The call only succeeds if the container's status is created or running.
 func (c *Container) Pause() error {
 	log.Debugf("Pausing container %q", c.ID)
-	switch c.Status {
-	case Created, Running:
-		if err := c.Sandbox.Pause(c.ID); err != nil {
-			return fmt.Errorf("error pausing container: %v", err)
-		}
-		c.changeStatus(Paused)
-		return c.save()
-	default:
-		return fmt.Errorf("container %q not created or running, not pausing", c.ID)
+	unlock, err := c.lock()
+	if err != nil {
+		return err
 	}
+	defer unlock()
+
+	if c.Status != Created && c.Status != Running {
+		return fmt.Errorf("cannot pause container %q in state %v", c.ID, c.Status)
+	}
+
+	if err := c.Sandbox.Pause(c.ID); err != nil {
+		return fmt.Errorf("error pausing container: %v", err)
+	}
+	c.changeStatus(Paused)
+	return c.save()
 }
 
 // Resume unpauses the container and its kernel.
 // The call only succeeds if the container's status is paused.
 func (c *Container) Resume() error {
 	log.Debugf("Resuming container %q", c.ID)
-	switch c.Status {
-	case Paused:
-		if err := c.Sandbox.Resume(c.ID); err != nil {
-			return fmt.Errorf("error resuming container: %v", err)
-		}
-		c.changeStatus(Running)
-		return c.save()
-	default:
-		return fmt.Errorf("container %q not paused, not resuming", c.ID)
+	unlock, err := c.lock()
+	if err != nil {
+		return err
 	}
+	defer unlock()
+
+	if c.Status != Paused {
+		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
+	}
+	if err := c.Sandbox.Resume(c.ID); err != nil {
+		return fmt.Errorf("error resuming container: %v", err)
+	}
+	c.changeStatus(Running)
+	return c.save()
 }
 
 // State returns the metadata of the container.
@@ -520,16 +567,15 @@ func (c *Container) Destroy() error {
 }
 
 // save saves the container metadata to a file.
+//
+// Precondition: container must be locked with container.lock().
 func (c *Container) save() error {
 	log.Debugf("Save container %q", c.ID)
-	if err := os.MkdirAll(c.Root, 0711); err != nil {
-		return fmt.Errorf("error creating container root directory %q: %v", c.Root, err)
-	}
+	metaFile := filepath.Join(c.Root, metadataFilename)
 	meta, err := json.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("error marshaling container metadata: %v", err)
 	}
-	metaFile := filepath.Join(c.Root, metadataFilename)
 	if err := ioutil.WriteFile(metaFile, meta, 0640); err != nil {
 		return fmt.Errorf("error writing container metadata: %v", err)
 	}
@@ -699,4 +745,23 @@ func (c *Container) requireStatus(action string, statuses ...Status) error {
 		}
 	}
 	return fmt.Errorf("cannot %s container %q in state %s", action, c.ID, c.Status)
+}
+
+// lock takes a file lock on the container metadata lock file.
+func (c *Container) lock() (func() error, error) {
+	return lockContainerMetadata(filepath.Join(c.Root, c.ID))
+}
+
+// lockContainerMetadata takes a file lock on the metadata lock file in the
+// given container root directory.
+func lockContainerMetadata(containerRootDir string) (func() error, error) {
+	if err := os.MkdirAll(containerRootDir, 0711); err != nil {
+		return nil, fmt.Errorf("error creating container root directory %q: %v", containerRootDir, err)
+	}
+	f := filepath.Join(containerRootDir, metadataLockFilename)
+	l := flock.NewFlock(f)
+	if err := l.Lock(); err != nil {
+		return nil, fmt.Errorf("error acquiring lock on container lock file %q: %v", f, err)
+	}
+	return l.Unlock, nil
 }

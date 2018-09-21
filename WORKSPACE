@@ -23,6 +23,12 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_gofrs_flock",
+    importpath = "github.com/gofrs/flock",
+    commit = "886344bea0798d02ff3fae16a922be5f6b26cee0"
+)
+
+go_repository(
     name = "com_github_google_go-cmp",
     importpath = "github.com/google/go-cmp",
     commit = "3af367b6b30c263d47e8895973edcca9a49cf029",
