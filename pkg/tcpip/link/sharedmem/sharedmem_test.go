@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -589,8 +588,8 @@ func TestSimpleReceive(t *testing.T) {
 
 	// Check that buffers have been posted.
 	limit := c.ep.rx.q.PostedBuffersLimit()
-	timeout := time.After(2 * time.Second)
 	for i := uint64(0); i < limit; i++ {
+		timeout := time.After(2 * time.Second)
 		bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for all buffers to be posted"))
 
 		if want := i * bufferSize; want != bi.Offset {
@@ -615,6 +614,7 @@ func TestSimpleReceive(t *testing.T) {
 
 	// Complete random packets 1000 times.
 	for iters := 1000; iters > 0; iters-- {
+		timeout := time.After(2 * time.Second)
 		// Prepare a random packet.
 		shuffle(idx)
 		n := 1 + rand.Intn(10)
@@ -642,15 +642,14 @@ func TestSimpleReceive(t *testing.T) {
 		c.packets = c.packets[:0]
 		c.mu.Unlock()
 
-		contents = contents[header.EthernetMinimumSize:]
-		if !bytes.Equal(contents, rcvd) {
+		if contents := contents[header.EthernetMinimumSize:]; !bytes.Equal(contents, rcvd) {
 			t.Fatalf("Unexpected buffer contents: got %x, want %x", rcvd, contents)
 		}
 
 		// Check that buffers have been reposted.
 		for i := range bufs {
 			bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffers to be reposted"))
-			if !reflect.DeepEqual(bi, bufs[i]) {
+			if bi != bufs[i] {
 				t.Fatalf("Unexpected buffer reposted: got %x, want %x", bi, bufs[i])
 			}
 		}
@@ -668,15 +667,15 @@ func TestRxBuffersReposted(t *testing.T) {
 	// Receive all posted buffers.
 	limit := c.ep.rx.q.PostedBuffersLimit()
 	buffers := make([]queue.RxBuffer, 0, limit)
-	timeout := time.After(2 * time.Second)
 	for i := limit; i > 0; i-- {
+		timeout := time.After(2 * time.Second)
 		buffers = append(buffers, queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for all buffers")))
 	}
 	c.rxq.tx.Flush()
 
 	// Check that all buffers are reposted when individually completed.
-	timeout = time.After(2 * time.Second)
 	for i := range buffers {
+		timeout := time.After(2 * time.Second)
 		// Complete the buffer.
 		c.pushRxCompletion(buffers[i].Size, buffers[i:][:1])
 		c.rxq.rx.Flush()
@@ -684,28 +683,26 @@ func TestRxBuffersReposted(t *testing.T) {
 
 		// Wait for it to be reposted.
 		bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
-		if !reflect.DeepEqual(bi, buffers[i]) {
+		if bi != buffers[i] {
 			t.Fatalf("Different buffer posted: got %v, want %v", bi, buffers[i])
 		}
 	}
 	c.rxq.tx.Flush()
 
 	// Check that all buffers are reposted when completed in pairs.
-	timeout = time.After(2 * time.Second)
 	for i := 0; i < len(buffers)/2; i++ {
+		timeout := time.After(2 * time.Second)
 		// Complete with two buffers.
 		c.pushRxCompletion(2*bufferSize, buffers[2*i:][:2])
 		c.rxq.rx.Flush()
 		syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 		// Wait for them to be reposted.
-		bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
-		if !reflect.DeepEqual(bi, buffers[2*i]) {
-			t.Fatalf("Different buffer posted: got %v, want %v", bi, buffers[2*i])
-		}
-		bi = queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
-		if !reflect.DeepEqual(bi, buffers[2*i+1]) {
-			t.Fatalf("Different buffer posted: got %v, want %v", bi, buffers[2*i+1])
+		for j := 0; j < 2; j++ {
+			bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
+			if bi != buffers[2*i+j] {
+				t.Fatalf("Different buffer posted: got %v, want %v", bi, buffers[2*i+j])
+			}
 		}
 	}
 	c.rxq.tx.Flush()
