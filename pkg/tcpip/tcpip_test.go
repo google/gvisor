@@ -15,6 +15,7 @@
 package tcpip
 
 import (
+	"net"
 	"testing"
 )
 
@@ -135,6 +136,60 @@ func TestRouteMatch(t *testing.T) {
 		r := Route{Destination: tt.d, Mask: tt.m}
 		if got := r.Match(tt.a); got != tt.want {
 			t.Errorf("Route(%v).Match(%v) = %v, want %v", r, tt.a, got, tt.want)
+		}
+	}
+}
+
+func TestAddressString(t *testing.T) {
+	for _, want := range []string{
+		// Taken from stdlib.
+		"2001:db8::123:12:1",
+		"2001:db8::1",
+		"2001:db8:0:1:0:1:0:1",
+		"2001:db8:1:0:1:0:1:0",
+		"2001::1:0:0:1",
+		"2001:db8:0:0:1::",
+		"2001:db8::1:0:0:1",
+		"2001:db8::a:b:c:d",
+
+		// Leading zeros.
+		"::1",
+		// Trailing zeros.
+		"8::",
+		// No zeros.
+		"1:1:1:1:1:1:1:1",
+		// Longer sequence is after other zeros, but not at the end.
+		"1:0:0:1::1",
+		// Longer sequence is at the beginning, shorter sequence is at
+		// the end.
+		"::1:1:1:0:0",
+		// Longer sequence is not at the beginning, shorter sequence is
+		// at the end.
+		"1::1:1:0:0",
+		// Longer sequence is at the beginning, shorter sequence is not
+		// at the end.
+		"::1:1:0:0:1",
+		// Neither sequence is at an end, longer is after shorter.
+		"1:0:0:1::1",
+		// Shorter sequence is at the beginning, longer sequence is not
+		// at the end.
+		"0:0:1:1::1",
+		// Shorter sequence is at the beginning, longer sequence is at
+		// the end.
+		"0:0:1:1:1::",
+		// Short sequences at both ends, longer one in the middle.
+		"0:1:1::1:1:0",
+		// Short sequences at both ends, longer one in the middle.
+		"0:1::1:0:0",
+		// Short sequences at both ends, longer one in the middle.
+		"0:0:1::1:0",
+		// Longer sequence surrounded by shorter sequences, but none at
+		// the end.
+		"1:0:1::1:0:1",
+	} {
+		addr := Address(net.ParseIP(want))
+		if got := addr.String(); got != want {
+			t.Errorf("Address(%x).String() = '%s', want = '%s'", addr, got, want)
 		}
 	}
 }
