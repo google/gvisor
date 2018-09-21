@@ -202,6 +202,11 @@ func (s *Subnet) Prefix() int {
 	return len(s.mask) * 8
 }
 
+// Mask returns the subnet mask.
+func (s *Subnet) Mask() AddressMask {
+	return s.mask
+}
+
 // NICID is a number that uniquely identifies a NIC.
 type NICID int32
 
