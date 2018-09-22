@@ -400,8 +400,8 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()
-		defer e.mu.Unlock()
 		e.multicastTTL = uint8(v)
+		e.mu.Unlock()
 
 	case tcpip.AddMembershipOption:
 		nicID := v.NIC
