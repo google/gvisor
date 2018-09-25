@@ -204,19 +204,13 @@ func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *f
 		err       error
 	)
 
-	switch conf.FileAccess {
-	case FileAccessShared, FileAccessExclusive:
-		fd := fds.remove()
-		log.Infof("Mounting root over 9P, ioFD: %d", fd)
-		hostFS := mustFindFilesystem("9p")
-		opts := p9MountOptions(conf, fd)
-		rootInode, err = hostFS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","))
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate root mount point: %v", err)
-		}
-
-	default:
-		return nil, fmt.Errorf("invalid file access type: %v", conf.FileAccess)
+	fd := fds.remove()
+	log.Infof("Mounting root over 9P, ioFD: %d", fd)
+	hostFS := mustFindFilesystem("9p")
+	opts := p9MountOptions(fd, conf.FileAccess)
+	rootInode, err = hostFS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate root mount point: %v", err)
 	}
 
 	// We need to overlay the root on top of a ramfs with stub directories
@@ -282,14 +276,10 @@ func getMountNameAndOptions(conf *Config, m specs.Mount, fds *fdDispenser) (stri
 		opts, err = parseAndFilterOptions(m.Options, "mode", "uid", "gid")
 
 	case bind:
-		switch conf.FileAccess {
-		case FileAccessShared, FileAccessExclusive:
-			fd := fds.remove()
-			fsName = "9p"
-			opts = p9MountOptions(conf, fd)
-		default:
-			err = fmt.Errorf("invalid file access type: %v", conf.FileAccess)
-		}
+		fd := fds.remove()
+		fsName = "9p"
+		// Non-root bind mounts are always shared.
+		opts = p9MountOptions(fd, FileAccessShared)
 		// If configured, add overlay to all writable mounts.
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
@@ -407,14 +397,14 @@ func mkdirAll(ctx context.Context, mns *fs.MountNamespace, path string) error {
 }
 
 // p9MountOptions creates a slice of options for a p9 mount.
-func p9MountOptions(conf *Config, fd int) []string {
+func p9MountOptions(fd int, fa FileAccessType) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
 		"wfdno=" + strconv.Itoa(fd),
 		"privateunixsocket=true",
 	}
-	if conf.FileAccess == FileAccessShared {
+	if fa == FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
 	}
 	return opts
@@ -500,7 +490,7 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 
 	// Add root mount.
 	fd := fds.remove()
-	opts := p9MountOptions(conf, fd)
+	opts := p9MountOptions(fd, conf.FileAccess)
 
 	mf := fs.MountSourceFlags{}
 	if spec.Root.Readonly {

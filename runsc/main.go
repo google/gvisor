@@ -58,7 +58,7 @@ var (
 	// Flags that control sandbox runtime behavior.
 	platform       = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
 	network        = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
-	fileAccess     = flag.String("file-access", "exclusive", "specifies which filesystem to use: exclusive (default), shared. Setting 'shared' will disable caches and should be used if external modifications to the filesystem are expected.")
+	fileAccess     = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
 	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	multiContainer = flag.Bool("multi-container", false, "enable *experimental* multi-container support.")
 	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
