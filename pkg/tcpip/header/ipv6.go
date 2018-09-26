@@ -202,3 +202,35 @@ func IsV6MulticastAddress(addr tcpip.Address) bool {
 	}
 	return addr[0] == 0xff
 }
+
+// SolicitedNodeAddr computes the solicited-node multicast address. This is
+// used for NDP. Described in RFC 4291. The argument must be a full-length IPv6
+// address.
+func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
+	const solicitedNodeMulticastPrefix = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff"
+	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
+}
+
+// LinkLocalAddr computes the default IPv6 link-local address from a link-layer
+// (MAC) address.
+func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
+	// Convert a 48-bit MAC to an EUI-64 and then prepend the link-local
+	// header, FE80::.
+	//
+	// The conversion is very nearly:
+	//	aa:bb:cc:dd:ee:ff => FE80::Aabb:ccFF:FEdd:eeff
+	// Note the capital A. The conversion aa->Aa involves a bit flip.
+	lladdrb := [16]byte{
+		0:  0xFE,
+		1:  0x80,
+		8:  linkAddr[0] ^ 2,
+		9:  linkAddr[1],
+		10: linkAddr[2],
+		11: 0xFF,
+		12: 0xFE,
+		13: linkAddr[3],
+		14: linkAddr[4],
+		15: linkAddr[5],
+	}
+	return tcpip.Address(lladdrb[:])
+}

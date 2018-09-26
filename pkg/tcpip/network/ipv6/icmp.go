@@ -153,13 +153,6 @@ const (
 	icmpV6LengthOffset = 25
 )
 
-// solicitedNodeAddr computes the solicited-node multicast address.
-// This is used for NDP. Described in RFC 4291.
-func solicitedNodeAddr(addr tcpip.Address) tcpip.Address {
-	const solicitedNodeMulticastPrefix = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff"
-	return solicitedNodeMulticastPrefix + addr[len(addr)-3:]
-}
-
 var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
 var _ stack.LinkAddressResolver = (*protocol)(nil)
@@ -171,7 +164,7 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
-	snaddr := solicitedNodeAddr(addr)
+	snaddr := header.SolicitedNodeAddr(addr)
 	r := &stack.Route{
 		LocalAddress:      localAddr,
 		RemoteAddress:     snaddr,

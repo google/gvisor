@@ -36,33 +36,9 @@ const (
 	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
 )
 
-// linkLocalAddr computes the default IPv6 link-local address from
-// a link-layer (MAC) address.
-func linkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
-	// Convert a 48-bit MAC to an EUI-64 and then prepend the
-	// link-local header, FE80::.
-	//
-	// The conversion is very nearly:
-	//	aa:bb:cc:dd:ee:ff => FE80::Aabb:ccFF:FEdd:eeff
-	// Note the capital A. The conversion aa->Aa involves a bit flip.
-	lladdrb := [16]byte{
-		0:  0xFE,
-		1:  0x80,
-		8:  linkAddr[0] ^ 2,
-		9:  linkAddr[1],
-		10: linkAddr[2],
-		11: 0xFF,
-		12: 0xFE,
-		13: linkAddr[3],
-		14: linkAddr[4],
-		15: linkAddr[5],
-	}
-	return tcpip.Address(lladdrb[:])
-}
-
 var (
-	lladdr0 = linkLocalAddr(linkAddr0)
-	lladdr1 = linkLocalAddr(linkAddr1)
+	lladdr0 = header.LinkLocalAddr(linkAddr0)
+	lladdr1 = header.LinkLocalAddr(linkAddr1)
 )
 
 type testContext struct {
@@ -106,7 +82,7 @@ func newTestContext(t *testing.T) *testContext {
 	if err := c.s0.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
 		t.Fatalf("AddAddress lladdr0: %v", err)
 	}
-	if err := c.s0.AddAddress(1, ProtocolNumber, solicitedNodeAddr(lladdr0)); err != nil {
+	if err := c.s0.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr0)); err != nil {
 		t.Fatalf("AddAddress sn lladdr0: %v", err)
 	}
 
@@ -120,7 +96,7 @@ func newTestContext(t *testing.T) *testContext {
 	if err := c.s1.AddAddress(1, ProtocolNumber, lladdr1); err != nil {
 		t.Fatalf("AddAddress lladdr1: %v", err)
 	}
-	if err := c.s1.AddAddress(1, ProtocolNumber, solicitedNodeAddr(lladdr1)); err != nil {
+	if err := c.s1.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr1)); err != nil {
 		t.Fatalf("AddAddress sn lladdr1: %v", err)
 	}
 
