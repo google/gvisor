@@ -41,6 +41,11 @@ var (
 	lladdr1 = header.LinkLocalAddr(linkAddr1)
 )
 
+type icmpInfo struct {
+	typ header.ICMPv6Type
+	src tcpip.Address
+}
+
 type testContext struct {
 	t  *testing.T
 	s0 *stack.Stack
@@ -49,7 +54,7 @@ type testContext struct {
 	linkEP0 *channel.Endpoint
 	linkEP1 *channel.Endpoint
 
-	icmpCh chan header.ICMPv6Type
+	icmpCh chan icmpInfo
 }
 
 type endpointWithResolutionCapability struct {
@@ -65,7 +70,7 @@ func newTestContext(t *testing.T) *testContext {
 		t:      t,
 		s0:     stack.New([]string{ProtocolName}, []string{ping.ProtocolName6}, stack.Options{}),
 		s1:     stack.New([]string{ProtocolName}, []string{ping.ProtocolName6}, stack.Options{}),
-		icmpCh: make(chan header.ICMPv6Type, 10),
+		icmpCh: make(chan icmpInfo, 10),
 	}
 
 	const defaultMTU = 65536
@@ -132,7 +137,10 @@ func (c *testContext) countPacket(pkt channel.PacketInfo) {
 	}
 	b := pkt.Header[header.IPv6MinimumSize:]
 	icmp := header.ICMPv6(b)
-	c.icmpCh <- icmp.Type()
+	c.icmpCh <- icmpInfo{
+		typ: icmp.Type(),
+		src: ipv6.SourceAddress(),
+	}
 }
 
 func (c *testContext) routePackets(ch <-chan channel.PacketInfo, ep *channel.Endpoint) {
@@ -198,8 +206,14 @@ func TestLinkResolution(t *testing.T) {
 		case <-ctx.Done():
 			t.Errorf("timeout waiting for ICMP, got: %#+v", stats)
 			return
-		case typ := <-c.icmpCh:
-			stats[typ]++
+		case icmpInfo := <-c.icmpCh:
+			switch icmpInfo.typ {
+			case header.ICMPv6NeighborAdvert:
+				if got, want := icmpInfo.src, lladdr1; got != want {
+					t.Errorf("got ICMPv6NeighborAdvert.sourceAddress = %v, want = %v", got, want)
+				}
+			}
+			stats[icmpInfo.typ]++
 
 			if stats[header.ICMPv6NeighborSolicit] > 0 &&
 				stats[header.ICMPv6NeighborAdvert] > 0 &&

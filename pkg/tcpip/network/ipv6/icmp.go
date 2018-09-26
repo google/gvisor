@@ -105,6 +105,18 @@ func (e *endpoint) handleICMP(r *stack.Route, vv buffer.VectorisedView) {
 		pkt[icmpV6OptOffset] = ndpOptDstLinkAddr
 		pkt[icmpV6LengthOffset] = 1
 		copy(pkt[icmpV6LengthOffset+1:], r.LocalLinkAddress[:])
+
+		// ICMPv6 Neighbor Solicit messages are always sent to
+		// specially crafted IPv6 multicast addresses. As a result, the
+		// route we end up with here has as its LocalAddress such a
+		// multicast address. It would be nonsense to claim that our
+		// source address is a multicast address, so we manually set
+		// the source address to the target address requested in the
+		// solicit message. Since that requires mutating the route, we
+		// must first clone it.
+		r := r.Clone()
+		defer r.Release()
+		r.LocalAddress = targetAddr
 		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 		r.WritePacket(hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
