@@ -23,7 +23,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 )
 
-func cpuTime() (time.Duration, error) {
+// CPUTime returns the CPU time usage by Sentry and app.
+func CPUTime() (time.Duration, error) {
 	var ts syscall.Timespec
 	_, _, errno := syscall.RawSyscall(syscall.SYS_CLOCK_GETTIME, uintptr(linux.CLOCK_PROCESS_CPUTIME_ID), uintptr(unsafe.Pointer(&ts)), 0)
 	if errno != 0 {

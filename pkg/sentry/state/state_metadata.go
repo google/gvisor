@@ -28,7 +28,7 @@ const (
 )
 
 func addSaveMetadata(m map[string]string) {
-	t, err := cpuTime()
+	t, err := CPUTime()
 	if err != nil {
 		log.Warningf("Error getting cpu time: %v", err)
 	}
