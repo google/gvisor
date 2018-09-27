@@ -247,10 +247,14 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	// '--process' file is deleted as soon as this process returns and the child
 	// may fail to read it.
 	ready := func() (bool, error) {
-		_, err := os.Stat(pidFile)
+		pidb, err := ioutil.ReadFile(pidFile)
 		if err == nil {
-			// File appeared, we're done!
-			return true, nil
+			// File appeared, check whether pid is fully written.
+			pid, err := strconv.Atoi(string(pidb))
+			if err != nil {
+				return false, nil
+			}
+			return pid == cmd.Process.Pid, nil
 		}
 		if pe, ok := err.(*os.PathError); !ok || pe.Err != syscall.ENOENT {
 			return false, err
