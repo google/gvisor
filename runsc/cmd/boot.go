@@ -69,7 +69,7 @@ func (*Boot) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Boot) Usage() string {
-	return `boot [flags]`
+	return `boot [flags] <container id>`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
@@ -86,7 +86,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 0 {
+	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -138,7 +138,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	l, err := boot.New(spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.console)
+	l, err := boot.New(f.Arg(0), spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.console)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}

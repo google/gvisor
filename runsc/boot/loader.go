@@ -142,7 +142,7 @@ func init() {
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, console bool) (*Loader, error) {
+func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, console bool) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("Error setting up memory usage: %v", err)
 	}
@@ -286,6 +286,9 @@ func New(spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []
 		spec:                  spec,
 		startSignalForwarding: startSignalForwarding,
 		rootProcArgs:          procArgs,
+		sandboxID:             id,
+		containerRootTGs:      make(map[string]*kernel.ThreadGroup),
+		execProcesses:         make(map[execID]*kernel.ThreadGroup),
 	}
 	ctrl.manager.l = l
 	return l, nil
@@ -420,10 +423,9 @@ func (l *Loader) run() error {
 		l.rootProcArgs.FDMap.DecRef()
 	}
 
-	if l.execProcesses != nil {
-		return fmt.Errorf("there shouldn't already be a cache of exec'd processes, but found: %v", l.execProcesses)
-	}
-	l.execProcesses = make(map[execID]*kernel.ThreadGroup)
+	l.mu.Lock()
+	l.containerRootTGs[l.sandboxID] = l.k.GlobalInit()
+	l.mu.Unlock()
 
 	// Start signal forwarding only after an init process is created.
 	l.stopSignalForwarding = l.startSignalForwarding()

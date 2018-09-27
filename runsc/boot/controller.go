@@ -171,7 +171,6 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	if err := <-cm.startResultChan; err != nil {
 		return fmt.Errorf("failed to start sandbox: %v", err)
 	}
-	cm.l.setRootContainerID(*cid)
 	return nil
 }
 

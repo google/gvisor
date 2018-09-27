@@ -101,7 +101,7 @@ func createLoader() (*Loader, func(), error) {
 		return nil, nil, err
 	}
 
-	l, err := New(spec, conf, fd, -1 /* device fd */, []int{sandEnd}, false)
+	l, err := New("foo", spec, conf, fd, -1 /* device fd */, []int{sandEnd}, false)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -129,7 +129,6 @@ func TestRun(t *testing.T) {
 	}()
 
 	// Run the container.
-	l.setRootContainerID("foo")
 	if err := l.Run(); err != nil {
 		t.Errorf("error running container: %v", err)
 	}

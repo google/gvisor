@@ -460,6 +460,9 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		}
 	}
 
+	// Add container as the last argument.
+	cmd.Args = append(cmd.Args, s.ID)
+
 	// Log the fds we are donating to the sandbox process.
 	for i, f := range cmd.ExtraFiles {
 		log.Debugf("Donating FD %d: %q", i+3, f.Name())
