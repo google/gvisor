@@ -2,13 +2,6 @@ package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
-go_binary(
-    name = "uds_test_app",
-    srcs = [
-        "uds_test_app.go",
-    ],
-)
-
 go_library(
     name = "container",
     srcs = [
@@ -42,7 +35,7 @@ go_test(
         "multi_container_test.go",
     ],
     data = [
-        ":uds_test_app",
+        ":test_app",
         "//runsc",
     ],
     embed = [":container"],
@@ -63,4 +56,10 @@ go_test(
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_binary(
+    name = "test_app",
+    srcs = ["test_app.go"],
+    deps = ["@com_github_google_subcommands//:go_default_library"],
 )

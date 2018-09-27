@@ -722,15 +722,15 @@ func TestUnixDomainSockets(t *testing.T) {
 		}
 		defer outputFile.Close()
 
-		app, err := testutil.FindFile("runsc/container/uds_test_app")
+		app, err := testutil.FindFile("runsc/container/test_app")
 		if err != nil {
-			t.Fatal("error finding uds_test_app:", err)
+			t.Fatal("error finding test_app:", err)
 		}
 
 		socketPath := filepath.Join(dir, "uds_socket")
 		defer os.Remove(socketPath)
 
-		spec := testutil.NewSpecWithArgs(app, "--file", outputPath, "--socket", socketPath)
+		spec := testutil.NewSpecWithArgs(app, "uds", "--file", outputPath, "--socket", socketPath)
 		spec.Process.User = specs.User{
 			UID: uint32(os.Getuid()),
 			GID: uint32(os.Getgid()),
