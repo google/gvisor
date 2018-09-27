@@ -269,11 +269,14 @@ func Processes(k *kernel.Kernel, out *[]*Process) error {
 			continue
 		}
 
+		ppid := kernel.ThreadID(0)
+		if tg.Leader().Parent() != nil {
+			ppid = ts.Root.IDOfThreadGroup(tg.Leader().Parent().ThreadGroup())
+		}
 		*out = append(*out, &Process{
-			UID: tg.Leader().Credentials().EffectiveKUID,
-			PID: pid,
-			// If Parent is null (i.e. tg is the init process), PPID will be 0.
-			PPID:  ts.Root.IDOfTask(tg.Leader().Parent()),
+			UID:   tg.Leader().Credentials().EffectiveKUID,
+			PID:   pid,
+			PPID:  ppid,
 			STime: formatStartTime(now, tg.Leader().StartTime()),
 			C:     percentCPU(tg.CPUStats(), tg.Leader().StartTime(), now),
 			Time:  tg.CPUStats().SysTime.String(),
