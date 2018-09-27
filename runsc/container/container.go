@@ -159,7 +159,7 @@ func Load(rootDir, id string) (*Container, error) {
 		} else if c.Status == Running {
 			// Container state should reflect the actual state of the application, so
 			// we don't consider gofer process here.
-			if err := c.Signal(syscall.Signal(0)); err != nil {
+			if err := c.Signal(syscall.Signal(0), false); err != nil {
 				c.changeStatus(Stopped)
 			}
 		}
@@ -398,7 +398,8 @@ func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 	if err := c.requireStatus("execute in", Created, Running); err != nil {
 		return 0, err
 	}
-	return c.Sandbox.Execute(c.ID, args)
+	args.ContainerID = c.ID
+	return c.Sandbox.Execute(args)
 }
 
 // Event returns events for the container.
@@ -453,13 +454,13 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // Signal sends the signal to the container.
 // Signal returns an error if the container is already stopped.
 // TODO: Distinguish different error types.
-func (c *Container) Signal(sig syscall.Signal) error {
+func (c *Container) Signal(sig syscall.Signal, all bool) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
 	if err := c.requireStatus("signal", Running); err != nil {
 		return err
 	}
 	// TODO: Query the container for its state, then save it.
-	return c.Sandbox.Signal(c.ID, sig)
+	return c.Sandbox.Signal(c.ID, sig, all)
 }
 
 // Checkpoint sends the checkpoint call to the container.
@@ -612,7 +613,7 @@ func (c *Container) waitForStopped() error {
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
 		if c.isSandboxRunning() {
-			if err := c.Signal(syscall.Signal(0)); err == nil {
+			if err := c.Signal(syscall.Signal(0), false); err == nil {
 				return fmt.Errorf("container is still running")
 			}
 		}

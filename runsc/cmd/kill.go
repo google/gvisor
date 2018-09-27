@@ -29,7 +29,9 @@ import (
 )
 
 // Kill implements subcommands.Command for the "kill" command.
-type Kill struct{}
+type Kill struct {
+	all bool
+}
 
 // Name implements subcommands.Command.Name.
 func (*Kill) Name() string {
@@ -47,15 +49,12 @@ func (*Kill) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (*Kill) SetFlags(f *flag.FlagSet) {
-	// TODO: Implement this flag.  It is defined here just to
-	// prevent runsc from crashing if it is passed.
-	var all bool
-	f.BoolVar(&all, "all", false, "send the specified signal to all processes inside the container")
+func (k *Kill) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&k.all, "all", false, "send the specified signal to all processes inside the container")
 }
 
 // Execute implements subcommands.Command.Execute.
-func (*Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	if f.NArg() == 0 || f.NArg() > 2 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -83,7 +82,7 @@ func (*Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	}
 	// TODO: Distinguish between already-exited containers and
 	// genuine errors.
-	if err := c.Signal(sig); err != nil {
+	if err := c.Signal(sig, k.all); err != nil {
 		Fatalf("%v", err)
 	}
 	return subcommands.ExitSuccess

@@ -174,10 +174,17 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	return nil
 }
 
+// ProcessesArgs container arguments to Processes method.
+type ProcessesArgs struct {
+	// CID restricts the result to processes belonging to
+	// the given container. Empty means all.
+	CID string
+}
+
 // Processes retrieves information about processes running in the sandbox.
-func (cm *containerManager) Processes(_, out *[]*control.Process) error {
+func (cm *containerManager) Processes(args *ProcessesArgs, out *[]*control.Process) error {
 	log.Debugf("containerManager.Processes")
-	return control.Processes(cm.l.k, out)
+	return control.Processes(cm.l.k, args.CID, out)
 }
 
 // StartArgs contains arguments to the Start method.
@@ -326,19 +333,11 @@ func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 	return nil
 }
 
-// ExecArgs contains arguments to Execute.
-type ExecArgs struct {
-	control.ExecArgs
-
-	// CID is the ID of the container to exec in.
-	CID string
-}
-
 // ExecuteAsync starts running a command on a created or running sandbox. It
 // returns the pid of the new process.
-func (cm *containerManager) ExecuteAsync(args *ExecArgs, pid *int32) error {
+func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) error {
 	log.Debugf("containerManager.ExecuteAsync: %+v", args)
-	tgid, err := cm.l.executeAsync(&args.ExecArgs, args.CID)
+	tgid, err := cm.l.executeAsync(args)
 	if err != nil {
 		return err
 	}
@@ -503,11 +502,15 @@ type SignalArgs struct {
 
 	// Signo is the signal to send to the process.
 	Signo int32
+
+	// All is set when signal should be sent to all processes in the container.
+	// When false, the signal is sent to the root container process only.
+	All bool
 }
 
 // Signal sends a signal to the init process of the container.
 // TODO: Send signal to exec process.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal")
-	return cm.l.signal(args.CID, args.Signo)
+	return cm.l.signal(args.CID, args.Signo, args.All)
 }

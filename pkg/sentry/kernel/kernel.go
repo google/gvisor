@@ -524,6 +524,9 @@ type CreateProcessArgs struct {
 	// Anyone setting Root must donate a reference (i.e. increment it) to
 	// keep it alive until it is decremented by CreateProcess.
 	Root *fs.Dirent
+
+	// ContainerID is the container that the process belongs to.
+	ContainerID string
 }
 
 // NewContext returns a context.Context that represents the task that will be
@@ -660,6 +663,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		UTSNamespace:            args.UTSNamespace,
 		IPCNamespace:            args.IPCNamespace,
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
+		ContainerID:             args.ContainerID,
 	}
 	t, err := k.tasks.NewTask(config)
 	if err != nil {
@@ -816,6 +820,27 @@ func (k *Kernel) SendExternalSignal(info *arch.SignalInfo, context string) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	k.sendExternalSignal(info, context)
+}
+
+// SendContainerSignal sends the given signal to all processes inside the
+// namespace that match the given container ID.
+func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+
+	for t := range k.tasks.Root.tids {
+		if t == t.tg.leader && t.ContainerID() == cid {
+			t.tg.signalHandlers.mu.Lock()
+			defer t.tg.signalHandlers.mu.Unlock()
+			infoCopy := *info
+			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // FeatureSet returns the FeatureSet.

@@ -270,7 +270,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 		log.Infof("Panic signal set to %v(%d)", ps, conf.PanicSignal)
 	}
 
-	procArgs, err := newProcess(spec, creds, k)
+	procArgs, err := newProcess(id, spec, creds, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root process: %v", err)
 	}
@@ -295,7 +295,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 }
 
 // newProcess creates a process that can be run with kernel.CreateProcess.
-func newProcess(spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
+func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -314,6 +314,7 @@ func newProcess(spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel) (ke
 		UTSNamespace:            k.RootUTSNamespace(),
 		IPCNamespace:            k.RootIPCNamespace(),
 		AbstractSocketNamespace: k.RootAbstractSocketNamespace(),
+		ContainerID:             id,
 	}
 	return procArgs, nil
 }
@@ -465,7 +466,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	// TODO New containers should be started in new PID namespaces
 	// when indicated by the spec.
 
-	procArgs, err := newProcess(spec, creds, l.k)
+	procArgs, err := newProcess(cid, spec, creds, l.k)
 	if err != nil {
 		return fmt.Errorf("failed to create new process: %v", err)
 	}
@@ -525,14 +526,14 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	return nil
 }
 
-func (l *Loader) executeAsync(args *control.ExecArgs, cid string) (kernel.ThreadID, error) {
+func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	// Get the container Root Dirent from the Task, since we must run this
 	// process with the same Root.
 	l.mu.Lock()
-	tg, ok := l.containerRootTGs[cid]
+	tg, ok := l.containerRootTGs[args.ContainerID]
 	l.mu.Unlock()
 	if !ok {
-		return 0, fmt.Errorf("cannot exec in container %q: no such container", cid)
+		return 0, fmt.Errorf("cannot exec in container %q: no such container", args.ContainerID)
 	}
 	tg.Leader().WithMuLocked(func(t *kernel.Task) {
 		args.Root = t.FSContext().RootDirectory()
@@ -552,7 +553,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs, cid string) (kernel.Thread
 	// later.
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	eid := execID{cid: cid, pid: tgid}
+	eid := execID{cid: args.ContainerID, pid: tgid}
 	l.execProcesses[eid] = tg
 	log.Debugf("updated execProcesses: %v", l.execProcesses)
 
@@ -671,8 +672,7 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 	}
 }
 
-// TODO: Support sending signal to all.
-func (l *Loader) signal(cid string, signo int32) error {
+func (l *Loader) signal(cid string, signo int32, all bool) error {
 	l.mu.Lock()
 	tg, ok := l.containerRootTGs[cid]
 	l.mu.Unlock()
@@ -681,5 +681,13 @@ func (l *Loader) signal(cid string, signo int32) error {
 	}
 
 	si := arch.SignalInfo{Signo: signo}
+	if all {
+		// Pause the kernel to prevent new processes from being created while
+		// the signal is delivered. This prevents process leaks when SIGKILL is
+		// sent to the entire container.
+		l.k.Pause()
+		defer l.k.Unpause()
+		return l.k.SendContainerSignal(cid, &si)
+	}
 	return tg.Leader().SendSignal(&si)
 }

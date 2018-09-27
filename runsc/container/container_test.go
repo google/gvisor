@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -49,21 +50,34 @@ func init() {
 }
 
 // waitForProcessList waits for the given process list to show up in the container.
-func waitForProcessList(cont *Container, expected []*control.Process) error {
-	var got []*control.Process
-	for start := time.Now(); time.Now().Sub(start) < 10*time.Second; {
-		var err error
-		got, err = cont.Processes()
+func waitForProcessList(cont *Container, want []*control.Process) error {
+	cb := func() error {
+		got, err := cont.Processes()
 		if err != nil {
-			return fmt.Errorf("error getting process data from container: %v", err)
+			err = fmt.Errorf("error getting process data from container: %v", err)
+			return &backoff.PermanentError{Err: err}
 		}
-		if procListsEqual(got, expected) {
-			return nil
+		if !procListsEqual(got, want) {
+			return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(want))
 		}
-		// Process might not have started, try again...
-		time.Sleep(10 * time.Millisecond)
+		return nil
 	}
-	return fmt.Errorf("container got process list: %s, want: %s", procListToString(got), procListToString(expected))
+	return testutil.Poll(cb, 5*time.Second)
+}
+
+func waitForProcessCount(cont *Container, want int) error {
+	cb := func() error {
+		pss, err := cont.Processes()
+		if err != nil {
+			err = fmt.Errorf("error getting process data from container: %v", err)
+			return &backoff.PermanentError{Err: err}
+		}
+		if got := len(pss); got != want {
+			return fmt.Errorf("wrong process count, got: %d, want: %d", got, want)
+		}
+		return nil
+	}
+	return testutil.Poll(cb, 5*time.Second)
 }
 
 // procListsEqual is used to check whether 2 Process lists are equal for all
@@ -345,7 +359,7 @@ func TestLifecycle(t *testing.T) {
 		<-ch
 		time.Sleep(100 * time.Millisecond)
 		// Send the container a SIGTERM which will cause it to stop.
-		if err := c.Signal(syscall.SIGTERM); err != nil {
+		if err := c.Signal(syscall.SIGTERM, false); err != nil {
 			t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
 		}
 		// Wait for it to die.

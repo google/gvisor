@@ -16,6 +16,7 @@ package container
 
 import (
 	"io/ioutil"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -91,9 +92,14 @@ func TestMultiContainerSanity(t *testing.T) {
 		// Check via ps that multiple processes are running.
 		expectedPL := []*control.Process{
 			{PID: 1, Cmd: "sleep"},
-			{PID: 2, Cmd: "sleep"},
 		}
 		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+		expectedPL = []*control.Process{
+			{PID: 2, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[1], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 	}
@@ -134,10 +140,9 @@ func TestMultiContainerWait(t *testing.T) {
 
 	// Check via ps that multiple processes are running.
 	expectedPL := []*control.Process{
-		{PID: 1, Cmd: "sleep"},
 		{PID: 2, Cmd: "sleep"},
 	}
-	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
 
@@ -179,7 +184,10 @@ func TestMultiContainerWait(t *testing.T) {
 
 	// After Wait returns, ensure that the root container is running and
 	// the child has finished.
-	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+	expectedPL = []*control.Process{
+		{PID: 1, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Errorf("failed to wait for %q to start: %v", strings.Join(containers[0].Spec.Process.Args, " "), err)
 	}
 }
@@ -219,17 +227,16 @@ func TestExecWait(t *testing.T) {
 		containers = append(containers, cont)
 	}
 
-	// Check via ps that multiple processes are running.
+	// Check via ps that process is running.
 	expectedPL := []*control.Process{
-		{PID: 1, Cmd: "sleep"},
 		{PID: 2, Cmd: "sleep"},
 	}
-	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+	if err := waitForProcessList(containers[1], expectedPL); err != nil {
 		t.Fatalf("failed to wait for sleep to start: %v", err)
 	}
 
 	// Wait for the second container to finish.
-	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+	if err := waitForProcessCount(containers[1], 0); err != nil {
 		t.Fatalf("failed to wait for second container to stop: %v", err)
 	}
 
@@ -256,7 +263,10 @@ func TestExecWait(t *testing.T) {
 	}
 
 	// Wait for the exec'd process to exit.
-	if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+	expectedPL = []*control.Process{
+		{PID: 1, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(containers[0], expectedPL); err != nil {
 		t.Fatalf("failed to wait for second container to stop: %v", err)
 	}
 
@@ -360,23 +370,25 @@ func TestMultiContainerSignal(t *testing.T) {
 			containers = append(containers, cont)
 		}
 
-		// Check via ps that multiple processes are running.
+		// Check via ps that container 1 process is running.
 		expectedPL := []*control.Process{
-			{PID: 1, Cmd: "sleep"},
 			{PID: 2, Cmd: "sleep"},
 		}
 
-		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+		if err := waitForProcessList(containers[1], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 
 		// Kill process 2.
-		if err := containers[1].Signal(syscall.SIGKILL); err != nil {
+		if err := containers[1].Signal(syscall.SIGKILL, false); err != nil {
 			t.Errorf("failed to kill process 2: %v", err)
 		}
 
 		// Make sure process 1 is still running.
-		if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+		expectedPL = []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 
@@ -395,18 +407,18 @@ func TestMultiContainerSignal(t *testing.T) {
 			t.Errorf("error waiting for gofer to exit: %v", err)
 		}
 		// Make sure process 1 is still running.
-		if err := waitForProcessList(containers[0], expectedPL[:1]); err != nil {
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 
 		// Now that process 2 is gone, ensure we get an error trying to
 		// signal it again.
-		if err := containers[1].Signal(syscall.SIGKILL); err == nil {
+		if err := containers[1].Signal(syscall.SIGKILL, false); err == nil {
 			t.Errorf("container %q shouldn't exist, but we were able to signal it", containers[1].ID)
 		}
 
 		// Kill process 1.
-		if err := containers[0].Signal(syscall.SIGKILL); err != nil {
+		if err := containers[0].Signal(syscall.SIGKILL, false); err != nil {
 			t.Errorf("failed to kill process 1: %v", err)
 		}
 
@@ -428,7 +440,7 @@ func TestMultiContainerSignal(t *testing.T) {
 		}
 
 		// The sentry should be gone, so signaling should yield an error.
-		if err := containers[0].Signal(syscall.SIGKILL); err == nil {
+		if err := containers[0].Signal(syscall.SIGKILL, false); err == nil {
 			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
 		}
 	}
@@ -453,7 +465,6 @@ func TestMultiContainerDestroy(t *testing.T) {
 		// Setup the containers.
 		var containers []*Container
 		for i, spec := range specs {
-			conf := testutil.TestConfig()
 			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
@@ -499,5 +510,146 @@ func TestMultiContainerDestroy(t *testing.T) {
 		if err := containers[1].Destroy(); err != nil {
 			t.Errorf("error destroying container: %v", err)
 		}
+	}
+}
+
+func TestMultiContainerProcesses(t *testing.T) {
+	// Note: use 'while true' to keep 'sh' process around. Otherwise, shell will
+	// just execve into 'sleep' and both containers will look the same.
+	specs, ids := createSpecs(
+		[]string{"sleep", "100"},
+		[]string{"sh", "-c", "while true; do sleep 100; done"})
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	var containers []*Container
+	for i, spec := range specs {
+		conf := testutil.TestConfig()
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		containers = append(containers, cont)
+	}
+
+	// Check root's container process list doesn't include other containers.
+	expectedPL0 := []*control.Process{
+		{PID: 1, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(containers[0], expectedPL0); err != nil {
+		t.Errorf("failed to wait for process to start: %v", err)
+	}
+
+	// Same for the other container.
+	expectedPL1 := []*control.Process{
+		{PID: 2, Cmd: "sh"},
+		{PID: 3, PPID: 2, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
+		t.Errorf("failed to wait for process to start: %v", err)
+	}
+
+	// Now exec into the second container and verify it shows up in the container.
+	args := &control.ExecArgs{
+		Filename: "/bin/sleep",
+		Argv:     []string{"/bin/sleep", "100"},
+	}
+	if _, err := containers[1].Execute(args); err != nil {
+		t.Fatalf("error exec'ing: %v", err)
+	}
+	expectedPL1 = append(expectedPL1, &control.Process{PID: 4, Cmd: "sleep"})
+	if err := waitForProcessList(containers[1], expectedPL1); err != nil {
+		t.Errorf("failed to wait for process to start: %v", err)
+	}
+	// Root container should remain unchanged.
+	if err := waitForProcessList(containers[0], expectedPL0); err != nil {
+		t.Errorf("failed to wait for process to start: %v", err)
+	}
+}
+
+// TestMultiContainerKillAll checks that all process that belong to a container
+// are killed when SIGKILL is sent to *all* processes in that container.
+func TestMultiContainerKillAll(t *testing.T) {
+	app, err := testutil.FindFile("runsc/container/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// First container will remain intact while the second container is killed.
+	specs, ids := createSpecs(
+		[]string{app, "task-tree", "--depth=2", "--width=2"},
+		[]string{app, "task-tree", "--depth=4", "--width=2"})
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	var containers []*Container
+	for i, spec := range specs {
+		conf := testutil.TestConfig()
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+		containers = append(containers, cont)
+	}
+
+	// Wait until all processes are created.
+	rootProcCount := int(math.Pow(2, 3) - 1)
+	if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
+		t.Fatal(err)
+	}
+	procCount := int(math.Pow(2, 5) - 1)
+	if err := waitForProcessCount(containers[1], procCount); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exec more processes to ensure signal works for exec'd processes too.
+	args := &control.ExecArgs{
+		Filename: app,
+		Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
+	}
+	if _, err := containers[1].Execute(args); err != nil {
+		t.Fatalf("error exec'ing: %v", err)
+	}
+	procCount += 3
+	if err := waitForProcessCount(containers[1], procCount); err != nil {
+		t.Fatal(err)
+	}
+
+	// Kill'Em All
+	containers[1].Signal(syscall.SIGKILL, true)
+
+	// Check that all processes are gone.
+	if err := waitForProcessCount(containers[1], 0); err != nil {
+		t.Fatal(err)
+	}
+	// Check that root container was not affected.
+	if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
+		t.Fatal(err)
 	}
 }

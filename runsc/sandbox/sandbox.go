@@ -183,10 +183,9 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	}
 	defer conn.Close()
 
+	args := boot.ProcessesArgs{CID: cid}
 	var pl []*control.Process
-	// TODO: Pass in the container id (cid) here. The sandbox
-	// should return process info for only that container.
-	if err := conn.Call(boot.ContainerProcesses, nil, &pl); err != nil {
+	if err := conn.Call(boot.ContainerProcesses, &args, &pl); err != nil {
 		return nil, fmt.Errorf("error retrieving process data from sandbox: %v", err)
 	}
 	return pl, nil
@@ -194,19 +193,17 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 
 // Execute runs the specified command in the container. It returns the pid of
 // the newly created process.
-func (s *Sandbox) Execute(cid string, args *control.ExecArgs) (int32, error) {
-	log.Debugf("Executing new process in container %q in sandbox %q", cid, s.ID)
+func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
+	log.Debugf("Executing new process in container %q in sandbox %q", args.ContainerID, s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return 0, s.connError(err)
 	}
 	defer conn.Close()
 
-	rpcArgs := &boot.ExecArgs{ExecArgs: *args, CID: cid}
-
 	// Send a message to the sandbox control server to start the container.
 	var pid int32
-	if err := conn.Call(boot.ContainerExecuteAsync, rpcArgs, &pid); err != nil {
+	if err := conn.Call(boot.ContainerExecuteAsync, args, &pid); err != nil {
 		return 0, fmt.Errorf("error executing in sandbox: %v", err)
 	}
 	return pid, nil
@@ -575,7 +572,7 @@ func (s *Sandbox) destroy() error {
 }
 
 // Signal sends the signal to a container in the sandbox.
-func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
+func (s *Sandbox) Signal(cid string, sig syscall.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -586,6 +583,7 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal) error {
 	args := boot.SignalArgs{
 		CID:   cid,
 		Signo: int32(sig),
+		All:   all,
 	}
 	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
 		return fmt.Errorf("err signaling container %q: %v", cid, err)

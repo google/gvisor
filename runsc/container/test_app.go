@@ -22,17 +22,20 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 
 	"flag"
 	"github.com/google/subcommands"
+	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
 func main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(new(uds), "")
+	subcommands.Register(new(taskTree), "")
 
 	flag.Parse()
 
@@ -113,4 +116,64 @@ func server(listener net.Listener, out *os.File) {
 		data := buf[0:nr]
 		fmt.Fprint(out, string(data)+"\n")
 	}
+}
+
+type taskTree struct {
+	depth int
+	width int
+}
+
+// Name implements subcommands.Command.
+func (*taskTree) Name() string {
+	return "task-tree"
+}
+
+// Synopsis implements subcommands.Command.
+func (*taskTree) Synopsis() string {
+	return "creates a tree of tasks"
+}
+
+// Usage implements subcommands.Command.
+func (*taskTree) Usage() string {
+	return "task-tree <flags>"
+}
+
+// SetFlags implements subcommands.Command.
+func (c *taskTree) SetFlags(f *flag.FlagSet) {
+	f.IntVar(&c.depth, "depth", 1, "number of levels to create")
+	f.IntVar(&c.width, "width", 1, "number of tasks at each level")
+}
+
+// Execute implements subcommands.Command.
+func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	stop := testutil.StartReaper()
+	defer stop()
+
+	if c.depth == 0 {
+		log.Printf("Child sleeping, PID: %d\n", os.Getpid())
+		for {
+			time.Sleep(24 * time.Hour)
+		}
+	}
+	log.Printf("Parent %d sleeping, PID: %d\n", c.depth, os.Getpid())
+
+	var cmds []*exec.Cmd
+	for i := 0; i < c.width; i++ {
+		cmd := exec.Command(
+			"/proc/self/exe", c.Name(),
+			"--depth", strconv.Itoa(c.depth-1),
+			"--width", strconv.Itoa(c.width))
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Start(); err != nil {
+			log.Fatal("failed to call self:", err)
+		}
+		cmds = append(cmds, cmd)
+	}
+
+	for _, c := range cmds {
+		c.Wait()
+	}
+	return subcommands.ExitSuccess
 }

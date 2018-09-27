@@ -83,6 +83,9 @@ type ExecArgs struct {
 
 	// FilePayload determines the files to give to the new process.
 	urpc.FilePayload
+
+	// ContainerID is the container for the process being executed.
+	ContainerID string
 }
 
 // Exec runs a new task.
@@ -133,6 +136,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
+		ContainerID:             args.ContainerID,
 	}
 	if initArgs.Root != nil {
 		// initArgs must hold a reference on Root. This ref is dropped
@@ -182,7 +186,7 @@ type PsArgs struct {
 // Ps provides a process listing for the running kernel.
 func (proc *Proc) Ps(args *PsArgs, out *string) error {
 	var p []*Process
-	if e := Processes(proc.Kernel, &p); e != nil {
+	if e := Processes(proc.Kernel, "", &p); e != nil {
 		return e
 	}
 	if !args.JSON {
@@ -258,14 +262,18 @@ func PrintPIDsJSON(pl []*Process) (string, error) {
 	return string(b), nil
 }
 
-// Processes retrieves information about processes running in the sandbox.
-func Processes(k *kernel.Kernel, out *[]*Process) error {
+// Processes retrieves information about processes running in the sandbox with
+// the given container id. All processes are returned if 'containerID' is empty.
+func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 	ts := k.TaskSet()
 	now := k.RealtimeClock().Now()
 	for _, tg := range ts.Root.ThreadGroups() {
 		pid := ts.Root.IDOfThreadGroup(tg)
 		// If tg has already been reaped ignore it.
 		if pid == 0 {
+			continue
+		}
+		if containerID != "" && containerID != tg.Leader().ContainerID() {
 			continue
 		}
 

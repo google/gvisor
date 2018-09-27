@@ -53,6 +53,7 @@ go_test(
         "//runsc/boot",
         "//runsc/specutils",
         "//runsc/test/testutil",
+        "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -61,5 +62,8 @@ go_test(
 go_binary(
     name = "test_app",
     srcs = ["test_app.go"],
-    deps = ["@com_github_google_subcommands//:go_default_library"],
+    deps = [
+        "//runsc/test/testutil",
+        "@com_github_google_subcommands//:go_default_library",
+    ],
 )

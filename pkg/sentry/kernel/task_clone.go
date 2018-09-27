@@ -258,6 +258,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		UTSNamespace:            utsns,
 		IPCNamespace:            ipcns,
 		AbstractSocketNamespace: t.abstractSockets,
+		ContainerID:             t.ContainerID(),
 	}
 	if opts.NewThreadGroup {
 		cfg.Parent = t

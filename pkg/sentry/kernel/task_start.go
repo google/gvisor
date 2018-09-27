@@ -77,6 +77,9 @@ type TaskConfig struct {
 
 	// AbstractSocketNamespace is the AbstractSocketNamespace of the new task.
 	AbstractSocketNamespace *AbstractSocketNamespace
+
+	// ContainerID is the container the new task belongs to.
+	ContainerID string
 }
 
 // NewTask creates a new task defined by cfg.
@@ -124,6 +127,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		abstractSockets: cfg.AbstractSocketNamespace,
 		rseqCPU:         -1,
 		futexWaiter:     futex.NewWaiter(),
+		containerID:     cfg.ContainerID,
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.ptraceTracer.Store((*Task)(nil))
