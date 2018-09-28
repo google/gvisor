@@ -60,21 +60,21 @@ func (*fakeTransportEndpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.Contr
 	return buffer.View{}, tcpip.ControlMessages{}, nil
 }
 
-func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tcpip.Error) {
+func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-chan struct{}, *tcpip.Error) {
 	if len(f.route.RemoteAddress) == 0 {
-		return 0, tcpip.ErrNoRoute
+		return 0, nil, tcpip.ErrNoRoute
 	}
 
 	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()))
 	v, err := p.Get(p.Size())
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if err := f.route.WritePacket(hdr, buffer.View(v).ToVectorisedView(), fakeTransNumber, 123); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	return uintptr(len(v)), nil
+	return uintptr(len(v)), nil, nil
 }
 
 func (f *fakeTransportEndpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
@@ -362,7 +362,7 @@ func TestTransportSend(t *testing.T) {
 
 	// Create buffer that will hold the payload.
 	view := buffer.NewView(30)
-	_, err = ep.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{})
+	_, _, err = ep.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{})
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}

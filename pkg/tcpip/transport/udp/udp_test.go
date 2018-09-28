@@ -482,7 +482,7 @@ func TestV4ReadOnV4(t *testing.T) {
 func testV4Write(c *testContext) uint16 {
 	// Write to V4 mapped address.
 	payload := buffer.View(newPayload())
-	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort},
 	})
 	if err != nil {
@@ -512,7 +512,7 @@ func testV4Write(c *testContext) uint16 {
 func testV6Write(c *testContext) uint16 {
 	// Write to v6 address.
 	payload := buffer.View(newPayload())
-	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
 	})
 	if err != nil {
@@ -590,7 +590,7 @@ func TestDualWriteConnectedToV6(t *testing.T) {
 
 	// Write to V4 mapped address.
 	payload := buffer.View(newPayload())
-	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	_, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort},
 	})
 	if err != tcpip.ErrNetworkUnreachable {
@@ -613,7 +613,7 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 
 	// Write to v6 address.
 	payload := buffer.View(newPayload())
-	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	_, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
 	})
 	if err != tcpip.ErrInvalidEndpointState {
@@ -629,7 +629,7 @@ func TestV4WriteOnV6Only(t *testing.T) {
 
 	// Write to V4 mapped address.
 	payload := buffer.View(newPayload())
-	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	_, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV4MappedAddr, Port: testPort},
 	})
 	if err != tcpip.ErrNoRoute {
@@ -650,7 +650,7 @@ func TestV6WriteOnBoundToV4Mapped(t *testing.T) {
 
 	// Write to v6 address.
 	payload := buffer.View(newPayload())
-	_, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
+	_, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{
 		To: &tcpip.FullAddress{Addr: testV6Addr, Port: testPort},
 	})
 	if err != tcpip.ErrInvalidEndpointState {
@@ -671,7 +671,7 @@ func TestV6WriteOnConnected(t *testing.T) {
 
 	// Write without destination.
 	payload := buffer.View(newPayload())
-	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{})
+	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{})
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestV4WriteOnConnected(t *testing.T) {
 
 	// Write without destination.
 	payload := buffer.View(newPayload())
-	n, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{})
+	n, _, err := c.ep.Write(tcpip.SlicePayload(payload), tcpip.WriteOptions{})
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
@@ -856,7 +856,7 @@ func TestTTL(t *testing.T) {
 								c.t.Fatalf("SetSockOpt failed: %v", err)
 							}
 
-							n, err := c.ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: addr, Port: port}})
+							n, _, err := c.ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: addr, Port: port}})
 							if err != nil {
 								c.t.Fatalf("Write failed: %v", err)
 							}

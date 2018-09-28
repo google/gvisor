@@ -258,10 +258,10 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
-		return 0, tcpip.ErrInvalidOptionValue
+		return 0, nil, tcpip.ErrInvalidOptionValue
 	}
 
 	to := opts.To
@@ -271,14 +271,14 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
-		return 0, tcpip.ErrClosedForSend
+		return 0, nil, tcpip.ErrClosedForSend
 	}
 
 	// Prepare for write.
 	for {
 		retry, err := e.prepareForWrite(to)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 
 		if !retry {
@@ -303,7 +303,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 			// Recheck state after lock was re-acquired.
 			if e.state != stateConnected {
-				return 0, tcpip.ErrInvalidEndpointState
+				return 0, nil, tcpip.ErrInvalidEndpointState
 			}
 		}
 	} else {
@@ -312,7 +312,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 		nicid := to.NIC
 		if e.bindNICID != 0 {
 			if nicid != 0 && nicid != e.bindNICID {
-				return 0, tcpip.ErrNoRoute
+				return 0, nil, tcpip.ErrNoRoute
 			}
 
 			nicid = e.bindNICID
@@ -322,13 +322,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 		to = &toCopy
 		netProto, err := e.checkV4Mapped(to, false)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 
 		// Find the enpoint.
 		r, err := e.stack.FindRoute(nicid, e.id.LocalAddress, to.Addr, netProto)
 		if err != nil {
-			return 0, err
+			return 0, nil, err
 		}
 		defer r.Release()
 
@@ -338,23 +338,20 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 
 	if route.IsResolutionRequired() {
 		waker := &sleep.Waker{}
-		if err := route.Resolve(waker); err != nil {
+		if ch, err := route.Resolve(waker); err != nil {
 			if err == tcpip.ErrWouldBlock {
 				// Link address needs to be resolved. Resolution was triggered the background.
 				// Better luck next time.
-				//
-				// TODO: queue up the request and send after link address
-				// is resolved.
 				route.RemoveWaker(waker)
-				return 0, tcpip.ErrNoLinkAddress
+				return 0, ch, tcpip.ErrNoLinkAddress
 			}
-			return 0, err
+			return 0, nil, err
 		}
 	}
 
 	v, err := p.Get(p.Size())
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
 	ttl := route.DefaultTTL()
@@ -363,9 +360,9 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, *tc
 	}
 
 	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.id.LocalPort, dstPort, ttl); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return uintptr(len(v)), nil
+	return uintptr(len(v)), nil, nil
 }
 
 // Peek only returns data from a single datagram, so do nothing here.

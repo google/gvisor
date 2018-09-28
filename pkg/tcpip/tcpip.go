@@ -306,7 +306,12 @@ type Endpoint interface {
 	//
 	// Note that unlike io.Writer.Write, it is not an error for Write to
 	// perform a partial write.
-	Write(Payload, WriteOptions) (uintptr, *Error)
+	//
+	// For UDP and Ping sockets if address resolution is required,
+	// ErrNoLinkAddress and a notification channel is returned for the caller to
+	// block. Channel is closed once address resolution is complete (success or
+	// not). The channel is only non-nil in this case.
+	Write(Payload, WriteOptions) (uintptr, <-chan struct{}, *Error)
 
 	// Peek reads data without consuming it from the endpoint.
 	//

@@ -95,8 +95,21 @@ func (c *epConn) Read() (buffer.View, tcpip.FullAddress, error) {
 }
 
 func (c *epConn) Write(b []byte, addr *tcpip.FullAddress) error {
-	if _, err := c.ep.Write(tcpip.SlicePayload(b), tcpip.WriteOptions{To: addr}); err != nil {
+	_, resCh, err := c.ep.Write(tcpip.SlicePayload(b), tcpip.WriteOptions{To: addr})
+	if err != nil && resCh == nil {
 		return fmt.Errorf("write: %v", err)
+	}
+
+	if resCh != nil {
+		select {
+		case <-resCh:
+		case <-c.ctx.Done():
+			return fmt.Errorf("dhcp server address resolution: %v", tcpip.ErrAborted)
+		}
+
+		if _, _, err := c.ep.Write(tcpip.SlicePayload(b), tcpip.WriteOptions{To: addr}); err != nil {
+			return fmt.Errorf("write: %v", err)
+		}
 	}
 	return nil
 }

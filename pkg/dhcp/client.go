@@ -195,8 +195,21 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 	wopts := tcpip.WriteOptions{
 		To: serverAddr,
 	}
-	if _, err := ep.Write(tcpip.SlicePayload(h), wopts); err != nil {
+	var resCh <-chan struct{}
+	if _, resCh, err = ep.Write(tcpip.SlicePayload(h), wopts); err != nil && resCh == nil {
 		return Config{}, fmt.Errorf("dhcp discovery write: %v", err)
+	}
+
+	if resCh != nil {
+		select {
+		case <-resCh:
+		case <-ctx.Done():
+			return Config{}, fmt.Errorf("dhcp client address resolution: %v", tcpip.ErrAborted)
+		}
+
+		if _, _, err := ep.Write(tcpip.SlicePayload(h), wopts); err != nil {
+			return Config{}, fmt.Errorf("dhcp discovery write: %v", err)
+		}
 	}
 
 	we, ch := waiter.NewChannelEntry(nil)
@@ -289,7 +302,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 		reqOpts = append(reqOpts, option{optClientID, clientID})
 	}
 	h.setOptions(reqOpts)
-	if _, err := ep.Write(tcpip.SlicePayload(h), wopts); err != nil {
+	if _, _, err := ep.Write(tcpip.SlicePayload(h), wopts); err != nil {
 		return Config{}, fmt.Errorf("dhcp discovery write: %v", err)
 	}
 

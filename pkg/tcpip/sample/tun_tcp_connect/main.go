@@ -80,7 +80,7 @@ func writer(ch chan struct{}, ep tcpip.Endpoint) {
 
 		v.CapLength(n)
 		for len(v) > 0 {
-			n, err := ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
+			n, _, err := ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
 			if err != nil {
 				fmt.Println("Write failed:", err)
 				return

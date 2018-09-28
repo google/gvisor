@@ -147,7 +147,7 @@ func timeStampEnabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wndS
 	view := buffer.NewView(len(data))
 	copy(view, data)
 
-	if _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Unexpected error from Write: %v", err)
 	}
 
@@ -210,7 +210,7 @@ func timeStampDisabledAccept(t *testing.T, cookieEnabled bool, wndScale int, wnd
 	view := buffer.NewView(len(data))
 	copy(view, data)
 
-	if _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
 		t.Fatalf("Unexpected error from Write: %v", err)
 	}
 

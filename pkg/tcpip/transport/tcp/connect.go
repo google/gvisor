@@ -365,7 +365,7 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 	for {
 		switch index {
 		case wakerForResolution:
-			if err := h.ep.route.Resolve(resolutionWaker); err != tcpip.ErrWouldBlock {
+			if _, err := h.ep.route.Resolve(resolutionWaker); err != tcpip.ErrWouldBlock {
 				// Either success (err == nil) or failure.
 				return err
 			}

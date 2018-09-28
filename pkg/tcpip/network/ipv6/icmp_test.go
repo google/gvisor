@@ -190,7 +190,7 @@ func TestLinkResolution(t *testing.T) {
 		if ctx.Err() != nil {
 			break
 		}
-		if _, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: 1, Addr: lladdr1}}); err == tcpip.ErrNoLinkAddress {
+		if _, _, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: 1, Addr: lladdr1}}); err == tcpip.ErrNoLinkAddress {
 			// There's something asynchronous going on; yield to let it do its thing.
 			runtime.Gosched()
 		} else if err == nil {

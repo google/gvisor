@@ -89,11 +89,15 @@ func (r *Route) Capabilities() LinkEndpointCapabilities {
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
 // case address resolution requires blocking, e.g. wait for ARP reply. Waker is
 // notified when address resolution is complete (success or not).
-func (r *Route) Resolve(waker *sleep.Waker) *tcpip.Error {
+//
+// If address resolution is required, ErrNoLinkAddress and a notification channel is
+// returned for the top level caller to block. Channel is closed once address resolution
+// is complete (success or not).
+func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 	if !r.IsResolutionRequired() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
 		// link address is already known.
-		return nil
+		return nil, nil
 	}
 
 	nextAddr := r.NextHop
@@ -101,16 +105,16 @@ func (r *Route) Resolve(waker *sleep.Waker) *tcpip.Error {
 		// Local link address is already known.
 		if r.RemoteAddress == r.LocalAddress {
 			r.RemoteLinkAddress = r.LocalLinkAddress
-			return nil
+			return nil, nil
 		}
 		nextAddr = r.RemoteAddress
 	}
-	linkAddr, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
+	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
-		return err
+		return ch, err
 	}
 	r.RemoteLinkAddress = linkAddr
-	return nil
+	return nil, nil
 }
 
 // RemoveWaker removes a waker that has been added in Resolve().

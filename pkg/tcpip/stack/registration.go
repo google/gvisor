@@ -289,7 +289,11 @@ type LinkAddressCache interface {
 	// registered with the network protocol, the cache attempts to resolve the address
 	// and returns ErrWouldBlock. Waker is notified when address resolution is
 	// complete (success or not).
-	GetLinkAddress(nicid tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, *tcpip.Error)
+	//
+	// If address resolution is required, ErrNoLinkAddress and a notification channel is
+	// returned for the top level caller to block. Channel is closed once address resolution
+	// is complete (success or not).
+	GetLinkAddress(nicid tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
 
 	// RemoveWaker removes a waker that has been added in GetLinkAddress().
 	RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
