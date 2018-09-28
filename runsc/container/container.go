@@ -472,8 +472,16 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal, all bool) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
-	if err := c.requireStatus("signal", Running); err != nil {
+	// Signaling container in Stopped state is allowed. When all=false,
+	// an error will be returned anyway; when all=true, this allows
+	// sending signal to other processes inside the container even
+	// after the init process exits. This is especially useful for
+	// container cleanup.
+	if err := c.requireStatus("signal", Running, Stopped); err != nil {
 		return err
+	}
+	if !c.isSandboxRunning() {
+		return fmt.Errorf("container is not running")
 	}
 	// TODO: Query the container for its state, then save it.
 	return c.Sandbox.Signal(c.ID, sig, all)
