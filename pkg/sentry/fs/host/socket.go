@@ -35,6 +35,8 @@ import (
 
 // endpoint encapsulates the state needed to represent a host Unix socket.
 //
+// TODO: Remove/merge with ConnectedEndpoint.
+//
 // +stateify savable
 type endpoint struct {
 	queue waiter.Queue `state:"zerovalue"`
@@ -288,13 +290,23 @@ func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.Fu
 	return rl, ml, control.New(nil, nil, newSCMRights(fds)), nil
 }
 
-// NewConnectedEndpoint creates a new ConnectedEndpoint backed by
-// a host FD that will pretend to be bound at a given sentry path.
+// NewConnectedEndpoint creates a new ConnectedEndpoint backed by a host FD
+// that will pretend to be bound at a given sentry path.
 //
-// The caller is responsible for calling Init(). Additionaly, Release needs
-// to be called twice because host.ConnectedEndpoint is both a
-// unix.Receiver and unix.ConnectedEndpoint.
+// The caller is responsible for calling Init(). Additionaly, Release needs to
+// be called twice because host.ConnectedEndpoint is both a unix.Receiver and
+// unix.ConnectedEndpoint.
 func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *tcpip.Error) {
+	family, err := syscall.GetsockoptInt(file.FD(), syscall.SOL_SOCKET, syscall.SO_DOMAIN)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	if family != syscall.AF_UNIX {
+		// We only allow Unix sockets.
+		return nil, tcpip.ErrInvalidEndpointState
+	}
+
 	e := &ConnectedEndpoint{path: path, queue: queue, file: file}
 
 	// AtomicRefCounters start off with a single reference. We need two.

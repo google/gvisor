@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
@@ -101,6 +102,7 @@ func (e *endpoint) BidirectionalConnect(ce unix.ConnectingEndpoint, returnConnec
 	c, terr := host.NewConnectedEndpoint(hostFile, ce.WaiterQueue(), e.path)
 	if terr != nil {
 		ce.Unlock()
+		log.Warningf("Gofer returned invalid host socket for BidirectionalConnect; file %+v flags %+v: %v", e.file, cf, terr)
 		return terr
 	}
 
@@ -120,6 +122,7 @@ func (e *endpoint) UnidirectionalConnect() (unix.ConnectedEndpoint, *tcpip.Error
 
 	c, terr := host.NewConnectedEndpoint(hostFile, &waiter.Queue{}, e.path)
 	if terr != nil {
+		log.Warningf("Gofer returned invalid host socket for UnidirectionalConnect; file %+v: %v", e.file, terr)
 		return nil, terr
 	}
 	c.Init()
