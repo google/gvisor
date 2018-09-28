@@ -149,6 +149,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 		{
 			seccomp.AllowAny{}, /* fd */
+			seccomp.AllowValue(linux.TCSETSF),
+			seccomp.AllowAny{}, /* termios struct */
+		},
+		{
+			seccomp.AllowAny{}, /* fd */
 			seccomp.AllowValue(linux.TCSETSW),
 			seccomp.AllowAny{}, /* termios struct */
 		},

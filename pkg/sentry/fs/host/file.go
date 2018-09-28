@@ -305,7 +305,7 @@ func (f *fileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.Sys
 		})
 		return 0, err
 
-	case linux.TCSETS, linux.TCSETSW:
+	case linux.TCSETS, linux.TCSETSW, linux.TCSETSF:
 		var termios linux.Termios
 		if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &termios, usermem.IOOpts{
 			AddressSpaceActive: true,
