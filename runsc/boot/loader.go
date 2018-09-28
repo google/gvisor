@@ -112,9 +112,6 @@ type Loader struct {
 	// have the corresponding pid set.
 	//
 	// processes is guardded by mu.
-	//
-	// TODO: When containers are removed via `runsc delete`,
-	// processes should be cleaned up.
 	processes map[execID]*kernel.ThreadGroup
 }
 
@@ -385,7 +382,7 @@ func (l *Loader) run() error {
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
-		if err := setFileSystemForProcess(
+		if err := setupContainerFS(
 			&l.rootProcArgs,
 			l.spec,
 			l.conf,
@@ -476,7 +473,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	stdioFDs := ioFDs[:3]
 	goferFDs := ioFDs[3:]
-	if err := setFileSystemForProcess(
+	if err := setupContainerFS(
 		&procArgs,
 		spec,
 		conf,
@@ -516,6 +513,34 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	key := execID{cid: cid}
 	l.processes[key] = tg
 
+	return nil
+}
+
+// destroyContainer stops a container if it is still running and cleans up its
+// filesystem.
+func (l *Loader) destroyContainer(cid string) error {
+	// First kill and wait for all processes in the container.
+	if err := l.signal(cid, int32(linux.SIGKILL), true /*all*/); err != nil {
+		return fmt.Errorf("failed to SIGKILL all container processes: %v", err)
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Remove all container thread groups from the map.
+	for key := range l.processes {
+		if key.cid == cid {
+			delete(l.processes, key)
+		}
+	}
+
+	ctx := l.rootProcArgs.NewContext(l.k)
+	if err := destroyContainerFS(ctx, cid, l.k); err != nil {
+		return fmt.Errorf("failed to destroy filesystem for container %q: %v", cid, err)
+	}
+
+	// We made it!
+	log.Debugf("Container destroyed %q", cid)
 	return nil
 }
 
@@ -669,13 +694,27 @@ func (l *Loader) signal(cid string, signo int32, all bool) error {
 	}
 
 	si := arch.SignalInfo{Signo: signo}
-	if all {
-		// Pause the kernel to prevent new processes from being created while
-		// the signal is delivered. This prevents process leaks when SIGKILL is
-		// sent to the entire container.
-		l.k.Pause()
-		defer l.k.Unpause()
-		return l.k.SendContainerSignal(cid, &si)
+	if !all {
+		return tg.Leader().SendSignal(&si)
 	}
-	return tg.Leader().SendSignal(&si)
+
+	// Pause the kernel to prevent new processes from being created while
+	// the signal is delivered. This prevents process leaks when SIGKILL is
+	// sent to the entire container.
+	l.k.Pause()
+	if err := l.k.SendContainerSignal(cid, &si); err != nil {
+		l.k.Unpause()
+		return err
+	}
+	l.k.Unpause()
+
+	// If killing all processes, wait for them to exit.
+	if all && linux.Signal(signo) == linux.SIGKILL {
+		for _, t := range l.k.TaskSet().Root.Tasks() {
+			if t.ContainerID() == cid {
+				t.ThreadGroup().WaitExited()
+			}
+		}
+	}
+	return nil
 }

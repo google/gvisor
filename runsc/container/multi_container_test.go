@@ -25,6 +25,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
@@ -403,12 +404,18 @@ func TestMultiContainerSignal(t *testing.T) {
 // TestMultiContainerDestroy checks that container are properly cleaned-up when
 // they are destroyed.
 func TestMultiContainerDestroy(t *testing.T) {
+	app, err := testutil.FindFile("runsc/container/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		// Two containers that will run for a long time. We will
-		// destroy the second one.
-		specs, ids := createSpecs([]string{"sleep", "100"}, []string{"sleep", "100"})
+		// First container will remain intact while the second container is killed.
+		specs, ids := createSpecs(
+			[]string{app, "reaper"},
+			[]string{app, "fork-bomb"})
 		containers, cleanup, err := startContainers(conf, specs, ids)
 		if err != nil {
 			t.Fatalf("error starting containers: %v", err)
@@ -416,26 +423,48 @@ func TestMultiContainerDestroy(t *testing.T) {
 		defer cleanup()
 
 		// Exec in the root container to check for the existence of the
-		// second containers root filesystem directory.
+		// second container's root filesystem directory.
 		contDir := path.Join(boot.ChildContainersDir, containers[1].ID)
-		args := &control.ExecArgs{
+		dirArgs := &control.ExecArgs{
 			Filename: "/usr/bin/test",
 			Argv:     []string{"test", "-d", contDir},
 		}
-		if ws, err := containers[0].executeSync(args); err != nil {
-			t.Fatalf("error executing %+v: %v", args, err)
+		if ws, err := containers[0].executeSync(dirArgs); err != nil {
+			t.Fatalf("error executing %+v: %v", dirArgs, err)
 		} else if ws.ExitStatus() != 0 {
 			t.Errorf("exec 'test -f %q' got exit status %d, wanted 0", contDir, ws.ExitStatus())
 		}
 
-		// Destory the second container.
+		// Exec more processes to ensure signal all works for exec'd processes too.
+		args := &control.ExecArgs{
+			Filename: app,
+			Argv:     []string{app, "fork-bomb"},
+		}
+		if _, err := containers[1].Execute(args); err != nil {
+			t.Fatalf("error exec'ing: %v", err)
+		}
+
+		// Let it brew...
+		time.Sleep(500 * time.Millisecond)
+
 		if err := containers[1].Destroy(); err != nil {
 			t.Fatalf("error destroying container: %v", err)
 		}
 
+		// Check that destroy killed all processes belonging to the container and
+		// waited for them to exit before returning.
+		pss, err := containers[0].Sandbox.Processes("")
+		if err != nil {
+			t.Fatalf("error getting process data from sandbox: %v", err)
+		}
+		expectedPL := []*control.Process{{PID: 1, Cmd: "test_app"}}
+		if !procListsEqual(pss, expectedPL) {
+			t.Errorf("container got process list: %s, want: %s", procListToString(pss), procListToString(expectedPL))
+		}
+
 		// Now the container dir should be gone.
-		if ws, err := containers[0].executeSync(args); err != nil {
-			t.Fatalf("error executing %+v: %v", args, err)
+		if ws, err := containers[0].executeSync(dirArgs); err != nil {
+			t.Fatalf("error executing %+v: %v", dirArgs, err)
 		} else if ws.ExitStatus() == 0 {
 			t.Errorf("exec 'test -f %q' got exit status 0, wanted non-zero", contDir)
 		}

@@ -36,6 +36,8 @@ func main() {
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	subcommands.Register(new(uds), "")
 	subcommands.Register(new(taskTree), "")
+	subcommands.Register(new(forkBomb), "")
+	subcommands.Register(new(reaper), "")
 
 	flag.Parse()
 
@@ -151,9 +153,7 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 
 	if c.depth == 0 {
 		log.Printf("Child sleeping, PID: %d\n", os.Getpid())
-		for {
-			time.Sleep(24 * time.Hour)
-		}
+		select {}
 	}
 	log.Printf("Parent %d sleeping, PID: %d\n", c.depth, os.Getpid())
 
@@ -176,4 +176,68 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 		c.Wait()
 	}
 	return subcommands.ExitSuccess
+}
+
+type forkBomb struct {
+	delay time.Duration
+}
+
+// Name implements subcommands.Command.
+func (*forkBomb) Name() string {
+	return "fork-bomb"
+}
+
+// Synopsis implements subcommands.Command.
+func (*forkBomb) Synopsis() string {
+	return "creates child process until the end of times"
+}
+
+// Usage implements subcommands.Command.
+func (*forkBomb) Usage() string {
+	return "fork-bomb <flags>"
+}
+
+// SetFlags implements subcommands.Command.
+func (c *forkBomb) SetFlags(f *flag.FlagSet) {
+	f.DurationVar(&c.delay, "delay", 100*time.Millisecond, "amount of time to delay creation of child")
+}
+
+// Execute implements subcommands.Command.
+func (c *forkBomb) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	time.Sleep(c.delay)
+
+	cmd := exec.Command("/proc/self/exe", c.Name())
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatal("failed to call self:", err)
+	}
+	return subcommands.ExitSuccess
+}
+
+type reaper struct{}
+
+// Name implements subcommands.Command.
+func (*reaper) Name() string {
+	return "reaper"
+}
+
+// Synopsis implements subcommands.Command.
+func (*reaper) Synopsis() string {
+	return "reaps all children in a loop"
+}
+
+// Usage implements subcommands.Command.
+func (*reaper) Usage() string {
+	return "reaper <flags>"
+}
+
+// SetFlags implements subcommands.Command.
+func (*reaper) SetFlags(*flag.FlagSet) {}
+
+// Execute implements subcommands.Command.
+func (c *reaper) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	stop := testutil.StartReaper()
+	defer stop()
+	select {}
 }

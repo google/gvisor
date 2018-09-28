@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -576,9 +577,9 @@ func subtargets(root string, mnts []specs.Mount) []string {
 	return targets
 }
 
-// setFileSystemForProcess is used to set up the file system and amend the procArgs accordingly.
+// setupContainerFS is used to set up the file system and amend the procArgs accordingly.
 // procArgs are passed by reference and the FDMap field is modified. It dups stdioFDs.
-func setFileSystemForProcess(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, stdioFDs, goferFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel, cid string) error {
+func setupContainerFS(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, stdioFDs, goferFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel, cid string) error {
 	ctx := procArgs.NewContext(k)
 
 	// Create the FD map, which will set stdin, stdout, and stderr.  If
@@ -674,5 +675,67 @@ func setExecutablePath(ctx context.Context, mns *fs.MountNamespace, procArgs *ke
 		return err
 	}
 	procArgs.Filename = f
+	return nil
+}
+
+// destroyContainerFS cleans up the filesystem by unmounting all mounts for the
+// given container and deleting the container root directory.
+func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error {
+	// First get a reference to the container root directory.
+	mns := k.RootMountNamespace()
+	mnsRoot := mns.Root()
+	defer mnsRoot.DecRef()
+	containerRoot := path.Join(ChildContainersDir, cid)
+	containerRootDirent, err := mns.FindInode(ctx, mnsRoot, nil, containerRoot, linux.MaxSymlinkTraversals)
+	if err == syserror.ENOENT {
+		// Container must have been destroyed already. That's fine.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("error finding container root directory %q: %v", containerRoot, err)
+	}
+	defer containerRootDirent.DecRef()
+
+	// Iterate through all submounts and unmount them. We unmount lazily by
+	// setting detach=true, so we can unmount in any order.
+	for _, m := range containerRootDirent.Inode.MountSource.Submounts() {
+		root := m.Root()
+		defer root.DecRef()
+
+		// Do a best-effort unmount by flushing the refs and unmount
+		// with "detach only = true".
+		log.Debugf("Unmounting container submount %q", root.BaseName())
+		m.FlushDirentRefs()
+		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil {
+			return fmt.Errorf("error unmounting container submount %q: %v", root.BaseName(), err)
+		}
+	}
+
+	// Unmount the container root itself.
+	log.Debugf("Unmounting container root %q", containerRoot)
+	containerRootDirent.Inode.MountSource.FlushDirentRefs()
+	if err := mns.Unmount(ctx, containerRootDirent, true /* detach only */); err != nil {
+		return fmt.Errorf("error unmounting container root mount %q: %v", containerRootDirent.BaseName(), err)
+	}
+
+	// Get a reference to the parent directory and remove the root
+	// container directory.
+	containersDirDirent, err := mns.FindInode(ctx, mnsRoot, nil, ChildContainersDir, linux.MaxSymlinkTraversals)
+	if err != nil {
+		return fmt.Errorf("error finding containers directory %q: %v", ChildContainersDir, err)
+	}
+	defer containersDirDirent.DecRef()
+	log.Debugf("Deleting container root %q", containerRoot)
+	if err := containersDirDirent.RemoveDirectory(ctx, mnsRoot, cid); err != nil {
+		return fmt.Errorf("error removing directory %q: %v", containerRoot, err)
+	}
+
+	// Flushing dirent references triggers many async close operations. We
+	// must wait for those to complete before returning, otherwise the
+	// caller may kill the gofer before they complete, causing a cascade of
+	// failing RPCs.
+	log.Infof("Waiting for async filesystem operations to complete")
+	fs.AsyncBarrier()
+
 	return nil
 }

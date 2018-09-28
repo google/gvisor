@@ -21,10 +21,8 @@ import (
 	"path"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -32,7 +30,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 )
 
@@ -247,91 +244,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 // filesystem.
 func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 	log.Debugf("containerManager.destroy %q", *cid)
-	cm.l.mu.Lock()
-	defer cm.l.mu.Unlock()
-
-	key := execID{cid: *cid}
-	if tg, ok := cm.l.processes[key]; ok {
-		// Send SIGKILL to threadgroup.
-		if err := tg.SendSignal(&arch.SignalInfo{
-			Signo: int32(linux.SIGKILL),
-			Code:  arch.SignalInfoUser,
-		}); err == nil {
-			// SIGKILL sent. Now wait for it to exit.
-			log.Debugf("Waiting for container process to exit.")
-			tg.WaitExited()
-			log.Debugf("Container process exited.")
-		} else if err != syserror.ESRCH {
-			return fmt.Errorf("error sending SIGKILL to container %q: %v", *cid, err)
-		}
-
-		// Remove the container thread group from the map.
-		delete(cm.l.processes, key)
-	}
-
-	// Clean up the filesystem by unmounting all mounts for this container
-	// and deleting the container root directory.
-
-	// First get a reference to the container root directory.
-	mns := cm.l.k.RootMountNamespace()
-	mnsRoot := mns.Root()
-	defer mnsRoot.DecRef()
-	ctx := cm.l.rootProcArgs.NewContext(cm.l.k)
-	containerRoot := path.Join(ChildContainersDir, *cid)
-	containerRootDirent, err := mns.FindInode(ctx, mnsRoot, nil, containerRoot, linux.MaxSymlinkTraversals)
-	if err == syserror.ENOENT {
-		// Container must have been destroyed already. That's fine.
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("error finding container root directory %q: %v", containerRoot, err)
-	}
-	defer containerRootDirent.DecRef()
-
-	// Iterate through all submounts and unmount them. We unmount lazily by
-	// setting detach=true, so we can unmount in any order.
-	for _, m := range containerRootDirent.Inode.MountSource.Submounts() {
-		root := m.Root()
-		defer root.DecRef()
-
-		// Do a best-effort unmount by flushing the refs and unmount
-		// with "detach only = true".
-		log.Debugf("Unmounting container submount %q", root.BaseName())
-		m.FlushDirentRefs()
-		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil {
-			return fmt.Errorf("error unmounting container submount %q: %v", root.BaseName(), err)
-		}
-	}
-
-	// Unmount the container root itself.
-	log.Debugf("Unmounting container root %q", containerRoot)
-	containerRootDirent.Inode.MountSource.FlushDirentRefs()
-	if err := mns.Unmount(ctx, containerRootDirent, true /* detach only */); err != nil {
-		return fmt.Errorf("error unmounting container root mount %q: %v", containerRootDirent.BaseName(), err)
-	}
-
-	// Get a reference to the parent directory and remove the root
-	// container directory.
-	containersDirDirent, err := mns.FindInode(ctx, mnsRoot, nil, ChildContainersDir, linux.MaxSymlinkTraversals)
-	if err != nil {
-		return fmt.Errorf("error finding containers directory %q: %v", ChildContainersDir, err)
-	}
-	defer containersDirDirent.DecRef()
-	log.Debugf("Deleting container root %q", containerRoot)
-	if err := containersDirDirent.RemoveDirectory(ctx, mnsRoot, *cid); err != nil {
-		return fmt.Errorf("error removing directory %q: %v", containerRoot, err)
-	}
-
-	// Flushing dirent references triggers many async close operations. We
-	// must wait for those to complete before returning, otherwise the
-	// caller may kill the gofer before they complete, causing a cascade of
-	// failing RPCs.
-	log.Infof("Waiting for async filesystem operations to complete")
-	fs.AsyncBarrier()
-
-	// We made it!
-	log.Debugf("Destroyed container %q", *cid)
-	return nil
+	return cm.l.destroyContainer(*cid)
 }
 
 // ExecuteAsync starts running a command on a created or running sandbox. It

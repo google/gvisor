@@ -572,7 +572,8 @@ func (s *Sandbox) destroy() error {
 	return nil
 }
 
-// Signal sends the signal to a container in the sandbox.
+// Signal sends the signal to a container in the sandbox. If all is true and
+// signal is SIGKILL, then waits for all processes to exit before returning.
 func (s *Sandbox) Signal(cid string, sig syscall.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()

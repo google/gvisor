@@ -142,6 +142,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}
+	// Fatalf exits the process and doesn't run defers. 'l' must be destroyed
+	// explicitly!
 
 	// Notify other processes the loader has been created.
 	l.NotifyLoaderCreated()

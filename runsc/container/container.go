@@ -72,6 +72,21 @@ func validateID(id string) error {
 // Containers must write their metadata files after any change to their internal
 // states. The entire container directory is deleted when the container is
 // destroyed.
+//
+// When the container is stopped, all processes that belong to the container
+// must be stopped before Destroy() returns. containerd makes roughly the
+// following calls to stop a container:
+//   - First it attempts to kill the container process with
+//     'runsc kill SIGTERM'. After some time, it escalates to SIGKILL. In a
+//     separate thread, it's waiting on the container. As soon as the wait
+//     returns, it moves on to the next step:
+//   - It calls 'runsc kill --all SIGKILL' to stop every process that belongs to
+//     the container. 'kill --all SIGKILL' waits for all processes before
+//     returning.
+//   - Containerd waits for stdin, stdout and stderr to drain and be closed.
+//   - It calls 'runsc delete'. runc implementation kills --all SIGKILL once
+//     again just to be sure, waits, and then proceeds with remaining teardown.
+//
 type Container struct {
 	// ID is the container ID.
 	ID string `json:"id"`
@@ -451,7 +466,8 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 	return c.Sandbox.WaitPID(c.ID, pid, clearStatus)
 }
 
-// Signal sends the signal to the container.
+// Signal sends the signal to the container. If all is true and signal is
+// SIGKILL, then waits for all processes to exit before returning.
 // Signal returns an error if the container is already stopped.
 // TODO: Distinguish different error types.
 func (c *Container) Signal(sig syscall.Signal, all bool) error {
@@ -534,8 +550,8 @@ func (c *Container) Processes() ([]*control.Process, error) {
 	return c.Sandbox.Processes(c.ID)
 }
 
-// Destroy frees all resources associated with the container. It fails fast and
-// is idempotent.
+// Destroy stops all processes and frees all resources associated with the
+// container. It fails fast and is idempotent.
 func (c *Container) Destroy() error {
 	log.Debugf("Destroy container %q", c.ID)
 
