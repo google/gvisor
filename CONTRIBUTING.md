@@ -1,19 +1,16 @@
 Want to contribute? Great! First, read this page.
 
-### Before you contribute
+### Contributor License Agreement
 
-Before we can use your code, you must sign the
-[Google Individual Contributor License Agreement][gcla] (CLA), which you can do
-online. The CLA is necessary mainly because you own the copyright to your
-changes, even after your contribution becomes part of our codebase, so we need
-your permission to use and distribute your code. We also need to be sure of
-various other things—for instance that you'll tell us if you know that your code
-infringes on other people's patents. You don't have to sign the CLA until after
-you've submitted your code for review and a member has approved it, but you must
-do it before we can put your code into our codebase. Before you start working on
-a larger contribution, you should get in touch with us first through the issue
-tracker with your idea so that we can help out and possibly guide you.
-Coordinating up front makes it much easier to avoid frustration later on.
+Contributions to this project must be accompanied by a Contributor License
+Agreement. You (or your employer) retain the copyright to your contribution;
+this simply gives us permission to use and redistribute your contributions as
+part of the project. Head over to <https://cla.developers.google.com/> to see
+your current agreements on file or to sign a new one.
+
+You generally only need to submit a CLA once, so if you've already submitted one
+(even if it was for a different project), you probably don't need to do it
+again.
 
 ### Coding Guidelines
 
@@ -97,9 +94,13 @@ git push origin HEAD:refs/for/master
 ```
 
 A change link will be generated for the commit, and a team member will review
-your change request, provide feedback (and submit when appropriate). To address
-feedback, you may be required to amend your commit and repush (don't change the
-Commit-Id in the commit message). This will generate a new version of the
+your change request, provide feedback (and submit when appropriate).
+
+If you receive an error like `No Contributor Agreement on file for user ...`,
+make sure you've [signed the CLA](#contributor-license-agreement).
+
+To address feedback, you may need to amend your commit and repush (don't change
+the Commit-Id in the commit message). This will generate a new version of the
 change.
 
 When approved, the change will be submitted by a team member and automatically
