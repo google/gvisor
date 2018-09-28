@@ -26,6 +26,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"gvisor.googlesource.com/gvisor/pkg/control/client"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -415,7 +416,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		// as user nobody.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
-		} else if specutils.CanSetUIDGID() {
+		} else if specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
 			// Map nobody in the new namespace to nobody in the parent namespace.
 			const nobody = 65534
 			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{
@@ -442,7 +443,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		// bind-mount the executable inside it.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
-		} else if specutils.HasCapSysAdmin() {
+		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
 			log.Infof("Sandbox will be started in minimal chroot")
 			chroot, err := setUpChroot()
 			if err != nil {
@@ -453,7 +454,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			cmd.Args[0] = "/runsc"
 			cmd.Path = "/runsc"
 		} else {
-			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
+			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN and CAP_SYS_CHROOT")
 		}
 	}
 

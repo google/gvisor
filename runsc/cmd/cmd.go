@@ -85,7 +85,6 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 		return err
 	}
 
-	log.Infof("Capabilities applied: %+v", caps)
 	log.Infof("Execve %q again, bye!", binPath)
 	syscall.Exec(binPath, args, []string{})
 	panic("unreachable")

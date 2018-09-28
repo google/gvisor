@@ -60,7 +60,11 @@ func applyCaps(caps *specs.LinuxCapabilities) error {
 		newCaps.Set(c, set...)
 	}
 
-	return newCaps.Apply(capability.CAPS | capability.BOUNDS | capability.AMBS)
+	if err := newCaps.Apply(capability.CAPS | capability.BOUNDS | capability.AMBS); err != nil {
+		return err
+	}
+	log.Infof("Capabilities applied: %+v", newCaps)
+	return nil
 }
 
 func getCaps(which capability.CapType, caps *specs.LinuxCapabilities) []string {

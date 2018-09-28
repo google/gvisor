@@ -32,6 +32,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -234,12 +235,12 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 	return Poll(cb, timeout)
 }
 
-// RunAsRoot ensures the test runs with CAP_SYS_ADMIN. If need it will create
-// a new user namespace and reexecute the test as root inside of the namespace.
-// This functionr returns when it's running as root. If it needs to create
-// another process, it will exit from there and not return.
+// RunAsRoot ensures the test runs with CAP_SYS_ADMIN and CAP_SYS_CHROOT. If
+// need it will create a new user namespace and reexecute the test as root
+// inside of the namespace. This functionr returns when it's running as root. If
+// it needs to create another process, it will exit from there and not return.
 func RunAsRoot() {
-	if specutils.HasCapSysAdmin() {
+	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
 		return
 	}
 

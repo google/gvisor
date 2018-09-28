@@ -204,8 +204,8 @@ func SetUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
 	}
 }
 
-// CanSetUIDGID returns true if the user has SETUID and SETGID capabilities.
-func CanSetUIDGID() bool {
+// HasCapabilities returns true if the user has all capabilties in 'cs'.
+func HasCapabilities(cs ...capability.Cap) bool {
 	caps, err := capability.NewPid2(os.Getpid())
 	if err != nil {
 		return false
@@ -213,18 +213,10 @@ func CanSetUIDGID() bool {
 	if err := caps.Load(); err != nil {
 		return false
 	}
-	return caps.Get(capability.EFFECTIVE, capability.CAP_SETUID) &&
-		caps.Get(capability.EFFECTIVE, capability.CAP_SETGID)
-}
-
-// HasCapSysAdmin returns true if the user has CAP_SYS_ADMIN capability.
-func HasCapSysAdmin() bool {
-	caps, err := capability.NewPid2(os.Getpid())
-	if err != nil {
-		return false
+	for _, c := range cs {
+		if !caps.Get(capability.EFFECTIVE, c) {
+			return false
+		}
 	}
-	if err := caps.Load(); err != nil {
-		return false
-	}
-	return caps.Get(capability.EFFECTIVE, capability.CAP_SYS_ADMIN)
+	return true
 }
