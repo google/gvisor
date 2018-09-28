@@ -11,6 +11,8 @@ go_test(
     data = [
         "latin10k.txt",
         "mysql.sql",
+        "ruby.rb",
+        "ruby.sh",
     ],
     embed = [":image"],
     tags = [

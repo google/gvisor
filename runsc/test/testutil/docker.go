@@ -162,6 +162,11 @@ func (d *Docker) Run(args ...string) (string, error) {
 	return do(a...)
 }
 
+// Logs calls 'docker logs'.
+func (d *Docker) Logs() (string, error) {
+	return do("logs", d.Name)
+}
+
 // Exec calls 'docker exec' with the arguments provided.
 func (d *Docker) Exec(args ...string) (string, error) {
 	a := []string{"exec", d.Name}
@@ -193,12 +198,14 @@ func (d *Docker) Remove() error {
 	return nil
 }
 
-// CleanUp kills and deletes the container.
-func (d *Docker) CleanUp() error {
+// CleanUp kills and deletes the container (best effort).
+func (d *Docker) CleanUp() {
 	if _, err := do("kill", d.Name); err != nil {
-		return fmt.Errorf("error killing container %q: %v", d.Name, err)
+		log.Printf("error killing container %q: %v", d.Name, err)
 	}
-	return d.Remove()
+	if err := d.Remove(); err != nil {
+		log.Print(err)
+	}
 }
 
 // FindPort returns the host port that is mapped to 'sandboxPort'. This calls
@@ -223,7 +230,7 @@ func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, e
 	var out string
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
 		var err error
-		out, err = do("logs", d.Name)
+		out, err = d.Logs()
 		if err != nil {
 			return "", err
 		}

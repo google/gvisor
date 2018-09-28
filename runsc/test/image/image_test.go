@@ -30,6 +30,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -253,6 +254,54 @@ func TestTomcat(t *testing.T) {
 	}
 	if want := http.StatusOK; resp.StatusCode != want {
 		t.Errorf("Wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+}
+
+func TestRuby(t *testing.T) {
+	if err := testutil.Pull("ruby"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("ruby-test")
+
+	dir, err := testutil.PrepareFiles("ruby.rb", "ruby.sh")
+	if err != nil {
+		t.Fatalf("PrepareFiles() failed: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(dir, "ruby.sh"), 0333); err != nil {
+		t.Fatalf("os.Chmod(%q, 0333) failed: %v", dir, err)
+	}
+
+	if _, err := d.Run("-p", "8080", "-v", testutil.MountArg(dir, "/src:ro"), "ruby", "/src/ruby.sh"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Find where port 8080 is mapped to.
+	port, err := d.FindPort(8080)
+	if err != nil {
+		t.Fatalf("docker.FindPort(8080) failed: %v", err)
+	}
+
+	// Wait until it's up and running, 'gem install' can take some time.
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	}
+
+	// Ensure that content is being served.
+	url := fmt.Sprintf("http://localhost:%d", port)
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Errorf("error reaching http server: %v", err)
+	}
+	if want := http.StatusOK; resp.StatusCode != want {
+		t.Errorf("wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("error reading body: %v", err)
+	}
+	if got, want := string(body), "Hello World"; !strings.Contains(got, want) {
+		t.Errorf("invalid body content, got: %q, want: %q", got, want)
 	}
 }
 
