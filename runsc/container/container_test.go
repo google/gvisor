@@ -62,7 +62,8 @@ func waitForProcessList(cont *Container, want []*control.Process) error {
 		}
 		return nil
 	}
-	return testutil.Poll(cb, 5*time.Second)
+	// Gives plenty of time as tests can run slow under --race.
+	return testutil.Poll(cb, 30*time.Second)
 }
 
 func waitForProcessCount(cont *Container, want int) error {
@@ -77,7 +78,8 @@ func waitForProcessCount(cont *Container, want int) error {
 		}
 		return nil
 	}
-	return testutil.Poll(cb, 5*time.Second)
+	// Gives plenty of time as tests can run slow under --race.
+	return testutil.Poll(cb, 30*time.Second)
 }
 
 // procListsEqual is used to check whether 2 Process lists are equal for all

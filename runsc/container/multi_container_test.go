@@ -15,6 +15,7 @@
 package container
 
 import (
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -56,38 +57,60 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 	return specs, ids
 }
 
+func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating root dir: %v", err)
+	}
+
+	var containers []*Container
+	var bundles []string
+	cleanup := func() {
+		for _, c := range containers {
+			c.Destroy()
+		}
+		for _, b := range bundles {
+			os.RemoveAll(b)
+		}
+		os.RemoveAll(rootDir)
+	}
+	for i, spec := range specs {
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("error setting up container: %v", err)
+		}
+		bundles = append(bundles, bundleDir)
+
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("error creating container: %v", err)
+		}
+		containers = append(containers, cont)
+
+		if err := cont.Start(conf); err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("error starting container: %v", err)
+		}
+	}
+	return containers, cleanup, nil
+}
+
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		rootDir, err := testutil.SetupRootDir()
-		if err != nil {
-			t.Fatalf("error creating root dir: %v", err)
-		}
-		defer os.RemoveAll(rootDir)
-
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		specs, ids := createSpecs(sleep, sleep)
-		var containers []*Container
-		for i, spec := range specs {
-			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer os.RemoveAll(bundleDir)
-			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont.Destroy()
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-			containers = append(containers, cont)
+		containers, cleanup, err := startContainers(conf, specs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
 		}
+		defer cleanup()
 
 		// Check via ps that multiple processes are running.
 		expectedPL := []*control.Process{
@@ -106,37 +129,18 @@ func TestMultiContainerSanity(t *testing.T) {
 }
 
 func TestMultiContainerWait(t *testing.T) {
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
 	// The first container should run the entire duration of the test.
 	cmd1 := []string{"sleep", "100"}
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
 	specs, ids := createSpecs(cmd1, cmd2)
 
-	// Setup the containers.
-	var containers []*Container
-	for i, spec := range specs {
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(bundleDir)
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
-		containers = append(containers, cont)
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
 	}
+	defer cleanup()
 
 	// Check via ps that multiple processes are running.
 	expectedPL := []*control.Process{
@@ -206,26 +210,12 @@ func TestExecWait(t *testing.T) {
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
 	specs, ids := createSpecs(cmd1, cmd2)
-
-	// Setup the containers.
-	var containers []*Container
-	for i, spec := range specs {
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(bundleDir)
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
-		containers = append(containers, cont)
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
 	}
+	defer cleanup()
 
 	// Check via ps that process is running.
 	expectedPL := []*control.Process{
@@ -284,12 +274,6 @@ func TestExecWait(t *testing.T) {
 // TestMultiContainerMount tests that bind mounts can be used with multiple
 // containers.
 func TestMultiContainerMount(t *testing.T) {
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
 	cmd1 := []string{"sleep", "100"}
 
 	// 'src != dst' ensures that 'dst' doesn't exist in the host and must be
@@ -309,24 +293,12 @@ func TestMultiContainerMount(t *testing.T) {
 	})
 
 	// Setup the containers.
-	var containers []*Container
-	for i, spec := range sps {
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(bundleDir)
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
-		containers = append(containers, cont)
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, sps, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
 	}
+	defer cleanup()
 
 	ws, err := containers[1].Wait()
 	if err != nil {
@@ -343,32 +315,14 @@ func TestMultiContainerSignal(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		rootDir, err := testutil.SetupRootDir()
-		if err != nil {
-			t.Fatalf("error creating root dir: %v", err)
-		}
-		defer os.RemoveAll(rootDir)
-
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		specs, ids := createSpecs(sleep, sleep)
-		var containers []*Container
-		for i, spec := range specs {
-			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer os.RemoveAll(bundleDir)
-			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont.Destroy()
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-			containers = append(containers, cont)
+		containers, cleanup, err := startContainers(conf, specs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
 		}
+		defer cleanup()
 
 		// Check via ps that container 1 process is running.
 		expectedPL := []*control.Process{
@@ -452,34 +406,14 @@ func TestMultiContainerDestroy(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		rootDir, err := testutil.SetupRootDir()
-		if err != nil {
-			t.Fatalf("error creating root dir: %v", err)
-		}
-		defer os.RemoveAll(rootDir)
-
 		// Two containers that will run for a long time. We will
 		// destroy the second one.
 		specs, ids := createSpecs([]string{"sleep", "100"}, []string{"sleep", "100"})
-
-		// Setup the containers.
-		var containers []*Container
-		for i, spec := range specs {
-			bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer os.RemoveAll(bundleDir)
-			cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont.Destroy()
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-			containers = append(containers, cont)
+		containers, cleanup, err := startContainers(conf, specs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
 		}
+		defer cleanup()
 
 		// Exec in the root container to check for the existence of the
 		// second containers root filesystem directory.
@@ -519,31 +453,12 @@ func TestMultiContainerProcesses(t *testing.T) {
 	specs, ids := createSpecs(
 		[]string{"sleep", "100"},
 		[]string{"sh", "-c", "while true; do sleep 100; done"})
-
-	rootDir, err := testutil.SetupRootDir()
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
+		t.Fatalf("error starting containers: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-
-	var containers []*Container
-	for i, spec := range specs {
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(bundleDir)
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
-		containers = append(containers, cont)
-	}
+	defer cleanup()
 
 	// Check root's container process list doesn't include other containers.
 	expectedPL0 := []*control.Process{
@@ -592,31 +507,12 @@ func TestMultiContainerKillAll(t *testing.T) {
 	specs, ids := createSpecs(
 		[]string{app, "task-tree", "--depth=2", "--width=2"},
 		[]string{app, "task-tree", "--depth=4", "--width=2"})
-
-	rootDir, err := testutil.SetupRootDir()
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
+		t.Fatalf("error starting containers: %v", err)
 	}
-	defer os.RemoveAll(rootDir)
-
-	var containers []*Container
-	for i, spec := range specs {
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(bundleDir)
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		defer cont.Destroy()
-		if err := cont.Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
-		containers = append(containers, cont)
-	}
+	defer cleanup()
 
 	// Wait until all processes are created.
 	rootProcCount := int(math.Pow(2, 3) - 1)
