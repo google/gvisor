@@ -412,7 +412,7 @@ The following applications have been tested and may not yet work:
 ### My container runs fine with *runc* but fails with *runsc*.
 
 If you’re having problems running a container with `runsc` it’s most likely due
-to a compatibility issue or a missing feature in gVisor. See **Debugging**,
+to a compatibility issue or a missing feature in gVisor. See [Debugging](#debugging),
 above.
 
 ### When I run my container, docker fails with `flag provided but not defined: -console`
