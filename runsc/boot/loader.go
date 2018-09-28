@@ -104,26 +104,18 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
-	// mu guards containerRootTGs and execProcesses.
+	// mu guards processes.
 	mu sync.Mutex
 
-	// containerRootTGs maps container IDs to their root processes. It
-	// can be used to determine which process to manipulate when clients
-	// call methods on particular containers.
+	// processes maps containers root process and invocation of exec. Root
+	// processes are keyed with container ID and pid=0, while exec invocations
+	// have the corresponding pid set.
 	//
-	// containerRootTGs is guarded by mu.
-	//
-	// TODO: When containers are removed via `runsc delete`,
-	// containerRootTGs should be cleaned up.
-	containerRootTGs map[string]*kernel.ThreadGroup
-
-	// execProcesses maps each invocation of exec to the process it spawns.
-	//
-	// execProcesses is guardded by mu.
+	// processes is guardded by mu.
 	//
 	// TODO: When containers are removed via `runsc delete`,
-	// execProcesses should be cleaned up.
-	execProcesses map[execID]*kernel.ThreadGroup
+	// processes should be cleaned up.
+	processes map[execID]*kernel.ThreadGroup
 }
 
 // execID uniquely identifies a sentry process.
@@ -287,8 +279,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 		startSignalForwarding: startSignalForwarding,
 		rootProcArgs:          procArgs,
 		sandboxID:             id,
-		containerRootTGs:      make(map[string]*kernel.ThreadGroup),
-		execProcesses:         make(map[execID]*kernel.ThreadGroup),
+		processes:             make(map[execID]*kernel.ThreadGroup),
 	}
 	ctrl.manager.l = l
 	return l, nil
@@ -425,7 +416,8 @@ func (l *Loader) run() error {
 	}
 
 	l.mu.Lock()
-	l.containerRootTGs[l.sandboxID] = l.k.GlobalInit()
+	key := execID{cid: l.sandboxID}
+	l.processes[key] = l.k.GlobalInit()
 	l.mu.Unlock()
 
 	// Start signal forwarding only after an init process is created.
@@ -521,7 +513,8 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.containerRootTGs[cid] = tg
+	key := execID{cid: cid}
+	l.processes[key] = tg
 
 	return nil
 }
@@ -530,7 +523,8 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	// Get the container Root Dirent from the Task, since we must run this
 	// process with the same Root.
 	l.mu.Lock()
-	tg, ok := l.containerRootTGs[args.ContainerID]
+	rootKey := execID{cid: args.ContainerID}
+	tg, ok := l.processes[rootKey]
 	l.mu.Unlock()
 	if !ok {
 		return 0, fmt.Errorf("cannot exec in container %q: no such container", args.ContainerID)
@@ -549,13 +543,13 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("error executing: %+v: %v", args, err)
 	}
 
-	// Insert the process into execProcesses so that we can wait on it
+	// Insert the process into processes so that we can wait on it
 	// later.
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	eid := execID{cid: args.ContainerID, pid: tgid}
-	l.execProcesses[eid] = tg
-	log.Debugf("updated execProcesses: %v", l.execProcesses)
+	l.processes[eid] = tg
+	log.Debugf("updated processes: %v", l.processes)
 
 	return tgid, nil
 }
@@ -567,12 +561,12 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for
 	// multiple clients to wait on the same container.
 	l.mu.Lock()
-	tg, ok := l.containerRootTGs[cid]
-	if !ok {
-		defer l.mu.Unlock()
-		return fmt.Errorf("can't find process for container %q in %v", cid, l.containerRootTGs)
-	}
+	key := execID{cid: cid}
+	tg, ok := l.processes[key]
 	l.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("can't find process for container %q in %v", cid, l.processes)
+	}
 
 	// If the thread either has already exited or exits during waiting,
 	// consider the container exited.
@@ -590,10 +584,10 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 	}*/
 
 	// If the process was started via runsc exec, it will have an
-	// entry in l.execProcesses.
+	// entry in l.processes.
 	l.mu.Lock()
 	eid := execID{cid: cid, pid: tgid}
-	tg, ok := l.execProcesses[eid]
+	tg, ok := l.processes[eid]
 	l.mu.Unlock()
 	if ok {
 		ws := l.wait(tg)
@@ -601,8 +595,8 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 		if clearStatus {
 			// Remove tg from the cache.
 			l.mu.Lock()
-			delete(l.execProcesses, eid)
-			log.Debugf("updated execProcesses (removal): %v", l.execProcesses)
+			delete(l.processes, eid)
+			log.Debugf("updated processes (removal): %v", l.processes)
 			l.mu.Unlock()
 		}
 		return nil
@@ -624,13 +618,6 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 func (l *Loader) wait(tg *kernel.ThreadGroup) uint32 {
 	tg.WaitExited()
 	return tg.ExitStatus().Status()
-}
-
-func (l *Loader) setRootContainerID(cid string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.containerRootTGs = map[string]*kernel.ThreadGroup{cid: l.k.GlobalInit()}
-	l.sandboxID = cid
 }
 
 // WaitForStartSignal waits for a start signal from the control server.
@@ -674,7 +661,8 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 
 func (l *Loader) signal(cid string, signo int32, all bool) error {
 	l.mu.Lock()
-	tg, ok := l.containerRootTGs[cid]
+	key := execID{cid: cid}
+	tg, ok := l.processes[key]
 	l.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("failed to signal container %q: no such container", cid)

@@ -250,7 +250,8 @@ func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 	cm.l.mu.Lock()
 	defer cm.l.mu.Unlock()
 
-	if tg, ok := cm.l.containerRootTGs[*cid]; ok {
+	key := execID{cid: *cid}
+	if tg, ok := cm.l.processes[key]; ok {
 		// Send SIGKILL to threadgroup.
 		if err := tg.SendSignal(&arch.SignalInfo{
 			Signo: int32(linux.SIGKILL),
@@ -265,7 +266,7 @@ func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 		}
 
 		// Remove the container thread group from the map.
-		delete(cm.l.containerRootTGs, *cid)
+		delete(cm.l.processes, key)
 	}
 
 	// Clean up the filesystem by unmounting all mounts for this container
@@ -379,9 +380,9 @@ type RestoreOpts struct {
 }
 
 // Restore loads a container from a statefile.
-// The container's current kernel is destroyed, a restore environment is created,
-// and the kernel is recreated with the restore state file. The container then sends the
-// signal to start.
+// The container's current kernel is destroyed, a restore environment is
+// created, and the kernel is recreated with the restore state file. The
+// container then sends the signal to start.
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
@@ -455,12 +456,20 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
+	// Reinitialize the sandbox ID and processes map. Note that it doesn't
+	// restore the state of multiple containers, nor exec processes.
+	cm.l.sandboxID = o.SandboxID
+	cm.l.mu.Lock()
+	key := execID{cid: o.SandboxID}
+	cm.l.processes = map[execID]*kernel.ThreadGroup{key: cm.l.k.GlobalInit()}
+	cm.l.mu.Unlock()
+
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
 		return fmt.Errorf("failed to start sandbox: %v", err)
 	}
-	cm.l.setRootContainerID(o.SandboxID)
+
 	return nil
 }
 
@@ -511,6 +520,6 @@ type SignalArgs struct {
 // Signal sends a signal to the init process of the container.
 // TODO: Send signal to exec process.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Signal")
+	log.Debugf("containerManager.Signal %q %d, all: %t", args.CID, args.Signo, args.All)
 	return cm.l.signal(args.CID, args.Signo, args.All)
 }
