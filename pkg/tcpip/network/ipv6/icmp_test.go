@@ -108,14 +108,14 @@ func newTestContext(t *testing.T) *testContext {
 	c.s0.SetRouteTable(
 		[]tcpip.Route{{
 			Destination: lladdr1,
-			Mask:        tcpip.Address(strings.Repeat("\xff", 16)),
+			Mask:        tcpip.AddressMask(strings.Repeat("\xff", 16)),
 			NIC:         1,
 		}},
 	)
 	c.s1.SetRouteTable(
 		[]tcpip.Route{{
 			Destination: lladdr0,
-			Mask:        tcpip.Address(strings.Repeat("\xff", 16)),
+			Mask:        tcpip.AddressMask(strings.Repeat("\xff", 16)),
 			NIC:         1,
 		}},
 	)

@@ -490,7 +490,7 @@ type Route struct {
 
 	// Mask specifies which bits of the Destination and the target address
 	// must match for this row to be viable.
-	Mask Address
+	Mask AddressMask
 
 	// Gateway is the gateway to be used if this row is viable.
 	Gateway Address

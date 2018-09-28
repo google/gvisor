@@ -86,7 +86,7 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) tcpip.Route {
 	return tcpip.Route{
 		Destination: ipToAddress(r.Destination),
 		Gateway:     ipToAddress(r.Gateway),
-		Mask:        ipToAddress(net.IP(r.Mask)),
+		Mask:        ipToAddressMask(net.IP(r.Mask)),
 		NIC:         id,
 	}
 }
@@ -201,6 +201,12 @@ func ipToAddressAndProto(ip net.IP) (tcpip.NetworkProtocolNumber, tcpip.Address)
 func ipToAddress(ip net.IP) tcpip.Address {
 	_, addr := ipToAddressAndProto(ip)
 	return addr
+}
+
+// ipToAddressMask converts IP to tcpip.AddressMask, ignoring the protocol.
+func ipToAddressMask(ip net.IP) tcpip.AddressMask {
+	_, addr := ipToAddressAndProto(ip)
+	return tcpip.AddressMask(addr)
 }
 
 // generateRndMac returns a random local MAC address.

@@ -57,7 +57,7 @@ func createStack(t *testing.T) *stack.Stack {
 
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: tcpip.Address(strings.Repeat("\x00", 4)),
-		Mask:        tcpip.Address(strings.Repeat("\x00", 4)),
+		Mask:        tcpip.AddressMask(strings.Repeat("\x00", 4)),
 		Gateway:     "",
 		NIC:         nicid,
 	}})

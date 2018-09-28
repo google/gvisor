@@ -123,7 +123,7 @@ func TestSubnetCreation(t *testing.T) {
 func TestRouteMatch(t *testing.T) {
 	tests := []struct {
 		d    Address
-		m    Address
+		m    AddressMask
 		a    Address
 		want bool
 	}{

@@ -68,7 +68,7 @@ func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 		// IPv4
 		{
 			Destination: tcpip.Address(strings.Repeat("\x00", 4)),
-			Mask:        tcpip.Address(strings.Repeat("\x00", 4)),
+			Mask:        tcpip.AddressMask(strings.Repeat("\x00", 4)),
 			Gateway:     "",
 			NIC:         NICID,
 		},
@@ -76,7 +76,7 @@ func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 		// IPv6
 		{
 			Destination: tcpip.Address(strings.Repeat("\x00", 16)),
-			Mask:        tcpip.Address(strings.Repeat("\x00", 16)),
+			Mask:        tcpip.AddressMask(strings.Repeat("\x00", 16)),
 			Gateway:     "",
 			NIC:         NICID,
 		},
