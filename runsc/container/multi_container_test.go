@@ -527,54 +527,86 @@ func TestMultiContainerProcesses(t *testing.T) {
 // TestMultiContainerKillAll checks that all process that belong to a container
 // are killed when SIGKILL is sent to *all* processes in that container.
 func TestMultiContainerKillAll(t *testing.T) {
-	app, err := testutil.FindFile("runsc/container/test_app")
-	if err != nil {
-		t.Fatal("error finding test_app:", err)
-	}
+	for _, tc := range []struct {
+		killContainer bool
+	}{
+		{killContainer: true},
+		{killContainer: false},
+	} {
+		app, err := testutil.FindFile("runsc/container/test_app")
+		if err != nil {
+			t.Fatal("error finding test_app:", err)
+		}
 
-	// First container will remain intact while the second container is killed.
-	specs, ids := createSpecs(
-		[]string{app, "task-tree", "--depth=2", "--width=2"},
-		[]string{app, "task-tree", "--depth=4", "--width=2"})
-	conf := testutil.TestConfig()
-	containers, cleanup, err := startContainers(conf, specs, ids)
-	if err != nil {
-		t.Fatalf("error starting containers: %v", err)
-	}
-	defer cleanup()
+		// First container will remain intact while the second container is killed.
+		specs, ids := createSpecs(
+			[]string{app, "task-tree", "--depth=2", "--width=2"},
+			[]string{app, "task-tree", "--depth=4", "--width=2"})
+		conf := testutil.TestConfig()
+		containers, cleanup, err := startContainers(conf, specs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
 
-	// Wait until all processes are created.
-	rootProcCount := int(math.Pow(2, 3) - 1)
-	if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
-		t.Fatal(err)
-	}
-	procCount := int(math.Pow(2, 5) - 1)
-	if err := waitForProcessCount(containers[1], procCount); err != nil {
-		t.Fatal(err)
-	}
+		// Wait until all processes are created.
+		rootProcCount := int(math.Pow(2, 3) - 1)
+		if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
+			t.Fatal(err)
+		}
+		procCount := int(math.Pow(2, 5) - 1)
+		if err := waitForProcessCount(containers[1], procCount); err != nil {
+			t.Fatal(err)
+		}
 
-	// Exec more processes to ensure signal works for exec'd processes too.
-	args := &control.ExecArgs{
-		Filename: app,
-		Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
-	}
-	if _, err := containers[1].Execute(args); err != nil {
-		t.Fatalf("error exec'ing: %v", err)
-	}
-	procCount += 3
-	if err := waitForProcessCount(containers[1], procCount); err != nil {
-		t.Fatal(err)
-	}
+		// Exec more processes to ensure signal works for exec'd processes too.
+		args := &control.ExecArgs{
+			Filename: app,
+			Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
+		}
+		if _, err := containers[1].Execute(args); err != nil {
+			t.Fatalf("error exec'ing: %v", err)
+		}
+		procCount += 3
+		if err := waitForProcessCount(containers[1], procCount); err != nil {
+			t.Fatal(err)
+		}
 
-	// Kill'Em All
-	containers[1].Signal(syscall.SIGKILL, true)
+		if tc.killContainer {
+			// First kill the init process to make the container be stopped with
+			// processes still running inside.
+			containers[1].Signal(syscall.SIGKILL, false)
+			op := func() error {
+				c, err := Load(conf.RootDir, ids[1])
+				if err != nil {
+					return err
+				}
+				if c.Status != Stopped {
+					return fmt.Errorf("container is not stopped")
+				}
+				return nil
+			}
+			if err := testutil.Poll(op, 5*time.Second); err != nil {
+				t.Fatalf("container did not stop %q: %v", containers[1].ID, err)
+			}
+		}
 
-	// Check that all processes are gone.
-	if err := waitForProcessCount(containers[1], 0); err != nil {
-		t.Fatal(err)
-	}
-	// Check that root container was not affected.
-	if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
-		t.Fatal(err)
+		c, err := Load(conf.RootDir, ids[1])
+		if err != nil {
+			t.Fatalf("failed to load child container %q: %v", c.ID, err)
+		}
+		// Kill'Em All
+		if err := c.Signal(syscall.SIGKILL, true); err != nil {
+			t.Fatalf("failed to send SIGKILL to container %q: %v", c.ID, err)
+		}
+
+		// Check that all processes are gone.
+		if err := waitForProcessCount(containers[1], 0); err != nil {
+			t.Fatal(err)
+		}
+		// Check that root container was not affected.
+		if err := waitForProcessCount(containers[0], rootProcCount); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
