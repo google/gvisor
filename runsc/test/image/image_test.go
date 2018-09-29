@@ -40,7 +40,7 @@ import (
 
 func TestHelloWorld(t *testing.T) {
 	d := testutil.MakeDocker("hello-test")
-	if _, err := d.Run("hello-world"); err != nil {
+	if err := d.Run("hello-world"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -94,7 +94,8 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Start the container.
-	if _, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/local/apache2/htdocs:ro"), "httpd"); err != nil {
+	mountArg := testutil.MountArg(dir, "/usr/local/apache2/htdocs", testutil.ReadOnly)
+	if err := d.Run("-p", "80", mountArg, "httpd"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -127,7 +128,8 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Start the container.
-	if _, err := d.Run("-p", "80", "-v", testutil.MountArg(dir, "/usr/share/nginx/html:ro"), "nginx"); err != nil {
+	mountArg := testutil.MountArg(dir, "/usr/share/nginx/html", testutil.ReadOnly)
+	if err := d.Run("-p", "80", mountArg, "nginx"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -155,7 +157,7 @@ func TestMysql(t *testing.T) {
 	d := testutil.MakeDocker("mysql-test")
 
 	// Start the container.
-	if _, err := d.Run("-e", "MYSQL_ROOT_PASSWORD=foobar123", "mysql"); err != nil {
+	if err := d.Run("-e", "MYSQL_ROOT_PASSWORD=foobar123", "mysql"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -174,12 +176,12 @@ func TestMysql(t *testing.T) {
 	// Tell mysql client to connect to the server and execute the file in verbose
 	// mode to verify the output.
 	args := []string{
-		"--link", testutil.LinkArg(&d, "mysql"),
-		"-v", testutil.MountArg(dir, "/sql"),
+		testutil.LinkArg(&d, "mysql"),
+		testutil.MountArg(dir, "/sql", testutil.ReadWrite),
 		"mysql",
 		"mysql", "-hmysql", "-uroot", "-pfoobar123", "-v", "-e", "source /sql/mysql.sql",
 	}
-	if _, err := client.Run(args...); err != nil {
+	if err := client.Run(args...); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer client.CleanUp()
@@ -198,7 +200,7 @@ func TestPythonHello(t *testing.T) {
 		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("python-hello-test")
-	if _, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+	if err := d.Run("-p", "8080", "google/python-hello"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -230,7 +232,7 @@ func TestTomcat(t *testing.T) {
 		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("tomcat-test")
-	if _, err := d.Run("-p", "8080", "tomcat:8.0"); err != nil {
+	if err := d.Run("-p", "8080", "tomcat:8.0"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()

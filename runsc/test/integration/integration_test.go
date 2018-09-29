@@ -98,8 +98,8 @@ func TestPauseResume(t *testing.T) {
 		t.Fatal("docker pull failed:", err)
 	}
 	d := testutil.MakeDocker("pause-resume-test")
-	if out, err := d.Run("-p", "8080", "google/python-hello"); err != nil {
-		t.Fatalf("docker run failed: %v\nout: %s", err, out)
+	if err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
 
@@ -157,7 +157,7 @@ func TestConnectToSelf(t *testing.T) {
 
 	// Creates server that replies "server" and exists. Sleeps at the end because
 	// 'docker exec' gets killed if the init process exists before it can finish.
-	if _, err := d.Run("ubuntu:trusty", "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
+	if err := d.Run("ubuntu:trusty", "/bin/sh", "-c", "echo server | nc -l -p 8080 && sleep 1"); err != nil {
 		t.Fatal("docker run failed:", err)
 	}
 	defer d.CleanUp()

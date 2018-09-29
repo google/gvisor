@@ -65,14 +65,35 @@ func EnsureSupportedDockerVersion() {
 	}
 }
 
+// MountMode describes if the mount should be ro or rw.
+type MountMode int
+
+const (
+	// ReadOnly is what the name says.
+	ReadOnly MountMode = iota
+	// ReadWrite is what the name says.
+	ReadWrite
+)
+
+// String returns the mount mode argument for this MountMode.
+func (m MountMode) String() string {
+	switch m {
+	case ReadOnly:
+		return "ro"
+	case ReadWrite:
+		return "rw"
+	}
+	panic(fmt.Sprintf("invalid mode: %d", m))
+}
+
 // MountArg formats the volume argument to mount in the container.
-func MountArg(source, target string) string {
-	return fmt.Sprintf("%s:%s", source, target)
+func MountArg(source, target string, mode MountMode) string {
+	return fmt.Sprintf("-v=%s:%s:%v", source, target, mode)
 }
 
 // LinkArg formats the link argument.
 func LinkArg(source *Docker, target string) string {
-	return fmt.Sprintf("%s:%s", source.Name, target)
+	return fmt.Sprintf("--link=%s:%s", source.Name, target)
 }
 
 // PrepareFiles creates temp directory to copy files there. The sandbox doesn't
@@ -155,11 +176,13 @@ func (d *Docker) Stop() error {
 	return nil
 }
 
-// Run calls 'docker run' with the arguments provided.
-func (d *Docker) Run(args ...string) (string, error) {
+// Run calls 'docker run' with the arguments provided. The container starts
+// running in the backgroud and the call returns immediately.
+func (d *Docker) Run(args ...string) error {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
 	a = append(a, args...)
-	return do(a...)
+	_, err := do(a...)
+	return err
 }
 
 // Logs calls 'docker logs'.

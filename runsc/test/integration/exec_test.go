@@ -40,7 +40,7 @@ func TestExecCapabilities(t *testing.T) {
 	d := testutil.MakeDocker("exec-test")
 
 	// Start the container.
-	if _, err := d.Run("alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+	if err := d.Run("alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
