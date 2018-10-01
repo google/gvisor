@@ -1556,6 +1556,27 @@ func TestGoferExits(t *testing.T) {
 	}
 }
 
+func TestRootNotMount(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/true")
+
+	root, err := ioutil.TempDir(testutil.TmpDir(), "root")
+	if err != nil {
+		t.Fatalf("failure to create tmp dir: %v", err)
+	}
+	spec.Root.Path = root
+	spec.Root.Readonly = true
+	spec.Mounts = []specs.Mount{
+		{Destination: "/bin", Source: "/bin", Type: "bind", Options: []string{"ro"}},
+		{Destination: "/lib", Source: "/lib", Type: "bind", Options: []string{"ro"}},
+		{Destination: "/lib64", Source: "/lib64", Type: "bind", Options: []string{"ro"}},
+	}
+
+	conf := testutil.TestConfig()
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("error running sandbox: %v", err)
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

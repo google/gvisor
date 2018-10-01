@@ -15,6 +15,7 @@
 package container
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,16 +101,70 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) error {
 		}
 	}
 
-	// Remount root as readonly after setup is done, if requested.
+	// If root is read only, check if it needs to be remounted as readonly.
 	if spec.Root.Readonly {
+		isMountPoint, readonly, err := mountInfo(spec.Root.Path)
+		if err != nil {
+			return err
+		}
+		if readonly {
+			return nil
+		}
+		if !isMountPoint {
+			// Readonly root is not a mount point nor read-only. Can't do much other
+			// than just logging a warning. The gofer will prevent files to be open
+			// in write mode.
+			log.Warningf("Mount where root is located is not read-only and cannot be changed: %q", spec.Root.Path)
+			return nil
+		}
+
+		// If root is a mount point but not read-only, we can change mount options
+		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", spec.Root.Path)
 		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
 		src := spec.Root.Path
 		if err := syscall.Mount(src, src, "bind", flags, ""); err != nil {
-			return fmt.Errorf("failed to remount root as readonly with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
+			return fmt.Errorf("failed to remount root as read-only with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
 		}
 	}
 	return nil
+}
+
+// mountInfo returns whether the path is a mount point and whether the mount
+// that path belongs to is read-only.
+func mountInfo(path string) (bool, bool, error) {
+	// Mounts are listed by their real paths.
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false, false, err
+	}
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false, false, err
+	}
+	scanner := bufio.NewScanner(f)
+
+	var mountPoint string
+	var readonly bool
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.Split(line, " ")
+		if len(parts) < 4 {
+			return false, false, fmt.Errorf("invalid /proc/mounts line format %q", line)
+		}
+		mp := parts[1]
+		opts := strings.Split(parts[3], ",")
+
+		// Find the closest submount to the path.
+		if strings.Contains(realPath, mp) && len(mp) > len(mountPoint) {
+			mountPoint = mp
+			readonly = specutils.ContainsStr(opts, "ro")
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return false, false, err
+	}
+	return mountPoint == realPath, readonly, nil
 }
 
 // destroyFS unmounts mounts done by runsc under `spec.Root.Path`. This
