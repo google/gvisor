@@ -80,8 +80,6 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	if err != nil {
 		Fatalf("%v", err)
 	}
-	// TODO: Distinguish between already-exited containers and
-	// genuine errors.
 	if err := c.Signal(sig, k.all); err != nil {
 		Fatalf("%v", err)
 	}

@@ -483,7 +483,6 @@ func (c *Container) Signal(sig syscall.Signal, all bool) error {
 	if !c.isSandboxRunning() {
 		return fmt.Errorf("container is not running")
 	}
-	// TODO: Query the container for its state, then save it.
 	return c.Sandbox.Signal(c.ID, sig, all)
 }
 
