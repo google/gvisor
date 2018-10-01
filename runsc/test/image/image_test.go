@@ -273,7 +273,7 @@ func TestRuby(t *testing.T) {
 		t.Fatalf("os.Chmod(%q, 0333) failed: %v", dir, err)
 	}
 
-	if _, err := d.Run("-p", "8080", "-v", testutil.MountArg(dir, "/src:ro"), "ruby", "/src/ruby.sh"); err != nil {
+	if err := d.Run("-p", "8080", testutil.MountArg(dir, "/src", testutil.ReadOnly), "ruby", "/src/ruby.sh"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
