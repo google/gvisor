@@ -278,8 +278,8 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 		}
 
 		ppid := kernel.ThreadID(0)
-		if tg.Leader().Parent() != nil {
-			ppid = ts.Root.IDOfThreadGroup(tg.Leader().Parent().ThreadGroup())
+		if p := tg.Leader().Parent(); p != nil {
+			ppid = ts.Root.IDOfThreadGroup(p.ThreadGroup())
 		}
 		*out = append(*out, &Process{
 			UID:   tg.Leader().Credentials().EffectiveKUID,
