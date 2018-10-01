@@ -579,8 +579,6 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	return tgid, nil
 }
 
-// TODO: Per-container namespaces must be supported for -pid.
-
 // waitContainer waits for the root process of a container to exit.
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for

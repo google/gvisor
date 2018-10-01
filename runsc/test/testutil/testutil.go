@@ -104,13 +104,12 @@ func FindFile(path string) (string, error) {
 // TestConfig return the default configuration to use in tests.
 func TestConfig() *boot.Config {
 	return &boot.Config{
-		Debug:          true,
-		LogFormat:      "text",
-		LogPackets:     true,
-		Network:        boot.NetworkNone,
-		Strace:         true,
-		MultiContainer: true,
-		FileAccess:     boot.FileAccessExclusive,
+		Debug:      true,
+		LogFormat:  "text",
+		LogPackets: true,
+		Network:    boot.NetworkNone,
+		Strace:     true,
+		FileAccess: boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 	}
 }

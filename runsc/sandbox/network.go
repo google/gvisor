@@ -57,35 +57,6 @@ const (
 func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Config) error {
 	log.Infof("Setting up network")
 
-	if !conf.MultiContainer {
-		// HACK!
-		//
-		// When kubernetes starts a pod, it first creates a sandbox with an
-		// application that just pauses forever.  Later, when a container is
-		// added to the pod, kubernetes will create another sandbox with a
-		// config that corresponds to the containerized application, and add it
-		// to the same namespaces as the pause sandbox.
-		//
-		// Running a second sandbox currently breaks because the two sandboxes
-		// have the same network namespace and configuration, and try to create
-		// a tap device on the same host device which fails.
-		//
-		// Runsc will eventually need to detect that this container is meant to
-		// be run in the same sandbox as the pausing application, and somehow
-		// make that happen.
-		//
-		// For now the following HACK disables networking for the "pause"
-		// sandbox, allowing the second sandbox to start up successfully.
-		//
-		// TODO: Remove this once multiple containers per sandbox
-		// is properly supported.
-		if spec.Annotations[crioContainerTypeAnnotation] == "sandbox" ||
-			spec.Annotations[containerdContainerTypeAnnotation] == "sandbox" {
-			log.Warningf("HACK: Disabling network")
-			conf.Network = boot.NetworkNone
-		}
-	}
-
 	switch conf.Network {
 	case boot.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")

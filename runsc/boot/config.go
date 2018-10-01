@@ -193,10 +193,6 @@ type Config struct {
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
 
-	// MultiContainer enables multiple containers support inside one sandbox.
-	// TODO: Remove this when multiple container is fully supported.
-	MultiContainer bool
-
 	// SpecFile is the file containing the OCI spec.
 	SpecFile string
 
@@ -224,7 +220,6 @@ func (c *Config) ToFlags() []string {
 		"--debug-log-dir=" + c.DebugLogDir,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
-		"--multi-container=" + strconv.FormatBool(c.MultiContainer),
 		"--network=" + c.Network.String(),
 		"--log-packets=" + strconv.FormatBool(c.LogPackets),
 		"--platform=" + c.Platform.String(),

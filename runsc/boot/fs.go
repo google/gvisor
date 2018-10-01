@@ -85,14 +85,14 @@ func (f *fdDispenser) empty() bool {
 // and all mounts. 'rootCtx' is used to walk directories to find mount points.
 func createMountNamespace(userCtx context.Context, rootCtx context.Context, spec *specs.Spec, conf *Config, goferFDs []int) (*fs.MountNamespace, error) {
 	mounts := compileMounts(spec)
-	if conf.MultiContainer {
-		// Create a tmpfs mount where we create and mount a root filesystem for
-		// each child container.
-		mounts = append(mounts, specs.Mount{
-			Type:        tmpfs,
-			Destination: ChildContainersDir,
-		})
-	}
+
+	// Create a tmpfs mount where we create and mount a root filesystem for
+	// each child container.
+	mounts = append(mounts, specs.Mount{
+		Type:        tmpfs,
+		Destination: ChildContainersDir,
+	})
+
 	fds := &fdDispenser{fds: goferFDs}
 	rootInode, err := createRootMount(rootCtx, spec, conf, fds, mounts)
 	if err != nil {
