@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bits"
 	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
@@ -45,6 +46,22 @@ var LogMaximumSize uint = DefaultLogMaximumSize
 // etc.) sent over the event channel. Default is 0 because most clients cannot
 // do anything useful with binary text dump of byte array arguments.
 var EventMaximumSize uint
+
+// ItimerTypes are the possible itimer types.
+var ItimerTypes = abi.ValueSet{
+	{
+		Value: linux.ITIMER_REAL,
+		Name:  "ITIMER_REAL",
+	},
+	{
+		Value: linux.ITIMER_VIRTUAL,
+		Name:  "ITIMER_VIRTUAL",
+	},
+	{
+		Value: linux.ITIMER_PROF,
+		Name:  "ITIMER_PROF",
+	},
+}
 
 func iovecs(t *kernel.Task, addr usermem.Addr, iovcnt int, printContent bool, maxBytes uint64) string {
 	if iovcnt < 0 || iovcnt > linux.UIO_MAXIOV {
@@ -322,6 +339,8 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, futex(uint64(args[arg].Uint())))
 		case PtraceRequest:
 			output = append(output, PtraceRequestSet.Parse(args[arg].Uint64()))
+		case ItimerType:
+			output = append(output, ItimerTypes.Parse(uint64(args[arg].Int())))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:

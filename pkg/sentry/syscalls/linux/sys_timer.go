@@ -25,19 +25,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// ItimerType denotes the type of interval timer.
-type ItimerType int
-
-// Interval timer types from <sys/time.h>.
-const (
-	// ItimerReal equals to ITIMER_REAL.
-	ItimerReal ItimerType = iota
-	// ItimerVirtual equals to ITIMER_VIRTUAL.
-	ItimerVirtual
-	// ItimerProf equals to ITIMER_PROF.
-	ItimerProf
-)
-
 const nsecPerSec = int64(time.Second)
 
 // copyItimerValIn copies an ItimerVal from the untrusted app range to the
@@ -83,13 +70,13 @@ func copyItimerValOut(t *kernel.Task, addr usermem.Addr, itv *linux.ItimerVal) e
 	}
 }
 
-func findTimer(t *kernel.Task, w ItimerType) (*ktime.Timer, error) {
-	switch w {
-	case ItimerReal:
+func findTimer(t *kernel.Task, which int32) (*ktime.Timer, error) {
+	switch which {
+	case linux.ITIMER_REAL:
 		return t.ThreadGroup().Timer().RealTimer, nil
-	case ItimerVirtual:
+	case linux.ITIMER_VIRTUAL:
 		return t.ThreadGroup().Timer().VirtualTimer, nil
-	case ItimerProf:
+	case linux.ITIMER_PROF:
 		return t.ThreadGroup().Timer().ProfTimer, nil
 	default:
 		return nil, syscall.EINVAL
@@ -98,7 +85,7 @@ func findTimer(t *kernel.Task, w ItimerType) (*ktime.Timer, error) {
 
 // Getitimer implements linux syscall getitimer(2).
 func Getitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	timerID := ItimerType(args[0].Int())
+	timerID := args[0].Int()
 	val := args[1].Pointer()
 
 	timer, err := findTimer(t, timerID)
@@ -116,7 +103,7 @@ func Getitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // Setitimer implements linux syscall setitimer(2).
 func Setitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	timerID := ItimerType(args[0].Int())
+	timerID := args[0].Int()
 	newVal := args[1].Pointer()
 	oldVal := args[2].Pointer()
 

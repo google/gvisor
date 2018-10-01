@@ -150,6 +150,9 @@ const (
 	// Utimbuf is a pointer to a struct utimbuf.
 	Utimbuf
 
+	// Rusage is a struct rusage, formatted after syscall execution.
+	Rusage
+
 	// CloneFlags are clone(2) flags.
 	CloneFlags
 
@@ -165,8 +168,8 @@ const (
 	// PtraceRequest is the ptrace(2) request.
 	PtraceRequest
 
-	// Rusage is a struct rusage, formatted after syscall execution.
-	Rusage
+	// ItimerType is an itimer type (ITIMER_REAL, etc).
+	ItimerType
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

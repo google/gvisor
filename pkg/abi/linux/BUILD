@@ -44,6 +44,7 @@ go_library(
         "signal.go",
         "socket.go",
         "time.go",
+        "timer.go",
         "tty.go",
         "uio.go",
         "utsname.go",
