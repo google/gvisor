@@ -69,7 +69,7 @@ func TestExecJobControl(t *testing.T) {
 	d := testutil.MakeDocker("exec-test")
 
 	// Start the container.
-	if _, err := d.Run("alpine", "sleep", "1000"); err != nil {
+	if err := d.Run("alpine", "sleep", "1000"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
