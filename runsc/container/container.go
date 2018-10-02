@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -107,14 +108,13 @@ type Container struct {
 	Owner string `json:"owner"`
 
 	// ConsoleSocket is the path to a unix domain socket that will receive
-	// the console FD. It is only used during create, so we don't need to
-	// store it in the metadata.
-	ConsoleSocket string `json:"-"`
+	// the console FD.
+	ConsoleSocket string `json:"consoleSocket"`
 
 	// Status is the current container Status.
 	Status Status `json:"status"`
 
-	// GoferPid is the pid of the gofer running along side the sandbox. May
+	// GoferPid is the PID of the gofer running along side the sandbox. May
 	// be 0 if the gofer has been killed.
 	GoferPid int `json:"goferPid"`
 
@@ -313,12 +313,12 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		return nil, err
 	}
 
-	// Write the pid file. Containerd considers the create complete after
+	// Write the PID file. Containerd considers the create complete after
 	// this file is created, so it must be the last thing we do.
 	if pidFile != "" {
 		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.Pid())), 0644); err != nil {
 			c.Destroy()
-			return nil, fmt.Errorf("error writing pid file: %v", err)
+			return nil, fmt.Errorf("error writing PID file: %v", err)
 		}
 	}
 
@@ -406,7 +406,7 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	return c.Wait()
 }
 
-// Execute runs the specified command in the container. It returns the pid of
+// Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
 func (c *Container) Execute(args *control.ExecArgs) (int32, error) {
 	log.Debugf("Execute in container %q, args: %+v", c.ID, args)
@@ -429,7 +429,7 @@ func (c *Container) Event() (*boot.Event, error) {
 // Pid returns the Pid of the sandbox the container is running in, or -1 if the
 // container is not running.
 func (c *Container) Pid() int {
-	if err := c.requireStatus("pid", Created, Running, Paused); err != nil {
+	if err := c.requireStatus("get PID", Created, Running, Paused); err != nil {
 		return -1
 	}
 	return c.Sandbox.Pid
@@ -449,7 +449,7 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 // WaitRootPID waits for process 'pid' in the sandbox's PID namespace and
 // returns its WaitStatus.
 func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
-	log.Debugf("Wait on pid %d in sandbox %q", pid, c.Sandbox.ID)
+	log.Debugf("Wait on PID %d in sandbox %q", pid, c.Sandbox.ID)
 	if !c.isSandboxRunning() {
 		return 0, fmt.Errorf("container is not running")
 	}
@@ -459,7 +459,7 @@ func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus
 // WaitPID waits for process 'pid' in the container's PID namespace and returns
 // its WaitStatus.
 func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
-	log.Debugf("Wait on pid %d in container %q", pid, c.ID)
+	log.Debugf("Wait on PID %d in container %q", pid, c.ID)
 	if !c.isSandboxRunning() {
 		return 0, fmt.Errorf("container is not running")
 	}
@@ -483,7 +483,30 @@ func (c *Container) Signal(sig syscall.Signal, all bool) error {
 	if !c.isSandboxRunning() {
 		return fmt.Errorf("container is not running")
 	}
-	return c.Sandbox.Signal(c.ID, sig, all)
+	return c.Sandbox.SignalContainer(c.ID, sig, all)
+}
+
+// ForwardSignals forwards all signals received by the current process to the
+// container process inside the sandbox. It returns a function that will stop
+// forwarding signals.
+func (c *Container) ForwardSignals(pid int32, fgProcess bool) func() {
+	log.Debugf("Forwarding all signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh)
+	go func() {
+		for s := range sigCh {
+			log.Debugf("Forwarding signal %d to container %q PID %d fgProcess=%t", s, c.ID, pid, fgProcess)
+			if err := c.Sandbox.SignalProcess(c.ID, pid, s.(syscall.Signal), fgProcess); err != nil {
+				log.Warningf("error forwarding signal %d to container %q: %v", s, c.ID, err)
+			}
+		}
+		log.Debugf("Done forwarding signals to container %q PID %d fgProcess=%t", c.ID, pid, fgProcess)
+	}()
+
+	return func() {
+		signal.Stop(sigCh)
+		close(sigCh)
+	}
 }
 
 // Checkpoint sends the checkpoint call to the container.
@@ -683,9 +706,9 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		if err != nil {
 			return nil, err
 		}
-		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox io fd"))
+		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
-		goferEnd := os.NewFile(uintptr(fds[1]), "gofer io fd")
+		goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
 		defer goferEnd.Close()
 		goferEnds = append(goferEnds, goferEnd)
 
@@ -710,7 +733,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return nil, err
 	}
-	log.Infof("Gofer started, pid: %d", cmd.Process.Pid)
+	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
 	return sandEnds, nil
 }

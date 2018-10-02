@@ -65,6 +65,10 @@ const (
 	// ContainerSignal is used to send a signal to a container.
 	ContainerSignal = "containerManager.Signal"
 
+	// ContainerSignalProcess is used to send a signal to a particular
+	// process in a container.
+	ContainerSignalProcess = "containerManager.SignalProcess"
+
 	// ContainerStart is the URPC endpoint for running a non-root container
 	// within a sandbox.
 	ContainerStart = "containerManager.Start"
@@ -92,7 +96,7 @@ const (
 	SandboxStacks = "debug.Stacks"
 )
 
-// ControlSocketAddr generates an abstract unix socket name for the given id.
+// ControlSocketAddr generates an abstract unix socket name for the given ID.
 func ControlSocketAddr(id string) string {
 	return fmt.Sprintf("\x00runsc-sandbox.%s", id)
 }
@@ -248,7 +252,7 @@ func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
 }
 
 // ExecuteAsync starts running a command on a created or running sandbox. It
-// returns the pid of the new process.
+// returns the PID of the new process.
 func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) error {
 	log.Debugf("containerManager.ExecuteAsync: %+v", args)
 	tgid, err := cm.l.executeAsync(args)
@@ -373,8 +377,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// restore the state of multiple containers, nor exec processes.
 	cm.l.sandboxID = o.SandboxID
 	cm.l.mu.Lock()
-	key := execID{cid: o.SandboxID}
-	cm.l.processes = map[execID]*kernel.ThreadGroup{key: cm.l.k.GlobalInit()}
+	eid := execID{cid: o.SandboxID}
+	cm.l.processes = map[execID]*execProcess{
+		eid: &execProcess{
+			tg: cm.l.k.GlobalInit(),
+		},
+	}
 	cm.l.mu.Unlock()
 
 	// Tell the root container to start and wait for the result.
@@ -419,7 +427,7 @@ func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error
 
 // SignalArgs are arguments to the Signal method.
 type SignalArgs struct {
-	// CID is the container id.
+	// CID is the container ID.
 	CID string
 
 	// Signo is the signal to send to the process.
@@ -430,9 +438,31 @@ type SignalArgs struct {
 	All bool
 }
 
-// Signal sends a signal to the init process of the container.
-// TODO: Send signal to exec process.
+// Signal sends a signal to the root process of the container.
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal %q %d, all: %t", args.CID, args.Signo, args.All)
-	return cm.l.signal(args.CID, args.Signo, args.All)
+	return cm.l.signalContainer(args.CID, args.Signo, args.All)
+}
+
+// SignalProcessArgs are arguments to the Signal method.
+type SignalProcessArgs struct {
+	// CID is the container ID.
+	CID string
+
+	// PID is the process ID in the given container that will be signaled.
+	PID int32
+
+	// Signo is the signal to send to the process.
+	Signo int32
+
+	// SendToForegroundProcess indicates that the signal should be sent to
+	// the foreground process group in the session that PID belongs to.
+	// This is only valid if the process is attached to a host TTY.
+	SendToForegroundProcess bool
+}
+
+// SignalProcess sends a signal to a particular process in the container.
+func (cm *containerManager) SignalProcess(args *SignalProcessArgs, _ *struct{}) error {
+	log.Debugf("containerManager.Signal: %+v", args)
+	return cm.l.signalProcess(args.CID, args.PID, args.Signo, args.SendToForegroundProcess)
 }

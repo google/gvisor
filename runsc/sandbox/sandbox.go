@@ -80,7 +80,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
-	log.Debugf("Start root sandbox %q, pid: %d", s.ID, s.Pid)
+	log.Debugf("Start root sandbox %q, PID: %d", s.ID, s.Pid)
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err
@@ -107,7 +107,7 @@ func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, goferFi
 		defer f.Close()
 	}
 
-	log.Debugf("Start non-root container sandbox %q, pid: %d", s.ID, s.Pid)
+	log.Debugf("Start non-root container sandbox %q, PID: %d", s.ID, s.Pid)
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
 		return fmt.Errorf("couldn't connect to sandbox: %v", err)
@@ -147,7 +147,7 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f str
 		SandboxID: s.ID,
 	}
 
-	// If the platform needs a device fd we must pass it in.
+	// If the platform needs a device FD we must pass it in.
 	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
 		return err
 	} else if deviceFile != nil {
@@ -192,7 +192,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	return pl, nil
 }
 
-// Execute runs the specified command in the container. It returns the pid of
+// Execute runs the specified command in the container. It returns the PID of
 // the newly created process.
 func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", args.ContainerID, s.ID)
@@ -239,7 +239,7 @@ func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 }
 
 func (s *Sandbox) connError(err error) error {
-	return fmt.Errorf("error connecting to control server at pid %d: %v", s.Pid, err)
+	return fmt.Errorf("error connecting to control server at PID %d: %v", s.Pid, err)
 }
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
@@ -322,7 +322,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nextFD++
 	}
 
-	// If the platform needs a device fd we must pass it in.
+	// If the platform needs a device FD we must pass it in.
 	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
 		return err
 	} else if deviceFile != nil {
@@ -338,7 +338,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd.Stderr = os.Stderr
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the tty on the sandbox process.
+	// pty master/slave pair and set the TTY on the sandbox process.
 	if consoleEnabled {
 		// console.NewWithSocket will send the master on the socket,
 		// and return the slave.
@@ -461,7 +461,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Add container as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)
 
-	// Log the fds we are donating to the sandbox process.
+	// Log the FDs we are donating to the sandbox process.
 	for i, f := range cmd.ExtraFiles {
 		log.Debugf("Donating FD %d: %q", i+3, f.Name())
 	}
@@ -472,7 +472,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		return err
 	}
 	s.Pid = cmd.Process.Pid
-	log.Infof("Sandbox started, pid: %d", s.Pid)
+	log.Infof("Sandbox started, PID: %d", s.Pid)
 
 	return nil
 }
@@ -572,9 +572,10 @@ func (s *Sandbox) destroy() error {
 	return nil
 }
 
-// Signal sends the signal to a container in the sandbox. If all is true and
-// signal is SIGKILL, then waits for all processes to exit before returning.
-func (s *Sandbox) Signal(cid string, sig syscall.Signal, all bool) error {
+// SignalContainer sends the signal to a container in the sandbox. If all is
+// true and signal is SIGKILL, then waits for all processes to exit before
+// returning.
+func (s *Sandbox) SignalContainer(cid string, sig syscall.Signal, all bool) error {
 	log.Debugf("Signal sandbox %q", s.ID)
 	conn, err := s.sandboxConnect()
 	if err != nil {
@@ -589,6 +590,30 @@ func (s *Sandbox) Signal(cid string, sig syscall.Signal, all bool) error {
 	}
 	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
 		return fmt.Errorf("err signaling container %q: %v", cid, err)
+	}
+	return nil
+}
+
+// SignalProcess sends the signal to a particular process in the container. If
+// fgProcess is true, then the signal is sent to the foreground process group
+// in the same session that PID belongs to. This is only valid if the process
+// is attached to a host TTY.
+func (s *Sandbox) SignalProcess(cid string, pid int32, sig syscall.Signal, fgProcess bool) error {
+	log.Debugf("Signal sandbox %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	args := boot.SignalProcessArgs{
+		CID:                     cid,
+		Signo:                   int32(sig),
+		PID:                     pid,
+		SendToForegroundProcess: fgProcess,
+	}
+	if err := conn.Call(boot.ContainerSignalProcess, &args, nil); err != nil {
+		return fmt.Errorf("err signaling container %q PID %d: %v", cid, pid, err)
 	}
 	return nil
 }

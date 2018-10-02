@@ -27,6 +27,7 @@
 package integration
 
 import (
+	"syscall"
 	"testing"
 	"time"
 
@@ -58,5 +59,59 @@ func TestExecCapabilities(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("wrong capabilities, got: %q, want: %q", got, want)
+	}
+}
+
+func TestExecJobControl(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("exec-test")
+
+	// Start the container.
+	if _, err := d.Run("alpine", "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Exec 'sh' with an attached pty.
+	cmd, ptmx, err := d.ExecWithTerminal("sh")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	defer ptmx.Close()
+
+	// Call "sleep 100" in the shell.
+	if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// Give shell a few seconds to start executing the sleep.
+	time.Sleep(2 * time.Second)
+
+	// Send a ^C to the pty, which should kill sleep, but not the shell.
+	// \x03 is ASCII "end of text", which is the same as ^C.
+	if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// The shell should still be alive at this point. Sleep should have
+	// exited with code 2+128=130. We'll exit with 10 plus that number, so
+	// that we can be sure that the shell did not get signalled.
+	if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// Exec process should exit with code 10+130=140.
+	ps, err := cmd.Process.Wait()
+	if err != nil {
+		t.Fatalf("error waiting for exec process: %v", err)
+	}
+	ws := ps.Sys().(syscall.WaitStatus)
+	if !ws.Exited() {
+		t.Errorf("ws.Exited got false, want true")
+	}
+	if got, want := ws.ExitStatus(), 140; got != want {
+		t.Errorf("ws.ExitedStatus got %d, want %d", got, want)
 	}
 }

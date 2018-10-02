@@ -158,6 +158,13 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("error getting processes for container: %v", err)
 	}
 
+	if e.StdioIsPty {
+		// Forward signals sent to this process to the foreground
+		// process in the sandbox.
+		stopForwarding := c.ForwardSignals(pid, true /* fgProcess */)
+		defer stopForwarding()
+	}
+
 	// Write the sandbox-internal pid if required.
 	if ex.internalPidFile != "" {
 		pidStr := []byte(strconv.Itoa(int(pid)))
@@ -216,9 +223,9 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	cmd.Stderr = os.Stderr
 
 	// If the console control socket file is provided, then create a new
-	// pty master/slave pair and set the tty on the sandbox process.
+	// pty master/slave pair and set the TTY on the sandbox process.
 	if ex.consoleSocket != "" {
-		// Create a new tty pair and send the master on the provided
+		// Create a new TTY pair and send the master on the provided
 		// socket.
 		tty, err := console.NewWithSocket(ex.consoleSocket)
 		if err != nil {
@@ -226,7 +233,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 		}
 		defer tty.Close()
 
-		// Set stdio to the new tty slave.
+		// Set stdio to the new TTY slave.
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

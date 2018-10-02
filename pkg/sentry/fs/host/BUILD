@@ -17,6 +17,7 @@ go_library(
         "socket.go",
         "socket_state.go",
         "socket_unsafe.go",
+        "tty.go",
         "util.go",
         "util_unsafe.go",
     ],

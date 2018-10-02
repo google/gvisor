@@ -219,6 +219,11 @@ func (pg *ProcessGroup) handleOrphan() {
 	return
 }
 
+// Session returns the process group's session without taking a reference.
+func (pg *ProcessGroup) Session() *Session {
+	return pg.session
+}
+
 // CreateSession creates a new Session, with the ThreadGroup as the leader.
 //
 // EPERM may be returned if either the given ThreadGroup is already a Session

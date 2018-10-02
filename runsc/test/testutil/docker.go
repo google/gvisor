@@ -26,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kr/pty"
 )
 
 func init() {
@@ -131,6 +133,17 @@ func do(args ...string) (string, error) {
 	return string(out), nil
 }
 
+// doWithPty executes docker command with stdio attached to a pty.
+func doWithPty(args ...string) (*exec.Cmd, *os.File, error) {
+	fmt.Printf("Running with pty: docker %s\n", args)
+	cmd := exec.Command("docker", args...)
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error executing docker %s with a pty: %v", args, err)
+	}
+	return cmd, ptmx, nil
+}
+
 // Pull pulls a docker image. This is used in tests to isolate the
 // time to pull the image off the network from the time to actually
 // start the container, to avoid timeouts over slow networks.
@@ -195,6 +208,14 @@ func (d *Docker) Exec(args ...string) (string, error) {
 	a := []string{"exec", d.Name}
 	a = append(a, args...)
 	return do(a...)
+}
+
+// ExecWithTerminal calls 'docker exec -it' with the arguments provided and
+// attaches a pty to stdio.
+func (d *Docker) ExecWithTerminal(args ...string) (*exec.Cmd, *os.File, error) {
+	a := []string{"exec", "-it", d.Name}
+	a = append(a, args...)
+	return doWithPty(a...)
 }
 
 // Pause calls 'docker pause'.

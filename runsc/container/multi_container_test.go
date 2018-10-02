@@ -477,11 +477,12 @@ func TestMultiContainerDestroy(t *testing.T) {
 }
 
 func TestMultiContainerProcesses(t *testing.T) {
-	// Note: use 'while true' to keep 'sh' process around. Otherwise, shell will
-	// just execve into 'sleep' and both containers will look the same.
+	// Note: use curly braces to keep 'sh' process around. Otherwise, shell
+	// will just execve into 'sleep' and both containers will look the
+	// same.
 	specs, ids := createSpecs(
 		[]string{"sleep", "100"},
-		[]string{"sh", "-c", "while true; do sleep 100; done"})
+		[]string{"sh", "-c", "{ sleep 100; }"})
 	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {

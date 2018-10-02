@@ -78,7 +78,7 @@ type ExecArgs struct {
 	Capabilities *auth.TaskCapabilities
 
 	// StdioIsPty indicates that FDs 0, 1, and 2 are connected to a host
-	// pty fd.
+	// pty FD.
 	StdioIsPty bool
 
 	// FilePayload determines the files to give to the new process.
@@ -90,7 +90,7 @@ type ExecArgs struct {
 
 // Exec runs a new task.
 func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
-	newTG, _, err := proc.execAsync(args)
+	newTG, _, _, err := proc.execAsync(args)
 	if err != nil {
 		return err
 	}
@@ -103,17 +103,26 @@ func (proc *Proc) Exec(args *ExecArgs, waitStatus *uint32) error {
 
 // ExecAsync runs a new task, but doesn't wait for it to finish. It is defined
 // as a function rather than a method to avoid exposing execAsync as an RPC.
-func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, error) {
+func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, error) {
 	return proc.execAsync(args)
 }
 
 // execAsync runs a new task, but doesn't wait for it to finish. It returns the
-// newly created thread group and its PID.
-func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, error) {
+// newly created thread group and its PID. If the stdio FDs are TTYs, then a
+// TTYFileOperations that wraps the TTY is also returned.
+func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, error) {
 	// Import file descriptors.
 	l := limits.NewLimitSet()
 	fdm := proc.Kernel.NewFDMap()
 	defer fdm.DecRef()
+
+	// No matter what happens, we should close all files in the FilePayload
+	// before returning. Any files that are imported will be duped.
+	defer func() {
+		for _, f := range args.FilePayload.Files {
+			f.Close()
+		}
+	}()
 
 	creds := auth.NewUserCredentials(
 		args.KUID,
@@ -150,31 +159,62 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		paths := fs.GetPath(initArgs.Envv)
 		f, err := proc.Kernel.RootMountNamespace().ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 		if err != nil {
-			return nil, 0, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
+			return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
 		}
 		initArgs.Filename = f
 	}
 
 	mounter := fs.FileOwnerFromContext(ctx)
-	for appFD, f := range args.FilePayload.Files {
-		enableIoctl := args.StdioIsPty && appFD <= 2
 
-		// Import the given file FD. This dups the FD as well.
-		file, err := host.ImportFile(ctx, int(f.Fd()), mounter, enableIoctl)
-		if err != nil {
-			return nil, 0, err
+	var ttyFile *fs.File
+	for appFD, hostFile := range args.FilePayload.Files {
+		var appFile *fs.File
+
+		if args.StdioIsPty && appFD < 3 {
+			// Import the file as a host TTY file.
+			if ttyFile == nil {
+				var err error
+				appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), mounter, true /* isTTY */)
+				if err != nil {
+					return nil, 0, nil, err
+				}
+				defer appFile.DecRef()
+
+				// Remember this in the TTY file, as we will
+				// use it for the other stdio FDs.
+				ttyFile = appFile
+			} else {
+				// Re-use the existing TTY file, as all three
+				// stdio FDs must point to the same fs.File in
+				// order to share TTY state, specifically the
+				// foreground process group id.
+				appFile = ttyFile
+			}
+		} else {
+			// Import the file as a regular host file.
+			var err error
+			appFile, err = host.ImportFile(ctx, int(hostFile.Fd()), mounter, false /* isTTY */)
+			if err != nil {
+				return nil, 0, nil, err
+			}
+			defer appFile.DecRef()
 		}
-		defer file.DecRef()
 
-		// We're done with this file.
-		f.Close()
-
-		if err := fdm.NewFDAt(kdefs.FD(appFD), file, kernel.FDFlags{}, l); err != nil {
-			return nil, 0, err
+		// Add the file to the FD map.
+		if err := fdm.NewFDAt(kdefs.FD(appFD), appFile, kernel.FDFlags{}, l); err != nil {
+			return nil, 0, nil, err
 		}
 	}
 
-	return proc.Kernel.CreateProcess(initArgs)
+	tg, tid, err := proc.Kernel.CreateProcess(initArgs)
+	if err != nil {
+		return nil, 0, nil, err
+	}
+
+	if ttyFile == nil {
+		return tg, tid, nil, nil
+	}
+	return tg, tid, ttyFile.FileOperations.(*host.TTYFileOperations), nil
 }
 
 // PsArgs is the set of arguments to ps.

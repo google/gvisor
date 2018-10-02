@@ -16,6 +16,7 @@
 package testutil
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -313,5 +316,38 @@ func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
 		if err != syscall.EINTR {
 			return r1, r2, err
 		}
+	}
+}
+
+// WaitUntilRead reads from the given reader until the wanted string is found
+// or until timeout.
+func WaitUntilRead(r io.Reader, want string, split bufio.SplitFunc, timeout time.Duration) error {
+	sc := bufio.NewScanner(r)
+	if split != nil {
+		sc.Split(split)
+	}
+	// done must be accessed atomically. A value greater than 0 indicates
+	// that the read loop can exit.
+	var done uint32
+	doneCh := make(chan struct{})
+	go func() {
+		for sc.Scan() {
+			t := sc.Text()
+			if strings.Contains(t, want) {
+				atomic.StoreUint32(&done, 1)
+				close(doneCh)
+				break
+			}
+			if atomic.LoadUint32(&done) > 0 {
+				break
+			}
+		}
+	}()
+	select {
+	case <-time.After(timeout):
+		atomic.StoreUint32(&done, 1)
+		return fmt.Errorf("timeout waiting to read %q", want)
+	case <-doneCh:
+		return nil
 	}
 }

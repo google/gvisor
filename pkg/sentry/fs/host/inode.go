@@ -73,7 +73,7 @@ type inodeFileState struct {
 	// Common file system state.
 	mops *superOperations `state:"wait"`
 
-	// descriptor is the backing host fd.
+	// descriptor is the backing host FD.
 	descriptor *descriptor `state:"wait"`
 
 	// Event queue for blocking operations.
@@ -167,7 +167,7 @@ func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, err
 // inodeOperations implements fs.InodeOperations.
 var _ fs.InodeOperations = (*inodeOperations)(nil)
 
-// newInode returns a new fs.Inode backed by the host fd.
+// newInode returns a new fs.Inode backed by the host FD.
 func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, donated bool) (*fs.Inode, error) {
 	// Retrieve metadata.
 	var s syscall.Stat_t
@@ -212,8 +212,8 @@ func (i *inodeOperations) Mappable(inode *fs.Inode) memmap.Mappable {
 	return i.cachingInodeOps
 }
 
-// ReturnsWouldBlock returns true if this host fd can return EWOULDBLOCK
-// for operations that would block.
+// ReturnsWouldBlock returns true if this host FD can return EWOULDBLOCK for
+// operations that would block.
 func (i *inodeOperations) ReturnsWouldBlock() bool {
 	return i.fileState.descriptor.wouldBlock
 }
@@ -226,7 +226,7 @@ func (i *inodeOperations) Release(context.Context) {
 
 // Lookup implements fs.InodeOperations.Lookup.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	// Get a new fd relative to i at name.
+	// Get a new FD relative to i at name.
 	fd, err := open(i, name)
 	if err != nil {
 		if err == syserror.ENOENT {
@@ -321,7 +321,7 @@ func (i *inodeOperations) BoundEndpoint(inode *fs.Inode, path string) unix.Bound
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	return newFile(ctx, d, flags, i, false), nil
+	return newFile(ctx, d, flags, i), nil
 }
 
 // canMap returns true if this fs.Inode can be memory mapped.
@@ -362,7 +362,7 @@ func (i *inodeOperations) SetOwner(context.Context, *fs.Inode, fs.FileOwner) err
 func (i *inodeOperations) SetPermissions(ctx context.Context, inode *fs.Inode, f fs.FilePermissions) bool {
 	// Can we use host kernel metadata caches?
 	if !inode.MountSource.Flags.ForcePageCache || !canMap(inode) {
-		// Then just change the timestamps on the fd, the host
+		// Then just change the timestamps on the FD, the host
 		// will synchronize the metadata update with any host
 		// inode and page cache.
 		return syscall.Fchmod(i.fileState.FD(), uint32(f.LinuxMode())) == nil
@@ -375,7 +375,7 @@ func (i *inodeOperations) SetPermissions(ctx context.Context, inode *fs.Inode, f
 func (i *inodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSpec) error {
 	// Can we use host kernel metadata caches?
 	if !inode.MountSource.Flags.ForcePageCache || !canMap(inode) {
-		// Then just change the timestamps on the fd, the host
+		// Then just change the timestamps on the FD, the host
 		// will synchronize the metadata update with any host
 		// inode and page cache.
 		return setTimestamps(i.fileState.FD(), ts)
@@ -388,7 +388,7 @@ func (i *inodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts
 func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, size int64) error {
 	// Is the file not memory-mappable?
 	if !canMap(inode) {
-		// Then just change the file size on the fd, the host
+		// Then just change the file size on the FD, the host
 		// will synchronize the metadata update with any host
 		// inode and page cache.
 		return syscall.Ftruncate(i.fileState.FD(), size)

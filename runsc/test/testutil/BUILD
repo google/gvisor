@@ -17,6 +17,7 @@ go_library(
         "//runsc/boot",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
