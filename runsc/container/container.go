@@ -771,7 +771,7 @@ func (c *Container) changeStatus(s Status) {
 		}
 
 	case Stopped:
-		if c.Status != Created && c.Status != Running && c.Status != Stopped {
+		if c.Status != Creating && c.Status != Created && c.Status != Running && c.Status != Stopped {
 			panic(fmt.Sprintf("invalid state transition: %v => %v", c.Status, s))
 		}
 
