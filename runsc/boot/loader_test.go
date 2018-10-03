@@ -101,7 +101,8 @@ func createLoader() (*Loader, func(), error) {
 		return nil, nil, err
 	}
 
-	l, err := New("foo", spec, conf, fd, -1 /* device fd */, []int{sandEnd}, false)
+	stdio := []int{int(os.Stdin.Fd()), int(os.Stdout.Fd()), int(os.Stderr.Fd())}
+	l, err := New("foo", spec, conf, fd, -1 /* device fd */, []int{sandEnd}, stdio, false)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

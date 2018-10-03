@@ -285,9 +285,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+bundleDir)
 
-	consoleEnabled := consoleSocket != ""
-	cmd.Args = append(cmd.Args, "--console="+strconv.FormatBool(consoleEnabled))
-
 	// Create a socket for the control server and donate it to the sandbox.
 	addr := boot.ControlSocketAddr(s.ID)
 	sockFD, err := server.CreateSocket(addr)
@@ -332,27 +329,54 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nextFD++
 	}
 
-	// Sandbox stdio defaults to current process stdio.
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
 	// If the console control socket file is provided, then create a new
 	// pty master/slave pair and set the TTY on the sandbox process.
-	if consoleEnabled {
-		// console.NewWithSocket will send the master on the socket,
-		// and return the slave.
+	if consoleSocket != "" {
+		cmd.Args = append(cmd.Args, "--console=true")
+
+		// console.NewWithSocket will send the master on the given
+		// socket, and return the slave.
 		tty, err := console.NewWithSocket(consoleSocket)
 		if err != nil {
 			return fmt.Errorf("error setting up console with socket %q: %v", consoleSocket, err)
 		}
 		defer tty.Close()
+		fd := int(tty.Fd())
 
+		// Set the TTY as a controlling TTY on the sandbox process.
+		cmd.SysProcAttr.Setctty = true
+		cmd.SysProcAttr.Ctty = fd
+
+		// Ideally we would set the sandbox stdin to this process'
+		// stdin, but for some reason Docker does not like that (it
+		// never calls `runsc start`). Instead we set stdio to the
+		// console TTY, but note that this is distinct from the
+		// container stdio, which is passed via the flags below.
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
-		cmd.SysProcAttr.Setctty = true
-		cmd.SysProcAttr.Ctty = int(tty.Fd())
+
+		// Pass the tty as all stdio fds to sandbox.
+		for i := 0; i < 3; i++ {
+			cmd.ExtraFiles = append(cmd.ExtraFiles, tty)
+			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
+			nextFD++
+		}
+	} else {
+		// Connect the sandbox process to this process's stdios. Note
+		// that this is distinct from the container's stdio, which is
+		// passed by the flags below.
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		// If not using a console, pass our current stdio as the
+		// container stdio via flags.
+		for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+			cmd.ExtraFiles = append(cmd.ExtraFiles, f)
+			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
+			nextFD++
+		}
 	}
 
 	// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT

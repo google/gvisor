@@ -40,6 +40,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 		ptySlave.Close()
 		return nil, fmt.Errorf("error dial socket %q: %v", socketPath, err)
 	}
+	defer conn.Close()
 	uc, ok := conn.(*net.UnixConn)
 	if !ok {
 		ptySlave.Close()
@@ -50,6 +51,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 		ptySlave.Close()
 		return nil, fmt.Errorf("error getting file for unix socket %v: %v", uc, err)
 	}
+	defer socket.Close()
 
 	// Send the master FD over the connection.
 	msg := unix.UnixRights(int(ptyMaster.Fd()))

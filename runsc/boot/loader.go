@@ -140,7 +140,7 @@ func init() {
 
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, console bool) (*Loader, error) {
+func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, stdioFDs []int, console bool) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("Error setting up memory usage: %v", err)
 	}
@@ -279,9 +279,9 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 		conf:                  conf,
 		console:               console,
 		watchdog:              watchdog,
-		stdioFDs:              []int{syscall.Stdin, syscall.Stdout, syscall.Stderr},
-		goferFDs:              goferFDs,
 		spec:                  spec,
+		goferFDs:              goferFDs,
+		stdioFDs:              stdioFDs,
 		startSignalForwarding: startSignalForwarding,
 		rootProcArgs:          procArgs,
 		sandboxID:             id,

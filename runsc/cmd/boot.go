@@ -48,6 +48,10 @@ type Boot struct {
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs intFlags
 
+	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
+	// provided in that order.
+	stdioFDs intFlags
+
 	// console is set to true if the sandbox should allow terminal ioctl(2)
 	// syscalls.
 	console bool
@@ -79,6 +83,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect 9P clients. They must follow this order: root first, then mounts as defined in the spec")
+	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 }
@@ -138,7 +143,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	l, err := boot.New(f.Arg(0), spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.console)
+	l, err := boot.New(f.Arg(0), spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.stdioFDs.GetArray(), b.console)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}
