@@ -335,6 +335,10 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.TIOCOUTQ),
 			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.TIOCINQ),
+			},
 		},
 		syscall.SYS_LISTEN:   {},
 		syscall.SYS_READV:    {},
