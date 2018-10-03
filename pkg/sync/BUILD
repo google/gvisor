@@ -8,6 +8,14 @@ package(
 load("//tools/go_generics:defs.bzl", "go_template")
 
 go_template(
+    name = "generic_atomicptr",
+    srcs = ["atomicptr_unsafe.go"],
+    types = [
+        "Value",
+    ],
+)
+
+go_template(
     name = "generic_seqatomic",
     srcs = ["seqatomic_unsafe.go"],
     types = [
