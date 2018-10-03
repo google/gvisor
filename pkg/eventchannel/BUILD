@@ -15,7 +15,7 @@ go_library(
         "//pkg/log",
         "//pkg/unet",
         "@com_github_golang_protobuf//proto:go_default_library",
-        "@com_github_golang_protobuf//ptypes:go_default_library",
+        "@com_github_golang_protobuf//ptypes:go_default_library_gen",
     ],
 )
 

@@ -285,7 +285,7 @@ func TestRuby(t *testing.T) {
 	}
 
 	// Wait until it's up and running, 'gem install' can take some time.
-	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 1*time.Minute); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
