@@ -568,7 +568,8 @@ func TestMultiContainerKillAll(t *testing.T) {
 		if _, err := containers[1].Execute(args); err != nil {
 			t.Fatalf("error exec'ing: %v", err)
 		}
-		procCount += 3
+		// Wait for these new processes to start.
+		procCount += int(math.Pow(2, 3) - 1)
 		if err := waitForProcessCount(containers[1], procCount); err != nil {
 			t.Fatal(err)
 		}
