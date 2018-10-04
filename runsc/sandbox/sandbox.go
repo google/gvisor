@@ -475,6 +475,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			}
 			s.Chroot = chroot // Remember path so it can cleaned up.
 			cmd.SysProcAttr.Chroot = chroot
+			cmd.Dir = "/"
 			cmd.Args[0] = "/runsc"
 			cmd.Path = "/runsc"
 		} else {

@@ -35,6 +35,11 @@ bazel build //...
 runtime=runsc_test_$((RANDOM))
 sudo -n ./runsc/test/install.sh --runtime ${runtime}
 
+# Best effort to uninstall the runtime
+uninstallRuntime() {
+  sudo -n ./runsc/test/install.sh -u --runtime ${runtime}
+}
+
 # Run the tests and upload results.
 #
 # We turn off "-e" flag because we must move the log files even if the test
@@ -43,6 +48,7 @@ set +e
 bazel test --test_output=errors //...
 exit_code=${?}
 
+# Execute local tests that require docker.
 if [[ ${exit_code} -eq 0 ]]; then
   # These names are used to exclude tests not supported in certain
   # configuration, e.g. save/restore not supported with hostnet.
@@ -59,8 +65,21 @@ if [[ ${exit_code} -eq 0 ]]; then
   done
 fi
 
-# Best effort to uninstall
-sudo -n ./runsc/test/install.sh -u --runtime ${runtime}
+# Execute local tests that require superuser.
+if [[ ${exit_code} -eq 0 ]]; then
+  bazel build //runsc/test/root:root_test
+  root_test=$(find -L ./bazel-bin/ -executable -type f -name root_test | grep __main__)
+  if [[ ! -f "${root_test}" ]]; then
+    uninstallRuntime
+    echo "root_test executable not found"
+    exit 1
+  fi
+  sudo -n -E RUNSC_RUNTIME=${runtime} ${root_test}
+  exit_code=${?}
+fi
+
+uninstallRuntime
+
 set -e
 
 # Find and rename all test xml and log files so that Sponge can pick them up.

@@ -12,18 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package image provides end-to-end integration tests for runsc. These tests require
-// docker and runsc to be installed on the machine. To set it up, run:
-//
-//     ./runsc/test/install.sh [--runtime <name>]
-//
-// The tests expect the runtime name to be provided in the RUNSC_RUNTIME
-// environment variable (default: runsc-test).
+// Package integration provides end-to-end integration tests for runsc.
 //
 // Each test calls docker commands to start up a container, and tests that it is
-// behaving properly, with various runsc commands. The container is killed and deleted
-// at the end.
-
+// behaving properly, with various runsc commands. The container is killed and
+// deleted at the end.
+//
+// Setup instruction in runsc/test/README.md.
 package integration
 
 import (
@@ -184,7 +179,7 @@ func TestConnectToSelf(t *testing.T) {
 	}
 }
 
-func MainTest(m *testing.M) {
+func TestMain(m *testing.M) {
 	testutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())
 }

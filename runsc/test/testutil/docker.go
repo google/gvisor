@@ -267,6 +267,19 @@ func (d *Docker) FindPort(sandboxPort int) (int, error) {
 	return port, nil
 }
 
+// SandboxPid returns the PID to the sandbox process.
+func (d *Docker) SandboxPid() (int, error) {
+	out, err := do("inspect", "-f={{.State.Pid}}", d.Name)
+	if err != nil {
+		return -1, fmt.Errorf("error retrieving pid: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSuffix(string(out), "\n"))
+	if err != nil {
+		return -1, fmt.Errorf("error parsing pid %q: %v", out, err)
+	}
+	return pid, nil
+}
+
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches
 // for the given pattern.
 func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, error) {

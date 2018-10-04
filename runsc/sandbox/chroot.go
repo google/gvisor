@@ -55,7 +55,7 @@ func setUpChroot() (string, error) {
 	log.Infof("Setting up sandbox chroot in %q", chroot)
 
 	// Mount /proc.
-	if err := mountInChroot(chroot, "proc", "/proc", "proc", 0); err != nil {
+	if err := mountInChroot(chroot, "proc", "/proc", "proc", syscall.MS_NOSUID|syscall.MS_NODEV|syscall.MS_NOEXEC); err != nil {
 		return "", fmt.Errorf("error mounting proc in chroot: %v", err)
 	}
 
