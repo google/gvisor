@@ -85,6 +85,9 @@ type File struct {
 	// async handles O_ASYNC notifications.
 	async FileAsync
 
+	// saving indicates that this file is in the process of being saved.
+	saving bool `state:"nosave"`
+
 	// mu is dual-purpose: first, to make read(2) and write(2) thread-safe
 	// in conformity with POSIX, and second, to cancel operations before they
 	// begin in response to interruptions (i.e. signals).
@@ -127,10 +130,15 @@ func (f *File) DecRef() {
 		// Release a reference on the Dirent.
 		f.Dirent.DecRef()
 
+		// Only unregister if we are currently registered. There is nothing
+		// to register if f.async is nil (this happens when async mode is
+		// enabled without setting an owner). Also, we unregister during
+		// save.
 		f.flagsMu.Lock()
-		if f.flags.Async && f.async != nil {
+		if !f.saving && f.flags.Async && f.async != nil {
 			f.async.Unregister(f)
 		}
+		f.async = nil
 		f.flagsMu.Unlock()
 	})
 }

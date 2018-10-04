@@ -113,6 +113,8 @@ type EntryCallback interface {
 // Entry represents a waiter that can be add to the a wait queue. It can
 // only be in one queue at a time, and is added "intrusively" to the queue with
 // no extra memory allocations.
+//
+// +stateify savable
 type Entry struct {
 	// Context stores any state the waiter may wish to store in the entry
 	// itself, which may be used at wake up time.

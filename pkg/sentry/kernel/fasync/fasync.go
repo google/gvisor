@@ -32,8 +32,10 @@ func New() fs.FileAsync {
 }
 
 // FileAsync sends signals when the registered file is ready for IO.
+//
+// +stateify savable
 type FileAsync struct {
-	mu        sync.Mutex
+	mu        sync.Mutex `state:"nosave"`
 	e         waiter.Entry
 	requester *auth.Credentials
 

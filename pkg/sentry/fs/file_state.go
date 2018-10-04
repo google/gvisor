@@ -14,7 +14,18 @@
 
 package fs
 
+// beforeSave is invoked by stateify.
+func (f *File) beforeSave() {
+	f.saving = true
+	if f.flags.Async && f.async != nil {
+		f.async.Unregister(f)
+	}
+}
+
 // afterLoad is invoked by stateify.
 func (f *File) afterLoad() {
 	f.mu.Init()
+	if f.flags.Async && f.async != nil {
+		f.async.Register(f)
+	}
 }
