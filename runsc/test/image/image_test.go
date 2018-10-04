@@ -303,6 +303,27 @@ func TestRuby(t *testing.T) {
 	}
 }
 
+func TestStdio(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("stdio-test")
+
+	wantStdout := "hello stdout"
+	wantStderr := "bonjour stderr"
+	cmd := fmt.Sprintf("echo %q; echo %q 1>&2;", wantStdout, wantStderr)
+	if err := d.Run("alpine", "/bin/sh", "-c", cmd); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	for _, want := range []string{wantStdout, wantStderr} {
+		if _, err := d.WaitForOutput(want, 5*time.Second); err != nil {
+			t.Fatalf("docker didn't get output %q : %v", want, err)
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	testutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())

@@ -175,14 +175,30 @@ func main() {
 		cmd.Fatalf("invalid log format %q, must be 'json' or 'text'", *logFormat)
 	}
 
+	subcommand := flag.CommandLine.Arg(0)
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
+
+		// Quick sanity check to make sure no other commands get passed
+		// a log fd (they should use log dir instead).
+		if subcommand != "boot" {
+			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' command, but was passed to %q", subcommand)
+		}
+
+		// If we are the boot process, then we own our stdio FDs and
+		// can do what we want with them. Since Docker and Containerd
+		// both eat boot's stderr, we dup our stderr to the provided
+		// log FD so that panics will appear in the logs, rather than
+		// just disappear.
+		if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
+			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
+		}
+
 		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
 	} else if *debugLogDir != "" {
 		if err := os.MkdirAll(*debugLogDir, 0775); err != nil {
 			cmd.Fatalf("error creating dir %q: %v", *debugLogDir, err)
 		}
-		subcommand := flag.CommandLine.Arg(0)
 		f, err := specutils.DebugLogFile(*debugLogDir, subcommand)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLogDir, err)
