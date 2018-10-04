@@ -154,6 +154,12 @@ func (sf *slaveFileOperations) Ioctl(ctx context.Context, io usermem.IO, args ar
 		return 0, sf.si.t.ld.windowSize(ctx, io, args)
 	case linux.TIOCSWINSZ:
 		return 0, sf.si.t.ld.setWindowSize(ctx, io, args)
+	case linux.TIOCSCTTY:
+		// Make the given terminal the controlling terminal of the
+		// calling process.
+		// TODO: Implement once we have support for job
+		// control.
+		return 0, nil
 	default:
 		return 0, syserror.ENOTTY
 	}
