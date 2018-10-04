@@ -60,6 +60,11 @@ func (a *FileAsync) Callback(e *waiter.Entry) {
 	if tg != nil {
 		t = tg.Leader()
 	}
+	if t == nil {
+		// No recipient has been registered.
+		a.mu.Unlock()
+		return
+	}
 	c := t.Credentials()
 	// Logic from sigio_perm in fs/fcntl.c.
 	if a.requester.EffectiveKUID == 0 ||
