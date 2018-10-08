@@ -200,7 +200,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		ipcns = NewIPCNamespace(userns)
 	}
 
-	tc, err := t.tc.Fork(t, !opts.NewAddressSpace)
+	tc, err := t.tc.Fork(t, t.k, !opts.NewAddressSpace)
 	if err != nil {
 		return 0, nil, err
 	}

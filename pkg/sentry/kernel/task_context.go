@@ -72,7 +72,7 @@ func (tc *TaskContext) release() {
 // TaskContext shares an address space with the original; otherwise, the copied
 // TaskContext has an independent address space that is initially a duplicate
 // of the original's.
-func (tc *TaskContext) Fork(ctx context.Context, shareAddressSpace bool) (*TaskContext, error) {
+func (tc *TaskContext) Fork(ctx context.Context, k *Kernel, shareAddressSpace bool) (*TaskContext, error) {
 	newTC := &TaskContext{
 		Arch: tc.Arch.Fork(),
 		st:   tc.st,
@@ -93,8 +93,7 @@ func (tc *TaskContext) Fork(ctx context.Context, shareAddressSpace bool) (*TaskC
 			return nil, err
 		}
 		newTC.MemoryManager = newMM
-		// TODO: revisit when shmem is supported.
-		newTC.fu = futex.NewManager()
+		newTC.fu = k.futexes.Fork()
 	}
 	return newTC, nil
 }
@@ -114,14 +113,6 @@ func (t *Task) Arch() arch.Context {
 // must be locked.
 func (t *Task) MemoryManager() *mm.MemoryManager {
 	return t.tc.MemoryManager
-}
-
-// Futex returns t's futex manager.
-//
-// Preconditions: The caller must be running on the task goroutine, or t.mu
-// must be locked.
-func (t *Task) Futex() *futex.Manager {
-	return t.tc.fu
 }
 
 // SyscallTable returns t's syscall table.
@@ -175,7 +166,7 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, r
 		Name:          name,
 		Arch:          ac,
 		MemoryManager: m,
-		fu:            futex.NewManager(),
+		fu:            k.futexes.Fork(),
 		st:            st,
 	}, nil
 }

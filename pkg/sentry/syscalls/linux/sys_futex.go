@@ -21,114 +21,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
-
-// futexChecker is a futex.Checker that uses a Task's MemoryManager.
-type futexChecker struct {
-	t *kernel.Task
-}
-
-// Check checks if the address contains the given value, and returns
-// syserror.EAGAIN if it doesn't. See Checker interface in futex package
-// for more information.
-func (f futexChecker) Check(addr uintptr, val uint32) error {
-	in := f.t.CopyScratchBuffer(4)
-	_, err := f.t.CopyInBytes(usermem.Addr(addr), in)
-	if err != nil {
-		return err
-	}
-	nval := usermem.ByteOrder.Uint32(in)
-	if val != nval {
-		return syserror.EAGAIN
-	}
-	return nil
-}
-
-func (f futexChecker) atomicOp(addr uintptr, op func(uint32) uint32) (uint32, error) {
-	in := f.t.CopyScratchBuffer(4)
-	_, err := f.t.CopyInBytes(usermem.Addr(addr), in)
-	if err != nil {
-		return 0, err
-	}
-	o := usermem.ByteOrder.Uint32(in)
-	mm := f.t.MemoryManager()
-	for {
-		n := op(o)
-		r, err := mm.CompareAndSwapUint32(f.t, usermem.Addr(addr), o, n, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-		if err != nil {
-			return 0, err
-		}
-
-		if r == o {
-			return o, nil
-		}
-		o = r
-	}
-}
-
-// Op performs an operation on addr and returns a result based on the operation.
-func (f futexChecker) Op(addr uintptr, opIn uint32) (bool, error) {
-	op := (opIn >> 28) & 0xf
-	cmp := (opIn >> 24) & 0xf
-	opArg := (opIn >> 12) & 0xfff
-	cmpArg := opIn & 0xfff
-
-	if op&linux.FUTEX_OP_OPARG_SHIFT != 0 {
-		opArg = 1 << opArg
-		op &^= linux.FUTEX_OP_OPARG_SHIFT // clear flag
-	}
-
-	var oldVal uint32
-	var err error
-	switch op {
-	case linux.FUTEX_OP_SET:
-		oldVal, err = f.t.MemoryManager().SwapUint32(f.t, usermem.Addr(addr), opArg, usermem.IOOpts{
-			AddressSpaceActive: true,
-		})
-	case linux.FUTEX_OP_ADD:
-		oldVal, err = f.atomicOp(addr, func(a uint32) uint32 {
-			return a + opArg
-		})
-	case linux.FUTEX_OP_OR:
-		oldVal, err = f.atomicOp(addr, func(a uint32) uint32 {
-			return a | opArg
-		})
-	case linux.FUTEX_OP_ANDN:
-		oldVal, err = f.atomicOp(addr, func(a uint32) uint32 {
-			return a & ^opArg
-		})
-	case linux.FUTEX_OP_XOR:
-		oldVal, err = f.atomicOp(addr, func(a uint32) uint32 {
-			return a ^ opArg
-		})
-	default:
-		return false, syserror.ENOSYS
-	}
-	if err != nil {
-		return false, err
-	}
-
-	switch cmp {
-	case linux.FUTEX_OP_CMP_EQ:
-		return oldVal == cmpArg, nil
-	case linux.FUTEX_OP_CMP_NE:
-		return oldVal != cmpArg, nil
-	case linux.FUTEX_OP_CMP_LT:
-		return oldVal < cmpArg, nil
-	case linux.FUTEX_OP_CMP_LE:
-		return oldVal <= cmpArg, nil
-	case linux.FUTEX_OP_CMP_GT:
-		return oldVal > cmpArg, nil
-	case linux.FUTEX_OP_CMP_GE:
-		return oldVal >= cmpArg, nil
-	default:
-		return false, syserror.ENOSYS
-	}
-}
 
 // futexWaitRestartBlock encapsulates the state required to restart futex(2)
 // via restart_syscall(2).
@@ -140,13 +34,14 @@ type futexWaitRestartBlock struct {
 	// addr stored as uint64 since uintptr is not save-able.
 	addr uint64
 
-	val  uint32
-	mask uint32
+	private bool
+	val     uint32
+	mask    uint32
 }
 
 // Restart implements kernel.SyscallRestartBlock.Restart.
 func (f *futexWaitRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
-	return futexWaitDuration(t, f.duration, false, uintptr(f.addr), f.val, f.mask)
+	return futexWaitDuration(t, f.duration, false, uintptr(f.addr), f.private, f.val, f.mask)
 }
 
 // futexWaitAbsolute performs a FUTEX_WAIT_BITSET, blocking until the wait is
@@ -156,9 +51,9 @@ func (f *futexWaitRestartBlock) Restart(t *kernel.Task) (uintptr, error) {
 //
 // If blocking is interrupted, the syscall is restarted with the original
 // arguments.
-func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, forever bool, addr uintptr, val, mask uint32) (uintptr, error) {
+func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, forever bool, addr uintptr, private bool, val, mask uint32) (uintptr, error) {
 	w := t.FutexWaiter()
-	err := t.Futex().WaitPrepare(w, futexChecker{t}, addr, val, mask)
+	err := t.Futex().WaitPrepare(w, t.FutexChecker(), addr, private, val, mask)
 	if err != nil {
 		return 0, err
 	}
@@ -192,9 +87,9 @@ func futexWaitAbsolute(t *kernel.Task, clockRealtime bool, ts linux.Timespec, fo
 // syscall. If forever is true, the syscall is restarted with the original
 // arguments. If forever is false, duration is a relative timeout and the
 // syscall is restarted with the remaining timeout.
-func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, addr uintptr, val, mask uint32) (uintptr, error) {
+func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, addr uintptr, private bool, val, mask uint32) (uintptr, error) {
 	w := t.FutexWaiter()
-	err := t.Futex().WaitPrepare(w, futexChecker{t}, addr, val, mask)
+	err := t.Futex().WaitPrepare(w, t.FutexChecker(), addr, private, val, mask)
 	if err != nil {
 		return 0, err
 	}
@@ -222,6 +117,7 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	t.SetSyscallRestartBlock(&futexWaitRestartBlock{
 		duration: remaining,
 		addr:     uint64(addr),
+		private:  private,
 		val:      val,
 		mask:     mask,
 	})
@@ -243,6 +139,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	addr := uintptr(uaddr)
 	naddr := uintptr(uaddr2)
 	cmd := futexOp &^ (linux.FUTEX_PRIVATE_FLAG | linux.FUTEX_CLOCK_REALTIME)
+	private := (futexOp & linux.FUTEX_PRIVATE_FLAG) != 0
 	clockRealtime := (futexOp & linux.FUTEX_CLOCK_REALTIME) == linux.FUTEX_CLOCK_REALTIME
 	mask := uint32(val3)
 
@@ -268,7 +165,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			if !forever {
 				timeoutDur = time.Duration(timespec.ToNsecCapped()) * time.Nanosecond
 			}
-			n, err := futexWaitDuration(t, timeoutDur, forever, addr, uint32(val), mask)
+			n, err := futexWaitDuration(t, timeoutDur, forever, addr, private, uint32(val), mask)
 			return n, nil, err
 
 		case linux.FUTEX_WAIT_BITSET:
@@ -277,7 +174,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			if mask == 0 {
 				return 0, nil, syserror.EINVAL
 			}
-			n, err := futexWaitAbsolute(t, clockRealtime, timespec, forever, addr, uint32(val), mask)
+			n, err := futexWaitAbsolute(t, clockRealtime, timespec, forever, addr, private, uint32(val), mask)
 			return n, nil, err
 		default:
 			panic("unreachable")
@@ -291,23 +188,23 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if mask == 0 {
 			return 0, nil, syserror.EINVAL
 		}
-		n, err := t.Futex().Wake(addr, mask, val)
+		n, err := t.Futex().Wake(t.FutexChecker(), addr, private, mask, val)
 		return uintptr(n), nil, err
 
 	case linux.FUTEX_REQUEUE:
-		n, err := t.Futex().Requeue(addr, naddr, val, nreq)
+		n, err := t.Futex().Requeue(t.FutexChecker(), addr, naddr, private, val, nreq)
 		return uintptr(n), nil, err
 
 	case linux.FUTEX_CMP_REQUEUE:
 		// 'val3' contains the value to be checked at 'addr' and
 		// 'val' is the number of waiters that should be woken up.
 		nval := uint32(val3)
-		n, err := t.Futex().RequeueCmp(futexChecker{t}, addr, nval, naddr, val, nreq)
+		n, err := t.Futex().RequeueCmp(t.FutexChecker(), addr, naddr, private, nval, val, nreq)
 		return uintptr(n), nil, err
 
 	case linux.FUTEX_WAKE_OP:
 		op := uint32(val3)
-		n, err := t.Futex().WakeOp(futexChecker{t}, addr, naddr, val, nreq, op)
+		n, err := t.Futex().WakeOp(t.FutexChecker(), addr, naddr, private, val, nreq, op)
 		return uintptr(n), nil, err
 
 	case linux.FUTEX_LOCK_PI, linux.FUTEX_UNLOCK_PI, linux.FUTEX_TRYLOCK_PI, linux.FUTEX_WAIT_REQUEUE_PI, linux.FUTEX_CMP_REQUEUE_PI:

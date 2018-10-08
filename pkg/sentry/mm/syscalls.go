@@ -20,6 +20,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
@@ -791,6 +792,40 @@ func (mm *MemoryManager) Sync(ctx context.Context, addr usermem.Addr, length uin
 		return syserror.ENOMEM
 	}
 	return nil
+}
+
+// GetSharedFutexKey is used by kernel.futexChecker.GetSharedKey to implement
+// futex.Checker.GetSharedKey.
+func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Addr) (futex.Key, error) {
+	ar, ok := addr.ToRange(4) // sizeof(int32)
+	if !ok {
+		return futex.Key{}, syserror.EFAULT
+	}
+
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	vseg, _, err := mm.getVMAsLocked(ctx, ar, usermem.Read, false)
+	if err != nil {
+		return futex.Key{}, err
+	}
+	vma := vseg.ValuePtr()
+
+	if vma.private {
+		return futex.Key{
+			Kind:   futex.KindSharedPrivate,
+			Offset: uint64(addr),
+		}, nil
+	}
+
+	if vma.id != nil {
+		vma.id.IncRef()
+	}
+	return futex.Key{
+		Kind:            futex.KindSharedMappable,
+		Mappable:        vma.mappable,
+		MappingIdentity: vma.id,
+		Offset:          vseg.mappableOffsetAt(addr),
+	}, nil
 }
 
 // VirtualMemorySize returns the combined length in bytes of all mappings in

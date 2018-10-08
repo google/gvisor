@@ -95,6 +95,7 @@ go_library(
         "task_context.go",
         "task_exec.go",
         "task_exit.go",
+        "task_futex.go",
         "task_identity.go",
         "task_list.go",
         "task_log.go",

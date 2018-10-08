@@ -49,6 +49,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/epoll"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
@@ -107,6 +108,11 @@ type Kernel struct {
 	// nil, and must be set by calling Kernel.SetRootMountNamespace before
 	// Kernel.CreateProcess can succeed.
 	mounts *fs.MountNamespace
+
+	// futexes is the "root" futex.Manager, from which all others are forked.
+	// This is necessary to ensure that shared futexes are coherent across all
+	// tasks, including those created by CreateProcess.
+	futexes *futex.Manager
 
 	// globalInit is the thread group whose leader has ID 1 in the root PID
 	// namespace. globalInit is stored separately so that it is accessible even
@@ -254,6 +260,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.vdso = args.Vdso
 	k.realtimeClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Realtime}
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
+	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 
 	return nil

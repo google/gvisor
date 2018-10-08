@@ -24,16 +24,12 @@ import (
 	"unsafe"
 )
 
-const (
-	testMutexSize            = 4
-	testMutexLocked   uint32 = 1
-	testMutexUnlocked uint32 = 0
-)
-
 // testData implements the Checker interface, and allows us to
 // treat the address passed for futex operations as an index in
 // a byte slice for testing simplicity.
 type testData []byte
+
+const sizeofInt32 = 4
 
 func newTestData(size uint) testData {
 	return make([]byte, size)
@@ -49,6 +45,405 @@ func (t testData) Check(addr uintptr, val uint32) error {
 func (t testData) Op(addr uintptr, val uint32) (bool, error) {
 	return val == 0, nil
 }
+
+func (t testData) GetSharedKey(addr uintptr) (Key, error) {
+	return Key{
+		Kind:   KindSharedMappable,
+		Offset: uint64(addr),
+	}, nil
+}
+
+func futexKind(private bool) string {
+	if private {
+		return "private"
+	}
+	return "shared"
+}
+
+func newPreparedTestWaiter(t *testing.T, m *Manager, c Checker, addr uintptr, private bool, val uint32, bitmask uint32) *Waiter {
+	w := NewWaiter()
+	if err := m.WaitPrepare(w, c, addr, private, val, bitmask); err != nil {
+		t.Fatalf("WaitPrepare failed: %v", err)
+	}
+	return w
+}
+
+func TestFutexWake(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(sizeofInt32)
+
+			// Start waiting for wakeup.
+			w := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w)
+
+			// Perform a wakeup.
+			if n, err := m.Wake(d, 0, private, ^uint32(0), 1); err != nil || n != 1 {
+				t.Errorf("Wake: got (%d, %v), wanted (1, nil)", n, err)
+			}
+
+			// Expect the waiter to have been woken.
+			if !w.woken() {
+				t.Error("waiter not woken")
+			}
+		})
+	}
+}
+
+func TestFutexWakeBitmask(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(sizeofInt32)
+
+			// Start waiting for wakeup.
+			w := newPreparedTestWaiter(t, m, d, 0, private, 0, 0x0000ffff)
+			defer m.WaitComplete(w)
+
+			// Perform a wakeup using the wrong bitmask.
+			if n, err := m.Wake(d, 0, private, 0xffff0000, 1); err != nil || n != 0 {
+				t.Errorf("Wake with non-matching bitmask: got (%d, %v), wanted (0, nil)", n, err)
+			}
+
+			// Expect the waiter to still be waiting.
+			if w.woken() {
+				t.Error("waiter woken unexpectedly")
+			}
+
+			// Perform a wakeup using the right bitmask.
+			if n, err := m.Wake(d, 0, private, 0x00000001, 1); err != nil || n != 1 {
+				t.Errorf("Wake with matching bitmask: got (%d, %v), wanted (1, nil)", n, err)
+			}
+
+			// Expect that the waiter was woken.
+			if !w.woken() {
+				t.Error("waiter not woken")
+			}
+		})
+	}
+}
+
+func TestFutexWakeTwo(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(sizeofInt32)
+
+			// Start three waiters waiting for wakeup.
+			var ws [3]*Waiter
+			for i := range ws {
+				ws[i] = newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+				defer m.WaitComplete(ws[i])
+			}
+
+			// Perform two wakeups.
+			const wakeups = 2
+			if n, err := m.Wake(d, 0, private, ^uint32(0), 2); err != nil || n != wakeups {
+				t.Errorf("Wake: got (%d, %v), wanted (%d, nil)", n, err, wakeups)
+			}
+
+			// Expect that exactly two waiters were woken.
+			// We don't get guarantees about exactly which two,
+			// (although we expect them to be w1 and w2).
+			awake := 0
+			for i := range ws {
+				if ws[i].woken() {
+					awake++
+				}
+			}
+			if awake != wakeups {
+				t.Errorf("got %d woken waiters, wanted %d", awake, wakeups)
+			}
+		})
+	}
+}
+
+func TestFutexWakeUnrelated(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(2 * sizeofInt32)
+
+			// Start two waiters waiting for wakeup on different addresses.
+			w1 := newPreparedTestWaiter(t, m, d, 0*sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, 1*sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Perform two wakeups on the second address.
+			if n, err := m.Wake(d, 1*sizeofInt32, private, ^uint32(0), 2); err != nil || n != 1 {
+				t.Errorf("Wake: got (%d, %v), wanted (1, nil)", n, err)
+			}
+
+			// Expect that only the second waiter was woken.
+			if w1.woken() {
+				t.Error("w1 woken unexpectedly")
+			}
+			if !w2.woken() {
+				t.Error("w2 not woken")
+			}
+		})
+	}
+}
+
+func TestWakeOpEmpty(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(2 * sizeofInt32)
+
+			// Perform wakeups with no waiters.
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 10, 10, 0); err != nil || n != 0 {
+				t.Fatalf("WakeOp: got (%d, %v), wanted (0, nil)", n, err)
+			}
+		})
+	}
+}
+
+func TestWakeOpFirstNonEmpty(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add two waiters on address 0.
+			w1 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Perform 10 wakeups on address 0.
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 10, 0, 0); err != nil || n != 2 {
+				t.Errorf("WakeOp: got (%d, %v), wanted (2, nil)", n, err)
+			}
+
+			// Expect that both waiters were woken.
+			if !w1.woken() {
+				t.Error("w1 not woken")
+			}
+			if !w2.woken() {
+				t.Error("w2 not woken")
+			}
+		})
+	}
+}
+
+func TestWakeOpSecondNonEmpty(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add two waiters on address sizeofInt32.
+			w1 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Perform 10 wakeups on address sizeofInt32 (contingent on
+			// d.Op(0), which should succeed).
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 0, 10, 0); err != nil || n != 2 {
+				t.Errorf("WakeOp: got (%d, %v), wanted (2, nil)", n, err)
+			}
+
+			// Expect that both waiters were woken.
+			if !w1.woken() {
+				t.Error("w1 not woken")
+			}
+			if !w2.woken() {
+				t.Error("w2 not woken")
+			}
+		})
+	}
+}
+
+func TestWakeOpSecondNonEmptyFailingOp(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add two waiters on address sizeofInt32.
+			w1 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Perform 10 wakeups on address sizeofInt32 (contingent on
+			// d.Op(1), which should fail).
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 0, 10, 1); err != nil || n != 0 {
+				t.Errorf("WakeOp: got (%d, %v), wanted (0, nil)", n, err)
+			}
+
+			// Expect that neither waiter was woken.
+			if w1.woken() {
+				t.Error("w1 woken unexpectedly")
+			}
+			if w2.woken() {
+				t.Error("w2 woken unexpectedly")
+			}
+		})
+	}
+}
+
+func TestWakeOpAllNonEmpty(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add two waiters on address 0.
+			w1 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Add two waiters on address sizeofInt32.
+			w3 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w3)
+			w4 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w4)
+
+			// Perform 10 wakeups on address 0 (unconditionally), and 10
+			// wakeups on address sizeofInt32 (contingent on d.Op(0), which
+			// should succeed).
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 10, 10, 0); err != nil || n != 4 {
+				t.Errorf("WakeOp: got (%d, %v), wanted (4, nil)", n, err)
+			}
+
+			// Expect that all waiters were woken.
+			if !w1.woken() {
+				t.Error("w1 not woken")
+			}
+			if !w2.woken() {
+				t.Error("w2 not woken")
+			}
+			if !w3.woken() {
+				t.Error("w3 not woken")
+			}
+			if !w4.woken() {
+				t.Error("w4 not woken")
+			}
+		})
+	}
+}
+
+func TestWakeOpAllNonEmptyFailingOp(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add two waiters on address 0.
+			w1 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w1)
+			w2 := newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+			defer m.WaitComplete(w2)
+
+			// Add two waiters on address sizeofInt32.
+			w3 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w3)
+			w4 := newPreparedTestWaiter(t, m, d, sizeofInt32, private, 0, ^uint32(0))
+			defer m.WaitComplete(w4)
+
+			// Perform 10 wakeups on address 0 (unconditionally), and 10
+			// wakeups on address sizeofInt32 (contingent on d.Op(1), which
+			// should fail).
+			if n, err := m.WakeOp(d, 0, sizeofInt32, private, 10, 10, 1); err != nil || n != 2 {
+				t.Errorf("WakeOp: got (%d, %v), wanted (2, nil)", n, err)
+			}
+
+			// Expect that only the first two waiters were woken.
+			if !w1.woken() {
+				t.Error("w1 not woken")
+			}
+			if !w2.woken() {
+				t.Error("w2 not woken")
+			}
+			if w3.woken() {
+				t.Error("w3 woken unexpectedly")
+			}
+			if w4.woken() {
+				t.Error("w4 woken unexpectedly")
+			}
+		})
+	}
+}
+
+func TestWakeOpSameAddress(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add four waiters on address 0.
+			var ws [4]*Waiter
+			for i := range ws {
+				ws[i] = newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+				defer m.WaitComplete(ws[i])
+			}
+
+			// Perform 1 wakeup on address 0 (unconditionally), and 1 wakeup
+			// on address 0 (contingent on d.Op(0), which should succeed).
+			const wakeups = 2
+			if n, err := m.WakeOp(d, 0, 0, private, 1, 1, 0); err != nil || n != wakeups {
+				t.Errorf("WakeOp: got (%d, %v), wanted (%d, nil)", n, err, wakeups)
+			}
+
+			// Expect that exactly two waiters were woken.
+			awake := 0
+			for i := range ws {
+				if ws[i].woken() {
+					awake++
+				}
+			}
+			if awake != wakeups {
+				t.Errorf("got %d woken waiters, wanted %d", awake, wakeups)
+			}
+		})
+	}
+}
+
+func TestWakeOpSameAddressFailingOp(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		t.Run(futexKind(private), func(t *testing.T) {
+			m := NewManager()
+			d := newTestData(8)
+
+			// Add four waiters on address 0.
+			var ws [4]*Waiter
+			for i := range ws {
+				ws[i] = newPreparedTestWaiter(t, m, d, 0, private, 0, ^uint32(0))
+				defer m.WaitComplete(ws[i])
+			}
+
+			// Perform 1 wakeup on address 0 (unconditionally), and 1 wakeup
+			// on address 0 (contingent on d.Op(1), which should fail).
+			const wakeups = 1
+			if n, err := m.WakeOp(d, 0, 0, private, 1, 1, 1); err != nil || n != wakeups {
+				t.Errorf("WakeOp: got (%d, %v), wanted (%d, nil)", n, err, wakeups)
+			}
+
+			// Expect that exactly one waiter was woken.
+			awake := 0
+			for i := range ws {
+				if ws[i].woken() {
+					awake++
+				}
+			}
+			if awake != wakeups {
+				t.Errorf("got %d woken waiters, wanted %d", awake, wakeups)
+			}
+		})
+	}
+}
+
+const (
+	testMutexSize            = sizeofInt32
+	testMutexLocked   uint32 = 1
+	testMutexUnlocked uint32 = 0
+)
 
 // testMutex ties together a testData slice, an address, and a
 // futex manager in order to implement the sync.Locker interface.
@@ -70,7 +465,7 @@ func (t *testMutex) Lock() {
 	for {
 		// Attempt to grab the lock.
 		if atomic.CompareAndSwapUint32(
-			((*uint32)(unsafe.Pointer(&t.d[t.a]))),
+			(*uint32)(unsafe.Pointer(&t.d[t.a])),
 			testMutexUnlocked,
 			testMutexLocked) {
 			// Lock held.
@@ -79,7 +474,7 @@ func (t *testMutex) Lock() {
 
 		// Wait for it to be "not locked".
 		w := NewWaiter()
-		err := t.m.WaitPrepare(w, t.d, t.a, testMutexLocked, ^uint32(0))
+		err := t.m.WaitPrepare(w, t.d, t.a, true, testMutexLocked, ^uint32(0))
 		if err == syscall.EAGAIN {
 			continue
 		}
@@ -96,122 +491,10 @@ func (t *testMutex) Lock() {
 // This will notify any waiters via the futex manager.
 func (t *testMutex) Unlock() {
 	// Unlock.
-	atomic.StoreUint32(((*uint32)(unsafe.Pointer(&t.d[t.a]))), testMutexUnlocked)
+	atomic.StoreUint32((*uint32)(unsafe.Pointer(&t.d[t.a])), testMutexUnlocked)
 
 	// Notify all waiters.
-	t.m.Wake(t.a, ^uint32(0), math.MaxInt32)
-}
-
-func TestFutexWake(t *testing.T) {
-	m := NewManager()
-	d := newTestData(testMutexSize)
-
-	// Wait for it to be locked.
-	// (This won't trigger the wake in testMutex)
-	w := NewWaiter()
-	m.WaitPrepare(w, d, 0, testMutexUnlocked, ^uint32(0))
-
-	// Wake the single thread.
-	if _, err := m.Wake(0, ^uint32(0), 1); err != nil {
-		t.Error("wake error:", err)
-	}
-
-	<-w.C
-	m.WaitComplete(w)
-}
-
-func TestFutexWakeBitmask(t *testing.T) {
-	m := NewManager()
-	d := newTestData(testMutexSize)
-
-	// Wait for it to be locked.
-	// (This won't trigger the wake in testMutex)
-	w := NewWaiter()
-	m.WaitPrepare(w, d, 0, testMutexUnlocked, 0x0000ffff)
-
-	// Wake the single thread, not using the bitmask.
-	if _, err := m.Wake(0, 0xffff0000, 1); err != nil {
-		t.Error("wake non-matching bitmask error:", err)
-	}
-
-	select {
-	case <-w.C:
-		t.Error("w is alive?")
-	default:
-	}
-
-	// Now use a matching bitmask.
-	if _, err := m.Wake(0, 0x00000001, 1); err != nil {
-		t.Error("wake matching bitmask error:", err)
-	}
-
-	<-w.C
-	m.WaitComplete(w)
-}
-
-func TestFutexWakeTwo(t *testing.T) {
-	m := NewManager()
-	d := newTestData(testMutexSize)
-
-	// Wait for it to be locked.
-	// (This won't trigger the wake in testMutex)
-	w1 := NewWaiter()
-	w2 := NewWaiter()
-	w3 := NewWaiter()
-	m.WaitPrepare(w1, d, 0, testMutexUnlocked, ^uint32(0))
-	m.WaitPrepare(w2, d, 0, testMutexUnlocked, ^uint32(0))
-	m.WaitPrepare(w3, d, 0, testMutexUnlocked, ^uint32(0))
-
-	// Wake exactly two threads.
-	if _, err := m.Wake(0, ^uint32(0), 2); err != nil {
-		t.Error("wake error:", err)
-	}
-
-	// Ensure exactly two are alive.
-	// We don't get guarantees about exactly which two,
-	// (although we expect them to be w1 and w2).
-	awake := 0
-	for {
-		select {
-		case <-w1.C:
-			awake++
-		case <-w2.C:
-			awake++
-		case <-w3.C:
-			awake++
-		default:
-			if awake != 2 {
-				t.Error("awake != 2?")
-			}
-
-			// Success.
-			return
-		}
-	}
-}
-
-func TestFutexWakeUnrelated(t *testing.T) {
-	m := NewManager()
-	d := newTestData(2 * testMutexSize)
-
-	// Wait for it to be locked.
-	w1 := NewWaiter()
-	w2 := NewWaiter()
-	m.WaitPrepare(w1, d, 0*testMutexSize, testMutexUnlocked, ^uint32(0))
-	m.WaitPrepare(w2, d, 1*testMutexSize, testMutexUnlocked, ^uint32(0))
-
-	// Wake only the second one.
-	if _, err := m.Wake(1*testMutexSize, ^uint32(0), 2); err != nil {
-		t.Error("wake error:", err)
-	}
-
-	// Ensure only r2 is alive.
-	select {
-	case <-w1.C:
-		t.Error("w1 is alive?")
-	default:
-	}
-	<-w2.C
+	t.m.Wake(t.d, t.a, true, ^uint32(0), math.MaxInt32)
 }
 
 // This function was shamelessly stolen from mutex_test.go.
@@ -224,7 +507,7 @@ func HammerMutex(l sync.Locker, loops int, cdone chan bool) {
 	cdone <- true
 }
 
-func TestFutexStress(t *testing.T) {
+func TestMutexStress(t *testing.T) {
 	m := NewManager()
 	d := newTestData(testMutexSize)
 	tm := newTestMutex(0*testMutexSize, d, m)
@@ -236,265 +519,5 @@ func TestFutexStress(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		<-c
-	}
-}
-
-func TestWakeOpEmpty(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 0)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 0 {
-		t.Fatalf("Invalid number of wakes: want 0, got %d", n)
-	}
-}
-
-func TestWakeOpFirstNonEmpty(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add two waiters on address 0.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	// Wake up all waiters on address 0.
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 0)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 2 {
-		t.Fatalf("Invalid number of wakes: want 2, got %d", n)
-	}
-}
-
-func TestWakeOpSecondNonEmpty(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add two waiters on address 4.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	// Wake up all waiters on address 4.
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 0)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 2 {
-		t.Fatalf("Invalid number of wakes: want 2, got %d", n)
-	}
-}
-
-func TestWakeOpSecondNonEmptyFailingOp(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add two waiters on address 4.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	// Wake up all waiters on address 4.
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 1)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 0 {
-		t.Fatalf("Invalid number of wakes: want 0, got %d", n)
-	}
-}
-
-func TestWakeOpAllNonEmpty(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add two waiters on address 0.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	// Add two waiters on address 4.
-	w3 := NewWaiter()
-	if err := m.WaitPrepare(w3, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w3)
-
-	w4 := NewWaiter()
-	if err := m.WaitPrepare(w4, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w4)
-
-	// Wake up all waiters on both addresses.
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 0)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 4 {
-		t.Fatalf("Invalid number of wakes: want 4, got %d", n)
-	}
-}
-
-func TestWakeOpAllNonEmptyFailingOp(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add two waiters on address 0.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	// Add two waiters on address 4.
-	w3 := NewWaiter()
-	if err := m.WaitPrepare(w3, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w3)
-
-	w4 := NewWaiter()
-	if err := m.WaitPrepare(w4, d, 4, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w4)
-
-	// Wake up all waiters on both addresses.
-	n, err := m.WakeOp(d, 0, 4, 10, 10, 1)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 2 {
-		t.Fatalf("Invalid number of wakes: want 2, got %d", n)
-	}
-}
-
-func TestWakeOpSameAddress(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add four waiters on address 0.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	w3 := NewWaiter()
-	if err := m.WaitPrepare(w3, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w3)
-
-	w4 := NewWaiter()
-	if err := m.WaitPrepare(w4, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w4)
-
-	// Use the same address, with one at most one waiter from each.
-	n, err := m.WakeOp(d, 0, 0, 1, 1, 0)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 2 {
-		t.Fatalf("Invalid number of wakes: want 2, got %d", n)
-	}
-}
-
-func TestWakeOpSameAddressFailingOp(t *testing.T) {
-	m := NewManager()
-	d := newTestData(8)
-
-	// Add four waiters on address 0.
-	w1 := NewWaiter()
-	if err := m.WaitPrepare(w1, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w1)
-
-	w2 := NewWaiter()
-	if err := m.WaitPrepare(w2, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w2)
-
-	w3 := NewWaiter()
-	if err := m.WaitPrepare(w3, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w3)
-
-	w4 := NewWaiter()
-	if err := m.WaitPrepare(w4, d, 0, 0, ^uint32(0)); err != nil {
-		t.Fatalf("WaitPrepare failed: %v", err)
-	}
-	defer m.WaitComplete(w4)
-
-	// Use the same address, with one at most one waiter from each.
-	n, err := m.WakeOp(d, 0, 0, 1, 1, 1)
-	if err != nil {
-		t.Fatalf("WakeOp failed: %v", err)
-	}
-
-	if n != 1 {
-		t.Fatalf("Invalid number of wakes: want 1, got %d", n)
 	}
 }
