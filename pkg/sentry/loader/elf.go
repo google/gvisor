@@ -19,7 +19,6 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
-	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -409,7 +408,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 				ctx.Infof("PT_INTERP path too small: %v", phdr.Filesz)
 				return loadedELF{}, syserror.ENOEXEC
 			}
-			if phdr.Filesz > syscall.PathMax {
+			if phdr.Filesz > linux.PATH_MAX {
 				ctx.Infof("PT_INTERP path too big: %v", phdr.Filesz)
 				return loadedELF{}, syserror.ENOEXEC
 			}

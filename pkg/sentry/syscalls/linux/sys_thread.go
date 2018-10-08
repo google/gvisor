@@ -76,7 +76,7 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	envvAddr := args[2].Pointer()
 
 	// Extract our arguments.
-	filename, err := t.CopyInString(filenameAddr, syscall.PathMax)
+	filename, err := t.CopyInString(filenameAddr, linux.PATH_MAX)
 	if err != nil {
 		return 0, nil, err
 	}

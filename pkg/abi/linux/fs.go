@@ -28,6 +28,12 @@ const (
 	V9FS_MAGIC            = 0x01021997
 )
 
+// Filesystem path limits, from uapi/linux/limits.h.
+const (
+	NAME_MAX = 255
+	PATH_MAX = 4096
+)
+
 // Statfs is struct statfs, from uapi/asm-generic/statfs.h.
 type Statfs struct {
 	// Type is one of the filesystem magic values, defined above.

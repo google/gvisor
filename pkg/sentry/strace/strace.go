@@ -133,7 +133,7 @@ func dump(t *kernel.Task, addr usermem.Addr, size uint, maximumBlobSize uint) st
 }
 
 func path(t *kernel.Task, addr usermem.Addr) string {
-	path, err := t.CopyInString(addr, syscall.PathMax)
+	path, err := t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return fmt.Sprintf("%#x (error decoding path: %s)", addr, err)
 	}

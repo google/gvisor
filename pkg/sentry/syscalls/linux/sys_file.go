@@ -115,7 +115,7 @@ func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func
 
 // copyInPath copies a path in.
 func copyInPath(t *kernel.Task, addr usermem.Addr, allowEmpty bool) (path string, dirPath bool, err error) {
-	path, err = t.CopyInString(addr, syscall.PathMax)
+	path, err = t.CopyInString(addr, linux.PATH_MAX)
 	if err != nil {
 		return "", false, err
 	}
@@ -1080,7 +1080,7 @@ func symlinkAt(t *kernel.Task, dirFD kdefs.FD, newAddr usermem.Addr, oldAddr use
 
 	// The oldPath is copied in verbatim. This is because the symlink
 	// will include all details, including trailing slashes.
-	oldPath, err := t.CopyInString(oldAddr, syscall.PathMax)
+	oldPath, err := t.CopyInString(oldAddr, linux.PATH_MAX)
 	if err != nil {
 		return err
 	}
