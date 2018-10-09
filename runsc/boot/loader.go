@@ -698,8 +698,6 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 // sendToFGProcess is true, then the signal will be sent to the foreground
 // process group in the same session that PID belongs to.
 func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess bool) error {
-	si := arch.SignalInfo{Signo: signo}
-
 	if pid <= 0 {
 		return fmt.Errorf("failed to signal container %q PID %d: PID must be positive", cid, pid)
 	}
@@ -718,7 +716,7 @@ func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess boo
 
 	if !sendToFGProcess {
 		// Send signal directly to exec process.
-		return ep.tg.SendSignal(&si)
+		return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
 	}
 
 	// Lookup foreground process group from the TTY for the given process,
@@ -731,11 +729,20 @@ func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess boo
 		// No foreground process group has been set. Signal the
 		// original thread group.
 		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, pid, pid)
-		return ep.tg.SendSignal(&si)
+		return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
 	}
 
-	// Send the signal.
-	return pg.Originator().SendSignal(&si)
+	// Send the signal to all processes in the process group.
+	var lastErr error
+	for _, tg := range l.k.TaskSet().Root.ThreadGroups() {
+		if tg.ProcessGroup() != pg {
+			continue
+		}
+		if err := tg.SendSignal(&arch.SignalInfo{Signo: signo}); err != nil {
+			lastErr = err
+		}
+	}
+	return lastErr
 }
 
 // signalContainer sends a signal to the root container process, or to all

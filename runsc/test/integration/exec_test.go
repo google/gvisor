@@ -81,16 +81,17 @@ func TestExecJobControl(t *testing.T) {
 	}
 	defer ptmx.Close()
 
-	// Call "sleep 100" in the shell.
-	if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
+	// Call "sleep 100 | cat" in the shell.  We pipe to cat so that there
+	// will be two processes in the foreground process group.
+	if _, err := ptmx.Write([]byte("sleep 100 | cat\n")); err != nil {
 		t.Fatalf("error writing to pty: %v", err)
 	}
 
 	// Give shell a few seconds to start executing the sleep.
 	time.Sleep(2 * time.Second)
 
-	// Send a ^C to the pty, which should kill sleep, but not the shell.
-	// \x03 is ASCII "end of text", which is the same as ^C.
+	// Send a ^C to the pty, which should kill sleep and cat, but not the
+	// shell.  \x03 is ASCII "end of text", which is the same as ^C.
 	if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
 		t.Fatalf("error writing to pty: %v", err)
 	}
