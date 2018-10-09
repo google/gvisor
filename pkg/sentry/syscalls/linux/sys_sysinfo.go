@@ -36,6 +36,7 @@ func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		Uptime:   t.Kernel().MonotonicClock().Now().Seconds(),
 		TotalRAM: totalSize,
 		FreeRAM:  totalSize - totalUsage,
+		Unit:     1,
 	}
 	_, err := t.CopyOut(addr, si)
 	return 0, nil, err

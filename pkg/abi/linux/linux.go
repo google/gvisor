@@ -31,6 +31,7 @@ type Sysinfo struct {
 	TotalSwap uint64
 	FreeSwap  uint64
 	Procs     uint16
+	_         [6]byte // Pad Procs to 64bits.
 	TotalHigh uint64
 	FreeHigh  uint64
 	Unit      uint32
