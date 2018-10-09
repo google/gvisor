@@ -683,11 +683,14 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
 		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, ping.ProtocolName4}
-		s := &epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{Clock: clock})}
+		s := epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{
+			Clock: clock,
+			Stats: epsocket.Metrics,
+		})}
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
 			return nil, fmt.Errorf("failed to enable SACK: %v", err)
 		}
-		return s, nil
+		return &s, nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

@@ -33,6 +33,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
+	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -52,6 +53,43 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
+
+func mustCreateMetric(name, description string) *tcpip.StatCounter {
+	var cm tcpip.StatCounter
+	metric.MustRegisterCustomUint64Metric(name, false /* sync */, description, cm.Value)
+	return &cm
+}
+
+// Metrics contains metrics exported by netstack.
+var Metrics = tcpip.Stats{
+	UnknownProtocolRcvdPackets: mustCreateMetric("/netstack/unknown_protocol_received_packets", "Number of packets received by netstack that were for an unknown or unsupported protocol."),
+	MalformedRcvdPackets:       mustCreateMetric("/netstack/malformed_received_packets", "Number of packets received by netstack that were deemed malformed."),
+	DroppedPackets:             mustCreateMetric("/netstack/dropped_packets", "Number of packets dropped by netstack due to full queues."),
+	IP: tcpip.IPStats{
+		PacketsReceived:          mustCreateMetric("/netstack/ip/packets_received", "Total number of IP packets received from the link layer in nic.DeliverNetworkPacket."),
+		InvalidAddressesReceived: mustCreateMetric("/netstack/ip/invalid_addresses_received", "Total number of IP packets received with an unknown or invalid destination address."),
+		PacketsDelivered:         mustCreateMetric("/netstack/ip/packets_delivered", "Total number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
+		PacketsSent:              mustCreateMetric("/netstack/ip/packets_sent", "Total number of IP packets sent via WritePacket."),
+		OutgoingPacketErrors:     mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Total number of IP packets which failed to write to a link-layer endpoint."),
+	},
+	TCP: tcpip.TCPStats{
+		ActiveConnectionOpenings:  mustCreateMetric("/netstack/tcp/active_connection_openings", "Number of connections opened successfully via Connect."),
+		PassiveConnectionOpenings: mustCreateMetric("/netstack/tcp/passive_connection_openings", "Number of connections opened successfully via Listen."),
+		FailedConnectionAttempts:  mustCreateMetric("/netstack/tcp/failed_connection_attempts", "Number of calls to Connect or Listen (active and passive openings, respectively) that end in an error."),
+		ValidSegmentsReceived:     mustCreateMetric("/netstack/tcp/valid_segments_received", "Number of TCP segments received that the transport layer successfully parsed."),
+		InvalidSegmentsReceived:   mustCreateMetric("/netstack/tcp/invalid_segments_received", "Number of TCP segments received that the transport layer could not parse."),
+		SegmentsSent:              mustCreateMetric("/netstack/tcp/segments_sent", "Number of TCP segments sent."),
+		ResetsSent:                mustCreateMetric("/netstack/tcp/resets_sent", "Number of TCP resets sent."),
+		ResetsReceived:            mustCreateMetric("/netstack/tcp/resets_received", "Number of TCP resets received."),
+	},
+	UDP: tcpip.UDPStats{
+		PacketsReceived:          mustCreateMetric("/netstack/udp/packets_received", "Number of UDP datagrams received via HandlePacket."),
+		UnknownPortErrors:        mustCreateMetric("/netstack/udp/unknown_port_errors", "Number of incoming UDP datagrams dropped because they did not have a known destination port."),
+		ReceiveBufferErrors:      mustCreateMetric("/netstack/udp/receive_buffer_errors", "Number of incoming UDP datagrams dropped due to the receiving buffer being in an invalid state."),
+		MalformedPacketsReceived: mustCreateMetric("/netstack/udp/malformed_packets_received", "Number of incoming UDP datagrams dropped due to the UDP header being in a malformed state."),
+		PacketsSent:              mustCreateMetric("/netstack/udp/packets_sent", "Number of UDP datagrams sent via sendUDP."),
+	},
+}
 
 const sizeOfInt32 int = 4
 

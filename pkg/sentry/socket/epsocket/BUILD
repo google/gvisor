@@ -19,6 +19,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
