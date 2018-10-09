@@ -142,7 +142,7 @@ func init() {
 // New also handles setting up a kernel for restoring a container.
 func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, stdioFDs []int, console bool) (*Loader, error) {
 	if err := usage.Init(); err != nil {
-		return nil, fmt.Errorf("Error setting up memory usage: %v", err)
+		return nil, fmt.Errorf("error setting up memory usage: %v", err)
 	}
 	// Create kernel and platform.
 	p, err := createPlatform(conf, deviceFD)
