@@ -105,14 +105,12 @@ func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to Bo
 	e.Lock()
 	n, notify, err := connected.Send(data, c, tcpip.FullAddress{Addr: tcpip.Address(e.path)})
 	e.Unlock()
-	if err != nil {
-		return 0, err
-	}
+
 	if notify {
 		connected.SendNotify()
 	}
 
-	return n, nil
+	return n, err
 }
 
 // Type implements Endpoint.Type.

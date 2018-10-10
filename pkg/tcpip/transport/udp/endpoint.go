@@ -15,6 +15,7 @@
 package udp
 
 import (
+	"math"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
@@ -262,6 +263,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
+	}
+
+	if p.Size() > math.MaxUint16 {
+		// Payload can't possibly fit in a packet.
+		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	to := opts.To

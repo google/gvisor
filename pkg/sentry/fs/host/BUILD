@@ -15,6 +15,7 @@ go_library(
         "inode_state.go",
         "ioctl_unsafe.go",
         "socket.go",
+        "socket_iovec.go",
         "socket_state.go",
         "socket_unsafe.go",
         "tty.go",

@@ -98,6 +98,8 @@ var (
 	ErrNoLinkAddress         = &Error{msg: "no remote link address"}
 	ErrBadAddress            = &Error{msg: "bad address"}
 	ErrNetworkUnreachable    = &Error{msg: "network is unreachable"}
+	ErrMessageTooLong        = &Error{msg: "message too long"}
+	ErrNoBufferSpace         = &Error{msg: "no buffer space available"}
 )
 
 // Errors related to Subnet

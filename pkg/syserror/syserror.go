@@ -44,6 +44,7 @@ var (
 	ELIBBAD      = error(syscall.ELIBBAD)
 	ELOOP        = error(syscall.ELOOP)
 	EMFILE       = error(syscall.EMFILE)
+	EMSGSIZE     = error(syscall.EMSGSIZE)
 	ENAMETOOLONG = error(syscall.ENAMETOOLONG)
 	ENOATTR      = ENODATA
 	ENODATA      = error(syscall.ENODATA)

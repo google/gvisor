@@ -124,11 +124,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_RCVBUF),
-		},
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
 			seccomp.AllowValue(syscall.SO_REUSEADDR),
 		},
 	},
@@ -303,6 +298,11 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.AllowAny{},
 				seccomp.AllowValue(syscall.SOL_SOCKET),
 				seccomp.AllowValue(syscall.SO_SNDBUF),
+			},
+			{
+				seccomp.AllowAny{},
+				seccomp.AllowValue(syscall.SOL_SOCKET),
+				seccomp.AllowValue(syscall.SO_RCVBUF),
 			},
 			{
 				seccomp.AllowAny{},

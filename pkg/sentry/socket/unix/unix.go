@@ -378,7 +378,8 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		w.To = ep
 	}
 
-	if n, err := src.CopyInTo(t, &w); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+	n, err := src.CopyInTo(t, &w)
+	if err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
 		return int(n), syserr.FromError(err)
 	}
 
@@ -388,15 +389,23 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	s.EventRegister(&e, waiter.EventOut)
 	defer s.EventUnregister(&e)
 
+	total := n
 	for {
-		if n, err := src.CopyInTo(t, &w); err != syserror.ErrWouldBlock {
-			return int(n), syserr.FromError(err)
+		// Shorten src to reflect bytes previously written.
+		src = src.DropFirst64(n)
+
+		n, err = src.CopyInTo(t, &w)
+		total += n
+		if err != syserror.ErrWouldBlock {
+			break
 		}
 
 		if err := t.Block(ch); err != nil {
-			return 0, syserr.FromError(err)
+			break
 		}
 	}
+
+	return int(total), syserr.FromError(err)
 }
 
 // Passcred implements unix.Credentialer.Passcred.

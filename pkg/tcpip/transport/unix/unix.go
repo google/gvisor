@@ -260,18 +260,26 @@ type message struct {
 	Address tcpip.FullAddress
 }
 
-// Length returns number of bytes stored in the Message.
+// Length returns number of bytes stored in the message.
 func (m *message) Length() int64 {
 	return int64(len(m.Data))
 }
 
-// Release releases any resources held by the Message.
+// Release releases any resources held by the message.
 func (m *message) Release() {
 	m.Control.Release()
 }
 
+// Peek returns a copy of the message.
 func (m *message) Peek() queue.Entry {
 	return &message{Data: m.Data, Control: m.Control.Clone(), Address: m.Address}
+}
+
+// Truncate reduces the length of the message payload to n bytes.
+//
+// Preconditions: n <= m.Length().
+func (m *message) Truncate(n int64) {
+	m.Data.CapLength(int(n))
 }
 
 // A Receiver can be used to receive Messages.
@@ -623,23 +631,33 @@ func (e *connectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) 
 
 // Send implements ConnectedEndpoint.Send.
 func (e *connectedEndpoint) Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
-	var l int
+	var l int64
 	for _, d := range data {
-		l += len(d)
+		l += int64(len(d))
 	}
-	// Discard empty stream packets. Since stream sockets don't preserve
-	// message boundaries, sending zero bytes is a no-op. In Linux, the
-	// receiver actually uses a zero-length receive as an indication that the
-	// stream was closed.
-	if l == 0 && e.endpoint.Type() == SockStream {
-		controlMessages.Release()
-		return 0, false, nil
+
+	truncate := false
+	if e.endpoint.Type() == SockStream {
+		// Since stream sockets don't preserve message boundaries, we
+		// can write only as much of the message as fits in the queue.
+		truncate = true
+
+		// Discard empty stream packets. Since stream sockets don't
+		// preserve message boundaries, sending zero bytes is a no-op.
+		// In Linux, the receiver actually uses a zero-length receive
+		// as an indication that the stream was closed.
+		if l == 0 {
+			controlMessages.Release()
+			return 0, false, nil
+		}
 	}
+
 	v := make([]byte, 0, l)
 	for _, d := range data {
 		v = append(v, d...)
 	}
-	notify, err := e.writeQueue.Enqueue(&message{Data: buffer.View(v), Control: controlMessages, Address: from})
+
+	l, notify, err := e.writeQueue.Enqueue(&message{Data: buffer.View(v), Control: controlMessages, Address: from}, truncate)
 	return uintptr(l), notify, err
 }
 
@@ -793,15 +811,12 @@ func (e *baseEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoin
 
 	n, notify, err := e.connected.Send(data, c, tcpip.FullAddress{Addr: tcpip.Address(e.path)})
 	e.Unlock()
-	if err != nil {
-		return 0, err
-	}
 
 	if notify {
 		e.connected.SendNotify()
 	}
 
-	return n, nil
+	return n, err
 }
 
 // SetSockOpt sets a socket option. Currently not supported.

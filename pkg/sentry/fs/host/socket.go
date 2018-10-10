@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -33,6 +34,11 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
+// maxSendBufferSize is the maximum host send buffer size allowed for endpoint.
+//
+// N.B. 8MB is the default maximum on Linux (2 * sysctl_wmem_max).
+const maxSendBufferSize = 8 << 20
+
 // endpoint encapsulates the state needed to represent a host Unix socket.
 //
 // TODO: Remove/merge with ConnectedEndpoint.
@@ -41,15 +47,17 @@ import (
 type endpoint struct {
 	queue waiter.Queue `state:"zerovalue"`
 
-	// stype is the type of Unix socket. (Ex: unix.SockStream,
-	// unix.SockSeqpacket, unix.SockDgram)
-	stype unix.SockType `state:"nosave"`
-
 	// fd is the host fd backing this file.
 	fd int `state:"nosave"`
 
 	// If srfd >= 0, it is the host fd that fd was imported from.
 	srfd int `state:"wait"`
+
+	// stype is the type of Unix socket.
+	stype unix.SockType `state:"nosave"`
+
+	// sndbuf is the size of the send buffer.
+	sndbuf int `state:"nosave"`
 }
 
 func (e *endpoint) init() error {
@@ -67,12 +75,21 @@ func (e *endpoint) init() error {
 	if err != nil {
 		return err
 	}
+	e.stype = unix.SockType(stype)
+
+	e.sndbuf, err = syscall.GetsockoptInt(e.fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	if err != nil {
+		return err
+	}
+	if e.sndbuf > maxSendBufferSize {
+		log.Warningf("Socket send buffer too large: %d", e.sndbuf)
+		return syserror.EINVAL
+	}
 
 	if err := syscall.SetNonblock(e.fd, true); err != nil {
 		return err
 	}
 
-	e.stype = unix.SockType(stype)
 	return fdnotifier.AddFD(int32(e.fd), &e.queue)
 }
 
@@ -189,13 +206,13 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = 0
 		return nil
 	case *tcpip.SendBufferSizeOption:
-		v, err := syscall.GetsockoptInt(e.fd, syscall.SOL_SOCKET, syscall.SO_SNDBUF)
-		*o = tcpip.SendBufferSizeOption(v)
-		return translateError(err)
+		*o = tcpip.SendBufferSizeOption(e.sndbuf)
+		return nil
 	case *tcpip.ReceiveBufferSizeOption:
-		v, err := syscall.GetsockoptInt(e.fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF)
-		*o = tcpip.ReceiveBufferSizeOption(v)
-		return translateError(err)
+		// N.B. Unix sockets don't use the receive buffer. We'll claim it is
+		// the same size as the send buffer.
+		*o = tcpip.ReceiveBufferSizeOption(e.sndbuf)
+		return nil
 	case *tcpip.ReuseAddressOption:
 		v, err := syscall.GetsockoptInt(e.fd, syscall.SOL_SOCKET, syscall.SO_REUSEADDR)
 		*o = tcpip.ReuseAddressOption(v)
@@ -240,33 +257,47 @@ func (e *endpoint) SendMsg(data [][]byte, controlMessages unix.ControlMessages, 
 	if to != nil {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
-	return sendMsg(e.fd, data, controlMessages)
+
+	// Since stream sockets don't preserve message boundaries, we can write
+	// only as much of the message as fits in the send buffer.
+	truncate := e.stype == unix.SockStream
+
+	return sendMsg(e.fd, data, controlMessages, e.sndbuf, truncate)
 }
 
-func sendMsg(fd int, data [][]byte, controlMessages unix.ControlMessages) (uintptr, *tcpip.Error) {
+func sendMsg(fd int, data [][]byte, controlMessages unix.ControlMessages, maxlen int, truncate bool) (uintptr, *tcpip.Error) {
 	if !controlMessages.Empty() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
-	n, err := fdWriteVec(fd, data)
+	n, totalLen, err := fdWriteVec(fd, data, maxlen, truncate)
+	if n < totalLen && err == nil {
+		// The host only returns a short write if it would otherwise
+		// block (and only for stream sockets).
+		err = syserror.EAGAIN
+	}
 	return n, translateError(err)
 }
 
 // RecvMsg implements unix.Endpoint.RecvMsg.
 func (e *endpoint) RecvMsg(data [][]byte, creds bool, numRights uintptr, peek bool, addr *tcpip.FullAddress) (uintptr, uintptr, unix.ControlMessages, *tcpip.Error) {
-	return recvMsg(e.fd, data, numRights, peek, addr)
+	// N.B. Unix sockets don't have a receive buffer, the send buffer
+	// serves both purposes.
+	rl, ml, cm, err := recvMsg(e.fd, data, numRights, peek, addr, e.sndbuf)
+	if rl > 0 && err == tcpip.ErrWouldBlock {
+		// Message did not fill buffer; that's fine, no need to block.
+		err = nil
+	}
+	return rl, ml, cm, err
 }
 
-func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.FullAddress) (uintptr, uintptr, unix.ControlMessages, *tcpip.Error) {
+func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.FullAddress, maxlen int) (uintptr, uintptr, unix.ControlMessages, *tcpip.Error) {
 	var cm unet.ControlMessage
 	if numRights > 0 {
 		cm.EnableFDs(int(numRights))
 	}
-	rl, ml, cl, err := fdReadVec(fd, data, []byte(cm), peek)
-	if err == syscall.EAGAIN {
-		return 0, 0, unix.ControlMessages{}, tcpip.ErrWouldBlock
-	}
-	if err != nil {
-		return 0, 0, unix.ControlMessages{}, translateError(err)
+	rl, ml, cl, rerr := fdReadVec(fd, data, []byte(cm), peek, maxlen)
+	if rl == 0 && rerr != nil {
+		return 0, 0, unix.ControlMessages{}, translateError(rerr)
 	}
 
 	// Trim the control data if we received less than the full amount.
@@ -276,7 +307,7 @@ func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.Fu
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, unix.ControlMessages{}, nil
+		return rl, ml, unix.ControlMessages{}, translateError(rerr)
 	}
 
 	fds, err := cm.ExtractFDs()
@@ -285,9 +316,9 @@ func recvMsg(fd int, data [][]byte, numRights uintptr, peek bool, addr *tcpip.Fu
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, unix.ControlMessages{}, nil
+		return rl, ml, unix.ControlMessages{}, translateError(rerr)
 	}
-	return rl, ml, control.New(nil, nil, newSCMRights(fds)), nil
+	return rl, ml, control.New(nil, nil, newSCMRights(fds)), translateError(rerr)
 }
 
 // NewConnectedEndpoint creates a new ConnectedEndpoint backed by a host FD
@@ -307,7 +338,27 @@ func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*Conne
 		return nil, tcpip.ErrInvalidEndpointState
 	}
 
-	e := &ConnectedEndpoint{path: path, queue: queue, file: file}
+	stype, err := syscall.GetsockoptInt(file.FD(), syscall.SOL_SOCKET, syscall.SO_TYPE)
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	sndbuf, err := syscall.GetsockoptInt(file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if sndbuf > maxSendBufferSize {
+		log.Warningf("Socket send buffer too large: %d", sndbuf)
+		return nil, tcpip.ErrInvalidEndpointState
+	}
+
+	e := &ConnectedEndpoint{
+		path:   path,
+		queue:  queue,
+		file:   file,
+		stype:  unix.SockType(stype),
+		sndbuf: sndbuf,
+	}
 
 	// AtomicRefCounters start off with a single reference. We need two.
 	e.ref.IncRef()
@@ -346,6 +397,17 @@ type ConnectedEndpoint struct {
 	// writeClosed is true if the FD has write shutdown or if it has been
 	// closed.
 	writeClosed bool
+
+	// stype is the type of Unix socket.
+	stype unix.SockType
+
+	// sndbuf is the size of the send buffer.
+	//
+	// N.B. When this is smaller than the host size, we present it via
+	// GetSockOpt and message splitting/rejection in SendMsg, but do not
+	// prevent lots of small messages from filling the real send buffer
+	// size on the host.
+	sndbuf int
 }
 
 // Send implements unix.ConnectedEndpoint.Send.
@@ -355,7 +417,12 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMess
 	if c.writeClosed {
 		return 0, false, tcpip.ErrClosedForSend
 	}
-	n, err := sendMsg(c.file.FD(), data, controlMessages)
+
+	// Since stream sockets don't preserve message boundaries, we can write
+	// only as much of the message as fits in the send buffer.
+	truncate := c.stype == unix.SockStream
+
+	n, err := sendMsg(c.file.FD(), data, controlMessages, c.sndbuf, truncate)
 	// There is no need for the callee to call SendNotify because sendMsg uses
 	// the host's sendmsg(2) and the host kernel's queue.
 	return n, false, err
@@ -411,7 +478,15 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 	if c.readClosed {
 		return 0, 0, unix.ControlMessages{}, tcpip.FullAddress{}, false, tcpip.ErrClosedForReceive
 	}
-	rl, ml, cm, err := recvMsg(c.file.FD(), data, numRights, peek, nil)
+
+	// N.B. Unix sockets don't have a receive buffer, the send buffer
+	// serves both purposes.
+	rl, ml, cm, err := recvMsg(c.file.FD(), data, numRights, peek, nil, c.sndbuf)
+	if rl > 0 && err == tcpip.ErrWouldBlock {
+		// Message did not fill buffer; that's fine, no need to block.
+		err = nil
+	}
+
 	// There is no need for the callee to call RecvNotify because recvMsg uses
 	// the host's recvmsg(2) and the host kernel's queue.
 	return rl, ml, cm, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, err
@@ -460,20 +535,14 @@ func (c *ConnectedEndpoint) RecvQueuedSize() int64 {
 
 // SendMaxQueueSize implements unix.Receiver.SendMaxQueueSize.
 func (c *ConnectedEndpoint) SendMaxQueueSize() int64 {
-	v, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
-	if err != nil {
-		return -1
-	}
-	return int64(v)
+	return int64(c.sndbuf)
 }
 
 // RecvMaxQueueSize implements unix.Receiver.RecvMaxQueueSize.
 func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
-	v, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_RCVBUF)
-	if err != nil {
-		return -1
-	}
-	return int64(v)
+	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
+	// the same size as the send buffer.
+	return int64(c.sndbuf)
 }
 
 // Release implements unix.ConnectedEndpoint.Release and unix.Receiver.Release.

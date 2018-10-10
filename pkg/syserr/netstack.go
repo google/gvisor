@@ -78,6 +78,8 @@ var netstackErrorTranslations = map[*tcpip.Error]*Error{
 	tcpip.ErrNoLinkAddress:         ErrHostDown,
 	tcpip.ErrBadAddress:            ErrBadAddress,
 	tcpip.ErrNetworkUnreachable:    ErrNetworkUnreachable,
+	tcpip.ErrMessageTooLong:        ErrMessageTooLong,
+	tcpip.ErrNoBufferSpace:         ErrNoBufferSpace,
 }
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry

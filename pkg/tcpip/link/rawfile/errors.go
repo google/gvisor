@@ -41,6 +41,8 @@ var translations = map[syscall.Errno]*tcpip.Error{
 	syscall.ENOTCONN:      tcpip.ErrNotConnected,
 	syscall.ECONNRESET:    tcpip.ErrConnectionReset,
 	syscall.ECONNABORTED:  tcpip.ErrConnectionAborted,
+	syscall.EMSGSIZE:      tcpip.ErrMessageTooLong,
+	syscall.ENOBUFS:       tcpip.ErrNoBufferSpace,
 }
 
 // TranslateErrno translate an errno from the syscall package into a
