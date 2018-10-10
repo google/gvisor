@@ -501,9 +501,6 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		caps,
 		l.k.RootUserNamespace())
 
-	// TODO New containers should be started in new PID namespaces
-	// when indicated by the spec.
-
 	procArgs, err := newProcess(cid, spec, creds, l.k)
 	if err != nil {
 		return fmt.Errorf("failed to create new process: %v", err)
