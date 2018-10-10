@@ -15,9 +15,7 @@ go_test(
         "manual",
         "local",
     ],
-    deps = [
-        "//runsc/test/testutil",
-    ],
+    deps = ["//runsc/test/testutil"],
 )
 
 go_library(

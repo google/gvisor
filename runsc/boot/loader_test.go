@@ -102,7 +102,16 @@ func createLoader() (*Loader, func(), error) {
 	}
 
 	stdio := []int{int(os.Stdin.Fd()), int(os.Stdout.Fd()), int(os.Stderr.Fd())}
-	l, err := New("foo", spec, conf, fd, -1 /* device fd */, []int{sandEnd}, stdio, false)
+	args := Args{
+		ID:           "foo",
+		Spec:         spec,
+		Conf:         conf,
+		ControllerFD: fd,
+		DeviceFD:     -1,
+		GoferFDs:     []int{sandEnd},
+		StdioFDs:     stdio,
+	}
+	l, err := New(args)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

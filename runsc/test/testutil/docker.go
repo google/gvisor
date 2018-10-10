@@ -198,6 +198,15 @@ func (d *Docker) Run(args ...string) error {
 	return err
 }
 
+// RunFg calls 'docker run' with the arguments provided in the foreground. It
+// blocks until the container exits and returns the output.
+func (d *Docker) RunFg(args ...string) (string, error) {
+	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name}
+	a = append(a, args...)
+	out, err := do(a...)
+	return string(out), err
+}
+
 // Logs calls 'docker logs'.
 func (d *Docker) Logs() (string, error) {
 	return do("logs", d.Name)

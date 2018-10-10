@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -176,6 +177,89 @@ func TestConnectToSelf(t *testing.T) {
 	}
 	if _, err := d.WaitForOutput("^client\n$", 1*time.Second); err != nil {
 		t.Fatal("docker.WaitForOutput(client) timeout:", err)
+	}
+}
+
+func TestMemLimit(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := testutil.MakeDocker("cgroup-test")
+	cmd := "cat /proc/meminfo | grep MemTotal: | awk '{print $2}'"
+	out, err := d.RunFg("--memory=500MB", "alpine", "sh", "-c", cmd)
+	if err != nil {
+		t.Fatal("docker run failed:", err)
+	}
+	defer d.CleanUp()
+
+	// Remove warning message that swap isn't present.
+	if strings.HasPrefix(out, "WARNING") {
+		lines := strings.Split(out, "\n")
+		if len(lines) != 3 {
+			t.Fatalf("invalid output: %s", out)
+		}
+		out = lines[1]
+	}
+
+	got, err := strconv.ParseUint(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", out, err)
+	}
+	if want := uint64(500 * 1024); got != want {
+		t.Errorf("MemTotal got: %d, want: %d", got, want)
+	}
+}
+
+func TestNumCPU(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := testutil.MakeDocker("cgroup-test")
+	cmd := "cat /proc/cpuinfo | grep 'processor.*:' | wc -l"
+	out, err := d.RunFg("--cpuset-cpus=0", "alpine", "sh", "-c", cmd)
+	if err != nil {
+		t.Fatal("docker run failed:", err)
+	}
+	defer d.CleanUp()
+
+	got, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("failed to parse %q: %v", out, err)
+	}
+	if want := 1; got != want {
+		t.Errorf("MemTotal got: %d, want: %d", got, want)
+	}
+}
+
+// TestCgroup sets cgroup options and checks that container can start.
+// TODO: Verify that these were set to cgroup on the host.
+func TestCgroup(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := testutil.MakeDocker("cgroup-test")
+
+	var args []string
+	args = append(args, "--cpu-shares=1000")
+	args = append(args, "--cpu-period=2000")
+	args = append(args, "--cpu-quota=3000")
+	args = append(args, "--cpuset-cpus=0")
+	args = append(args, "--cpuset-mems=0")
+	args = append(args, "--kernel-memory=100MB")
+	args = append(args, "--memory=1GB")
+	args = append(args, "--memory-reservation=500MB")
+	args = append(args, "--memory-swap=2GB")
+	args = append(args, "--memory-swappiness=5")
+	args = append(args, "--blkio-weight=750")
+
+	args = append(args, "hello-world")
+	if err := d.Run(args...); err != nil {
+		t.Fatal("docker create failed:", err)
+	}
+	defer d.CleanUp()
+
+	if _, err := d.WaitForOutput("Hello from Docker!", 5*time.Second); err != nil {
+		t.Fatalf("docker didn't say hello: %v", err)
 	}
 }
 

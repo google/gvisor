@@ -34,6 +34,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/cgroup"
 	"gvisor.googlesource.com/gvisor/runsc/console"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -58,12 +59,26 @@ type Sandbox struct {
 	// Chroot is the path to the chroot directory that the sandbox process
 	// is running in.
 	Chroot string `json:"chroot"`
+
+	// Ccroup has the cgroup configuration for the sandbox.
+	Cgroup *cgroup.Cgroup `json:"cgroup"`
 }
 
 // Create creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
+	c := specutils.MakeCleanup(func() { s.destroy() })
+	defer c.Clean()
+
+	if cg, ok := cgroup.New(spec); ok {
+		s.Cgroup = cg
+
+		// If there is cgroup config, install it before creating sandbox process.
+		if err := s.Cgroup.Install(spec.Linux.Resources); err != nil {
+			return nil, fmt.Errorf("error configuring cgroup: %v", err)
+		}
+	}
 
 	// Create the sandbox process.
 	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, ioFiles); err != nil {
@@ -75,6 +90,13 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		return nil, err
 	}
 
+	if s.Cgroup != nil {
+		if err := s.Cgroup.Add(s.Pid); err != nil {
+			return nil, fmt.Errorf("error adding sandbox to cgroup: %v", err)
+		}
+	}
+
+	c.Release()
 	return s, nil
 }
 
@@ -483,6 +505,24 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		}
 	}
 
+	if s.Cgroup != nil {
+		cpuNum, err := s.Cgroup.NumCPU()
+		if err != nil {
+			return fmt.Errorf("error getting cpu count from cgroups: %v", err)
+		}
+		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
+
+		mem, err := s.Cgroup.MemoryLimit()
+		if err != nil {
+			return fmt.Errorf("error getting memory limit from cgroups: %v", err)
+		}
+		// When memory limit is unset, a "large" number is returned. In that case,
+		// just stick with the default.
+		if mem < 0x7ffffffffffff000 {
+			cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
+		}
+	}
+
 	// Add container as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)
 
@@ -590,8 +630,15 @@ func (s *Sandbox) destroy() error {
 		}
 	}
 
+	if s.Cgroup != nil {
+		if err := s.Cgroup.Uninstall(); err != nil {
+			return err
+		}
+	}
 	if s.Chroot != "" {
-		return tearDownChroot(s.Chroot)
+		if err := tearDownChroot(s.Chroot); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -759,6 +806,14 @@ func (s *Sandbox) waitForStopped() error {
 		return nil
 	}
 	return backoff.Retry(op, b)
+}
+
+// AddGoferToCgroup adds the gofer process to the sandbox's cgroup.
+func (s *Sandbox) AddGoferToCgroup(pid int) error {
+	if s.Cgroup != nil {
+		return s.Cgroup.Add(pid)
+	}
+	return nil
 }
 
 // deviceFileForPlatform opens the device file for the given platform. If the

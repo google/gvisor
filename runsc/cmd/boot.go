@@ -59,6 +59,13 @@ type Boot struct {
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
+
+	// cpuNum number of CPUs to create inside the sandbox.
+	cpuNum int
+
+	// totalMem sets the initial amount of total memory to report back to the
+	// container.
+	totalMem uint64
 }
 
 // Name implements subcommands.Command.Name.
@@ -86,6 +93,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
+	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
+	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -143,7 +152,19 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	// Create the loader.
-	l, err := boot.New(f.Arg(0), spec, conf, b.controllerFD, b.deviceFD, b.ioFDs.GetArray(), b.stdioFDs.GetArray(), b.console)
+	bootArgs := boot.Args{
+		ID:           f.Arg(0),
+		Spec:         spec,
+		Conf:         conf,
+		ControllerFD: b.controllerFD,
+		DeviceFD:     b.deviceFD,
+		GoferFDs:     b.ioFDs.GetArray(),
+		StdioFDs:     b.stdioFDs.GetArray(),
+		Console:      b.console,
+		NumCPU:       b.cpuNum,
+		TotalMem:     b.totalMem,
+	}
+	l, err := boot.New(bootArgs)
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}

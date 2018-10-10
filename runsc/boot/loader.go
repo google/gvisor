@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -138,14 +139,39 @@ func init() {
 	kernel.RegisterSyscallTable(slinux.AMD64)
 }
 
+// Args are the arguments for New().
+type Args struct {
+	// Id is the sandbox ID.
+	ID string
+	// Spec is the sandbox specification.
+	Spec *specs.Spec
+	// Conf is the system configuration.
+	Conf *Config
+	// ControllerFD is the FD to the URPC controller.
+	ControllerFD int
+	// DeviceFD is an optional argument that is passed to the platform.
+	DeviceFD int
+	// GoferFDs is an array of FDs used to connect with the Gofer.
+	GoferFDs []int
+	// StdioFDs is the stdio for the application.
+	StdioFDs []int
+	// Console is set to true if using TTY.
+	Console bool
+	// NumCPU is the number of CPUs to create inside the sandbox.
+	NumCPU int
+	// TotalMem is the initial amount of total memory to report back to the
+	// container.
+	TotalMem uint64
+}
+
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
-func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, goferFDs []int, stdioFDs []int, console bool) (*Loader, error) {
+func New(args Args) (*Loader, error) {
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("error setting up memory usage: %v", err)
 	}
 	// Create kernel and platform.
-	p, err := createPlatform(conf, deviceFD)
+	p, err := createPlatform(args.Conf, args.DeviceFD)
 	if err != nil {
 		return nil, fmt.Errorf("error creating platform: %v", err)
 	}
@@ -168,7 +194,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
 
-	if err := enableStrace(conf); err != nil {
+	if err := enableStrace(args.Conf); err != nil {
 		return nil, fmt.Errorf("failed to enable strace: %v", err)
 	}
 
@@ -176,35 +202,41 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
 	// Run().
-	networkStack, err := newEmptyNetworkStack(conf, k)
+	networkStack, err := newEmptyNetworkStack(args.Conf, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network: %v", err)
 	}
 
 	// Create capabilities.
-	caps, err := specutils.Capabilities(spec.Process.Capabilities)
+	caps, err := specutils.Capabilities(args.Spec.Process.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("error creating capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
-	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
-	for _, GID := range spec.Process.User.AdditionalGids {
+	extraKGIDs := make([]auth.KGID, 0, len(args.Spec.Process.User.AdditionalGids))
+	for _, GID := range args.Spec.Process.User.AdditionalGids {
 		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
 	}
 
 	// Create credentials.
 	creds := auth.NewUserCredentials(
-		auth.KUID(spec.Process.User.UID),
-		auth.KGID(spec.Process.User.GID),
+		auth.KUID(args.Spec.Process.User.UID),
+		auth.KGID(args.Spec.Process.User.GID),
 		extraKGIDs,
 		caps,
 		auth.NewRootUserNamespace())
 
-	// Get CPU numbers from spec.
-	cpuNum, err := specutils.CalculateCPUNumber(spec)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get cpus from spec: %v", err)
+	if args.NumCPU == 0 {
+		args.NumCPU = runtime.NumCPU()
+	}
+	log.Infof("CPUs: %d", args.NumCPU)
+
+	if args.TotalMem > 0 {
+		// Adjust the total memory returned by the Sentry so that applications that
+		// use /proc/meminfo can make allocations based on this limit.
+		usage.MinimumTotalMemoryBytes = args.TotalMem
+		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(2^30))
 	}
 
 	// Initiate the Kernel object, which is required by the Context passed
@@ -214,9 +246,9 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 		Timekeeper:                  tk,
 		RootUserNamespace:           creds.UserNamespace,
 		NetworkStack:                networkStack,
-		ApplicationCores:            uint(cpuNum),
+		ApplicationCores:            uint(args.NumCPU),
 		Vdso:                        vdso,
-		RootUTSNamespace:            kernel.NewUTSNamespace(spec.Hostname, "", creds.UserNamespace),
+		RootUTSNamespace:            kernel.NewUTSNamespace(args.Spec.Hostname, "", creds.UserNamespace),
 		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
 		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 	}); err != nil {
@@ -224,7 +256,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	}
 
 	// Turn on packet logging if enabled.
-	if conf.LogPackets {
+	if args.Conf.LogPackets {
 		log.Infof("Packet logging enabled")
 		atomic.StoreUint32(&sniffer.LogPackets, 1)
 	} else {
@@ -233,7 +265,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	}
 
 	// Create a watchdog.
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, conf.WatchdogAction)
+	watchdog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
 
 	// Create the control server using the provided FD.
 	//
@@ -244,7 +276,7 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	// misconfigured process will cause an error, and we want the control
 	// server up before that so that we don't time out trying to connect to
 	// it.
-	ctrl, err := newController(controllerFD, k, watchdog)
+	ctrl, err := newController(args.ControllerFD, k, watchdog)
 	if err != nil {
 		return nil, fmt.Errorf("error creating control server: %v", err)
 	}
@@ -255,20 +287,20 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
 	}
 	// Ensure that signals received are forwarded to the emulated kernel.
-	ps := syscall.Signal(conf.PanicSignal)
+	ps := syscall.Signal(args.Conf.PanicSignal)
 	startSignalForwarding := sighandling.PrepareForwarding(k, ps)
-	if conf.PanicSignal != -1 {
-		// Panics if the sentry receives 'conf.PanicSignal'.
+	if args.Conf.PanicSignal != -1 {
+		// Panics if the sentry receives 'Config.PanicSignal'.
 		panicChan := make(chan os.Signal, 1)
 		signal.Notify(panicChan, ps)
 		go func() { // S/R-SAFE: causes sentry panic.
 			<-panicChan
 			panic("Signal-induced panic")
 		}()
-		log.Infof("Panic signal set to %v(%d)", ps, conf.PanicSignal)
+		log.Infof("Panic signal set to %v(%d)", ps, args.Conf.PanicSignal)
 	}
 
-	procArgs, err := newProcess(id, spec, creds, k)
+	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root process: %v", err)
 	}
@@ -276,15 +308,15 @@ func New(id string, spec *specs.Spec, conf *Config, controllerFD, deviceFD int, 
 	l := &Loader{
 		k:                     k,
 		ctrl:                  ctrl,
-		conf:                  conf,
-		console:               console,
+		conf:                  args.Conf,
+		console:               args.Console,
 		watchdog:              watchdog,
-		spec:                  spec,
-		goferFDs:              goferFDs,
-		stdioFDs:              stdioFDs,
+		spec:                  args.Spec,
+		goferFDs:              args.GoferFDs,
+		stdioFDs:              args.StdioFDs,
 		startSignalForwarding: startSignalForwarding,
 		rootProcArgs:          procArgs,
-		sandboxID:             id,
+		sandboxID:             args.ID,
 		processes:             make(map[execID]*execProcess),
 	}
 	ctrl.manager.l = l

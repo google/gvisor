@@ -43,6 +43,13 @@ func LogSpec(spec *specs.Spec) {
 	log.Debugf("Spec: %+v", spec)
 	log.Debugf("Spec.Hooks: %+v", spec.Hooks)
 	log.Debugf("Spec.Linux: %+v", spec.Linux)
+	if spec.Linux != nil && spec.Linux.Resources != nil {
+		res := spec.Linux.Resources
+		log.Debugf("Spec.Linux.Resources.Memory: %+v", res.Memory)
+		log.Debugf("Spec.Linux.Resources.CPU: %+v", res.CPU)
+		log.Debugf("Spec.Linux.Resources.BlockIO: %+v", res.BlockIO)
+		log.Debugf("Spec.Linux.Resources.Network: %+v", res.Network)
+	}
 	log.Debugf("Spec.Process: %+v", spec.Process)
 	log.Debugf("Spec.Root: %+v", spec.Root)
 }
@@ -401,4 +408,34 @@ func ContainsStr(strs []string, str string) bool {
 		}
 	}
 	return false
+}
+
+// Cleanup allows defers to be aborted when cleanup needs to happen
+// conditionally. Usage:
+// c := MakeCleanup(func() { f.Close() })
+// defer c.Clean() // any failure before release is called will close the file.
+// ...
+// c.Release() // on success, aborts closing the file and return it.
+// return f
+type Cleanup struct {
+	clean    func()
+	released bool
+}
+
+// MakeCleanup creates a new Cleanup object.
+func MakeCleanup(f func()) Cleanup {
+	return Cleanup{clean: f}
+}
+
+// Clean calls the cleanup function.
+func (c *Cleanup) Clean() {
+	if !c.released {
+		c.clean()
+	}
+}
+
+// Release releases the cleanup from its duties, i.e. cleanup function is not
+// called after this point.
+func (c *Cleanup) Release() {
+	c.released = true
 }

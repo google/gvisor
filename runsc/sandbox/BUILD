@@ -21,6 +21,7 @@ go_library(
         "//pkg/sentry/platform/kvm",
         "//pkg/urpc",
         "//runsc/boot",
+        "//runsc/cgroup",
         "//runsc/console",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",

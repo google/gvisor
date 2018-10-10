@@ -262,6 +262,8 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		Status:        Creating,
 		Owner:         os.Getenv("USER"),
 	}
+	cu := specutils.MakeCleanup(func() { c.Destroy() })
+	defer cu.Clean()
 
 	// If the metadata annotations indicate that this container should be
 	// started in an existing sandbox, we must do so. The metadata will
@@ -276,12 +278,13 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
-		s, err := sandbox.Create(id, spec, conf, bundleDir, consoleSocket, ioFiles)
+		c.Sandbox, err = sandbox.Create(id, spec, conf, bundleDir, consoleSocket, ioFiles)
 		if err != nil {
-			c.Destroy()
 			return nil, err
 		}
-		c.Sandbox = s
+		if err := c.Sandbox.AddGoferToCgroup(c.GoferPid); err != nil {
+			return nil, err
+		}
 	} else {
 		// This is sort of confusing. For a sandbox with a root
 		// container and a child container in it, runsc sees:
@@ -300,7 +303,6 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		// Find the sandbox associated with this ID.
 		sb, err := Load(conf.RootDir, sbid)
 		if err != nil {
-			c.Destroy()
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
@@ -309,7 +311,6 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 	// Save the metadata file.
 	if err := c.save(); err != nil {
-		c.Destroy()
 		return nil, err
 	}
 
@@ -317,11 +318,11 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// this file is created, so it must be the last thing we do.
 	if pidFile != "" {
 		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
-			c.Destroy()
 			return nil, fmt.Errorf("error writing PID file: %v", err)
 		}
 	}
 
+	cu.Release()
 	return c, nil
 }
 
@@ -356,6 +357,9 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 		if err := c.Sandbox.Start(c.Spec, conf, c.ID, ioFiles); err != nil {
+			return err
+		}
+		if err := c.Sandbox.AddGoferToCgroup(c.GoferPid); err != nil {
 			return err
 		}
 	}
