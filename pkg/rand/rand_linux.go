@@ -17,23 +17,46 @@
 package rand
 
 import (
+	"crypto/rand"
 	"io"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
 
 // reader implements an io.Reader that returns pseudorandom bytes.
-type reader struct{}
+type reader struct {
+	once         sync.Once
+	useGetrandom bool
+}
 
 // Read implements io.Reader.Read.
-func (reader) Read(p []byte) (int, error) {
-	return unix.Getrandom(p, 0)
+func (r *reader) Read(p []byte) (int, error) {
+	r.once.Do(func() {
+		_, err := unix.Getrandom(p, 0)
+		if err != unix.ENOSYS {
+			r.useGetrandom = true
+		}
+	})
+
+	if r.useGetrandom {
+		return unix.Getrandom(p, 0)
+	}
+	return rand.Read(p)
 }
 
 // Reader is the default reader.
-var Reader io.Reader = reader{}
+var Reader io.Reader = &reader{}
 
 // Read reads from the default reader.
 func Read(b []byte) (int, error) {
 	return io.ReadFull(Reader, b)
+}
+
+// Init can be called to make sure /dev/urandom is pre-opened on kernels that
+// do not support getrandom(2).
+func Init() error {
+	p := make([]byte, 1)
+	_, err := Read(p)
+	return err
 }

@@ -17,7 +17,7 @@ package boot
 
 import (
 	"fmt"
-	"math/rand"
+	mrand "math/rand"
 	"os"
 	"os/signal"
 	"runtime"
@@ -30,6 +30,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
@@ -133,7 +134,7 @@ type execProcess struct {
 
 func init() {
 	// Initialize the random number generator.
-	rand.Seed(gtime.Now().UnixNano())
+	mrand.Seed(gtime.Now().UnixNano())
 
 	// Register the global syscall table.
 	kernel.RegisterSyscallTable(slinux.AMD64)
@@ -167,9 +168,16 @@ type Args struct {
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
+	// We initialize the rand package now to make sure /dev/urandom is pre-opened
+	// on kernels that do not support getrandom(2).
+	if err := rand.Init(); err != nil {
+		return nil, fmt.Errorf("error setting up rand: %v", err)
+	}
+
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("error setting up memory usage: %v", err)
 	}
+
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.DeviceFD)
 	if err != nil {
