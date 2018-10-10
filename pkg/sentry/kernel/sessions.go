@@ -367,6 +367,9 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	tg.processGroup.decRefWithParent(oldParentPG)
 	tg.processGroup = pg
 
+	// Add the new process group to the session.
+	pg.session.processGroups.PushBack(pg)
+
 	// Ensure this translation is added to all namespaces.
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
 		local := ns.tids[tg.leader]
