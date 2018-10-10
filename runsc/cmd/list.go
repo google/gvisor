@@ -94,7 +94,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		for _, c := range containers {
 			fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\n",
 				c.ID,
-				c.Pid(),
+				c.SandboxPid(),
 				c.Status,
 				c.BundleDir,
 				c.CreatedAt.Format(time.RFC3339Nano),

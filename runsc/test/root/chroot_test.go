@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -88,6 +89,75 @@ func TestChroot(t *testing.T) {
 	// Check that chroot directory was cleaned up.
 	if _, err := os.Stat(chroot); err == nil || !os.IsNotExist(err) {
 		t.Errorf("chroot directory %q was not deleted: %v", chroot, err)
+	}
+}
+
+func TestChrootGofer(t *testing.T) {
+	d := testutil.MakeDocker("chroot-test")
+	if err := d.Run("alpine", "sleep", "10000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// It's tricky to find gofers. Get sandbox PID first, then find parent. From
+	// parent get all immediate children, remove the sandbox, and everything else
+	// are gofers.
+	sandPID, err := d.SandboxPid()
+	if err != nil {
+		t.Fatalf("Docker.SandboxPid(): %v", err)
+	}
+
+	// Find sandbox's parent PID.
+	cmd := fmt.Sprintf("grep PPid /proc/%d/status | awk '{print $2}'", sandPID)
+	parent, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to fetch runsc (%d) parent PID: %v, out:\n%s", sandPID, err, string(parent))
+	}
+	parentPID, err := strconv.Atoi(strings.TrimSpace(string(parent)))
+	if err != nil {
+		t.Fatalf("failed to parse PPID %q: %v", string(parent), err)
+	}
+
+	// Get all children from parent.
+	childrenOut, err := exec.Command("/usr/bin/pgrep", "-P", strconv.Itoa(parentPID)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to fetch containerd-shim children: %v", err)
+	}
+	children := strings.Split(strings.TrimSpace(string(childrenOut)), "\n")
+
+	// This where the root directory is mapped on the host and that's where the
+	// gofer must have chroot'd to.
+	root, err := d.RootDirInHost()
+	if err != nil {
+		t.Fatalf("Docker.RootDirInHost(): %v", err)
+	}
+
+	for _, child := range children {
+		childPID, err := strconv.Atoi(child)
+		if err != nil {
+			t.Fatalf("failed to parse child PID %q: %v", child, err)
+		}
+		if childPID == sandPID {
+			// Skip the sandbox, all other immediate children are gofers.
+			continue
+		}
+
+		// Check that gofer is chroot'ed.
+		chroot, err := filepath.EvalSymlinks(filepath.Join("/proc", child, "root"))
+		if err != nil {
+			t.Fatalf("error resolving /proc/<pid>/root symlink: %v", err)
+		}
+		if root != chroot {
+			t.Errorf("gofer chroot is wrong, want: %q, got: %q", root, chroot)
+		}
+
+		path, err := filepath.EvalSymlinks(filepath.Join("/proc", child, "cwd"))
+		if err != nil {
+			t.Fatalf("error resolving /proc/<pid>/cwd symlink: %v", err)
+		}
+		if root != path {
+			t.Errorf("gofer current dir is wrong, want: %q, got: %q", root, path)
+		}
 	}
 }
 

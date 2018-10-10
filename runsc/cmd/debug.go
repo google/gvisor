@@ -85,7 +85,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			if err != nil {
 				Fatalf("error loading container %q: %v", id, err)
 			}
-			if candidate.Pid() == d.pid {
+			if candidate.SandboxPid() == d.pid {
 				c = candidate
 				break
 			}

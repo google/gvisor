@@ -316,7 +316,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// Write the PID file. Containerd considers the create complete after
 	// this file is created, so it must be the last thing we do.
 	if pidFile != "" {
-		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.Pid())), 0644); err != nil {
+		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
 			c.Destroy()
 			return nil, fmt.Errorf("error writing PID file: %v", err)
 		}
@@ -426,9 +426,9 @@ func (c *Container) Event() (*boot.Event, error) {
 	return c.Sandbox.Event(c.ID)
 }
 
-// Pid returns the Pid of the sandbox the container is running in, or -1 if the
+// SandboxPid returns the Pid of the sandbox the container is running in, or -1 if the
 // container is not running.
-func (c *Container) Pid() int {
+func (c *Container) SandboxPid() int {
 	if err := c.requireStatus("get PID", Created, Running, Paused); err != nil {
 		return -1
 	}
@@ -566,7 +566,7 @@ func (c *Container) State() specs.State {
 		Version: specs.Version,
 		ID:      c.ID,
 		Status:  c.Status.String(),
-		Pid:     c.Pid(),
+		Pid:     c.SandboxPid(),
 		Bundle:  c.BundleDir,
 	}
 }

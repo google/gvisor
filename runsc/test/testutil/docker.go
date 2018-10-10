@@ -280,6 +280,15 @@ func (d *Docker) SandboxPid() (int, error) {
 	return pid, nil
 }
 
+// RootDirInHost returns where the root directory is mapped on the host.
+func (d *Docker) RootDirInHost() (string, error) {
+	out, err := do("inspect", "-f={{.GraphDriver.Data.MergedDir}}", d.Name)
+	if err != nil {
+		return "", fmt.Errorf("error retrieving pid: %v", err)
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
+}
+
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches
 // for the given pattern.
 func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, error) {
