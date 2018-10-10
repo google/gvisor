@@ -363,11 +363,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			return fmt.Errorf("error setting up console with socket %q: %v", consoleSocket, err)
 		}
 		defer tty.Close()
-		fd := int(tty.Fd())
-
-		// Set the TTY as a controlling TTY on the sandbox process.
-		cmd.SysProcAttr.Setctty = true
-		cmd.SysProcAttr.Ctty = fd
 
 		// Ideally we would set the sandbox stdin to this process'
 		// stdin, but for some reason Docker does not like that (it
@@ -377,6 +372,13 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
+
+		// Set the TTY as a controlling TTY on the sandbox process.
+		// Note that the Ctty field must be the FD of the TTY in the
+		// *new* process, not this process. Since we set the TTY to
+		// stdin, we can use FD 0 here.
+		cmd.SysProcAttr.Setctty = true
+		cmd.SysProcAttr.Ctty = 0
 
 		// Pass the tty as all stdio fds to sandbox.
 		for i := 0; i < 3; i++ {
