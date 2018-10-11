@@ -231,38 +231,6 @@ func TestNumCPU(t *testing.T) {
 	}
 }
 
-// TestCgroup sets cgroup options and checks that container can start.
-// TODO: Verify that these were set to cgroup on the host.
-func TestCgroup(t *testing.T) {
-	if err := testutil.Pull("alpine"); err != nil {
-		t.Fatal("docker pull failed:", err)
-	}
-	d := testutil.MakeDocker("cgroup-test")
-
-	var args []string
-	args = append(args, "--cpu-shares=1000")
-	args = append(args, "--cpu-period=2000")
-	args = append(args, "--cpu-quota=3000")
-	args = append(args, "--cpuset-cpus=0")
-	args = append(args, "--cpuset-mems=0")
-	args = append(args, "--kernel-memory=100MB")
-	args = append(args, "--memory=1GB")
-	args = append(args, "--memory-reservation=500MB")
-	args = append(args, "--memory-swap=2GB")
-	args = append(args, "--memory-swappiness=5")
-	args = append(args, "--blkio-weight=750")
-
-	args = append(args, "hello-world")
-	if err := d.Run(args...); err != nil {
-		t.Fatal("docker create failed:", err)
-	}
-	defer d.CleanUp()
-
-	if _, err := d.WaitForOutput("Hello from Docker!", 5*time.Second); err != nil {
-		t.Fatalf("docker didn't say hello: %v", err)
-	}
-}
-
 func TestMain(m *testing.M) {
 	testutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())

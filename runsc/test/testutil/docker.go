@@ -298,6 +298,15 @@ func (d *Docker) RootDirInHost() (string, error) {
 	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
+// ID returns the container ID.
+func (d *Docker) ID() (string, error) {
+	out, err := do("inspect", "-f={{.Id}}", d.Name)
+	if err != nil {
+		return "", fmt.Errorf("error retrieving ID: %v", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches
 // for the given pattern.
 func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, error) {

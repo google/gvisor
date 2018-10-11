@@ -123,6 +123,8 @@ func fillFromAncestor(path string) (string, error) {
 	return val, nil
 }
 
+// countCpuset returns the number of CPU in a string formatted like:
+// 		"0-2,7,12-14  # bits 0, 1, 2, 7, 12, 13, and 14 set" - man 7 cpuset
 func countCpuset(cpuset string) (int, error) {
 	var count int
 	for _, p := range strings.Split(cpuset, ",") {
