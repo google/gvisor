@@ -163,6 +163,8 @@ type Args struct {
 	// TotalMem is the initial amount of total memory to report back to the
 	// container.
 	TotalMem uint64
+	// UserLogFD is the file descriptor to write user logs to.
+	UserLogFD int
 }
 
 // New initializes a new kernel loader configured by spec.
@@ -311,6 +313,10 @@ func New(args Args) (*Loader, error) {
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create root process: %v", err)
+	}
+
+	if err := initCompatLogs(args.UserLogFD); err != nil {
+		return nil, fmt.Errorf("init compat logs: %v", err)
 	}
 
 	l := &Loader{

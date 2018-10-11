@@ -230,7 +230,7 @@ func List(rootDir string) ([]string, error) {
 // Create creates the container in a new Sandbox process, unless the metadata
 // indicates that an existing Sandbox should be used. The caller must call
 // Destroy() on the container.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string) (*Container, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string) (*Container, error) {
 	log.Debugf("Create container %q in root dir: %s", id, conf.RootDir)
 	if err := validateID(id); err != nil {
 		return nil, err
@@ -278,7 +278,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 		// Start a new sandbox for this container. Any errors after this point
 		// must destroy the container.
-		c.Sandbox, err = sandbox.Create(id, spec, conf, bundleDir, consoleSocket, ioFiles)
+		c.Sandbox, err = sandbox.Create(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles)
 		if err != nil {
 			return nil, err
 		}
@@ -396,9 +396,9 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 }
 
 // Run is a helper that calls Create + Start + Wait.
-func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile string) (syscall.WaitStatus, error) {
+func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string) (syscall.WaitStatus, error) {
 	log.Debugf("Run container %q in root dir: %s", id, conf.RootDir)
-	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile)
+	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile, userLog)
 	if err != nil {
 		return 0, fmt.Errorf("error creating container: %v", err)
 	}

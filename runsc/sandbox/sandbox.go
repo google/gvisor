@@ -66,7 +66,7 @@ type Sandbox struct {
 
 // Create creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) (*Sandbox, error) {
+func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 	c := specutils.MakeCleanup(func() { s.destroy() })
 	defer c.Clean()
@@ -81,7 +81,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	}
 
 	// Create the sandbox process.
-	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, ioFiles); err != nil {
+	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles); err != nil {
 		return nil, err
 	}
 
@@ -266,7 +266,7 @@ func (s *Sandbox) connError(err error) error {
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket string, ioFiles []*os.File) error {
+func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -523,6 +523,18 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		if mem < 0x7ffffffffffff000 {
 			cmd.Args = append(cmd.Args, "--total-memory", strconv.FormatUint(mem, 10))
 		}
+	}
+
+	if userLog != "" {
+		f, err := os.OpenFile(userLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
+		if err != nil {
+			return fmt.Errorf("opening compat log file: %v", err)
+		}
+		defer f.Close()
+
+		cmd.ExtraFiles = append(cmd.ExtraFiles, f)
+		cmd.Args = append(cmd.Args, "--user-log-fd", strconv.Itoa(nextFD))
+		nextFD++
 	}
 
 	// Add container as the last argument.

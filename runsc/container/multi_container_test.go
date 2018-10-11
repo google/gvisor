@@ -83,7 +83,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		}
 		bundles = append(bundles, bundleDir)
 
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "")
+		cont, err := Create(ids[i], spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("error creating container: %v", err)

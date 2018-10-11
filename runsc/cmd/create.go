@@ -41,6 +41,13 @@ type Create struct {
 	// pseudoterminal.  This is ignored unless spec.Process.Terminal is
 	// true.
 	consoleSocket string
+
+	// userLog is the path to send user-visible logs to. This log is different
+	// from debug logs. The former is meant to be consumed by the users and should
+	// contain only information that is relevant to the person running the
+	// container, e.g. unsuported syscalls, while the later is more verbose and
+	// consumed by developers.
+	userLog string
 }
 
 // Name implements subcommands.Command.Name.
@@ -64,6 +71,7 @@ func (c *Create) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.StringVar(&c.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.StringVar(&c.pidFile, "pid-file", "", "filename that the container pid will be written to")
+	f.StringVar(&c.userLog, "user-log", "", "filename to send user-visible logs to. Empty means no logging.")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -90,7 +98,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	// Create the container. A new sandbox will be created for the
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
-	if _, err := container.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile); err != nil {
+	if _, err := container.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile, c.userLog); err != nil {
 		Fatalf("error creating container: %v", err)
 	}
 	return subcommands.ExitSuccess

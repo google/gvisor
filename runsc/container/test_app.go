@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	sys "syscall"
 	"time"
 
 	"flag"
@@ -38,6 +39,7 @@ func main() {
 	subcommands.Register(new(taskTree), "")
 	subcommands.Register(new(forkBomb), "")
 	subcommands.Register(new(reaper), "")
+	subcommands.Register(new(syscall), "")
 
 	flag.Parse()
 
@@ -240,4 +242,38 @@ func (c *reaper) Execute(ctx context.Context, f *flag.FlagSet, args ...interface
 	stop := testutil.StartReaper()
 	defer stop()
 	select {}
+}
+
+type syscall struct {
+	sysno uint64
+}
+
+// Name implements subcommands.Command.
+func (*syscall) Name() string {
+	return "syscall"
+}
+
+// Synopsis implements subcommands.Command.
+func (*syscall) Synopsis() string {
+	return "syscall makes a syscall"
+}
+
+// Usage implements subcommands.Command.
+func (*syscall) Usage() string {
+	return "syscall <flags>"
+}
+
+// SetFlags implements subcommands.Command.
+func (s *syscall) SetFlags(f *flag.FlagSet) {
+	f.Uint64Var(&s.sysno, "syscall", 0, "syscall to call")
+}
+
+// Execute implements subcommands.Command.
+func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if _, _, errno := sys.Syscall(uintptr(s.sysno), 0, 0, 0); errno != 0 {
+		fmt.Printf("syscall(%d, 0, 0...) failed: %v\n", s.sysno, errno)
+	} else {
+		fmt.Printf("syscall(%d, 0, 0...) success\n", s.sysno)
+	}
+	return subcommands.ExitSuccess
 }

@@ -5,6 +5,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "boot",
     srcs = [
+        "compat.go",
         "config.go",
         "controller.go",
         "debug.go",
@@ -21,12 +22,15 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/control/server",
         "//pkg/cpuid",
+        "//pkg/eventchannel",
         "//pkg/log",
         "//pkg/rand",
         "//pkg/sentry/arch",
+        "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/context",
         "//pkg/sentry/control",
         "//pkg/sentry/fs",
@@ -55,6 +59,7 @@ go_library(
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
+        "//pkg/sentry/syscalls:unimplemented_syscall_go_proto",
         "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
@@ -74,6 +79,7 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot/filter",
         "//runsc/specutils",
+        "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
     ],
 )

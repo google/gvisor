@@ -66,6 +66,9 @@ type Boot struct {
 	// totalMem sets the initial amount of total memory to report back to the
 	// container.
 	totalMem uint64
+
+	// userLogFD is the file descriptor to write user logs to.
+	userLogFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -95,6 +98,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
+	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -163,6 +167,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Console:      b.console,
 		NumCPU:       b.cpuNum,
 		TotalMem:     b.totalMem,
+		UserLogFD:    b.userLogFD,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {

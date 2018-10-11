@@ -210,18 +210,9 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
-		return fmt.Errorf("error creating container: %v", err)
-	}
-	defer c.Destroy()
-	if err := c.Start(conf); err != nil {
-		return fmt.Errorf("error starting container: %v", err)
-	}
-
-	ws, err := c.Wait()
-	if err != nil {
-		return fmt.Errorf("error waiting on container: %v", err)
+		return fmt.Errorf("running container: %v", err)
 	}
 	if !ws.Exited() || ws.ExitStatus() != 0 {
 		return fmt.Errorf("container failed, waitStatus: %v", ws)
@@ -299,7 +290,7 @@ func TestLifecycle(t *testing.T) {
 		}
 		// Create the container.
 		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, "", "")
+		c, err := Create(id, spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -420,7 +411,7 @@ func TestExePath(t *testing.T) {
 				t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
 			}
 
-			ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+			ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 
 			os.RemoveAll(rootDir)
 			os.RemoveAll(bundleDir)
@@ -453,7 +444,7 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	ws, err := Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "")
+	ws, err := Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -472,7 +463,7 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir2, "", "")
+	ws, err = Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir2, "", "", "")
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -497,7 +488,7 @@ func TestExec(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -603,7 +594,7 @@ func TestCheckpointRestore(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -649,7 +640,7 @@ func TestCheckpointRestore(t *testing.T) {
 		defer outputFile2.Close()
 
 		// Restore into a new container.
-		cont2, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont2, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -688,7 +679,7 @@ func TestCheckpointRestore(t *testing.T) {
 		defer outputFile3.Close()
 
 		// Restore into a new container.
-		cont3, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont3, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -767,7 +758,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -814,7 +805,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		defer outputFile2.Close()
 
 		// Restore into a new container.
-		contRestore, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		contRestore, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -868,7 +859,7 @@ func TestPauseResume(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -973,7 +964,7 @@ func TestPauseResumeStatus(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1037,7 +1028,7 @@ func TestCapabilities(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1138,7 +1129,7 @@ func TestConsoleSocket(t *testing.T) {
 
 		// Create the container and pass the socket name.
 		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, socketRelPath, "")
+		c, err := Create(id, spec, conf, bundleDir, socketRelPath, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1262,7 +1253,7 @@ func TestReadonlyRoot(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1306,7 +1297,7 @@ func TestReadonlyMount(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1349,7 +1340,7 @@ func TestAbbreviatedIDs(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(cid, spec, conf, bundleDir, "", "")
+		cont, err := Create(cid, spec, conf, bundleDir, "", "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1409,7 +1400,7 @@ func TestContainerVolumeContentsShared(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1531,7 +1522,7 @@ func TestGoferExits(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1591,7 +1582,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1691,6 +1682,46 @@ func TestJobControlSignalExec(t *testing.T) {
 	}
 	if got, want := ws.Signal(), syscall.SIGKILL; got != want {
 		t.Errorf("ws.Signal() got %v, want %v", got, want)
+	}
+}
+
+func TestUserLog(t *testing.T) {
+	app, err := testutil.FindFile("runsc/container/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// sched_rr_get_interval = 148 - not implemented in gvisor.
+	spec := testutil.NewSpecWithArgs(app, "syscall", "--syscall=148")
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "user_log_test")
+	if err != nil {
+		t.Fatalf("error creating tmp dir: %v", err)
+	}
+	userLog := filepath.Join(dir, "user.log")
+
+	// Create, start and wait for the container.
+	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", userLog)
+	if err != nil {
+		t.Fatalf("error running container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Fatalf("container failed, waitStatus: %v", ws)
+	}
+
+	out, err := ioutil.ReadFile(userLog)
+	if err != nil {
+		t.Fatalf("error opening user log file %q: %v", userLog, err)
+	}
+	if want := "Unsupported syscall: sched_rr_get_interval"; !strings.Contains(string(out), want) {
+		t.Errorf("user log file doesn't contain %q, out: %s", want, string(out))
 	}
 }
 

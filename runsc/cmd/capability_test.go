@@ -97,7 +97,7 @@ func TestCapabilities(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "")
+	c, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
