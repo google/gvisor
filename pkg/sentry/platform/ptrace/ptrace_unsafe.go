@@ -136,7 +136,7 @@ func (t *thread) clone(initRegs *syscall.PtraceRegs) (*thread, error) {
 		return nil, syscall.EINVAL
 	}
 	rval, err := t.syscallIgnoreInterrupt(
-		initRegs,
+		&t.initRegs,
 		syscall.SYS_CLONE,
 		arch.SyscallArgument{Value: uintptr(
 			syscall.CLONE_FILES |

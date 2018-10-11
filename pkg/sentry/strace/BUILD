@@ -24,6 +24,7 @@ go_library(
         "//pkg/binary",
         "//pkg/bits",
         "//pkg/eventchannel",
+        "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/control",

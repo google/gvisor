@@ -17,7 +17,6 @@
 package seccomp
 
 import (
-	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -31,19 +30,28 @@ type sockFprog struct {
 	Filter *linux.BPFInstruction
 }
 
-func seccomp(instrs []linux.BPFInstruction) error {
+// SetFilter installs the given BPF program.
+//
+// This is safe to call from an afterFork context.
+//
+//go:nosplit
+func SetFilter(instrs []linux.BPFInstruction) syscall.Errno {
 	// SYS_SECCOMP is not available in syscall package.
 	const SYS_SECCOMP = 317
 
 	// PR_SET_NO_NEW_PRIVS is required in order to enable seccomp. See seccomp(2) for details.
-	if _, _, err := syscall.RawSyscall(syscall.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0); err != 0 {
-		return fmt.Errorf("failed to set PR_SET_NO_NEW_PRIVS: %v", err)
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0); errno != 0 {
+		return errno
 	}
-	sockProg := sockFprog{Len: uint16(len(instrs)), Filter: (*linux.BPFInstruction)(unsafe.Pointer(&instrs[0]))}
 
 	// TODO: Use SECCOMP_FILTER_FLAG_KILL_PROCESS when available.
-	if _, _, err := syscall.RawSyscall(SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_TSYNC, uintptr(unsafe.Pointer(&sockProg))); err != 0 {
-		return fmt.Errorf("failed to set seccomp filter: %v", err)
+	sockProg := sockFprog{
+		Len:    uint16(len(instrs)),
+		Filter: (*linux.BPFInstruction)(unsafe.Pointer(&instrs[0])),
 	}
-	return nil
+	if _, _, errno := syscall.RawSyscall(SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_TSYNC, uintptr(unsafe.Pointer(&sockProg))); errno != 0 {
+		return errno
+	}
+
+	return 0
 }

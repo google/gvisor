@@ -28,12 +28,9 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/seccomp",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/log",
-        "//pkg/sentry/arch",
-        "//pkg/sentry/strace",
     ],
 )
 

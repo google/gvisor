@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build amd64
+
 package arch
 
 import (
@@ -25,6 +27,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
+
+// Host specifies the host architecture.
+const Host = AMD64
 
 // These constants come directly from Linux.
 const (

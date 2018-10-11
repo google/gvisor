@@ -28,6 +28,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bits"
 	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
+	"gvisor.googlesource.com/gvisor/pkg/seccomp"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	pb "gvisor.googlesource.com/gvisor/pkg/sentry/strace/strace_go_proto"
@@ -697,5 +698,15 @@ func EnableAll(sinks SinkType) {
 		}
 
 		table.FeatureEnable.EnableAll(flags)
+	}
+}
+
+func init() {
+	t, ok := Lookup(abi.Host, arch.Host)
+	if ok {
+		// Provide the native table as the lookup for seccomp
+		// debugging. This is best-effort. This is provided this way to
+		// avoid dependencies from seccomp to this package.
+		seccomp.SyscallName = t.Name
 	}
 }

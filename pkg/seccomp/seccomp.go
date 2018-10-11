@@ -20,31 +20,36 @@ import (
 	"reflect"
 	"sort"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bpf"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/strace"
 )
 
 const (
-	// violationLabel is added to the program to take action on a violation.
-	violationLabel = "violation"
-
 	// skipOneInst is the offset to take for skipping one instruction.
 	skipOneInst = 1
+
+	// defaultLabel is the label for the default action.
+	defaultLabel = "default_action"
 )
 
 // Install generates BPF code based on the set of syscalls provided. It only
-// allows syscalls that conform to the specification (*) and generates SIGSYS
+// allows syscalls that conform to the specification and generates SIGSYS
 // trap unless kill is set.
 //
-// (*) The current implementation only checks the syscall number. It does NOT
-// validate any of the arguments.
+// This is a convenience wrapper around BuildProgram and SetFilter.
 func Install(rules SyscallRules, kill bool) error {
 	log.Infof("Installing seccomp filters for %d syscalls (kill=%t)", len(rules), kill)
-	instrs, err := buildProgram(rules, kill)
+	defaultAction := uint32(linux.SECCOMP_RET_TRAP)
+	if kill {
+		defaultAction = uint32(linux.SECCOMP_RET_KILL)
+	}
+	instrs, err := BuildProgram([]RuleSet{
+		RuleSet{
+			Rules:  rules,
+			Action: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+	}, defaultAction)
 	if log.IsLogging(log.Debug) {
 		programStr, errDecode := bpf.DecodeProgram(instrs)
 		if errDecode != nil {
@@ -56,60 +61,84 @@ func Install(rules SyscallRules, kill bool) error {
 		return err
 	}
 
-	if err := seccomp(instrs); err != nil {
-		return err
+	// Perform the actual installation.
+	if errno := SetFilter(instrs); errno != 0 {
+		return fmt.Errorf("Failed to set filter: %v", errno)
 	}
 
 	log.Infof("Seccomp filters installed.")
 	return nil
 }
 
-// buildProgram builds a BPF program that whitelists all given syscall rules.
-func buildProgram(rules SyscallRules, kill bool) ([]linux.BPFInstruction, error) {
+// RuleSet is a set of rules and associated action.
+type RuleSet struct {
+	Rules  SyscallRules
+	Action uint32
+
+	// Vsyscall indicates that a check is made for a function being called
+	// from kernel mappings. This is where the vsyscall page is located
+	// (and typically) emulated, so this RuleSet will not match any
+	// functions not dispatched from the vsyscall page.
+	Vsyscall bool
+}
+
+// SyscallName gives names to system calls. It is used purely for debugging purposes.
+//
+// An alternate namer can be provided to the package at initialization time.
+var SyscallName = func(sysno uintptr) string {
+	return fmt.Sprintf("syscall_%d", sysno)
+}
+
+// BuildProgram builds a BPF program from the given map of actions to matching
+// SyscallRules. The single generated program covers all provided RuleSets.
+func BuildProgram(rules []RuleSet, defaultAction uint32) ([]linux.BPFInstruction, error) {
 	program := bpf.NewProgramBuilder()
-	violationAction := uint32(linux.SECCOMP_RET_KILL)
-	if !kill {
-		violationAction = linux.SECCOMP_RET_TRAP
-	}
 
 	// Be paranoid and check that syscall is done in the expected architecture.
 	//
 	// A = seccomp_data.arch
-	// if (A != AUDIT_ARCH_X86_64) goto violation
+	// if (A != AUDIT_ARCH_X86_64) goto defaultAction.
 	program.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArch)
-	// violationLabel is at the bottom of the program. The size of program
+	// defaultLabel is at the bottom of the program. The size of program
 	// may exceeds 255 lines, which is the limit of a condition jump.
 	program.AddJump(bpf.Jmp|bpf.Jeq|bpf.K, linux.AUDIT_ARCH_X86_64, skipOneInst, 0)
-	program.AddDirectJumpLabel(violationLabel)
-
+	program.AddDirectJumpLabel(defaultLabel)
 	if err := buildIndex(rules, program); err != nil {
 		return nil, err
 	}
 
-	// violation: return violationAction
-	if err := program.AddLabel(violationLabel); err != nil {
+	// Exhausted: return defaultAction.
+	if err := program.AddLabel(defaultLabel); err != nil {
 		return nil, err
 	}
-	program.AddStmt(bpf.Ret|bpf.K, violationAction)
+	program.AddStmt(bpf.Ret|bpf.K, defaultAction)
 
 	return program.Instructions()
 }
 
-// buildIndex builds a BST to quickly search through all syscalls that are whitelisted.
-func buildIndex(rules SyscallRules, program *bpf.ProgramBuilder) error {
-	syscalls := []uintptr{}
-	for sysno := range rules {
+// buildIndex builds a BST to quickly search through all syscalls.
+func buildIndex(rules []RuleSet, program *bpf.ProgramBuilder) error {
+	// Build a list of all application system calls, across all given rule
+	// sets. We have a simple BST, but may dispatch individual matchers
+	// with different actions. The matchers are evaluated linearly.
+	requiredSyscalls := make(map[uintptr]struct{})
+	for _, rs := range rules {
+		for sysno := range rs.Rules {
+			requiredSyscalls[sysno] = struct{}{}
+		}
+	}
+	syscalls := make([]uintptr, 0, len(requiredSyscalls))
+	for sysno, _ := range requiredSyscalls {
 		syscalls = append(syscalls, sysno)
 	}
-
-	t, ok := strace.Lookup(abi.Linux, arch.AMD64)
-	if !ok {
-		panic("Can't find amd64 Linux syscall table")
-	}
-
 	sort.Slice(syscalls, func(i, j int) bool { return syscalls[i] < syscalls[j] })
-	for _, s := range syscalls {
-		log.Infof("syscall filter: %v (%v): %s", s, t.Name(s), rules[s])
+	for _, sysno := range syscalls {
+		for _, rs := range rules {
+			// Print only if there is a corresponding set of rules.
+			if _, ok := rs.Rules[sysno]; ok {
+				log.Debugf("syscall filter %v: %s => 0x%x", SyscallName(sysno), rs.Rules[sysno], rs.Action)
+			}
+		}
 	}
 
 	root := createBST(syscalls)
@@ -119,7 +148,7 @@ func buildIndex(rules SyscallRules, program *bpf.ProgramBuilder) error {
 	//
 	// A = seccomp_data.nr
 	program.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetNR)
-	return root.traverse(buildBSTProgram, program, rules)
+	return root.traverse(buildBSTProgram, rules, program)
 }
 
 // createBST converts sorted syscall slice into a balanced BST.
@@ -136,15 +165,23 @@ func createBST(syscalls []uintptr) *node {
 	return &parent
 }
 
-func ruleViolationLabel(sysno uintptr, idx int) string {
-	return fmt.Sprintf("ruleViolation_%v_%v", sysno, idx)
+func vsyscallViolationLabel(ruleSetIdx int, sysno uintptr) string {
+	return fmt.Sprintf("vsyscallViolation_%v_%v", ruleSetIdx, sysno)
+}
+
+func ruleViolationLabel(ruleSetIdx int, sysno uintptr, idx int) string {
+	return fmt.Sprintf("ruleViolation_%v_%v_%v", ruleSetIdx, sysno, idx)
 }
 
 func checkArgsLabel(sysno uintptr) string {
 	return fmt.Sprintf("checkArgs_%v", sysno)
 }
 
-func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, sysno uintptr) error {
+// addSyscallArgsCheck adds argument checks for a single system call. It does
+// not insert a jump to the default action at the end and it is the
+// responsibility of the caller to insert an appropriate jump after calling
+// this function.
+func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action uint32, ruleSetIdx int, sysno uintptr) error {
 	for ruleidx, rule := range rules {
 		labelled := false
 		for i, arg := range rule {
@@ -155,28 +192,29 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, sysno uintptr) err
 					high, low := uint32(a>>32), uint32(a)
 					// assert arg_low == low
 					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArgLow(i))
-					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, low, 0, ruleViolationLabel(sysno, ruleidx))
+					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, low, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
 					// assert arg_high == high
 					p.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArgHigh(i))
-					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, high, 0, ruleViolationLabel(sysno, ruleidx))
+					p.AddJumpFalseLabel(bpf.Jmp|bpf.Jeq|bpf.K, high, 0, ruleViolationLabel(ruleSetIdx, sysno, ruleidx))
 					labelled = true
-
 				default:
 					return fmt.Errorf("unknown syscall rule type: %v", reflect.TypeOf(a))
 				}
 			}
 		}
-		// Matched, allow the syscall.
-		p.AddStmt(bpf.Ret|bpf.K, linux.SECCOMP_RET_ALLOW)
-		// Label the end of the rule if necessary.
+
+		// Matched, emit the given action.
+		p.AddStmt(bpf.Ret|bpf.K, action)
+
+		// Label the end of the rule if necessary. This is added for
+		// the jumps above when the argument check fails.
 		if labelled {
-			if err := p.AddLabel(ruleViolationLabel(sysno, ruleidx)); err != nil {
+			if err := p.AddLabel(ruleViolationLabel(ruleSetIdx, sysno, ruleidx)); err != nil {
 				return err
 			}
 		}
 	}
-	// Not matched?
-	p.AddDirectJumpLabel(violationLabel)
+
 	return nil
 }
 
@@ -188,16 +226,16 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, sysno uintptr) err
 //   (A > 22) ? goto index_35 : goto index_9
 //
 // index_9:  // SYS_MMAP(9), leaf
-//   A == 9) ? goto argument check : violation
+//   A == 9) ? goto argument check : defaultLabel
 //
 // index_35:  // SYS_NANOSLEEP(35), single child
 //   (A == 35) ? goto argument check : continue
-//   (A > 35) ? goto index_50 : goto violation
+//   (A > 35) ? goto index_50 : goto defaultLabel
 //
 // index_50:  // SYS_LISTEN(50), leaf
-//   (A == 50) ? goto argument check : goto violation
+//   (A == 50) ? goto argument check : goto defaultLabel
 //
-func buildBSTProgram(program *bpf.ProgramBuilder, rules SyscallRules, n *node) error {
+func buildBSTProgram(n *node, rules []RuleSet, program *bpf.ProgramBuilder) error {
 	// Root node is never referenced by label, skip it.
 	if !n.root {
 		if err := program.AddLabel(n.label()); err != nil {
@@ -209,11 +247,10 @@ func buildBSTProgram(program *bpf.ProgramBuilder, rules SyscallRules, n *node) e
 	program.AddJumpTrueLabel(bpf.Jmp|bpf.Jeq|bpf.K, uint32(sysno), checkArgsLabel(sysno), 0)
 	if n.left == nil && n.right == nil {
 		// Leaf nodes don't require extra check.
-		program.AddDirectJumpLabel(violationLabel)
+		program.AddDirectJumpLabel(defaultLabel)
 	} else {
 		// Non-leaf node. Check which turn to take otherwise. Using direct jumps
 		// in case that the offset may exceed the limit of a conditional jump (255)
-		// Note that 'violationLabel' is returned for nil children.
 		program.AddJump(bpf.Jmp|bpf.Jgt|bpf.K, uint32(sysno), 0, skipOneInst)
 		program.AddDirectJumpLabel(n.right.label())
 		program.AddDirectJumpLabel(n.left.label())
@@ -222,12 +259,60 @@ func buildBSTProgram(program *bpf.ProgramBuilder, rules SyscallRules, n *node) e
 	if err := program.AddLabel(checkArgsLabel(sysno)); err != nil {
 		return err
 	}
-	// No rules, just allow it and save one jmp.
-	if len(rules[sysno]) == 0 {
-		program.AddStmt(bpf.Ret|bpf.K, linux.SECCOMP_RET_ALLOW)
-		return nil
+
+	emitted := false
+	for ruleSetIdx, rs := range rules {
+		if _, ok := rs.Rules[sysno]; ok {
+			// If there are no rules, then this will always match.
+			// Remember we've done this so that we can emit a
+			// sensible error. We can't catch all overlaps, but we
+			// can catch this one at least.
+			if emitted {
+				return fmt.Errorf("unreachable action for %v: 0x%x (rule set %d)", SyscallName(sysno), rs.Action, ruleSetIdx)
+			}
+
+			// Emit a vsyscall check if this rule requires a
+			// Vsyscall match. This rule ensures that the top bit
+			// is set in the instruction pointer, which is where
+			// the vsyscall page will be mapped.
+			if rs.Vsyscall {
+				program.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetIPHigh)
+				program.AddJumpFalseLabel(bpf.Jmp|bpf.Jset|bpf.K, 0x80000000, 0, vsyscallViolationLabel(ruleSetIdx, sysno))
+			}
+
+			// Emit matchers.
+			if len(rs.Rules[sysno]) == 0 {
+				// This is a blanket action.
+				program.AddStmt(bpf.Ret|bpf.K, rs.Action)
+				emitted = true
+			} else {
+				// Add an argument check for these particular
+				// arguments. This will continue execution and
+				// check the next rule set. We need to ensure
+				// that at the very end, we insert a direct
+				// jump label for the unmatched case.
+				if err := addSyscallArgsCheck(program, rs.Rules[sysno], rs.Action, ruleSetIdx, sysno); err != nil {
+					return err
+				}
+			}
+
+			// If there was a Vsyscall check for this rule, then we
+			// need to add an appropriate label for the jump above.
+			if rs.Vsyscall {
+				if err := program.AddLabel(vsyscallViolationLabel(ruleSetIdx, sysno)); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	return addSyscallArgsCheck(program, rules[sysno], sysno)
+
+	// Not matched? We only need to insert a jump to the default label if
+	// not default action has been emitted for this call.
+	if !emitted {
+		program.AddDirectJumpLabel(defaultLabel)
+	}
+
+	return nil
 }
 
 // node represents a tree node.
@@ -238,26 +323,27 @@ type node struct {
 	root  bool
 }
 
-// label returns the label corresponding to this node. If node is nil (syscall not present),
-// violationLabel is returned for convenience.
+// label returns the label corresponding to this node.
+//
+// If n is nil, then the defaultLabel is returned.
 func (n *node) label() string {
 	if n == nil {
-		return violationLabel
+		return defaultLabel
 	}
 	return fmt.Sprintf("index_%v", n.value)
 }
 
-type traverseFunc func(*bpf.ProgramBuilder, SyscallRules, *node) error
+type traverseFunc func(*node, []RuleSet, *bpf.ProgramBuilder) error
 
-func (n *node) traverse(fn traverseFunc, p *bpf.ProgramBuilder, rules SyscallRules) error {
+func (n *node) traverse(fn traverseFunc, rules []RuleSet, p *bpf.ProgramBuilder) error {
 	if n == nil {
 		return nil
 	}
-	if err := fn(p, rules, n); err != nil {
+	if err := fn(n, rules, p); err != nil {
 		return err
 	}
-	if err := n.left.traverse(fn, p, rules); err != nil {
+	if err := n.left.traverse(fn, rules, p); err != nil {
 		return err
 	}
-	return n.right.traverse(fn, p, rules)
+	return n.right.traverse(fn, rules, p)
 }

@@ -6,6 +6,7 @@ go_library(
     name = "abi",
     srcs = [
         "abi.go",
+        "abi_linux.go",
         "flag.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/abi",

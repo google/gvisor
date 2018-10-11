@@ -76,14 +76,18 @@ func TestBasic(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		// filters are the set of syscall that are allowed.
-		filters SyscallRules
-		kill    bool
-		specs   []spec
+		ruleSets      []RuleSet
+		defaultAction uint32
+		specs         []spec
 	}{
 		{
-			filters: SyscallRules{1: {}},
-			kill:    false,
+			ruleSets: []RuleSet{
+				{
+					Rules:  SyscallRules{1: {}},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "Single syscall allowed",
@@ -98,12 +102,61 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: SyscallRules{
-				1: {},
-				3: {},
-				5: {},
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								AllowValue(0x1),
+							},
+						},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					Rules: SyscallRules{
+						1: {},
+						2: {},
+					},
+					Action: linux.SECCOMP_RET_TRAP,
+				},
 			},
-			kill: false,
+			defaultAction: linux.SECCOMP_RET_KILL,
+			specs: []spec{
+				{
+					desc: "Multiple rulesets allowed (1a)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64, args: [6]uint64{0x1}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "Multiple rulesets allowed (1b)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "Multiple rulesets allowed (2)",
+					data: seccompData{nr: 1, arch: linux.AUDIT_ARCH_X86_64},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "Multiple rulesets allowed (2)",
+					data: seccompData{nr: 0, arch: linux.AUDIT_ARCH_X86_64},
+					want: linux.SECCOMP_RET_KILL,
+				},
+			},
+		},
+		{
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: {},
+						3: {},
+						5: {},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "Multiple syscalls allowed (1)",
@@ -148,8 +201,15 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: SyscallRules{1: {}},
-			kill:    false,
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: {},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "Wrong architecture",
@@ -159,26 +219,38 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: SyscallRules{1: {}},
-			kill:    true,
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: {},
+					},
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
-					desc: "Syscall disallowed, action kill",
+					desc: "Syscall disallowed, action trap",
 					data: seccompData{nr: 2, arch: linux.AUDIT_ARCH_X86_64},
-					want: linux.SECCOMP_RET_KILL,
+					want: linux.SECCOMP_RET_TRAP,
 				},
 			},
 		},
 		{
-			filters: SyscallRules{
-				1: []Rule{
-					{
-						AllowAny{},
-						AllowValue(0xf),
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								AllowAny{},
+								AllowValue(0xf),
+							},
+						},
 					},
+					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			kill: false,
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "Syscall argument allowed",
@@ -193,17 +265,22 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: SyscallRules{
-				1: []Rule{
-					{
-						AllowValue(0xf),
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								AllowValue(0xf),
+							},
+							{
+								AllowValue(0xe),
+							},
+						},
 					},
-					{
-						AllowValue(0xe),
-					},
+					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			kill: false,
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "Syscall argument allowed, two rules",
@@ -218,16 +295,21 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
-			filters: SyscallRules{
-				1: []Rule{
-					{
-						AllowValue(0),
-						AllowValue(math.MaxUint64 - 1),
-						AllowValue(math.MaxUint32),
+			ruleSets: []RuleSet{
+				{
+					Rules: SyscallRules{
+						1: []Rule{
+							{
+								AllowValue(0),
+								AllowValue(math.MaxUint64 - 1),
+								AllowValue(math.MaxUint32),
+							},
+						},
 					},
+					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			kill: false,
+			defaultAction: linux.SECCOMP_RET_TRAP,
 			specs: []spec{
 				{
 					desc: "64bit syscall argument allowed",
@@ -259,7 +341,7 @@ func TestBasic(t *testing.T) {
 			},
 		},
 	} {
-		instrs, err := buildProgram(test.filters, test.kill)
+		instrs, err := BuildProgram(test.ruleSets, test.defaultAction)
 		if err != nil {
 			t.Errorf("%s: buildProgram() got error: %v", test.specs[0].desc, err)
 			continue
@@ -282,6 +364,7 @@ func TestBasic(t *testing.T) {
 	}
 }
 
+// TestRandom tests that randomly generated rules are encoded correctly.
 func TestRandom(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	size := rand.Intn(50) + 1
@@ -294,7 +377,12 @@ func TestRandom(t *testing.T) {
 	}
 
 	fmt.Printf("Testing filters: %v", syscallRules)
-	instrs, err := buildProgram(syscallRules, false)
+	instrs, err := BuildProgram([]RuleSet{
+		RuleSet{
+			Rules:  syscallRules,
+			Action: uint32(linux.SECCOMP_RET_ALLOW),
+		},
+	}, uint32(linux.SECCOMP_RET_TRAP))
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
@@ -319,8 +407,8 @@ func TestRandom(t *testing.T) {
 	}
 }
 
-// TestReadDeal checks that a process dies when it trips over the filter and that it
-// doesn't die when the filter is not triggered.
+// TestReadDeal checks that a process dies when it trips over the filter and
+// that it doesn't die when the filter is not triggered.
 func TestRealDeal(t *testing.T) {
 	for _, test := range []struct {
 		die  bool

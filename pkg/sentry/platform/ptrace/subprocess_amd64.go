@@ -43,20 +43,20 @@ const (
 // resetSysemuRegs sets up emulation registers.
 //
 // This should be called prior to calling sysemu.
-func (s *subprocess) resetSysemuRegs(regs *syscall.PtraceRegs) {
-	regs.Cs = s.initRegs.Cs
-	regs.Ss = s.initRegs.Ss
-	regs.Ds = s.initRegs.Ds
-	regs.Es = s.initRegs.Es
-	regs.Fs = s.initRegs.Fs
-	regs.Gs = s.initRegs.Gs
+func (t *thread) resetSysemuRegs(regs *syscall.PtraceRegs) {
+	regs.Cs = t.initRegs.Cs
+	regs.Ss = t.initRegs.Ss
+	regs.Ds = t.initRegs.Ds
+	regs.Es = t.initRegs.Es
+	regs.Fs = t.initRegs.Fs
+	regs.Gs = t.initRegs.Gs
 }
 
 // createSyscallRegs sets up syscall registers.
 //
 // This should be called to generate registers for a system call.
 func createSyscallRegs(initRegs *syscall.PtraceRegs, sysno uintptr, args ...arch.SyscallArgument) syscall.PtraceRegs {
-	// Copy initial registers (RIP, segments, etc.).
+	// Copy initial registers.
 	regs := *initRegs
 
 	// Set our syscall number.
