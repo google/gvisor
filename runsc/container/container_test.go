@@ -1725,6 +1725,53 @@ func TestUserLog(t *testing.T) {
 	}
 }
 
+func TestWaitOnExitedSandbox(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Run a shell that exits immediately with a non-zero code.
+		const wantExit = 17
+		cmd := fmt.Sprintf("exit %d", wantExit)
+		spec := testutil.NewSpecWithArgs("/bin/sh", "-c", cmd)
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create and Start the container.
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+
+		// Wait for the sandbox to stop running.
+		if err := testutil.Poll(func() error {
+			if c.Sandbox.IsRunning() {
+				return nil
+			}
+			return fmt.Errorf("sandbox still running")
+		}, 10*time.Second); err != nil {
+			t.Fatalf("error waiting for sandbox to exit: %v", err)
+		}
+
+		// Now call Wait.
+		ws, err := c.Wait()
+		if err != nil {
+			t.Fatalf("error waiting on container: %v", err)
+		}
+
+		if got := ws.ExitStatus(); got != wantExit {
+			t.Errorf("got exit status %d, want %d", got, wantExit)
+		}
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

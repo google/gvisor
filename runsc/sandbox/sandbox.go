@@ -596,10 +596,28 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	}
 	defer conn.Close()
 
-	if err := conn.Call(boot.ContainerWait, &cid, &ws); err != nil {
-		return ws, fmt.Errorf("error waiting on container %q: %v", cid, err)
+	// First try the Wait RPC to the sandbox.
+	if err := conn.Call(boot.ContainerWait, &cid, &ws); err == nil {
+		return ws, nil
 	}
-	return ws, nil
+	log.Warningf("Wait RPC to container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
+
+	// The sandbox may have already exited, or exited while handling the
+	// Wait RPC. The best we can do is ask Linux what the sandbox exit
+	// status was, since in most cases that will be the same as the
+	// container exit status.
+	p, err := os.FindProcess(s.Pid)
+	if err != nil {
+		// "On Unix systems, FindProcess always succeeds and returns a
+		// Process for the given pid, regardless of whether the process
+		// exists."
+		return ws, fmt.Errorf("FindProcess(%d) failed: %v", s.Pid, err)
+	}
+	ps, err := p.Wait()
+	if err != nil {
+		return ws, fmt.Errorf("sandbox no longer running, tried to get exit status, but Wait failed: %v", err)
+	}
+	return ps.Sys().(syscall.WaitStatus), nil
 }
 
 // WaitPID waits for process 'pid' in the container's sandbox and returns its
