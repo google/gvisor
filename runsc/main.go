@@ -45,10 +45,10 @@ var (
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	debugLogDir = flag.String("debug-log-dir", "", "additional location for logs. It creates individual log files per command")
-	logPackets  = flag.Bool("log-packets", false, "enable network packet logging")
-	logFD       = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD  = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	debugLog   = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	logPackets = flag.Bool("log-packets", false, "enable network packet logging")
+	logFD      = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
 
 	// Debugging flags: strace related
 	strace         = flag.Bool("strace", false, "enable strace")
@@ -131,7 +131,7 @@ func main() {
 		Debug:          *debug,
 		LogFilename:    *logFilename,
 		LogFormat:      *logFormat,
-		DebugLogDir:    *debugLogDir,
+		DebugLog:       *debugLog,
 		FileAccess:     fsAccess,
 		Overlay:        *overlay,
 		Network:        netType,
@@ -195,13 +195,10 @@ func main() {
 		}
 
 		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
-	} else if *debugLogDir != "" {
-		if err := os.MkdirAll(*debugLogDir, 0775); err != nil {
-			cmd.Fatalf("error creating dir %q: %v", *debugLogDir, err)
-		}
-		f, err := specutils.DebugLogFile(*debugLogDir, subcommand)
+	} else if *debugLog != "" {
+		f, err := specutils.DebugLogFile(*debugLog, subcommand)
 		if err != nil {
-			cmd.Fatalf("error opening debug log file in %q: %v", *debugLogDir, err)
+			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}
 		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
 	}

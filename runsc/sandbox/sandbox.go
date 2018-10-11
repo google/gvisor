@@ -291,10 +291,10 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		cmd.Args = append(cmd.Args, "--log-fd="+strconv.Itoa(nextFD))
 		nextFD++
 	}
-	if conf.DebugLogDir != "" {
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLogDir, "boot")
+	if conf.DebugLog != "" {
+		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot")
 		if err != nil {
-			return fmt.Errorf("error opening debug log file in %q: %v", conf.DebugLogDir, err)
+			return fmt.Errorf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}
 		defer debugLogFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, debugLogFile)

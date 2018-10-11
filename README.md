@@ -297,7 +297,7 @@ Docker configuration (`/etc/docker/daemon.json`):
         "runsc": {
             "path": "/usr/local/bin/runsc",
             "runtimeArgs": [
-                "--debug-log-dir=/tmp/runsc",
+                "--debug-log=/tmp/runsc/",
                 "--debug",
                 "--strace"
             ]

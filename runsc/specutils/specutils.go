@@ -351,12 +351,25 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 	return backoff.Retry(op, b)
 }
 
-// DebugLogFile opens a file in logDir based on the timestamp and subcommand
-// for writing.
-func DebugLogFile(logDir, subcommand string) (*os.File, error) {
-	// Format: <debug-log-dir>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
-	filename := fmt.Sprintf("runsc.log.%s.%s", time.Now().Format("20060102-150405.000000"), subcommand)
-	return os.OpenFile(filepath.Join(logDir, filename), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
+// DebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'
+// ends with '/', it's used as a directory with default file name.
+// 'logPattern' can contain variables that are substitued:
+//   - %TIMESTAMP%: is replaced with a timestamp using the following format:
+//			<yyyymmdd-hhmmss.uuuuuu>
+//	 - %COMMAND%: is replaced with 'command'
+func DebugLogFile(logPattern, command string) (*os.File, error) {
+	if strings.HasSuffix(logPattern, "/") {
+		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
+		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%"
+	}
+	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
+	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
+
+	dir := filepath.Dir(logPattern)
+	if err := os.MkdirAll(dir, 0775); err != nil {
+		return nil, fmt.Errorf("error creating dir %q: %v", dir, err)
+	}
+	return os.OpenFile(logPattern, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 }
 
 // Mount creates the mount point and calls Mount with the given flags.

@@ -160,9 +160,8 @@ type Config struct {
 	// LogFormat is the log format, "text" or "json".
 	LogFormat string
 
-	// DebugLogDir is the directory to log debug information to, if not
-	// empty.
-	DebugLogDir string
+	// DebugLog is the path to log debug information to, if not empty.
+	DebugLog string
 
 	// FileAccess indicates how the filesystem is accessed.
 	FileAccess FileAccessType
@@ -217,7 +216,7 @@ func (c *Config) ToFlags() []string {
 		"--debug=" + strconv.FormatBool(c.Debug),
 		"--log=" + c.LogFilename,
 		"--log-format=" + c.LogFormat,
-		"--debug-log-dir=" + c.DebugLogDir,
+		"--debug-log=" + c.DebugLog,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
 		"--network=" + c.Network.String(),
