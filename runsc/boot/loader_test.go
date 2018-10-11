@@ -398,8 +398,10 @@ func TestCreateMountNamespace(t *testing.T) {
 			root := mm.Root()
 			defer root.DecRef()
 			for _, p := range tc.expectedPaths {
-				if _, err := mm.FindInode(ctx, root, root, p, 0); err != nil {
+				if d, err := mm.FindInode(ctx, root, root, p, 0); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
+				} else {
+					d.DecRef()
 				}
 			}
 		})
