@@ -139,6 +139,11 @@ type Address string
 // AddressMask is a bitmask for an address.
 type AddressMask string
 
+// String implements Stringer.
+func (a AddressMask) String() string {
+	return Address(a).String()
+}
+
 // Subnet is a subnet defined by its address and mask.
 type Subnet struct {
 	address Address
