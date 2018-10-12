@@ -1266,9 +1266,10 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 		// Gets the metric of the device. As per netdevice(7), this
 		// always just sets ifr_metric to 0.
 		usermem.ByteOrder.PutUint32(ifr.Data[:4], 0)
+
 	case syscall.SIOCGIFMTU:
 		// Gets the MTU of the device.
-		// TODO: Implement.
+		usermem.ByteOrder.PutUint32(ifr.Data[:4], iface.MTU)
 
 	case syscall.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
