@@ -408,12 +408,14 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd.SysProcAttr.Setsid = true
 
 	// nss is the set of namespaces to join or create before starting the sandbox
-	// process. IPC and UTS namespaces from the host are not used as they
+	// process. Mount, IPC and UTS namespaces from the host are not used as they
 	// are virtualized inside the sandbox. Be paranoid and run inside an empty
-	// namespace for these.
-	log.Infof("Sandbox will be started in new IPC and UTS namespaces")
+	// namespace for these. Don't unshare cgroup because sandbox is added to a
+	// cgroup in the caller's namespace.
+	log.Infof("Sandbox will be started in new mount, IPC and UTS namespaces")
 	nss := []specs.LinuxNamespace{
 		{Type: specs.IPCNamespace},
+		{Type: specs.MountNamespace},
 		{Type: specs.UTSNamespace},
 	}
 
@@ -426,9 +428,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
 	}
 
-	log.Infof("Sandbox will be started in new mount namespace")
-	nss = append(nss, specs.LinuxNamespace{Type: specs.MountNamespace})
-
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
 	// namespace.
@@ -440,9 +439,9 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nss = append(nss, specs.LinuxNamespace{Type: specs.NetworkNamespace})
 	}
 
-	// User namespace depends on the following options:
-	//   - Host network/filesystem: requires to run inside the user namespace
-	//       specified in the spec or the current namespace if none is configured.
+	// User namespace depends on the network type. Host network requires to run
+	// inside the user namespace specified in the spec or the current namespace
+	// if none is configured.
 	if conf.Network == boot.NetworkHost {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)

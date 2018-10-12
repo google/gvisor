@@ -726,11 +726,21 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd := exec.Command(binPath, args...)
 	cmd.ExtraFiles = goferEnds
 
+	// Enter new namespaces to isolate from the rest of the system. Don't unshare
+	// cgroup because gofer is added to a cgroup in the caller's namespace.
+	nss := []specs.LinuxNamespace{
+		{Type: specs.IPCNamespace},
+		{Type: specs.MountNamespace},
+		{Type: specs.NetworkNamespace},
+		{Type: specs.PIDNamespace},
+		{Type: specs.UTSNamespace},
+	}
+
 	// Setup any uid/gid mappings, and create or join the configured user
 	// namespace so the gofer's view of the filesystem aligns with the
 	// users in the sandbox.
+	nss = append(nss, specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)...)
 	specutils.SetUIDGIDMappings(cmd, spec)
-	nss := specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
 
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
