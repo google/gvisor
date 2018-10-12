@@ -86,6 +86,7 @@ func main() {
 	subcommands.Register(new(cmd.Restore), "")
 	subcommands.Register(new(cmd.Resume), "")
 	subcommands.Register(new(cmd.Run), "")
+	subcommands.Register(new(cmd.Spec), "")
 	subcommands.Register(new(cmd.Start), "")
 	subcommands.Register(new(cmd.State), "")
 	subcommands.Register(new(cmd.Wait), "")

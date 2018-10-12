@@ -23,6 +23,7 @@ go_library(
         "restore.go",
         "resume.go",
         "run.go",
+        "spec.go",
         "start.go",
         "state.go",
         "wait.go",
