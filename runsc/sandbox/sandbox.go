@@ -351,6 +351,15 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		nextFD++
 	}
 
+	// The current process' stdio must be passed to the application via the
+	// --stdio-fds flag. The stdio of the sandbox process itself must not
+	// be connected to the same FDs, otherwise we risk leaking sandbox
+	// errors to the application, so we set the sandbox stdio to nil,
+	// causing them to read/write from the null device.
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
 	// If the console control socket file is provided, then create a new
 	// pty master/slave pair and set the TTY on the sandbox process.
 	if consoleSocket != "" {
@@ -364,21 +373,13 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		}
 		defer tty.Close()
 
-		// Ideally we would set the sandbox stdin to this process'
-		// stdin, but for some reason Docker does not like that (it
-		// never calls `runsc start`). Instead we set stdio to the
-		// console TTY, but note that this is distinct from the
-		// container stdio, which is passed via the flags below.
-		cmd.Stdin = tty
-		cmd.Stdout = tty
-		cmd.Stderr = tty
-
 		// Set the TTY as a controlling TTY on the sandbox process.
 		// Note that the Ctty field must be the FD of the TTY in the
-		// *new* process, not this process. Since we set the TTY to
+		// *new* process, not this process. Since we are about to
+		// assign the TTY to nextFD, we can use that value here.
 		// stdin, we can use FD 0 here.
 		cmd.SysProcAttr.Setctty = true
-		cmd.SysProcAttr.Ctty = 0
+		cmd.SysProcAttr.Ctty = nextFD
 
 		// Pass the tty as all stdio fds to sandbox.
 		for i := 0; i < 3; i++ {
@@ -386,20 +387,29 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
 			nextFD++
 		}
-	} else {
-		// Connect the sandbox process to this process's stdios. Note
-		// that this is distinct from the container's stdio, which is
-		// passed by the flags below.
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
 
+		if conf.Debug {
+			// If debugging, send the boot process stdio to the
+			// TTY, so that it is easier to find.
+			cmd.Stdin = tty
+			cmd.Stdout = tty
+			cmd.Stderr = tty
+		}
+	} else {
 		// If not using a console, pass our current stdio as the
 		// container stdio via flags.
 		for _, f := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
 			cmd.ExtraFiles = append(cmd.ExtraFiles, f)
 			cmd.Args = append(cmd.Args, "--stdio-fds="+strconv.Itoa(nextFD))
 			nextFD++
+		}
+
+		if conf.Debug {
+			// If debugging, send the boot process stdio to the
+			// this process' stdio, so that is is easier to find.
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
 		}
 	}
 
