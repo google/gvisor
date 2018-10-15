@@ -119,7 +119,7 @@ type Dirent struct {
 	parent *Dirent
 
 	// deleted may be set atomically when removed.
-	deleted int32 `state:"nosave"`
+	deleted int32
 
 	// frozen indicates this entry can't walk to unknown nodes.
 	frozen bool
