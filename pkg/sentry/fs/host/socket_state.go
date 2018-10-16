@@ -17,23 +17,26 @@ package host
 import (
 	"fmt"
 	"syscall"
+
+	"gvisor.googlesource.com/gvisor/pkg/fd"
 )
 
 // beforeSave is invoked by stateify.
-func (ep *endpoint) beforeSave() {
-	if ep.srfd < 0 {
+func (c *ConnectedEndpoint) beforeSave() {
+	if c.srfd < 0 {
 		panic("only host file descriptors provided at sentry startup can be saved")
 	}
 }
 
 // afterLoad is invoked by stateify.
-func (ep *endpoint) afterLoad() {
-	fd, err := syscall.Dup(ep.srfd)
+func (c *ConnectedEndpoint) afterLoad() {
+	f, err := syscall.Dup(c.srfd)
 	if err != nil {
-		panic(fmt.Sprintf("failed to dup restored fd %d: %v", ep.srfd, err))
+		panic(fmt.Sprintf("failed to dup restored FD %d: %v", c.srfd, err))
 	}
-	ep.fd = fd
-	if err := ep.init(); err != nil {
-		panic(fmt.Sprintf("Could not restore host socket fd %d: %v", ep.srfd, err))
+	c.file = fd.New(f)
+	if err := c.init(); err != nil {
+		panic(fmt.Sprintf("Could not restore host socket FD %d: %v", c.srfd, err))
 	}
+	c.Init()
 }

@@ -7,5 +7,8 @@ go_library(
     srcs = ["context.go"],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid",
     visibility = ["//pkg/sentry:internal"],
-    deps = ["//pkg/sentry/context"],
+    deps = [
+        "//pkg/sentry/context",
+        "//pkg/tcpip/transport/unix",
+    ],
 )

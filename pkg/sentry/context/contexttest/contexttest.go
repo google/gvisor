@@ -53,6 +53,14 @@ type testContext struct {
 // globalUniqueID tracks incremental unique identifiers for tests.
 var globalUniqueID uint64
 
+// globalUniqueIDProvider implements unix.UniqueIDProvider.
+type globalUniqueIDProvider struct{}
+
+// UniqueID implements unix.UniqueIDProvider.UniqueID.
+func (*globalUniqueIDProvider) UniqueID() uint64 {
+	return atomic.AddUint64(&globalUniqueID, 1)
+}
+
 // lastInotifyCookie is a monotonically increasing counter for generating unique
 // inotify cookies. Must be accessed using atomic ops.
 var lastInotifyCookie uint32
@@ -76,7 +84,9 @@ func (t *testContext) Value(key interface{}) interface{} {
 	case platform.CtxPlatform:
 		return t.platform
 	case uniqueid.CtxGlobalUniqueID:
-		return atomic.AddUint64(&globalUniqueID, 1)
+		return (*globalUniqueIDProvider).UniqueID(nil)
+	case uniqueid.CtxGlobalUniqueIDProvider:
+		return &globalUniqueIDProvider{}
 	case uniqueid.CtxInotifyCookie:
 		return atomic.AddUint32(&lastInotifyCookie, 1)
 	case ktime.CtxRealtimeClock:

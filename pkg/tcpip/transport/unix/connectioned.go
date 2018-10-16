@@ -158,6 +158,17 @@ func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 	return a, b
 }
 
+// NewExternal creates a new externally backed Endpoint. It behaves like a
+// socketpair.
+func NewExternal(stype SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
+	return &connectionedEndpoint{
+		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
+		id:           uid.UniqueID(),
+		idGenerator:  uid,
+		stype:        stype,
+	}
+}
+
 // ID implements ConnectingEndpoint.ID.
 func (e *connectionedEndpoint) ID() uint64 {
 	return e.id

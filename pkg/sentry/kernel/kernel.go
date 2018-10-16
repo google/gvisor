@@ -591,6 +591,8 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.k
 	case uniqueid.CtxGlobalUniqueID:
 		return ctx.k.UniqueID()
+	case uniqueid.CtxGlobalUniqueIDProvider:
+		return ctx.k
 	case uniqueid.CtxInotifyCookie:
 		return ctx.k.GenerateInotifyCookie()
 	default:
@@ -1045,6 +1047,8 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		return ctx.k
 	case uniqueid.CtxGlobalUniqueID:
 		return ctx.k.UniqueID()
+	case uniqueid.CtxGlobalUniqueIDProvider:
+		return ctx.k
 	case uniqueid.CtxInotifyCookie:
 		return ctx.k.GenerateInotifyCookie()
 	default:

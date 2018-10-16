@@ -590,6 +590,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return t.k
 	case uniqueid.CtxGlobalUniqueID:
 		return t.k.UniqueID()
+	case uniqueid.CtxGlobalUniqueIDProvider:
+		return t.k
 	case uniqueid.CtxInotifyCookie:
 		return t.k.GenerateInotifyCookie()
 	default:
