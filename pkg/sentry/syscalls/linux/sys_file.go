@@ -1042,16 +1042,23 @@ func rmdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr) error {
 		return err
 	}
 
-	// Special case: rmdir rejects anything with '.' as last component.
-	// This would be handled by the busy check for the current working
-	// directory, but this is how it's done.
-	if (len(path) == 1 && path == ".") || (len(path) > 1 && path[len(path)-2:] == "/.") {
-		return syserror.EINVAL
+	// Special case: removing the root always returns EBUSY.
+	if path == "/" {
+		return syserror.EBUSY
 	}
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
+		}
+
+		// Linux returns different ernos when the path ends in single
+		// dot vs. double dots.
+		switch name {
+		case ".":
+			return syserror.EINVAL
+		case "..":
+			return syserror.ENOTEMPTY
 		}
 
 		if err := fs.MayDelete(t, root, d, name); err != nil {
@@ -1829,27 +1836,25 @@ func renameAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD 
 			return syserror.ENOTDIR
 		}
 
-		// Root cannot be renamed to anything.
-		//
-		// TODO: This catches the case when the rename
-		// argument is exactly "/", but we should return EBUSY when
-		// renaming any mount point, or when the argument is not
-		// exactly "/" but still resolves to the root, like "/.." or
-		// "/bin/..".
-		if oldParent == root && oldName == "." {
-			return syscall.EBUSY
+		// Rename rejects paths that end in ".", "..", or empty (i.e.
+		// the root) with EBUSY.
+		switch oldName {
+		case "", ".", "..":
+			return syserror.EBUSY
 		}
+
 		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
 				return syserror.ENOTDIR
 			}
 
-			// Nothing can be renamed to root.
-			//
-			// TODO: Same as above.
-			if newParent == root && newName == "." {
-				return syscall.EBUSY
+			// Rename rejects paths that end in ".", "..", or empty
+			// (i.e.  the root) with EBUSY.
+			switch newName {
+			case "", ".", "..":
+				return syserror.EBUSY
 			}
+
 			return fs.Rename(t, root, oldParent, oldName, newParent, newName)
 		})
 	})

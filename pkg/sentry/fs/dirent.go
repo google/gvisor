@@ -1027,11 +1027,14 @@ func (d *Dirent) flush() {
 	}
 }
 
-// Busy indicates whether this Dirent is a mount point or root dirent.
-func (d *Dirent) Busy() bool {
+// isMountPoint returns true if the dirent is a mount point or the root.
+func (d *Dirent) isMountPoint() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.isMountPointLocked()
+}
 
+func (d *Dirent) isMountPointLocked() bool {
 	return d.mounted || d.parent == nil
 }
 
@@ -1137,7 +1140,7 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string) error {
 	}
 
 	// Remove cannot remove a mount point.
-	if child.Busy() {
+	if child.isMountPoint() {
 		return syscall.EBUSY
 	}
 
@@ -1211,7 +1214,7 @@ func (d *Dirent) RemoveDirectory(ctx context.Context, root *Dirent, name string)
 	}
 
 	// Remove cannot remove a mount point.
-	if child.Busy() {
+	if child.isMountPoint() {
 		return syscall.EBUSY
 	}
 
@@ -1457,12 +1460,20 @@ func MayDelete(ctx context.Context, root, dir *Dirent, name string) error {
 	return mayDelete(ctx, dir, victim)
 }
 
-func mayDelete(ctx context.Context, dir *Dirent, victim *Dirent) error {
+func mayDelete(ctx context.Context, dir, victim *Dirent) error {
 	if err := dir.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
 		return err
 	}
 
-	return checkSticky(ctx, dir, victim)
+	if err := checkSticky(ctx, dir, victim); err != nil {
+		return err
+	}
+
+	if victim.IsRoot() {
+		return syserror.EBUSY
+	}
+
+	return nil
 }
 
 // Rename atomically converts the child of oldParent named oldName to a
@@ -1491,31 +1502,26 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		return syscall.ENOENT
 	}
 
-	// Check constraints on the object being renamed.
+	// renamed is the dirent that will be renamed to something else.
 	renamed, err := oldParent.walk(ctx, root, oldName, false /* may unlock */)
 	if err != nil {
 		return err
 	}
 	defer renamed.DecRef()
 
-	// Make sure we have write permissions on old and new parent.
+	// Check that the renamed dirent is deletable.
 	if err := mayDelete(ctx, oldParent, renamed); err != nil {
 		return err
 	}
-	if newParent != oldParent {
-		if err := newParent.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
-			return err
-		}
+
+	// Check that the renamed dirent is not a mount point.
+	if renamed.isMountPointLocked() {
+		return syscall.EBUSY
 	}
 
 	// Source should not be an ancestor of the target.
-	if renamed == newParent {
+	if newParent.descendantOf(renamed) {
 		return syscall.EINVAL
-	}
-
-	// Is the thing we're trying to rename busy?
-	if renamed.Busy() {
-		return syscall.EBUSY
 	}
 
 	// Per rename(2): "... EACCES: ... or oldpath is a directory and does not
@@ -1526,21 +1532,42 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		}
 	}
 
-	// Check constraints on the object being replaced, if any.
+	// replaced is the dirent that is being overwritten by rename.
 	replaced, err := newParent.walk(ctx, root, newName, false /* may unlock */)
-	if err == nil {
+	if err != nil {
+		if err != syserror.ENOENT {
+			return err
+		}
+
+		// Make sure we can create a new child in the new parent.
+		if err := newParent.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
+			return err
+		}
+	} else {
+		// Check constraints on the dirent being replaced.
+
 		// NOTE: We don't want to keep replaced alive
 		// across the Rename, so must call DecRef manually (no defer).
 
-		// Target should not be an ancestor of source.
-		if replaced == oldParent {
+		// Check that we can delete replaced.
+		if err := mayDelete(ctx, oldParent, renamed); err != nil {
 			replaced.DecRef()
-			// Why is this not EINVAL? See fs/namei.c.
+			return err
+		}
+
+		// Target should not be an ancestor of source.
+		if oldParent.descendantOf(replaced) {
+			replaced.DecRef()
+
+			// Note that Linux returns EINVAL if the source is an
+			// ancestor of target, but ENOTEMPTY if the target is
+			// an ancestor of source (unless RENAME_EXCHANGE flag
+			// is present).  See fs/namei.c:renameat2.
 			return syscall.ENOTEMPTY
 		}
 
-		// Is the thing we're trying to replace busy?
-		if replaced.Busy() {
+		// Check that replaced is not a mount point.
+		if replaced.isMountPointLocked() {
 			replaced.DecRef()
 			return syscall.EBUSY
 		}
