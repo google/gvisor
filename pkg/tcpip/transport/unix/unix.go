@@ -562,6 +562,9 @@ type ConnectedEndpoint interface {
 	// Send sends a single message. This method does not block.
 	//
 	// notify indicates if SendNotify should be called.
+	//
+	// tcpip.ErrWouldBlock can be returned along with a partial write if
+	// the caller should block to send the rest of the data.
 	Send(data [][]byte, controlMessages ControlMessages, from tcpip.FullAddress) (n uintptr, notify bool, err *tcpip.Error)
 
 	// SendNotify notifies the ConnectedEndpoint of a successful Send. This
