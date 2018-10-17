@@ -71,18 +71,18 @@ func TestSocketIsBlocking(t *testing.T) {
 		t.Fatalf("newSocket(%v) failed => %v", pair[0], err)
 	}
 	defer sock.DecRef()
-	// Test that the socket now is non blocking.
+	// Test that the socket now is non-blocking.
 	if fl, err = getFl(pair[0]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[0], err)
 	}
 	if fl&syscall.O_NONBLOCK != syscall.O_NONBLOCK {
-		t.Errorf("Expected socket %v to have becoming non blocking", pair[0])
+		t.Errorf("Expected socket %v to have become non-blocking", pair[0])
 	}
 	if fl, err = getFl(pair[1]); err != nil {
 		t.Fatalf("getFl: fcntl(%v, GETFL) => %v", pair[1], err)
 	}
 	if fl&syscall.O_NONBLOCK == syscall.O_NONBLOCK {
-		t.Errorf("Did not expect socket %v to become non blocking", pair[1])
+		t.Errorf("Did not expect socket %v to become non-blocking", pair[1])
 	}
 }
 
