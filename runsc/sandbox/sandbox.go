@@ -696,10 +696,15 @@ func (s *Sandbox) SignalContainer(cid string, sig syscall.Signal, all bool) erro
 	}
 	defer conn.Close()
 
+	mode := boot.DeliverToProcess
+	if all {
+		mode = boot.DeliverToAllProcesses
+	}
+
 	args := boot.SignalArgs{
 		CID:   cid,
 		Signo: int32(sig),
-		All:   all,
+		Mode:  mode,
 	}
 	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
 		return fmt.Errorf("err signaling container %q: %v", cid, err)
@@ -719,13 +724,18 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig syscall.Signal, fgPro
 	}
 	defer conn.Close()
 
-	args := boot.SignalProcessArgs{
-		CID:                     cid,
-		Signo:                   int32(sig),
-		PID:                     pid,
-		SendToForegroundProcess: fgProcess,
+	mode := boot.DeliverToProcess
+	if fgProcess {
+		mode = boot.DeliverToForegroundProcessGroup
 	}
-	if err := conn.Call(boot.ContainerSignalProcess, &args, nil); err != nil {
+
+	args := boot.SignalArgs{
+		CID:   cid,
+		Signo: int32(sig),
+		PID:   pid,
+		Mode:  mode,
+	}
+	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
 		return fmt.Errorf("err signaling container %q PID %d: %v", cid, pid, err)
 	}
 	return nil

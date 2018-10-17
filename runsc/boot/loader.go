@@ -19,7 +19,6 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"os"
-	"os/signal"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -110,7 +109,7 @@ type Loader struct {
 	// mu guards processes.
 	mu sync.Mutex
 
-	// processes maps containers root process and invocation of exec. Root
+	// processes maps containers init process and invocation of exec. Root
 	// processes are keyed with container ID and pid=0, while exec invocations
 	// have the corresponding pid set.
 	//
@@ -291,28 +290,9 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("error creating control server: %v", err)
 	}
 
-	// We don't care about child signals; some platforms can generate a
-	// tremendous number of useless ones (I'm looking at you, ptrace).
-	if err := sighandling.IgnoreChildStop(); err != nil {
-		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
-	}
-	// Ensure that signals received are forwarded to the emulated kernel.
-	ps := syscall.Signal(args.Conf.PanicSignal)
-	startSignalForwarding := sighandling.PrepareForwarding(k, ps)
-	if args.Conf.PanicSignal != -1 {
-		// Panics if the sentry receives 'Config.PanicSignal'.
-		panicChan := make(chan os.Signal, 1)
-		signal.Notify(panicChan, ps)
-		go func() { // S/R-SAFE: causes sentry panic.
-			<-panicChan
-			panic("Signal-induced panic")
-		}()
-		log.Infof("Panic signal set to %v(%d)", ps, args.Conf.PanicSignal)
-	}
-
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create root process: %v", err)
+		return nil, fmt.Errorf("failed to create init process for root container: %v", err)
 	}
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
@@ -320,19 +300,47 @@ func New(args Args) (*Loader, error) {
 	}
 
 	l := &Loader{
-		k:                     k,
-		ctrl:                  ctrl,
-		conf:                  args.Conf,
-		console:               args.Console,
-		watchdog:              watchdog,
-		spec:                  args.Spec,
-		goferFDs:              args.GoferFDs,
-		stdioFDs:              args.StdioFDs,
-		startSignalForwarding: startSignalForwarding,
-		rootProcArgs:          procArgs,
-		sandboxID:             args.ID,
-		processes:             make(map[execID]*execProcess),
+		k:            k,
+		ctrl:         ctrl,
+		conf:         args.Conf,
+		console:      args.Console,
+		watchdog:     watchdog,
+		spec:         args.Spec,
+		goferFDs:     args.GoferFDs,
+		stdioFDs:     args.StdioFDs,
+		rootProcArgs: procArgs,
+		sandboxID:    args.ID,
+		processes:    make(map[execID]*execProcess),
 	}
+
+	// We don't care about child signals; some platforms can generate a
+	// tremendous number of useless ones (I'm looking at you, ptrace).
+	if err := sighandling.IgnoreChildStop(); err != nil {
+		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
+	}
+
+	// Handle signals by forwarding them to the root container process
+	// (except for panic signal, which should cause a panic).
+	l.startSignalForwarding = sighandling.PrepareHandler(func(sig linux.Signal) {
+		// Panic signal should cause a panic.
+		if args.Conf.PanicSignal != -1 && sig == linux.Signal(args.Conf.PanicSignal) {
+			panic("Signal-induced panic")
+		}
+
+		// Otherwise forward to root container.
+		deliveryMode := DeliverToProcess
+		if args.Console {
+			// Since we are running with a console, we should
+			// forward the signal to the foreground process group
+			// so that job control signals like ^C can be handled
+			// properly.
+			deliveryMode = DeliverToForegroundProcessGroup
+		}
+		if err := l.signal(args.ID, 0, int32(sig), deliveryMode); err != nil {
+			log.Warningf("error sending signal %v to container %q: %v", sig, args.ID, err)
+		}
+	})
+
 	ctrl.manager.l = l
 	return l, nil
 }
@@ -467,9 +475,15 @@ func (l *Loader) run() error {
 		l.rootProcArgs.FDMap.DecRef()
 	}
 
-	l.mu.Lock()
 	eid := execID{cid: l.sandboxID}
-	l.processes[eid] = &execProcess{tg: l.k.GlobalInit()}
+	ep := execProcess{tg: l.k.GlobalInit()}
+	if l.console {
+		ttyFile := l.rootProcArgs.FDMap.GetFile(0)
+		defer ttyFile.DecRef()
+		ep.tty = ttyFile.FileOperations.(*host.TTYFileOperations)
+	}
+	l.mu.Lock()
+	l.processes[eid] = &ep
 	l.mu.Unlock()
 
 	// Start signal forwarding only after an init process is created.
@@ -572,7 +586,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 // filesystem.
 func (l *Loader) destroyContainer(cid string) error {
 	// First kill and wait for all processes in the container.
-	if err := l.signalContainer(cid, int32(linux.SIGKILL), true /*all*/); err != nil {
+	if err := l.signal(cid, 0, int32(linux.SIGKILL), DeliverToAllProcesses); err != nil {
 		return fmt.Errorf("failed to SIGKILL all container processes: %v", err)
 	}
 
@@ -634,7 +648,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	return tgid, nil
 }
 
-// waitContainer waits for the root process of a container to exit.
+// waitContainer waits for the init process of a container to exit.
 func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// Don't defer unlock, as doing so would make it impossible for
 	// multiple clients to wait on the same container.
@@ -740,11 +754,12 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 	}
 }
 
-// signalProcess sends a signal to the process with the given PID. If
-// sendToFGProcess is true, then the signal will be sent to the foreground
-// process group in the same session that PID belongs to.
-func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess bool) error {
-	if pid <= 0 {
+// signal sends a signal to one or more processes in a container. If PID is 0,
+// then the container init process is used. Depending on the SignalDeliveryMode
+// option, the signal may be sent directly to the indicated process, to all
+// processes in the container, or to the foreground process group.
+func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) error {
+	if pid < 0 {
 		return fmt.Errorf("failed to signal container %q PID %d: PID must be positive", cid, pid)
 	}
 
@@ -756,10 +771,16 @@ func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess boo
 	ep, ok := l.processes[eid]
 	l.mu.Unlock()
 
-	// The caller may be signaling a process not started directly via exec.
-	// In this case, find the process in the container's PID namespace and
-	// signal it.
-	if !ok {
+	switch mode {
+	case DeliverToProcess:
+		if ok {
+			// Send signal directly to the identified process.
+			return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
+		}
+
+		// The caller may be signaling a process not started directly via exec.
+		// In this case, find the process in the container's PID namespace and
+		// signal it.
 		ep, ok := l.processes[execID{cid: cid}]
 		if !ok {
 			return fmt.Errorf("no container with ID: %q", cid)
@@ -772,74 +793,60 @@ func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess boo
 			return fmt.Errorf("process %d is part of a different container: %q", pid, tg.Leader().ContainerID())
 		}
 		return tg.SendSignal(&arch.SignalInfo{Signo: signo})
-	}
 
-	if !sendToFGProcess {
-		// Send signal directly to exec process.
-		return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
-	}
-
-	// Lookup foreground process group from the TTY for the given process,
-	// and send the signal to it.
-	if ep.tty == nil {
-		return fmt.Errorf("failed to signal foreground process group in container %q PID %d: no TTY attached", cid, pid)
-	}
-	pg := ep.tty.ForegroundProcessGroup()
-	if pg == nil {
-		// No foreground process group has been set. Signal the
-		// original thread group.
-		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, pid, pid)
-		return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
-	}
-
-	// Send the signal to all processes in the process group.
-	var lastErr error
-	for _, tg := range l.k.TaskSet().Root.ThreadGroups() {
-		if tg.ProcessGroup() != pg {
-			continue
+	case DeliverToForegroundProcessGroup:
+		if !ok {
+			return fmt.Errorf("failed to signal foreground process group for container %q PID %d: no such PID", cid, pid)
 		}
-		if err := tg.SendSignal(&arch.SignalInfo{Signo: signo}); err != nil {
-			lastErr = err
+
+		// Lookup foreground process group from the TTY for the given process,
+		// and send the signal to it.
+		if ep.tty == nil {
+			return fmt.Errorf("failed to signal foreground process group in container %q PID %d: no TTY attached", cid, pid)
 		}
-	}
-	return lastErr
-}
-
-// signalContainer sends a signal to the root container process, or to all
-// processes in the container if all is true.
-func (l *Loader) signalContainer(cid string, signo int32, all bool) error {
-	si := arch.SignalInfo{Signo: signo}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	eid := execID{cid: cid}
-	ep, ok := l.processes[eid]
-	if !ok {
-		return fmt.Errorf("failed to signal container %q: no such container", cid)
-	}
-
-	if !all {
-		return ep.tg.SendSignal(&si)
-	}
-
-	// Pause the kernel to prevent new processes from being created while
-	// the signal is delivered. This prevents process leaks when SIGKILL is
-	// sent to the entire container.
-	l.k.Pause()
-	if err := l.k.SendContainerSignal(cid, &si); err != nil {
-		l.k.Unpause()
-		return err
-	}
-	l.k.Unpause()
-
-	// If killing all processes, wait for them to exit.
-	if all && linux.Signal(signo) == linux.SIGKILL {
-		for _, t := range l.k.TaskSet().Root.Tasks() {
-			if t.ContainerID() == cid {
-				t.ThreadGroup().WaitExited()
+		pg := ep.tty.ForegroundProcessGroup()
+		if pg == nil {
+			// No foreground process group has been set. Signal the
+			// original thread group.
+			log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, pid, pid)
+			return ep.tg.SendSignal(&arch.SignalInfo{Signo: signo})
+		}
+		// Send the signal to all processes in the process group.
+		var lastErr error
+		for _, tg := range l.k.TaskSet().Root.ThreadGroups() {
+			if tg.ProcessGroup() != pg {
+				continue
+			}
+			if err := tg.SendSignal(&arch.SignalInfo{Signo: signo}); err != nil {
+				lastErr = err
 			}
 		}
+		return lastErr
+	case DeliverToAllProcesses:
+		if !ok {
+			return fmt.Errorf("failed to signal all processes in container %q PID %d: no such PID", cid, pid)
+		}
+
+		// Pause the kernel to prevent new processes from being created while
+		// the signal is delivered. This prevents process leaks when SIGKILL is
+		// sent to the entire container.
+		l.k.Pause()
+		if err := l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo}); err != nil {
+			l.k.Unpause()
+			return err
+		}
+		l.k.Unpause()
+
+		// If SIGKILLing all processes, wait for them to exit.
+		if linux.Signal(signo) == linux.SIGKILL {
+			for _, t := range l.k.TaskSet().Root.Tasks() {
+				if t.ContainerID() == cid {
+					t.ThreadGroup().WaitExited()
+				}
+			}
+		}
+		return nil
+	default:
+		panic(fmt.Sprintf("unknown signal signal delivery mode %v", mode))
 	}
-	return nil
 }

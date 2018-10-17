@@ -425,6 +425,26 @@ func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error
 	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, args.ClearStatus, waitStatus)
 }
 
+// SignalDeliveryMode enumerates different signal delivery modes.
+type SignalDeliveryMode int
+
+const (
+	// DeliverToProcess delivers the signal to the container process with
+	// the specified PID. If PID is 0, then the container init process is
+	// signaled.
+	DeliverToProcess SignalDeliveryMode = iota
+
+	// DeliverToAllProcesses delivers the signal to all processes in the
+	// container. PID must be 0.
+	DeliverToAllProcesses
+
+	// DeliverToForegroundProcessGroup delivers the signal to the
+	// foreground process group in the same TTY session as the specified
+	// process. If PID is 0, then the signal is delivered to the foreground
+	// process group for the TTY for the init process.
+	DeliverToForegroundProcessGroup
+)
+
 // SignalArgs are arguments to the Signal method.
 type SignalArgs struct {
 	// CID is the container ID.
@@ -433,36 +453,20 @@ type SignalArgs struct {
 	// Signo is the signal to send to the process.
 	Signo int32
 
-	// All is set when signal should be sent to all processes in the container.
-	// When false, the signal is sent to the root container process only.
-	All bool
-}
-
-// Signal sends a signal to the root process of the container.
-func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Signal %q %d, all: %t", args.CID, args.Signo, args.All)
-	return cm.l.signalContainer(args.CID, args.Signo, args.All)
-}
-
-// SignalProcessArgs are arguments to the Signal method.
-type SignalProcessArgs struct {
-	// CID is the container ID.
-	CID string
-
 	// PID is the process ID in the given container that will be signaled.
+	// If 0, the root container will be signalled.
 	PID int32
 
-	// Signo is the signal to send to the process.
-	Signo int32
-
-	// SendToForegroundProcess indicates that the signal should be sent to
-	// the foreground process group in the session that PID belongs to.
-	// This is only valid if the process is attached to a host TTY.
-	SendToForegroundProcess bool
+	// Mode is the signal delivery mode.
+	Mode SignalDeliveryMode
 }
 
-// SignalProcess sends a signal to a particular process in the container.
-func (cm *containerManager) SignalProcess(args *SignalProcessArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Signal: %+v", args)
-	return cm.l.signalProcess(args.CID, args.PID, args.Signo, args.SendToForegroundProcess)
+// Signal sends a signal to one or more processes in a container. If args.PID
+// is 0, then the container init process is used. Depending on the
+// args.SignalDeliveryMode option, the signal may be sent directly to the
+// indicated process, to all processes in the container, or to the foreground
+// process group.
+func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
+	log.Debugf("containerManager.Signal %+v", args)
+	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
 }

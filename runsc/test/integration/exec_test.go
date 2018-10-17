@@ -66,7 +66,7 @@ func TestExecJobControl(t *testing.T) {
 	if err := testutil.Pull("alpine"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
-	d := testutil.MakeDocker("exec-test")
+	d := testutil.MakeDocker("exec-job-control-test")
 
 	// Start the container.
 	if err := d.Run("alpine", "sleep", "1000"); err != nil {

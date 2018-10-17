@@ -30,6 +30,7 @@ go_test(
     name = "container_test",
     size = "medium",
     srcs = [
+        "console_test.go",
         "container_test.go",
         "fs_test.go",
         "multi_container_test.go",

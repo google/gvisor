@@ -28,6 +28,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -228,6 +229,53 @@ func TestNumCPU(t *testing.T) {
 	}
 	if want := 1; got != want {
 		t.Errorf("MemTotal got: %d, want: %d", got, want)
+	}
+}
+
+// TestJobControl tests that job control characters are handled properly.
+func TestJobControl(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("job-control-test")
+
+	// Start the container with an attached PTY.
+	_, ptmx, err := d.RunWithPty("alpine", "sh")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer ptmx.Close()
+	defer d.CleanUp()
+
+	// Call "sleep 100" in the shell.
+	if _, err := ptmx.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// Give shell a few seconds to start executing the sleep.
+	time.Sleep(2 * time.Second)
+
+	// Send a ^C to the pty, which should kill sleep, but not the shell.
+	// \x03 is ASCII "end of text", which is the same as ^C.
+	if _, err := ptmx.Write([]byte{'\x03'}); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// The shell should still be alive at this point. Sleep should have
+	// exited with code 2+128=130. We'll exit with 10 plus that number, so
+	// that we can be sure that the shell did not get signalled.
+	if _, err := ptmx.Write([]byte("exit $(expr $? + 10)\n")); err != nil {
+		t.Fatalf("error writing to pty: %v", err)
+	}
+
+	// Wait for the container to exit.
+	got, err := d.Wait(5 * time.Second)
+	if err != nil {
+		t.Fatalf("error getting exit code: %v", err)
+	}
+	// Container should exit with code 10+130=140.
+	if want := syscall.WaitStatus(140); got != want {
+		t.Errorf("container exited with code %d want %d", got, want)
 	}
 }
 

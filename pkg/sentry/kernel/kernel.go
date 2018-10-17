@@ -839,17 +839,40 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 	k.tasks.mu.RLock()
 	defer k.tasks.mu.RUnlock()
 
+	var lastErr error
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader && t.ContainerID() == cid {
 			t.tg.signalHandlers.mu.Lock()
 			defer t.tg.signalHandlers.mu.Unlock()
 			infoCopy := *info
 			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
-				return err
+				lastErr = err
 			}
 		}
 	}
-	return nil
+	return lastErr
+}
+
+// SendProcessGroupSignal sends a signal to all processes inside the process
+// group. It is analagous to kernel/signal.c:kill_pgrp.
+func (k *Kernel) SendProcessGroupSignal(pg *ProcessGroup, info *arch.SignalInfo) error {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	k.tasks.mu.RLock()
+	defer k.tasks.mu.RUnlock()
+
+	var lastErr error
+	for t := range k.tasks.Root.tids {
+		if t == t.tg.leader && t.tg.ProcessGroup() == pg {
+			t.tg.signalHandlers.mu.Lock()
+			defer t.tg.signalHandlers.mu.Unlock()
+			infoCopy := *info
+			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	return lastErr
 }
 
 // FeatureSet returns the FeatureSet.

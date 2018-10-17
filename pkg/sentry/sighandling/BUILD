@@ -10,9 +10,5 @@ go_library(
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/sighandling",
     visibility = ["//pkg/sentry:internal"],
-    deps = [
-        "//pkg/abi/linux",
-        "//pkg/sentry/arch",
-        "//pkg/sentry/kernel",
-    ],
+    deps = ["//pkg/abi/linux"],
 )

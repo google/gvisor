@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kr/pty"
@@ -198,6 +199,13 @@ func (d *Docker) Run(args ...string) error {
 	return err
 }
 
+// RunWithPty is like Run but with an attached pty.
+func (d *Docker) RunWithPty(args ...string) (*exec.Cmd, *os.File, error) {
+	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-it"}
+	a = append(a, args...)
+	return doWithPty(a...)
+}
+
 // RunFg calls 'docker run' with the arguments provided in the foreground. It
 // blocks until the container exits and returns the output.
 func (d *Docker) RunFg(args ...string) (string, error) {
@@ -305,6 +313,37 @@ func (d *Docker) ID() (string, error) {
 		return "", fmt.Errorf("error retrieving ID: %v", err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// Wait waits for container to exit, up to the given timeout. Returns error if
+// wait fails or timeout is hit. Returns the application return code otherwise.
+// Note that the application may have failed even if err == nil, always check
+// the exit code.
+func (d *Docker) Wait(timeout time.Duration) (syscall.WaitStatus, error) {
+	timeoutChan := time.After(timeout)
+	waitChan := make(chan (syscall.WaitStatus))
+	errChan := make(chan (error))
+
+	go func() {
+		out, err := do("wait", d.Name)
+		if err != nil {
+			errChan <- fmt.Errorf("error waiting for container %q: %v", d.Name, err)
+		}
+		exit, err := strconv.Atoi(strings.TrimSuffix(string(out), "\n"))
+		if err != nil {
+			errChan <- fmt.Errorf("error parsing exit code %q: %v", out, err)
+		}
+		waitChan <- syscall.WaitStatus(uint32(exit))
+	}()
+
+	select {
+	case ws := <-waitChan:
+		return ws, nil
+	case err := <-errChan:
+		return syscall.WaitStatus(1), err
+	case <-timeoutChan:
+		return syscall.WaitStatus(1), fmt.Errorf("timeout waiting for container %q", d.Name)
+	}
 }
 
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches

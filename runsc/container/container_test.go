@@ -17,7 +17,6 @@ package container
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -31,15 +30,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/kr/pty"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
-	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
@@ -1151,89 +1146,6 @@ func TestCapabilities(t *testing.T) {
 	}
 }
 
-// Test that an tty FD is sent over the console socket if one is provided.
-func TestConsoleSocket(t *testing.T) {
-	for _, conf := range configs(all...) {
-		t.Logf("Running test with conf: %+v", conf)
-		spec := testutil.NewSpecWithArgs("true")
-		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
-		if err != nil {
-			t.Fatalf("error setting up container: %v", err)
-		}
-		defer os.RemoveAll(rootDir)
-		defer os.RemoveAll(bundleDir)
-
-		// Create a named socket and start listening.  We use a relative path
-		// to avoid overflowing the unix path length limit (108 chars).
-		socketPath := filepath.Join(bundleDir, "socket")
-		cwd, err := os.Getwd()
-		if err != nil {
-			t.Fatalf("error getting cwd: %v", err)
-		}
-		socketRelPath, err := filepath.Rel(cwd, socketPath)
-		if err != nil {
-			t.Fatalf("error getting relative path for %q from cwd %q: %v", socketPath, cwd, err)
-		}
-		if len(socketRelPath) > len(socketPath) {
-			socketRelPath = socketPath
-		}
-		srv, err := unet.BindAndListen(socketRelPath, false)
-		if err != nil {
-			t.Fatalf("error binding and listening to socket %q: %v", socketPath, err)
-		}
-		defer os.Remove(socketPath)
-
-		// Create the container and pass the socket name.
-		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, socketRelPath, "", "")
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		c.Destroy()
-
-		// Open the othe end of the socket.
-		sock, err := srv.Accept()
-		if err != nil {
-			t.Fatalf("error accepting socket connection: %v", err)
-		}
-
-		// Allow 3 fds to be received.  We only expect 1.
-		r := sock.Reader(true /* blocking */)
-		r.EnableFDs(1)
-
-		// The socket is closed right after sending the FD, so EOF is
-		// an allowed error.
-		b := [][]byte{{}}
-		if _, err := r.ReadVec(b); err != nil && err != io.EOF {
-			t.Fatalf("error reading from socket connection: %v", err)
-		}
-
-		// We should have gotten a control message.
-		fds, err := r.ExtractFDs()
-		if err != nil {
-			t.Fatalf("error extracting fds from socket connection: %v", err)
-		}
-		if len(fds) != 1 {
-			t.Fatalf("got %d fds from socket, wanted 1", len(fds))
-		}
-
-		// Verify that the fd is a terminal.
-		if _, err := unix.IoctlGetTermios(fds[0], unix.TCGETS); err != nil {
-			t.Errorf("fd is not a terminal (ioctl TGGETS got %v)", err)
-		}
-
-		// Shut it down.
-		if err := c.Destroy(); err != nil {
-			t.Fatalf("error destroying container: %v", err)
-		}
-
-		// Close socket.
-		if err := srv.Close(); err != nil {
-			t.Fatalf("error destroying container: %v", err)
-		}
-	}
-}
-
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
@@ -1623,121 +1535,6 @@ func TestRootNotMount(t *testing.T) {
 	conf := testutil.TestConfig()
 	if err := run(spec, conf); err != nil {
 		t.Fatalf("error running sandbox: %v", err)
-	}
-}
-
-func TestJobControlSignalExec(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
-	conf := testutil.TestConfig()
-
-	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-	defer os.RemoveAll(bundleDir)
-
-	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
-	if err != nil {
-		t.Fatalf("error creating container: %v", err)
-	}
-	defer c.Destroy()
-	if err := c.Start(conf); err != nil {
-		t.Fatalf("error starting container: %v", err)
-	}
-
-	// Create a pty master/slave. The slave will be passed to the exec
-	// process.
-	ptyMaster, ptySlave, err := pty.Open()
-	if err != nil {
-		t.Fatalf("error opening pty: %v", err)
-	}
-	defer ptyMaster.Close()
-	defer ptySlave.Close()
-
-	// Exec bash and attach a terminal.
-	args := &control.ExecArgs{
-		Filename: "/bin/bash",
-		// Don't let bash execute from profile or rc files, otherwise
-		// our PID counts get messed up.
-		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
-		// Pass the pty slave as FD 0, 1, and 2.
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{ptySlave, ptySlave, ptySlave},
-		},
-		StdioIsPty: true,
-	}
-
-	pid, err := c.Execute(args)
-	if err != nil {
-		t.Fatalf("error executing: %v", err)
-	}
-	if pid != 2 {
-		t.Fatalf("exec got pid %d, wanted %d", pid, 2)
-	}
-
-	// Make sure all the processes are running.
-	expectedPL := []*control.Process{
-		// Root container process.
-		{PID: 1, Cmd: "sleep"},
-		// Bash from exec process.
-		{PID: 2, Cmd: "bash"},
-	}
-	if err := waitForProcessList(c, expectedPL); err != nil {
-		t.Error(err)
-	}
-
-	// Execute sleep.
-	ptyMaster.Write([]byte("sleep 100\n"))
-
-	// Wait for it to start. Sleep's PPID is bash's PID.
-	expectedPL = append(expectedPL, &control.Process{PID: 3, PPID: 2, Cmd: "sleep"})
-	if err := waitForProcessList(c, expectedPL); err != nil {
-		t.Error(err)
-	}
-
-	// Send a SIGTERM to the foreground process for the exec PID. Note that
-	// although we pass in the PID of "bash", it should actually terminate
-	// "sleep", since that is the foreground process.
-	if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.SIGTERM, true /* fgProcess */); err != nil {
-		t.Fatalf("error signaling container: %v", err)
-	}
-
-	// Sleep process should be gone.
-	expectedPL = expectedPL[:len(expectedPL)-1]
-	if err := waitForProcessList(c, expectedPL); err != nil {
-		t.Error(err)
-	}
-
-	// Sleep is dead, but it may take more time for bash to notice and
-	// change the foreground process back to itself. We know it is done
-	// when bash writes "Terminated" to the pty.
-	if err := testutil.WaitUntilRead(ptyMaster, "Terminated", nil, 5*time.Second); err != nil {
-		t.Fatalf("bash did not take over pty: %v", err)
-	}
-
-	// Send a SIGKILL to the foreground process again. This time "bash"
-	// should be killed. We use SIGKILL instead of SIGTERM or SIGINT
-	// because bash ignores those.
-	if err := c.Sandbox.SignalProcess(c.ID, pid, syscall.SIGKILL, true /* fgProcess */); err != nil {
-		t.Fatalf("error signaling container: %v", err)
-	}
-	expectedPL = expectedPL[:1]
-	if err := waitForProcessList(c, expectedPL); err != nil {
-		t.Error(err)
-	}
-
-	// Make sure the process indicates it was killed by a SIGKILL.
-	ws, err := c.WaitPID(pid, true)
-	if err != nil {
-		t.Errorf("waiting on container failed: %v", err)
-	}
-	if !ws.Signaled() {
-		t.Error("ws.Signaled() got false, want true")
-	}
-	if got, want := ws.Signal(), syscall.SIGKILL; got != want {
-		t.Errorf("ws.Signal() got %v, want %v", got, want)
 	}
 }
 

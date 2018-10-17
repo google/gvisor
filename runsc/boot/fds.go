@@ -35,6 +35,7 @@ func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, cons
 
 	fdm := k.NewFDMap()
 	defer fdm.DecRef()
+	mounter := fs.FileOwnerFromContext(ctx)
 
 	// Maps sandbox FD to host FD.
 	fdMap := map[int]int{
@@ -42,16 +43,44 @@ func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, cons
 		1: stdioFDs[1],
 		2: stdioFDs[2],
 	}
-	mounter := fs.FileOwnerFromContext(ctx)
 
-	for sfd, hfd := range fdMap {
-		file, err := host.ImportFile(ctx, hfd, mounter, console /* isTTY */)
-		if err != nil {
-			return nil, fmt.Errorf("failed to import fd %d: %v", hfd, err)
+	var ttyFile *fs.File
+	for appFD, hostFD := range fdMap {
+		var appFile *fs.File
+
+		if console && appFD < 3 {
+			// Import the file as a host TTY file.
+			if ttyFile == nil {
+				var err error
+				appFile, err = host.ImportFile(ctx, hostFD, mounter, true /* isTTY */)
+				if err != nil {
+					return nil, err
+				}
+				defer appFile.DecRef()
+
+				// Remember this in the TTY file, as we will
+				// use it for the other stdio FDs.
+				ttyFile = appFile
+			} else {
+				// Re-use the existing TTY file, as all three
+				// stdio FDs must point to the same fs.File in
+				// order to share TTY state, specifically the
+				// foreground process group id.
+				appFile = ttyFile
+			}
+		} else {
+			// Import the file as a regular host file.
+			var err error
+			appFile, err = host.ImportFile(ctx, hostFD, mounter, false /* isTTY */)
+			if err != nil {
+				return nil, err
+			}
+			defer appFile.DecRef()
 		}
-		defer file.DecRef()
-		if err := fdm.NewFDAt(kdefs.FD(sfd), file, kernel.FDFlags{}, l); err != nil {
-			return nil, fmt.Errorf("failed to add imported fd %d to FDMap: %v", hfd, err)
+
+		// Add the file to the FD map.
+		if err := fdm.NewFDAt(kdefs.FD(appFD), appFile, kernel.FDFlags{}, l); err != nil {
+			return nil, err
 		}
 	}
 
