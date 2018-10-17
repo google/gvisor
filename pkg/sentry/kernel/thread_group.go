@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 )
@@ -58,12 +59,6 @@ type ThreadGroup struct {
 	//
 	// pendingSignals is protected by the signal mutex.
 	pendingSignals pendingSignals
-
-	// lastTimerSignalTask records the last task we deliver a process timer signal to.
-	// Please see SendTimerSignal for more details.
-	//
-	// lastTimerSignalTask is protected by the signal mutex.
-	lastTimerSignalTask *Task
 
 	// groupStopPhase indicates the state of a group stop in progress on the
 	// thread group, if any.
@@ -152,14 +147,39 @@ type ThreadGroup struct {
 	// restarted by Task.Start.
 	liveGoroutines sync.WaitGroup `state:"nosave"`
 
-	// tm contains process timers. TimerManager fields are immutable.
-	tm TimerManager
+	timerMu sync.Mutex `state:"nosave"`
+
+	// itimerRealTimer implements ITIMER_REAL for the thread group.
+	itimerRealTimer *ktime.Timer
+
+	// itimerVirtSetting is the ITIMER_VIRTUAL setting for the thread group.
+	//
+	// itimerVirtSetting is protected by the signal mutex.
+	itimerVirtSetting ktime.Setting
+
+	// itimerProfSetting is the ITIMER_PROF setting for the thread group.
+	//
+	// itimerProfSetting is protected by the signal mutex.
+	itimerProfSetting ktime.Setting
+
+	// rlimitCPUSoftSetting is the setting for RLIMIT_CPU soft limit
+	// notifications for the thread group.
+	//
+	// rlimitCPUSoftSetting is protected by the signal mutex.
+	rlimitCPUSoftSetting ktime.Setting
+
+	// cpuTimersEnabled is non-zero if itimerVirtSetting.Enabled is true,
+	// itimerProfSetting.Enabled is true, rlimitCPUSoftSetting.Enabled is true,
+	// or limits.Get(CPU) is finite.
+	//
+	// cpuTimersEnabled is protected by the signal mutex. cpuTimersEnabled is
+	// accessed using atomic memory operations.
+	cpuTimersEnabled uint32
 
 	// timers is the thread group's POSIX interval timers. nextTimerID is the
 	// TimerID at which allocation should begin searching for an unused ID.
 	//
 	// timers and nextTimerID are protected by timerMu.
-	timerMu     sync.Mutex `state:"nosave"`
 	timers      map[linux.TimerID]*IntervalTimer
 	nextTimerID linux.TimerID
 
@@ -211,11 +231,11 @@ type ThreadGroup struct {
 	rscr atomic.Value `state:".(*RSEQCriticalRegion)"`
 }
 
-// NewThreadGroup returns a new, empty thread group in PID namespace ns. The
+// newThreadGroup returns a new, empty thread group in PID namespace ns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func NewThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
+func (k *Kernel) newThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: ns,
@@ -225,7 +245,7 @@ func NewThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminationSignal linu
 		ioUsage:           &usage.IO{},
 		limits:            limits,
 	}
-	tg.tm = newTimerManager(tg, monotonicClock)
+	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
 	tg.rscr.Store(&RSEQCriticalRegion{})
 	return tg
@@ -249,11 +269,6 @@ func (tg *ThreadGroup) SignalHandlers() *SignalHandlers {
 	return tg.signalHandlers
 }
 
-// Timer returns tg's timers.
-func (tg *ThreadGroup) Timer() *TimerManager {
-	return &tg.tm
-}
-
 // Limits returns tg's limits.
 func (tg *ThreadGroup) Limits() *limits.LimitSet {
 	return tg.limits
@@ -261,11 +276,9 @@ func (tg *ThreadGroup) Limits() *limits.LimitSet {
 
 // release releases the thread group's resources.
 func (tg *ThreadGroup) release() {
-	// These must be done without holding the TaskSet or signal mutexes since
-	// timers send signals with Timer.mu locked.
-
-	tg.tm.destroy()
-
+	// Timers must be destroyed without holding the TaskSet or signal mutexes
+	// since timers send signals with Timer.mu locked.
+	tg.itimerRealTimer.Destroy()
 	var its []*IntervalTimer
 	tg.pidns.owner.mu.Lock()
 	tg.signalHandlers.mu.Lock()
@@ -291,4 +304,20 @@ func (tg *ThreadGroup) forEachChildThreadGroupLocked(fn func(*ThreadGroup)) {
 			}
 		}
 	}
+}
+
+// itimerRealListener implements ktime.Listener for ITIMER_REAL expirations.
+//
+// +stateify savable
+type itimerRealListener struct {
+	tg *ThreadGroup
+}
+
+// Notify implements ktime.TimerListener.Notify.
+func (l *itimerRealListener) Notify(exp uint64) {
+	l.tg.SendSignal(sigPriv(linux.SIGALRM))
+}
+
+// Destroy implements ktime.TimerListener.Destroy.
+func (l *itimerRealListener) Destroy() {
 }

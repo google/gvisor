@@ -675,9 +675,6 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 		t.tg.ioUsage.Accumulate(t.ioUsage)
 		t.tg.signalHandlers.mu.Lock()
 		t.tg.tasks.Remove(t)
-		if t.tg.lastTimerSignalTask == t {
-			t.tg.lastTimerSignalTask = nil
-		}
 		t.tg.tasksCount--
 		tc := t.tg.tasksCount
 		t.tg.signalHandlers.mu.Unlock()

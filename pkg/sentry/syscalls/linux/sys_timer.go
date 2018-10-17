@@ -21,7 +21,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -70,34 +69,15 @@ func copyItimerValOut(t *kernel.Task, addr usermem.Addr, itv *linux.ItimerVal) e
 	}
 }
 
-func findTimer(t *kernel.Task, which int32) (*ktime.Timer, error) {
-	switch which {
-	case linux.ITIMER_REAL:
-		return t.ThreadGroup().Timer().RealTimer, nil
-	case linux.ITIMER_VIRTUAL:
-		return t.ThreadGroup().Timer().VirtualTimer, nil
-	case linux.ITIMER_PROF:
-		return t.ThreadGroup().Timer().ProfTimer, nil
-	default:
-		return nil, syscall.EINVAL
-	}
-}
-
 // Getitimer implements linux syscall getitimer(2).
 func Getitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	timerID := args[0].Int()
 	val := args[1].Pointer()
 
-	timer, err := findTimer(t, timerID)
+	olditv, err := t.Getitimer(timerID)
 	if err != nil {
 		return 0, nil, err
 	}
-	value, interval := ktime.SpecFromSetting(timer.Get())
-	olditv := linux.ItimerVal{
-		Value:    linux.DurationToTimeval(value),
-		Interval: linux.DurationToTimeval(interval),
-	}
-
 	return 0, nil, copyItimerValOut(t, val, &olditv)
 }
 
@@ -107,29 +87,14 @@ func Setitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	newVal := args[1].Pointer()
 	oldVal := args[2].Pointer()
 
-	timer, err := findTimer(t, timerID)
+	newitv, err := copyItimerValIn(t, newVal)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	itv, err := copyItimerValIn(t, newVal)
+	olditv, err := t.Setitimer(timerID, newitv)
 	if err != nil {
 		return 0, nil, err
 	}
-	// Just like linux, we cap the timer value and interval with the max
-	// number that int64 can represent which is roughly 292 years.
-	s, err := ktime.SettingFromSpec(itv.Value.ToDuration(),
-		itv.Interval.ToDuration(), timer.Clock())
-	if err != nil {
-		return 0, nil, err
-	}
-
-	valueNS, intervalNS := ktime.SpecFromSetting(timer.Swap(s))
-	olditv := linux.ItimerVal{
-		Value:    linux.DurationToTimeval(valueNS),
-		Interval: linux.DurationToTimeval(intervalNS),
-	}
-
 	return 0, nil, copyItimerValOut(t, oldVal, &olditv)
 }
 
@@ -137,21 +102,19 @@ func Setitimer(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 func Alarm(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	duration := time.Duration(args[0].Uint()) * time.Second
 
-	timer := t.ThreadGroup().Timer().RealTimer
-	s, err := ktime.SettingFromSpec(duration, 0, timer.Clock())
+	olditv, err := t.Setitimer(linux.ITIMER_REAL, linux.ItimerVal{
+		Value: linux.DurationToTimeval(duration),
+	})
 	if err != nil {
 		return 0, nil, err
 	}
-
-	value, _ := ktime.SpecFromSetting(timer.Swap(s))
-	sec := int64(value) / nsecPerSec
-	nsec := int64(value) % nsecPerSec
-	// We can't return 0 if we have an alarm pending ...
-	if (sec == 0 && nsec > 0) || nsec >= nsecPerSec/2 {
-		sec++
+	olddur := olditv.Value.ToDuration()
+	secs := olddur.Round(time.Second).Nanoseconds() / nsecPerSec
+	if secs == 0 && olddur != 0 {
+		// We can't return 0 if an alarm was previously scheduled.
+		secs = 1
 	}
-
-	return uintptr(sec), nil, nil
+	return uintptr(secs), nil, nil
 }
 
 // TimerCreate implements linux syscall timer_create(2).

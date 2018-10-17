@@ -20,7 +20,7 @@
 //
 // Kernel.extMu
 //   ThreadGroup.timerMu
-//     ktime.Timer.mu (for IntervalTimer)
+//     ktime.Timer.mu (for kernelCPUClockTicker and IntervalTimer)
 //       TaskSet.mu
 //         SignalHandlers.mu
 //           Task.mu
@@ -617,7 +617,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		return nil, 0, fmt.Errorf("no kernel MountNamespace")
 	}
 
-	tg := NewThreadGroup(k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
+	tg := k.newThreadGroup(k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
 	ctx := args.NewContext(k)
 
 	// Grab the root directory.
@@ -705,7 +705,7 @@ func (k *Kernel) Start() error {
 	}
 
 	k.started = true
-	k.cpuClockTicker = ktime.NewTimer(k.monotonicClock, kernelCPUClockListener{k})
+	k.cpuClockTicker = ktime.NewTimer(k.monotonicClock, newKernelCPUClockTicker(k))
 	k.cpuClockTicker.Swap(ktime.Setting{
 		Enabled: true,
 		Period:  linux.ClockTick,
@@ -741,14 +741,13 @@ func (k *Kernel) pauseTimeLocked() {
 	// mutex, while holding the Timer mutex.)
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
-			t.tg.tm.pause()
+			t.tg.itimerRealTimer.Pause()
+			for _, it := range t.tg.timers {
+				it.PauseTimer()
+			}
 		}
-		// This means we'll iterate ThreadGroups and FDMaps shared by multiple
-		// tasks repeatedly, but ktime.Timer.Pause is idempotent so this is
-		// harmless.
-		for _, it := range t.tg.timers {
-			it.PauseTimer()
-		}
+		// This means we'll iterate FDMaps shared by multiple tasks repeatedly,
+		// but ktime.Timer.Pause is idempotent so this is harmless.
 		if fdm := t.fds; fdm != nil {
 			for _, desc := range fdm.files {
 				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
@@ -774,10 +773,10 @@ func (k *Kernel) resumeTimeLocked() {
 	k.timekeeper.ResumeUpdates()
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader {
-			t.tg.tm.resume()
-		}
-		for _, it := range t.tg.timers {
-			it.ResumeTimer()
+			t.tg.itimerRealTimer.Resume()
+			for _, it := range t.tg.timers {
+				it.ResumeTimer()
+			}
 		}
 		if fdm := t.fds; fdm != nil {
 			for _, desc := range fdm.files {
@@ -1077,23 +1076,4 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 	default:
 		return nil
 	}
-}
-
-type kernelCPUClockListener struct {
-	k *Kernel
-}
-
-// Notify implements ktime.TimerListener.Notify.
-func (l kernelCPUClockListener) Notify(exp uint64) {
-	// Only increment cpuClock by 1 regardless of the number of expirations.
-	// This approximately compensates for cases where thread throttling or bad
-	// Go runtime scheduling prevents the cpuClockTicker goroutine, and
-	// presumably task goroutines as well, from executing for a long period of
-	// time. It's also necessary to prevent CPU clocks from seeing large
-	// discontinuous jumps.
-	atomic.AddUint64(&l.k.cpuClock, 1)
-}
-
-// Destroy implements ktime.TimerListener.Destroy.
-func (l kernelCPUClockListener) Destroy() {
 }

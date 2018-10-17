@@ -21,7 +21,98 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
+
+// Getitimer implements getitimer(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) Getitimer(id int32) (linux.ItimerVal, error) {
+	var tm ktime.Time
+	var s ktime.Setting
+	switch id {
+	case linux.ITIMER_REAL:
+		tm, s = t.tg.itimerRealTimer.Get()
+	case linux.ITIMER_VIRTUAL:
+		tm = t.tg.UserCPUClock().Now()
+		t.tg.signalHandlers.mu.Lock()
+		s, _ = t.tg.itimerVirtSetting.At(tm)
+		t.tg.signalHandlers.mu.Unlock()
+	case linux.ITIMER_PROF:
+		tm = t.tg.CPUClock().Now()
+		t.tg.signalHandlers.mu.Lock()
+		s, _ = t.tg.itimerProfSetting.At(tm)
+		t.tg.signalHandlers.mu.Unlock()
+	default:
+		return linux.ItimerVal{}, syserror.EINVAL
+	}
+	val, iv := ktime.SpecFromSetting(tm, s)
+	return linux.ItimerVal{
+		Value:    linux.DurationToTimeval(val),
+		Interval: linux.DurationToTimeval(iv),
+	}, nil
+}
+
+// Setitimer implements setitimer(2).
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) Setitimer(id int32, newitv linux.ItimerVal) (linux.ItimerVal, error) {
+	var tm ktime.Time
+	var olds ktime.Setting
+	switch id {
+	case linux.ITIMER_REAL:
+		news, err := ktime.SettingFromSpec(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), t.tg.itimerRealTimer.Clock())
+		if err != nil {
+			return linux.ItimerVal{}, err
+		}
+		tm, olds = t.tg.itimerRealTimer.Swap(news)
+	case linux.ITIMER_VIRTUAL:
+		c := t.tg.UserCPUClock()
+		var err error
+		t.k.cpuClockTicker.Atomically(func() {
+			tm = c.Now()
+			var news ktime.Setting
+			news, err = ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
+			if err != nil {
+				return
+			}
+			t.tg.signalHandlers.mu.Lock()
+			olds = t.tg.itimerVirtSetting
+			t.tg.itimerVirtSetting = news
+			t.tg.updateCPUTimersEnabledLocked()
+			t.tg.signalHandlers.mu.Unlock()
+		})
+		if err != nil {
+			return linux.ItimerVal{}, err
+		}
+	case linux.ITIMER_PROF:
+		c := t.tg.CPUClock()
+		var err error
+		t.k.cpuClockTicker.Atomically(func() {
+			tm = c.Now()
+			var news ktime.Setting
+			news, err = ktime.SettingFromSpecAt(newitv.Value.ToDuration(), newitv.Interval.ToDuration(), tm)
+			if err != nil {
+				return
+			}
+			t.tg.signalHandlers.mu.Lock()
+			olds = t.tg.itimerProfSetting
+			t.tg.itimerProfSetting = news
+			t.tg.updateCPUTimersEnabledLocked()
+			t.tg.signalHandlers.mu.Unlock()
+		})
+		if err != nil {
+			return linux.ItimerVal{}, err
+		}
+	default:
+		return linux.ItimerVal{}, syserror.EINVAL
+	}
+	oldval, oldiv := ktime.SpecFromSetting(tm, olds)
+	return linux.ItimerVal{
+		Value:    linux.DurationToTimeval(oldval),
+		Interval: linux.DurationToTimeval(oldiv),
+	}, nil
+}
 
 // IOUsage returns the io usage of the thread.
 func (t *Task) IOUsage() *usage.IO {
@@ -54,12 +145,6 @@ func (t *Task) SetName(name string) {
 	defer t.mu.Unlock()
 	t.tc.Name = name
 	t.Debugf("Set thread name to %q", name)
-}
-
-// SetCPUTimer is used by setrlimit(RLIMIT_CPU) to enforce the hard and soft
-// limits on CPU time used by this process.
-func (tg *ThreadGroup) SetCPUTimer(l *limits.Limit) {
-	tg.Timer().applyCPULimits(*l)
 }
 
 // Limits implements context.Context.Limits.

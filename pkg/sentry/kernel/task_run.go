@@ -70,10 +70,6 @@ func (t *Task) run(threadID uintptr) {
 	// Platform.CooperativelySharesAddressSpace() == true, we give up the
 	// AddressSpace before the task goroutine finishes executing.
 
-	// Ensure that thread group timers for execution time reflect that this
-	// task now exists.
-	t.tg.tm.kick()
-
 	// If this is a newly-started task, it should check for participation in
 	// group stops. If this is a task resuming after restore, it was
 	// interrupted by saving. In either case, the task is initially

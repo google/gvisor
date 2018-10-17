@@ -111,7 +111,7 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 	}
 
 	if resource == limits.CPU {
-		t.ThreadGroup().SetCPUTimer(newLim)
+		t.NotifyRlimitCPUUpdated()
 	}
 	return oldLim, nil
 }

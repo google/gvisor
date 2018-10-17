@@ -243,9 +243,13 @@ func (ns *PIDNamespace) Tasks() []*Task {
 
 // ThreadGroups returns a snapshot of the thread groups in ns.
 func (ns *PIDNamespace) ThreadGroups() []*ThreadGroup {
+	return ns.ThreadGroupsAppend(nil)
+}
+
+// ThreadGroupsAppend appends a snapshot of the thread groups in ns to tgs.
+func (ns *PIDNamespace) ThreadGroupsAppend(tgs []*ThreadGroup) []*ThreadGroup {
 	ns.owner.mu.RLock()
 	defer ns.owner.mu.RUnlock()
-	var tgs []*ThreadGroup
 	for t := range ns.tids {
 		if t == t.tg.leader {
 			tgs = append(tgs, t.tg)
