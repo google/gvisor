@@ -568,8 +568,10 @@ func (s SyscallMap) SyscallExit(context interface{}, t *kernel.Task, sysno, rval
 	}
 }
 
-// ConvertToSysnoMap converts the names to a map keyed on the syscall number and value set to true.
-// The map is in a convenient format to call SyscallFlagsTable.Enable().
+// ConvertToSysnoMap converts the names to a map keyed on the syscall number
+// and value set to true.
+//
+// The map is in a convenient format to pass to SyscallFlagsTable.Enable().
 func (s SyscallMap) ConvertToSysnoMap(syscalls []string) (map[uintptr]bool, error) {
 	if syscalls == nil {
 		// Sentinel: no list.
