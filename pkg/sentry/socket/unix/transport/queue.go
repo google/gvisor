@@ -17,7 +17,6 @@ package transport
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -33,7 +32,7 @@ type queue struct {
 	closed   bool
 	used     int64
 	limit    int64
-	dataList ilist.List
+	dataList messageList
 }
 
 // newQueue allocates and initializes a new queue.
@@ -61,7 +60,7 @@ func (q *queue) Close() {
 func (q *queue) Reset() {
 	q.mu.Lock()
 	for cur := q.dataList.Front(); cur != nil; cur = cur.Next() {
-		cur.(*message).Release()
+		cur.Release()
 	}
 	q.dataList.Reset()
 	q.used = 0
@@ -165,7 +164,7 @@ func (q *queue) Dequeue() (e *message, notify bool, err *tcpip.Error) {
 
 	notify = !q.bufWritable()
 
-	e = q.dataList.Front().(*message)
+	e = q.dataList.Front()
 	q.dataList.Remove(e)
 	q.used -= e.Length()
 
@@ -189,7 +188,7 @@ func (q *queue) Peek() (*message, *tcpip.Error) {
 		return nil, err
 	}
 
-	return q.dataList.Front().(*message).Peek(), nil
+	return q.dataList.Front().Peek(), nil
 }
 
 // QueuedSize returns the number of bytes currently in the queue, that is, the

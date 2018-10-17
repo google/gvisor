@@ -19,7 +19,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -243,7 +242,7 @@ type BoundEndpoint interface {
 //
 // +stateify savable
 type message struct {
-	ilist.Entry
+	messageEntry
 
 	// Data is the Message payload.
 	Data buffer.View
