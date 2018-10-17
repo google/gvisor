@@ -335,7 +335,7 @@ func TestMultiContainerSignal(t *testing.T) {
 		}
 
 		// Kill process 2.
-		if err := containers[1].Signal(syscall.SIGKILL, false); err != nil {
+		if err := containers[1].SignalContainer(syscall.SIGKILL, false); err != nil {
 			t.Errorf("failed to kill process 2: %v", err)
 		}
 
@@ -368,12 +368,12 @@ func TestMultiContainerSignal(t *testing.T) {
 
 		// Now that process 2 is gone, ensure we get an error trying to
 		// signal it again.
-		if err := containers[1].Signal(syscall.SIGKILL, false); err == nil {
+		if err := containers[1].SignalContainer(syscall.SIGKILL, false); err == nil {
 			t.Errorf("container %q shouldn't exist, but we were able to signal it", containers[1].ID)
 		}
 
 		// Kill process 1.
-		if err := containers[0].Signal(syscall.SIGKILL, false); err != nil {
+		if err := containers[0].SignalContainer(syscall.SIGKILL, false); err != nil {
 			t.Errorf("failed to kill process 1: %v", err)
 		}
 
@@ -395,7 +395,7 @@ func TestMultiContainerSignal(t *testing.T) {
 		}
 
 		// The sentry should be gone, so signaling should yield an error.
-		if err := containers[0].Signal(syscall.SIGKILL, false); err == nil {
+		if err := containers[0].SignalContainer(syscall.SIGKILL, false); err == nil {
 			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
 		}
 	}
@@ -577,7 +577,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 		if tc.killContainer {
 			// First kill the init process to make the container be stopped with
 			// processes still running inside.
-			containers[1].Signal(syscall.SIGKILL, false)
+			containers[1].SignalContainer(syscall.SIGKILL, false)
 			op := func() error {
 				c, err := Load(conf.RootDir, ids[1])
 				if err != nil {
@@ -598,7 +598,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			t.Fatalf("failed to load child container %q: %v", c.ID, err)
 		}
 		// Kill'Em All
-		if err := c.Signal(syscall.SIGKILL, true); err != nil {
+		if err := c.SignalContainer(syscall.SIGKILL, true); err != nil {
 			t.Fatalf("failed to send SIGKILL to container %q: %v", c.ID, err)
 		}
 

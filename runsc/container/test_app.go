@@ -125,6 +125,7 @@ func server(listener net.Listener, out *os.File) {
 type taskTree struct {
 	depth int
 	width int
+	pause bool
 }
 
 // Name implements subcommands.Command.
@@ -146,6 +147,7 @@ func (*taskTree) Usage() string {
 func (c *taskTree) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&c.depth, "depth", 1, "number of levels to create")
 	f.IntVar(&c.width, "width", 1, "number of tasks at each level")
+	f.BoolVar(&c.pause, "pause", false, "whether the tasks should pause perpetually")
 }
 
 // Execute implements subcommands.Command.
@@ -164,7 +166,8 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 		cmd := exec.Command(
 			"/proc/self/exe", c.Name(),
 			"--depth", strconv.Itoa(c.depth-1),
-			"--width", strconv.Itoa(c.width))
+			"--width", strconv.Itoa(c.width),
+			"--pause", strconv.FormatBool(c.pause))
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -177,6 +180,11 @@ func (c *taskTree) Execute(ctx context.Context, f *flag.FlagSet, args ...interfa
 	for _, c := range cmds {
 		c.Wait()
 	}
+
+	if c.pause {
+		select {}
+	}
+
 	return subcommands.ExitSuccess
 }
 

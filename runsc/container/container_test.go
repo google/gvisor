@@ -354,7 +354,7 @@ func TestLifecycle(t *testing.T) {
 		<-ch
 		time.Sleep(100 * time.Millisecond)
 		// Send the container a SIGTERM which will cause it to stop.
-		if err := c.Signal(syscall.SIGTERM, false); err != nil {
+		if err := c.SignalContainer(syscall.SIGTERM, false); err != nil {
 			t.Fatalf("error sending signal %v to container: %v", syscall.SIGTERM, err)
 		}
 		// Wait for it to die.
@@ -555,6 +555,62 @@ func TestExec(t *testing.T) {
 			if st != nil {
 				t.Errorf("container failed to exec %v: %v", args, err)
 			}
+		}
+	}
+}
+
+// TestKillPid verifies that we can signal individual exec'd processes.
+func TestKillPid(t *testing.T) {
+	for _, conf := range configs(overlay) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		app, err := testutil.FindFile("runsc/container/test_app")
+		if err != nil {
+			t.Fatal("error finding test_app:", err)
+		}
+
+		const nProcs = 4
+		spec := testutil.NewSpecWithArgs(app, "task-tree", "--depth", strconv.Itoa(nProcs-1), "--width=1", "--pause=true")
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create and start the container.
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer cont.Destroy()
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+
+		// Verify that all processes are running.
+		if err := waitForProcessCount(cont, nProcs); err != nil {
+			t.Fatalf("timed out waiting for processes to start: %v", err)
+		}
+
+		// Kill the child process with the largest PID.
+		procs, err := cont.Processes()
+		if err != nil {
+			t.Fatalf("failed to get process list: %v", err)
+		}
+		var pid int32
+		for _, p := range procs {
+			if pid < int32(p.PID) {
+				pid = int32(p.PID)
+			}
+		}
+		if err := cont.SignalProcess(syscall.SIGKILL, pid); err != nil {
+			t.Fatalf("failed to signal process %d: %v", pid, err)
+		}
+
+		// Verify that one process is gone.
+		if err := waitForProcessCount(cont, nProcs-1); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

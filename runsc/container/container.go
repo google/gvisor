@@ -174,7 +174,7 @@ func Load(rootDir, id string) (*Container, error) {
 		} else if c.Status == Running {
 			// Container state should reflect the actual state of the application, so
 			// we don't consider gofer process here.
-			if err := c.Signal(syscall.Signal(0), false); err != nil {
+			if err := c.SignalContainer(syscall.Signal(0), false); err != nil {
 				c.changeStatus(Stopped)
 			}
 		}
@@ -445,7 +445,7 @@ func (c *Container) SandboxPid() int {
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container %q", c.ID)
 	if !c.isSandboxRunning() {
-		return 0, fmt.Errorf("container is not running")
+		return 0, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.Wait(c.ID)
 }
@@ -455,7 +455,7 @@ func (c *Container) Wait() (syscall.WaitStatus, error) {
 func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on PID %d in sandbox %q", pid, c.Sandbox.ID)
 	if !c.isSandboxRunning() {
-		return 0, fmt.Errorf("container is not running")
+		return 0, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.WaitPID(c.Sandbox.ID, pid, clearStatus)
 }
@@ -465,16 +465,16 @@ func (c *Container) WaitRootPID(pid int32, clearStatus bool) (syscall.WaitStatus
 func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, error) {
 	log.Debugf("Wait on PID %d in container %q", pid, c.ID)
 	if !c.isSandboxRunning() {
-		return 0, fmt.Errorf("container is not running")
+		return 0, fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.WaitPID(c.ID, pid, clearStatus)
 }
 
-// Signal sends the signal to the container. If all is true and signal is
-// SIGKILL, then waits for all processes to exit before returning.
-// Signal returns an error if the container is already stopped.
+// SignalContainer sends the signal to the container. If all is true and signal
+// is SIGKILL, then waits for all processes to exit before returning.
+// SignalContainer returns an error if the container is already stopped.
 // TODO: Distinguish different error types.
-func (c *Container) Signal(sig syscall.Signal, all bool) error {
+func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
 	// Signaling container in Stopped state is allowed. When all=false,
 	// an error will be returned anyway; when all=true, this allows
@@ -485,9 +485,21 @@ func (c *Container) Signal(sig syscall.Signal, all bool) error {
 		return err
 	}
 	if !c.isSandboxRunning() {
-		return fmt.Errorf("container is not running")
+		return fmt.Errorf("sandbox is not running")
 	}
 	return c.Sandbox.SignalContainer(c.ID, sig, all)
+}
+
+// SignalProcess sends sig to a specific process in the container.
+func (c *Container) SignalProcess(sig syscall.Signal, pid int32) error {
+	log.Debugf("Signal process %d in container %q: %v", pid, c.ID, sig)
+	if err := c.requireStatus("signal a process inside", Running); err != nil {
+		return err
+	}
+	if !c.isSandboxRunning() {
+		return fmt.Errorf("sandbox is not running")
+	}
+	return c.Sandbox.SignalProcess(c.ID, int32(pid), sig, false)
 }
 
 // ForwardSignals forwards all signals received by the current process to the
@@ -663,7 +675,7 @@ func (c *Container) waitForStopped() error {
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
 		if c.isSandboxRunning() {
-			if err := c.Signal(syscall.Signal(0), false); err == nil {
+			if err := c.SignalContainer(syscall.Signal(0), false); err == nil {
 				return fmt.Errorf("container is still running")
 			}
 		}

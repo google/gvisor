@@ -756,8 +756,22 @@ func (l *Loader) signalProcess(cid string, pid, signo int32, sendToFGProcess boo
 	ep, ok := l.processes[eid]
 	l.mu.Unlock()
 
+	// The caller may be signaling a process not started directly via exec.
+	// In this case, find the process in the container's PID namespace and
+	// signal it.
 	if !ok {
-		return fmt.Errorf("failed to signal container %q PID %d: no such PID", cid, pid)
+		ep, ok := l.processes[execID{cid: cid}]
+		if !ok {
+			return fmt.Errorf("no container with ID: %q", cid)
+		}
+		tg := ep.tg.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(pid))
+		if tg == nil {
+			return fmt.Errorf("failed to signal container %q PID %d: no such process", cid, pid)
+		}
+		if tg.Leader().ContainerID() != cid {
+			return fmt.Errorf("process %d is part of a different container: %q", pid, tg.Leader().ContainerID())
+		}
+		return tg.SendSignal(&arch.SignalInfo{Signo: signo})
 	}
 
 	if !sendToFGProcess {
