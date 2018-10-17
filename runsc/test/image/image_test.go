@@ -208,7 +208,7 @@ func TestPythonHello(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
