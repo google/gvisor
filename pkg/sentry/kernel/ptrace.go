@@ -921,7 +921,13 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		if err != nil {
 			return err
 		}
-		ar.End -= usermem.Addr(n)
+
+		// Update iovecs to represent the range of the written register set.
+		end, ok := ar.Start.AddLength(uint64(n))
+		if !ok {
+			panic(fmt.Sprintf("%#x + %#x overflows. Invalid reg size > %#x", ar.Start, n, ar.Length()))
+		}
+		ar.End = end
 		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
 
 	case linux.PTRACE_SETREGS:
