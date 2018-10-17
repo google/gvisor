@@ -17,6 +17,7 @@
 package cgroup
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -24,7 +25,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -214,8 +217,19 @@ func (c *Cgroup) Uninstall() error {
 	}
 	log.Debugf("Deleting cgroup %q", c.Name)
 	for key := range controllers {
-		if err := syscall.Rmdir(c.makePath(key)); err != nil && !os.IsNotExist(err) {
-			return err
+		path := c.makePath(key)
+		log.Debugf("Removing cgroup controller for key=%q path=%q", key, path)
+
+		// If we try to remove the cgroup too soon after killing the
+		// sandbox we might get EBUSY, so we retry for a few seconds
+		// until it succeeds.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
+		if err := backoff.Retry(func() error {
+			return syscall.Rmdir(path)
+		}, b); err != nil {
+			return fmt.Errorf("error removing cgroup path %q: %v", path, err)
 		}
 	}
 	return nil
