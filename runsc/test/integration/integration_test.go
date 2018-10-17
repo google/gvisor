@@ -106,7 +106,7 @@ func TestPauseResume(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 20*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
 		t.Fatal("WaitForHTTP() timeout:", err)
 	}
 
