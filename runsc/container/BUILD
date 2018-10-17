@@ -40,8 +40,6 @@ go_test(
     ],
     embed = [":container"],
     tags = [
-        # FIXME
-        "flaky",
         "requires-kvm",
     ],
     deps = [

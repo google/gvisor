@@ -86,7 +86,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	}
 
 	// Wait for the control server to come up (or timeout).
-	if err := s.waitForCreated(10 * time.Second); err != nil {
+	if err := s.waitForCreated(20 * time.Second); err != nil {
 		return nil, err
 	}
 
