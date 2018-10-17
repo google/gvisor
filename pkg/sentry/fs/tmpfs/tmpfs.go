@@ -22,9 +22,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 var fsInfo = fs.Info{
@@ -104,7 +104,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 		NewSymlink: func(ctx context.Context, dir *fs.Inode, target string) (*fs.Inode, error) {
 			return NewSymlink(ctx, target, fs.FileOwnerFromContext(ctx), dir.MountSource), nil
 		},
-		NewBoundEndpoint: func(ctx context.Context, dir *fs.Inode, socket unix.BoundEndpoint, perms fs.FilePermissions) (*fs.Inode, error) {
+		NewBoundEndpoint: func(ctx context.Context, dir *fs.Inode, socket transport.BoundEndpoint, perms fs.FilePermissions) (*fs.Inode, error) {
 			return NewSocket(ctx, socket, fs.FileOwnerFromContext(ctx), perms, dir.MountSource), nil
 		},
 		NewFifo: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
@@ -160,7 +160,7 @@ type Socket struct {
 }
 
 // NewSocket returns a new socket with the provided permissions.
-func NewSocket(ctx context.Context, socket unix.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
+func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
 	s := &Socket{}
 	s.InitSocket(ctx, socket, owner, perms)
 	return fs.NewInode(s, msrc, fs.StableAttr{

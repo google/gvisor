@@ -26,9 +26,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -279,7 +279,7 @@ func (*Entry) CreateDirectory(context.Context, *fs.Inode, string, fs.FilePermiss
 }
 
 // Bind is not supported by default.
-func (*Entry) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
+func (*Entry) Bind(context.Context, *fs.Inode, string, transport.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
 	return nil, ErrInvalidOp
 }
 

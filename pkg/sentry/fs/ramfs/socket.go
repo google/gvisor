@@ -17,7 +17,7 @@ package ramfs
 import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // Socket represents a socket.
@@ -27,17 +27,17 @@ type Socket struct {
 	Entry
 
 	// ep is the bound endpoint.
-	ep unix.BoundEndpoint
+	ep transport.BoundEndpoint
 }
 
 // InitSocket initializes a socket.
-func (s *Socket) InitSocket(ctx context.Context, ep unix.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions) {
+func (s *Socket) InitSocket(ctx context.Context, ep transport.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions) {
 	s.InitEntry(ctx, owner, perms)
 	s.ep = ep
 }
 
 // BoundEndpoint returns the socket data.
-func (s *Socket) BoundEndpoint(*fs.Inode, string) unix.BoundEndpoint {
+func (s *Socket) BoundEndpoint(*fs.Inode, string) transport.BoundEndpoint {
 	// ramfs only supports stored sentry internal sockets. Only gofer sockets
 	// care about the path argument.
 	return s.ep

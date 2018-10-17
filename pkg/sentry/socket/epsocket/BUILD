@@ -31,6 +31,7 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
@@ -42,7 +43,6 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

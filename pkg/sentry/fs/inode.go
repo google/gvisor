@@ -22,8 +22,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 // Inode is a file system object that can be simultaneously referenced by different
@@ -223,7 +223,7 @@ func (i *Inode) Rename(ctx context.Context, oldParent *Dirent, renamed *Dirent, 
 }
 
 // Bind calls i.InodeOperations.Bind with i as the directory.
-func (i *Inode) Bind(ctx context.Context, name string, data unix.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
+func (i *Inode) Bind(ctx context.Context, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
 	if i.overlay != nil {
 		return overlayBind(ctx, i.overlay, name, data, perm)
 	}
@@ -231,7 +231,7 @@ func (i *Inode) Bind(ctx context.Context, name string, data unix.BoundEndpoint, 
 }
 
 // BoundEndpoint calls i.InodeOperations.BoundEndpoint with i as the Inode.
-func (i *Inode) BoundEndpoint(path string) unix.BoundEndpoint {
+func (i *Inode) BoundEndpoint(path string) transport.BoundEndpoint {
 	if i.overlay != nil {
 		return overlayBoundEndpoint(i.overlay, path)
 	}

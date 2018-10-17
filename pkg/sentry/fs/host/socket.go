@@ -25,12 +25,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/control"
 	unixsocket "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/rawfile"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
@@ -42,7 +42,7 @@ import (
 const maxSendBufferSize = 8 << 20
 
 // ConnectedEndpoint is a host FD backed implementation of
-// unix.ConnectedEndpoint and unix.Receiver.
+// transport.ConnectedEndpoint and transport.Receiver.
 //
 // +stateify savable
 type ConnectedEndpoint struct {
@@ -70,7 +70,7 @@ type ConnectedEndpoint struct {
 	srfd int `state:"wait"`
 
 	// stype is the type of Unix socket.
-	stype unix.SockType
+	stype transport.SockType
 
 	// sndbuf is the size of the send buffer.
 	//
@@ -112,7 +112,7 @@ func (c *ConnectedEndpoint) init() *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	c.stype = unix.SockType(stype)
+	c.stype = transport.SockType(stype)
 	c.sndbuf = sndbuf
 
 	return nil
@@ -122,8 +122,8 @@ func (c *ConnectedEndpoint) init() *tcpip.Error {
 // that will pretend to be bound at a given sentry path.
 //
 // The caller is responsible for calling Init(). Additionaly, Release needs to
-// be called twice because ConnectedEndpoint is both a unix.Receiver and
-// unix.ConnectedEndpoint.
+// be called twice because ConnectedEndpoint is both a transport.Receiver and
+// transport.ConnectedEndpoint.
 func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *tcpip.Error) {
 	e := ConnectedEndpoint{
 		path:  path,
@@ -168,7 +168,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 
 	e.Init()
 
-	ep := unix.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.NewWithDirent(ctx, d, ep, flags), nil
 }
@@ -200,13 +200,13 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	e.srfd = srfd
 	e.Init()
 
-	ep := unix.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.New(ctx, ep), nil
 }
 
-// Send implements unix.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
+// Send implements transport.ConnectedEndpoint.Send.
+func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.writeClosed {
@@ -219,7 +219,7 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMess
 
 	// Since stream sockets don't preserve message boundaries, we can write
 	// only as much of the message as fits in the send buffer.
-	truncate := c.stype == unix.SockStream
+	truncate := c.stype == transport.SockStream
 
 	n, totalLen, err := fdWriteVec(c.file.FD(), data, c.sndbuf, truncate)
 	if n < totalLen && err == nil {
@@ -239,20 +239,20 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages unix.ControlMess
 	return n, false, translateError(err)
 }
 
-// SendNotify implements unix.ConnectedEndpoint.SendNotify.
+// SendNotify implements transport.ConnectedEndpoint.SendNotify.
 func (c *ConnectedEndpoint) SendNotify() {}
 
-// CloseSend implements unix.ConnectedEndpoint.CloseSend.
+// CloseSend implements transport.ConnectedEndpoint.CloseSend.
 func (c *ConnectedEndpoint) CloseSend() {
 	c.mu.Lock()
 	c.writeClosed = true
 	c.mu.Unlock()
 }
 
-// CloseNotify implements unix.ConnectedEndpoint.CloseNotify.
+// CloseNotify implements transport.ConnectedEndpoint.CloseNotify.
 func (c *ConnectedEndpoint) CloseNotify() {}
 
-// Writable implements unix.ConnectedEndpoint.Writable.
+// Writable implements transport.ConnectedEndpoint.Writable.
 func (c *ConnectedEndpoint) Writable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -262,18 +262,18 @@ func (c *ConnectedEndpoint) Writable() bool {
 	return fdnotifier.NonBlockingPoll(int32(c.file.FD()), waiter.EventOut)&waiter.EventOut != 0
 }
 
-// Passcred implements unix.ConnectedEndpoint.Passcred.
+// Passcred implements transport.ConnectedEndpoint.Passcred.
 func (c *ConnectedEndpoint) Passcred() bool {
 	// We don't support credential passing for host sockets.
 	return false
 }
 
-// GetLocalAddress implements unix.ConnectedEndpoint.GetLocalAddress.
+// GetLocalAddress implements transport.ConnectedEndpoint.GetLocalAddress.
 func (c *ConnectedEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	return tcpip.FullAddress{Addr: tcpip.Address(c.path)}, nil
 }
 
-// EventUpdate implements unix.ConnectedEndpoint.EventUpdate.
+// EventUpdate implements transport.ConnectedEndpoint.EventUpdate.
 func (c *ConnectedEndpoint) EventUpdate() {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -282,12 +282,12 @@ func (c *ConnectedEndpoint) EventUpdate() {
 	}
 }
 
-// Recv implements unix.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, unix.ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
+// Recv implements transport.Receiver.Recv.
+func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.readClosed {
-		return 0, 0, unix.ControlMessages{}, tcpip.FullAddress{}, false, tcpip.ErrClosedForReceive
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, tcpip.ErrClosedForReceive
 	}
 
 	var cm unet.ControlMessage
@@ -305,7 +305,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 		err = nil
 	}
 	if err != nil {
-		return 0, 0, unix.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
 	}
 
 	// There is no need for the callee to call RecvNotify because fdReadVec uses
@@ -318,16 +318,16 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, unix.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 	}
 
 	fds, err := cm.ExtractFDs()
 	if err != nil {
-		return 0, 0, unix.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, unix.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 	}
 	return rl, ml, control.New(nil, nil, newSCMRights(fds)), tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 }
@@ -339,17 +339,17 @@ func (c *ConnectedEndpoint) close() {
 	c.file = nil
 }
 
-// RecvNotify implements unix.Receiver.RecvNotify.
+// RecvNotify implements transport.Receiver.RecvNotify.
 func (c *ConnectedEndpoint) RecvNotify() {}
 
-// CloseRecv implements unix.Receiver.CloseRecv.
+// CloseRecv implements transport.Receiver.CloseRecv.
 func (c *ConnectedEndpoint) CloseRecv() {
 	c.mu.Lock()
 	c.readClosed = true
 	c.mu.Unlock()
 }
 
-// Readable implements unix.Receiver.Readable.
+// Readable implements transport.Receiver.Readable.
 func (c *ConnectedEndpoint) Readable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -359,33 +359,33 @@ func (c *ConnectedEndpoint) Readable() bool {
 	return fdnotifier.NonBlockingPoll(int32(c.file.FD()), waiter.EventIn)&waiter.EventIn != 0
 }
 
-// SendQueuedSize implements unix.Receiver.SendQueuedSize.
+// SendQueuedSize implements transport.Receiver.SendQueuedSize.
 func (c *ConnectedEndpoint) SendQueuedSize() int64 {
 	// SendQueuedSize isn't supported for host sockets because we don't allow the
 	// sentry to call ioctl(2).
 	return -1
 }
 
-// RecvQueuedSize implements unix.Receiver.RecvQueuedSize.
+// RecvQueuedSize implements transport.Receiver.RecvQueuedSize.
 func (c *ConnectedEndpoint) RecvQueuedSize() int64 {
 	// RecvQueuedSize isn't supported for host sockets because we don't allow the
 	// sentry to call ioctl(2).
 	return -1
 }
 
-// SendMaxQueueSize implements unix.Receiver.SendMaxQueueSize.
+// SendMaxQueueSize implements transport.Receiver.SendMaxQueueSize.
 func (c *ConnectedEndpoint) SendMaxQueueSize() int64 {
 	return int64(c.sndbuf)
 }
 
-// RecvMaxQueueSize implements unix.Receiver.RecvMaxQueueSize.
+// RecvMaxQueueSize implements transport.Receiver.RecvMaxQueueSize.
 func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 	// N.B. Unix sockets don't use the receive buffer. We'll claim it is
 	// the same size as the send buffer.
 	return int64(c.sndbuf)
 }
 
-// Release implements unix.ConnectedEndpoint.Release and unix.Receiver.Release.
+// Release implements transport.ConnectedEndpoint.Release and transport.Receiver.Release.
 func (c *ConnectedEndpoint) Release() {
 	c.ref.DecRefWithDestructor(c.close)
 }

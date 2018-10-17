@@ -31,12 +31,12 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink/port"
-	sunix "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -80,11 +80,11 @@ type Socket struct {
 
 	// ep is a datagram unix endpoint used to buffer messages sent from the
 	// kernel to userspace. RecvMsg reads messages from this endpoint.
-	ep unix.Endpoint
+	ep transport.Endpoint
 
 	// connection is the kernel's connection to ep, used to write messages
 	// sent to userspace.
-	connection unix.ConnectedEndpoint
+	connection transport.ConnectedEndpoint
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -105,7 +105,7 @@ var _ socket.Socket = (*Socket)(nil)
 // NewSocket creates a new Socket.
 func NewSocket(t *kernel.Task, protocol Protocol) (*Socket, *syserr.Error) {
 	// Datagram endpoint used to buffer kernel -> user messages.
-	ep := unix.NewConnectionless()
+	ep := transport.NewConnectionless()
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
@@ -115,7 +115,7 @@ func NewSocket(t *kernel.Task, protocol Protocol) (*Socket, *syserr.Error) {
 	}
 
 	// Create a connection from which the kernel can write messages.
-	connection, terr := ep.(unix.BoundEndpoint).UnidirectionalConnect()
+	connection, terr := ep.(transport.BoundEndpoint).UnidirectionalConnect()
 	if terr != nil {
 		ep.Close()
 		return nil, syserr.TranslateNetstackError(terr)
@@ -368,7 +368,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 
 	trunc := flags&linux.MSG_TRUNC != 0
 
-	r := sunix.EndpointReader{
+	r := unix.EndpointReader{
 		Endpoint: s.ep,
 		Peek:     flags&linux.MSG_PEEK != 0,
 	}
@@ -408,7 +408,7 @@ func (s *Socket) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _
 	if dst.NumBytes() == 0 {
 		return 0, nil
 	}
-	return dst.CopyOutFrom(ctx, &sunix.EndpointReader{
+	return dst.CopyOutFrom(ctx, &unix.EndpointReader{
 		Endpoint: s.ep,
 	})
 }
@@ -424,7 +424,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, terr := s.connection.Send(bufs, unix.ControlMessages{}, tcpip.FullAddress{})
+		_, notify, terr := s.connection.Send(bufs, transport.ControlMessages{}, tcpip.FullAddress{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
 		if terr != nil && terr != tcpip.ErrWouldBlock {
@@ -448,7 +448,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 			PortID: uint32(ms.PortID),
 		})
 
-		_, notify, terr := s.connection.Send([][]byte{m.Finalize()}, unix.ControlMessages{}, tcpip.FullAddress{})
+		_, notify, terr := s.connection.Send([][]byte{m.Finalize()}, transport.ControlMessages{}, tcpip.FullAddress{})
 		if terr != nil && terr != tcpip.ErrWouldBlock {
 			return syserr.TranslateNetstackError(terr)
 		}

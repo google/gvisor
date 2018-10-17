@@ -26,9 +26,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 type globalDirentMap struct {
@@ -800,7 +800,7 @@ func (d *Dirent) CreateDirectory(ctx context.Context, root *Dirent, name string,
 }
 
 // Bind satisfies the InodeOperations interface; otherwise same as GetFile.
-func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data unix.BoundEndpoint, perms FilePermissions) (*Dirent, error) {
+func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data transport.BoundEndpoint, perms FilePermissions) (*Dirent, error) {
 	var childDir *Dirent
 	err := d.genericCreate(ctx, root, name, func() error {
 		var e error

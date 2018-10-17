@@ -19,12 +19,12 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // +stateify savable
 type abstractEndpoint struct {
-	ep   unix.BoundEndpoint
+	ep   transport.BoundEndpoint
 	wr   *refs.WeakRef
 	name string
 	ns   *AbstractSocketNamespace
@@ -56,14 +56,14 @@ func NewAbstractSocketNamespace() *AbstractSocketNamespace {
 	}
 }
 
-// A boundEndpoint wraps a unix.BoundEndpoint to maintain a reference on its
-// backing object.
+// A boundEndpoint wraps a transport.BoundEndpoint to maintain a reference on
+// its backing object.
 type boundEndpoint struct {
-	unix.BoundEndpoint
+	transport.BoundEndpoint
 	rc refs.RefCounter
 }
 
-// Release implements unix.BoundEndpoint.Release.
+// Release implements transport.BoundEndpoint.Release.
 func (e *boundEndpoint) Release() {
 	e.rc.DecRef()
 	e.BoundEndpoint.Release()
@@ -71,7 +71,7 @@ func (e *boundEndpoint) Release() {
 
 // BoundEndpoint retrieves the endpoint bound to the given name. The return
 // value is nil if no endpoint was bound.
-func (a *AbstractSocketNamespace) BoundEndpoint(name string) unix.BoundEndpoint {
+func (a *AbstractSocketNamespace) BoundEndpoint(name string) transport.BoundEndpoint {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -93,7 +93,7 @@ func (a *AbstractSocketNamespace) BoundEndpoint(name string) unix.BoundEndpoint 
 //
 // When the last reference managed by rc is dropped, ep may be removed from the
 // namespace.
-func (a *AbstractSocketNamespace) Bind(name string, ep unix.BoundEndpoint, rc refs.RefCounter) error {
+func (a *AbstractSocketNamespace) Bind(name string, ep transport.BoundEndpoint, rc refs.RefCounter) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 

@@ -26,9 +26,9 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

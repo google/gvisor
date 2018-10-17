@@ -156,6 +156,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket/netlink/port",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
@@ -166,7 +167,6 @@ go_library(
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

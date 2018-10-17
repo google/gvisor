@@ -16,23 +16,23 @@ package unix
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
-// EndpointWriter implements safemem.Writer that writes to a unix.Endpoint.
+// EndpointWriter implements safemem.Writer that writes to a transport.Endpoint.
 //
 // EndpointWriter is not thread-safe.
 type EndpointWriter struct {
-	// Endpoint is the unix.Endpoint to write to.
-	Endpoint unix.Endpoint
+	// Endpoint is the transport.Endpoint to write to.
+	Endpoint transport.Endpoint
 
 	// Control is the control messages to send.
-	Control unix.ControlMessages
+	Control transport.ControlMessages
 
 	// To is the endpoint to send to. May be nil.
-	To unix.BoundEndpoint
+	To transport.BoundEndpoint
 }
 
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
@@ -46,12 +46,13 @@ func (w *EndpointWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) 
 	}}.WriteFromBlocks(srcs)
 }
 
-// EndpointReader implements safemem.Reader that reads from a unix.Endpoint.
+// EndpointReader implements safemem.Reader that reads from a
+// transport.Endpoint.
 //
 // EndpointReader is not thread-safe.
 type EndpointReader struct {
-	// Endpoint is the unix.Endpoint to read from.
-	Endpoint unix.Endpoint
+	// Endpoint is the transport.Endpoint to read from.
+	Endpoint transport.Endpoint
 
 	// Creds indicates if credential control messages are requested.
 	Creds bool
@@ -71,7 +72,7 @@ type EndpointReader struct {
 	From *tcpip.FullAddress
 
 	// Control contains the received control messages.
-	Control unix.ControlMessages
+	Control transport.ControlMessages
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.

@@ -20,9 +20,9 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 // CreateOps represents operations to create different file types.
@@ -37,7 +37,7 @@ type CreateOps struct {
 	NewSymlink func(ctx context.Context, dir *fs.Inode, target string) (*fs.Inode, error)
 
 	// NewBoundEndpoint creates a new socket.
-	NewBoundEndpoint func(ctx context.Context, dir *fs.Inode, ep unix.BoundEndpoint, perms fs.FilePermissions) (*fs.Inode, error)
+	NewBoundEndpoint func(ctx context.Context, dir *fs.Inode, ep transport.BoundEndpoint, perms fs.FilePermissions) (*fs.Inode, error)
 
 	// NewFifo creates a new fifo.
 	NewFifo func(ctx context.Context, dir *fs.Inode, perm fs.FilePermissions) (*fs.Inode, error)
@@ -314,7 +314,7 @@ func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, p
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep unix.BoundEndpoint, perms fs.FilePermissions) (*fs.Dirent, error) {
+func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport.BoundEndpoint, perms fs.FilePermissions) (*fs.Dirent, error) {
 	if d.CreateOps == nil || d.CreateOps.NewBoundEndpoint == nil {
 		return nil, ErrDenied
 	}

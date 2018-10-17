@@ -79,11 +79,11 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

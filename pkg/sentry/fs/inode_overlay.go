@@ -20,8 +20,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 func overlayHasWhiteout(parent *Inode, name string) bool {
@@ -356,7 +356,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 	return nil
 }
 
-func overlayBind(ctx context.Context, o *overlayEntry, name string, data unix.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
+func overlayBind(ctx context.Context, o *overlayEntry, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
 	// We do not support doing anything exciting with sockets unless there
@@ -383,7 +383,7 @@ func overlayBind(ctx context.Context, o *overlayEntry, name string, data unix.Bo
 	return NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
 }
 
-func overlayBoundEndpoint(o *overlayEntry, path string) unix.BoundEndpoint {
+func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
 

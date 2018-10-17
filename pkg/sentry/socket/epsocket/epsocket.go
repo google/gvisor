@@ -44,13 +44,13 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -108,26 +108,26 @@ func htons(v uint16) uint16 {
 }
 
 // commonEndpoint represents the intersection of a tcpip.Endpoint and a
-// unix.Endpoint.
+// transport.Endpoint.
 type commonEndpoint interface {
 	// GetLocalAddress implements tcpip.Endpoint.GetLocalAddress and
-	// unix.Endpoint.GetLocalAddress.
+	// transport.Endpoint.GetLocalAddress.
 	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
 
 	// GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress and
-	// unix.Endpoint.GetRemoteAddress.
+	// transport.Endpoint.GetRemoteAddress.
 	GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error)
 
 	// Readiness implements tcpip.Endpoint.Readiness and
-	// unix.Endpoint.Readiness.
+	// transport.Endpoint.Readiness.
 	Readiness(mask waiter.EventMask) waiter.EventMask
 
 	// SetSockOpt implements tcpip.Endpoint.SetSockOpt and
-	// unix.Endpoint.SetSockOpt.
+	// transport.Endpoint.SetSockOpt.
 	SetSockOpt(interface{}) *tcpip.Error
 
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
-	// unix.Endpoint.GetSockOpt.
+	// transport.Endpoint.GetSockOpt.
 	GetSockOpt(interface{}) *tcpip.Error
 }
 
@@ -146,7 +146,7 @@ type SocketOperations struct {
 
 	family   int
 	Endpoint tcpip.Endpoint
-	skType   unix.SockType
+	skType   transport.SockType
 
 	// readMu protects access to readView, control, and sender.
 	readMu   sync.Mutex `state:"nosave"`
@@ -156,7 +156,7 @@ type SocketOperations struct {
 }
 
 // New creates a new endpoint socket.
-func New(t *kernel.Task, family int, skType unix.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) *fs.File {
+func New(t *kernel.Task, family int, skType transport.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) *fs.File {
 	dirent := socket.NewDirent(t, epsocketDevice)
 	defer dirent.DecRef()
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
@@ -502,7 +502,7 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (
 
 // GetSockOpt can be used to implement the linux syscall getsockopt(2) for
 // sockets backed by a commonEndpoint.
-func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType unix.SockType, level, name, outLen int) (interface{}, *syserr.Error) {
+func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType transport.SockType, level, name, outLen int) (interface{}, *syserr.Error) {
 	switch level {
 	case linux.SOL_SOCKET:
 		switch name {

@@ -22,20 +22,20 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 var (
-	// Make sure that ConnectedEndpoint implements unix.ConnectedEndpoint.
-	_ = unix.ConnectedEndpoint(new(ConnectedEndpoint))
+	// Make sure that ConnectedEndpoint implements transport.ConnectedEndpoint.
+	_ = transport.ConnectedEndpoint(new(ConnectedEndpoint))
 
-	// Make sure that ConnectedEndpoint implements unix.Receiver.
-	_ = unix.Receiver(new(ConnectedEndpoint))
+	// Make sure that ConnectedEndpoint implements transport.Receiver.
+	_ = transport.Receiver(new(ConnectedEndpoint))
 )
 
 func getFl(fd int) (uint32, error) {
@@ -199,7 +199,7 @@ func TestListen(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	e := ConnectedEndpoint{writeClosed: true}
-	if _, _, err := e.Send(nil, unix.ControlMessages{}, tcpip.FullAddress{}); err != tcpip.ErrClosedForSend {
+	if _, _, err := e.Send(nil, transport.ControlMessages{}, tcpip.FullAddress{}); err != tcpip.ErrClosedForSend {
 		t.Errorf("Got %#v.Send() = %v, want = %v", e, err, tcpip.ErrClosedForSend)
 	}
 }

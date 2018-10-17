@@ -26,11 +26,11 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/epsocket",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

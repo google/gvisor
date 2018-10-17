@@ -20,7 +20,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/control"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 type scmRights struct {
@@ -45,13 +45,13 @@ func (c *scmRights) Files(ctx context.Context, max int) control.RightsFiles {
 	return rf
 }
 
-// Clone implements unix.RightsControlMessage.Clone.
-func (c *scmRights) Clone() unix.RightsControlMessage {
+// Clone implements transport.RightsControlMessage.Clone.
+func (c *scmRights) Clone() transport.RightsControlMessage {
 	// Host rights never need to be cloned.
 	return nil
 }
 
-// Release implements unix.RightsControlMessage.Release.
+// Release implements transport.RightsControlMessage.Release.
 func (c *scmRights) Release() {
 	for _, fd := range c.fds {
 		syscall.Close(fd)

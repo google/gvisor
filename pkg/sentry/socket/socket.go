@@ -29,16 +29,16 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 // ControlMessages represents the union of unix control messages and tcpip
 // control messages.
 type ControlMessages struct {
-	Unix unix.ControlMessages
+	Unix transport.ControlMessages
 	IP   tcpip.ControlMessages
 }
 
@@ -109,12 +109,12 @@ type Provider interface {
 	// If a nil Socket _and_ a nil error is returned, it means that the
 	// protocol is not supported. A non-nil error should only be returned
 	// if the protocol is supported, but an error occurs during creation.
-	Socket(t *kernel.Task, stype unix.SockType, protocol int) (*fs.File, *syserr.Error)
+	Socket(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *syserr.Error)
 
 	// Pair creates a pair of connected sockets.
 	//
 	// See Socket for error information.
-	Pair(t *kernel.Task, stype unix.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error)
+	Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error)
 }
 
 // families holds a map of all known address families and their providers.
@@ -128,7 +128,7 @@ func RegisterProvider(family int, provider Provider) {
 }
 
 // New creates a new socket with the given family, type and protocol.
-func New(t *kernel.Task, family int, stype unix.SockType, protocol int) (*fs.File, *syserr.Error) {
+func New(t *kernel.Task, family int, stype transport.SockType, protocol int) (*fs.File, *syserr.Error) {
 	for _, p := range families[family] {
 		s, err := p.Socket(t, stype, protocol)
 		if err != nil {
@@ -144,7 +144,7 @@ func New(t *kernel.Task, family int, stype unix.SockType, protocol int) (*fs.Fil
 
 // Pair creates a new connected socket pair with the given family, type and
 // protocol.
-func Pair(t *kernel.Task, family int, stype unix.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func Pair(t *kernel.Task, family int, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	providers, ok := families[family]
 	if !ok {
 		return nil, nil, syserr.ErrAddressFamilyNotSupported

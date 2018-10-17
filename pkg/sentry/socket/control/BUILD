@@ -18,8 +18,8 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/kdefs",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
-        "//pkg/tcpip/transport/unix",
     ],
 )

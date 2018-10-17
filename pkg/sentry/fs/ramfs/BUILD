@@ -23,9 +23,9 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/safemem",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

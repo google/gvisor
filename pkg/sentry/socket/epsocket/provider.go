@@ -21,6 +21,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
@@ -28,7 +29,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -40,7 +40,7 @@ type provider struct {
 
 // GetTransportProtocol figures out transport protocol. Currently only TCP,
 // UDP, and ICMP are supported.
-func GetTransportProtocol(stype unix.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
+func GetTransportProtocol(stype transport.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
 	switch stype {
 	case linux.SOCK_STREAM:
 		if protocol != 0 && protocol != syscall.IPPROTO_TCP {
@@ -62,7 +62,7 @@ func GetTransportProtocol(stype unix.SockType, protocol int) (tcpip.TransportPro
 }
 
 // Socket creates a new socket object for the AF_INET or AF_INET6 family.
-func (p *provider) Socket(t *kernel.Task, stype unix.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *provider) Socket(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Fail right away if we don't have a stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -92,7 +92,7 @@ func (p *provider) Socket(t *kernel.Task, stype unix.SockType, protocol int) (*f
 }
 
 // Pair just returns nil sockets (not supported).
-func (*provider) Pair(*kernel.Task, unix.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
+func (*provider) Pair(*kernel.Task, transport.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
 	return nil, nil, nil
 }
 

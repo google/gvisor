@@ -25,11 +25,11 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
-        "//pkg/tcpip/transport/unix",
         "//pkg/waiter",
     ],
 )

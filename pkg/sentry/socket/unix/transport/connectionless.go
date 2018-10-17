@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package unix
+package transport
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport/queue"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/queue"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 

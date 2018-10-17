@@ -19,9 +19,9 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -254,7 +254,7 @@ func (InodeNotDirectory) CreateDirectory(context.Context, *fs.Inode, string, fs.
 }
 
 // Bind implements fs.InodeOperations.Bind.
-func (InodeNotDirectory) Bind(context.Context, *fs.Inode, string, unix.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
+func (InodeNotDirectory) Bind(context.Context, *fs.Inode, string, transport.BoundEndpoint, fs.FilePermissions) (*fs.Dirent, error) {
 	return nil, syserror.ENOTDIR
 }
 
@@ -277,7 +277,7 @@ func (InodeNotDirectory) RemoveDirectory(context.Context, *fs.Inode, string) err
 type InodeNotSocket struct{}
 
 // BoundEndpoint implements fs.InodeOperations.BoundEndpoint.
-func (InodeNotSocket) BoundEndpoint(*fs.Inode, string) unix.BoundEndpoint {
+func (InodeNotSocket) BoundEndpoint(*fs.Inode, string) transport.BoundEndpoint {
 	return nil
 }
 

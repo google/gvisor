@@ -16,9 +16,9 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/tcpip",
-        "//pkg/tcpip/transport/unix",
     ],
 )

@@ -32,16 +32,16 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// SocketOperations is a Unix socket. It is similar to an epsocket, except it is backed
-// by a unix.Endpoint instead of a tcpip.Endpoint.
+// SocketOperations is a Unix socket. It is similar to an epsocket, except it
+// is backed by a transport.Endpoint instead of a tcpip.Endpoint.
 //
 // +stateify savable
 type SocketOperations struct {
@@ -52,18 +52,18 @@ type SocketOperations struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
-	ep                   unix.Endpoint
+	ep                   transport.Endpoint
 }
 
 // New creates a new unix socket.
-func New(ctx context.Context, endpoint unix.Endpoint) *fs.File {
+func New(ctx context.Context, endpoint transport.Endpoint) *fs.File {
 	dirent := socket.NewDirent(ctx, unixSocketDevice)
 	defer dirent.DecRef()
 	return NewWithDirent(ctx, dirent, endpoint, fs.FileFlags{Read: true, Write: true})
 }
 
 // NewWithDirent creates a new unix socket using an existing dirent.
-func NewWithDirent(ctx context.Context, d *fs.Dirent, ep unix.Endpoint, flags fs.FileFlags) *fs.File {
+func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, flags fs.FileFlags) *fs.File {
 	return fs.NewFile(ctx, d, flags, &SocketOperations{
 		ep: ep,
 	})
@@ -83,8 +83,8 @@ func (s *SocketOperations) Release() {
 	s.DecRef()
 }
 
-// Endpoint extracts the unix.Endpoint.
-func (s *SocketOperations) Endpoint() unix.Endpoint {
+// Endpoint extracts the transport.Endpoint.
+func (s *SocketOperations) Endpoint() transport.Endpoint {
 	return s.ep
 }
 
@@ -110,7 +110,7 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 }
 
 // GetPeerName implements the linux syscall getpeername(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
 	addr, err := s.ep.GetRemoteAddress()
 	if err != nil {
@@ -122,7 +122,7 @@ func (s *SocketOperations) GetPeerName(t *kernel.Task) (interface{}, uint32, *sy
 }
 
 // GetSockName implements the linux syscall getsockname(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) GetSockName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
 	addr, err := s.ep.GetLocalAddress()
 	if err != nil {
@@ -139,20 +139,20 @@ func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.S
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (interface{}, *syserr.Error) {
 	return epsocket.GetSockOpt(t, s, s.ep, linux.AF_UNIX, s.ep.Type(), level, name, outLen)
 }
 
 // Listen implements the linux syscall listen(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
 	return syserr.TranslateNetstackError(s.ep.Listen(backlog))
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
 // connections are ready to be accept, it will block until one becomes ready.
-func (s *SocketOperations) blockingAccept(t *kernel.Task) (unix.Endpoint, *syserr.Error) {
+func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *syserr.Error) {
 	// Register for notifications.
 	e, ch := waiter.NewChannelEntry(nil)
 	s.EventRegister(&e, waiter.EventIn)
@@ -172,7 +172,7 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (unix.Endpoint, *syser
 }
 
 // Accept implements the linux syscall accept(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
 	// Issue the accept request to get the new endpoint.
 	ep, err := s.ep.Accept()
@@ -226,7 +226,7 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return e
 	}
 
-	bep, ok := s.ep.(unix.BoundEndpoint)
+	bep, ok := s.ep.(transport.BoundEndpoint)
 	if !ok {
 		// This socket can't be bound.
 		return syserr.ErrInvalidArgument
@@ -287,10 +287,10 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}))
 }
 
-// extractEndpoint retrieves the unix.BoundEndpoint associated with a Unix
-// socket path. The Release must be called on the unix.BoundEndpoint when the
-// caller is done with it.
-func extractEndpoint(t *kernel.Task, sockaddr []byte) (unix.BoundEndpoint, *syserr.Error) {
+// extractEndpoint retrieves the transport.BoundEndpoint associated with a Unix
+// socket path. The Release must be called on the transport.BoundEndpoint when
+// the caller is done with it.
+func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, *syserr.Error) {
 	path, err := extractPath(sockaddr)
 	if err != nil {
 		return nil, err
@@ -362,7 +362,7 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 }
 
 // SendMsg implements the linux syscall sendmsg(2) for unix sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	w := EndpointWriter{
 		Endpoint: s.ep,
@@ -408,12 +408,12 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	return int(total), syserr.FromError(err)
 }
 
-// Passcred implements unix.Credentialer.Passcred.
+// Passcred implements transport.Credentialer.Passcred.
 func (s *SocketOperations) Passcred() bool {
 	return s.ep.Passcred()
 }
 
-// ConnectedPasscred implements unix.Credentialer.ConnectedPasscred.
+// ConnectedPasscred implements transport.Credentialer.ConnectedPasscred.
 func (s *SocketOperations) ConnectedPasscred() bool {
 	return s.ep.ConnectedPasscred()
 }
@@ -434,13 +434,13 @@ func (s *SocketOperations) EventUnregister(e *waiter.Entry) {
 }
 
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
 	return epsocket.SetSockOpt(t, s, s.ep, level, name, optVal)
 }
 
 // Shutdown implements the linux syscall shutdown(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 	f, err := epsocket.ConvertShutdown(how)
 	if err != nil {
@@ -465,7 +465,7 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 }
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
-// a unix.Endpoint.
+// a transport.Endpoint.
 func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages socket.ControlMessages, err *syserr.Error) {
 	trunc := flags&linux.MSG_TRUNC != 0
 	peek := flags&linux.MSG_PEEK != 0
@@ -539,19 +539,19 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 type provider struct{}
 
 // Socket returns a new unix domain socket.
-func (*provider) Socket(t *kernel.Task, stype unix.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (*provider) Socket(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Check arguments.
 	if protocol != 0 {
 		return nil, syserr.ErrInvalidArgument
 	}
 
 	// Create the endpoint and socket.
-	var ep unix.Endpoint
+	var ep transport.Endpoint
 	switch stype {
 	case linux.SOCK_DGRAM:
-		ep = unix.NewConnectionless()
+		ep = transport.NewConnectionless()
 	case linux.SOCK_STREAM, linux.SOCK_SEQPACKET:
-		ep = unix.NewConnectioned(stype, t.Kernel())
+		ep = transport.NewConnectioned(stype, t.Kernel())
 	default:
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -560,7 +560,7 @@ func (*provider) Socket(t *kernel.Task, stype unix.SockType, protocol int) (*fs.
 }
 
 // Pair creates a new pair of AF_UNIX connected sockets.
-func (*provider) Pair(t *kernel.Task, stype unix.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (*provider) Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	// Check arguments.
 	if protocol != 0 {
 		return nil, nil, syserr.ErrInvalidArgument
@@ -573,7 +573,7 @@ func (*provider) Pair(t *kernel.Task, stype unix.SockType, protocol int) (*fs.Fi
 	}
 
 	// Create the endpoints and sockets.
-	ep1, ep2 := unix.NewPair(stype, t.Kernel())
+	ep1, ep2 := transport.NewPair(stype, t.Kernel())
 	s1 := New(t, ep1)
 	s2 := New(t, ep2)
 

@@ -9,6 +9,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/sentry/context",
-        "//pkg/tcpip/transport/unix",
+        "//pkg/sentry/socket/unix/transport",
     ],
 )

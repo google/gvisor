@@ -27,9 +27,9 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/control"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/unix"
 )
 
 // minListenBacklog is the minimum reasonable backlog for listening sockets.
@@ -180,7 +180,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Create the new socket.
-	s, e := socket.New(t, domain, unix.SockType(stype&0xf), protocol)
+	s, e := socket.New(t, domain, transport.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -219,7 +219,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	// Create the socket pair.
-	s1, s2, e := socket.Pair(t, domain, unix.SockType(stype&0xf), protocol)
+	s1, s2, e := socket.Pair(t, domain, transport.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -750,7 +750,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 	controlData := make([]byte, 0, msg.ControlLen)
 
-	if cr, ok := s.(unix.Credentialer); ok && cr.Passcred() {
+	if cr, ok := s.(transport.Credentialer); ok && cr.Passcred() {
 		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)
 		controlData = control.PackCredentials(t, creds, controlData)
 	}
