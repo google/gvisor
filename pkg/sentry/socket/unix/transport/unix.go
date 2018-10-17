@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/ilist"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport/queue"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -271,7 +270,7 @@ func (m *message) Release() {
 }
 
 // Peek returns a copy of the message.
-func (m *message) Peek() queue.Entry {
+func (m *message) Peek() *message {
 	return &message{Data: m.Data, Control: m.Control.Clone(), Address: m.Address}
 }
 
@@ -325,12 +324,12 @@ type Receiver interface {
 //
 // +stateify savable
 type queueReceiver struct {
-	readQueue *queue.Queue
+	readQueue *queue
 }
 
 // Recv implements Receiver.Recv.
 func (q *queueReceiver) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
-	var m queue.Entry
+	var m *message
 	var notify bool
 	var err *tcpip.Error
 	if peek {
@@ -341,15 +340,14 @@ func (q *queueReceiver) Recv(data [][]byte, creds bool, numRights uintptr, peek 
 	if err != nil {
 		return 0, 0, ControlMessages{}, tcpip.FullAddress{}, false, err
 	}
-	msg := m.(*message)
-	src := []byte(msg.Data)
+	src := []byte(m.Data)
 	var copied uintptr
 	for i := 0; i < len(data) && len(src) > 0; i++ {
 		n := copy(data[i], src)
 		copied += uintptr(n)
 		src = src[n:]
 	}
-	return copied, uintptr(len(msg.Data)), msg.Control, msg.Address, notify, nil
+	return copied, uintptr(len(m.Data)), m.Control, m.Address, notify, nil
 }
 
 // RecvNotify implements Receiver.RecvNotify.
@@ -456,10 +454,9 @@ func (q *streamQueueReceiver) Recv(data [][]byte, wantCreds bool, numRights uint
 			return 0, 0, ControlMessages{}, tcpip.FullAddress{}, false, err
 		}
 		notify = n
-		msg := m.(*message)
-		q.buffer = []byte(msg.Data)
-		q.control = msg.Control
-		q.addr = msg.Address
+		q.buffer = []byte(m.Data)
+		q.control = m.Control
+		q.addr = m.Address
 	}
 
 	var copied uintptr
@@ -506,10 +503,9 @@ func (q *streamQueueReceiver) Recv(data [][]byte, wantCreds bool, numRights uint
 			break
 		}
 		notify = notify || n
-		msg := m.(*message)
-		q.buffer = []byte(msg.Data)
-		q.control = msg.Control
-		q.addr = msg.Address
+		q.buffer = []byte(m.Data)
+		q.control = m.Control
+		q.addr = m.Address
 
 		if wantCreds {
 			if (q.control.Credentials == nil) != (c.Credentials == nil) {
@@ -619,7 +615,7 @@ type connectedEndpoint struct {
 		Type() SockType
 	}
 
-	writeQueue *queue.Queue
+	writeQueue *queue
 }
 
 // Passcred implements ConnectedEndpoint.Passcred.

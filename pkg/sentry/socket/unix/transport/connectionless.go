@@ -15,7 +15,6 @@
 package transport
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport/queue"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -34,7 +33,7 @@ type connectionlessEndpoint struct {
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless() Endpoint {
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
-	ep.receiver = &queueReceiver{readQueue: queue.New(&waiter.Queue{}, ep.Queue, initialLimit)}
+	ep.receiver = &queueReceiver{readQueue: newQueue(&waiter.Queue{}, ep.Queue, initialLimit)}
 	return ep
 }
 

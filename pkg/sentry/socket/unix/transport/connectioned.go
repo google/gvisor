@@ -17,7 +17,6 @@ package transport
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport/queue"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -135,8 +134,8 @@ func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 		stype:        stype,
 	}
 
-	q1 := queue.New(a.Queue, b.Queue, initialLimit)
-	q2 := queue.New(b.Queue, a.Queue, initialLimit)
+	q1 := newQueue(a.Queue, b.Queue, initialLimit)
+	q2 := newQueue(b.Queue, a.Queue, initialLimit)
 
 	if stype == SockStream {
 		a.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q1}}
@@ -283,8 +282,8 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 		idGenerator: e.idGenerator,
 		stype:       e.stype,
 	}
-	readQueue := queue.New(ce.WaiterQueue(), ne.Queue, initialLimit)
-	writeQueue := queue.New(ne.Queue, ce.WaiterQueue(), initialLimit)
+	readQueue := newQueue(ce.WaiterQueue(), ne.Queue, initialLimit)
+	writeQueue := newQueue(ne.Queue, ce.WaiterQueue(), initialLimit)
 	ne.connected = &connectedEndpoint{
 		endpoint:   ce,
 		writeQueue: readQueue,

@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package queue provides the implementation of buffer queue
-// and interface of queue entry with Length method.
-package queue
+package transport
 
 import (
 	"sync"
@@ -24,29 +22,10 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// Entry implements Linker interface and has additional required methods.
-type Entry interface {
-	ilist.Linker
-
-	// Length returns the number of bytes stored in the entry.
-	Length() int64
-
-	// Release releases any resources held by the entry.
-	Release()
-
-	// Peek returns a copy of the entry. It must be Released separately.
-	Peek() Entry
-
-	// Truncate reduces the number of bytes stored in the entry to n bytes.
-	//
-	// Preconditions: n <= Length().
-	Truncate(n int64)
-}
-
-// Queue is a buffer queue.
+// queue is a buffer queue.
 //
 // +stateify savable
-type Queue struct {
+type queue struct {
 	ReaderQueue *waiter.Queue
 	WriterQueue *waiter.Queue
 
@@ -57,9 +36,9 @@ type Queue struct {
 	dataList ilist.List
 }
 
-// New allocates and initializes a new queue.
-func New(ReaderQueue *waiter.Queue, WriterQueue *waiter.Queue, limit int64) *Queue {
-	return &Queue{ReaderQueue: ReaderQueue, WriterQueue: WriterQueue, limit: limit}
+// newQueue allocates and initializes a new queue.
+func newQueue(ReaderQueue *waiter.Queue, WriterQueue *waiter.Queue, limit int64) *queue {
+	return &queue{ReaderQueue: ReaderQueue, WriterQueue: WriterQueue, limit: limit}
 }
 
 // Close closes q for reading and writing. It is immediately not writable and
@@ -68,7 +47,7 @@ func New(ReaderQueue *waiter.Queue, WriterQueue *waiter.Queue, limit int64) *Que
 // Both the read and write queues must be notified after closing:
 // q.ReaderQueue.Notify(waiter.EventIn)
 // q.WriterQueue.Notify(waiter.EventOut)
-func (q *Queue) Close() {
+func (q *queue) Close() {
 	q.mu.Lock()
 	q.closed = true
 	q.mu.Unlock()
@@ -79,10 +58,10 @@ func (q *Queue) Close() {
 // Both the read and write queues must be notified after resetting:
 // q.ReaderQueue.Notify(waiter.EventIn)
 // q.WriterQueue.Notify(waiter.EventOut)
-func (q *Queue) Reset() {
+func (q *queue) Reset() {
 	q.mu.Lock()
 	for cur := q.dataList.Front(); cur != nil; cur = cur.Next() {
-		cur.(Entry).Release()
+		cur.(*message).Release()
 	}
 	q.dataList.Reset()
 	q.used = 0
@@ -90,7 +69,7 @@ func (q *Queue) Reset() {
 }
 
 // IsReadable determines if q is currently readable.
-func (q *Queue) IsReadable() bool {
+func (q *queue) IsReadable() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -103,12 +82,12 @@ func (q *Queue) IsReadable() bool {
 // free.
 //
 // See net/unix/af_unix.c:unix_writeable.
-func (q *Queue) bufWritable() bool {
+func (q *queue) bufWritable() bool {
 	return 4*q.used < q.limit
 }
 
 // IsWritable determines if q is currently writable.
-func (q *Queue) IsWritable() bool {
+func (q *queue) IsWritable() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -122,7 +101,7 @@ func (q *Queue) IsWritable() bool {
 //
 // If notify is true, ReaderQueue.Notify must be called:
 // q.ReaderQueue.Notify(waiter.EventIn)
-func (q *Queue) Enqueue(e Entry, truncate bool) (l int64, notify bool, err *tcpip.Error) {
+func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *tcpip.Error) {
 	q.mu.Lock()
 
 	if q.closed {
@@ -171,7 +150,7 @@ func (q *Queue) Enqueue(e Entry, truncate bool) (l int64, notify bool, err *tcpi
 //
 // If notify is true, WriterQueue.Notify must be called:
 // q.WriterQueue.Notify(waiter.EventOut)
-func (q *Queue) Dequeue() (e Entry, notify bool, err *tcpip.Error) {
+func (q *queue) Dequeue() (e *message, notify bool, err *tcpip.Error) {
 	q.mu.Lock()
 
 	if q.dataList.Front() == nil {
@@ -186,7 +165,7 @@ func (q *Queue) Dequeue() (e Entry, notify bool, err *tcpip.Error) {
 
 	notify = !q.bufWritable()
 
-	e = q.dataList.Front().(Entry)
+	e = q.dataList.Front().(*message)
 	q.dataList.Remove(e)
 	q.used -= e.Length()
 
@@ -198,7 +177,7 @@ func (q *Queue) Dequeue() (e Entry, notify bool, err *tcpip.Error) {
 }
 
 // Peek returns the first entry in the data queue, if one exists.
-func (q *Queue) Peek() (Entry, *tcpip.Error) {
+func (q *queue) Peek() (*message, *tcpip.Error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -210,18 +189,18 @@ func (q *Queue) Peek() (Entry, *tcpip.Error) {
 		return nil, err
 	}
 
-	return q.dataList.Front().(Entry).Peek(), nil
+	return q.dataList.Front().(*message).Peek(), nil
 }
 
 // QueuedSize returns the number of bytes currently in the queue, that is, the
 // number of readable bytes.
-func (q *Queue) QueuedSize() int64 {
+func (q *queue) QueuedSize() int64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.used
 }
 
 // MaxQueueSize returns the maximum number of bytes storable in the queue.
-func (q *Queue) MaxQueueSize() int64 {
+func (q *queue) MaxQueueSize() int64 {
 	return q.limit
 }
