@@ -33,34 +33,44 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
-// createConsoleSocket creates a socket that will receive a console fd from the
-// sandbox. If no error occurs, it returns the server socket and a cleanup
-// function.
-func createConsoleSocket(socketPath string) (*unet.ServerSocket, func() error, error) {
+// socketPath creates a path inside bundleDir and ensures that the returned
+// path is under 108 charactors (the unix socket path length limit),
+// relativizing the path if necessary.
+func socketPath(bundleDir string) (string, error) {
+	path := filepath.Join(bundleDir, "socket")
 	cwd, err := os.Getwd()
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting cwd: %v", err)
+		return "", fmt.Errorf("error getting cwd: %v", err)
 	}
-	// We use a relative path to avoid overflowing the unix path length
-	// limit (108 chars).
-	socketRelPath, err := filepath.Rel(cwd, socketPath)
+	relPath, err := filepath.Rel(cwd, path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error getting relative path for %q from cwd %q: %v", socketPath, cwd, err)
+		return "", fmt.Errorf("error getting relative path for %q from cwd %q: %v", path, cwd, err)
 	}
-	if len(socketRelPath) > len(socketPath) {
-		socketRelPath = socketPath
+	if len(path) > len(relPath) {
+		path = relPath
 	}
-	srv, err := unet.BindAndListen(socketRelPath, false)
+	const maxPathLen = 108
+	if len(path) > maxPathLen {
+		return "", fmt.Errorf("could not get socket path under length limit %d: %s", maxPathLen, path)
+	}
+	return path, nil
+}
+
+// createConsoleSocket creates a socket at the given path that will receive a
+// console fd from the sandbox. If no error occurs, it returns the server
+// socket and a cleanup function.
+func createConsoleSocket(path string) (*unet.ServerSocket, func() error, error) {
+	srv, err := unet.BindAndListen(path, false)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error binding and listening to socket %q: %v", socketPath, err)
+		return nil, nil, fmt.Errorf("error binding and listening to socket %q: %v", path, err)
 	}
 
 	cleanup := func() error {
 		if err := srv.Close(); err != nil {
-			return fmt.Errorf("error closing socket %q: %v", socketRelPath, err)
+			return fmt.Errorf("error closing socket %q: %v", path, err)
 		}
-		if err := os.Remove(socketPath); err != nil {
-			return fmt.Errorf("error removing socket %q: %v", socketRelPath, err)
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("error removing socket %q: %v", path, err)
 		}
 		return nil
 	}
@@ -117,16 +127,19 @@ func TestConsoleSocket(t *testing.T) {
 		defer os.RemoveAll(rootDir)
 		defer os.RemoveAll(bundleDir)
 
-		socketPath := filepath.Join(bundleDir, "socket")
-		srv, cleanup, err := createConsoleSocket(socketPath)
+		sock, err := socketPath(bundleDir)
 		if err != nil {
-			t.Fatalf("error creating socket at %q: %v", socketPath, err)
+			t.Fatalf("error getting socket path: %v", err)
+		}
+		srv, cleanup, err := createConsoleSocket(sock)
+		if err != nil {
+			t.Fatalf("error creating socket at %q: %v", sock, err)
 		}
 		defer cleanup()
 
 		// Create the container and pass the socket name.
 		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, socketPath, "", "")
+		c, err := Create(id, spec, conf, bundleDir, sock, "", "")
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -272,16 +285,19 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	socketPath := filepath.Join(bundleDir, "socket")
-	srv, cleanup, err := createConsoleSocket(socketPath)
+	sock, err := socketPath(bundleDir)
 	if err != nil {
-		t.Fatalf("error creating socket at %q: %v", socketPath, err)
+		t.Fatalf("error getting socket path: %v", err)
+	}
+	srv, cleanup, err := createConsoleSocket(sock)
+	if err != nil {
+		t.Fatalf("error creating socket at %q: %v", sock, err)
 	}
 	defer cleanup()
 
 	// Create the container and pass the socket name.
 	id := testutil.UniqueContainerID()
-	c, err := Create(id, spec, conf, bundleDir, socketPath, "", "")
+	c, err := Create(id, spec, conf, bundleDir, sock, "", "")
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
