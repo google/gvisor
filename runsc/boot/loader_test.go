@@ -84,8 +84,13 @@ func startGofer(root string) (int, func(), error) {
 			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
 		}
 	}()
-	// Closing the gofer FD will stop the gofer and exit goroutine above.
-	return sandboxEnd, func() { syscall.Close(goferEnd) }, nil
+	// Closing the gofer socket will stop the gofer and exit goroutine above.
+	cleanup := func() {
+		if err := socket.Close(); err != nil {
+			log.Warningf("Error closing gofer socket: %v", err)
+		}
+	}
+	return sandboxEnd, cleanup, nil
 }
 
 func createLoader() (*Loader, func(), error) {
