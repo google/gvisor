@@ -323,10 +323,10 @@ func (p *pool) schedule(c *chunk, callback func(*chunk) error) error {
 			inputChan  chan *chunk
 			outputChan chan result
 		)
-		if c != nil {
+		if c != nil && len(p.workers) != 0 {
 			inputChan = p.workers[(p.nextInput+1)%len(p.workers)].input
 		}
-		if callback != nil && p.nextOutput != p.nextInput {
+		if callback != nil && p.nextOutput != p.nextInput && len(p.workers) != 0 {
 			outputChan = p.workers[(p.nextOutput+1)%len(p.workers)].output
 		}
 		if inputChan == nil && outputChan == nil {
