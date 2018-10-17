@@ -29,7 +29,6 @@ type Event struct {
 
 // Stats is the runc specific stats structure for stability when encoding and
 // decoding stats.
-// TODO: Many fields aren't obtainable due to a lack of cgroups.
 type Stats struct {
 	Memory Memory `json:"memory"`
 	Pids   Pids   `json:"pids"`
