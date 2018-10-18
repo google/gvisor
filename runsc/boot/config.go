@@ -192,9 +192,6 @@ type Config struct {
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
 
-	// SpecFile is the file containing the OCI spec.
-	SpecFile string
-
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action
 

@@ -170,6 +170,29 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File) (*specs.Spec, error) 
 	return &spec, nil
 }
 
+// OpenCleanSpec opens spec file that has destination mount paths resolved to
+// their absolute location.
+func OpenCleanSpec(bundleDir string) (*os.File, error) {
+	f, err := os.Open(filepath.Join(bundleDir, "config.clean.json"))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(0, os.SEEK_SET); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", f.Name(), err)
+	}
+	return f, nil
+}
+
+// WriteCleanSpec writes a spec file that has destination mount paths resolved.
+func WriteCleanSpec(bundleDir string, spec *specs.Spec) error {
+	bytes, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filepath.Join(bundleDir, "config.clean.json"), bytes, 0755)
+}
+
 // Capabilities takes in spec and returns a TaskCapabilities corresponding to
 // the spec.
 func Capabilities(specCaps *specs.LinuxCapabilities) (*auth.TaskCapabilities, error) {

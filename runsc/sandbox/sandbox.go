@@ -321,12 +321,9 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	nextFD++
 
 	// Open the spec file to donate to the sandbox.
-	if conf.SpecFile == "" {
-		return fmt.Errorf("conf.SpecFile must be set")
-	}
-	specFile, err := os.Open(conf.SpecFile)
+	specFile, err := specutils.OpenCleanSpec(bundleDir)
 	if err != nil {
-		return fmt.Errorf("error opening spec file %q: %v", conf.SpecFile, err)
+		return fmt.Errorf("opening spec file: %v", err)
 	}
 	defer specFile.Close()
 	cmd.ExtraFiles = append(cmd.ExtraFiles, specFile)

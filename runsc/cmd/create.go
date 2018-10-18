@@ -15,8 +15,6 @@
 package cmd
 
 import (
-	"path/filepath"
-
 	"context"
 	"flag"
 	"github.com/google/subcommands"
@@ -93,7 +91,6 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 		Fatalf("error reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
-	conf.SpecFile = filepath.Join(bundleDir, "config.json")
 
 	// Create the container. A new sandbox will be created for the
 	// container unless the metadata specifies that it should be run in an

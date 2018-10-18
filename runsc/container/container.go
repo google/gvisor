@@ -271,6 +271,19 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// init container in the sandbox.
 	if specutils.ShouldCreateSandbox(spec) {
 		log.Debugf("Creating new sandbox for container %q", id)
+
+		// Setup rootfs and mounts. It returns a new mount list with destination
+		// paths resolved. Since the spec for the root container is read from disk,
+		// Write the new spec to a new file that will be used by the sandbox.
+		cleanMounts, err := setupFS(spec, conf, bundleDir)
+		if err != nil {
+			return nil, fmt.Errorf("setup mounts: %v", err)
+		}
+		spec.Mounts = cleanMounts
+		if err := specutils.WriteCleanSpec(bundleDir, spec); err != nil {
+			return nil, fmt.Errorf("writing clean spec: %v", err)
+		}
+
 		ioFiles, err := c.createGoferProcess(spec, conf, bundleDir)
 		if err != nil {
 			return nil, err
@@ -351,6 +364,15 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 	} else {
+		// Setup rootfs and mounts. It returns a new mount list with destination
+		// paths resolved. Replace the original spec with new mount list and start
+		// container.
+		cleanMounts, err := setupFS(c.Spec, conf, c.BundleDir)
+		if err != nil {
+			return fmt.Errorf("setup mounts: %v", err)
+		}
+		c.Spec.Mounts = cleanMounts
+
 		// Create the gofer process.
 		ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
 		if err != nil {
@@ -691,10 +713,6 @@ func (c *Container) waitForStopped() error {
 }
 
 func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, error) {
-	if err := setupFS(spec, conf, bundleDir); err != nil {
-		return nil, fmt.Errorf("failed to setup mounts: %v", err)
-	}
-
 	// Start with the general config flags.
 	args := conf.ToFlags()
 	args = append(args, "gofer", "--bundle", bundleDir)

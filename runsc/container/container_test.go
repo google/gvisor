@@ -458,7 +458,7 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir2, "", "", "")
+	ws, err = Run(testutil.UniqueContainerID(), errSpec, conf, bundleDir2, "", "", "")
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}

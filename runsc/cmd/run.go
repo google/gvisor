@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"path/filepath"
 	"syscall"
 
 	"context"
@@ -73,7 +72,6 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 		Fatalf("error reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
-	conf.SpecFile = filepath.Join(bundleDir, "config.json")
 
 	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog)
 	if err != nil {
