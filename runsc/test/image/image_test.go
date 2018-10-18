@@ -192,6 +192,12 @@ func TestMysql(t *testing.T) {
 }
 
 func TestPythonHello(t *testing.T) {
+	// TODO: This test occasionally hangs on the ptrace
+	// platform. Re-enable it once we have this issue fixed.
+	if testutil.IsPtracePlatform() {
+		t.Skipf("Skipping PythonHello test on ptrace platform")
+	}
+
 	if err := testutil.Pull("google/python-hello"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
