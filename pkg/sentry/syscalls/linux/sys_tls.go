@@ -45,6 +45,9 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		regs.Fs = 0
 		regs.Fs_base = fsbase
 
+	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
+		t.Kernel().EmitUnimplementedEvent(t)
+		fallthrough
 	default:
 		return 0, nil, syscall.EINVAL
 	}

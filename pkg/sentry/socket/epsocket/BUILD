@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/unimpl",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",

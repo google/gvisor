@@ -369,7 +369,7 @@ var AMD64 = &kernel.SyscallTable{
 		0xffffffffff600800: 309, // vsyscall getcpu(2)
 	},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-		syscalls.UnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, syserror.ENOSYS
 	},
 }

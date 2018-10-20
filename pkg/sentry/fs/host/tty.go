@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -179,6 +180,35 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.
 		err := ioctlSetWinsize(fd, &winsize)
 		return 0, err
 
+	// Unimplemented commands.
+	case linux.TIOCSETD,
+		linux.TIOCSBRK,
+		linux.TIOCCBRK,
+		linux.TCSBRK,
+		linux.TCSBRKP,
+		linux.TIOCSTI,
+		linux.TIOCCONS,
+		linux.FIONBIO,
+		linux.TIOCEXCL,
+		linux.TIOCNXCL,
+		linux.TIOCGEXCL,
+		linux.TIOCNOTTY,
+		linux.TIOCSCTTY,
+		linux.TIOCGSID,
+		linux.TIOCGETD,
+		linux.TIOCVHANGUP,
+		linux.TIOCGDEV,
+		linux.TIOCMGET,
+		linux.TIOCMSET,
+		linux.TIOCMBIC,
+		linux.TIOCMBIS,
+		linux.TIOCGICOUNT,
+		linux.TCFLSH,
+		linux.TIOCSSERIAL,
+		linux.TIOCGPTPEER:
+
+		unimpl.EmitUnimplementedEvent(ctx)
+		fallthrough
 	default:
 		return 0, syserror.ENOTTY
 	}

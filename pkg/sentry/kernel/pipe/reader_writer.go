@@ -19,6 +19,7 @@ import (
 	"math"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -77,7 +78,7 @@ func (rw *ReaderWriter) Readiness(mask waiter.EventMask) waiter.EventMask {
 func (rw *ReaderWriter) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch int(args[1].Int()) {
-	case syscall.TIOCINQ:
+	case linux.FIONREAD:
 		v := rw.queuedSize()
 		if v > math.MaxInt32 {
 			panic(fmt.Sprintf("Impossibly large pipe queued size: %d", v))

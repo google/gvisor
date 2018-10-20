@@ -1,7 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_stateify:defs.bzl", "go_library")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 go_library(
     name = "syscalls",
@@ -13,9 +12,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls",
     visibility = ["//:sandbox"],
     deps = [
-        ":unimplemented_syscall_go_proto",
         "//pkg/abi/linux",
-        "//pkg/eventchannel",
         "//pkg/sentry/arch",
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
@@ -25,19 +22,4 @@ go_library(
         "//pkg/syserror",
         "//pkg/waiter",
     ],
-)
-
-proto_library(
-    name = "unimplemented_syscall_proto",
-    srcs = ["unimplemented_syscall.proto"],
-    visibility = ["//visibility:public"],
-    deps = ["//pkg/sentry/arch:registers_proto"],
-)
-
-go_proto_library(
-    name = "unimplemented_syscall_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/unimplemented_syscall_go_proto",
-    proto = ":unimplemented_syscall_proto",
-    visibility = ["//visibility:public"],
-    deps = ["//pkg/sentry/arch:registers_go_proto"],
 )

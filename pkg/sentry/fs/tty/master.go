@@ -20,6 +20,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -149,7 +150,7 @@ func (mf *masterFileOperations) Write(ctx context.Context, _ *fs.File, src userm
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (mf *masterFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	switch args[1].Uint() {
+	switch cmd := args[1].Uint(); cmd {
 	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
 		// Get the number of bytes in the output queue read buffer.
 		return 0, mf.t.ld.outputQueueReadSize(ctx, io, args)
@@ -177,6 +178,48 @@ func (mf *masterFileOperations) Ioctl(ctx context.Context, io usermem.IO, args a
 	case linux.TIOCSWINSZ:
 		return 0, mf.t.ld.setWindowSize(ctx, io, args)
 	default:
+		maybeEmitUnimplementedEvent(ctx, cmd)
 		return 0, syserror.ENOTTY
+	}
+}
+
+// maybeEmitUnimplementedEvent emits unimplemented event if cmd is valid.
+func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
+	switch cmd {
+	case linux.TCGETS,
+		linux.TCSETS,
+		linux.TCSETSW,
+		linux.TCSETSF,
+		linux.TIOCGPGRP,
+		linux.TIOCSPGRP,
+		linux.TIOCGWINSZ,
+		linux.TIOCSWINSZ,
+		linux.TIOCSETD,
+		linux.TIOCSBRK,
+		linux.TIOCCBRK,
+		linux.TCSBRK,
+		linux.TCSBRKP,
+		linux.TIOCSTI,
+		linux.TIOCCONS,
+		linux.FIONBIO,
+		linux.TIOCEXCL,
+		linux.TIOCNXCL,
+		linux.TIOCGEXCL,
+		linux.TIOCNOTTY,
+		linux.TIOCSCTTY,
+		linux.TIOCGSID,
+		linux.TIOCGETD,
+		linux.TIOCVHANGUP,
+		linux.TIOCGDEV,
+		linux.TIOCMGET,
+		linux.TIOCMSET,
+		linux.TIOCMBIC,
+		linux.TIOCMBIS,
+		linux.TIOCGICOUNT,
+		linux.TCFLSH,
+		linux.TIOCSSERIAL,
+		linux.TIOCGPTPEER:
+
+		unimpl.EmitUnimplementedEvent(ctx)
 	}
 }

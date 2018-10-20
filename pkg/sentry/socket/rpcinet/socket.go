@@ -32,6 +32,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/notifier"
 	pb "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
@@ -555,6 +556,10 @@ func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.S
 		})
 
 		return 0, err
+
+	case linux.SIOCGIFMEM, linux.SIOCGIFPFLAGS, linux.SIOCGMIIPHY, linux.SIOCGMIIREG:
+		unimpl.EmitUnimplementedEvent(ctx)
+
 	default:
 		return 0, syserror.ENOTTY
 	}

@@ -157,6 +157,8 @@ go_library(
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
+        "//pkg/sentry/unimpl",
+        "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",

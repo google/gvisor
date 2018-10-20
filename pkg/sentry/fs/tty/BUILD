@@ -27,6 +27,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/unimpl",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
         "//pkg/waiter",

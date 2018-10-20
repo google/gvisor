@@ -30,6 +30,7 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -594,6 +595,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return t.k
 	case uniqueid.CtxInotifyCookie:
 		return t.k.GenerateInotifyCookie()
+	case unimpl.CtxEvents:
+		return t.k
 	default:
 		return nil
 	}

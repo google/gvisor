@@ -40,6 +40,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
+	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -58,6 +59,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink/port"
 	sentrytime "gvisor.googlesource.com/gvisor/pkg/sentry/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
+	uspb "gvisor.googlesource.com/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
 	"gvisor.googlesource.com/gvisor/pkg/state"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
@@ -595,6 +598,8 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.k
 	case uniqueid.CtxInotifyCookie:
 		return ctx.k.GenerateInotifyCookie()
+	case unimpl.CtxEvents:
+		return ctx.k
 	default:
 		return nil
 	}
@@ -1033,6 +1038,16 @@ func (k *Kernel) SupervisorContext() context.Context {
 	}
 }
 
+// EmitUnimplementedEvent emits an UnimplementedSyscall event via the event
+// channel.
+func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
+	t := TaskFromContext(ctx)
+	eventchannel.Emit(&uspb.UnimplementedSyscall{
+		Tid:       int32(t.ThreadID()),
+		Registers: t.Arch().StateData().Proto(),
+	})
+}
+
 type supervisorContext struct {
 	context.NoopSleeper
 	log.Logger
@@ -1073,6 +1088,8 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		return ctx.k
 	case uniqueid.CtxInotifyCookie:
 		return ctx.k.GenerateInotifyCookie()
+	case unimpl.CtxEvents:
+		return ctx.k
 	default:
 		return nil
 	}

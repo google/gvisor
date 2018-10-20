@@ -43,6 +43,7 @@ go_library(
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
+        "//pkg/sentry/unimpl",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usermem",
         "//pkg/syserr",

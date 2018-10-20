@@ -26,10 +26,8 @@ package syscalls
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	uspb "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/unimplemented_syscall_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -44,7 +42,7 @@ func Error(err error) kernel.SyscallFn {
 // syscall event via the event channel and returns the passed error.
 func ErrorWithEvent(err error) kernel.SyscallFn {
 	return func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-		UnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, nil, err
 	}
 }
@@ -57,16 +55,7 @@ func CapError(c linux.Capability) kernel.SyscallFn {
 		if !t.HasCapability(c) {
 			return 0, nil, syserror.EPERM
 		}
-		UnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, nil, syserror.ENOSYS
 	}
-}
-
-// UnimplementedEvent emits an UnimplementedSyscall event via the event
-// channel.
-func UnimplementedEvent(t *kernel.Task) {
-	eventchannel.Emit(&uspb.UnimplementedSyscall{
-		Tid:       int32(t.ThreadID()),
-		Registers: t.Arch().StateData().Proto(),
-	})
 }

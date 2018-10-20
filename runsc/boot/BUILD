@@ -6,6 +6,7 @@ go_library(
     name = "boot",
     srcs = [
         "compat.go",
+        "compat_amd64.go",
         "config.go",
         "controller.go",
         "debug.go",
@@ -59,9 +60,9 @@ go_library(
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/state",
         "//pkg/sentry/strace",
-        "//pkg/sentry/syscalls:unimplemented_syscall_go_proto",
         "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/time",
+        "//pkg/sentry/unimpl:unimplemented_syscall_go_proto",
         "//pkg/sentry/usage",
         "//pkg/sentry/watchdog",
         "//pkg/syserror",
@@ -87,12 +88,16 @@ go_library(
 go_test(
     name = "boot_test",
     size = "small",
-    srcs = ["loader_test.go"],
+    srcs = [
+        "compat_test.go",
+        "loader_test.go",
+    ],
     embed = [":boot"],
     deps = [
         "//pkg/control/server",
         "//pkg/log",
         "//pkg/p9",
+        "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
         "//pkg/unet",
