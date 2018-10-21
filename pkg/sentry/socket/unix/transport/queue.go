@@ -17,6 +17,7 @@ package transport
 import (
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -25,6 +26,8 @@ import (
 //
 // +stateify savable
 type queue struct {
+	refs.AtomicRefCount
+
 	ReaderQueue *waiter.Queue
 	WriterQueue *waiter.Queue
 
@@ -65,6 +68,13 @@ func (q *queue) Reset() {
 	q.dataList.Reset()
 	q.used = 0
 	q.mu.Unlock()
+}
+
+// DecRef implements RefCounter.DecRef with destructor q.Reset.
+func (q *queue) DecRef() {
+	q.DecRefWithDestructor(q.Reset)
+	// We don't need to notify after resetting because no one cares about
+	// this queue after all references have been dropped.
 }
 
 // IsReadable determines if q is currently readable.

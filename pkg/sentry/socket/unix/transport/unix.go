@@ -381,7 +381,9 @@ func (q *queueReceiver) RecvMaxQueueSize() int64 {
 }
 
 // Release implements Receiver.Release.
-func (*queueReceiver) Release() {}
+func (q *queueReceiver) Release() {
+	q.readQueue.DecRef()
+}
 
 // streamQueueReceiver implements Receiver for stream sockets.
 //
@@ -694,7 +696,9 @@ func (e *connectedEndpoint) SendMaxQueueSize() int64 {
 }
 
 // Release implements ConnectedEndpoint.Release.
-func (*connectedEndpoint) Release() {}
+func (e *connectedEndpoint) Release() {
+	e.writeQueue.DecRef()
+}
 
 // baseEndpoint is an embeddable unix endpoint base used in both the connected and connectionless
 // unix domain socket Endpoint implementations.
@@ -945,4 +949,6 @@ func (e *baseEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 }
 
 // Release implements BoundEndpoint.Release.
-func (*baseEndpoint) Release() {}
+func (*baseEndpoint) Release() {
+	// Binding a baseEndpoint doesn't take a reference.
+}

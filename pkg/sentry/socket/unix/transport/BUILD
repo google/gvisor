@@ -29,6 +29,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/ilist",
+        "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/waiter",

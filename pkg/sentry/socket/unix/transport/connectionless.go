@@ -82,9 +82,13 @@ func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *tc
 	if r == nil {
 		return nil, tcpip.ErrConnectionRefused
 	}
+	q := r.(*queueReceiver).readQueue
+	if !q.TryIncRef() {
+		return nil, tcpip.ErrConnectionRefused
+	}
 	return &connectedEndpoint{
 		endpoint:   e,
-		writeQueue: r.(*queueReceiver).readQueue,
+		writeQueue: q,
 	}, nil
 }
 
