@@ -190,7 +190,9 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 	// Mark that cgroup resources are owned by me.
 	log.Debugf("Creating cgroup %q", c.Name)
 	c.Own = true
-	clean := specutils.MakeCleanup(func() { c.Uninstall() })
+	// The Cleanup object cleans up partially created cgroups when an error occurs.
+	// Errors occuring during cleanup itself are ignored.
+	clean := specutils.MakeCleanup(func() { _ = c.Uninstall() })
 	defer clean.Clean()
 
 	for key, ctrl := range controllers {

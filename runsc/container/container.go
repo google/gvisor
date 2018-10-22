@@ -262,7 +262,9 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		Status:        Creating,
 		Owner:         os.Getenv("USER"),
 	}
-	cu := specutils.MakeCleanup(func() { c.Destroy() })
+	// The Cleanup object cleans up partially created containers when an error occurs.
+	// Any errors occuring during cleanup itself are ignored.
+	cu := specutils.MakeCleanup(func() { _ = c.Destroy() })
 	defer cu.Clean()
 
 	// If the metadata annotations indicate that this container should be
@@ -424,6 +426,8 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	if err != nil {
 		return 0, fmt.Errorf("error creating container: %v", err)
 	}
+	// Clean up partially created container if an error ocurrs.
+	// Any errors returned by Destroy() itself are ignored.
 	defer c.Destroy()
 
 	if err := c.Start(conf); err != nil {

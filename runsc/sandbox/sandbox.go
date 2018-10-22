@@ -68,7 +68,9 @@ type Sandbox struct {
 // sandbox.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
-	c := specutils.MakeCleanup(func() { s.destroy() })
+	// The Cleanup object cleans up partially created sandboxes when an error occurs.
+	// Any errors occuring during cleanup itself are ignored.
+	c := specutils.MakeCleanup(func() { _ = s.destroy() })
 	defer c.Clean()
 
 	if cg, ok := cgroup.New(spec); ok {
