@@ -378,7 +378,6 @@ func (e *endpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error)
 
 // SetSockOpt sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	// TODO: Actually implement this.
 	switch v := opt.(type) {
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
