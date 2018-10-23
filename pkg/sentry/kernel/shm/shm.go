@@ -101,9 +101,12 @@ func (r *Registry) findByKey(key int32) *Shm {
 // FindOrCreate looks up or creates a segment in the registry. It's functionally
 // analogous to open(2).
 func (r *Registry) FindOrCreate(ctx context.Context, pid, key int32, size uint64, mode linux.FileMode, private, create, exclusive bool) (*Shm, error) {
-	if create && (size < linux.SHMMIN || size > linux.SHMMAX) {
+	if (create || private) && (size < linux.SHMMIN || size > linux.SHMMAX) {
 		// "A new segment was to be created and size is less than SHMMIN or
 		// greater than SHMMAX." - man shmget(2)
+		//
+		// Note that 'private' always implies the creation of a new segment
+		// whether IPC_CREAT is specified or not.
 		return nil, syserror.EINVAL
 	}
 
