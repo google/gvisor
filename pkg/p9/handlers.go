@@ -27,8 +27,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
-const maximumNameLength = 255
-
 // ExtractErrno extracts a syscall.Errno from a error, best effort.
 func ExtractErrno(err error) syscall.Errno {
 	switch err {
@@ -109,13 +107,10 @@ func (t *Tflush) handle(cs *connState) message {
 
 // checkSafeName validates the name and returns nil or returns an error.
 func checkSafeName(name string) error {
-	if name == "" || strings.Contains(name, "/") || name == "." || name == ".." {
-		return syscall.EINVAL
+	if name != "" && !strings.Contains(name, "/") && name != "." && name != ".." {
+		return nil
 	}
-	if len(name) > maximumNameLength {
-		return syscall.ENAMETOOLONG
-	}
-	return nil
+	return syscall.EINVAL
 }
 
 // handle implements handler.handle.
@@ -977,11 +972,6 @@ func (t *Tstatfs) handle(cs *connState) message {
 	st, err := ref.file.StatFS()
 	if err != nil {
 		return newErr(err)
-	}
-
-	// Constrain the name length.
-	if st.NameLength > maximumNameLength {
-		st.NameLength = maximumNameLength
 	}
 
 	return &Rstatfs{st}
