@@ -415,22 +415,22 @@ func TestLink(t *testing.T) {
 
 func TestROMountChecks(t *testing.T) {
 	runCustom(t, allTypes, roConfs, func(t *testing.T, s state) {
-		if _, _, _, _, err := s.file.Create("..", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
+		if _, _, _, _, err := s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
 			t.Errorf("%v: Create() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
-		if _, err := s.file.Mkdir("..", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
+		if _, err := s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
 			t.Errorf("%v: MkDir() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
-		if err := s.file.Rename(s.file, ".."); err != syscall.EBADF {
+		if err := s.file.RenameAt("some_file", s.file, "other_file"); err != syscall.EBADF {
 			t.Errorf("%v: Rename() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
-		if _, err := s.file.Symlink("some_place", "..", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
+		if _, err := s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EBADF {
 			t.Errorf("%v: Symlink() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
-		if err := s.file.UnlinkAt("..", 0); err != syscall.EBADF {
+		if err := s.file.UnlinkAt("some_file", 0); err != syscall.EBADF {
 			t.Errorf("%v: UnlinkAt() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
-		if err := s.file.Link(s.file, ".."); err != syscall.EBADF {
+		if err := s.file.Link(s.file, "some_link"); err != syscall.EBADF {
 			t.Errorf("%v: Link() should have failed, got: %v, expected: syscall.EBADF", s, err)
 		}
 
@@ -445,71 +445,17 @@ func TestROMountChecks(t *testing.T) {
 func TestROMountPanics(t *testing.T) {
 	conf := Config{ROMount: true, PanicOnWrite: true}
 	runCustom(t, allTypes, []Config{conf}, func(t *testing.T, s state) {
-		assertPanic(t, func() { s.file.Create("..", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.Mkdir("..", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.Rename(s.file, "..") })
-		assertPanic(t, func() { s.file.Symlink("some_place", "..", p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
-		assertPanic(t, func() { s.file.UnlinkAt("..", 0) })
-		assertPanic(t, func() { s.file.Link(s.file, "..") })
+		assertPanic(t, func() { s.file.Create("some_file", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.Mkdir("some_dir", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.RenameAt("some_file", s.file, "other_file") })
+		assertPanic(t, func() { s.file.Symlink("some_place", "some_symlink", p9.UID(os.Getuid()), p9.GID(os.Getgid())) })
+		assertPanic(t, func() { s.file.UnlinkAt("some_file", 0) })
+		assertPanic(t, func() { s.file.Link(s.file, "some_link") })
 
 		valid := p9.SetAttrMask{Size: true}
 		attr := p9.SetAttr{Size: 0}
 		assertPanic(t, func() { s.file.SetAttr(valid, attr) })
 	})
-}
-
-func TestInvalidName(t *testing.T) {
-	runCustom(t, []fileType{regular}, rwConfs, func(t *testing.T, s state) {
-		if _, _, _, _, err := s.file.Create("..", p9.ReadWrite, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EINVAL {
-			t.Errorf("%v: Create() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if _, _, err := s.file.Walk([]string{".."}); err != syscall.EINVAL {
-			t.Errorf("%v: Walk() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if _, err := s.file.Mkdir("..", 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EINVAL {
-			t.Errorf("%v: MkDir() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if err := s.file.Rename(s.file, ".."); err != syscall.EINVAL {
-			t.Errorf("%v: Rename() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if _, err := s.file.Symlink("some_place", "..", p9.UID(os.Getuid()), p9.GID(os.Getgid())); err != syscall.EINVAL {
-			t.Errorf("%v: Symlink() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if err := s.file.UnlinkAt("..", 0); err != syscall.EINVAL {
-			t.Errorf("%v: UnlinkAt() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-		if err := s.file.Link(s.file, ".."); err != syscall.EINVAL {
-			t.Errorf("%v: Link() should have failed, got: %v, expected: syscall.EINVAL", s, err)
-		}
-	})
-}
-
-func TestIsNameValid(t *testing.T) {
-	valid := []string{
-		"name",
-		"123",
-		"!@#$%^&*()",
-		".name",
-		"..name",
-		"...",
-	}
-	for _, s := range valid {
-		if got := isNameValid(s); !got {
-			t.Errorf("isNameValid(%s) failed, got: %v, expected: true", s, got)
-		}
-	}
-	invalid := []string{
-		".",
-		"..",
-		"name/name",
-		"/name",
-		"name/",
-	}
-	for _, s := range invalid {
-		if got := isNameValid(s); got {
-			t.Errorf("isNameValid(%s) failed, got: %v, expected: false", s, got)
-		}
-	}
 }
 
 func TestWalkNotFound(t *testing.T) {

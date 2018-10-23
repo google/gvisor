@@ -1,6 +1,6 @@
-package(licenses = ["notice"])  # BSD
-
 load("//tools/go_stateify:defs.bzl", "go_library")
+
+package(licenses = ["notice"])  # BSD
 
 go_library(
     name = "conn",

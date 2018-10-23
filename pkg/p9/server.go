@@ -15,6 +15,8 @@
 package p9
 
 import (
+	"io"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -27,6 +29,19 @@ import (
 type Server struct {
 	// attacher provides the attach function.
 	attacher Attacher
+
+	// pathTree is the full set of paths opened on this server.
+	//
+	// These may be across different connections, but rename operations
+	// must be serialized globally for safely. There is a single pathTree
+	// for the entire server, and not per connection.
+	pathTree pathNode
+
+	// renameMu is a global lock protecting rename operations. With this
+	// lock, we can be certain that any given rename operation can safely
+	// acquire two path nodes in any order, as all other concurrent
+	// operations acquire at most a single node.
+	renameMu sync.RWMutex
 }
 
 // NewServer returns a new server.
@@ -81,6 +96,9 @@ type connState struct {
 
 // fidRef wraps a node and tracks references.
 type fidRef struct {
+	// server is the associated server.
+	server *Server
+
 	// file is the associated File.
 	file File
 
@@ -97,13 +115,39 @@ type fidRef struct {
 	// This is updated in handlers.go.
 	opened bool
 
-	// walkable indicates this fidRef may be walked.
-	walkable bool
+	// mode is the fidRef's mode from the walk. Only the type bits are
+	// valid, the permissions may change. This is used to sanity check
+	// operations on this element, and prevent walks across
+	// non-directories.
+	mode FileMode
 
 	// openFlags is the mode used in the open.
 	//
 	// This is updated in handlers.go.
 	openFlags OpenFlags
+
+	// pathNode is the current pathNode for this FID.
+	pathNode *pathNode
+
+	// parent is the parent fidRef. We hold on to a parent reference to
+	// ensure that hooks, such as Renamed, can be executed safely by the
+	// server code.
+	//
+	// Note that parent cannot be changed without holding both the global
+	// rename lock and a writable lock on the associated pathNode for this
+	// fidRef. Holding either of these locks is sufficient to examine
+	// parent safely.
+	//
+	// The parent will be nil for root fidRefs, and non-nil otherwise. The
+	// method maybeParent can be used to return a cyclical reference, and
+	// isRoot should be used to check for root over looking at parent
+	// directly.
+	parent *fidRef
+
+	// deleted indicates that the backing file has been deleted. We stop
+	// many operations at the API level if they are incompatible with a
+	// file that has already been unlinked.
+	deleted uint32
 }
 
 // OpenFlags returns the flags the file was opened with and true iff the fid was opened previously.
@@ -113,11 +157,144 @@ func (f *fidRef) OpenFlags() (OpenFlags, bool) {
 	return f.openFlags, f.opened
 }
 
+// IncRef increases the references on a fid.
+func (f *fidRef) IncRef() {
+	atomic.AddInt64(&f.refs, 1)
+}
+
 // DecRef should be called when you're finished with a fid.
 func (f *fidRef) DecRef() {
 	if atomic.AddInt64(&f.refs, -1) == 0 {
 		f.file.Close()
+
+		// Drop the parent reference.
+		//
+		// Since this fidRef is guaranteed to be non-discoverable when
+		// the references reach zero, we don't need to worry about
+		// clearing the parent.
+		if f.parent != nil {
+			// If we've been previously deleted, this removing this
+			// ref is a no-op. That's expected.
+			f.parent.pathNode.removeChild(f)
+			f.parent.DecRef()
+		}
 	}
+}
+
+// isDeleted returns true if this fidRef has been deleted.
+func (f *fidRef) isDeleted() bool {
+	return atomic.LoadUint32(&f.deleted) != 0
+}
+
+// isRoot indicates whether this is a root fid.
+func (f *fidRef) isRoot() bool {
+	return f.parent == nil
+}
+
+// maybeParent returns a cyclic reference for roots, and the parent otherwise.
+func (f *fidRef) maybeParent() *fidRef {
+	if f.parent != nil {
+		return f.parent
+	}
+	return f // Root has itself.
+}
+
+// notifyDelete marks all fidRefs as deleted.
+//
+// Precondition: the write lock must be held on the given pathNode.
+func notifyDelete(pn *pathNode) {
+	// Call on all local references.
+	pn.fidRefs.Range(func(key, _ interface{}) bool {
+		ref := key.(*fidRef)
+		atomic.StoreUint32(&ref.deleted, 1)
+		return true
+	})
+
+	// Call on all subtrees.
+	pn.children.Range(func(_, value interface{}) bool {
+		notifyDelete(value.(*pathNode))
+		return true
+	})
+}
+
+// markChildDeleted marks all children below the given name as deleted.
+//
+// Precondition: this must be called via safelyWrite or safelyGlobal.
+func (f *fidRef) markChildDeleted(name string) {
+	origPathNode := f.pathNode.removeWithName(name, func(ref *fidRef) {
+		atomic.StoreUint32(&ref.deleted, 1)
+	})
+
+	// Mark everything below as deleted.
+	notifyDelete(origPathNode)
+}
+
+// notifyNameChange calls the relevant Renamed method on all nodes in the path,
+// recursively. Note that this applies only for subtrees, as these
+// notifications do not apply to the actual file whose name has changed.
+//
+// Precondition: the write lock must be held on the given pathNode.
+func notifyNameChange(pn *pathNode) {
+	// Call on all local references.
+	pn.fidRefs.Range(func(key, value interface{}) bool {
+		ref := key.(*fidRef)
+		name := value.(string)
+		ref.file.Renamed(ref.parent.file, name)
+		return true
+	})
+
+	// Call on all subtrees.
+	pn.children.Range(func(_, value interface{}) bool {
+		notifyNameChange(value.(*pathNode))
+		return true
+	})
+}
+
+// renameChildTo renames the given child to the target.
+//
+// Precondition: this must be called via safelyGlobal.
+func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
+	target.markChildDeleted(newName)
+	origPathNode := f.pathNode.removeWithName(oldName, func(ref *fidRef) {
+		ref.parent.DecRef() // Drop original reference.
+		ref.parent = target // Change parent.
+		ref.parent.IncRef() // Acquire new one.
+		target.pathNode.addChild(ref, newName)
+		ref.file.Renamed(target.file, newName)
+	})
+
+	// Replace the previous (now deleted) path node.
+	f.pathNode.children.Store(newName, origPathNode)
+
+	// Call Renamed on everything above.
+	notifyNameChange(origPathNode)
+}
+
+// safelyRead executes the given operation with the local path node locked.
+// This implies that paths will not change during the operation.
+func (f *fidRef) safelyRead(fn func() error) (err error) {
+	f.server.renameMu.RLock()
+	defer f.server.renameMu.RUnlock()
+	f.pathNode.mu.RLock()
+	defer f.pathNode.mu.RUnlock()
+	return fn()
+}
+
+// safelyWrite executes the given operation with the local path node locked in
+// a writable fashion. This implies some paths may change.
+func (f *fidRef) safelyWrite(fn func() error) (err error) {
+	f.server.renameMu.RLock()
+	defer f.server.renameMu.RUnlock()
+	f.pathNode.mu.Lock()
+	defer f.pathNode.mu.Unlock()
+	return fn()
+}
+
+// safelyGlobal executes the given operation with the global path lock held.
+func (f *fidRef) safelyGlobal(fn func() error) (err error) {
+	f.server.renameMu.Lock()
+	defer f.server.renameMu.Unlock()
+	return fn()
 }
 
 // LookupFID finds the given FID.
@@ -128,7 +305,7 @@ func (cs *connState) LookupFID(fid FID) (*fidRef, bool) {
 	defer cs.fidMu.Unlock()
 	fidRef, ok := cs.fids[fid]
 	if ok {
-		atomic.AddInt64(&fidRef.refs, 1)
+		fidRef.IncRef()
 		return fidRef, true
 	}
 	return nil, false
@@ -145,7 +322,7 @@ func (cs *connState) InsertFID(fid FID, newRef *fidRef) {
 	if ok {
 		defer origRef.DecRef()
 	}
-	atomic.AddInt64(&newRef.refs, 1)
+	newRef.IncRef()
 	cs.fids[fid] = newRef
 }
 
@@ -229,10 +406,9 @@ func (cs *connState) handleRequest() {
 	cs.recvDone <- nil
 
 	// Deal with other errors.
-	if err != nil {
+	if err != nil && err != io.EOF {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
-		log.Debugf("err [%05d] %v", tag, err)
 		cs.sendMu.Lock()
 		err := send(cs.conn, tag, newErr(err))
 		cs.sendMu.Unlock()
@@ -243,12 +419,38 @@ func (cs *connState) handleRequest() {
 	// Try to start the tag.
 	if !cs.StartTag(tag) {
 		// Nothing we can do at this point; client is bogus.
+		log.Debugf("no valid tag [%05d]", tag)
 		cs.sendDone <- ErrNoValidMessage
 		return
 	}
 
 	// Handle the message.
-	var r message
+	var r message // r is the response.
+	defer func() {
+		if r == nil {
+			// Don't allow a panic to propagate.
+			recover()
+
+			// Include a useful log message.
+			log.Warningf("panic in handler: %s", debug.Stack())
+
+			// Wrap in an EFAULT error; we don't really have a
+			// better way to describe this kind of error. It will
+			// usually manifest as a result of the test framework.
+			r = newErr(syscall.EFAULT)
+		}
+
+		// Clear the tag before sending. That's because as soon as this
+		// hits the wire, the client can legally send another message
+		// with the same tag.
+		cs.ClearTag(tag)
+
+		// Send back the result.
+		cs.sendMu.Lock()
+		err = send(cs.conn, tag, r)
+		cs.sendMu.Unlock()
+		cs.sendDone <- err
+	}()
 	if handler, ok := m.(handler); ok {
 		// Call the message handler.
 		r = handler.handle(cs)
@@ -256,18 +458,6 @@ func (cs *connState) handleRequest() {
 		// Produce an ENOSYS error.
 		r = newErr(syscall.ENOSYS)
 	}
-
-	// Clear the tag before sending. That's because as soon
-	// as this hits the wire, the client can legally send
-	// another message with the same tag.
-	cs.ClearTag(tag)
-
-	// Send back the result.
-	cs.sendMu.Lock()
-	err = send(cs.conn, tag, r)
-	cs.sendMu.Unlock()
-	cs.sendDone <- err
-	return
 }
 
 func (cs *connState) handleRequests() {

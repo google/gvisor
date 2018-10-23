@@ -167,7 +167,7 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	r.EnableFDs(1)
 
 	n, err := r.ReadVec([][]byte{hdr[:]})
-	if err != nil {
+	if err != nil && (n == 0 || err != io.EOF) {
 		r.CloseFDs()
 		return NoTag, nil, ErrSocket{err}
 	}
@@ -189,10 +189,8 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 	// Continuing reading for a short header.
 	for n < int(headerLength) {
 		cur, err := r.ReadVec([][]byte{hdr[n:]})
-		if err != nil {
+		if err != nil && (cur == 0 || err != io.EOF) {
 			return NoTag, nil, ErrSocket{err}
-		} else if cur == 0 {
-			return NoTag, nil, ErrSocket{io.EOF}
 		}
 		n += cur
 	}
@@ -296,10 +294,8 @@ func recv(s *unet.Socket, msize uint32, lookup lookupTagAndType) (Tag, message, 
 		r := s.Reader(true)
 		for n := 0; n < int(remaining); {
 			cur, err := r.ReadVec(vecs)
-			if err != nil {
+			if err != nil && (cur == 0 || err != io.EOF) {
 				return NoTag, nil, ErrSocket{err}
-			} else if cur == 0 {
-				return NoTag, nil, ErrSocket{io.EOF}
 			}
 			n += cur
 

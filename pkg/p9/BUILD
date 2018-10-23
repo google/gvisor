@@ -15,6 +15,7 @@ go_library(
         "handlers.go",
         "messages.go",
         "p9.go",
+        "path_tree.go",
         "pool.go",
         "server.go",
         "transport.go",
@@ -32,6 +33,7 @@ go_test(
     name = "p9_test",
     size = "small",
     srcs = [
+        "buffer_test.go",
         "client_test.go",
         "messages_test.go",
         "p9_test.go",

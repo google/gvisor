@@ -15,7 +15,7 @@ go_register_toolchains(go_version="1.11.1")
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 gazelle_dependencies()
 
-# Add dependencies on external repositories.
+# External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
     importpath = "github.com/cenkalti/backoff",
@@ -26,6 +26,12 @@ go_repository(
     name = "com_github_gofrs_flock",
     importpath = "github.com/gofrs/flock",
     commit = "886344bea0798d02ff3fae16a922be5f6b26cee0"
+)
+
+go_repository(
+    name = "com_github_golang_mock",
+    importpath = "github.com/golang/mock",
+    commit = "600781dde9cca80734169b9e969d9054ccc57937",
 )
 
 go_repository(
@@ -59,6 +65,12 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_syndtr_gocapability",
+    importpath = "github.com/syndtr/gocapability",
+    commit = "d98352740cb2c55f81556b63d4a1ec64c5a319c2",
+)
+
+go_repository(
     name = "com_github_vishvananda_netlink",
     importpath = "github.com/vishvananda/netlink",
     commit = "d35d6b58e1cb692b27b94fc403170bf44058ac3e",
@@ -80,10 +92,4 @@ go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
     commit = "0dd5e194bbf5eb84a39666eb4c98a4d007e4203a",
-)
-
-go_repository(
-    name = "com_github_syndtr_gocapability",
-    importpath = "github.com/syndtr/gocapability",
-    commit = "d98352740cb2c55f81556b63d4a1ec64c5a319c2",
 )

@@ -1,6 +1,6 @@
-package(licenses = ["notice"])  # Apache 2.0
-
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(licenses = ["notice"])  # Apache 2.0
 
 go_library(
     name = "specutils",

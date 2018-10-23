@@ -984,6 +984,30 @@ func (s *SetAttr) Encode(b *buffer) {
 	b.Write64(s.MTimeNanoSeconds)
 }
 
+// Apply applies this to the given Attr.
+func (a *Attr) Apply(mask SetAttrMask, attr SetAttr) {
+	if mask.Permissions {
+		a.Mode = a.Mode&^PermissionsMask | (attr.Permissions & PermissionsMask)
+	}
+	if mask.UID {
+		a.UID = attr.UID
+	}
+	if mask.GID {
+		a.GID = attr.GID
+	}
+	if mask.Size {
+		a.Size = attr.Size
+	}
+	if mask.ATime {
+		a.ATimeSeconds = attr.ATimeSeconds
+		a.ATimeNanoSeconds = attr.ATimeNanoSeconds
+	}
+	if mask.MTime {
+		a.MTimeSeconds = attr.MTimeSeconds
+		a.MTimeNanoSeconds = attr.MTimeNanoSeconds
+	}
+}
+
 // Dirent is used for readdir.
 type Dirent struct {
 	// QID is the entry QID.

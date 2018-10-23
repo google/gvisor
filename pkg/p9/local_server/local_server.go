@@ -318,6 +318,11 @@ func (l *local) Connect(p9.ConnectFlags) (*fd.FD, error) {
 	return nil, syscall.ECONNREFUSED
 }
 
+// Renamed implements p9.File.Renamed.
+func (l *local) Renamed(parent p9.File, newName string) {
+	l.path = path.Join(parent.(*local).path, newName)
+}
+
 func main() {
 	log.SetLevel(log.Debug)
 

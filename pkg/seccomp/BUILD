@@ -1,7 +1,7 @@
-package(licenses = ["notice"])  # Apache 2.0
-
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_embed_data")
+
+package(licenses = ["notice"])  # Apache 2.0
 
 go_binary(
     name = "victim",

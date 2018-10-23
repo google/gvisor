@@ -1,7 +1,8 @@
-package(licenses = ["notice"])  # Apache 2.0
-
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+
+package(licenses = ["notice"])  # Apache 2.0
+
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(

@@ -91,10 +91,6 @@ func (e *endpointMaps) get(key device.MultiDeviceKey) transport.BoundEndpoint {
 type session struct {
 	refs.AtomicRefCount
 
-	// conn is a unet.Socket that wraps the readFD/writeFD mount option,
-	// see fs/gofer/fs.go.
-	conn *unet.Socket `state:"nosave"`
-
 	// msize is the value of the msize mount option, see fs/gofer/fs.go.
 	msize uint32 `state:"wait"`
 
@@ -142,7 +138,7 @@ type session struct {
 
 // Destroy tears down the session.
 func (s *session) Destroy() {
-	s.conn.Close()
+	s.client.Close()
 }
 
 // Revalidate implements MountSource.Revalidate.
@@ -235,7 +231,6 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	// Construct the session.
 	s := &session{
 		connID:          dev,
-		conn:            conn,
 		msize:           o.msize,
 		version:         o.version,
 		cachePolicy:     o.policy,
@@ -252,7 +247,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	m := fs.NewMountSource(s, filesystem, superBlockFlags)
 
 	// Send the Tversion request.
-	s.client, err = p9.NewClient(s.conn, s.msize, s.version)
+	s.client, err = p9.NewClient(conn, s.msize, s.version)
 	if err != nil {
 		// Drop our reference on the session, it needs to be torn down.
 		s.DecRef()

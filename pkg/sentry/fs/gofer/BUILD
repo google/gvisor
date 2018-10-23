@@ -56,14 +56,10 @@ go_test(
     srcs = ["gofer_test.go"],
     embed = [":gofer"],
     deps = [
-        "//pkg/log",
         "//pkg/p9",
         "//pkg/p9/p9test",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
-        "//pkg/sentry/kernel/time",
-        "//pkg/sentry/usermem",
-        "//pkg/unet",
     ],
 )

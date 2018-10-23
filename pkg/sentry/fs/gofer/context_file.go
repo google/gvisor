@@ -58,13 +58,6 @@ func (c *contextFile) setAttr(ctx context.Context, valid p9.SetAttrMask, attr p9
 	return c.file.SetAttr(valid, attr)
 }
 
-func (c *contextFile) remove(ctx context.Context) error {
-	ctx.UninterruptibleSleepStart(false)
-	defer ctx.UninterruptibleSleepFinish(false)
-
-	return c.file.Remove()
-}
-
 func (c *contextFile) rename(ctx context.Context, directory contextFile, name string) error {
 	ctx.UninterruptibleSleepStart(false)
 	defer ctx.UninterruptibleSleepFinish(false)

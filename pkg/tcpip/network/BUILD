@@ -1,6 +1,6 @@
-package(licenses = ["notice"])  # Apache 2.0
-
 load("//tools/go_stateify:defs.bzl", "go_test")
+
+package(licenses = ["notice"])  # Apache 2.0
 
 go_test(
     name = "ip_test",

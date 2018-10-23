@@ -172,6 +172,9 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 }
 
 // Remove implements File.Remove.
+//
+// N.B. This method is no longer part of the file interface and should be
+// considered deprecated.
 func (c *clientFile) Remove() error {
 	// Avoid double close.
 	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
@@ -181,7 +184,6 @@ func (c *clientFile) Remove() error {
 
 	// Send the remove message.
 	if err := c.client.sendRecv(&Tremove{FID: c.fid}, &Rremove{}); err != nil {
-		log.Warningf("Tremove failed, losing FID %v: %v", c.fid, err)
 		return err
 	}
 

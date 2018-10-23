@@ -26,7 +26,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -181,18 +180,6 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 	}
 }
 
-func isNameValid(name string) bool {
-	if name == "" || name == "." || name == ".." {
-		log.Warningf("Invalid name: %s", name)
-		return false
-	}
-	if strings.IndexByte(name, '/') >= 0 {
-		log.Warningf("Invalid name: %s", name)
-		return false
-	}
-	return true
-}
-
 // localFile implements p9.File wrapping a local file. The underlying file
 // is opened during Walk() and stored in 'controlFile' to be used with other
 // operations. The mode in which the file is opened varies depending on the
@@ -228,11 +215,7 @@ type localFile struct {
 	// attachPoint is the attachPoint that serves this localFile.
 	attachPoint *attachPoint
 
-	// mu protects 'hostPath' when file is renamed.
-	mu sync.Mutex
-
-	// TODO: hostPath is not safe to use as path needs to be walked
-	// everytime (and can change underneath us). Remove all usages.
+	// hostPath will be safely updated by the Renamed hook.
 	hostPath string
 
 	// controlFile is opened when localFile is created and it's never nil.
@@ -246,6 +229,7 @@ type localFile struct {
 	// if localFile isn't opened.
 	mode p9.OpenFlags
 
+	// ft is the fileType for this file.
 	ft fileType
 
 	// readDirMu protects against concurrent Readdir calls.
@@ -296,10 +280,7 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 		return nil, "", extractErrno(err)
 	}
 
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
 	newPath := path.Join(parent.hostPath, name)
-
 	return os.NewFile(uintptr(fd), newPath), newPath, nil
 }
 
@@ -382,13 +363,10 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		log.Debugf("Open reopening file, mode: %v, %q", mode, l.controlFile.Name())
 		var err error
 
-		l.mu.Lock()
 		newFile, err = os.OpenFile(l.hostPath, openFlags|mode.OSFlags(), 0)
 		if err != nil {
-			l.mu.Unlock()
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
-		l.mu.Unlock()
 	}
 
 	stat, err := stat(int(newFile.Fd()))
@@ -417,9 +395,6 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 			panic("attempt to write to RO mount")
 		}
 		return nil, nil, p9.QID{}, 0, syscall.EBADF
-	}
-	if !isNameValid(name) {
-		return nil, nil, p9.QID{}, 0, syscall.EINVAL
 	}
 
 	// Use a single file for both 'controlFile' and 'openedFile'. Mode must include read for control
@@ -452,9 +427,6 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	cPath := path.Join(l.hostPath, name)
 	f := os.NewFile(uintptr(fd), cPath)
 	c := &localFile{
@@ -475,10 +447,6 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 			panic("attempt to write to RO mount")
 		}
 		return p9.QID{}, syscall.EBADF
-	}
-
-	if !isNameValid(name) {
-		return p9.QID{}, syscall.EINVAL
 	}
 
 	if err := syscall.Mkdirat(l.controlFD(), name, uint32(perm.Permissions())); err != nil {
@@ -517,9 +485,6 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 			return nil, nil, extractErrno(err)
 		}
 
-		l.mu.Lock()
-		defer l.mu.Unlock()
-
 		c := &localFile{
 			attachPoint: l.attachPoint,
 			hostPath:    l.hostPath,
@@ -532,10 +497,6 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	var qids []p9.QID
 	last := l
 	for _, name := range names {
-		if !isNameValid(name) {
-			return nil, nil, syscall.EINVAL
-		}
-
 		f, path, err := openAnyFile(last, name)
 		if err != nil {
 			return nil, nil, extractErrno(err)
@@ -761,15 +722,15 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
-// Remove implements p9.File.
-//
-// This is deprecated in favor of UnlinkAt.
-func (*localFile) Remove() error {
-	return syscall.ENOSYS
+// Rename implements p9.File; this should never be called.
+func (l *localFile) Rename(p9.File, string) error {
+	panic("rename called directly")
 }
 
-// Rename implements p9.File.
-func (l *localFile) Rename(directory p9.File, name string) error {
+// RenameAt implements p9.File.RenameAt.
+//
+// TODO: change to renameat(2).
+func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) error {
 	conf := l.attachPoint.conf
 	if conf.ROMount {
 		if conf.PanicOnWrite {
@@ -777,32 +738,14 @@ func (l *localFile) Rename(directory p9.File, name string) error {
 		}
 		return syscall.EBADF
 	}
-	if !isNameValid(name) {
-		return syscall.EINVAL
-	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	// TODO: change to renameat(2)
-	parent := directory.(*localFile)
-	newPath := path.Join(parent.hostPath, name)
-	if err := syscall.Rename(l.hostPath, newPath); err != nil {
+	newParent := directory.(*localFile)
+	oldPath := path.Join(l.hostPath, oldName)
+	newPath := path.Join(newParent.hostPath, newName)
+	if err := syscall.Rename(oldPath, newPath); err != nil {
 		return extractErrno(err)
 	}
-
-	// Update path on success.
-	// TODO: this doesn't cover cases where any of the
-	// parents have been renamed.
-	l.hostPath = newPath
 	return nil
-}
-
-// RenameAt implements p9.File.RenameAt.
-//
-// Code still uses [deprecated] Rename().
-func (*localFile) RenameAt(_ string, _ p9.File, _ string) error {
-	return syscall.ENOSYS
 }
 
 // ReadAt implements p9.File.
@@ -848,9 +791,6 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 		}
 		return p9.QID{}, syscall.EBADF
 	}
-	if !isNameValid(newName) {
-		return p9.QID{}, syscall.EINVAL
-	}
 
 	if err := unix.Symlinkat(target, l.controlFD(), newName); err != nil {
 		return p9.QID{}, extractErrno(err)
@@ -882,9 +822,6 @@ func (l *localFile) Link(target p9.File, newName string) error {
 		}
 		return syscall.EBADF
 	}
-	if !isNameValid(newName) {
-		return syscall.EINVAL
-	}
 
 	targetFile := target.(*localFile)
 	if err := unix.Linkat(targetFile.controlFD(), "", l.controlFD(), newName, linux.AT_EMPTY_PATH); err != nil {
@@ -909,9 +846,7 @@ func (l *localFile) UnlinkAt(name string, flags uint32) error {
 		}
 		return syscall.EBADF
 	}
-	if !isNameValid(name) {
-		return syscall.EINVAL
-	}
+
 	if err := unix.Unlinkat(l.controlFD(), name, int(flags)); err != nil {
 		return extractErrno(err)
 	}
@@ -998,6 +933,11 @@ func (l *localFile) Close() error {
 	l.controlFile = nil
 	l.mode = invalidMode
 	return err
+}
+
+// Renamed implements p9.Renamed.
+func (l *localFile) Renamed(newDir p9.File, newName string) {
+	l.hostPath = path.Join(newDir.(*localFile).hostPath, newName)
 }
 
 // extractErrno tries to determine the errno.

@@ -15,6 +15,7 @@
 package p9
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -186,6 +187,13 @@ func TestEncodeDecode(t *testing.T) {
 		&Rxattrwalk{
 			Size: 1,
 		},
+		&Txattrcreate{
+			FID:      1,
+			Name:     "a",
+			AttrSize: 2,
+			Flags:    3,
+		},
+		&Rxattrcreate{},
 		&Treaddir{
 			Directory: 1,
 			Offset:    2,
@@ -388,4 +396,33 @@ func TestEncodeDecode(t *testing.T) {
 			continue
 		}
 	}
+}
+
+func TestMessageStrings(t *testing.T) {
+	for typ, fn := range messageRegistry {
+		name := fmt.Sprintf("%+v", typ)
+		t.Run(name, func(t *testing.T) {
+			defer func() { // Ensure no panic.
+				if r := recover(); r != nil {
+					t.Errorf("printing %s failed: %v", name, r)
+				}
+			}()
+			m := fn()
+			_ = fmt.Sprintf("%v", m)
+			err := ErrInvalidMsgType{typ}
+			_ = err.Error()
+		})
+	}
+}
+
+func TestRegisterDuplicate(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			// We expect a panic.
+			t.FailNow()
+		}
+	}()
+
+	// Register a duplicate.
+	register(&Rlerror{})
 }
