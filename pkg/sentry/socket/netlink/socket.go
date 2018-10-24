@@ -109,16 +109,16 @@ func NewSocket(t *kernel.Task, protocol Protocol) (*Socket, *syserr.Error) {
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
-	if terr := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); terr != nil {
+	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}, nil); err != nil {
 		ep.Close()
-		return nil, syserr.TranslateNetstackError(terr)
+		return nil, err
 	}
 
 	// Create a connection from which the kernel can write messages.
-	connection, terr := ep.(transport.BoundEndpoint).UnidirectionalConnect()
-	if terr != nil {
+	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect()
+	if err != nil {
 		ep.Close()
-		return nil, syserr.TranslateNetstackError(terr)
+		return nil, err
 	}
 
 	return &Socket{
@@ -424,11 +424,11 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, terr := s.connection.Send(bufs, transport.ControlMessages{}, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(bufs, transport.ControlMessages{}, tcpip.FullAddress{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
-		if terr != nil && terr != tcpip.ErrWouldBlock {
-			return syserr.TranslateNetstackError(terr)
+		if err != nil && err != syserr.ErrWouldBlock {
+			return err
 		}
 		if notify {
 			s.connection.SendNotify()
@@ -448,9 +448,9 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 			PortID: uint32(ms.PortID),
 		})
 
-		_, notify, terr := s.connection.Send([][]byte{m.Finalize()}, transport.ControlMessages{}, tcpip.FullAddress{})
-		if terr != nil && terr != tcpip.ErrWouldBlock {
-			return syserr.TranslateNetstackError(terr)
+		_, notify, err := s.connection.Send([][]byte{m.Finalize()}, transport.ControlMessages{}, tcpip.FullAddress{})
+		if err != nil && err != syserr.ErrWouldBlock {
+			return err
 		}
 		if notify {
 			s.connection.SendNotify()

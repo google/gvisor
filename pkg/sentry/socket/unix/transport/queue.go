@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -110,12 +110,12 @@ func (q *queue) IsWritable() bool {
 //
 // If notify is true, ReaderQueue.Notify must be called:
 // q.ReaderQueue.Notify(waiter.EventIn)
-func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *tcpip.Error) {
+func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
 	if q.closed {
 		q.mu.Unlock()
-		return 0, false, tcpip.ErrClosedForSend
+		return 0, false, syserr.ErrClosedForSend
 	}
 
 	free := q.limit - q.used
@@ -126,24 +126,24 @@ func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *t
 		if free == 0 {
 			// Message can't fit right now.
 			q.mu.Unlock()
-			return 0, false, tcpip.ErrWouldBlock
+			return 0, false, syserr.ErrWouldBlock
 		}
 
 		e.Truncate(free)
 		l = e.Length()
-		err = tcpip.ErrWouldBlock
+		err = syserr.ErrWouldBlock
 	}
 
 	if l > q.limit {
 		// Message is too big to ever fit.
 		q.mu.Unlock()
-		return 0, false, tcpip.ErrMessageTooLong
+		return 0, false, syserr.ErrMessageTooLong
 	}
 
 	if l > free {
 		// Message can't fit right now.
 		q.mu.Unlock()
-		return 0, false, tcpip.ErrWouldBlock
+		return 0, false, syserr.ErrWouldBlock
 	}
 
 	notify = q.dataList.Front() == nil
@@ -159,13 +159,13 @@ func (q *queue) Enqueue(e *message, truncate bool) (l int64, notify bool, err *t
 //
 // If notify is true, WriterQueue.Notify must be called:
 // q.WriterQueue.Notify(waiter.EventOut)
-func (q *queue) Dequeue() (e *message, notify bool, err *tcpip.Error) {
+func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
 	if q.dataList.Front() == nil {
-		err := tcpip.ErrWouldBlock
+		err := syserr.ErrWouldBlock
 		if q.closed {
-			err = tcpip.ErrClosedForReceive
+			err = syserr.ErrClosedForReceive
 		}
 		q.mu.Unlock()
 
@@ -186,14 +186,14 @@ func (q *queue) Dequeue() (e *message, notify bool, err *tcpip.Error) {
 }
 
 // Peek returns the first entry in the data queue, if one exists.
-func (q *queue) Peek() (*message, *tcpip.Error) {
+func (q *queue) Peek() (*message, *syserr.Error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	if q.dataList.Front() == nil {
-		err := tcpip.ErrWouldBlock
+		err := syserr.ErrWouldBlock
 		if q.closed {
-			err = tcpip.ErrClosedForReceive
+			err = syserr.ErrClosedForReceive
 		}
 		return nil, err
 	}

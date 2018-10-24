@@ -17,7 +17,6 @@ package unix
 import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 )
 
@@ -40,7 +39,7 @@ func (w *EndpointWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) 
 	return safemem.FromVecWriterFunc{func(bufs [][]byte) (int64, error) {
 		n, err := w.Endpoint.SendMsg(bufs, w.Control, w.To)
 		if err != nil {
-			return int64(n), syserr.TranslateNetstackError(err).ToError()
+			return int64(n), err.ToError()
 		}
 		return int64(n), nil
 	}}.WriteFromBlocks(srcs)
@@ -82,7 +81,7 @@ func (r *EndpointReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		r.Control = c
 		r.MsgSize = ms
 		if err != nil {
-			return int64(n), syserr.TranslateNetstackError(err).ToError()
+			return int64(n), err.ToError()
 		}
 		return int64(n), nil
 	}}.ReadToBlocks(dsts)

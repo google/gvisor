@@ -17,6 +17,7 @@ package transport
 import (
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -236,14 +237,14 @@ func (e *connectionedEndpoint) Close() {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *tcpip.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
-		return tcpip.ErrConnectionRefused
+		return syserr.ErrConnectionRefused
 	}
 
 	// Check if ce is e to avoid a deadlock.
 	if ce, ok := ce.(*connectionedEndpoint); ok && ce == e {
-		return tcpip.ErrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Do a dance to safely acquire locks on both endpoints.
@@ -259,19 +260,19 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 	if ce.Connected() {
 		e.Unlock()
 		ce.Unlock()
-		return tcpip.ErrAlreadyConnected
+		return syserr.ErrAlreadyConnected
 	}
 	if ce.Listening() {
 		e.Unlock()
 		ce.Unlock()
-		return tcpip.ErrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Check bound state.
 	if !e.Listening() {
 		e.Unlock()
 		ce.Unlock()
-		return tcpip.ErrConnectionRefused
+		return syserr.ErrConnectionRefused
 	}
 
 	// Create a newly bound connectionedEndpoint.
@@ -327,18 +328,18 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 		ne.Close()
 		e.Unlock()
 		ce.Unlock()
-		return tcpip.ErrConnectionRefused
+		return syserr.ErrConnectionRefused
 	}
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionedEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *tcpip.Error) {
-	return nil, tcpip.ErrConnectionRefused
+func (e *connectionedEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error) {
+	return nil, syserr.ErrConnectionRefused
 }
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
-func (e *connectionedEndpoint) Connect(server BoundEndpoint) *tcpip.Error {
+func (e *connectionedEndpoint) Connect(server BoundEndpoint) *syserr.Error {
 	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
 		e.receiver = r
 		e.connected = ce
@@ -348,14 +349,14 @@ func (e *connectionedEndpoint) Connect(server BoundEndpoint) *tcpip.Error {
 }
 
 // Listen starts listening on the connection.
-func (e *connectionedEndpoint) Listen(backlog int) *tcpip.Error {
+func (e *connectionedEndpoint) Listen(backlog int) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.Listening() {
 		// Adjust the size of the channel iff we can fix existing
 		// pending connections into the new one.
 		if len(e.acceptedChan) > backlog {
-			return tcpip.ErrInvalidEndpointState
+			return syserr.ErrInvalidEndpointState
 		}
 		origChan := e.acceptedChan
 		e.acceptedChan = make(chan *connectionedEndpoint, backlog)
@@ -366,7 +367,7 @@ func (e *connectionedEndpoint) Listen(backlog int) *tcpip.Error {
 		return nil
 	}
 	if !e.isBound() {
-		return tcpip.ErrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	// Normal case.
@@ -375,12 +376,12 @@ func (e *connectionedEndpoint) Listen(backlog int) *tcpip.Error {
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept() (Endpoint, *tcpip.Error) {
+func (e *connectionedEndpoint) Accept() (Endpoint, *syserr.Error) {
 	e.Lock()
 	defer e.Unlock()
 
 	if !e.Listening() {
-		return nil, tcpip.ErrInvalidEndpointState
+		return nil, syserr.ErrInvalidEndpointState
 	}
 
 	select {
@@ -389,7 +390,7 @@ func (e *connectionedEndpoint) Accept() (Endpoint, *tcpip.Error) {
 
 	default:
 		// Nothing left.
-		return nil, tcpip.ErrWouldBlock
+		return nil, syserr.ErrWouldBlock
 	}
 }
 
@@ -401,15 +402,15 @@ func (e *connectionedEndpoint) Accept() (Endpoint, *tcpip.Error) {
 //
 // Bind will fail only if the socket is connected, bound or the passed address
 // is invalid (the empty string).
-func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) *tcpip.Error {
+func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *syserr.Error) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() || e.Listening() {
-		return tcpip.ErrAlreadyBound
+		return syserr.ErrAlreadyBound
 	}
 	if addr.Addr == "" {
 		// The empty string is not permitted.
-		return tcpip.ErrBadLocalAddress
+		return syserr.ErrBadLocalAddress
 	}
 	if commit != nil {
 		if err := commit(); err != nil {
@@ -424,11 +425,11 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip
 
 // SendMsg writes data and a control message to the endpoint's peer.
 // This method does not block if the data cannot be written.
-func (e *connectionedEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *tcpip.Error) {
+func (e *connectionedEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	// Stream sockets do not support specifying the endpoint. Seqpacket
 	// sockets ignore the passed endpoint.
 	if e.stype == SockStream && to != nil {
-		return 0, tcpip.ErrNotSupported
+		return 0, syserr.ErrNotSupported
 	}
 	return e.baseEndpoint.SendMsg(data, c, to)
 }

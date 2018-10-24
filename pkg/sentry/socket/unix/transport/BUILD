@@ -30,6 +30,7 @@ go_library(
     deps = [
         "//pkg/ilist",
         "//pkg/refs",
+        "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/waiter",

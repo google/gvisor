@@ -147,7 +147,7 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (
 // Listen implements the linux syscall listen(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
-	return syserr.TranslateNetstackError(s.ep.Listen(backlog))
+	return s.ep.Listen(backlog)
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
@@ -161,8 +161,8 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *
 	// Try to accept the connection; if it fails, then wait until we get a
 	// notification.
 	for {
-		if ep, err := s.ep.Accept(); err != tcpip.ErrWouldBlock {
-			return ep, syserr.TranslateNetstackError(err)
+		if ep, err := s.ep.Accept(); err != syserr.ErrWouldBlock {
+			return ep, err
 		}
 
 		if err := t.Block(ch); err != nil {
@@ -177,8 +177,8 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	// Issue the accept request to get the new endpoint.
 	ep, err := s.ep.Accept()
 	if err != nil {
-		if err != tcpip.ErrWouldBlock || !blocking {
-			return 0, nil, 0, syserr.TranslateNetstackError(err)
+		if err != syserr.ErrWouldBlock || !blocking {
+			return 0, nil, 0, err
 		}
 
 		var err *syserr.Error
@@ -232,15 +232,15 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	return syserr.TranslateNetstackError(s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}, func() *tcpip.Error {
+	return s.ep.Bind(tcpip.FullAddress{Addr: tcpip.Address(p)}, func() *syserr.Error {
 		// Is it abstract?
 		if p[0] == 0 {
 			if t.IsNetworkNamespaced() {
-				return tcpip.ErrInvalidEndpointState
+				return syserr.ErrInvalidEndpointState
 			}
 			if err := t.AbstractSockets().Bind(p[1:], bep, s); err != nil {
-				// tcpip.ErrPortInUse corresponds to EADDRINUSE.
-				return tcpip.ErrPortInUse
+				// syserr.ErrPortInUse corresponds to EADDRINUSE.
+				return syserr.ErrPortInUse
 			}
 		} else {
 			// The parent and name.
@@ -269,7 +269,7 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 				d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, fs.DefaultTraversalLimit)
 				if err != nil {
 					// No path available.
-					return tcpip.ErrNoSuchFile
+					return syserr.ErrNoSuchFile
 				}
 				defer d.DecRef()
 				name = p[lastSlash+1:]
@@ -278,13 +278,13 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 			// Create the socket.
 			childDir, err := d.Bind(t, t.FSContext().RootDirectory(), name, bep, fs.FilePermissions{User: fs.PermMask{Read: true}})
 			if err != nil {
-				return tcpip.ErrPortInUse
+				return syserr.ErrPortInUse
 			}
 			childDir.DecRef()
 		}
 
 		return nil
-	}))
+	})
 }
 
 // extractEndpoint retrieves the transport.BoundEndpoint associated with a Unix
@@ -341,7 +341,7 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 	defer ep.Release()
 
 	// Connect the server endpoint.
-	return syserr.TranslateNetstackError(s.ep.Connect(ep))
+	return s.ep.Connect(ep)
 }
 
 // Writev implements fs.FileOperations.Write.
@@ -350,8 +350,8 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	ctrl := control.New(t, s.ep, nil)
 
 	if src.NumBytes() == 0 {
-		nInt, tcpipError := s.ep.SendMsg([][]byte{}, ctrl, nil)
-		return int64(nInt), syserr.TranslateNetstackError(tcpipError).ToError()
+		nInt, err := s.ep.SendMsg([][]byte{}, ctrl, nil)
+		return int64(nInt), err.ToError()
 	}
 
 	return src.CopyInTo(ctx, &EndpointWriter{
@@ -448,7 +448,7 @@ func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 	}
 
 	// Issue shutdown request.
-	return syserr.TranslateNetstackError(s.ep.Shutdown(f))
+	return s.ep.Shutdown(f)
 }
 
 // Read implements fs.FileOperations.Read.

@@ -15,6 +15,7 @@
 package transport
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -70,21 +71,21 @@ func (e *connectionlessEndpoint) Close() {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *tcpip.Error {
-	return tcpip.ErrConnectionRefused
+func (e *connectionlessEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
+	return syserr.ErrConnectionRefused
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *tcpip.Error) {
+func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error) {
 	e.Lock()
 	r := e.receiver
 	e.Unlock()
 	if r == nil {
-		return nil, tcpip.ErrConnectionRefused
+		return nil, syserr.ErrConnectionRefused
 	}
 	q := r.(*queueReceiver).readQueue
 	if !q.TryIncRef() {
-		return nil, tcpip.ErrConnectionRefused
+		return nil, syserr.ErrConnectionRefused
 	}
 	return &connectedEndpoint{
 		endpoint:   e,
@@ -94,14 +95,14 @@ func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *tc
 
 // SendMsg writes data and a control message to the specified endpoint.
 // This method does not block if the data cannot be written.
-func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *tcpip.Error) {
+func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	if to == nil {
 		return e.baseEndpoint.SendMsg(data, c, nil)
 	}
 
 	connected, err := to.UnidirectionalConnect()
 	if err != nil {
-		return 0, tcpip.ErrInvalidEndpointState
+		return 0, syserr.ErrInvalidEndpointState
 	}
 	defer connected.Release()
 
@@ -122,7 +123,7 @@ func (e *connectionlessEndpoint) Type() SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(server BoundEndpoint) *tcpip.Error {
+func (e *connectionlessEndpoint) Connect(server BoundEndpoint) *syserr.Error {
 	connected, err := server.UnidirectionalConnect()
 	if err != nil {
 		return err
@@ -136,13 +137,13 @@ func (e *connectionlessEndpoint) Connect(server BoundEndpoint) *tcpip.Error {
 }
 
 // Listen starts listening on the connection.
-func (e *connectionlessEndpoint) Listen(int) *tcpip.Error {
-	return tcpip.ErrNotSupported
+func (e *connectionlessEndpoint) Listen(int) *syserr.Error {
+	return syserr.ErrNotSupported
 }
 
 // Accept accepts a new connection.
-func (e *connectionlessEndpoint) Accept() (Endpoint, *tcpip.Error) {
-	return nil, tcpip.ErrNotSupported
+func (e *connectionlessEndpoint) Accept() (Endpoint, *syserr.Error) {
+	return nil, syserr.ErrNotSupported
 }
 
 // Bind binds the connection.
@@ -153,15 +154,15 @@ func (e *connectionlessEndpoint) Accept() (Endpoint, *tcpip.Error) {
 //
 // Bind will fail only if the socket is connected, bound or the passed address
 // is invalid (the empty string).
-func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) *tcpip.Error {
+func (e *connectionlessEndpoint) Bind(addr tcpip.FullAddress, commit func() *syserr.Error) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() {
-		return tcpip.ErrAlreadyBound
+		return syserr.ErrAlreadyBound
 	}
 	if addr.Addr == "" {
 		// The empty string is not permitted.
-		return tcpip.ErrBadLocalAddress
+		return syserr.ErrBadLocalAddress
 	}
 	if commit != nil {
 		if err := commit(); err != nil {

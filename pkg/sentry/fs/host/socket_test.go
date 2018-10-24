@@ -199,15 +199,15 @@ func TestListen(t *testing.T) {
 
 func TestSend(t *testing.T) {
 	e := ConnectedEndpoint{writeClosed: true}
-	if _, _, err := e.Send(nil, transport.ControlMessages{}, tcpip.FullAddress{}); err != tcpip.ErrClosedForSend {
-		t.Errorf("Got %#v.Send() = %v, want = %v", e, err, tcpip.ErrClosedForSend)
+	if _, _, err := e.Send(nil, transport.ControlMessages{}, tcpip.FullAddress{}); err != syserr.ErrClosedForSend {
+		t.Errorf("Got %#v.Send() = %v, want = %v", e, err, syserr.ErrClosedForSend)
 	}
 }
 
 func TestRecv(t *testing.T) {
 	e := ConnectedEndpoint{readClosed: true}
-	if _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != tcpip.ErrClosedForReceive {
-		t.Errorf("Got %#v.Recv() = %v, want = %v", e, err, tcpip.ErrClosedForReceive)
+	if _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != syserr.ErrClosedForReceive {
+		t.Errorf("Got %#v.Recv() = %v, want = %v", e, err, syserr.ErrClosedForReceive)
 	}
 }
 

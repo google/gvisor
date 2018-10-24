@@ -30,7 +30,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
@@ -83,33 +82,33 @@ type ConnectedEndpoint struct {
 
 // init performs initialization required for creating new ConnectedEndpoints and
 // for restoring them.
-func (c *ConnectedEndpoint) init() *tcpip.Error {
+func (c *ConnectedEndpoint) init() *syserr.Error {
 	family, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_DOMAIN)
 	if err != nil {
-		return translateError(err)
+		return syserr.FromError(err)
 	}
 
 	if family != syscall.AF_UNIX {
 		// We only allow Unix sockets.
-		return tcpip.ErrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	stype, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_TYPE)
 	if err != nil {
-		return translateError(err)
+		return syserr.FromError(err)
 	}
 
 	if err := syscall.SetNonblock(c.file.FD(), true); err != nil {
-		return translateError(err)
+		return syserr.FromError(err)
 	}
 
 	sndbuf, err := syscall.GetsockoptInt(c.file.FD(), syscall.SOL_SOCKET, syscall.SO_SNDBUF)
 	if err != nil {
-		return translateError(err)
+		return syserr.FromError(err)
 	}
 	if sndbuf > maxSendBufferSize {
 		log.Warningf("Socket send buffer too large: %d", sndbuf)
-		return tcpip.ErrInvalidEndpointState
+		return syserr.ErrInvalidEndpointState
 	}
 
 	c.stype = transport.SockType(stype)
@@ -124,7 +123,7 @@ func (c *ConnectedEndpoint) init() *tcpip.Error {
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *tcpip.Error) {
+func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
 		path:  path,
 		queue: queue,
@@ -160,7 +159,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 	e, err := NewConnectedEndpoint(f2, &q, "" /* path */)
 	if err != nil {
 		f2.Release()
-		return nil, syserr.TranslateNetstackError(err).ToError()
+		return nil, err.ToError()
 	}
 
 	// Take ownship of the FD.
@@ -194,7 +193,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 		} else {
 			f.Release()
 		}
-		return nil, syserr.TranslateNetstackError(err).ToError()
+		return nil, err.ToError()
 	}
 
 	e.srfd = srfd
@@ -206,15 +205,15 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *tcpip.Error) {
+func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.writeClosed {
-		return 0, false, tcpip.ErrClosedForSend
+		return 0, false, syserr.ErrClosedForSend
 	}
 
 	if !controlMessages.Empty() {
-		return 0, false, tcpip.ErrInvalidEndpointState
+		return 0, false, syserr.ErrInvalidEndpointState
 	}
 
 	// Since stream sockets don't preserve message boundaries, we can write
@@ -236,7 +235,7 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.Contro
 
 	// There is no need for the callee to call SendNotify because fdWriteVec
 	// uses the host's sendmsg(2) and the host kernel's queue.
-	return n, false, translateError(err)
+	return n, false, syserr.FromError(err)
 }
 
 // SendNotify implements transport.ConnectedEndpoint.SendNotify.
@@ -283,11 +282,11 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, tcpip.FullAddress, bool, *tcpip.Error) {
+func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.readClosed {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, tcpip.ErrClosedForReceive
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.ErrClosedForReceive
 	}
 
 	var cm unet.ControlMessage
@@ -305,7 +304,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 		err = nil
 	}
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	// There is no need for the callee to call RecvNotify because fdReadVec uses
@@ -323,7 +322,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 
 	fds, err := cm.ExtractFDs()
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, translateError(err)
+		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	if len(fds) == 0 {
@@ -388,11 +387,4 @@ func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 // Release implements transport.ConnectedEndpoint.Release and transport.Receiver.Release.
 func (c *ConnectedEndpoint) Release() {
 	c.ref.DecRefWithDestructor(c.close)
-}
-
-func translateError(err error) *tcpip.Error {
-	if err == nil {
-		return nil
-	}
-	return rawfile.TranslateErrno(err.(syscall.Errno))
 }

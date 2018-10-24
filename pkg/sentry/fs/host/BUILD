@@ -49,7 +49,6 @@ go_library(
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
-        "//pkg/tcpip/link/rawfile",
         "//pkg/unet",
         "//pkg/waiter",
         "//pkg/waiter/fdnotifier",
