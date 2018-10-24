@@ -222,14 +222,21 @@ func attachedThread(flags uintptr, defaultAction uint32) (*thread, error) {
 		return t, nil
 	}
 
+	// Move the stub to a new session (and thus a new process group). This
+	// prevents the stub from getting PTY job control signals intended only
+	// for the sentry process. We must call this before restoring signal
+	// mask.
+	if _, _, errno := syscall.RawSyscall(syscall.SYS_SETSID, 0, 0, 0); errno != 0 {
+		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
+	}
+
 	// afterForkInChild resets all signals to their default dispositions
 	// and restores the signal mask to its pre-fork state.
 	afterForkInChild()
 
 	// Explicitly unmask all signals to ensure that the tracer can see
 	// them.
-	errno = unmaskAllSignals()
-	if errno != 0 {
+	if errno := unmaskAllSignals(); errno != 0 {
 		syscall.RawSyscall(syscall.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
