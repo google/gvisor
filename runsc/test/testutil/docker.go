@@ -49,15 +49,6 @@ func IsPauseResumeSupported() bool {
 	return !strings.Contains(getRuntime(), "hostnet")
 }
 
-// IsPtracePlatform returns true if the runtime is using ptrace platform.
-//
-// TODO: Tests should not depend on the platform, but
-// TestPythonHello sometimes hangs on ptrace. Once that is debugged, this
-// method should go away.
-func IsPtracePlatform() bool {
-	return !strings.Contains(getRuntime(), "kvm")
-}
-
 // EnsureSupportedDockerVersion checks if correct docker is installed.
 func EnsureSupportedDockerVersion() {
 	cmd := exec.Command("docker", "version")
