@@ -229,7 +229,11 @@ func (c *Cgroup) Uninstall() error {
 		defer cancel()
 		b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 		if err := backoff.Retry(func() error {
-			return syscall.Rmdir(path)
+			err := syscall.Rmdir(path)
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
 		}, b); err != nil {
 			return fmt.Errorf("error removing cgroup path %q: %v", path, err)
 		}

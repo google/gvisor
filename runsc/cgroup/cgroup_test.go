@@ -18,6 +18,17 @@ import (
 	"testing"
 )
 
+func TestUninstallEnoent(t *testing.T) {
+	c := Cgroup{
+		// set a non-existent name
+		Name: "runsc-test-uninstall-656e6f656e740a",
+		Own:  true,
+	}
+	if err := c.Uninstall(); err != nil {
+		t.Errorf("Uninstall() failed: %v", err)
+	}
+}
+
 func TestCountCpuset(t *testing.T) {
 	for _, tc := range []struct {
 		str   string
