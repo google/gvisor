@@ -222,7 +222,7 @@ const (
 // which doesn't match well here, so for the /proc/cpuinfo generation we simply
 // re-map the blocks to Linux's ordering and then go through the bits in each
 // block.
-var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4}
+var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 3}
 
 // To make emulation of /proc/cpuinfo easy down the line, these names match the
 // names of the basic features in Linux defined in
@@ -317,6 +317,12 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureAVX512BW:   "avx512bw",
 	X86FeatureAVX512VL:   "avx512vl",
 
+	// Block 3.
+	X86FeaturePREFETCHWT1: "prefetchwt1",
+	X86FeatureAVX512VBMI:  "avx512vbmi",
+	X86FeatureUMIP:        "umip",
+	X86FeaturePKU:         "pku",
+
 	// Block 4.
 	X86FeatureXSAVEOPT: "xsaveopt",
 	X86FeatureXSAVEC:   "xsavec",
@@ -347,12 +353,6 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 	X86FeatureFPCSDS:          "fpcsds",
 	X86FeatureIPT:             "pt",
 	X86FeatureCLFLUSHOPT:      "clfushopt",
-
-	// Block 3.
-	X86FeaturePREFETCHWT1: "prefetchwt1",
-	X86FeatureAVX512VBMI:  "avx512vbmi",
-	X86FeatureUMIP:        "umip",
-	X86FeaturePKU:         "pku",
 
 	// Block 4.
 	X86FeatureXSAVES: "xsaves",
