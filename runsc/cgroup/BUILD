@@ -22,4 +22,5 @@ go_test(
     size = "small",
     srcs = ["cgroup_test.go"],
     embed = [":cgroup"],
+    tags = ["local"],
 )
