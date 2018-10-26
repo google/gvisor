@@ -39,9 +39,20 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
+// Common references for CPUID leaves and bits:
+//
+// Intel:
+//   * Intel SDM Volume 2, Chapter 3.2 "CPUID" (more up-to-date)
+//   * Intel Application Note 485 (more detailed)
+//
+// AMD:
+//   * AMD64 APM Volume 3, Appendix 3 "Obtaining Processor Information ..."
+
 // Feature is a unique identifier for a particular cpu feature. We just use an
-// int as a feature number on x86. It corresponds to the bit position in the
-// basic feature mask returned by a cpuid with eax=1.
+// int as a feature number on x86.
+//
+// Features are numbered according to "blocks". Each block is 32 bits, and
+// feature bits from the same source (cpuid leaf/level) are in the same block.
 type Feature int
 
 // block is a collection of 32 Feature bits.
@@ -185,36 +196,60 @@ const (
 )
 
 // Block 5 constants are the extended feature bits in
-// CPUID.(EAX=0x80000001):ECX. These are very sparse, and so the bit positions
-// are assigned manually.
+// CPUID.(EAX=0x80000001):ECX.
 const (
-	X86FeatureLAHF64    Feature = 5*32 + 0
-	X86FeatureLZCNT     Feature = 5*32 + 5
-	X86FeaturePREFETCHW Feature = 5*32 + 8
+	X86FeatureLAHF64 Feature = 5*32 + iota
+	X86FeatureCMP_LEGACY
+	X86FeatureSVM
+	X86FeatureEXTAPIC
+	X86FeatureCR8_LEGACY
+	X86FeatureLZCNT
+	X86FeatureSSE4A
+	X86FeatureMISALIGNSSE
+	X86FeaturePREFETCHW
+	X86FeatureOSVW
+	X86FeatureIBS
+	X86FeatureXOP
+	X86FeatureSKINIT
+	X86FeatureWDT
+	_ // ecx bit 14 is reserved.
+	X86FeatureLWP
+	X86FeatureFMA4
+	X86FeatureTCE
+	_ // ecx bit 18 is reserved.
+	_ // ecx bit 19 is reserved.
+	_ // ecx bit 20 is reserved.
+	X86FeatureTBM
+	X86FeatureTOPOLOGY
+	X86FeaturePERFCTR_CORE
+	X86FeaturePERFCTR_NB
+	_ // ecx bit 25 is reserved.
+	X86FeatureBPEXT
+	X86FeaturePERFCTR_TSC
+	X86FeaturePERFCTR_L2
+	X86FeatureMWAITX
+	// ECX[31:30] are reserved.
 )
 
 // Block 6 constants are the extended feature bits in
-// CPUID.(EAX=0x80000001):EDX. These are very sparse, and so the bit positions
-// are assigned manually.
+// CPUID.(EAX=0x80000001):EDX.
+//
+// These are sparse, and so the bit positions are assigned manually.
 const (
-	X86FeatureSYSCALL Feature = 6*32 + 11
-	X86FeatureNX      Feature = 6*32 + 20
-	X86FeatureGBPAGES Feature = 6*32 + 26
-	X86FeatureRDTSCP  Feature = 6*32 + 27
-	X86FeatureLM      Feature = 6*32 + 29
-	// These are not in the most recent intel manual. Not surprising... It
-	// shouldn't matter but we should find where these bits come from and
-	// support them. The linux strings are below for completeness.
-	//X86FeatureMMXEXT
-	//X86FeatureMP
-	//X86FeatureFXSR_OPT
-	//X86Feature3DNOWEXT
-	//X86Feature3DNOW
-	//X86FeatureMMXEXT:      "mmxext",
-	//X86FeatureMP:          "mp",
-	//X86FeatureFXSR_OPT:    "fxsr_opt",
-	//X86Feature3DNOWEXT:    "3dnowext",
-	//X86Feature3DNOW:       "3dnow",
+	// On AMD, EDX[24:23] | EDX[17:12] | EDX[9:0] are duplicate features
+	// also defined in block 1 (in identical bit positions). Those features
+	// are not listed here.
+	block6DuplicateMask = 0x183f3ff
+
+	X86FeatureSYSCALL  Feature = 6*32 + 11
+	X86FeatureNX       Feature = 6*32 + 20
+	X86FeatureMMXEXT   Feature = 6*32 + 22
+	X86FeatureFXSR_OPT Feature = 6*32 + 25
+	X86FeatureGBPAGES  Feature = 6*32 + 26
+	X86FeatureRDTSCP   Feature = 6*32 + 27
+	X86FeatureLM       Feature = 6*32 + 29
+	X86Feature3DNOWEXT Feature = 6*32 + 30
+	X86Feature3DNOW    Feature = 6*32 + 31
 )
 
 // linuxBlockOrder defines the order in which linux organizes the feature
@@ -224,9 +259,8 @@ const (
 // block.
 var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 3}
 
-// To make emulation of /proc/cpuinfo easy down the line, these names match the
-// names of the basic features in Linux defined in
-// arch/x86/kernel/cpu/capflags.c.
+// To make emulation of /proc/cpuinfo easy, these names match the names of the
+// basic features in Linux defined in arch/x86/kernel/cpu/capflags.c.
 var x86FeatureStrings = map[Feature]string{
 	// Block 0.
 	X86FeatureSSE3:     "pni",
@@ -329,16 +363,42 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureXGETBV1:  "xgetbv1",
 
 	// Block 5.
-	X86FeatureLAHF64:    "lahf_lm", // LAHF/SAHF in long mode
-	X86FeatureLZCNT:     "abm",     // Advanced bit manipulation
-	X86FeaturePREFETCHW: "3dnowprefetch",
+	X86FeatureLAHF64:       "lahf_lm", // LAHF/SAHF in long mode
+	X86FeatureCMP_LEGACY:   "cmp_legacy",
+	X86FeatureSVM:          "svm",
+	X86FeatureEXTAPIC:      "extapic",
+	X86FeatureCR8_LEGACY:   "cr8_legacy",
+	X86FeatureLZCNT:        "abm", // Advanced bit manipulation
+	X86FeatureSSE4A:        "sse4a",
+	X86FeatureMISALIGNSSE:  "misalignsse",
+	X86FeaturePREFETCHW:    "3dnowprefetch",
+	X86FeatureOSVW:         "osvw",
+	X86FeatureIBS:          "ibs",
+	X86FeatureXOP:          "xop",
+	X86FeatureSKINIT:       "skinit",
+	X86FeatureWDT:          "wdt",
+	X86FeatureLWP:          "lwp",
+	X86FeatureFMA4:         "fma4",
+	X86FeatureTCE:          "tce",
+	X86FeatureTBM:          "tbm",
+	X86FeatureTOPOLOGY:     "topoext",
+	X86FeaturePERFCTR_CORE: "perfctr_core",
+	X86FeaturePERFCTR_NB:   "perfctr_nb",
+	X86FeatureBPEXT:        "bpext",
+	X86FeaturePERFCTR_TSC:  "ptsc",
+	X86FeaturePERFCTR_L2:   "perfctr_l2",
+	X86FeatureMWAITX:       "mwaitx",
 
 	// Block 6.
-	X86FeatureSYSCALL: "syscall",
-	X86FeatureNX:      "nx",
-	X86FeatureGBPAGES: "pdpe1gb",
-	X86FeatureRDTSCP:  "rdtscp",
-	X86FeatureLM:      "lm",
+	X86FeatureSYSCALL:  "syscall",
+	X86FeatureNX:       "nx",
+	X86FeatureMMXEXT:   "mmxext",
+	X86FeatureFXSR_OPT: "fxsr_opt",
+	X86FeatureGBPAGES:  "pdpe1gb",
+	X86FeatureRDTSCP:   "rdtscp",
+	X86FeatureLM:       "lm",
+	X86Feature3DNOWEXT: "3dnowext",
+	X86Feature3DNOW:    "3dnow",
 }
 
 // These flags are parse only---they can be used for setting / unsetting the
@@ -358,44 +418,29 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 	X86FeatureXSAVES: "xsaves",
 }
 
-// These are the default values of various FeatureSet fields.
-const (
-	defaultVendorID = "GenuineIntel"
-
-	// These processor signature defaults are derived from the values
-	// listed in Intel AN485 for i7/Xeon processors.
-	defaultExtFamily  uint8 = 0
-	defaultExtModel   uint8 = 1
-	defaultType       uint8 = 0
-	defaultFamily     uint8 = 0x06
-	defaultModel      uint8 = 0x0a
-	defaultSteppingID uint8 = 0
-)
-
 // Just a way to wrap cpuid function numbers.
 type cpuidFunction uint32
 
-// The constants below are the lower or "standard" cpuid functions. See Intel
-// AN485 for detailed information about each one.
+// The constants below are the lower or "standard" cpuid functions, ordered as
+// defined by the hardware.
 const (
-	vendorID                 cpuidFunction = iota // Returns vendor ID and largest standard function.
-	featureInfo                                   // Returns basic feature bits and processor signature.
-	cacheDescriptors                              // Returns list of cache descriptors.
-	serialNumber                                  // Returns processor serial number (obsolete on new hardware).
-	deterministicCacheParams                      // Returns deterministic cache information. See AN485.
-	monitorMwaitParams                            // Returns information about monitor/mwait instructions.
-	powerParams                                   // Returns information about power management and thermal sensors.
-	extendedFeatureInfo                           // Returns extended feature bits.
-	_                                             // Function 8 is reserved.
-	DCAParams                                     // Returns direct cache access information.
-	pmcInfo                                       // Returns information about performance monitoring features.
-	x2APICInfo                                    // Returns core/logical processor topology. See AN485 for details.
-	_                                             // Function 0xc is reserved.
-	xSaveInfo                                     // Returns information about extended state management.
+	vendorID                      cpuidFunction = iota // Returns vendor ID and largest standard function.
+	featureInfo                                        // Returns basic feature bits and processor signature.
+	intelCacheDescriptors                              // Returns list of cache descriptors. Intel only.
+	intelSerialNumber                                  // Returns processor serial number (obsolete on new hardware). Intel only.
+	intelDeterministicCacheParams                      // Returns deterministic cache information. Intel only.
+	monitorMwaitParams                                 // Returns information about monitor/mwait instructions.
+	powerParams                                        // Returns information about power management and thermal sensors.
+	extendedFeatureInfo                                // Returns extended feature bits.
+	_                                                  // Function 0x8 is reserved.
+	intelDCAParams                                     // Returns direct cache access information. Intel only.
+	intelPMCInfo                                       // Returns information about performance monitoring features. Intel only.
+	intelX2APICInfo                                    // Returns core/logical processor topology. Intel only.
+	_                                                  // Function 0xc is reserved.
+	xSaveInfo                                          // Returns information about extended state management.
 )
 
-// The "extended" functions start at 0x80000000. Intel AP-485 has information
-// on these as well.
+// The "extended" functions start at 0x80000000.
 const (
 	extendedFunctionInfo cpuidFunction = 0x80000000 + iota // Returns highest available extended function in eax.
 	extendedFeatures                                       // Returns some extended feature bits in edx and ecx.
@@ -419,7 +464,10 @@ func (f Feature) String() string {
 	if s := f.flagString(false); s != "" {
 		return s
 	}
-	return fmt.Sprintf("<cpuflag %d>", f)
+
+	block := int(f) / 32
+	bit := int(f) % 32
+	return fmt.Sprintf("<cpuflag %d; block %d bit %d>", f, block, bit)
 }
 
 func (f Feature) flagString(cpuinfoOnly bool) string {
@@ -597,27 +645,6 @@ func signatureSplit(v uint32) (ef, em, pt, f, m, sid uint8) {
 	return
 }
 
-// This factory function is only needed inside the package, package users
-// should not be creating and using empty feature sets.
-func newEmptyFeatureSet() *FeatureSet {
-	return newFeatureSet(make(map[Feature]bool))
-}
-
-// newFeatureSet creates a new FeatureSet with sensible default values and the
-// provided set of features.
-func newFeatureSet(s map[Feature]bool) *FeatureSet {
-	return &FeatureSet{
-		Set:            s,
-		VendorID:       defaultVendorID,
-		ExtendedFamily: defaultExtFamily,
-		ExtendedModel:  defaultExtModel,
-		ProcessorType:  defaultType,
-		Family:         defaultFamily,
-		Model:          defaultModel,
-		SteppingID:     defaultSteppingID,
-	}
-}
-
 // Helper to convert blockwise feature bit masks into a set of features. Masks
 // must be provided in order for each block, without skipping them. If a block
 // does not matter for this feature set, 0 is specified.
@@ -726,6 +753,10 @@ func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 	case extendedFeatures:
 		cx = fs.blockMask(block(5))
 		dx = fs.blockMask(block(6))
+		if fs.VendorID == "AuthenticAMD" {
+			// AMD duplicates some block 1 features in block 6.
+			dx |= fs.blockMask(block(1)) & block6DuplicateMask
+		}
 	}
 
 	return
@@ -779,7 +810,9 @@ func HostFeatureSet() *FeatureSet {
 		// eax=0x80000001 gets AMD added feature bits.
 		_, _, cx, dx = HostID(uint32(extendedFeatures), 0)
 		featureBlock5 = cx
-		featureBlock6 = dx
+		// Ignore features duplicated from block 1 on AMD. These bits
+		// are reserved on Intel.
+		featureBlock6 = dx &^ block6DuplicateMask
 	}
 
 	set := setFromBlockMasks(featureBlock0, featureBlock1, featureBlock2, featureBlock3, featureBlock4, featureBlock5, featureBlock6)
@@ -810,7 +843,7 @@ func initCPUFreq() {
 
 	// We get the value straight from host /proc/cpuinfo. On machines with
 	// frequency scaling enabled, this will only get the current value
-	// which will likely be innacurate. This is fine on machines with
+	// which will likely be inaccurate. This is fine on machines with
 	// frequency scaling disabled.
 	for _, line := range strings.Split(cpuinfo, "\n") {
 		if strings.Contains(line, "cpu MHz") {

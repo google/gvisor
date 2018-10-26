@@ -18,6 +18,34 @@ import (
 	"testing"
 )
 
+// These are the default values of various FeatureSet fields.
+const (
+	defaultVendorID = "GenuineIntel"
+
+	// These processor signature defaults are derived from the values
+	// listed in Intel Application Note 485 for i7/Xeon processors.
+	defaultExtFamily  uint8 = 0
+	defaultExtModel   uint8 = 1
+	defaultType       uint8 = 0
+	defaultFamily     uint8 = 0x06
+	defaultModel      uint8 = 0x0a
+	defaultSteppingID uint8 = 0
+)
+
+// newEmptyFeatureSet creates a new FeatureSet with a sensible default model and no features.
+func newEmptyFeatureSet() *FeatureSet {
+	return &FeatureSet{
+		Set:            make(map[Feature]bool),
+		VendorID:       defaultVendorID,
+		ExtendedFamily: defaultExtFamily,
+		ExtendedModel:  defaultExtModel,
+		ProcessorType:  defaultType,
+		Family:         defaultFamily,
+		Model:          defaultModel,
+		SteppingID:     defaultSteppingID,
+	}
+}
+
 var justFPU = &FeatureSet{
 	Set: map[Feature]bool{
 		X86FeatureFPU: true,
