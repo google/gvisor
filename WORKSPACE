@@ -9,6 +9,7 @@ http_archive(
     url = "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.15.0/bazel-gazelle-0.15.0.tar.gz",
     sha256 = "6e875ab4b6bf64a38c352887760f21203ab054676d9c1b274963907e0768740d",
 )
+
 load("@io_bazel_rules_go//go:def.bzl", "go_rules_dependencies", "go_register_toolchains")
 go_rules_dependencies()
 go_register_toolchains(go_version="1.11.1")
@@ -92,4 +93,41 @@ go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
     commit = "0dd5e194bbf5eb84a39666eb4c98a4d007e4203a",
+)
+
+# System Call test dependencies
+http_archive(
+    name = "com_github_gflags_gflags",
+    sha256 = "6e16c8bc91b1310a44f3965e616383dbda48f83e8c1eaa2370a215057b00cabe",
+    strip_prefix = "gflags-77592648e3f3be87d6c7123eb81cbad75f9aef5a",
+    urls = [
+        "https://mirror.bazel.build/github.com/gflags/gflags/archive/77592648e3f3be87d6c7123eb81cbad75f9aef5a.tar.gz",
+        "https://github.com/gflags/gflags/archive/77592648e3f3be87d6c7123eb81cbad75f9aef5a.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "com_google_absl",
+    strip_prefix = "abseil-cpp-master",
+    urls = ["https://github.com/abseil/abseil-cpp/archive/master.zip"],
+)
+
+http_archive(
+    name = "com_google_googletest",
+    sha256 = "353ab86e35cea1cd386115279cf4b16695bbf21b897bfbf2721cf4cb5f64ade8",
+    strip_prefix = "googletest-997d343dd680e541ef96ce71ee54a91daf2577a0",
+    urls = [
+        "https://mirror.bazel.build/github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
+        "https://github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
+    ],
+)
+
+http_archive(
+    name = "com_google_glog",
+    sha256 = "1ee310e5d0a19b9d584a855000434bb724aa744745d5b8ab1855c85bff8a8e21",
+    strip_prefix = "glog-028d37889a1e80e8a07da1b8945ac706259e5fd8",
+    urls = [
+        "https://mirror.bazel.build/github.com/google/glog/archive/028d37889a1e80e8a07da1b8945ac706259e5fd8.tar.gz",
+        "https://github.com/google/glog/archive/028d37889a1e80e8a07da1b8945ac706259e5fd8.tar.gz",
+    ],
 )
