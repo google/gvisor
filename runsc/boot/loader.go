@@ -668,13 +668,6 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 }
 
 func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, waitStatus *uint32) error {
-	// TODO: Containers all currently share a PID namespace.
-	// When per-container PID namespaces are supported, wait should use cid
-	// to find the appropriate PID namespace.
-	/*if cid != l.sandboxID {
-		return errors.New("non-sandbox PID namespaces are not yet implemented")
-	}*/
-
 	// If the process was started via runsc exec, it will have an
 	// entry in l.processes.
 	l.mu.Lock()
