@@ -48,6 +48,60 @@ set +e
 bazel test --test_output=errors //...
 exit_code=${?}
 
+# This function spawns a subshell to install crictl and containerd.
+installCrictl() (
+  # Fail on any error.
+  set -e
+  # Display commands to stderr.
+  set -x
+
+  # Install containerd.
+  # libseccomp2 needs to be downgraded in order to install libseccomp-dev.
+  sudo -n -E apt-get install -y --force-yes libseccomp2=2.1.1-1ubuntu1~trusty4
+  sudo -n -E apt-get install -y btrfs-tools libseccomp-dev
+  # go get will exit with a status of 1 despite succeeding, so ignore errors.
+  go get -d github.com/containerd/containerd || true
+  cd ${GOPATH}/src/github.com/containerd/containerd
+  git checkout tags/v1.1.4
+  make
+  sudo -n -E make install
+
+  # Install crictl.
+  # go get will exit with a status of 1 despite succeeding, so ignore errors.
+  go get -d github.com/kubernetes-sigs/cri-tools || true
+  cd ${GOPATH}/src/github.com/kubernetes-sigs/cri-tools
+  git checkout tags/v1.11.0
+  make
+  sudo -n -E make install
+
+  # Install gvisor-containerd-shim.
+  local shim_path=/tmp/gvisor-containerd-shim
+  wget https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim/gvisor-containerd-shim -O ${shim_path}
+  chmod +x ${shim_path}
+  sudo -n -E mv ${shim_path} /usr/local/bin
+
+  # Configure containerd.
+  local shim_config_path=/etc/containerd
+  local shim_config_tmp_path=/tmp/gvisor-containerd-shim.toml
+  sudo -n -E mkdir -p ${shim_config_path}
+  cat > ${shim_config_tmp_path} <<-EOF
+    runc_shim = "/usr/local/bin/containerd-shim"
+
+    [runsc_config]
+      debug = "true"
+      debug-log = "/tmp/runsc-log/"
+      strace = "true"
+      file-access = "shared"
+EOF
+  sudo mv ${shim_config_tmp_path} ${shim_config_path}
+)
+
+# Install containerd and crictl.
+if [[ ${exit_code} -eq 0 ]]; then
+  installCrictl
+  exit_code=${?}
+fi
+
 # Execute local tests that require docker.
 if [[ ${exit_code} -eq 0 ]]; then
   # These names are used to exclude tests not supported in certain
