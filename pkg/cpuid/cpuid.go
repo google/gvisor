@@ -274,6 +274,7 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureTM2:      "tm2",
 	X86FeatureSSSE3:    "ssse3",
 	X86FeatureCNXTID:   "cid",
+	X86FeatureSDBG:     "sdbg",
 	X86FeatureFMA:      "fma",
 	X86FeatureCX16:     "cx16",
 	X86FeatureXTPR:     "xtpr",
@@ -352,10 +353,9 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureAVX512VL:   "avx512vl",
 
 	// Block 3.
-	X86FeaturePREFETCHWT1: "prefetchwt1",
-	X86FeatureAVX512VBMI:  "avx512vbmi",
-	X86FeatureUMIP:        "umip",
-	X86FeaturePKU:         "pku",
+	X86FeatureAVX512VBMI: "avx512vbmi",
+	X86FeatureUMIP:       "umip",
+	X86FeaturePKU:        "pku",
 
 	// Block 4.
 	X86FeatureXSAVEOPT: "xsaveopt",
@@ -405,7 +405,6 @@ var x86FeatureStrings = map[Feature]string{
 // flags, but will not get printed out in /proc/cpuinfo.
 var x86FeatureParseOnlyStrings = map[Feature]string{
 	// Block 0.
-	X86FeatureSDBG:    "sdbg",
 	X86FeatureOSXSAVE: "osxsave",
 
 	// Block 2.
@@ -413,6 +412,9 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 	X86FeatureFPCSDS:          "fpcsds",
 	X86FeatureIPT:             "pt",
 	X86FeatureCLFLUSHOPT:      "clfushopt",
+
+	// Block 3.
+	X86FeaturePREFETCHWT1: "prefetchwt1",
 
 	// Block 4.
 	X86FeatureXSAVES: "xsaves",
