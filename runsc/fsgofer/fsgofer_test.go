@@ -48,14 +48,8 @@ var (
 	// allConfs is set in init() above.
 	allConfs []Config
 
-	rwConfs = []Config{
-		{ROMount: false, LazyOpenForWrite: false},
-		{ROMount: false, LazyOpenForWrite: true},
-	}
-	roConfs = []Config{
-		{ROMount: true, LazyOpenForWrite: false},
-		{ROMount: true, LazyOpenForWrite: true},
-	}
+	rwConfs = []Config{{ROMount: false}}
+	roConfs = []Config{{ROMount: true}}
 )
 
 type state struct {
@@ -66,7 +60,7 @@ type state struct {
 }
 
 func (s state) String() string {
-	return fmt.Sprintf("lazyopen(%v)-%v", s.conf.LazyOpenForWrite, s.ft)
+	return fmt.Sprintf("type(%v)", s.ft)
 }
 
 func runAll(t *testing.T, test func(*testing.T, state)) {

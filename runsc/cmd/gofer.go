@@ -124,9 +124,6 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	ats = append(ats, fsgofer.NewAttachPoint("/", fsgofer.Config{
 		ROMount:      spec.Root.Readonly,
 		PanicOnWrite: g.panicOnWrite,
-		// Docker uses overlay2 by default for the root mount, and overlay2 does a copy-up when
-		// each file is opened as writable. Thus, we open files lazily to avoid copy-up.
-		LazyOpenForWrite: true,
 	}))
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], spec.Root.Readonly)
 
@@ -134,9 +131,8 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:          isReadonlyMount(m.Options),
-				PanicOnWrite:     g.panicOnWrite,
-				LazyOpenForWrite: false,
+				ROMount:      isReadonlyMount(m.Options),
+				PanicOnWrite: g.panicOnWrite,
 			}
 			ats = append(ats, fsgofer.NewAttachPoint(m.Destination, cfg))
 

@@ -19,20 +19,29 @@ import (
 	"unsafe"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 )
 
 func statAt(dirFd int, name string) (syscall.Stat_t, error) {
 	nameBytes, err := syscall.BytePtrFromString(name)
 	if err != nil {
-		return syscall.Stat_t{}, extractErrno(err)
+		return syscall.Stat_t{}, err
 	}
-	namePtr := uintptr(unsafe.Pointer(nameBytes))
+	namePtr := unsafe.Pointer(nameBytes)
 
 	var stat syscall.Stat_t
-	statPtr := uintptr(unsafe.Pointer(&stat))
+	statPtr := unsafe.Pointer(&stat)
 
-	if _, _, err := syscall.Syscall6(syscall.SYS_NEWFSTATAT, uintptr(dirFd), namePtr, statPtr, linux.AT_SYMLINK_NOFOLLOW, 0, 0); err != 0 {
-		return syscall.Stat_t{}, err
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_NEWFSTATAT,
+		uintptr(dirFd),
+		uintptr(namePtr),
+		uintptr(statPtr),
+		linux.AT_SYMLINK_NOFOLLOW,
+		0,
+		0); errno != 0 {
+
+		return syscall.Stat_t{}, syserr.FromHost(errno).ToError()
 	}
 	return stat, nil
 }
@@ -40,19 +49,59 @@ func statAt(dirFd int, name string) (syscall.Stat_t, error) {
 func utimensat(dirFd int, name string, times [2]syscall.Timespec, flags int) error {
 	// utimensat(2) doesn't accept empty name, instead name must be nil to make it
 	// operate directly on 'dirFd' unlike other *at syscalls.
-	var namePtr uintptr
+	var namePtr unsafe.Pointer
 	if name != "" {
 		nameBytes, err := syscall.BytePtrFromString(name)
 		if err != nil {
-			return extractErrno(err)
+			return err
 		}
-		namePtr = uintptr(unsafe.Pointer(nameBytes))
+		namePtr = unsafe.Pointer(nameBytes)
 	}
 
-	timesPtr := uintptr(unsafe.Pointer(&times[0]))
+	timesPtr := unsafe.Pointer(&times[0])
 
-	if _, _, err := syscall.Syscall6(syscall.SYS_UTIMENSAT, uintptr(dirFd), namePtr, timesPtr, uintptr(flags), 0, 0); err != 0 {
-		return err
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_UTIMENSAT,
+		uintptr(dirFd),
+		uintptr(namePtr),
+		uintptr(timesPtr),
+		uintptr(flags),
+		0,
+		0); errno != 0 {
+
+		return syserr.FromHost(errno).ToError()
+	}
+	return nil
+}
+
+func renameat(oldDirFD int, oldName string, newDirFD int, newName string) error {
+	var oldNamePtr unsafe.Pointer
+	if oldName != "" {
+		nameBytes, err := syscall.BytePtrFromString(oldName)
+		if err != nil {
+			return err
+		}
+		oldNamePtr = unsafe.Pointer(nameBytes)
+	}
+	var newNamePtr unsafe.Pointer
+	if newName != "" {
+		nameBytes, err := syscall.BytePtrFromString(newName)
+		if err != nil {
+			return err
+		}
+		newNamePtr = unsafe.Pointer(nameBytes)
+	}
+
+	if _, _, errno := syscall.Syscall6(
+		syscall.SYS_RENAMEAT,
+		uintptr(oldDirFD),
+		uintptr(oldNamePtr),
+		uintptr(newDirFD),
+		uintptr(newNamePtr),
+		0,
+		0); errno != 0 {
+
+		return syserr.FromHost(errno).ToError()
 	}
 	return nil
 }
