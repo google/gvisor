@@ -31,6 +31,7 @@ const (
 	_KVM_SET_USER_MEMORY_REGION = 0x4020ae46
 	_KVM_SET_REGS               = 0x4090ae82
 	_KVM_SET_SREGS              = 0x4138ae84
+	_KVM_GET_REGS               = 0x8090ae81
 	_KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
 	_KVM_SET_CPUID2             = 0x4008ae90
 	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b

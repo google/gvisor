@@ -120,6 +120,9 @@ type vCPU struct {
 
 	// vCPUArchState is the architecture-specific state.
 	vCPUArchState
+
+	// dieMessage is thrown from die.
+	dieMessage string
 }
 
 // newVCPU creates a returns a new vCPU.

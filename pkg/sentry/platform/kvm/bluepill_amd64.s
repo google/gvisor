@@ -85,3 +85,9 @@ fallback:
 	XORQ CX, CX
 	MOVQ ·savedHandler(SB), AX
 	JMP AX
+
+// dieTrampoline: see bluepill.go, bluepill_amd64_unsafe.go for documentation.
+TEXT ·dieTrampoline(SB),NOSPLIT,$0
+	PUSHQ BX // First argument (vCPU).
+	PUSHQ AX // Fake the old RIP as caller.
+	JMP ·dieHandler(SB)

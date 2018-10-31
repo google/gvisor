@@ -73,30 +73,6 @@ func (c *vCPU) loadSegments(tid uint64) {
 	atomic.StoreUint64(&c.tid, tid)
 }
 
-// setUserRegisters sets user registers in the vCPU.
-func (c *vCPU) setUserRegisters(uregs *userRegs) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_REGS,
-		uintptr(unsafe.Pointer(uregs))); errno != 0 {
-		return fmt.Errorf("error setting user registers: %v", errno)
-	}
-	return nil
-}
-
-// setSystemRegisters sets system registers.
-func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_SREGS,
-		uintptr(unsafe.Pointer(sregs))); errno != 0 {
-		return fmt.Errorf("error setting system registers: %v", errno)
-	}
-	return nil
-}
-
 // setCPUID sets the CPUID to be used by the guest.
 func (c *vCPU) setCPUID() error {
 	if _, _, errno := syscall.RawSyscall(
