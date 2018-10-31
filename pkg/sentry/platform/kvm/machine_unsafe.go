@@ -88,7 +88,7 @@ func (c *vCPU) notify() {
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
-		linux.FUTEX_WAKE,
+		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
 		^uintptr(0), // Number of waiters.
 		0, 0, 0)
 	if errno != 0 {
@@ -106,7 +106,7 @@ func (c *vCPU) waitUntilNot(state uint32) {
 	_, _, errno := syscall.Syscall6(
 		syscall.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
-		linux.FUTEX_WAIT,
+		linux.FUTEX_WAIT|linux.FUTEX_PRIVATE_FLAG,
 		uintptr(state),
 		0, 0, 0)
 	if errno != 0 && errno != syscall.EINTR && errno != syscall.EAGAIN {

@@ -438,7 +438,6 @@ func ptraceFilters() seccomp.SyscallRules {
 func kvmFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
 		syscall.SYS_ARCH_PRCTL:      {},
-		syscall.SYS_FUTEX:           {},
 		syscall.SYS_IOCTL:           {},
 		syscall.SYS_MMAP:            {},
 		syscall.SYS_RT_SIGSUSPEND:   {},
