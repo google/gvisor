@@ -38,6 +38,33 @@ type Kernel struct {
 	KernelArchState
 }
 
+// Hooks are hooks for kernel functions.
+type Hooks interface {
+	// KernelSyscall is called for kernel system calls.
+	//
+	// Return from this call will restore registers and return to the kernel: the
+	// registers must be modified directly.
+	//
+	// If this function is not provided, a kernel exception results in halt.
+	//
+	// This must be go:nosplit, as this will be on the interrupt stack.
+	// Closures are permitted, as the pointer to the closure frame is not
+	// passed on the stack.
+	KernelSyscall()
+
+	// KernelException handles an exception during kernel execution.
+	//
+	// Return from this call will restore registers and return to the kernel: the
+	// registers must be modified directly.
+	//
+	// If this function is not provided, a kernel exception results in halt.
+	//
+	// This must be go:nosplit, as this will be on the interrupt stack.
+	// Closures are permitted, as the pointer to the closure frame is not
+	// passed on the stack.
+	KernelException(Vector)
+}
+
 // CPU is the per-CPU struct.
 type CPU struct {
 	// self is a self reference.
@@ -58,29 +85,8 @@ type CPU struct {
 	// calls and exceptions via the Registers function.
 	registers syscall.PtraceRegs
 
-	// KernelException handles an exception during kernel execution.
-	//
-	// Return from this call will restore registers and return to the kernel: the
-	// registers must be modified directly.
-	//
-	// If this function is not provided, a kernel exception results in halt.
-	//
-	// This must be go:nosplit, as this will be on the interrupt stack.
-	// Closures are permitted, as the pointer to the closure frame is not
-	// passed on the stack.
-	KernelException func(Vector)
-
-	// KernelSyscall is called for kernel system calls.
-	//
-	// Return from this call will restore registers and return to the kernel: the
-	// registers must be modified directly.
-	//
-	// If this function is not provided, a kernel exception results in halt.
-	//
-	// This must be go:nosplit, as this will be on the interrupt stack.
-	// Closures are permitted, as the pointer to the closure frame is not
-	// passed on the stack.
-	KernelSyscall func()
+	// hooks are kernel hooks.
+	hooks Hooks
 }
 
 // Registers returns a modifiable-copy of the kernel registers.

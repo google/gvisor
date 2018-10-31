@@ -90,12 +90,6 @@ TEXT ·Halt(SB),NOSPLIT,$0
 	HLT
 	RET
 
-// See kernel.go.
-TEXT ·Current(SB),NOSPLIT,$0-8
-	MOVQ CPU_SELF(GS), AX
-	MOVQ AX, ret+0(FP)
-	RET
-
 // See entry_amd64.go.
 TEXT ·swapgs(SB),NOSPLIT,$0
 	SWAP_GS()
@@ -205,19 +199,12 @@ kernel:
 	MOVQ $0, CPU_ERROR_CODE(GS) // Clear error code.
 	MOVQ $0, CPU_ERROR_TYPE(GS) // Set error type to kernel.
 
-	// Load the function stored in KernelSyscall.
-	//
-	// Note that this function needs to be executed on the stack in case
-	// the runtime decides to make use of the redzone (grumble). This also
-	// protects against any functions that might not be go:nosplit, since
-	// this will cause a failure immediately.
+	// Call the syscall trampoline.
 	LOAD_KERNEL_STACK(GS)
-	MOVQ CPU_KERNEL_SYSCALL(GS), DX // Function data.
-	MOVQ 0(DX), AX                  // Function pointer.
-	PUSHQ BP                        // Push the frame pointer.
-	MOVQ SP, BP                     // Set frame pointer value.
-	CALL *AX                        // Call the function.
-	POPQ BP                         // Restore the frame pointer.
+	MOVQ CPU_SELF(GS), AX   // Load vCPU.
+	PUSHQ AX                // First argument (vCPU).
+	CALL ·kernelSyscall(SB) // Call the trampoline.
+	POPQ AX                 // Pop vCPU.
 	JMP ·resume(SB)
 
 // exception is a generic exception handler.
@@ -287,18 +274,14 @@ kernel:
 	MOVQ 0(SP), BX              // BX contains the vector.
 	ADDQ $48, SP                // Drop the exception frame.
 
-	// Load the function stored in KernelException.
-	//
-	// See note above re: the kernel stack.
+	// Call the exception trampoline.
 	LOAD_KERNEL_STACK(GS)
-	MOVQ CPU_KERNEL_EXCEPTION(GS), DX // Function data.
-	MOVQ 0(DX), AX                    // Function pointer.
-	PUSHQ BP                          // Push the frame pointer.
-	MOVQ SP, BP                       // Set frame pointer value.
-	PUSHQ BX                          // First argument (vector).
-	CALL *AX                          // Call the function.
-	POPQ BX                           // Discard the argument.
-	POPQ BP                           // Restore the frame pointer.
+	MOVQ CPU_SELF(GS), AX     // Load vCPU.
+	PUSHQ BX                  // Second argument (vector).
+	PUSHQ AX                  // First argument (vCPU).
+	CALL ·kernelException(SB) // Call the trampoline.
+	POPQ BX                   // Pop vector.
+	POPQ AX                   // Pop vCPU.
 	JMP ·resume(SB)
 
 #define EXCEPTION_WITH_ERROR(value, symbol) \

@@ -37,6 +37,13 @@ func bytePtr(addr uintptr) *byte {
 	return (*byte)(unsafe.Pointer(addr))
 }
 
+// uintptrValue returns a uintptr for the given address.
+//
+//go:nosplit
+func uintptrValue(addr *byte) uintptr {
+	return (uintptr)(unsafe.Pointer(addr))
+}
+
 // bluepillHandler is called from the signal stub.
 //
 // The world may be stopped while this is executing, and it executes on the

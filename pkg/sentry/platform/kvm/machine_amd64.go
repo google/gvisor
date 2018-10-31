@@ -63,6 +63,10 @@ type vCPUArchState struct {
 	//
 	// This starts above fixedKernelPCID.
 	PCIDs *pagetables.PCIDs
+
+	// floatingPointState is the floating point state buffer used in guest
+	// to host transitions. See usage in bluepill_amd64.go.
+	floatingPointState *arch.FloatingPointData
 }
 
 const (
@@ -148,6 +152,12 @@ func (c *vCPU) initArchState() error {
 	if err := c.setUserRegisters(&kernelUserRegs); err != nil {
 		return err
 	}
+
+	// Allocate some floating point state save area for the local vCPU.
+	// This will be saved prior to leaving the guest, and we restore from
+	// this always. We cannot use the pointer in the context alone because
+	// we don't know how large the area there is in reality.
+	c.floatingPointState = arch.NewFloatingPointData()
 
 	// Set the time offset to the host native time.
 	return c.setSystemTime()

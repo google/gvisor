@@ -204,7 +204,7 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 func start(c *CPU) {
 	// Save per-cpu & FS segment.
 	WriteGS(kernelAddr(c))
-	WriteFS(uintptr(c.Registers().Fs_base))
+	WriteFS(uintptr(c.registers.Fs_base))
 
 	// Initialize floating point.
 	//

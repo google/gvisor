@@ -26,31 +26,41 @@ func (k *Kernel) Init(opts KernelOpts) {
 // Halt halts execution.
 func Halt()
 
-// Current returns the current CPU.
-//
-// Its use is only legal in the KernelSyscall and KernelException contexts,
-// which must all be guarded go:nosplit.
-func Current() *CPU
+// defaultHooks implements hooks.
+type defaultHooks struct{}
 
-// defaultSyscall is the default syscall hook.
+// KernelSyscall implements Hooks.KernelSyscall.
 //
 //go:nosplit
-func defaultSyscall() { Halt() }
+func (defaultHooks) KernelSyscall() { Halt() }
 
-// defaultException is the default exception hook.
+// KernelException implements Hooks.KernelException.
 //
 //go:nosplit
-func defaultException(Vector) { Halt() }
+func (defaultHooks) KernelException(Vector) { Halt() }
+
+// kernelSyscall is a trampoline.
+//
+//go:nosplit
+func kernelSyscall(c *CPU) { c.hooks.KernelSyscall() }
+
+// kernelException is a trampoline.
+//
+//go:nosplit
+func kernelException(c *CPU, vector Vector) { c.hooks.KernelException(vector) }
 
 // Init initializes a new CPU.
 //
 // Init allows embedding in other objects.
-func (c *CPU) Init(k *Kernel) {
+func (c *CPU) Init(k *Kernel, hooks Hooks) {
 	c.self = c   // Set self reference.
 	c.kernel = k // Set kernel reference.
 	c.init()     // Perform architectural init.
 
-	// Defaults.
-	c.KernelSyscall = defaultSyscall
-	c.KernelException = defaultException
+	// Require hooks.
+	if hooks != nil {
+		c.hooks = hooks
+	} else {
+		c.hooks = defaultHooks{}
+	}
 }

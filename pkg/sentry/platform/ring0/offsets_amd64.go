@@ -34,8 +34,6 @@ func Emit(w io.Writer) {
 	fmt.Fprintf(w, "#define CPU_STACK_TOP        0x%02x\n", reflect.ValueOf(&c.stack[0]).Pointer()-reflect.ValueOf(c).Pointer()+uintptr(len(c.stack)))
 	fmt.Fprintf(w, "#define CPU_ERROR_CODE       0x%02x\n", reflect.ValueOf(&c.errorCode).Pointer()-reflect.ValueOf(c).Pointer())
 	fmt.Fprintf(w, "#define CPU_ERROR_TYPE       0x%02x\n", reflect.ValueOf(&c.errorType).Pointer()-reflect.ValueOf(c).Pointer())
-	fmt.Fprintf(w, "#define CPU_KERNEL_EXCEPTION 0x%02x\n", reflect.ValueOf(&c.KernelException).Pointer()-reflect.ValueOf(c).Pointer())
-	fmt.Fprintf(w, "#define CPU_KERNEL_SYSCALL   0x%02x\n", reflect.ValueOf(&c.KernelSyscall).Pointer()-reflect.ValueOf(c).Pointer())
 
 	fmt.Fprintf(w, "\n// Bits.\n")
 	fmt.Fprintf(w, "#define _RFLAGS_IF           0x%02x\n", _RFLAGS_IF)

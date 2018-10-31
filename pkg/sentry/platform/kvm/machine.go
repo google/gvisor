@@ -142,9 +142,7 @@ func (m *machine) newVCPU() *vCPU {
 		fd:      int(fd),
 		machine: m,
 	}
-	c.CPU.Init(&m.kernel)
-	c.CPU.KernelSyscall = bluepillSyscall
-	c.CPU.KernelException = bluepillException
+	c.CPU.Init(&m.kernel, c)
 	m.vCPUsByID[c.id] = c
 
 	// Ensure the signal mask is correct.

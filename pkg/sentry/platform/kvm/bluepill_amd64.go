@@ -47,8 +47,8 @@ func redpill() {
 // bluepillArchEnter is called during bluepillEnter.
 //
 //go:nosplit
-func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
-	c = vCPUPtr(uintptr(context.Rax))
+func bluepillArchEnter(context *arch.SignalContext64) *vCPU {
+	c := vCPUPtr(uintptr(context.Rax))
 	regs := c.CPU.Registers()
 	regs.R8 = context.R8
 	regs.R9 = context.R9
@@ -73,50 +73,41 @@ func bluepillArchEnter(context *arch.SignalContext64) (c *vCPU) {
 	regs.Cs = uint64(ring0.Kcode)
 	regs.Ds = uint64(ring0.Udata)
 	regs.Es = uint64(ring0.Udata)
-	regs.Fs = uint64(ring0.Udata)
 	regs.Ss = uint64(ring0.Kdata)
-
-	// ring0 uses GS exclusively, so we use GS_base to store the location
-	// of the floating point address.
-	//
-	// The address will be restored directly after running the VCPU, and
-	// will be saved again prior to halting. We rely on the fact that the
-	// SaveFloatingPointer/LoadFloatingPoint functions use the most
-	// efficient mechanism available (including compression) so the state
-	// size is guaranteed to be less than what's pointed to here.
-	regs.Gs_base = uint64(context.Fpstate)
-	return
+	return c
 }
 
-// bluepillSyscall handles kernel syscalls.
+// KernelSyscall handles kernel syscalls.
 //
 //go:nosplit
-func bluepillSyscall() {
-	regs := ring0.Current().Registers()
+func (c *vCPU) KernelSyscall() {
+	regs := c.Registers()
 	if regs.Rax != ^uint64(0) {
 		regs.Rip -= 2 // Rewind.
 	}
-	ring0.SaveFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
+	// We only trigger a bluepill entry in the bluepill function, and can
+	// therefore be guaranteed that there is no floating point state to be
+	// loaded on resuming from halt. We only worry about saving on exit.
+	ring0.SaveFloatingPoint((*byte)(c.floatingPointState))
 	ring0.Halt()
 	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
-	ring0.LoadFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 }
 
-// bluepillException handles kernel exceptions.
+// KernelException handles kernel exceptions.
 //
 //go:nosplit
-func bluepillException(vector ring0.Vector) {
-	regs := ring0.Current().Registers()
+func (c *vCPU) KernelException(vector ring0.Vector) {
+	regs := c.Registers()
 	if vector == ring0.Vector(bounce) {
 		// These should not interrupt kernel execution; point the Rip
 		// to zero to ensure that we get a reasonable panic when we
-		// attempt to return.
+		// attempt to return and a full stack trace.
 		regs.Rip = 0
 	}
-	ring0.SaveFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
+	// See above.
+	ring0.SaveFloatingPoint((*byte)(c.floatingPointState))
 	ring0.Halt()
 	ring0.WriteFS(uintptr(regs.Fs_base)) // Reload host segment.
-	ring0.LoadFloatingPoint(bytePtr(uintptr(regs.Gs_base)))
 }
 
 // bluepillArchExit is called during bluepillEnter.
@@ -142,4 +133,9 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	context.Rsp = regs.Rsp
 	context.Rip = regs.Rip
 	context.Eflags = regs.Eflags
+
+	// Set the context pointer to the saved floating point state. This is
+	// where the guest data has been serialized, the kernel will restore
+	// from this new pointer value.
+	context.Fpstate = uint64(uintptrValue((*byte)(c.floatingPointState)))
 }
