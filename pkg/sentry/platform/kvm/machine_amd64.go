@@ -156,19 +156,19 @@ func (c *vCPU) initArchState() error {
 // nonCanonical generates a canonical address return.
 //
 //go:nosplit
-func nonCanonical(addr uint64, signal int32) (*arch.SignalInfo, usermem.AccessType, error) {
-	info := &arch.SignalInfo{
+func nonCanonical(addr uint64, signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
+	*info = arch.SignalInfo{
 		Signo: signal,
 		Code:  arch.SignalInfoKernel,
 	}
 	info.SetAddr(addr) // Include address.
-	return info, usermem.NoAccess, platform.ErrContextSignal
+	return usermem.NoAccess, platform.ErrContextSignal
 }
 
 // fault generates an appropriate fault return.
 //
 //go:nosplit
-func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *vCPU) fault(signal int32, info *arch.SignalInfo) (usermem.AccessType, error) {
 	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := ring0.ReadCR2()
 	code, user := c.ErrorCode()
@@ -176,11 +176,10 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 		// The last fault serviced by this CPU was not a user
 		// fault, so we can't reliably trust the faultAddr or
 		// the code provided here. We need to re-execute.
-		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+		return usermem.NoAccess, platform.ErrContextInterrupt
 	}
-	info := &arch.SignalInfo{
-		Signo: signal,
-	}
+	// Reset the pointed SignalInfo.
+	*info = arch.SignalInfo{Signo: signal}
 	info.SetAddr(uint64(faultAddr))
 	accessType := usermem.AccessType{
 		Read:    code&(1<<1) == 0,
@@ -192,20 +191,20 @@ func (c *vCPU) fault(signal int32) (*arch.SignalInfo, usermem.AccessType, error)
 	} else {
 		info.Code = 2 // SEGV_ACCERR.
 	}
-	return info, accessType, platform.ErrContextSignal
+	return accessType, platform.ErrContextSignal
 }
 
 // SwitchToUser unpacks architectural-details.
-func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, usermem.AccessType, error) {
+func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) (usermem.AccessType, error) {
 	// Check for canonical addresses.
 	if regs := switchOpts.Registers; !ring0.IsCanonical(regs.Rip) {
-		return nonCanonical(regs.Rip, int32(syscall.SIGSEGV))
+		return nonCanonical(regs.Rip, int32(syscall.SIGSEGV), info)
 	} else if !ring0.IsCanonical(regs.Rsp) {
-		return nonCanonical(regs.Rsp, int32(syscall.SIGBUS))
+		return nonCanonical(regs.Rsp, int32(syscall.SIGBUS), info)
 	} else if !ring0.IsCanonical(regs.Fs_base) {
-		return nonCanonical(regs.Fs_base, int32(syscall.SIGBUS))
+		return nonCanonical(regs.Fs_base, int32(syscall.SIGBUS), info)
 	} else if !ring0.IsCanonical(regs.Gs_base) {
-		return nonCanonical(regs.Gs_base, int32(syscall.SIGBUS))
+		return nonCanonical(regs.Gs_base, int32(syscall.SIGBUS), info)
 	}
 
 	// Assign PCIDs.
@@ -231,25 +230,25 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 	switch vector {
 	case ring0.Syscall, ring0.SyscallInt80:
 		// Fast path: system call executed.
-		return nil, usermem.NoAccess, nil
+		return usermem.NoAccess, nil
 
 	case ring0.PageFault:
-		return c.fault(int32(syscall.SIGSEGV))
+		return c.fault(int32(syscall.SIGSEGV), info)
 
 	case ring0.Debug, ring0.Breakpoint:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGTRAP),
 			Code:  1, // TRAP_BRKPT (breakpoint).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.GeneralProtectionFault,
 		ring0.SegmentNotPresent,
 		ring0.BoundRangeExceeded,
 		ring0.InvalidTSS,
 		ring0.StackSegmentFault:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGSEGV),
 			Code:  arch.SignalInfoKernel,
 		}
@@ -258,52 +257,52 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 			// When CPUID faulting is enabled, we will generate a #GP(0) when
 			// userspace executes a CPUID instruction. This is handled above,
 			// because we need to be able to map and read user memory.
-			return info, usermem.AccessType{}, platform.ErrContextSignalCPUID
+			return usermem.AccessType{}, platform.ErrContextSignalCPUID
 		}
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.InvalidOpcode:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGILL),
 			Code:  1, // ILL_ILLOPC (illegal opcode).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.DivideByZero:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGFPE),
 			Code:  1, // FPE_INTDIV (divide by zero).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Overflow:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGFPE),
 			Code:  1, // FPE_INTOVF (integer overflow).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.X87FloatingPointException,
 		ring0.SIMDFloatingPointException:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGFPE),
 			Code:  7, // FPE_FLTINV (invalid operation).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
-		return info, usermem.AccessType{}, platform.ErrContextSignal
+		return usermem.AccessType{}, platform.ErrContextSignal
 
 	case ring0.Vector(bounce): // ring0.VirtualizationException
-		return nil, usermem.NoAccess, platform.ErrContextInterrupt
+		return usermem.NoAccess, platform.ErrContextInterrupt
 
 	case ring0.AlignmentCheck:
-		info := &arch.SignalInfo{
+		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGBUS),
 			Code:  2, // BUS_ADRERR (physical address does not exist).
 		}
-		return info, usermem.NoAccess, platform.ErrContextSignal
+		return usermem.NoAccess, platform.ErrContextSignal
 
 	case ring0.NMI:
 		// An NMI is generated only when a fault is not servicable by
@@ -311,7 +310,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts) (*arch.SignalInfo, user
 		// really not. This could happen, e.g. if some file is
 		// truncated (and would generate a SIGBUS) and we map it
 		// directly into the instance.
-		return c.fault(int32(syscall.SIGBUS))
+		return c.fault(int32(syscall.SIGBUS), info)
 
 	case ring0.DeviceNotAvailable,
 		ring0.DoubleFault,
