@@ -14,4 +14,5 @@ go_test(
     size = "small",
     srcs = ["amutex_test.go"],
     embed = [":amutex"],
+    tags = ["flaky"],
 )
