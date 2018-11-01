@@ -230,8 +230,12 @@ func Poll(cb func() error, timeout time.Duration) error {
 // WaitForHTTP tries GET requests on a port until the call succeeds or timeout.
 func WaitForHTTP(port int, timeout time.Duration) error {
 	cb := func() error {
-		_, err := http.Get(fmt.Sprintf("http://localhost:%d/", port))
-		return err
+		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", port))
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		return nil
 	}
 	return Poll(cb, timeout)
 }
