@@ -144,7 +144,7 @@ func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, nil
 
 	case linux.SHM_LOCK, linux.SHM_UNLOCK:
-		// We currently do not support memmory locking anywhere.
+		// We currently do not support memory locking anywhere.
 		// mlock(2)/munlock(2) are currently stubbed out as no-ops so do the
 		// same here.
 		t.Kernel().EmitUnimplementedEvent(t)

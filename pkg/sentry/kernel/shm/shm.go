@@ -575,10 +575,19 @@ func (s *Shm) destroy() {
 func (s *Shm) MarkDestroyed() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	// Prevent the segment from being found in the registry.
 	s.key = linux.IPC_PRIVATE
-	s.pendingDestruction = true
-	s.DecRef()
+
+	// Only drop the segment's self-reference once, when destruction is
+	// requested. Otherwise, repeated calls shmctl(IPC_RMID) would force a
+	// segment to be destroyed prematurely, potentially with active maps to the
+	// segment's address range. Remaining references are dropped when the
+	// segment is detached or unmaped.
+	if !s.pendingDestruction {
+		s.pendingDestruction = true
+		s.DecRef()
+	}
 }
 
 // checkOwnership verifies whether a segment may be accessed by ctx as an
