@@ -44,7 +44,7 @@ const (
 )
 
 // modeRegexp is the expected format of the mode option.
-var modeRegexp = regexp.MustCompile("0[0-7][0-7][0-7]")
+var modeRegexp = regexp.MustCompile("^0?[0-7][0-7][0-7]$")
 
 // Filesystem is a tmpfs.
 //
