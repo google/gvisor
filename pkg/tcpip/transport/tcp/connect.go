@@ -829,6 +829,13 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	}
 }
 
+// disableKeepaliveTimer stops the keepalive timer.
+func (e *endpoint) disableKeepaliveTimer() {
+	e.keepalive.Lock()
+	e.keepalive.timer.disable()
+	e.keepalive.Unlock()
+}
+
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
 // goroutine and is responsible for sending segments and handling received
 // segments.

@@ -62,8 +62,6 @@ go_test(
         "tcp_test.go",
         "tcp_timestamp_test.go",
     ],
-    # FIXME
-    tags = ["flaky"],
     deps = [
         ":tcp",
         "//pkg/tcpip",

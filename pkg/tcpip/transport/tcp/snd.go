@@ -405,6 +405,7 @@ func (s *sender) sendData() {
 	// eventually.
 	var seg *segment
 	end := s.sndUna.Add(s.sndWnd)
+	var dataSent bool
 	for seg = s.writeNext; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
 		// We abuse the flags field to determine if we have already
 		// assigned a sequence number to this segment.
@@ -448,6 +449,12 @@ func (s *sender) sendData() {
 			segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 		}
 
+		if !dataSent {
+			dataSent = true
+			// We are sending data, so we should stop the keepalive timer to
+			// ensure that no keepalives are sent while there is pending data.
+			s.ep.disableKeepaliveTimer()
+		}
 		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
 
 		// Update sndNxt if we actually sent new data (as opposed to
