@@ -17,42 +17,54 @@
 package rawfile
 
 import (
+	"fmt"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 )
 
-var translations = map[syscall.Errno]*tcpip.Error{
-	syscall.EEXIST:        tcpip.ErrDuplicateAddress,
-	syscall.ENETUNREACH:   tcpip.ErrNoRoute,
-	syscall.EINVAL:        tcpip.ErrInvalidEndpointState,
-	syscall.EALREADY:      tcpip.ErrAlreadyConnecting,
-	syscall.EISCONN:       tcpip.ErrAlreadyConnected,
-	syscall.EADDRINUSE:    tcpip.ErrPortInUse,
-	syscall.EADDRNOTAVAIL: tcpip.ErrBadLocalAddress,
-	syscall.EPIPE:         tcpip.ErrClosedForSend,
-	syscall.EWOULDBLOCK:   tcpip.ErrWouldBlock,
-	syscall.ECONNREFUSED:  tcpip.ErrConnectionRefused,
-	syscall.ETIMEDOUT:     tcpip.ErrTimeout,
-	syscall.EINPROGRESS:   tcpip.ErrConnectStarted,
-	syscall.EDESTADDRREQ:  tcpip.ErrDestinationRequired,
-	syscall.ENOTSUP:       tcpip.ErrNotSupported,
-	syscall.ENOTTY:        tcpip.ErrQueueSizeNotSupported,
-	syscall.ENOTCONN:      tcpip.ErrNotConnected,
-	syscall.ECONNRESET:    tcpip.ErrConnectionReset,
-	syscall.ECONNABORTED:  tcpip.ErrConnectionAborted,
-	syscall.EMSGSIZE:      tcpip.ErrMessageTooLong,
-	syscall.ENOBUFS:       tcpip.ErrNoBufferSpace,
-}
+const maxErrno = 134
+
+var translations [maxErrno]*tcpip.Error
 
 // TranslateErrno translate an errno from the syscall package into a
 // *tcpip.Error.
 //
-// Not all errnos are supported and this function will panic on unreconized
-// errnos.
+// Valid, but unreconigized errnos will be translated to
+// tcpip.ErrInvalidEndpointState (EINVAL). Panics on invalid errnos.
 func TranslateErrno(e syscall.Errno) *tcpip.Error {
-	if err, ok := translations[e]; ok {
+	if err := translations[e]; err != nil {
 		return err
 	}
 	return tcpip.ErrInvalidEndpointState
+}
+
+func addTranslation(host syscall.Errno, trans *tcpip.Error) {
+	if translations[host] != nil {
+		panic(fmt.Sprintf("duplicate translation for host errno %q (%d)", host.Error(), host))
+	}
+	translations[host] = trans
+}
+
+func init() {
+	addTranslation(syscall.EEXIST, tcpip.ErrDuplicateAddress)
+	addTranslation(syscall.ENETUNREACH, tcpip.ErrNoRoute)
+	addTranslation(syscall.EINVAL, tcpip.ErrInvalidEndpointState)
+	addTranslation(syscall.EALREADY, tcpip.ErrAlreadyConnecting)
+	addTranslation(syscall.EISCONN, tcpip.ErrAlreadyConnected)
+	addTranslation(syscall.EADDRINUSE, tcpip.ErrPortInUse)
+	addTranslation(syscall.EADDRNOTAVAIL, tcpip.ErrBadLocalAddress)
+	addTranslation(syscall.EPIPE, tcpip.ErrClosedForSend)
+	addTranslation(syscall.EWOULDBLOCK, tcpip.ErrWouldBlock)
+	addTranslation(syscall.ECONNREFUSED, tcpip.ErrConnectionRefused)
+	addTranslation(syscall.ETIMEDOUT, tcpip.ErrTimeout)
+	addTranslation(syscall.EINPROGRESS, tcpip.ErrConnectStarted)
+	addTranslation(syscall.EDESTADDRREQ, tcpip.ErrDestinationRequired)
+	addTranslation(syscall.ENOTSUP, tcpip.ErrNotSupported)
+	addTranslation(syscall.ENOTTY, tcpip.ErrQueueSizeNotSupported)
+	addTranslation(syscall.ENOTCONN, tcpip.ErrNotConnected)
+	addTranslation(syscall.ECONNRESET, tcpip.ErrConnectionReset)
+	addTranslation(syscall.ECONNABORTED, tcpip.ErrConnectionAborted)
+	addTranslation(syscall.EMSGSIZE, tcpip.ErrMessageTooLong)
+	addTranslation(syscall.ENOBUFS, tcpip.ErrNoBufferSpace)
 }
