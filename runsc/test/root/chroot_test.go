@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package root is used for tests that requires sysadmin privileges run. First,
-// follow the setup instruction in runsc/test/README.md. To run these test:
+// follow the setup instruction in runsc/test/README.md. To run these tests:
 //
 //     bazel build //runsc/test/root:root_test
 //     root_test=$(find -L ./bazel-bin/ -executable -type f -name root_test | grep __main__)

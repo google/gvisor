@@ -14,6 +14,7 @@ go_test(
     srcs = [
         "cgroup_test.go",
         "chroot_test.go",
+        "crictl_test.go",
     ],
     embed = [":root"],
     tags = [
@@ -24,6 +25,7 @@ go_test(
     ],
     deps = [
         "//runsc/specutils",
+        "//runsc/test/root/testdata",
         "//runsc/test/testutil",
         "@com_github_syndtr_gocapability//capability:go_default_library",
     ],

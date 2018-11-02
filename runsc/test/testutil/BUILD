@@ -5,6 +5,7 @@ package(licenses = ["notice"])  # Apache 2.0
 go_library(
     name = "testutil",
     srcs = [
+        "crictl.go",
         "docker.go",
         "testutil.go",
         "testutil_race.go",

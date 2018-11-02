@@ -80,7 +80,7 @@ installCrictl() (
   chmod +x ${shim_path}
   sudo -n -E mv ${shim_path} /usr/local/bin
 
-  # Configure containerd.
+  # Configure containerd-shim.
   local shim_config_path=/etc/containerd
   local shim_config_tmp_path=/tmp/gvisor-containerd-shim.toml
   sudo -n -E mkdir -p ${shim_config_path}
@@ -89,11 +89,14 @@ installCrictl() (
 
     [runsc_config]
       debug = "true"
-      debug-log = "/tmp/runsc-log/"
+      debug-log = "/tmp/runsc-logs/"
       strace = "true"
       file-access = "shared"
 EOF
   sudo mv ${shim_config_tmp_path} ${shim_config_path}
+
+  # Configure CNI.
+  sudo -n -E env PATH=${PATH} ${GOPATH}/src/github.com/containerd/containerd/script/setup/install-cni
 )
 
 # Install containerd and crictl.
@@ -128,7 +131,7 @@ if [[ ${exit_code} -eq 0 ]]; then
     echo "root_test executable not found"
     exit 1
   fi
-  sudo -n -E RUNSC_RUNTIME=${runtime} ${root_test}
+  sudo -n -E RUNSC_RUNTIME=${runtime} RUNSC_EXEC=/tmp/${runtime}/runsc ${root_test}
   exit_code=${?}
 fi
 

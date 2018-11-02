@@ -72,7 +72,7 @@ func FindFile(path string) (string, error) {
 	}
 
 	// The test root is demarcated by a path element called "__main__". Search for
-	// it backwards from the in the working directory.
+	// it backwards from the working directory.
 	root := wd
 	for {
 		dir, name := filepath.Split(root)
@@ -242,7 +242,7 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 
 // RunAsRoot ensures the test runs with CAP_SYS_ADMIN and CAP_SYS_CHROOT. If
 // needed it will create a new user namespace and re-execute the test as root
-// inside of the namespace. This functionr returns when it's running as root. If
+// inside of the namespace. This function returns when it's running as root. If
 // it needs to create another process, it will exit from there and not return.
 func RunAsRoot() {
 	if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
@@ -288,7 +288,7 @@ func RunAsRoot() {
 	os.Exit(0)
 }
 
-// StartReaper starts a gorouting that will reap all children processes created
+// StartReaper starts a goroutine that will reap all children processes created
 // by the tests. Caller must call the returned function to stop it.
 func StartReaper() func() {
 	ch := make(chan os.Signal, 1)
@@ -355,4 +355,33 @@ func WaitUntilRead(r io.Reader, want string, split bufio.SplitFunc, timeout time
 	case <-doneCh:
 		return nil
 	}
+}
+
+// KillCommand kills the process running cmd unless it hasn't been started. It
+// returns an error if it cannot kill the process unless the reason is that the
+// process has already exited.
+func KillCommand(cmd *exec.Cmd) error {
+	if cmd.Process == nil {
+		return nil
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		if !strings.Contains(err.Error(), "process already finished") {
+			return fmt.Errorf("failed to kill process %v: %v", cmd, err)
+		}
+	}
+	return nil
+}
+
+// WriteTmpFile writes text to a temporary file, closes the file, and returns
+// the name of the file.
+func WriteTmpFile(pattern, text string) (string, error) {
+	file, err := ioutil.TempFile(TmpDir(), pattern)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if _, err := file.Write([]byte(text)); err != nil {
+		return "", err
+	}
+	return file.Name(), nil
 }
