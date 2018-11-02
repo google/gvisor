@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -86,6 +87,16 @@ type ExecArgs struct {
 
 	// ContainerID is the container for the process being executed.
 	ContainerID string
+}
+
+// String prints the arguments as a string.
+func (args ExecArgs) String() string {
+	a := make([]string, len(args.Argv))
+	copy(a, args.Argv)
+	if args.Filename != "" {
+		a[0] = args.Filename
+	}
+	return strings.Join(a, " ")
 }
 
 // Exec runs a new task.

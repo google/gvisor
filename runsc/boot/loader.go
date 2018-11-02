@@ -618,7 +618,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	ep, ok := l.processes[rootKey]
 	l.mu.Unlock()
 	if !ok {
-		return 0, fmt.Errorf("cannot exec in container %q: no such container", args.ContainerID)
+		return 0, fmt.Errorf("no such container: %q", args.ContainerID)
 	}
 	ep.tg.Leader().WithMuLocked(func(t *kernel.Task) {
 		args.Root = t.FSContext().RootDirectory()
@@ -631,7 +631,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	proc := control.Proc{Kernel: l.k}
 	tg, tgid, ttyFile, err := control.ExecAsync(&proc, args)
 	if err != nil {
-		return 0, fmt.Errorf("error executing: %+v: %v", args, err)
+		return 0, err
 	}
 
 	// Insert the process into processes so that we can wait on it

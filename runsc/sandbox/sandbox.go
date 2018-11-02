@@ -229,7 +229,7 @@ func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
 	// Send a message to the sandbox control server to start the container.
 	var pid int32
 	if err := conn.Call(boot.ContainerExecuteAsync, args, &pid); err != nil {
-		return 0, fmt.Errorf("error executing in sandbox: %v", err)
+		return 0, fmt.Errorf("error executing command %q in sandbox: %v", args, err)
 	}
 	return pid, nil
 }
