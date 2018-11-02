@@ -38,17 +38,18 @@ var (
 	// Docker, and thus should not be changed.
 	rootDir     = flag.String("root", "", "root directory for storage of container state")
 	logFilename = flag.String("log", "", "file path where internal debug information is written, default is stdout")
-	logFormat   = flag.String("log-format", "text", "log format: text (default) or json")
+	logFormat   = flag.String("log-format", "text", "log format: text (default), json, or json-k8s")
 	debug       = flag.Bool("debug", false, "enable debug logging")
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	debugLog   = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-	logPackets = flag.Bool("log-packets", false, "enable network packet logging")
-	logFD      = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	debugLog       = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	logPackets     = flag.Bool("log-packets", false, "enable network packet logging")
+	logFD          = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD     = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	debugLogFormat = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s")
 
 	// Debugging flags: strace related
 	strace         = flag.Bool("strace", false, "enable strace")
@@ -133,6 +134,7 @@ func main() {
 		LogFilename:    *logFilename,
 		LogFormat:      *logFormat,
 		DebugLog:       *debugLog,
+		DebugLogFormat: *debugLogFormat,
 		FileAccess:     fsAccess,
 		Overlay:        *overlay,
 		Network:        netType,
@@ -166,15 +168,7 @@ func main() {
 		logFile = f
 	}
 
-	var e log.Emitter
-	switch *logFormat {
-	case "text":
-		e = log.GoogleEmitter{&log.Writer{Next: logFile}}
-	case "json":
-		e = log.JSONEmitter{log.Writer{Next: logFile}}
-	default:
-		cmd.Fatalf("invalid log format %q, must be 'json' or 'text'", *logFormat)
-	}
+	e := newEmitter(*logFormat, logFile)
 
 	subcommand := flag.CommandLine.Arg(0)
 	if *debugLogFD > -1 {
@@ -195,13 +189,13 @@ func main() {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
-		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
+		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
 	} else if *debugLog != "" {
 		f, err := specutils.DebugLogFile(*debugLog, subcommand)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}
-		e = log.MultiEmitter{e, log.GoogleEmitter{&log.Writer{Next: f}}}
+		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
 	}
 
 	log.SetTarget(e)
@@ -234,6 +228,19 @@ func main() {
 	// Return an error that is unlikely to be used by the application.
 	log.Warningf("Failure to execute command, err: %v", subcmdCode)
 	os.Exit(128)
+}
+
+func newEmitter(format string, logFile io.Writer) log.Emitter {
+	switch format {
+	case "text":
+		return &log.GoogleEmitter{&log.Writer{Next: logFile}}
+	case "json":
+		return &log.JSONEmitter{log.Writer{Next: logFile}}
+	case "json-k8s":
+		return &log.K8sJSONEmitter{log.Writer{Next: logFile}}
+	}
+	cmd.Fatalf("invalid log format %q, must be 'text', 'json', or 'json-k8s'", format)
+	panic("unreachable")
 }
 
 func init() {

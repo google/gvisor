@@ -66,7 +66,7 @@ func newCompatEmitter(logFD int) (*compatEmitter, error) {
 
 	if logFD > 0 {
 		f := os.NewFile(uintptr(logFD), "user log file")
-		target := log.MultiEmitter{c.sink, log.GoogleEmitter{&log.Writer{Next: f}}}
+		target := log.MultiEmitter{c.sink, log.K8sJSONEmitter{log.Writer{Next: f}}}
 		c.sink = &log.BasicLogger{Level: log.Info, Emitter: target}
 	}
 	return c, nil

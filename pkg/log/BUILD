@@ -8,6 +8,7 @@ go_library(
         "glog.go",
         "glog_unsafe.go",
         "json.go",
+        "json_k8s.go",
         "log.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/log",

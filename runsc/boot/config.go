@@ -157,11 +157,14 @@ type Config struct {
 	// LogFilename is the filename to log to, if not empty.
 	LogFilename string
 
-	// LogFormat is the log format, "text" or "json".
+	// LogFormat is the log format.
 	LogFormat string
 
 	// DebugLog is the path to log debug information to, if not empty.
 	DebugLog string
+
+	// DebugLogFormat is the log format for debug.
+	DebugLogFormat string
 
 	// FileAccess indicates how the filesystem is accessed.
 	FileAccess FileAccessType
@@ -214,6 +217,7 @@ func (c *Config) ToFlags() []string {
 		"--log=" + c.LogFilename,
 		"--log-format=" + c.LogFormat,
 		"--debug-log=" + c.DebugLog,
+		"--debug-log-format=" + c.DebugLogFormat,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
 		"--network=" + c.Network.String(),
