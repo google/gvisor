@@ -99,7 +99,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		panic("unreachable")
 	}
 
-	spec, err := specutils.ReadSpec(g.bundleDir)
+	specFile, err := specutils.OpenCleanSpec(g.bundleDir)
+	if err != nil {
+		Fatalf("error opening spec: %v", err)
+	}
+	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile)
+	specFile.Close()
 	if err != nil {
 		Fatalf("error reading spec: %v", err)
 	}
@@ -121,10 +126,14 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	// Start with root mount, then add any other additional mount as needed.
 	ats := make([]p9.Attacher, 0, len(spec.Mounts)+1)
-	ats = append(ats, fsgofer.NewAttachPoint("/", fsgofer.Config{
+	ap, err := fsgofer.NewAttachPoint("/", fsgofer.Config{
 		ROMount:      spec.Root.Readonly,
 		PanicOnWrite: g.panicOnWrite,
-	}))
+	})
+	if err != nil {
+		Fatalf("Error creating attach point: %v", err)
+	}
+	ats = append(ats, ap)
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], spec.Root.Readonly)
 
 	mountIdx := 1 // first one is the root
@@ -134,7 +143,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 				ROMount:      isReadonlyMount(m.Options),
 				PanicOnWrite: g.panicOnWrite,
 			}
-			ats = append(ats, fsgofer.NewAttachPoint(m.Destination, cfg))
+			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
+			if err != nil {
+				Fatalf("Error creating attach point: %v", err)
+			}
+			ats = append(ats, ap)
 
 			if mountIdx >= len(g.ioFDs) {
 				Fatalf("No FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)

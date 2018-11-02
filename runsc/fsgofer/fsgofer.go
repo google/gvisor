@@ -26,6 +26,7 @@ import (
 	"math"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -99,24 +100,28 @@ type attachPoint struct {
 }
 
 // NewAttachPoint creates a new attacher that gives local file
-// access to all files under 'prefix'.
-func NewAttachPoint(prefix string, c Config) p9.Attacher {
+// access to all files under 'prefix'. 'prefix' must be an absolute path.
+func NewAttachPoint(prefix string, c Config) (p9.Attacher, error) {
+	// Sanity check the prefix.
+	if !filepath.IsAbs(prefix) {
+		return nil, fmt.Errorf("attach point prefix must be absolute %q", prefix)
+	}
 	return &attachPoint{
 		prefix:  prefix,
 		conf:    c,
 		devices: make(map[uint64]uint8),
-	}
+	}, nil
 }
 
 // Attach implements p9.Attacher.
 func (a *attachPoint) Attach() (p9.File, error) {
-	// Sanity check the prefix.
-	fi, err := os.Stat(a.prefix)
+	// dirFD (1st argument) is ignored because 'prefix' is always absolute.
+	stat, err := statAt(-1, a.prefix)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
 	mode := os.O_RDWR
-	if a.conf.ROMount || fi.IsDir() {
+	if a.conf.ROMount || stat.Mode&syscall.S_IFDIR != 0 {
 		mode = os.O_RDONLY
 	}
 
@@ -124,11 +129,6 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	f, err := os.OpenFile(a.prefix, mode|openFlags, 0)
 	if err != nil {
 		return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
-	}
-	stat, err := stat(int(f.Fd()))
-	if err != nil {
-		f.Close()
-		return nil, fmt.Errorf("failed to stat file %q, err: %v", a.prefix, err)
 	}
 
 	a.attachedMu.Lock()

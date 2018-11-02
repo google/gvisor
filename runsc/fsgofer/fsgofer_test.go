@@ -80,7 +80,10 @@ func runCustom(t *testing.T, types []fileType, confs []Config, test func(*testin
 			}
 			defer os.RemoveAll(path)
 
-			a := NewAttachPoint(path, c)
+			a, err := NewAttachPoint(path, c)
+			if err != nil {
+				t.Fatalf("NewAttachPoint failed: %v", err)
+			}
 			root, err := a.Attach()
 			if err != nil {
 				t.Fatalf("Attach failed, err: %v", err)
@@ -107,7 +110,10 @@ func setup(ft fileType) (string, string, error) {
 	}
 
 	// First attach with writable configuration to setup tree.
-	a := NewAttachPoint(path, Config{})
+	a, err := NewAttachPoint(path, Config{})
+	if err != nil {
+		return "", "", err
+	}
 	root, err := a.Attach()
 	if err != nil {
 		return "", "", fmt.Errorf("Attach failed, err: %v", err)
@@ -556,7 +562,10 @@ func TestAttachFile(t *testing.T) {
 		t.Fatalf("os.Create(%q) failed, err: %v", path, err)
 	}
 
-	a := NewAttachPoint(path, conf)
+	a, err := NewAttachPoint(path, conf)
+	if err != nil {
+		t.Fatalf("NewAttachPoint failed: %v", err)
+	}
 	root, err := a.Attach()
 	if err != nil {
 		t.Fatalf("Attach failed, err: %v", err)
@@ -595,7 +604,10 @@ func TestDoubleAttachError(t *testing.T) {
 		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
 	}
 	defer os.RemoveAll(root)
-	a := NewAttachPoint(root, conf)
+	a, err := NewAttachPoint(root, conf)
+	if err != nil {
+		t.Fatalf("NewAttachPoint failed: %v", err)
+	}
 
 	if _, err := a.Attach(); err != nil {
 		t.Fatalf("Attach failed: %v", err)

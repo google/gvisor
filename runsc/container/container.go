@@ -374,6 +374,9 @@ func (c *Container) Start(conf *boot.Config) error {
 			return fmt.Errorf("setup mounts: %v", err)
 		}
 		c.Spec.Mounts = cleanMounts
+		if err := specutils.WriteCleanSpec(c.BundleDir, c.Spec); err != nil {
+			return fmt.Errorf("writing clean spec: %v", err)
+		}
 
 		// Create the gofer process.
 		ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)

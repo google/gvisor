@@ -77,8 +77,11 @@ func startGofer(root string) (int, func(), error) {
 		syscall.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
+	at, err := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
+	if err != nil {
+		return 0, nil, err
+	}
 	go func() {
-		at := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
 		s := p9.NewServer(at)
 		if err := s.Handle(socket); err != nil {
 			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
