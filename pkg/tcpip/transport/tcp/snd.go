@@ -403,15 +403,36 @@ func (s *sender) sendData() {
 	// TODO: We currently don't merge multiple send buffers
 	// into one segment if they happen to fit. We should do that
 	// eventually.
-	var seg *segment
+	seg := s.writeNext
 	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
-	for seg = s.writeNext; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
+	for next := (*segment)(nil); seg != nil && s.outstanding < s.sndCwnd; seg = next {
+		next = seg.Next()
+
 		// We abuse the flags field to determine if we have already
 		// assigned a sequence number to this segment.
 		if seg.flags == 0 {
 			seg.sequenceNumber = s.sndNxt
 			seg.flags = flagAck | flagPsh
+			// Merge segments if allowed.
+			if seg.data.Size() != 0 {
+				available := int(seg.sequenceNumber.Size(end))
+				if available > limit {
+					available = limit
+				}
+
+				for next != nil && next.data.Size() != 0 {
+					if seg.data.Size()+next.data.Size() > available {
+						break
+					}
+
+					seg.data.Append(&next.data)
+
+					// Consume the segment that we just merged in.
+					s.writeList.Remove(next)
+					next = next.Next()
+				}
+			}
 		}
 
 		var segEnd seqnum.Value
@@ -442,6 +463,7 @@ func (s *sender) sendData() {
 				nSeg.data.TrimFront(available)
 				nSeg.sequenceNumber.UpdateForward(seqnum.Size(available))
 				s.writeList.InsertAfter(seg, nSeg)
+				next = nSeg
 				seg.data.CapLength(available)
 			}
 

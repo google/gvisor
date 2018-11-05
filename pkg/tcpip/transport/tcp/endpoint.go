@@ -243,6 +243,16 @@ type endpoint struct {
 	connectingAddress tcpip.Address
 }
 
+// StopWork halts packet processing. Only to be used in tests.
+func (e *endpoint) StopWork() {
+	e.workMu.Lock()
+}
+
+// ResumeWork resumes packet processing. Only to be used in tests.
+func (e *endpoint) ResumeWork() {
+	e.workMu.Unlock()
+}
+
 // keepalive is a synchronization wrapper used to appease stateify. See the
 // comment in endpoint, where it is used.
 //

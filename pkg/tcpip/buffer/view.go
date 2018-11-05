@@ -144,3 +144,9 @@ func (vv VectorisedView) ToView() View {
 func (vv VectorisedView) Views() []View {
 	return vv.views
 }
+
+// Append appends the views in a vectorised view to this vectorised view.
+func (vv *VectorisedView) Append(vv2 *VectorisedView) {
+	vv.views = append(vv.views, vv2.views...)
+	vv.size += vv2.size
+}

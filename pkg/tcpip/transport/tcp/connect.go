@@ -596,9 +596,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
 		length := uint16(hdr.UsedLength() + data.Size())
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
-		for _, v := range data.Views() {
-			xsum = header.Checksum(v, xsum)
-		}
+		xsum = header.ChecksumVV(data, xsum)
 
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
 	}

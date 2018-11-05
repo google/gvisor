@@ -1254,6 +1254,58 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	)
 }
 
+func TestSegmentMerging(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, nil)
+
+	// Prevent the endpoint from processing packets.
+	worker := c.EP.(interface {
+		StopWork()
+		ResumeWork()
+	})
+	worker.StopWork()
+
+	var allData []byte
+	for i, data := range [][]byte{{1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
+		allData = append(allData, data...)
+		view := buffer.NewViewFromBytes(data)
+		if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write #%d failed: %v", i+1, err)
+		}
+	}
+
+	// Let the endpoint process the segments that we just sent.
+	worker.ResumeWork()
+
+	// Check that data is received.
+	b := c.GetPacket()
+	checker.IPv4(t, b,
+		checker.PayloadLen(len(allData)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	if got := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(got, allData) {
+		t.Fatalf("got data = %v, want = %v", got, allData)
+	}
+
+	// Acknowledge the data.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  c.IRS.Add(1 + seqnum.Size(len(allData))),
+		RcvWnd:  30000,
+	})
+}
+
 func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 	payloadMultiplier := 10
 	dataLen := payloadMultiplier * maxPayload
