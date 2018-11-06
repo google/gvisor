@@ -321,6 +321,9 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 			return nil, err
 		}
 		c.Sandbox = sb.Sandbox
+		if err := c.Sandbox.CreateContainer(c.ID); err != nil {
+			return nil, err
+		}
 	}
 	c.changeStatus(Created)
 
@@ -383,7 +386,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		if err != nil {
 			return err
 		}
-		if err := c.Sandbox.Start(c.Spec, conf, c.ID, ioFiles); err != nil {
+		if err := c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles); err != nil {
 			return err
 		}
 		if err := c.Sandbox.AddGoferToCgroup(c.GoferPid); err != nil {

@@ -1625,6 +1625,70 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 	}
 }
 
+func TestDestroyNotStarted(t *testing.T) {
+	spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	// Create the container and check that it can be destroyed.
+	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	if err := c.Destroy(); err != nil {
+		t.Fatalf("deleting non-started container failed: %v", err)
+	}
+}
+
+// TestDestroyStarting attempts to force a race between start and destroy.
+func TestDestroyStarting(t *testing.T) {
+	for i := 0; i < 10; i++ {
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
+		conf := testutil.TestConfig()
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create the container and check that it can be destroyed.
+		id := testutil.UniqueContainerID()
+		c, err := Create(id, spec, conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+
+		// Container is not thread safe, so load another instance to run in
+		// concurrently.
+		startCont, err := Load(rootDir, id)
+		if err != nil {
+			t.Fatalf("error loading container: %v", err)
+		}
+		wg := sync.WaitGroup{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// Ignore failures, start can fail if destroy runs first.
+			startCont.Start(conf)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := c.Destroy(); err != nil {
+				t.Errorf("deleting non-started container failed: %v", err)
+			}
+		}()
+		wg.Wait()
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

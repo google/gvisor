@@ -102,6 +102,21 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	return s, nil
 }
 
+// CreateContainer creates a non-root container inside the sandbox.
+func (s *Sandbox) CreateContainer(cid string) error {
+	log.Debugf("Create non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
+	sandboxConn, err := s.sandboxConnect()
+	if err != nil {
+		return fmt.Errorf("couldn't connect to sandbox: %v", err)
+	}
+	defer sandboxConn.Close()
+
+	if err := sandboxConn.Call(boot.ContainerCreate, &cid, nil); err != nil {
+		return fmt.Errorf("creating non-root container %q: %v", cid, err)
+	}
+	return nil
+}
+
 // StartRoot starts running the root container process inside the sandbox.
 func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 	log.Debugf("Start root sandbox %q, PID: %d", s.ID, s.Pid)
@@ -125,13 +140,13 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 	return nil
 }
 
-// Start starts running a non-root container inside the sandbox.
-func (s *Sandbox) Start(spec *specs.Spec, conf *boot.Config, cid string, goferFiles []*os.File) error {
+// StartContainer starts running a non-root container inside the sandbox.
+func (s *Sandbox) StartContainer(spec *specs.Spec, conf *boot.Config, cid string, goferFiles []*os.File) error {
 	for _, f := range goferFiles {
 		defer f.Close()
 	}
 
-	log.Debugf("Start non-root container sandbox %q, PID: %d", s.ID, s.Pid)
+	log.Debugf("Start non-root container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid)
 	sandboxConn, err := s.sandboxConnect()
 	if err != nil {
 		return fmt.Errorf("couldn't connect to sandbox: %v", err)
@@ -208,9 +223,8 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 	}
 	defer conn.Close()
 
-	args := boot.ProcessesArgs{CID: cid}
 	var pl []*control.Process
-	if err := conn.Call(boot.ContainerProcesses, &args, &pl); err != nil {
+	if err := conn.Call(boot.ContainerProcesses, &cid, &pl); err != nil {
 		return nil, fmt.Errorf("error retrieving process data from sandbox: %v", err)
 	}
 	return pl, nil

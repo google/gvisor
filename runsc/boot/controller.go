@@ -37,6 +37,9 @@ const (
 	// ContainerCheckpoint checkpoints a container.
 	ContainerCheckpoint = "containerManager.Checkpoint"
 
+	// ContainerCreate creates a container.
+	ContainerCreate = "containerManager.Create"
+
 	// ContainerDestroy is used to stop a non-root container and free all
 	// associated resources in the sandbox.
 	ContainerDestroy = "containerManager.Destroy"
@@ -175,17 +178,16 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	return nil
 }
 
-// ProcessesArgs container arguments to Processes method.
-type ProcessesArgs struct {
-	// CID restricts the result to processes belonging to
-	// the given container. Empty means all.
-	CID string
+// Processes retrieves information about processes running in the sandbox.
+func (cm *containerManager) Processes(cid *string, out *[]*control.Process) error {
+	log.Debugf("containerManager.Processes: %q", *cid)
+	return control.Processes(cm.l.k, *cid, out)
 }
 
-// Processes retrieves information about processes running in the sandbox.
-func (cm *containerManager) Processes(args *ProcessesArgs, out *[]*control.Process) error {
-	log.Debugf("containerManager.Processes")
-	return control.Processes(cm.l.k, args.CID, out)
+// Create creates a container within a sandbox.
+func (cm *containerManager) Create(cid *string, _ *struct{}) error {
+	log.Debugf("containerManager.Create: %q", *cid)
+	return cm.l.createContainer(*cid)
 }
 
 // StartArgs contains arguments to the Start method.

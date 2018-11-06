@@ -612,3 +612,121 @@ func TestMultiContainerKillAll(t *testing.T) {
 		}
 	}
 }
+
+func TestMultiContainerDestroyNotStarted(t *testing.T) {
+	specs, ids := createSpecs(
+		[]string{"/bin/sleep", "100"},
+		[]string{"/bin/sleep", "100"})
+	conf := testutil.TestConfig()
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Create and start root container.
+	rootBundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[0], conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootBundleDir)
+
+	root, err := Create(ids[0], specs[0], conf, rootBundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating root container: %v", err)
+	}
+	defer root.Destroy()
+	if err := root.Start(conf); err != nil {
+		t.Fatalf("error starting root container: %v", err)
+	}
+
+	// Create and destroy sub-container.
+	bundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[1], conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	cont, err := Create(ids[1], specs[1], conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+
+	// Check that container can be destroyed.
+	if err := cont.Destroy(); err != nil {
+		t.Fatalf("deleting non-started container failed: %v", err)
+	}
+}
+
+// TestMultiContainerDestroyStarting attempts to force a race between start
+// and destroy.
+func TestMultiContainerDestroyStarting(t *testing.T) {
+	cmds := make([][]string, 10)
+	for i := range cmds {
+		cmds[i] = []string{"/bin/sleep", "100"}
+	}
+	specs, ids := createSpecs(cmds...)
+	conf := testutil.TestConfig()
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Create and start root container.
+	rootBundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[0], conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootBundleDir)
+
+	root, err := Create(ids[0], specs[0], conf, rootBundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating root container: %v", err)
+	}
+	defer root.Destroy()
+	if err := root.Start(conf); err != nil {
+		t.Fatalf("error starting root container: %v", err)
+	}
+
+	wg := sync.WaitGroup{}
+	for i := range cmds {
+		if i == 0 {
+			continue // skip root container
+		}
+
+		bundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[i], conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+
+		cont, err := Create(ids[i], specs[i], conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+
+		// Container is not thread safe, so load another instance to run in
+		// concurrently.
+		startCont, err := Load(rootDir, ids[i])
+		if err != nil {
+			t.Fatalf("error loading container: %v", err)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			startCont.Start(conf) // ignore failures, start can fail if destroy runs first.
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := cont.Destroy(); err != nil {
+				t.Errorf("deleting non-started container failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+}
