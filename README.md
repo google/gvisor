@@ -255,7 +255,7 @@ gVisor currently requires x86\_64 Linux to build.
 Make sure the following dependencies are installed:
 
 *   [git][git]
-*   [Bazel][bazel]
+*   [Bazel][bazel] 0.18+
 *   [Python][python]
 *   [Docker version 17.09.0 or greater][docker]
 *   Gold linker (e.g. `binutils-gold` package on Ubuntu)
