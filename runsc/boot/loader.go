@@ -336,6 +336,7 @@ func New(args Args) (*Loader, error) {
 			// properly.
 			deliveryMode = DeliverToForegroundProcessGroup
 		}
+		log.Infof("Received external signal %d, mode: %v", sig, deliveryMode)
 		if err := l.signal(args.ID, 0, int32(sig), deliveryMode); err != nil {
 			log.Warningf("error sending signal %v to container %q: %v", sig, args.ID, err)
 		}

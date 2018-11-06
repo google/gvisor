@@ -445,6 +445,18 @@ const (
 	DeliverToForegroundProcessGroup
 )
 
+func (s SignalDeliveryMode) String() string {
+	switch s {
+	case DeliverToProcess:
+		return "Process"
+	case DeliverToAllProcesses:
+		return "All"
+	case DeliverToForegroundProcessGroup:
+		return "Foreground Process Group"
+	}
+	return fmt.Sprintf("unknown signal delivery mode: %d", s)
+}
+
 // SignalArgs are arguments to the Signal method.
 type SignalArgs struct {
 	// CID is the container ID.
