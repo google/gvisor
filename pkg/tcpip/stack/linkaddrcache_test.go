@@ -237,8 +237,8 @@ func TestCacheResolutionFailed(t *testing.T) {
 }
 
 func TestCacheResolutionTimeout(t *testing.T) {
-	resolverDelay := 50 * time.Millisecond
-	expiration := resolverDelay / 2
+	resolverDelay := 500 * time.Millisecond
+	expiration := resolverDelay / 10
 	c := newLinkAddrCache(expiration, 1*time.Millisecond, 3)
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
