@@ -169,7 +169,7 @@ type containerManager struct {
 
 // StartRoot will start the root container process.
 func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.StartRoot")
+	log.Debugf("containerManager.StartRoot %q", *cid)
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
@@ -239,6 +239,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 
 	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
+		log.Debugf("containerManager.Start failed %q: %+v", args.CID, args)
 		return err
 	}
 	log.Debugf("Container %q started", args.CID)
@@ -259,6 +260,7 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 	log.Debugf("containerManager.ExecuteAsync: %+v", args)
 	tgid, err := cm.l.executeAsync(args)
 	if err != nil {
+		log.Debugf("containerManager.ExecuteAsync failed: %+v: %v", args, err)
 		return err
 	}
 	*pid = int32(tgid)
@@ -277,6 +279,7 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 
 // Pause suspends a container.
 func (cm *containerManager) Pause(_, _ *struct{}) error {
+	log.Debugf("containerManager.Pause")
 	cm.l.k.Pause()
 	return nil
 }
@@ -398,6 +401,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 // Resume unpauses a container.
 func (cm *containerManager) Resume(_, _ *struct{}) error {
+	log.Debugf("containerManager.Resume")
 	cm.l.k.Unpause()
 	return nil
 }
@@ -405,7 +409,9 @@ func (cm *containerManager) Resume(_, _ *struct{}) error {
 // Wait waits for the init process in the given container.
 func (cm *containerManager) Wait(cid *string, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait")
-	return cm.l.waitContainer(*cid, waitStatus)
+	err := cm.l.waitContainer(*cid, waitStatus)
+	log.Debugf("containerManager.Wait returned, waitStatus: %v: %v", waitStatus, err)
+	return err
 }
 
 // WaitPIDArgs are arguments to the WaitPID method.
