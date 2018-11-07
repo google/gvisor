@@ -638,6 +638,19 @@ func setExecutablePath(ctx context.Context, mns *fs.MountNamespace, procArgs *ke
 // destroyContainerFS cleans up the filesystem by unmounting all mounts for the
 // given container and deleting the container root directory.
 func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error {
+	defer func() {
+		// Flushing dirent references triggers many async close
+		// operations. We must wait for those to complete before
+		// returning, otherwise the caller may kill the gofer before
+		// they complete, causing a cascade of failing RPCs.
+		//
+		// This must take place in the first deferred function, so that
+		// it runs after all the other deferred DecRef() calls in this
+		// function.
+		log.Infof("Waiting for async filesystem operations to complete")
+		fs.AsyncBarrier()
+	}()
+
 	// First get a reference to the container root directory.
 	mns := k.RootMountNamespace()
 	mnsRoot := mns.Root()
@@ -686,13 +699,6 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 	if err := containersDirDirent.RemoveDirectory(ctx, mnsRoot, cid); err != nil {
 		return fmt.Errorf("error removing directory %q: %v", containerRoot, err)
 	}
-
-	// Flushing dirent references triggers many async close operations. We
-	// must wait for those to complete before returning, otherwise the
-	// caller may kill the gofer before they complete, causing a cascade of
-	// failing RPCs.
-	log.Infof("Waiting for async filesystem operations to complete")
-	fs.AsyncBarrier()
 
 	return nil
 }
