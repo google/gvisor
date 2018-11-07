@@ -212,6 +212,7 @@ func (cc *Crictl) run(args ...string) (string, error) {
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			errCh <- fmt.Errorf("error: \"%v\", output: %s", err, string(output))
+			return
 		}
 		done <- string(output)
 	}()
