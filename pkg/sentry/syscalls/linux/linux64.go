@@ -32,15 +32,19 @@ import (
 const _AUDIT_ARCH_X86_64 = 0xc000003e
 
 // AMD64 is a table of Linux amd64 syscall API with the corresponding syscall
-// numbers from Linux 3.11. The entries commented out are those syscalls we
+// numbers from Linux 4.4. The entries commented out are those syscalls we
 // don't currently support.
 var AMD64 = &kernel.SyscallTable{
 	OS:   abi.Linux,
 	Arch: arch.AMD64,
 	Version: kernel.Version{
+		// Version 4.4 is chosen as a stable, longterm version of Linux, which
+		// guides the interface provided by this syscall table. The build
+		// version is that for a clean build with default kernel config, at 5
+		// minutes after v4.4 was tagged.
 		Sysname: "Linux",
-		Release: "3.11.10",
-		Version: "#1 SMP Fri Nov 29 10:47:50 PST 2013",
+		Release: "4.4",
+		Version: "#1 SMP Sun Jan 10 15:06:54 PST 2016",
 	},
 	AuditNumber: _AUDIT_ARCH_X86_64,
 	Table: map[uintptr]kernel.SyscallFn{
@@ -358,9 +362,18 @@ var AMD64 = &kernel.SyscallTable{
 		//     311: ProcessVmWritev, TODO may require cap_sys_ptrace
 		312: syscalls.CapError(linux.CAP_SYS_PTRACE), // Kcmp, requires cap_sys_ptrace
 		313: syscalls.CapError(linux.CAP_SYS_MODULE), // FinitModule, requires cap_sys_module
-		// "Backports."
+		//     314: SchedSetattr, TODO, we have no scheduler
+		//     315: SchedGetattr, TODO, we have no scheduler
+		//     316: Renameat2, TODO
 		317: Seccomp,
 		318: GetRandom,
+		//     319: MemfdCreate, TODO
+		320: syscalls.CapError(linux.CAP_SYS_BOOT),  // KexecFileLoad, infeasible to support
+		321: syscalls.CapError(linux.CAP_SYS_ADMIN), // Bpf, requires cap_sys_admin for all commands
+		//     322: Execveat, TODO
+		//     323: Userfaultfd, TODO
+		//     324: Membarrier, TODO
+		325: syscalls.Error(nil), // Mlock2, TODO
 	},
 
 	Emulate: map[usermem.Addr]uintptr{

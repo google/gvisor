@@ -223,7 +223,7 @@ Number of seconds idle           | Always zero
 
 ```bash
 $ cat /proc/version
-Linux version 3.11.10 #1 SMP Fri Nov 29 10:47:50 PST 2013
+Linux version 4.4 #1 SMP Sun Jan 10 15:06:54 PST 2016
 ```
 
 ## Process-specific data

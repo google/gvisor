@@ -159,8 +159,8 @@ func clone(t *kernel.Task, flags int, stack usermem.Addr, parentTID usermem.Addr
 }
 
 // Clone implements linux syscall clone(2).
-// sys_clone has so many flavors. We implement the default one in the
-// current linux 3.11 x86_64:
+// sys_clone has so many flavors. We implement the default one in linux 3.11
+// x86_64:
 //    sys_clone(clone_flags, newsp, parent_tidptr, child_tidptr, tls_val)
 func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := int(args[0].Int())

@@ -76,7 +76,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"gid_map": newGIDMap(t, msrc),
 		// TODO: This is incorrect for /proc/[pid]/task/[tid]/io, i.e. if
 		// showSubtasks is false:
-		// http://lxr.free-electrons.com/source/fs/proc/base.c?v=3.11#L2980
+		// https://elixir.bootlin.com/linux/v4.4/source/fs/proc/base.c#L3154
 		"io":        newIO(t, msrc),
 		"maps":      newMaps(t, msrc),
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),

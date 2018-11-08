@@ -439,10 +439,7 @@ func (i *Inode) CheckOwnership(ctx context.Context) bool {
 // CheckCapability checks whether `ctx` has capability `cp` with respect to
 // operations on this Inode.
 //
-// Compare Linux's kernel/capability.c:capable_wrt_inode_uidgid(). Note that
-// this function didn't exist in Linux 3.11.10, but was added by upstream
-// 23adbe12ef7d "fs,userns: Change inode_capable to capable_wrt_inode_uidgid"
-// to fix local privilege escalation CVE-2014-4014.
+// Compare Linux's kernel/capability.c:capable_wrt_inode_uidgid().
 func (i *Inode) CheckCapability(ctx context.Context, cp linux.Capability) bool {
 	uattr, err := i.UnstableAttr(ctx)
 	if err != nil {

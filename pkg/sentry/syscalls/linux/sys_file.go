@@ -1140,9 +1140,6 @@ func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
 	// always enabled, and thus imposes the following restrictions on hard
 	// links.
 
-	// Technically Linux is more restrictive in 3.11.10 (requires CAP_FOWNER in
-	// root user namespace); this is from the later f2ca379642d7 "namei: permit
-	// linking with CAP_FOWNER in userns".
 	if target.CheckOwnership(t) {
 		// fs/namei.c:may_linkat: "Source inode owner (or CAP_FOWNER)
 		// can hardlink all they like."

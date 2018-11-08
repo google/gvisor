@@ -49,10 +49,7 @@ type UserNamespace struct {
 	gidMapFromParent idMapSet
 	gidMapToParent   idMapSet
 
-	// TODO: Consider supporting disabling setgroups(2), which "was
-	// added in Linux 3.19, but was backported to many earlier stable kernel
-	// series, because it addresses a security issue" - user_namespaces(7). (It
-	// was not backported to 3.11.10, which we are currently imitating.)
+	// TODO: Support disabling setgroups(2).
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a

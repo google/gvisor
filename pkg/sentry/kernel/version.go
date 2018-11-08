@@ -19,7 +19,7 @@ type Version struct {
 	// Operating system name (e.g. "Linux").
 	Sysname string
 
-	// Operating system release (e.g. "3.11.10-amd64").
+	// Operating system release (e.g. "4.4-amd64").
 	Release string
 
 	// Operating system version. On Linux this takes the shape

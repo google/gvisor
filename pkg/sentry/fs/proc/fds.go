@@ -173,11 +173,6 @@ func (f *fdDir) Check(ctx context.Context, inode *fs.Inode, req fs.PermMask) boo
 	if t := kernel.TaskFromContext(ctx); t != nil {
 		// Allow access if the task trying to access it is in the
 		// thread group corresponding to this directory.
-		//
-		// N.B. Technically, in Linux 3.11, this compares what would be
-		// the equivalent of task pointers. However, this was fixed
-		// later in 54708d2858e7 ("proc: actually make
-		// proc_fd_permission() thread-friendly").
 		if f.t.ThreadGroup() == t.ThreadGroup() {
 			return true
 		}
