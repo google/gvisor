@@ -92,6 +92,17 @@ func (cc *Crictl) Stop(contID string) error {
 	return err
 }
 
+// Exec execs a program inside a container. It corresponds to `crictl exec`.
+func (cc *Crictl) Exec(contID string, args ...string) (string, error) {
+	a := []string{"exec", contID}
+	a = append(a, args...)
+	output, err := cc.run(a...)
+	if err != nil {
+		return "", fmt.Errorf("exec failed: %v", err)
+	}
+	return output, nil
+}
+
 // Rm removes a container. It corresponds to `crictl rm`.
 func (cc *Crictl) Rm(contID string) error {
 	_, err := cc.run("rm", contID)

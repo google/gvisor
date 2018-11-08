@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,43 @@ func TestMountPaths(t *testing.T) {
 	// Look for the directory available at /test.
 	if err = httpGet(crictl, podID, "test"); err != nil {
 		t.Fatalf("failed to get page: %v", err)
+	}
+
+	// Stop everything.
+	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestMountOverSymlinks(t *testing.T) {
+	// Setup containerd and crictl.
+	crictl, cleanup, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+	podID, contID, err := crictl.StartPodAndContainer("k8s.gcr.io/busybox", testdata.Sandbox, testdata.MountOverSymlink)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := crictl.Exec(contID, "readlink", "/etc/resolv.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/tmp/resolv.conf"; !strings.Contains(string(out), want) {
+		t.Fatalf("/etc/resolv.conf is not pointing to %q: %q", want, string(out))
+	}
+
+	etc, err := crictl.Exec(contID, "cat", "/etc/resolv.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp, err := crictl.Exec(contID, "cat", "/tmp/resolv.conf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tmp != etc {
+		t.Fatalf("file content doesn't match:\n\t/etc/resolv.conf: %s\n\t/tmp/resolv.conf: %s", string(etc), string(tmp))
 	}
 
 	// Stop everything.

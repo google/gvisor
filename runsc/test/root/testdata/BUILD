@@ -5,6 +5,7 @@ package(licenses = ["notice"])  # Apache 2.0
 go_library(
     name = "testdata",
     srcs = [
+        "busybox.go",
         "containerd_config.go",
         "httpd.go",
         "httpd_mount_paths.go",
