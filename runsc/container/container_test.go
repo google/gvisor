@@ -1287,24 +1287,25 @@ func TestReadonlyMount(t *testing.T) {
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfigWithRoot(rootDir)
+
 	cids := []string{
 		"foo-" + testutil.UniqueContainerID(),
 		"bar-" + testutil.UniqueContainerID(),
 		"baz-" + testutil.UniqueContainerID(),
 	}
-
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
 	for _, cid := range cids {
 		spec := testutil.NewSpecWithArgs("sleep", "100")
-		conf := testutil.TestConfig()
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		bundleDir, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
 		}
-		defer os.RemoveAll(rootDir)
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.

@@ -63,6 +63,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 	if err != nil {
 		return nil, nil, fmt.Errorf("error creating root dir: %v", err)
 	}
+	conf.RootDir = rootDir
 
 	var containers []*Container
 	var bundles []string
@@ -76,7 +77,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		os.RemoveAll(rootDir)
 	}
 	for i, spec := range specs {
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, spec, conf)
+		bundleDir, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("error setting up container: %v", err)
@@ -617,16 +618,16 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 	specs, ids := createSpecs(
 		[]string{"/bin/sleep", "100"},
 		[]string{"/bin/sleep", "100"})
-	conf := testutil.TestConfig()
-
 	rootDir, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 
+	conf := testutil.TestConfigWithRoot(rootDir)
+
 	// Create and start root container.
-	rootBundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[0], conf)
+	rootBundleDir, err := testutil.SetupBundleDir(specs[0])
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -642,7 +643,7 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 	}
 
 	// Create and destroy sub-container.
-	bundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[1], conf)
+	bundleDir, err := testutil.SetupBundleDir(specs[1])
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -667,7 +668,6 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 		cmds[i] = []string{"/bin/sleep", "100"}
 	}
 	specs, ids := createSpecs(cmds...)
-	conf := testutil.TestConfig()
 
 	rootDir, err := testutil.SetupRootDir()
 	if err != nil {
@@ -675,8 +675,10 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
+	conf := testutil.TestConfigWithRoot(rootDir)
+
 	// Create and start root container.
-	rootBundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[0], conf)
+	rootBundleDir, err := testutil.SetupBundleDir(specs[0])
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
@@ -697,7 +699,7 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 			continue // skip root container
 		}
 
-		bundleDir, err := testutil.SetupContainerInRoot(rootDir, specs[i], conf)
+		bundleDir, err := testutil.SetupBundleDir(specs[i])
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
 		}

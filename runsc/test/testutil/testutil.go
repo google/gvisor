@@ -104,7 +104,8 @@ func FindFile(path string) (string, error) {
 	return matches[0], nil
 }
 
-// TestConfig return the default configuration to use in tests.
+// TestConfig returns the default configuration to use in tests. Note that
+// 'RootDir' must be set by caller if required.
 func TestConfig() *boot.Config {
 	return &boot.Config{
 		Debug:      true,
@@ -115,6 +116,13 @@ func TestConfig() *boot.Config {
 		FileAccess: boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 	}
+}
+
+// TestConfigWithRoot returns the default configuration to use in tests.
+func TestConfigWithRoot(rootDir string) *boot.Config {
+	conf := TestConfig()
+	conf.RootDir = rootDir
+	return conf
 }
 
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
@@ -162,13 +170,13 @@ func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir str
 	if err != nil {
 		return "", "", err
 	}
-	bundleDir, err = SetupContainerInRoot(rootDir, spec, conf)
+	conf.RootDir = rootDir
+	bundleDir, err = SetupBundleDir(spec)
 	return rootDir, bundleDir, err
 }
 
-// SetupContainerInRoot creates a bundle for the container, generates a test
-// config, and writes the spec to config.json in the bundle dir.
-func SetupContainerInRoot(rootDir string, spec *specs.Spec, conf *boot.Config) (bundleDir string, err error) {
+// SetupBundleDir creates a bundle dir and writes the spec to config.json.
+func SetupBundleDir(spec *specs.Spec) (bundleDir string, err error) {
 	bundleDir, err = ioutil.TempDir(TmpDir(), "bundle")
 	if err != nil {
 		return "", fmt.Errorf("error creating bundle dir: %v", err)
@@ -177,8 +185,6 @@ func SetupContainerInRoot(rootDir string, spec *specs.Spec, conf *boot.Config) (
 	if err = writeSpec(bundleDir, spec); err != nil {
 		return "", fmt.Errorf("error writing spec: %v", err)
 	}
-
-	conf.RootDir = rootDir
 	return bundleDir, nil
 }
 
