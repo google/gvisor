@@ -732,3 +732,94 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestMultiContainerGoferStop tests that IO operations continue to work after
+// containers have been stopped and gofers killed.
+func TestMultiContainerGoferStop(t *testing.T) {
+	app, err := testutil.FindFile("runsc/container/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// Setup containers. Root container just reaps children, while the others
+	// perform some IOs. Children are executed in 3 batches of 10. Within the
+	// batch there is overlap between containers starting and being destroyed. In
+	// between batches all containers stop before starting another batch.
+	cmds := [][]string{{app, "reaper"}}
+	const batchSize = 10
+	for i := 0; i < 3*batchSize; i++ {
+		cmds = append(cmds, []string{"sh", "-c", "find /bin -type f | head | xargs -I SRC cp SRC /tmp/output"})
+	}
+	allSpecs, allIDs := createSpecs(cmds...)
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	// Split up the specs and IDs.
+	rootSpec := allSpecs[0]
+	rootID := allIDs[0]
+	childrenSpecs := allSpecs[1:]
+	childrenIDs := allIDs[1:]
+
+	bundleDir, err := testutil.SetupBundleDir(rootSpec)
+	if err != nil {
+		t.Fatalf("error setting up bundle dir: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
+	// Start root container.
+	conf := testutil.TestConfigWithRoot(rootDir)
+	root, err := Create(rootID, rootSpec, conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("error creating root container: %v", err)
+	}
+	if err := root.Start(conf); err != nil {
+		t.Fatalf("error starting root container: %v", err)
+	}
+	defer root.Destroy()
+
+	// Run batches. Each batch starts containers in parallel, then wait and
+	// destroy them before starting another batch.
+	for i := 0; i < len(childrenSpecs); i += batchSize {
+		t.Logf("Starting batch from %d to %d", i, i+batchSize)
+		specs := childrenSpecs[i : i+batchSize]
+		ids := childrenIDs[i : i+batchSize]
+
+		var children []*Container
+		for j, spec := range specs {
+			bundleDir, err := testutil.SetupBundleDir(spec)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer os.RemoveAll(bundleDir)
+
+			child, err := Create(ids[j], spec, conf, bundleDir, "", "", "")
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			children = append(children, child)
+
+			if err := child.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Give a small gap between containers.
+			time.Sleep(50 * time.Millisecond)
+		}
+		for _, child := range children {
+			ws, err := child.Wait()
+			if err != nil {
+				t.Fatalf("waiting for container: %v", err)
+			}
+			if !ws.Exited() || ws.ExitStatus() != 0 {
+				t.Fatalf("container failed, waitStatus: %x (%d)", ws, ws.ExitStatus())
+			}
+			if err := child.Destroy(); err != nil {
+				t.Fatalf("error destroying container: %v", err)
+			}
+		}
+	}
+}
