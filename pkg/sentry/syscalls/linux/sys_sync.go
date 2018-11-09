@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -71,5 +72,67 @@ func Fdatasync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	defer file.DecRef()
 
 	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncData)
+	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+}
+
+// SyncFileRange implements linux syscall sync_file_rage(2)
+func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	var err error
+
+	offset := args[1].Int64()
+	nbytes := args[2].Int64()
+	uflags := args[3].Uint()
+
+	if offset < 0 || offset+nbytes < offset {
+		return 0, nil, syserror.EINVAL
+	}
+
+	if uflags&^(linux.SYNC_FILE_RANGE_WAIT_BEFORE|
+		linux.SYNC_FILE_RANGE_WRITE|
+		linux.SYNC_FILE_RANGE_WAIT_AFTER) != 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	if nbytes == 0 {
+		nbytes = fs.FileMaxOffset
+	}
+
+	fd := kdefs.FD(args[0].Int())
+	file := t.FDMap().GetFile(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	// SYNC_FILE_RANGE_WAIT_BEFORE waits upon write-out of all pages in the
+	// specified range that have already been submitted to the device
+	// driver for write-out before performing any write.
+	if uflags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
+		uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
+		t.Kernel().EmitUnimplementedEvent(t)
+		return 0, nil, syserror.ENOSYS
+	}
+
+	// SYNC_FILE_RANGE_WRITE initiates write-out of all dirty pages in the
+	// specified range which are not presently submitted write-out.
+	//
+	// It looks impossible to implement this functionality without a
+	// massive rework of the vfs subsystem. file.Fsync() take a file lock
+	// for the entire operation, so even if it is running in a go routing,
+	// it blocks other file operations instead of flushing data in the
+	// background.
+	//
+	// It should be safe to skipped this flag while nobody uses
+	// SYNC_FILE_RANGE_WAIT_BEFORE.
+
+	// SYNC_FILE_RANGE_WAIT_AFTER waits upon write-out of all pages in the
+	// range after performing any write.
+	//
+	// In Linux, sync_file_range() doesn't writes out the  file's
+	// meta-data, but fdatasync() does if a file size is changed.
+	if uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER != 0 {
+		err = file.Fsync(t, offset, fs.FileMaxOffset, fs.SyncData)
+	}
+
 	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 }

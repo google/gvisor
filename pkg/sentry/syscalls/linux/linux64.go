@@ -325,7 +325,7 @@ var AMD64 = &kernel.SyscallTable{
 		274: syscalls.Error(syscall.ENOSYS), // GetRobustList, obsolete
 		//     275: Splice, TODO
 		//     276: Tee, TODO
-		//     277: SyncFileRange, TODO
+		277: SyncFileRange,
 		//     278: Vmsplice, TODO
 		279: syscalls.CapError(linux.CAP_SYS_NICE), // MovePages, requires cap_sys_nice (mostly)
 		280: Utimensat,

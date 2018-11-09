@@ -73,3 +73,10 @@ type Statfs struct {
 	// Spare is unused.
 	Spare [4]uint64
 }
+
+// Sync_file_range flags, from include/uapi/linux/fs.h
+const (
+	SYNC_FILE_RANGE_WAIT_BEFORE = 1
+	SYNC_FILE_RANGE_WRITE       = 2
+	SYNC_FILE_RANGE_WAIT_AFTER  = 4
+)
