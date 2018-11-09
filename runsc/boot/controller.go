@@ -213,6 +213,12 @@ type StartArgs struct {
 func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Start: %+v", args)
 
+	defer func() {
+		for _, f := range args.FilePayload.Files {
+			f.Close()
+		}
+	}()
+
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")

@@ -515,7 +515,8 @@ func (l *Loader) createContainer(cid string) error {
 }
 
 // startContainer starts a child container. It returns the thread group ID of
-// the newly created process.
+// the newly created process. Caller owns 'files' and may close them after
+// this method returns.
 func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
@@ -553,7 +554,6 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
-		f.Close()
 		ioFDs = append(ioFDs, fd)
 	}
 
