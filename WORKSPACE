@@ -131,3 +131,9 @@ http_archive(
         "https://github.com/google/glog/archive/028d37889a1e80e8a07da1b8945ac706259e5fd8.tar.gz",
     ],
 )
+
+go_repository(
+    name = "com_github_google_btree",
+    importpath = "github.com/google/btree",
+    commit = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306",
+)

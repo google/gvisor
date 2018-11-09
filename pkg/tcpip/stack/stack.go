@@ -200,9 +200,17 @@ type TCPSenderState struct {
 
 // TCPSACKInfo holds TCP SACK related information for a given TCP endpoint.
 type TCPSACKInfo struct {
-	// Blocks is the list of SACK block currently received by the
-	// TCP endpoint.
+	// Blocks is the list of SACK Blocks that identify the out of order segments
+	// held by a given TCP endpoint.
 	Blocks []header.SACKBlock
+
+	// ReceivedBlocks are the SACK blocks received by this endpoint
+	// from the peer endpoint.
+	ReceivedBlocks []header.SACKBlock
+
+	// MaxSACKED is the highest sequence number that has been SACKED
+	// by the peer.
+	MaxSACKED seqnum.Value
 }
 
 // TCPEndpointState is a copy of the internal state of a TCP endpoint.

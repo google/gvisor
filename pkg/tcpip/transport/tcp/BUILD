@@ -28,6 +28,7 @@ go_library(
         "rcv.go",
         "reno.go",
         "sack.go",
+        "sack_scoreboard.go",
         "segment.go",
         "segment_heap.go",
         "segment_queue.go",
@@ -50,7 +51,16 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/tmutex",
         "//pkg/waiter",
+        "@com_github_google_btree//:go_default_library",
     ],
+)
+
+filegroup(
+    name = "autogen",
+    srcs = [
+        "tcp_segment_list.go",
+    ],
+    visibility = ["//:sandbox"],
 )
 
 go_test(
@@ -58,6 +68,7 @@ go_test(
     size = "small",
     srcs = [
         "dual_stack_test.go",
+        "sack_scoreboard_test.go",
         "tcp_sack_test.go",
         "tcp_test.go",
         "tcp_timestamp_test.go",
@@ -78,12 +89,4 @@ go_test(
         "//pkg/tcpip/transport/tcp/testing/context",
         "//pkg/waiter",
     ],
-)
-
-filegroup(
-    name = "autogen",
-    srcs = [
-        "tcp_segment_list.go",
-    ],
-    visibility = ["//:sandbox"],
 )
