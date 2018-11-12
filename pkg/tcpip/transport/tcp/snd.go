@@ -400,9 +400,6 @@ func (s *sender) sendData() {
 		}
 	}
 
-	// TODO: We currently don't merge multiple send buffers
-	// into one segment if they happen to fit. We should do that
-	// eventually.
 	seg := s.writeNext
 	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
