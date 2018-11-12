@@ -146,12 +146,6 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		return ex.execAndWait(waitStatus)
 	}
 
-	if ex.pidFile != "" {
-		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
-			Fatalf("error writing pid file: %v", err)
-		}
-	}
-
 	// Start the new process and get it pid.
 	pid, err := c.Execute(e)
 	if err != nil {
@@ -170,6 +164,15 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		pidStr := []byte(strconv.Itoa(int(pid)))
 		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
 			Fatalf("error writing internal pid file %q: %v", ex.internalPidFile, err)
+		}
+	}
+
+	// Generate the pid file after the internal pid file is generated, so that users
+	// can safely assume that the internal pid file is ready after `runsc exec -d`
+	// returns.
+	if ex.pidFile != "" {
+		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
+			Fatalf("error writing pid file: %v", err)
 		}
 	}
 
