@@ -13,6 +13,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/runsc/test/testutil",
     visibility = [
         "//runsc:__subpackages__",
+        "//third_party/golang/gvisor/test:__subpackages__",
     ],
     deps = [
         "//runsc/boot",
