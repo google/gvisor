@@ -216,6 +216,21 @@ func Capabilities(specCaps *specs.LinuxCapabilities) (*auth.TaskCapabilities, er
 	return &caps, nil
 }
 
+// AllCapabilities returns a LinuxCapabilities struct with all capabilities.
+func AllCapabilities() *specs.LinuxCapabilities {
+	var names []string
+	for n := range capFromName {
+		names = append(names, n)
+	}
+	return &specs.LinuxCapabilities{
+		Bounding:    names,
+		Effective:   names,
+		Inheritable: names,
+		Permitted:   names,
+		Ambient:     names,
+	}
+}
+
 var capFromName = map[string]linux.Capability{
 	"CAP_CHOWN":            linux.CAP_CHOWN,
 	"CAP_DAC_OVERRIDE":     linux.CAP_DAC_OVERRIDE,

@@ -139,6 +139,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 			Env: []string{
 				"PATH=" + os.Getenv("PATH"),
 			},
+			Capabilities: specutils.AllCapabilities(),
 		},
 		Mounts: []specs.Mount{
 			// Root is readonly, but many tests want to write to tmpdir.
