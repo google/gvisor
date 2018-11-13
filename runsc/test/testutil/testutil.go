@@ -151,6 +151,7 @@ func NewSpecWithArgs(args ...string) *specs.Spec {
 				Source:      TmpDir(),
 			},
 		},
+		Hostname: "runsc-test-" + strings.Join(args, "_"),
 	}
 }
 

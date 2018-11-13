@@ -258,7 +258,7 @@ func New(args Args) (*Loader, error) {
 		NetworkStack:                networkStack,
 		ApplicationCores:            uint(args.NumCPU),
 		Vdso:                        vdso,
-		RootUTSNamespace:            kernel.NewUTSNamespace(args.Spec.Hostname, "", creds.UserNamespace),
+		RootUTSNamespace:            kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
 		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
 		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 	}); err != nil {
