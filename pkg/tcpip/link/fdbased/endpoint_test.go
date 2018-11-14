@@ -85,8 +85,8 @@ func (c *context) cleanup() {
 	syscall.Close(c.fds[1])
 }
 
-func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remoteLinkAddr tcpip.LinkAddress, localLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	c.ch <- packetInfo{remoteLinkAddr, protocol, vv.ToView()}
+func (c *context) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+	c.ch <- packetInfo{remote, protocol, vv.ToView()}
 }
 
 func TestNoEthernetProperties(t *testing.T) {

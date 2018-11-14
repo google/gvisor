@@ -81,7 +81,7 @@ func (e *endpoint) WritePacket(_ *stack.Route, hdr buffer.Prependable, payload b
 	// Because we're immediately turning around and writing the packet back to the
 	// rx path, we intentionally don't preserve the remote and local link
 	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remoteLinkAddr */, "" /* localLinkAddr */, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv)
 
 	return nil
 }

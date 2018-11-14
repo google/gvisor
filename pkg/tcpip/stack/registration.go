@@ -196,7 +196,7 @@ type NetworkProtocol interface {
 type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol
 	// endpoint and hands the packet over for further processing.
-	DeliverNetworkPacket(linkEP LinkEndpoint, dstLinkAddr, srcLinkAddr tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
