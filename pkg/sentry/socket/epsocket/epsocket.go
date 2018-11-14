@@ -157,7 +157,13 @@ type SocketOperations struct {
 }
 
 // New creates a new endpoint socket.
-func New(t *kernel.Task, family int, skType transport.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) *fs.File {
+func New(t *kernel.Task, family int, skType transport.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) (*fs.File, *syserr.Error) {
+	if skType == transport.SockStream {
+		if err := endpoint.SetSockOpt(tcpip.DelayOption(1)); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+	}
+
 	dirent := socket.NewDirent(t, epsocketDevice)
 	defer dirent.DecRef()
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
@@ -165,7 +171,7 @@ func New(t *kernel.Task, family int, skType transport.SockType, queue *waiter.Qu
 		family:   family,
 		Endpoint: endpoint,
 		skType:   skType,
-	})
+	}), nil
 }
 
 var sockAddrInetSize = int(binary.Size(linux.SockAddrInet{}))
@@ -426,10 +432,10 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (tcpip.Endpoint, *wait
 // tcpip.Endpoint.
 func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
 	// Issue the accept request to get the new endpoint.
-	ep, wq, err := s.Endpoint.Accept()
-	if err != nil {
-		if err != tcpip.ErrWouldBlock || !blocking {
-			return 0, nil, 0, syserr.TranslateNetstackError(err)
+	ep, wq, terr := s.Endpoint.Accept()
+	if terr != nil {
+		if terr != tcpip.ErrWouldBlock || !blocking {
+			return 0, nil, 0, syserr.TranslateNetstackError(terr)
 		}
 
 		var err *syserr.Error
@@ -439,7 +445,10 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		}
 	}
 
-	ns := New(t, s.family, s.skType, wq, ep)
+	ns, err := New(t, s.family, s.skType, wq, ep)
+	if err != nil {
+		return 0, nil, 0, err
+	}
 	defer ns.DecRef()
 
 	if flags&linux.SOCK_NONBLOCK != 0 {
@@ -632,7 +641,22 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 				return nil, syserr.ErrInvalidArgument
 			}
 
-			var v tcpip.NoDelayOption
+			var v tcpip.DelayOption
+			if err := ep.GetSockOpt(&v); err != nil {
+				return nil, syserr.TranslateNetstackError(err)
+			}
+
+			if v == 0 {
+				return int32(1), nil
+			}
+			return int32(0), nil
+
+		case syscall.TCP_CORK:
+			if outLen < sizeOfInt32 {
+				return nil, syserr.ErrInvalidArgument
+			}
+
+			var v tcpip.CorkOption
 			if err := ep.GetSockOpt(&v); err != nil {
 				return nil, syserr.TranslateNetstackError(err)
 			}
@@ -748,7 +772,18 @@ func SetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, level int, n
 			}
 
 			v := usermem.ByteOrder.Uint32(optVal)
-			return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.NoDelayOption(v)))
+			var o tcpip.DelayOption
+			if v == 0 {
+				o = 1
+			}
+			return syserr.TranslateNetstackError(ep.SetSockOpt(o))
+		case syscall.TCP_CORK:
+			if len(optVal) < sizeOfInt32 {
+				return syserr.ErrInvalidArgument
+			}
+
+			v := usermem.ByteOrder.Uint32(optVal)
+			return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.CorkOption(v)))
 		}
 	case syscall.SOL_IPV6:
 		switch name {

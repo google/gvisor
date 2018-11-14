@@ -420,10 +420,14 @@ type ReceiveQueueSizeOption int
 // socket is to be restricted to sending and receiving IPv6 packets only.
 type V6OnlyOption int
 
-// NoDelayOption is used by SetSockOpt/GetSockOpt to specify if data should be
+// DelayOption is used by SetSockOpt/GetSockOpt to specify if data should be
 // sent out immediately by the transport protocol. For TCP, it determines if the
 // Nagle algorithm is on or off.
-type NoDelayOption int
+type DelayOption int
+
+// CorkOption is used by SetSockOpt/GetSockOpt to specify if data should be
+// held until segments are full by the TCP transport protocol.
+type CorkOption int
 
 // ReuseAddressOption is used by SetSockOpt/GetSockOpt to specify whether Bind()
 // should allow reuse of local address.

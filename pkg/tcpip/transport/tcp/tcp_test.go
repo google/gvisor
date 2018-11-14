@@ -1255,20 +1255,92 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 }
 
 func TestSegmentMerging(t *testing.T) {
+	tests := []struct {
+		name   string
+		stop   func(tcpip.Endpoint)
+		resume func(tcpip.Endpoint)
+	}{
+		{
+			"stop work",
+			func(ep tcpip.Endpoint) {
+				ep.(interface{ StopWork() }).StopWork()
+			},
+			func(ep tcpip.Endpoint) {
+				ep.(interface{ ResumeWork() }).ResumeWork()
+			},
+		},
+		{
+			"cork",
+			func(ep tcpip.Endpoint) {
+				ep.SetSockOpt(tcpip.CorkOption(1))
+			},
+			func(ep tcpip.Endpoint) {
+				ep.SetSockOpt(tcpip.CorkOption(0))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.CreateConnected(789, 30000, nil)
+
+			// Prevent the endpoint from processing packets.
+			test.stop(c.EP)
+
+			var allData []byte
+			for i, data := range [][]byte{{1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
+				allData = append(allData, data...)
+				view := buffer.NewViewFromBytes(data)
+				if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+					t.Fatalf("Write #%d failed: %v", i+1, err)
+				}
+			}
+
+			// Let the endpoint process the segments that we just sent.
+			test.resume(c.EP)
+
+			// Check that data is received.
+			b := c.GetPacket()
+			checker.IPv4(t, b,
+				checker.PayloadLen(len(allData)+header.TCPMinimumSize),
+				checker.TCP(
+					checker.DstPort(context.TestPort),
+					checker.SeqNum(uint32(c.IRS)+1),
+					checker.AckNum(790),
+					checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+				),
+			)
+
+			if got := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(got, allData) {
+				t.Fatalf("got data = %v, want = %v", got, allData)
+			}
+
+			// Acknowledge the data.
+			c.SendPacket(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: c.Port,
+				Flags:   header.TCPFlagAck,
+				SeqNum:  790,
+				AckNum:  c.IRS.Add(1 + seqnum.Size(len(allData))),
+				RcvWnd:  30000,
+			})
+		})
+	}
+}
+
+func TestDelay(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
 	c.CreateConnected(789, 30000, nil)
 
-	// Prevent the endpoint from processing packets.
-	worker := c.EP.(interface {
-		StopWork()
-		ResumeWork()
-	})
-	worker.StopWork()
+	c.EP.SetSockOpt(tcpip.DelayOption(1))
 
 	var allData []byte
-	for i, data := range [][]byte{{1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
+	for i, data := range [][]byte{{0}, {1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
 		allData = append(allData, data...)
 		view := buffer.NewViewFromBytes(data)
 		if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
@@ -1276,34 +1348,35 @@ func TestSegmentMerging(t *testing.T) {
 		}
 	}
 
-	// Let the endpoint process the segments that we just sent.
-	worker.ResumeWork()
+	seq := c.IRS.Add(1)
+	for _, want := range [][]byte{allData[:1], allData[1:]} {
+		// Check that data is received.
+		b := c.GetPacket()
+		checker.IPv4(t, b,
+			checker.PayloadLen(len(want)+header.TCPMinimumSize),
+			checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.SeqNum(uint32(seq)),
+				checker.AckNum(790),
+				checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+			),
+		)
 
-	// Check that data is received.
-	b := c.GetPacket()
-	checker.IPv4(t, b,
-		checker.PayloadLen(len(allData)+header.TCPMinimumSize),
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.SeqNum(uint32(c.IRS)+1),
-			checker.AckNum(790),
-			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
-		),
-	)
+		if got := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(got, want) {
+			t.Fatalf("got data = %v, want = %v", got, want)
+		}
 
-	if got := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(got, allData) {
-		t.Fatalf("got data = %v, want = %v", got, allData)
+		seq = seq.Add(seqnum.Size(len(want)))
+		// Acknowledge the data.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  790,
+			AckNum:  seq,
+			RcvWnd:  30000,
+		})
 	}
-
-	// Acknowledge the data.
-	c.SendPacket(nil, &context.Headers{
-		SrcPort: context.TestPort,
-		DstPort: c.Port,
-		Flags:   header.TCPFlagAck,
-		SeqNum:  790,
-		AckNum:  c.IRS.Add(1 + seqnum.Size(len(allData))),
-		RcvWnd:  30000,
-	})
 }
 
 func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
