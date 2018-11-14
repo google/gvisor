@@ -52,6 +52,7 @@ func LogSpec(spec *specs.Spec) {
 	}
 	log.Debugf("Spec.Process: %+v", spec.Process)
 	log.Debugf("Spec.Root: %+v", spec.Root)
+	log.Debugf("Spec.Mounts: %+v", spec.Mounts)
 }
 
 // ValidateSpec validates that the spec is compatible with runsc.
