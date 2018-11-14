@@ -404,8 +404,7 @@ func (s *sender) sendData() {
 	seg := s.writeNext
 	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
-	for next := (*segment)(nil); seg != nil && s.outstanding < s.sndCwnd; seg = next {
-		next = seg.Next()
+	for ; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
 
 		// We abuse the flags field to determine if we have already
 		// assigned a sequence number to this segment.
@@ -428,17 +427,16 @@ func (s *sender) sendData() {
 				// in poorly written DNS implementations.
 				var nextTooBig bool
 
-				for next != nil && next.data.Size() != 0 {
-					if seg.data.Size()+next.data.Size() > available {
+				for seg.Next() != nil && seg.Next().data.Size() != 0 {
+					if seg.data.Size()+seg.Next().data.Size() > available {
 						nextTooBig = true
 						break
 					}
 
-					seg.data.Append(&next.data)
+					seg.data.Append(seg.Next().data)
 
 					// Consume the segment that we just merged in.
-					s.writeList.Remove(next)
-					next = next.Next()
+					s.writeList.Remove(seg.Next())
 				}
 
 				if !nextTooBig && seg.data.Size() < available {
@@ -496,7 +494,6 @@ func (s *sender) sendData() {
 				nSeg.data.TrimFront(available)
 				nSeg.sequenceNumber.UpdateForward(seqnum.Size(available))
 				s.writeList.InsertAfter(seg, nSeg)
-				next = nSeg
 				seg.data.CapLength(available)
 			}
 
