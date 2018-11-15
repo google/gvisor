@@ -395,19 +395,13 @@ The following applications/images have been tested:
 *   nginx
 *   node
 *   php
+*   postgres
 *   prometheus
 *   python
 *   redis
 *   registry
 *   tomcat
 *   wordpress
-
-### What doesn't work yet?
-
-The following applications have been tested and may not yet work:
-
-*   postgres: Requires unimplemented sync_file_range. See
-    [bug #88](https://github.com/google/gvisor/issues/88).
 
 ### My container runs fine with *runc* but fails with *runsc*.
 
