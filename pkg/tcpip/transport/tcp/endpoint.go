@@ -654,20 +654,24 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	case tcpip.DelayOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.delay, 0)
+
+			// Handle delayed data.
+			e.sndWaker.Assert()
 		} else {
 			atomic.StoreUint32(&e.delay, 1)
 		}
+
 		return nil
 
 	case tcpip.CorkOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.cork, 0)
+
+			// Handle the corked data.
+			e.sndWaker.Assert()
 		} else {
 			atomic.StoreUint32(&e.cork, 1)
 		}
-
-		// Handle the corked data.
-		e.sndWaker.Assert()
 
 		return nil
 

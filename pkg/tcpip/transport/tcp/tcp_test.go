@@ -1379,6 +1379,76 @@ func TestDelay(t *testing.T) {
 	}
 }
 
+func TestUndelay(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, nil)
+
+	c.EP.SetSockOpt(tcpip.DelayOption(1))
+
+	allData := [][]byte{{0}, {1, 2, 3}}
+	for i, data := range allData {
+		view := buffer.NewViewFromBytes(data)
+		if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+			t.Fatalf("Write #%d failed: %v", i+1, err)
+		}
+	}
+
+	seq := c.IRS.Add(1)
+
+	// Check that data is received.
+	first := c.GetPacket()
+	checker.IPv4(t, first,
+		checker.PayloadLen(len(allData[0])+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(seq)),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	if got, want := first[header.IPv4MinimumSize+header.TCPMinimumSize:], allData[0]; !bytes.Equal(got, want) {
+		t.Fatalf("got first packet's data = %v, want = %v", got, want)
+	}
+
+	seq = seq.Add(seqnum.Size(len(allData[0])))
+
+	// Check that we don't get the second packet yet.
+	c.CheckNoPacketTimeout("delayed second packet transmitted", 100*time.Millisecond)
+
+	c.EP.SetSockOpt(tcpip.DelayOption(0))
+
+	// Check that data is received.
+	second := c.GetPacket()
+	checker.IPv4(t, second,
+		checker.PayloadLen(len(allData[1])+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(seq)),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+	)
+
+	if got, want := second[header.IPv4MinimumSize+header.TCPMinimumSize:], allData[1]; !bytes.Equal(got, want) {
+		t.Fatalf("got second packet's data = %v, want = %v", got, want)
+	}
+
+	seq = seq.Add(seqnum.Size(len(allData[1])))
+
+	// Acknowledge the data.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  790,
+		AckNum:  seq,
+		RcvWnd:  30000,
+	})
+}
+
 func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 	payloadMultiplier := 10
 	dataLen := payloadMultiplier * maxPayload
