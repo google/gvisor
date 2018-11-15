@@ -53,6 +53,22 @@ func (mm *MemoryManager) ReadSeqFileData(ctx context.Context, handle seqfile.Seq
 			Handle: &vmaAddr,
 		})
 	}
+
+	// We always emulate vsyscall, so advertise it here. Everything about a
+	// vsyscall region is static, so just hard code the maps entry since we
+	// don't have a real vma backing it. The vsyscall region is at the end of
+	// the virtual address space so nothing should be mapped after it (if
+	// something is really mapped in the tiny ~10 MiB segment afterwards, we'll
+	// get the sorting on the maps file wrong at worst; but that's not possible
+	// on any current platform).
+	//
+	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
+	if vsyscallEnd := usermem.Addr(0xffffffffff601000); start != vsyscallEnd {
+		data = append(data, seqfile.SeqData{
+			Buf:    []byte("ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]\n"),
+			Handle: &vsyscallEnd,
+		})
+	}
 	return data, 1
 }
 

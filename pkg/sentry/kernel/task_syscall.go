@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bits"
+	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -59,6 +60,8 @@ const (
 	// Task.SetRestartSyscallFn.
 	ERESTART_RESTARTBLOCK = SyscallRestartErrno(516)
 )
+
+var vsyscallCount = metric.MustCreateNewUint64Metric("/kernel/vsyscall_count", false /* sync */, "Number of times vsyscalls were invoked by the application")
 
 // Error implements error.Error.
 func (e SyscallRestartErrno) Error() string {
@@ -325,6 +328,8 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
 func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
+	vsyscallCount.Increment()
+
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))
 	if _, err := t.CopyIn(usermem.Addr(t.Arch().Stack()), caller); err != nil {

@@ -131,6 +131,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/eventchannel",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/refs",
         "//pkg/secio",
         "//pkg/sentry/arch",
