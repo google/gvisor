@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -296,18 +297,37 @@ func RunAsRoot() {
 	os.Exit(0)
 }
 
-// StartReaper starts a goroutine that will reap all children processes created
-// by the tests. Caller must call the returned function to stop it.
-func StartReaper() func() {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGCHLD)
-	stop := make(chan struct{})
+// Reaper reaps child processes.
+type Reaper struct {
+	// mu protects ch, which will be nil if the reaper is not running.
+	mu sync.Mutex
+	ch chan os.Signal
+}
+
+// Start starts reaping child processes.
+func (r *Reaper) Start() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.ch != nil {
+		panic("reaper.Start called on a running reaper")
+	}
+
+	r.ch = make(chan os.Signal, 1)
+	signal.Notify(r.ch, syscall.SIGCHLD)
 
 	go func() {
 		for {
-			select {
-			case <-ch:
-			case <-stop:
+			r.mu.Lock()
+			ch := r.ch
+			r.mu.Unlock()
+			if ch == nil {
+				return
+			}
+
+			_, ok := <-ch
+			if !ok {
+				// Channel closed.
 				return
 			}
 			for {
@@ -318,7 +338,28 @@ func StartReaper() func() {
 			}
 		}
 	}()
-	return func() { stop <- struct{}{} }
+}
+
+// Stop stops reaping child processes.
+func (r *Reaper) Stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.ch == nil {
+		panic("reaper.Stop called on a stopped reaper")
+	}
+
+	signal.Stop(r.ch)
+	close(r.ch)
+	r.ch = nil
+}
+
+// StartReaper is a helper that starts a new Reaper and returns a function to
+// stop it.
+func StartReaper() func() {
+	r := &Reaper{}
+	r.Start()
+	return r.Stop
 }
 
 // RetryEintr retries the function until an error different than EINTR is

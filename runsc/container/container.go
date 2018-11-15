@@ -476,9 +476,6 @@ func (c *Container) SandboxPid() int {
 // and wait returns immediately.
 func (c *Container) Wait() (syscall.WaitStatus, error) {
 	log.Debugf("Wait on container %q", c.ID)
-	if !c.isSandboxRunning() {
-		return 0, fmt.Errorf("sandbox is not running")
-	}
 	return c.Sandbox.Wait(c.ID)
 }
 

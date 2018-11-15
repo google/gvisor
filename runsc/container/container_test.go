@@ -39,12 +39,8 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
-func init() {
-	log.SetLevel(log.Debug)
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
-	}
-}
+// childReaper reaps child processes.
+var childReaper *testutil.Reaper
 
 // waitForProcessList waits for the given process list to show up in the container.
 func waitForProcessList(cont *Container, want []*control.Process) error {
@@ -1580,12 +1576,17 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
+	// Disable the childReaper for this test.
+	childReaper.Stop()
+	defer childReaper.Start()
+
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		// Run a shell that exits immediately with a non-zero code.
+		// Run a shell that sleeps for 1 second and then exits with a
+		// non-zero code.
 		const wantExit = 17
-		cmd := fmt.Sprintf("exit %d", wantExit)
+		cmd := fmt.Sprintf("sleep 1; exit %d", wantExit)
 		spec := testutil.NewSpecWithArgs("/bin/sh", "-c", cmd)
 		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
@@ -1604,22 +1605,23 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 			t.Fatalf("error starting container: %v", err)
 		}
 
-		// Wait for the sandbox to stop running.
-		if err := testutil.Poll(func() error {
-			if c.Sandbox.IsRunning() {
-				return nil
-			}
-			return fmt.Errorf("sandbox still running")
-		}, 10*time.Second); err != nil {
-			t.Fatalf("error waiting for sandbox to exit: %v", err)
-		}
-
-		// Now call Wait.
+		// Wait on the sandbox. This will make an RPC to the sandbox
+		// and get the actual exit status of the application.
 		ws, err := c.Wait()
 		if err != nil {
 			t.Fatalf("error waiting on container: %v", err)
 		}
+		if got := ws.ExitStatus(); got != wantExit {
+			t.Errorf("got exit status %d, want %d", got, wantExit)
+		}
 
+		// Now the sandbox has exited, but the zombie sandbox process
+		// still exists. Calling Wait() now will return the sandbox
+		// exit status.
+		ws, err = c.Wait()
+		if err != nil {
+			t.Fatalf("error waiting on container: %v", err)
+		}
 		if got := ws.ExitStatus(); got != wantExit {
 			t.Errorf("got exit status %d, want %d", got, wantExit)
 		}
@@ -1704,8 +1706,16 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 }
 
 func TestMain(m *testing.M) {
+	log.SetLevel(log.Debug)
+	if err := testutil.ConfigureExePath(); err != nil {
+		panic(err.Error())
+	}
 	testutil.RunAsRoot()
-	stop := testutil.StartReaper()
-	defer stop()
+
+	// Start the child reaper.
+	childReaper = &testutil.Reaper{}
+	childReaper.Start()
+	defer childReaper.Stop()
+
 	os.Exit(m.Run())
 }

@@ -612,17 +612,23 @@ func (s *Sandbox) waitForCreated(timeout time.Duration) error {
 func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	log.Debugf("Waiting for container %q in sandbox %q", cid, s.ID)
 	var ws syscall.WaitStatus
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return ws, err
-	}
-	defer conn.Close()
 
-	// First try the Wait RPC to the sandbox.
-	if err := conn.Call(boot.ContainerWait, &cid, &ws); err == nil {
-		return ws, nil
+	if conn, err := s.sandboxConnect(); err != nil {
+		// The sandbox may have exited while before we had a chance to
+		// wait on it.
+		log.Warningf("Wait on container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
+	} else {
+		defer conn.Close()
+		// Try the Wait RPC to the sandbox.
+		err = conn.Call(boot.ContainerWait, &cid, &ws)
+		if err == nil {
+			// It worked!
+			return ws, nil
+		}
+		// The sandbox may have exited after we connected, but before
+		// or during the Wait RPC.
+		log.Warningf("Wait RPC to container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
 	}
-	log.Warningf("Wait RPC to container %q failed: %v. Will try waiting on the sandbox process instead.", cid, err)
 
 	// The sandbox may have already exited, or exited while handling the
 	// Wait RPC. The best we can do is ask Linux what the sandbox exit
