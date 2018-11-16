@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -39,12 +38,12 @@ const (
 	// TODO: support a tmpfs size limit.
 	// size = "size"
 
-	// default permissions are read/write/execute.
+	// Permissions that exceed modeMask will be rejected.
+	modeMask = 01777
+
+	// Default permissions are read/write/execute.
 	defaultMode = 0777
 )
-
-// modeRegexp is the expected format of the mode option.
-var modeRegexp = regexp.MustCompile("^[0-1]?[0-7][0-7][0-7]$")
 
 // Filesystem is a tmpfs.
 //
@@ -91,14 +90,12 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	// Parse the root directory permissions.
 	perms := fs.FilePermsFromMode(defaultMode)
 	if m, ok := options[modeKey]; ok {
-		if !modeRegexp.MatchString(m) {
-			return nil, fmt.Errorf("unsupported mode value: 'mode=%s'", m)
-		}
-		// It's basically impossible that we error out at this point,
-		// maybe we should panic.
 		i, err := strconv.ParseUint(m, 8, 32)
 		if err != nil {
 			return nil, fmt.Errorf("mode value not parsable 'mode=%s': %v", m, err)
+		}
+		if i&^modeMask != 0 {
+			return nil, fmt.Errorf("invalid mode %q: must be less than %o", m, modeMask)
 		}
 		perms = fs.FilePermsFromMode(linux.FileMode(i))
 		delete(options, modeKey)
