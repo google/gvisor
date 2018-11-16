@@ -22,9 +22,11 @@ import (
 	"syscall"
 	"testing"
 	"unsafe"
+
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// testData implements the Checker interface, and allows us to
+// testData implements the Target interface, and allows us to
 // treat the address passed for futex operations as an index in
 // a byte slice for testing simplicity.
 type testData []byte
@@ -35,18 +37,19 @@ func newTestData(size uint) testData {
 	return make([]byte, size)
 }
 
-func (t testData) Check(addr uintptr, val uint32) error {
-	if val != atomic.LoadUint32((*uint32)(unsafe.Pointer(&t[addr]))) {
-		return syscall.EAGAIN
+func (t testData) SwapUint32(addr usermem.Addr, new uint32) (uint32, error) {
+	val := atomic.SwapUint32((*uint32)(unsafe.Pointer(&t[addr])), new)
+	return val, nil
+}
+
+func (t testData) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error) {
+	if atomic.CompareAndSwapUint32((*uint32)(unsafe.Pointer(&t[addr])), old, new) {
+		return old, nil
 	}
-	return nil
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t[addr]))), nil
 }
 
-func (t testData) Op(addr uintptr, val uint32) (bool, error) {
-	return val == 0, nil
-}
-
-func (t testData) GetSharedKey(addr uintptr) (Key, error) {
+func (t testData) GetSharedKey(addr usermem.Addr) (Key, error) {
 	return Key{
 		Kind:   KindSharedMappable,
 		Offset: uint64(addr),
@@ -60,9 +63,9 @@ func futexKind(private bool) string {
 	return "shared"
 }
 
-func newPreparedTestWaiter(t *testing.T, m *Manager, c Checker, addr uintptr, private bool, val uint32, bitmask uint32) *Waiter {
+func newPreparedTestWaiter(t *testing.T, m *Manager, ta Target, addr usermem.Addr, private bool, val uint32, bitmask uint32) *Waiter {
 	w := NewWaiter()
-	if err := m.WaitPrepare(w, c, addr, private, val, bitmask); err != nil {
+	if err := m.WaitPrepare(w, ta, addr, private, val, bitmask); err != nil {
 		t.Fatalf("WaitPrepare failed: %v", err)
 	}
 	return w
@@ -450,12 +453,12 @@ const (
 // Beyond being used as a Locker, this is a simple mechanism for
 // changing the underlying values for simpler tests.
 type testMutex struct {
-	a uintptr
+	a usermem.Addr
 	d testData
 	m *Manager
 }
 
-func newTestMutex(addr uintptr, d testData, m *Manager) *testMutex {
+func newTestMutex(addr usermem.Addr, d testData, m *Manager) *testMutex {
 	return &testMutex{a: addr, d: d, m: m}
 }
 

@@ -20,7 +20,9 @@ package futex
 import (
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -81,8 +83,8 @@ func (k *Key) clone() Key {
 }
 
 // Preconditions: k.Kind == KindPrivate or KindSharedPrivate.
-func (k *Key) addr() uintptr {
-	return uintptr(k.Offset)
+func (k *Key) addr() usermem.Addr {
+	return usermem.Addr(k.Offset)
 }
 
 // matches returns true if a wakeup on k2 should wake a waiter waiting on k.
@@ -91,23 +93,13 @@ func (k *Key) matches(k2 *Key) bool {
 	return k.Kind == k2.Kind && k.Mappable == k2.Mappable && k.Offset == k2.Offset
 }
 
-// Checker abstracts memory accesses. This is useful because the "addresses"
-// used in this package may not be real addresses (they could be indices of an
-// array, for example), or they could be mapped via some special mechanism.
-//
-// TODO: Replace this with usermem.IO.
-type Checker interface {
-	// Check should validate that given address contains the given value.
-	// If it does not contain the value, syserror.EAGAIN must be returned.
-	// Any other error may be returned, which will be propagated.
-	Check(addr uintptr, val uint32) error
+// Target abstracts memory accesses and keys.
+type Target interface {
+	// SwapUint32 gives access to usermem.SwapUint32.
+	SwapUint32(addr usermem.Addr, new uint32) (uint32, error)
 
-	// Op should atomically perform the operation encoded in op on the data
-	// pointed to by addr, then apply the comparison encoded in op to the
-	// original value at addr, returning the result.
-	// Note that op is an opaque operation whose behaviour is defined
-	// outside of the futex manager.
-	Op(addr uintptr, op uint32) (bool, error)
+	// CompareAndSwap gives access to usermem.CompareAndSwapUint32.
+	CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error)
 
 	// GetSharedKey returns a Key with kind KindSharedPrivate or
 	// KindSharedMappable corresponding to the memory mapped at address addr.
@@ -115,7 +107,84 @@ type Checker interface {
 	// If GetSharedKey returns a Key with a non-nil MappingIdentity, a
 	// reference is held on the MappingIdentity, which must be dropped by the
 	// caller when the Key is no longer in use.
-	GetSharedKey(addr uintptr) (Key, error)
+	GetSharedKey(addr usermem.Addr) (Key, error)
+}
+
+// check performs a basic equality check on the given address.
+func check(t Target, addr usermem.Addr, val uint32) error {
+	prev, err := t.CompareAndSwapUint32(addr, val, val)
+	if err != nil {
+		return err
+	}
+	if prev != val {
+		return syserror.EAGAIN
+	}
+	return nil
+}
+
+// atomicOp performs a complex operation on the given address.
+func atomicOp(t Target, addr usermem.Addr, opIn uint32) (bool, error) {
+	opType := (opIn >> 28) & 0xf
+	cmp := (opIn >> 24) & 0xf
+	opArg := (opIn >> 12) & 0xfff
+	cmpArg := opIn & 0xfff
+
+	if opType&linux.FUTEX_OP_OPARG_SHIFT != 0 {
+		opArg = 1 << opArg
+		opType &^= linux.FUTEX_OP_OPARG_SHIFT // Clear flag.
+	}
+
+	var (
+		oldVal uint32
+		err    error
+	)
+	if opType == linux.FUTEX_OP_SET {
+		oldVal, err = t.SwapUint32(addr, opArg)
+	} else {
+		for {
+			oldVal, err = t.CompareAndSwapUint32(addr, 0, 0)
+			if err != nil {
+				break
+			}
+			var newVal uint32
+			switch opType {
+			case linux.FUTEX_OP_ADD:
+				newVal = oldVal + opArg
+			case linux.FUTEX_OP_OR:
+				newVal = oldVal | opArg
+			case linux.FUTEX_OP_ANDN:
+				newVal = oldVal &^ opArg
+			case linux.FUTEX_OP_XOR:
+				newVal = oldVal ^ opArg
+			default:
+				return false, syserror.ENOSYS
+			}
+			prev, err := t.CompareAndSwapUint32(addr, oldVal, newVal)
+			if err != nil {
+				break
+			}
+			if prev == oldVal {
+				break // Success.
+			}
+		}
+	}
+
+	switch cmp {
+	case linux.FUTEX_OP_CMP_EQ:
+		return oldVal == cmpArg, nil
+	case linux.FUTEX_OP_CMP_NE:
+		return oldVal != cmpArg, nil
+	case linux.FUTEX_OP_CMP_LT:
+		return oldVal < cmpArg, nil
+	case linux.FUTEX_OP_CMP_LE:
+		return oldVal <= cmpArg, nil
+	case linux.FUTEX_OP_CMP_GT:
+		return oldVal > cmpArg, nil
+	case linux.FUTEX_OP_CMP_GE:
+		return oldVal >= cmpArg, nil
+	default:
+		return false, syserror.ENOSYS
+	}
 }
 
 // Waiter is the struct which gets enqueued into buckets for wake up routines
@@ -243,7 +312,7 @@ const (
 )
 
 // getKey returns a Key representing address addr in c.
-func getKey(c Checker, addr uintptr, private bool) (Key, error) {
+func getKey(t Target, addr usermem.Addr, private bool) (Key, error) {
 	// Ensure the address is aligned.
 	// It must be a DWORD boundary.
 	if addr&0x3 != 0 {
@@ -252,11 +321,11 @@ func getKey(c Checker, addr uintptr, private bool) (Key, error) {
 	if private {
 		return Key{Kind: KindPrivate, Offset: uint64(addr)}, nil
 	}
-	return c.GetSharedKey(addr)
+	return t.GetSharedKey(addr)
 }
 
 // bucketIndexForAddr returns the index into Manager.buckets for addr.
-func bucketIndexForAddr(addr uintptr) uintptr {
+func bucketIndexForAddr(addr usermem.Addr) uintptr {
 	// - The bottom 2 bits of addr must be 0, per getKey.
 	//
 	// - On amd64, the top 16 bits of addr (bits 48-63) must be equal to bit 47
@@ -277,8 +346,8 @@ func bucketIndexForAddr(addr uintptr) uintptr {
 	// is also why h1 and h2 are grouped separately; for "(addr >> 2) + ... +
 	// (addr >> 42)" without any additional grouping, the compiler puts all 4
 	// additions in the critical path.
-	h1 := (addr >> 2) + (addr >> 12) + (addr >> 22)
-	h2 := (addr >> 32) + (addr >> 42)
+	h1 := uintptr(addr>>2) + uintptr(addr>>12) + uintptr(addr>>22)
+	h2 := uintptr(addr>>32) + uintptr(addr>>42)
 	return (h1 + h2) % bucketCount
 }
 
@@ -363,9 +432,9 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
 
 // Wake wakes up to n waiters matching the bitmask on the given addr.
 // The number of waiters woken is returned.
-func (m *Manager) Wake(c Checker, addr uintptr, private bool, bitmask uint32, n int) (int, error) {
+func (m *Manager) Wake(t Target, addr usermem.Addr, private bool, bitmask uint32, n int) (int, error) {
 	// This function is very hot; avoid defer.
-	k, err := getKey(c, addr, private)
+	k, err := getKey(t, addr, private)
 	if err != nil {
 		return 0, err
 	}
@@ -378,13 +447,13 @@ func (m *Manager) Wake(c Checker, addr uintptr, private bool, bitmask uint32, n 
 	return r, nil
 }
 
-func (m *Manager) doRequeue(c Checker, addr, naddr uintptr, private bool, checkval bool, val uint32, nwake int, nreq int) (int, error) {
-	k1, err := getKey(c, addr, private)
+func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, checkval bool, val uint32, nwake int, nreq int) (int, error) {
+	k1, err := getKey(t, addr, private)
 	if err != nil {
 		return 0, err
 	}
 	defer k1.release()
-	k2, err := getKey(c, naddr, private)
+	k2, err := getKey(t, naddr, private)
 	if err != nil {
 		return 0, err
 	}
@@ -397,7 +466,7 @@ func (m *Manager) doRequeue(c Checker, addr, naddr uintptr, private bool, checkv
 	}
 
 	if checkval {
-		if err := c.Check(addr, val); err != nil {
+		if err := check(t, addr, val); err != nil {
 			return 0, err
 		}
 	}
@@ -413,28 +482,28 @@ func (m *Manager) doRequeue(c Checker, addr, naddr uintptr, private bool, checkv
 
 // Requeue wakes up to nwake waiters on the given addr, and unconditionally
 // requeues up to nreq waiters on naddr.
-func (m *Manager) Requeue(c Checker, addr, naddr uintptr, private bool, nwake int, nreq int) (int, error) {
-	return m.doRequeue(c, addr, naddr, private, false, 0, nwake, nreq)
+func (m *Manager) Requeue(t Target, addr, naddr usermem.Addr, private bool, nwake int, nreq int) (int, error) {
+	return m.doRequeue(t, addr, naddr, private, false, 0, nwake, nreq)
 }
 
-// RequeueCmp atomically checks that the addr contains val (via the Checker),
+// RequeueCmp atomically checks that the addr contains val (via the Target),
 // wakes up to nwake waiters on addr and then unconditionally requeues nreq
 // waiters on naddr.
-func (m *Manager) RequeueCmp(c Checker, addr, naddr uintptr, private bool, val uint32, nwake int, nreq int) (int, error) {
-	return m.doRequeue(c, addr, naddr, private, true, val, nwake, nreq)
+func (m *Manager) RequeueCmp(t Target, addr, naddr usermem.Addr, private bool, val uint32, nwake int, nreq int) (int, error) {
+	return m.doRequeue(t, addr, naddr, private, true, val, nwake, nreq)
 }
 
 // WakeOp atomically applies op to the memory address addr2, wakes up to nwake1
 // waiters unconditionally from addr1, and, based on the original value at addr2
 // and a comparison encoded in op, wakes up to nwake2 waiters from addr2.
 // It returns the total number of waiters woken.
-func (m *Manager) WakeOp(c Checker, addr1, addr2 uintptr, private bool, nwake1 int, nwake2 int, op uint32) (int, error) {
-	k1, err := getKey(c, addr1, private)
+func (m *Manager) WakeOp(t Target, addr1, addr2 usermem.Addr, private bool, nwake1 int, nwake2 int, op uint32) (int, error) {
+	k1, err := getKey(t, addr1, private)
 	if err != nil {
 		return 0, err
 	}
 	defer k1.release()
-	k2, err := getKey(c, addr2, private)
+	k2, err := getKey(t, addr2, private)
 	if err != nil {
 		return 0, err
 	}
@@ -447,7 +516,7 @@ func (m *Manager) WakeOp(c Checker, addr1, addr2 uintptr, private bool, nwake1 i
 	}
 
 	done := 0
-	cond, err := c.Op(addr2, op)
+	cond, err := atomicOp(t, addr2, op)
 	if err != nil {
 		return 0, err
 	}
@@ -468,8 +537,8 @@ func (m *Manager) WakeOp(c Checker, addr1, addr2 uintptr, private bool, nwake1 i
 // enqueues w to be woken by a send to w.C. If WaitPrepare returns nil, the
 // Waiter must be subsequently removed by calling WaitComplete, whether or not
 // a wakeup is received on w.C.
-func (m *Manager) WaitPrepare(w *Waiter, c Checker, addr uintptr, private bool, val uint32, bitmask uint32) error {
-	k, err := getKey(c, addr, private)
+func (m *Manager) WaitPrepare(w *Waiter, t Target, addr usermem.Addr, private bool, val uint32, bitmask uint32) error {
+	k, err := getKey(t, addr, private)
 	if err != nil {
 		return err
 	}
@@ -487,7 +556,7 @@ func (m *Manager) WaitPrepare(w *Waiter, c Checker, addr uintptr, private bool, 
 	// This function is very hot; avoid defer.
 
 	// Perform our atomic check.
-	if err := c.Check(addr, val); err != nil {
+	if err := check(t, addr, val); err != nil {
 		b.mu.Unlock()
 		w.key.release()
 		return err

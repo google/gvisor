@@ -36,7 +36,9 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/usermem",
         "//pkg/syserror",
     ],
 )
@@ -46,4 +48,5 @@ go_test(
     size = "small",
     srcs = ["futex_test.go"],
     embed = [":futex"],
+    deps = ["//pkg/sentry/usermem"],
 )

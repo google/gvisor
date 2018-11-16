@@ -247,7 +247,7 @@ func (*runExitMain) execute(t *Task) taskRunState {
 		t.tg.signalHandlers.mu.Unlock()
 		if !signaled {
 			if _, err := t.CopyOut(t.cleartid, ThreadID(0)); err == nil {
-				t.Futex().Wake(t.FutexChecker(), uintptr(t.cleartid), false, ^uint32(0), 1)
+				t.Futex().Wake(t, t.cleartid, false, ^uint32(0), 1)
 			}
 			// If the CopyOut fails, there's nothing we can do.
 		}

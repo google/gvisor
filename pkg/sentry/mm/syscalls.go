@@ -794,10 +794,9 @@ func (mm *MemoryManager) Sync(ctx context.Context, addr usermem.Addr, length uin
 	return nil
 }
 
-// GetSharedFutexKey is used by kernel.futexChecker.GetSharedKey to implement
-// futex.Checker.GetSharedKey.
+// GetSharedFutexKey is used by kernel.Task.GetSharedKey.
 func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Addr) (futex.Key, error) {
-	ar, ok := addr.ToRange(4) // sizeof(int32)
+	ar, ok := addr.ToRange(4) // sizeof(int32).
 	if !ok {
 		return futex.Key{}, syserror.EFAULT
 	}
