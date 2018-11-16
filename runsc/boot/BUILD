@@ -21,7 +21,6 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/runsc/boot",
     visibility = [
         "//runsc:__subpackages__",
-        "//third_party/golang/gvisor/test:__subpackages__",
     ],
     deps = [
         "//pkg/abi",
