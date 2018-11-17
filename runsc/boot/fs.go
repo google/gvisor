@@ -673,10 +673,11 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 		defer root.DecRef()
 
 		// Do a best-effort unmount by flushing the refs and unmount
-		// with "detach only = true".
+		// with "detach only = true". Unmount returns EINVAL when the mount point
+		// doesn't exist, i.e. it has already been unmounted.
 		log.Debugf("Unmounting container submount %q", root.BaseName())
 		m.FlushDirentRefs()
-		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil {
+		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil && err != syserror.EINVAL {
 			return fmt.Errorf("error unmounting container submount %q: %v", root.BaseName(), err)
 		}
 	}
