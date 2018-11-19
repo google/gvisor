@@ -33,34 +33,53 @@ func TestOnceTracker(t *testing.T) {
 	}
 }
 
-func TestCmdTracker(t *testing.T) {
+func TestArgsTracker(t *testing.T) {
 	for _, tc := range []struct {
 		name string
-		idx  int
+		idx  []int
 		rdi1 uint64
 		rdi2 uint64
 		rsi1 uint64
 		rsi2 uint64
 		want bool
 	}{
-		{name: "same rdi", idx: 0, rdi1: 123, rdi2: 123, want: false},
-		{name: "same rsi", idx: 1, rsi1: 123, rsi2: 123, want: false},
-		{name: "diff rdi", idx: 0, rdi1: 123, rdi2: 321, want: true},
-		{name: "diff rsi", idx: 1, rsi1: 123, rsi2: 321, want: true},
-		{name: "cmd is uint32", idx: 0, rsi1: 0xdead00000123, rsi2: 0xbeef00000123, want: false},
+		{name: "same rdi", idx: []int{0}, rdi1: 123, rdi2: 123, want: false},
+		{name: "same rsi", idx: []int{1}, rsi1: 123, rsi2: 123, want: false},
+		{name: "diff rdi", idx: []int{0}, rdi1: 123, rdi2: 321, want: true},
+		{name: "diff rsi", idx: []int{1}, rsi1: 123, rsi2: 321, want: true},
+		{name: "cmd is uint32", idx: []int{0}, rsi1: 0xdead00000123, rsi2: 0xbeef00000123, want: false},
+		{name: "same 2 args", idx: []int{0, 1}, rsi1: 123, rdi1: 321, rsi2: 123, rdi2: 321, want: false},
+		{name: "diff 2 args", idx: []int{0, 1}, rsi1: 123, rdi1: 321, rsi2: 789, rdi2: 987, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := newCmdTracker(tc.idx)
+			c := newArgsTracker(tc.idx...)
 			regs := &rpb.AMD64Registers{Rdi: tc.rdi1, Rsi: tc.rsi1}
 			if !c.shouldReport(regs) {
-				t.Error("first call to checkAndMark, got: false, want: true")
+				t.Error("first call to shouldReport, got: false, want: true")
 			}
 			c.onReported(regs)
 
 			regs.Rdi, regs.Rsi = tc.rdi2, tc.rsi2
 			if got := c.shouldReport(regs); tc.want != got {
-				t.Errorf("after first call to checkAndMark, got: %t, want: %t", got, tc.want)
+				t.Errorf("second call to shouldReport, got: %t, want: %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestArgsTrackerLimit(t *testing.T) {
+	c := newArgsTracker(0, 1)
+	for i := 0; i < reportLimit; i++ {
+		regs := &rpb.AMD64Registers{Rdi: 123, Rsi: uint64(i)}
+		if !c.shouldReport(regs) {
+			t.Error("shouldReport before limit was reached, got: false, want: true")
+		}
+		c.onReported(regs)
+	}
+
+	// Should hit the count limit now.
+	regs := &rpb.AMD64Registers{Rdi: 123, Rsi: 123456}
+	if c.shouldReport(regs) {
+		t.Error("shouldReport after limit was reached, got: true, want: false")
 	}
 }

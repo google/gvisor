@@ -299,6 +299,21 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (in
 			}
 			// We don't have limit on receiving size.
 			return math.MaxInt32, nil
+
+		default:
+			socket.GetSockOptEmitUnimplementedEvent(t, name)
+		}
+	case linux.SOL_NETLINK:
+		switch name {
+		case linux.NETLINK_BROADCAST_ERROR,
+			linux.NETLINK_CAP_ACK,
+			linux.NETLINK_DUMP_STRICT_CHK,
+			linux.NETLINK_EXT_ACK,
+			linux.NETLINK_LIST_MEMBERSHIPS,
+			linux.NETLINK_NO_ENOBUFS,
+			linux.NETLINK_PKTINFO:
+
+			t.Kernel().EmitUnimplementedEvent(t)
 		}
 	}
 	// TODO: other sockopts are not supported.
@@ -329,7 +344,25 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			// We don't have limit on receiving size. So just accept anything as
 			// valid for compatibility.
 			return nil
+		default:
+			socket.SetSockOptEmitUnimplementedEvent(t, name)
 		}
+
+	case linux.SOL_NETLINK:
+		switch name {
+		case linux.NETLINK_ADD_MEMBERSHIP,
+			linux.NETLINK_BROADCAST_ERROR,
+			linux.NETLINK_CAP_ACK,
+			linux.NETLINK_DROP_MEMBERSHIP,
+			linux.NETLINK_DUMP_STRICT_CHK,
+			linux.NETLINK_EXT_ACK,
+			linux.NETLINK_LISTEN_ALL_NSID,
+			linux.NETLINK_NO_ENOBUFS,
+			linux.NETLINK_PKTINFO:
+
+			t.Kernel().EmitUnimplementedEvent(t)
+		}
+
 	}
 	// TODO: other sockopts are not supported.
 	return syserr.ErrProtocolNotAvailable

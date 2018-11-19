@@ -20,35 +20,58 @@ import (
 	rpb "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
 )
 
-// cmdTracker reports only a single time for each different command argument in
-// the syscall. It's used for generic syscalls like ioctl to report once per
-// 'cmd'
-type cmdTracker struct {
-	// argIdx is the syscall argument index where the command is located.
-	argIdx int
-	cmds   map[uint32]struct{}
+// reportLimit is the max number of events that should be reported per tracker.
+const reportLimit = 100
+
+// argsTracker reports only once for each different combination of arguments.
+// It's used for generic syscalls like ioctl to report once per 'cmd'.
+type argsTracker struct {
+	// argsIdx is the syscall arguments to use as unique ID.
+	argsIdx  []int
+	reported map[string]struct{}
+	count    int
 }
 
-func newCmdTracker(argIdx int) *cmdTracker {
-	return &cmdTracker{argIdx: argIdx, cmds: make(map[uint32]struct{})}
+func newArgsTracker(argIdx ...int) *argsTracker {
+	return &argsTracker{argsIdx: argIdx, reported: make(map[string]struct{})}
 }
 
 // cmd returns the command based on the syscall argument index.
-func (c *cmdTracker) cmd(regs *rpb.AMD64Registers) uint32 {
-	switch c.argIdx {
+func (a *argsTracker) key(regs *rpb.AMD64Registers) string {
+	var rv string
+	for _, idx := range a.argsIdx {
+		rv += fmt.Sprintf("%d|", argVal(idx, regs))
+	}
+	return rv
+}
+
+func argVal(argIdx int, regs *rpb.AMD64Registers) uint32 {
+	switch argIdx {
 	case 0:
 		return uint32(regs.Rdi)
 	case 1:
 		return uint32(regs.Rsi)
+	case 2:
+		return uint32(regs.Rdx)
+	case 3:
+		return uint32(regs.R10)
+	case 4:
+		return uint32(regs.R8)
+	case 5:
+		return uint32(regs.R9)
 	}
-	panic(fmt.Sprintf("unsupported syscall argument index %d", c.argIdx))
+	panic(fmt.Sprintf("invalid syscall argument index %d", argIdx))
 }
 
-func (c *cmdTracker) shouldReport(regs *rpb.AMD64Registers) bool {
-	_, ok := c.cmds[c.cmd(regs)]
+func (a *argsTracker) shouldReport(regs *rpb.AMD64Registers) bool {
+	if a.count >= reportLimit {
+		return false
+	}
+	_, ok := a.reported[a.key(regs)]
 	return !ok
 }
 
-func (c *cmdTracker) onReported(regs *rpb.AMD64Registers) {
-	c.cmds[c.cmd(regs)] = struct{}{}
+func (a *argsTracker) onReported(regs *rpb.AMD64Registers) {
+	a.count++
+	a.reported[a.key(regs)] = struct{}{}
 }

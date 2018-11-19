@@ -89,10 +89,16 @@ func (c *compatEmitter) Emit(msg proto.Message) (hangup bool, err error) {
 	if tr == nil {
 		switch sysnr {
 		case syscall.SYS_PRCTL, syscall.SYS_ARCH_PRCTL:
-			tr = newCmdTracker(0)
+			// args: cmd, ...
+			tr = newArgsTracker(0)
 
 		case syscall.SYS_IOCTL, syscall.SYS_EPOLL_CTL, syscall.SYS_SHMCTL:
-			tr = newCmdTracker(1)
+			// args: fd, cmd, ...
+			tr = newArgsTracker(1)
+
+		case syscall.SYS_GETSOCKOPT, syscall.SYS_SETSOCKOPT:
+			// args: fd, level, name, ...
+			tr = newArgsTracker(1, 2)
 
 		default:
 			tr = &onceTracker{}

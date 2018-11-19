@@ -89,8 +89,18 @@ const (
 	MSG_CMSG_CLOEXEC     = 0x40000000
 )
 
-// SOL_SOCKET is from socket.h
-const SOL_SOCKET = 1
+// Set/get socket option levels, from socket.h.
+const (
+	SOL_IP      = 0
+	SOL_SOCKET  = 1
+	SOL_TCP     = 6
+	SOL_UDP     = 17
+	SOL_IPV6    = 41
+	SOL_ICMPV6  = 58
+	SOL_RAW     = 255
+	SOL_PACKET  = 263
+	SOL_NETLINK = 270
+)
 
 // Socket types, from linux/net.h.
 const (
@@ -122,22 +132,63 @@ const (
 
 // Socket options from socket.h.
 const (
-	SO_ERROR       = 4
-	SO_KEEPALIVE   = 9
-	SO_LINGER      = 13
-	SO_MARK        = 36
-	SO_PASSCRED    = 16
-	SO_PEERCRED    = 17
-	SO_PEERNAME    = 28
-	SO_PROTOCOL    = 38
-	SO_RCVBUF      = 8
-	SO_RCVTIMEO    = 20
-	SO_REUSEADDR   = 2
-	SO_SNDBUF      = 7
-	SO_SNDTIMEO    = 21
-	SO_TIMESTAMP   = 29
-	SO_TIMESTAMPNS = 35
-	SO_TYPE        = 3
+	SO_DEBUG                 = 1
+	SO_REUSEADDR             = 2
+	SO_TYPE                  = 3
+	SO_ERROR                 = 4
+	SO_DONTROUTE             = 5
+	SO_BROADCAST             = 6
+	SO_SNDBUF                = 7
+	SO_RCVBUF                = 8
+	SO_KEEPALIVE             = 9
+	SO_OOBINLINE             = 10
+	SO_NO_CHECK              = 11
+	SO_PRIORITY              = 12
+	SO_LINGER                = 13
+	SO_BSDCOMPAT             = 14
+	SO_REUSEPORT             = 15
+	SO_PASSCRED              = 16
+	SO_PEERCRED              = 17
+	SO_RCVLOWAT              = 18
+	SO_SNDLOWAT              = 19
+	SO_RCVTIMEO              = 20
+	SO_SNDTIMEO              = 21
+	SO_BINDTODEVICE          = 25
+	SO_ATTACH_FILTER         = 26
+	SO_DETACH_FILTER         = 27
+	SO_GET_FILTER            = SO_ATTACH_FILTER
+	SO_PEERNAME              = 28
+	SO_TIMESTAMP             = 29
+	SO_ACCEPTCONN            = 30
+	SO_PEERSEC               = 31
+	SO_SNDBUFFORCE           = 32
+	SO_RCVBUFFORCE           = 33
+	SO_PASSSEC               = 34
+	SO_TIMESTAMPNS           = 35
+	SO_MARK                  = 36
+	SO_TIMESTAMPING          = 37
+	SO_PROTOCOL              = 38
+	SO_DOMAIN                = 39
+	SO_RXQ_OVFL              = 40
+	SO_WIFI_STATUS           = 41
+	SO_PEEK_OFF              = 42
+	SO_NOFCS                 = 43
+	SO_LOCK_FILTER           = 44
+	SO_SELECT_ERR_QUEUE      = 45
+	SO_BUSY_POLL             = 46
+	SO_MAX_PACING_RATE       = 47
+	SO_BPF_EXTENSIONS        = 48
+	SO_INCOMING_CPU          = 49
+	SO_ATTACH_BPF            = 50
+	SO_ATTACH_REUSEPORT_CBPF = 51
+	SO_ATTACH_REUSEPORT_EBPF = 52
+	SO_CNX_ADVICE            = 53
+	SO_MEMINFO               = 55
+	SO_INCOMING_NAPI_ID      = 56
+	SO_COOKIE                = 57
+	SO_PEERGROUPS            = 59
+	SO_ZEROCOPY              = 60
+	SO_TXTIME                = 61
 )
 
 // SockAddrMax is the maximum size of a struct sockaddr, from

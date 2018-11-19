@@ -108,3 +108,17 @@ const NetlinkAttrHeaderSize = 4
 // NLA_ALIGNTO is the alignment of netlink attributes, from
 // uapi/linux/netlink.h.
 const NLA_ALIGNTO = 4
+
+// Socket options, from uapi/linux/netlink.h.
+const (
+	NETLINK_ADD_MEMBERSHIP   = 1
+	NETLINK_DROP_MEMBERSHIP  = 2
+	NETLINK_PKTINFO          = 3
+	NETLINK_BROADCAST_ERROR  = 4
+	NETLINK_NO_ENOBUFS       = 5
+	NETLINK_LISTEN_ALL_NSID  = 8
+	NETLINK_LIST_MEMBERSHIPS = 9
+	NETLINK_CAP_ACK          = 10
+	NETLINK_EXT_ACK          = 11
+	NETLINK_DUMP_STRICT_CHK  = 12
+)

@@ -213,3 +213,94 @@ func (rt *ReceiveTimeout) SetRecvTimeout(nanoseconds int64) {
 func (rt *ReceiveTimeout) RecvTimeout() int64 {
 	return atomic.LoadInt64(&rt.ns)
 }
+
+// GetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.
+// It contains names that are valid for GetSockOpt when level is SOL_SOCKET.
+func GetSockOptEmitUnimplementedEvent(t *kernel.Task, name int) {
+	switch name {
+	case linux.SO_ACCEPTCONN,
+		linux.SO_BPF_EXTENSIONS,
+		linux.SO_COOKIE,
+		linux.SO_DOMAIN,
+		linux.SO_ERROR,
+		linux.SO_GET_FILTER,
+		linux.SO_INCOMING_NAPI_ID,
+		linux.SO_MEMINFO,
+		linux.SO_PEERCRED,
+		linux.SO_PEERGROUPS,
+		linux.SO_PEERNAME,
+		linux.SO_PEERSEC,
+		linux.SO_PROTOCOL,
+		linux.SO_SNDLOWAT,
+		linux.SO_TYPE:
+
+		t.Kernel().EmitUnimplementedEvent(t)
+
+	default:
+		emitUnimplementedEvent(t, name)
+	}
+}
+
+// SetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.
+// It contains names that are valid for SetSockOpt when level is SOL_SOCKET.
+func SetSockOptEmitUnimplementedEvent(t *kernel.Task, name int) {
+	switch name {
+	case linux.SO_ATTACH_BPF,
+		linux.SO_ATTACH_FILTER,
+		linux.SO_ATTACH_REUSEPORT_CBPF,
+		linux.SO_ATTACH_REUSEPORT_EBPF,
+		linux.SO_CNX_ADVICE,
+		linux.SO_DETACH_FILTER,
+		linux.SO_RCVBUFFORCE,
+		linux.SO_SNDBUFFORCE:
+
+		t.Kernel().EmitUnimplementedEvent(t)
+
+	default:
+		emitUnimplementedEvent(t, name)
+	}
+}
+
+// emitUnimplementedEvent emits unimplemented event if name is valid. It
+// contains names that are common between Get and SetSocketOpt when level is
+// SOL_SOCKET.
+func emitUnimplementedEvent(t *kernel.Task, name int) {
+	switch name {
+	case linux.SO_BINDTODEVICE,
+		linux.SO_BROADCAST,
+		linux.SO_BSDCOMPAT,
+		linux.SO_BUSY_POLL,
+		linux.SO_DEBUG,
+		linux.SO_DONTROUTE,
+		linux.SO_INCOMING_CPU,
+		linux.SO_KEEPALIVE,
+		linux.SO_LINGER,
+		linux.SO_LOCK_FILTER,
+		linux.SO_MARK,
+		linux.SO_MAX_PACING_RATE,
+		linux.SO_NOFCS,
+		linux.SO_NO_CHECK,
+		linux.SO_OOBINLINE,
+		linux.SO_PASSCRED,
+		linux.SO_PASSSEC,
+		linux.SO_PEEK_OFF,
+		linux.SO_PRIORITY,
+		linux.SO_RCVBUF,
+		linux.SO_RCVLOWAT,
+		linux.SO_RCVTIMEO,
+		linux.SO_REUSEADDR,
+		linux.SO_REUSEPORT,
+		linux.SO_RXQ_OVFL,
+		linux.SO_SELECT_ERR_QUEUE,
+		linux.SO_SNDBUF,
+		linux.SO_SNDTIMEO,
+		linux.SO_TIMESTAMP,
+		linux.SO_TIMESTAMPING,
+		linux.SO_TIMESTAMPNS,
+		linux.SO_TXTIME,
+		linux.SO_WIFI_STATUS,
+		linux.SO_ZEROCOPY:
+
+		t.Kernel().EmitUnimplementedEvent(t)
+	}
+}
