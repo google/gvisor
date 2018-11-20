@@ -18,10 +18,12 @@ package testutil
 import (
 	"bufio"
 	"context"
+	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -40,6 +42,10 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 // RaceEnabled is set to true if it was built with '--race' option.
 var RaceEnabled = false
@@ -220,7 +226,15 @@ func writeSpec(dir string, spec *specs.Spec) error {
 // name, sometimes between test runs the socket does not get cleaned up quickly
 // enough, causing container creation to fail.
 func UniqueContainerID() string {
-	return fmt.Sprintf("test-container-%d", time.Now().UnixNano())
+	// Read 20 random bytes.
+	b := make([]byte, 20)
+	// "[Read] always returns len(p) and a nil error." --godoc
+	if _, err := rand.Read(b); err != nil {
+		panic("rand.Read failed: " + err.Error())
+	}
+	// base32 encode the random bytes, so that the name is a valid
+	// container id and can be used as a socket name in the filesystem.
+	return fmt.Sprintf("test-container-%s", base32.StdEncoding.EncodeToString(b))
 }
 
 // Copy copies file from src to dst.
