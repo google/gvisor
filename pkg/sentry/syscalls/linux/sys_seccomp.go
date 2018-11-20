@@ -68,12 +68,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr usermem.Addr) error {
 		return syscall.EINVAL
 	}
 
-	err = t.AppendSyscallFilter(compiledFilter)
-	if err == nil && tsync {
-		// Now we must copy this seccomp program to all other threads.
-		err = t.SyncSyscallFiltersToThreadGroup()
-	}
-	return err
+	return t.AppendSyscallFilter(compiledFilter, tsync)
 }
 
 // Seccomp implements linux syscall seccomp(2).

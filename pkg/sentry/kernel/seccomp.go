@@ -179,20 +179,19 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 // AppendSyscallFilter adds BPF program p as a system call filter.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) AppendSyscallFilter(p bpf.Program) error {
+func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
+	// While syscallFilters are an atomic.Value we must take the mutex to prevent
+	// our read-copy-update from happening while another task is syncing syscall
+	// filters to us, this keeps the filters in a consistent state.
+	t.tg.signalHandlers.mu.Lock()
+	defer t.tg.signalHandlers.mu.Unlock()
+
 	// Cap the combined length of all syscall filters (plus a penalty of 4
-	// instructions per filter beyond the first) to
-	// maxSyscallFilterInstructions. (This restriction is inherited from
-	// Linux.)
+	// instructions per filter beyond the first) to maxSyscallFilterInstructions.
+	// This restriction is inherited from Linux.
 	totalLength := p.Length()
 	var newFilters []bpf.Program
 
-	// While syscallFilters are an atomic.Value we must take the mutex to
-	// prevent our read-copy-update from happening while another task
-	// is syncing syscall filters to us, this keeps the filters in a
-	// consistent state.
-	t.mu.Lock()
-	defer t.mu.Unlock()
 	if sf := t.syscallFilters.Load(); sf != nil {
 		oldFilters := sf.([]bpf.Program)
 		for _, f := range oldFilters {
@@ -207,31 +206,18 @@ func (t *Task) AppendSyscallFilter(p bpf.Program) error {
 
 	newFilters = append(newFilters, p)
 	t.syscallFilters.Store(newFilters)
-	return nil
-}
 
-// SyncSyscallFiltersToThreadGroup will copy this task's filters to all other
-// threads in our thread group.
-func (t *Task) SyncSyscallFiltersToThreadGroup() error {
-	f := t.syscallFilters.Load()
-
-	t.tg.pidns.owner.mu.RLock()
-	defer t.tg.pidns.owner.mu.RUnlock()
-
-	// Note: No new privs is always assumed to be set.
-	for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
-		if ot.ThreadID() != t.ThreadID() {
-			// We must take the other task's mutex to prevent it from
-			// appending to its own syscall filters while we're syncing.
-			ot.mu.Lock()
-			var copiedFilters []bpf.Program
-			if f != nil {
-				copiedFilters = append(copiedFilters, f.([]bpf.Program)...)
+	if syncAll {
+		// Note: No new privs is always assumed to be set.
+		for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
+			if ot != t {
+				var copiedFilters []bpf.Program
+				copiedFilters = append(copiedFilters, newFilters...)
+				ot.syscallFilters.Store(copiedFilters)
 			}
-			ot.syscallFilters.Store(copiedFilters)
-			ot.mu.Unlock()
 		}
 	}
+
 	return nil
 }
 

@@ -392,7 +392,7 @@ type Task struct {
 
 	// syscallFilters is all seccomp-bpf syscall filters applicable to the
 	// task, in the order in which they were installed. The type of the atomic
-	// is []bpf.Program. Writing needs to be protected by mu.
+	// is []bpf.Program. Writing needs to be protected by the signal mutex.
 	//
 	// syscallFilters is owned by the task goroutine.
 	syscallFilters atomic.Value `state:".([]bpf.Program)"`
