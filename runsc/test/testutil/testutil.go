@@ -87,22 +87,35 @@ func FindFile(path string) (string, error) {
 		root = dir[:len(dir)-1]
 	}
 
-	// bazel adds the build type to the directory structure. Since I don't want
-	// to guess what build type it's, just place '*' to match anything.
-	//
-	// The pattern goes like: /test-path/__main__/directories/*/file.
-	pattern := filepath.Join(root, filepath.Dir(path), "*", filepath.Base(path))
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", fmt.Errorf("error globbing %q: %v", pattern, err)
+	// Annoyingly, bazel adds the build type to the directory path for go
+	// binaries, but not for c++ binaries. We use two different patterns to
+	// to find our file.
+	patterns := []string{
+		// Try the obvious path first.
+		filepath.Join(root, path),
+		// If it was a go binary, use a wildcard to match the build
+		// type. The pattern is: /test-path/__main__/directories/*/file.
+		filepath.Join(root, filepath.Dir(path), "*", filepath.Base(path)),
 	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("file %q not found", path)
+
+	for _, p := range patterns {
+		matches, err := filepath.Glob(p)
+		if err != nil {
+			// "The only possible returned error is ErrBadPattern,
+			// when pattern is malformed." -godoc
+			return "", fmt.Errorf("error globbing %q: %v", p, err)
+		}
+		switch len(matches) {
+		case 0:
+			// Try the next pattern.
+		case 1:
+			// We found it.
+			return matches[0], nil
+		default:
+			return "", fmt.Errorf("more than one match found for %q: %s", path, matches)
+		}
 	}
-	if len(matches) != 1 {
-		return "", fmt.Errorf("more than one match found for %q: %s", path, matches)
-	}
-	return matches[0], nil
+	return "", fmt.Errorf("file %q not found", path)
 }
 
 // TestConfig returns the default configuration to use in tests. Note that
