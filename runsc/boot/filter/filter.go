@@ -57,8 +57,7 @@ func Install(opt Options) error {
 		return fmt.Errorf("unknown platform type %T", p)
 	}
 
-	// TODO: Set kill=true when SECCOMP_RET_KILL_PROCESS is supported.
-	return seccomp.Install(s, false)
+	return seccomp.Install(s)
 }
 
 // Report writes a warning message to the log.

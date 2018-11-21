@@ -29,6 +29,5 @@ func Install() error {
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
-	// TODO: Set kill=true when SECCOMP_RET_KILL_PROCESS is supported.
-	return seccomp.Install(s, false)
+	return seccomp.Install(s)
 }

@@ -36,22 +36,40 @@ type sockFprog struct {
 //
 //go:nosplit
 func SetFilter(instrs []linux.BPFInstruction) syscall.Errno {
-	// SYS_SECCOMP is not available in syscall package.
-	const SYS_SECCOMP = 317
-
 	// PR_SET_NO_NEW_PRIVS is required in order to enable seccomp. See seccomp(2) for details.
 	if _, _, errno := syscall.RawSyscall(syscall.SYS_PRCTL, linux.PR_SET_NO_NEW_PRIVS, 1, 0); errno != 0 {
 		return errno
 	}
 
-	// TODO: Use SECCOMP_FILTER_FLAG_KILL_PROCESS when available.
 	sockProg := sockFprog{
 		Len:    uint16(len(instrs)),
 		Filter: (*linux.BPFInstruction)(unsafe.Pointer(&instrs[0])),
 	}
-	if _, _, errno := syscall.RawSyscall(SYS_SECCOMP, linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_TSYNC, uintptr(unsafe.Pointer(&sockProg))); errno != 0 {
+	return seccomp(linux.SECCOMP_SET_MODE_FILTER, linux.SECCOMP_FILTER_FLAG_TSYNC, unsafe.Pointer(&sockProg))
+}
+
+func isKillProcessAvailable() (bool, error) {
+	action := uint32(linux.SECCOMP_RET_KILL_PROCESS)
+	if errno := seccomp(linux.SECCOMP_GET_ACTION_AVAIL, 0, unsafe.Pointer(&action)); errno != 0 {
+		// EINVAL: SECCOMP_GET_ACTION_AVAIL not in this kernel yet.
+		// EOPNOTSUPP: SECCOMP_RET_KILL_PROCESS not supported.
+		if errno == syscall.EINVAL || errno == syscall.EOPNOTSUPP {
+			return false, nil
+		}
+		return false, errno
+	}
+	return true, nil
+}
+
+// seccomp calls seccomp(2). This is safe to call from an afterFork context.
+//
+//go:nosplit
+func seccomp(op, flags uint32, ptr unsafe.Pointer) syscall.Errno {
+	// SYS_SECCOMP is not available in syscall package.
+	const SYS_SECCOMP = 317
+
+	if _, _, errno := syscall.RawSyscall(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr)); errno != 0 {
 		return errno
 	}
-
 	return 0
 }

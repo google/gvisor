@@ -33,17 +33,42 @@ const (
 	defaultLabel = "default_action"
 )
 
-// Install generates BPF code based on the set of syscalls provided. It only
-// allows syscalls that conform to the specification and generates SIGSYS
-// trap unless kill is set.
-//
-// This is a convenience wrapper around BuildProgram and SetFilter.
-func Install(rules SyscallRules, kill bool) error {
-	log.Infof("Installing seccomp filters for %d syscalls (kill=%t)", len(rules), kill)
-	defaultAction := uint32(linux.SECCOMP_RET_TRAP)
-	if kill {
-		defaultAction = uint32(linux.SECCOMP_RET_KILL)
+func actionName(a uint32) string {
+	switch a {
+	case linux.SECCOMP_RET_KILL_PROCESS:
+		return "kill process"
+	case linux.SECCOMP_RET_TRAP:
+		return "trap"
 	}
+	panic(fmt.Sprintf("invalid action: %d", a))
+}
+
+// Install generates BPF code based on the set of syscalls provided. It only
+// allows syscalls that conform to the specification. Syscalls that violate the
+// specification will trigger RET_KILL_PROCESS, except for the cases below.
+//
+// RET_TRAP is used in violations, instead of RET_KILL_PROCESS, in the
+// following cases:
+//	 1. Kernel doesn't support RET_KILL_PROCESS: RET_KILL_THREAD only kills the
+//      offending thread and often keeps the sentry hanging.
+//   2. Debug: RET_TRAP generates a panic followed by a stack trace which is
+//      much easier to debug then RET_KILL_PROCESS which can't be caught.
+//
+// Be aware that RET_TRAP sends SIGSYS to the process and it may be ignored,
+// making it possible for the process to continue running after a violation.
+// However, it will leave a SECCOMP audit event trail behind. In any case, the
+// syscall is still blocked from executing.
+func Install(rules SyscallRules) error {
+	defaultAction, err := defaultAction()
+	if err != nil {
+		return err
+	}
+
+	// Uncomment to get stack trace when there is a violation.
+	// defaultAction = uint32(linux.SECCOMP_RET_TRAP)
+
+	log.Infof("Installing seccomp filters for %d syscalls (action=%s)", len(rules), actionName(defaultAction))
+
 	instrs, err := BuildProgram([]RuleSet{
 		RuleSet{
 			Rules:  rules,
@@ -68,6 +93,17 @@ func Install(rules SyscallRules, kill bool) error {
 
 	log.Infof("Seccomp filters installed.")
 	return nil
+}
+
+func defaultAction() (uint32, error) {
+	available, err := isKillProcessAvailable()
+	if err != nil {
+		return 0, err
+	}
+	if available {
+		return uint32(linux.SECCOMP_RET_KILL_PROCESS), nil
+	}
+	return uint32(linux.SECCOMP_RET_TRAP), nil
 }
 
 // RuleSet is a set of rules and associated action.

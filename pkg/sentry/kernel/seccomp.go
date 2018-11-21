@@ -117,7 +117,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 		// "Results in the system call being executed."
 		return seccompResultAllow
 
-	case linux.SECCOMP_RET_KILL:
+	case linux.SECCOMP_RET_KILL_THREAD:
 		// "Results in the task exiting immediately without executing the
 		// system call. The exit status of the task will be SIGSYS, not
 		// SIGKILL."
@@ -155,7 +155,7 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 		thisRet, err := bpf.Exec(f.([]bpf.Program)[i], input)
 		if err != nil {
 			t.Debugf("seccomp-bpf filter %d returned error: %v", i, err)
-			thisRet = linux.SECCOMP_RET_KILL
+			thisRet = linux.SECCOMP_RET_KILL_THREAD
 		}
 		// "If multiple filters exist, the return value for the evaluation of a
 		// given system call will always use the highest precedent value." -

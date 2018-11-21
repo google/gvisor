@@ -115,7 +115,7 @@ func createStub() (*thread, error) {
 	var defaultAction uint32
 	if probeSeccomp() {
 		log.Infof("Latest seccomp behavior found (kernel >= 4.8 likely)")
-		defaultAction = uint32(linux.SECCOMP_RET_KILL)
+		defaultAction = uint32(linux.SECCOMP_RET_KILL_THREAD)
 	} else {
 		// We must rely on SYSEMU behavior; tracing with SYSEMU is broken.
 		log.Infof("Legacy seccomp behavior found (kernel < 4.8 likely)")

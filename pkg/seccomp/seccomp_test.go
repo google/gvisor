@@ -121,7 +121,7 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_TRAP,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_KILL,
+			defaultAction: linux.SECCOMP_RET_KILL_THREAD,
 			specs: []spec{
 				{
 					desc: "Multiple rulesets allowed (1a)",
@@ -141,7 +141,7 @@ func TestBasic(t *testing.T) {
 				{
 					desc: "Multiple rulesets allowed (2)",
 					data: seccompData{nr: 0, arch: linux.AUDIT_ARCH_X86_64},
-					want: linux.SECCOMP_RET_KILL,
+					want: linux.SECCOMP_RET_KILL_THREAD,
 				},
 			},
 		},
@@ -431,15 +431,23 @@ func TestRealDeal(t *testing.T) {
 				t.Errorf("victim was not killed as expected, output: %s", out)
 				continue
 			}
+			// Depending on kernel version, either RET_TRAP or RET_KILL_PROCESS is
+			// used. RET_TRAP dumps reason for exit in output, while RET_KILL_PROCESS
+			// returns SIGSYS as exit status.
+			if !strings.Contains(string(out), test.want) &&
+				!strings.Contains(err.Error(), test.want) {
+				t.Errorf("Victim error is wrong, got: %v, err: %v, want: %v", string(out), err, test.want)
+				continue
+			}
 		} else {
 			if err != nil {
 				t.Errorf("victim failed to execute, err: %v", err)
 				continue
 			}
-		}
-		if !strings.Contains(string(out), test.want) {
-			t.Errorf("Victim output is wrong, got: %v, want: %v", err, test.want)
-			continue
+			if !strings.Contains(string(out), test.want) {
+				t.Errorf("Victim output is wrong, got: %v, want: %v", string(out), test.want)
+				continue
+			}
 		}
 	}
 }
