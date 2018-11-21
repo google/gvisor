@@ -190,7 +190,24 @@ func (w *Watchdog) loop() {
 
 // runTurn runs a single pass over all tasks and reports anything it finds.
 func (w *Watchdog) runTurn() {
-	tasks := w.k.TaskSet().Root.Tasks()
+	// Someone needs to watch the watchdog. The call below can get stuck if there
+	// is a deadlock affecting root's PID namespace mutex. Run it in a goroutine
+	// and report if it takes too long to return.
+	var tasks []*kernel.Task
+	done := make(chan struct{})
+	go func() { // S/R-SAFE: watchdog is stopped and restarted during S/R.
+		tasks = w.k.TaskSet().Root.Tasks()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(w.taskTimeout):
+		// Report if the watchdog is not making progress.
+		// No one is wathching the watchdog watcher though.
+		w.reportStuckWatchdog()
+		<-done
+	}
 
 	newOffenders := make(map[*kernel.Task]*offender)
 	newTaskFound := false
@@ -245,7 +262,16 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (%#x), entered RunSys state %v ago.\n", tid, uint64(tid), now.Sub(o.lastUpdateTime)))
 	}
 	buf.WriteString("Search for '(*Task).run(0x..., 0x<tid>)' in the stack dump to find the offending goroutine")
+	w.onStuckTask(newTaskFound, &buf)
+}
 
+func (w *Watchdog) reportStuckWatchdog() {
+	var buf bytes.Buffer
+	buf.WriteString("Watchdog goroutine is stuck:\n")
+	w.onStuckTask(true, &buf)
+}
+
+func (w *Watchdog) onStuckTask(newTaskFound bool, buf *bytes.Buffer) {
 	switch w.timeoutAction {
 	case LogWarning:
 		// Dump stack only if a new task is detected or if it sometime has passed since
