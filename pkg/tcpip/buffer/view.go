@@ -132,7 +132,13 @@ func (vv VectorisedView) Size() int {
 }
 
 // ToView returns a single view containing the content of the vectorised view.
+//
+// If the vectorised view contains a single view, that view will be returned
+// directly.
 func (vv VectorisedView) ToView() View {
+	if len(vv.views) == 1 {
+		return vv.views[0]
+	}
 	u := make([]byte, 0, vv.size)
 	for _, v := range vv.views {
 		u = append(u, v...)
