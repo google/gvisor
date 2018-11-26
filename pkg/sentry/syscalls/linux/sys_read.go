@@ -187,6 +187,68 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv", file)
 }
 
+// Preadv2 implements linux syscall preadv2(2).
+func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := kdefs.FD(args[0].Int())
+	addr := args[1].Pointer()
+	iovcnt := int(args[2].Int())
+	offset := args[3].Int64()
+	flags := int(args[4].Int())
+
+	validFlags := linux.RWF_HIPRI
+
+	file := t.FDMap().GetFile(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	// Check that the offset is legitimate.
+	if offset < -1 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Is reading at an offset supported?
+	if offset > -1 && !file.Flags().Pread {
+		return 0, nil, syserror.ESPIPE
+	}
+
+	// Check that the file is readable.
+	if !file.Flags().Read {
+		return 0, nil, syserror.EBADF
+	}
+
+	// Check flags field.
+	if flags != 0 {
+		if flags&^validFlags != 0 {
+			return 0, nil, syserror.EINVAL
+		}
+		// RWF_HIPRI must be called on a file with O_DIRECT flag set.
+		if flags&linux.RWF_HIPRI != 0 && !file.Flags().Direct {
+			return 0, nil, syserror.EINVAL
+		}
+	}
+
+	// Read the iovecs that specify the destination of the read.
+	dst, err := t.IovecsIOSequence(addr, iovcnt, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// If preadv2 is called with an offset of -1, readv is called.
+	if offset == -1 {
+		n, err := readv(t, file, dst)
+		t.IOUsage().AccountReadSyscall(n)
+		return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+	}
+
+	n, err := preadv(t, file, dst, offset)
+	t.IOUsage().AccountReadSyscall(n)
+	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "preadv2", file)
+}
+
 func readv(t *kernel.Task, f *fs.File, dst usermem.IOSequence) (int64, error) {
 	n, err := f.Readv(t, dst)
 	if err != syserror.ErrWouldBlock || f.Flags().NonBlocking {

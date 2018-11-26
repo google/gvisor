@@ -150,6 +150,13 @@ const (
 	PermissionsMask = 0777
 )
 
+// Values for preadv2/pwritev2.
+const (
+	RWF_HIPRI = 0x0001
+	RWF_DSYNC = 0X0002
+	RWF_SYNC  = 0x0004
+)
+
 // Stat represents struct stat.
 type Stat struct {
 	Dev      uint64

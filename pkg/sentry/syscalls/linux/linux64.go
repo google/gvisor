@@ -373,7 +373,10 @@ var AMD64 = &kernel.SyscallTable{
 		//     322: Execveat, TODO
 		//     323: Userfaultfd, TODO
 		//     324: Membarrier, TODO
+		// Syscalls after 325 are backports from 4.6.
 		325: syscalls.Error(nil), // Mlock2, TODO
+		327: Preadv2,
+		//	328: Pwritev2,  // Pwritev2, TODO
 	},
 
 	Emulate: map[usermem.Addr]uintptr{
