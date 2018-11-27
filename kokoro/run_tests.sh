@@ -100,10 +100,11 @@ EOF
 )
 
 # Install containerd and crictl.
-if [[ ${exit_code} -eq 0 ]]; then
-  installCrictl
-  exit_code=${?}
-fi
+# FIXME: gvisor-containerd-shim installation broken.
+#if [[ ${exit_code} -eq 0 ]]; then
+#  installCrictl
+#  exit_code=${?}
+#fi
 
 # Execute local tests that require docker.
 if [[ ${exit_code} -eq 0 ]]; then
