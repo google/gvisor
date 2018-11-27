@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "procid.go",
         "procid_amd64.s",
+        "procid_arm64.s",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid",
     visibility = ["//pkg/sentry:internal"],
