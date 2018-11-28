@@ -15,12 +15,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"syscall"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"

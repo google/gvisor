@@ -15,11 +15,11 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"sync"
 	"syscall"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"

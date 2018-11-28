@@ -15,11 +15,11 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"time"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/log"

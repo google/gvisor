@@ -17,13 +17,13 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 
-	"context"
 	"flag"
 
 	"github.com/google/subcommands"

@@ -15,11 +15,11 @@
 package cmd
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 )

@@ -15,10 +15,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/log"

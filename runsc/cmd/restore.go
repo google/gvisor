@@ -15,10 +15,10 @@
 package cmd
 
 import (
+	"context"
 	"path/filepath"
 	"syscall"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/runsc/boot"

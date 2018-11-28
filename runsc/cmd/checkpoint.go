@@ -15,11 +15,11 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"syscall"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/pkg/log"

@@ -16,13 +16,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 
-	"context"
 	"flag"
 	"github.com/google/subcommands"
 )
