@@ -110,20 +110,13 @@ func (i *Inode) destroy() {
 	// wouldn't be in the destructor.
 	i.Watches.targetDestroyed()
 
-	// Overlay resources should be released synchronously, since they may
-	// trigger more Inode.destroy calls which must themselves be handled
-	// synchronously, like the WriteOut call above.
 	if i.overlay != nil {
 		i.overlay.release()
-		i.MountSource.DecRef()
-		return
+	} else {
+		i.InodeOperations.Release(ctx)
 	}
 
-	// Regular (non-overlay) resources may be released asynchronously.
-	Async(func() {
-		i.InodeOperations.Release(ctx)
-		i.MountSource.DecRef()
-	})
+	i.MountSource.DecRef()
 }
 
 // Mappable calls i.InodeOperations.Mappable.

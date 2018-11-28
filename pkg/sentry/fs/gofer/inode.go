@@ -333,8 +333,14 @@ func (i *inodeOperations) session() *session {
 
 // Release implements fs.InodeOperations.Release.
 func (i *inodeOperations) Release(ctx context.Context) {
-	i.fileState.Release(ctx)
 	i.cachingInodeOps.Release()
+
+	// Releasing the fileState may make RPCs to the gofer. There is
+	// no need to wait for those to return, so we can do this
+	// asynchronously.
+	fs.Async(func() {
+		i.fileState.Release(ctx)
+	})
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
