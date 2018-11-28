@@ -354,6 +354,13 @@ func (s *socketOperations) Listen(t *kernel.Task, backlog int) *syserr.Error {
 
 // Shutdown implements socket.Socket.Shutdown.
 func (s *socketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
+	// We save the shutdown state because of strange differences on linux
+	// related to recvs on blocking vs. non-blocking sockets after a SHUT_RD.
+	// We need to emulate that behavior on the blocking side.
+	// TODO: There is a possible race that can exist with loopback,
+	// where data could possibly be lost.
+	s.setShutdownFlags(how)
+
 	stack := t.NetworkContext().(*Stack)
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Shutdown{&pb.ShutdownRequest{Fd: s.fd, How: int64(how)}}}, false /* ignoreResult */)
 	<-c
@@ -362,10 +369,6 @@ func (s *socketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 		return syserr.FromHost(syscall.Errno(e))
 	}
 
-	// We save the shutdown state because of strange differences on linux
-	// related to recvs on blocking vs. non-blocking sockets after a SHUT_RD.
-	// We need to emulate that behavior on the blocking side.
-	s.setShutdownFlags(how)
 	return nil
 }
 
