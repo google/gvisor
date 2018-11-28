@@ -75,8 +75,10 @@ installCrictl() (
   sudo -n -E make install
 
   # Install gvisor-containerd-shim.
+  local latest=/tmp/gvisor-containerd-shim-latest
   local shim_path=/tmp/gvisor-containerd-shim
-  wget https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim/gvisor-containerd-shim -O ${shim_path}
+  wget https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim/latest -O ${latest}
+  wget https://storage.googleapis.com/cri-containerd-staging/gvisor-containerd-shim/$(cat ${latest}) -O ${shim_path}
   chmod +x ${shim_path}
   sudo -n -E mv ${shim_path} /usr/local/bin
 
@@ -100,11 +102,10 @@ EOF
 )
 
 # Install containerd and crictl.
-# FIXME: gvisor-containerd-shim installation broken.
-#if [[ ${exit_code} -eq 0 ]]; then
-#  installCrictl
-#  exit_code=${?}
-#fi
+if [[ ${exit_code} -eq 0 ]]; then
+  installCrictl
+  exit_code=${?}
+fi
 
 # Execute local tests that require docker.
 if [[ ${exit_code} -eq 0 ]]; then
