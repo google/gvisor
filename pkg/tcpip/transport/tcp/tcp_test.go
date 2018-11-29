@@ -1449,6 +1449,71 @@ func TestUndelay(t *testing.T) {
 	})
 }
 
+func TestMSSNotDelayed(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(tcpip.Endpoint)
+	}{
+		{"no-op", func(tcpip.Endpoint) {}},
+		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOpt(tcpip.DelayOption(1)) }},
+		{"cork", func(ep tcpip.Endpoint) { ep.SetSockOpt(tcpip.CorkOption(1)) }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			const maxPayload = 100
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.CreateConnectedWithRawOptions(789, 30000, nil, []byte{
+				header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
+			})
+
+			test.fn(c.EP)
+
+			allData := [][]byte{{0}, make([]byte, maxPayload), make([]byte, maxPayload)}
+			for i, data := range allData {
+				view := buffer.NewViewFromBytes(data)
+				if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+					t.Fatalf("Write #%d failed: %v", i+1, err)
+				}
+			}
+
+			seq := c.IRS.Add(1)
+
+			for i, data := range allData {
+				// Check that data is received.
+				packet := c.GetPacket()
+				checker.IPv4(t, packet,
+					checker.PayloadLen(len(data)+header.TCPMinimumSize),
+					checker.TCP(
+						checker.DstPort(context.TestPort),
+						checker.SeqNum(uint32(seq)),
+						checker.AckNum(790),
+						checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+					),
+				)
+
+				if got, want := packet[header.IPv4MinimumSize+header.TCPMinimumSize:], data; !bytes.Equal(got, want) {
+					t.Fatalf("got packet #%d's data = %v, want = %v", i+1, got, want)
+				}
+
+				seq = seq.Add(seqnum.Size(len(data)))
+			}
+
+			// Acknowledge the data.
+			c.SendPacket(nil, &context.Headers{
+				SrcPort: context.TestPort,
+				DstPort: c.Port,
+				Flags:   header.TCPFlagAck,
+				SeqNum:  790,
+				AckNum:  seq,
+				RcvWnd:  30000,
+			})
+		})
+	}
+}
+
 func testBrokenUpWrite(t *testing.T, c *context.Context, maxPayload int) {
 	payloadMultiplier := 10
 	dataLen := payloadMultiplier * maxPayload
