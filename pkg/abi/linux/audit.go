@@ -14,22 +14,10 @@
 
 package linux
 
-// Seccomp constants taken from <linux/seccomp.h>.
+// Audit numbers identify different system call APIs, from <uapi/linux/audit.h>
 const (
-	SECCOMP_MODE_NONE   = 0
-	SECCOMP_MODE_FILTER = 2
-
-	SECCOMP_RET_KILL_PROCESS = 0x80000000
-	SECCOMP_RET_KILL_THREAD  = 0x00000000
-	SECCOMP_RET_TRAP         = 0x00030000
-	SECCOMP_RET_ERRNO        = 0x00050000
-	SECCOMP_RET_TRACE        = 0x7ff00000
-	SECCOMP_RET_ALLOW        = 0x7fff0000
-
-	SECCOMP_RET_ACTION = 0x7fff0000
-	SECCOMP_RET_DATA   = 0x0000ffff
-
-	SECCOMP_SET_MODE_FILTER   = 1
-	SECCOMP_FILTER_FLAG_TSYNC = 1
-	SECCOMP_GET_ACTION_AVAIL  = 2
+	// AUDIT_ARCH_X86_64 identifies AMD64.
+	AUDIT_ARCH_X86_64 = 0xc000003e
+	// AUDIT_ARCH_AARCH64 identifies ARM64.
+	AUDIT_ARCH_AARCH64 = 0xc00000b7
 )

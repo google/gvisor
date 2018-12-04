@@ -11,6 +11,7 @@ go_library(
     srcs = [
         "aio.go",
         "ashmem.go",
+        "audit.go",
         "binder.go",
         "bpf.go",
         "capability.go",
