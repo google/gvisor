@@ -40,6 +40,7 @@ go_test(
         "//runsc",
     ],
     embed = [":container"],
+    shard_count = 5,
     tags = [
         "requires-kvm",
     ],
