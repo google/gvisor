@@ -1251,6 +1251,12 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// AT_SYMLINK_FOLLOW can be specified in flags to cause oldpath to be
 	// dereferenced if it is a symbolic link.
 	flags := args[4].Int()
+
+	// Sanity check flags.
+	if flags&^(linux.AT_SYMLINK_FOLLOW|linux.AT_EMPTY_PATH) != 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
 	resolve := flags&linux.AT_SYMLINK_FOLLOW == linux.AT_SYMLINK_FOLLOW
 	allowEmpty := flags&linux.AT_EMPTY_PATH == linux.AT_EMPTY_PATH
 
