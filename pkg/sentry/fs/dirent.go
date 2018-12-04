@@ -840,6 +840,10 @@ func (d *Dirent) getDotAttrs(root *Dirent) (DentAttr, DentAttr) {
 		InodeID: sattr.InodeID,
 	}
 
+	// Hold d.mu while we call d.descendantOf.
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	// Get '..'.
 	if !d.IsRoot() && d.descendantOf(root) {
 		// Dirent is a descendant of the root.  Get its parent's attrs.
