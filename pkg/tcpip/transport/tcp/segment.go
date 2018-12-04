@@ -46,7 +46,7 @@ type segment struct {
 	data   buffer.VectorisedView     `state:".(buffer.VectorisedView)"`
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
-	views [8]buffer.View
+	views [8]buffer.View `state:"nosave"`
 	// viewToDeliver keeps track of the next View that should be
 	// delivered by the Read endpoint.
 	viewToDeliver  int
