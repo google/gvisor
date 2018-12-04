@@ -308,28 +308,31 @@ func SetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	nodemask := args[1].Pointer()
 	maxnode := args[2].Uint()
 
-	if maxnode < 1 {
+	if nodemask != 0 && maxnode < 1 {
 		return 0, nil, syserror.EINVAL
 	}
 
 	if modeWithFlags&linux.MPOL_MODE_FLAGS == linux.MPOL_MODE_FLAGS {
-		// Can't specify multiple modes simultaneously. Must also contain a
-		// valid mode, which we check below.
+		// Can't specify multiple modes simultaneously.
 		return 0, nil, syserror.EINVAL
 	}
 
 	mode := modeWithFlags &^ linux.MPOL_MODE_FLAGS
 	if mode < 0 || mode >= linux.MPOL_MAX {
+		// Must specify a valid mode.
 		return 0, nil, syserror.EINVAL
 	}
 
 	var nodemaskVal uint32
-	if _, err := t.CopyIn(nodemask, &nodemaskVal); err != nil {
-		return 0, nil, syserror.EFAULT
+	// Nodemask may be empty for some policy modes.
+	if nodemask != 0 && maxnode > 0 {
+		if _, err := t.CopyIn(nodemask, &nodemaskVal); err != nil {
+			return 0, nil, syserror.EFAULT
+		}
 	}
 
-	// When setting MPOL_INTERLEAVE, nodemask must not be empty.
-	if mode == linux.MPOL_INTERLEAVE && nodemaskVal == 0 {
+	if (mode == linux.MPOL_INTERLEAVE || mode == linux.MPOL_BIND) && nodemaskVal == 0 {
+		// Mode requires a non-empty nodemask, but got an empty nodemask.
 		return 0, nil, syserror.EINVAL
 	}
 
