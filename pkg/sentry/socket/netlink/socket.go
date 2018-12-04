@@ -298,7 +298,7 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (in
 				return nil, syserr.ErrInvalidArgument
 			}
 			// We don't have limit on receiving size.
-			return math.MaxInt32, nil
+			return int32(math.MaxInt32), nil
 
 		default:
 			socket.GetSockOptEmitUnimplementedEvent(t, name)
