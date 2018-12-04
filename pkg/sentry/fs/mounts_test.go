@@ -77,7 +77,8 @@ func TestFindLink(t *testing.T) {
 		{"bar", foo, "/foo/bar"},
 	} {
 		wdPath, _ := tc.wd.FullName(root)
-		if d, err := mm.FindLink(ctx, root, tc.wd, tc.findPath, 0); err != nil {
+		maxTraversals := uint(0)
+		if d, err := mm.FindLink(ctx, root, tc.wd, tc.findPath, &maxTraversals); err != nil {
 			t.Errorf("FindLink(%q, wd=%q) failed: %v", tc.findPath, wdPath, err)
 		} else if got, _ := d.FullName(root); got != tc.wantPath {
 			t.Errorf("FindLink(%q, wd=%q) got dirent %q, want %q", tc.findPath, wdPath, got, tc.wantPath)
@@ -95,7 +96,8 @@ func TestFindLink(t *testing.T) {
 		{"foo", foo},
 	} {
 		wdPath, _ := tc.wd.FullName(root)
-		if _, err := mm.FindLink(ctx, root, tc.wd, tc.findPath, 0); err == nil {
+		maxTraversals := uint(0)
+		if _, err := mm.FindLink(ctx, root, tc.wd, tc.findPath, &maxTraversals); err == nil {
 			t.Errorf("FindLink(%q, wd=%q) did not return error", tc.findPath, wdPath)
 		}
 	}

@@ -103,7 +103,8 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	defer wd.DecRef()
 
 	// Load the new TaskContext.
-	tc, err := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, linux.MaxSymlinkTraversals, filename, argv, envv, t.Arch().FeatureSet())
+	maxTraversals := uint(linux.MaxSymlinkTraversals)
+	tc, err := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, filename, argv, envv, t.Arch().FeatureSet())
 	if err != nil {
 		return 0, nil, err
 	}

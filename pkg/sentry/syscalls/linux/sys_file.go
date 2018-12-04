@@ -92,10 +92,11 @@ func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func
 	root := t.FSContext().RootDirectory()
 
 	// Lookup the node.
+	remainingTraversals := uint(linux.MaxSymlinkTraversals)
 	if resolve {
-		d, err = t.MountNamespace().FindInode(t, root, rel, path, linux.MaxSymlinkTraversals)
+		d, err = t.MountNamespace().FindInode(t, root, rel, path, &remainingTraversals)
 	} else {
-		d, err = t.MountNamespace().FindLink(t, root, rel, path, linux.MaxSymlinkTraversals)
+		d, err = t.MountNamespace().FindLink(t, root, rel, path, &remainingTraversals)
 	}
 	root.DecRef()
 	if wd != nil {
@@ -312,7 +313,8 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		fileFlags.LargeFile = true
 
 		// Does this file exist already?
-		targetDirent, err := t.MountNamespace().FindInode(t, root, d, name, linux.MaxSymlinkTraversals)
+		remainingTraversals := uint(linux.MaxSymlinkTraversals)
+		targetDirent, err := t.MountNamespace().FindInode(t, root, d, name, &remainingTraversals)
 		var newFile *fs.File
 		switch err {
 		case nil:
@@ -997,7 +999,8 @@ func mkdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileM
 		}
 
 		// Does this directory exist already?
-		f, err := t.MountNamespace().FindInode(t, root, d, name, linux.MaxSymlinkTraversals)
+		remainingTraversals := uint(linux.MaxSymlinkTraversals)
+		f, err := t.MountNamespace().FindInode(t, root, d, name, &remainingTraversals)
 		switch err {
 		case nil:
 			// The directory existed.

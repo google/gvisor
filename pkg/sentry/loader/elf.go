@@ -610,7 +610,7 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, in
 //
 // Preconditions:
 //  * f is an ELF file
-func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals uint, fs *cpuid.FeatureSet, f *fs.File) (loadedELF, arch.Context, error) {
+func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, f *fs.File) (loadedELF, arch.Context, error) {
 	bin, ac, err := loadInitialELF(ctx, m, fs, f)
 	if err != nil {
 		ctx.Infof("Error loading binary: %v", err)

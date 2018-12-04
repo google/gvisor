@@ -166,7 +166,8 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 
 	// Walk to all of the files in the overlay, open them readable.
 	for _, f := range files {
-		d, err := mns.FindInode(ctx, mns.Root(), mns.Root(), f.name, 0)
+		maxTraversals := uint(0)
+		d, err := mns.FindInode(ctx, mns.Root(), mns.Root(), f.name, &maxTraversals)
 		if err != nil {
 			t.Fatalf("failed to find %q: %v", f.name, err)
 		}

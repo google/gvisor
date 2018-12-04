@@ -350,7 +350,7 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 //
 // Precondition: root must be non-nil.
 // Precondition: the path must be non-empty.
-func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path string, maxTraversals uint) (*Dirent, error) {
+func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path string, remainingTraversals *uint) (*Dirent, error) {
 	if root == nil {
 		panic("MountNamespace.FindLink: root must not be nil")
 	}
@@ -419,7 +419,7 @@ func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path 
 			//
 			// See resolve for reference semantics; on err next
 			// will have one dropped.
-			current, err = mns.resolve(ctx, root, next, maxTraversals)
+			current, err = mns.resolve(ctx, root, next, remainingTraversals)
 			if err != nil {
 				return nil, err
 			}
@@ -439,15 +439,15 @@ func (mns *MountNamespace) FindLink(ctx context.Context, root, wd *Dirent, path 
 // FindInode is identical to FindLink except the return value is resolved.
 //
 //go:nosplit
-func (mns *MountNamespace) FindInode(ctx context.Context, root, wd *Dirent, path string, maxTraversals uint) (*Dirent, error) {
-	d, err := mns.FindLink(ctx, root, wd, path, maxTraversals)
+func (mns *MountNamespace) FindInode(ctx context.Context, root, wd *Dirent, path string, remainingTraversals *uint) (*Dirent, error) {
+	d, err := mns.FindLink(ctx, root, wd, path, remainingTraversals)
 	if err != nil {
 		return nil, err
 	}
 
 	// See resolve for reference semantics; on err d will have the
 	// reference dropped.
-	return mns.resolve(ctx, root, d, maxTraversals)
+	return mns.resolve(ctx, root, d, remainingTraversals)
 }
 
 // resolve resolves the given link.
@@ -458,14 +458,14 @@ func (mns *MountNamespace) FindInode(ctx context.Context, root, wd *Dirent, path
 // If not successful, a reference is _also_ dropped on the node and an error
 // returned. This is for convenience in using resolve directly as a return
 // value.
-func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, maxTraversals uint) (*Dirent, error) {
+func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, remainingTraversals *uint) (*Dirent, error) {
 	// Resolve the path.
 	target, err := node.Inode.Getlink(ctx)
 
 	switch err {
 	case nil:
 		// Make sure we didn't exhaust the traversal budget.
-		if maxTraversals == 0 {
+		if *remainingTraversals == 0 {
 			target.DecRef()
 			return nil, syscall.ELOOP
 		}
@@ -481,7 +481,7 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, maxT
 		defer node.DecRef() // See above.
 
 		// First, check if we should traverse.
-		if maxTraversals == 0 {
+		if *remainingTraversals == 0 {
 			return nil, syscall.ELOOP
 		}
 
@@ -492,7 +492,8 @@ func (mns *MountNamespace) resolve(ctx context.Context, root, node *Dirent, maxT
 		}
 
 		// Find the node; we resolve relative to the current symlink's parent.
-		d, err := mns.FindInode(ctx, root, node.parent, targetPath, maxTraversals-1)
+		*remainingTraversals--
+		d, err := mns.FindInode(ctx, root, node.parent, targetPath, remainingTraversals)
 		if err != nil {
 			return nil, err
 		}
@@ -544,7 +545,8 @@ func (mns *MountNamespace) ResolveExecutablePath(ctx context.Context, wd, name s
 	defer root.DecRef()
 	for _, p := range paths {
 		binPath := path.Join(p, name)
-		d, err := mns.FindInode(ctx, root, nil, binPath, linux.MaxSymlinkTraversals)
+		traversals := uint(linux.MaxSymlinkTraversals)
+		d, err := mns.FindInode(ctx, root, nil, binPath, &traversals)
 		if err == syserror.ENOENT || err == syserror.EACCES {
 			// Didn't find it here.
 			continue

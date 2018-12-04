@@ -338,7 +338,8 @@ func mountSubmount(ctx context.Context, conf *Config, mns *fs.MountNamespace, ro
 		}
 	}
 
-	dirent, err := mns.FindInode(ctx, root, root, m.Destination, 0 /* maxTraversals */)
+	maxTraversals := uint(0)
+	dirent, err := mns.FindInode(ctx, root, root, m.Destination, &maxTraversals)
 	if err != nil {
 		return fmt.Errorf("failed to find mount destination %q: %v", m.Destination, err)
 	}
@@ -582,7 +583,8 @@ func setupContainerFS(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf
 	defer globalRoot.DecRef()
 
 	// Create mount point for the container's rootfs.
-	contDir, err := mns.FindInode(ctx, globalRoot, nil, ChildContainersDir, 0 /* TraversalLimit */)
+	maxTraversals := uint(0)
+	contDir, err := mns.FindInode(ctx, globalRoot, nil, ChildContainersDir, &maxTraversals)
 	if err != nil {
 		return fmt.Errorf("couldn't find child container dir %q: %v", ChildContainersDir, err)
 	}
@@ -656,7 +658,8 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 	mnsRoot := mns.Root()
 	defer mnsRoot.DecRef()
 	containerRoot := path.Join(ChildContainersDir, cid)
-	containerRootDirent, err := mns.FindInode(ctx, mnsRoot, nil, containerRoot, 0 /* maxTraversals */)
+	maxTraversals := uint(0)
+	containerRootDirent, err := mns.FindInode(ctx, mnsRoot, nil, containerRoot, &maxTraversals)
 	if err == syserror.ENOENT {
 		// Container must have been destroyed already. That's fine.
 		return nil
@@ -691,7 +694,8 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 
 	// Get a reference to the parent directory and remove the root
 	// container directory.
-	containersDirDirent, err := mns.FindInode(ctx, mnsRoot, nil, ChildContainersDir, 0 /* maxTraversals */)
+	maxTraversals = 0
+	containersDirDirent, err := mns.FindInode(ctx, mnsRoot, nil, ChildContainersDir, &maxTraversals)
 	if err != nil {
 		return fmt.Errorf("error finding containers directory %q: %v", ChildContainersDir, err)
 	}

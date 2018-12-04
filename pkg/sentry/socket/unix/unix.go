@@ -266,7 +266,8 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 					subPath = "/"
 				}
 				var err error
-				d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, fs.DefaultTraversalLimit)
+				remainingTraversals := uint(fs.DefaultTraversalLimit)
+				d, err = t.MountNamespace().FindInode(t, root, cwd, subPath, &remainingTraversals)
 				if err != nil {
 					// No path available.
 					return syserr.ErrNoSuchFile
@@ -314,7 +315,8 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 	// Find the node in the filesystem.
 	root := t.FSContext().RootDirectory()
 	cwd := t.FSContext().WorkingDirectory()
-	d, e := t.MountNamespace().FindInode(t, root, cwd, path, fs.DefaultTraversalLimit)
+	remainingTraversals := uint(fs.DefaultTraversalLimit)
+	d, e := t.MountNamespace().FindInode(t, root, cwd, path, &remainingTraversals)
 	cwd.DecRef()
 	root.DecRef()
 	if e != nil {

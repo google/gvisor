@@ -634,10 +634,11 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	args.Root = nil
 
 	// Grab the working directory.
+	remainingTraversals := uint(args.MaxSymlinkTraversals)
 	wd := root // Default.
 	if args.WorkingDirectory != "" {
 		var err error
-		wd, err = k.mounts.FindInode(ctx, root, nil, args.WorkingDirectory, args.MaxSymlinkTraversals)
+		wd, err = k.mounts.FindInode(ctx, root, nil, args.WorkingDirectory, &remainingTraversals)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to find initial working directory %q: %v", args.WorkingDirectory, err)
 		}
@@ -656,7 +657,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	}
 
 	// Create a fresh task context.
-	tc, err := k.LoadTaskImage(ctx, k.mounts, root, wd, args.MaxSymlinkTraversals, args.Filename, args.Argv, args.Envv, k.featureSet)
+	remainingTraversals = uint(args.MaxSymlinkTraversals)
+	tc, err := k.LoadTaskImage(ctx, k.mounts, root, wd, &remainingTraversals, args.Filename, args.Argv, args.Envv, k.featureSet)
 	if err != nil {
 		return nil, 0, err
 	}

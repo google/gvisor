@@ -115,8 +115,10 @@ func TestMountSourceParentChildRelationship(t *testing.T) {
 		"/waldo",
 	}
 
+	var maxTraversals uint
 	for _, p := range paths {
-		d, err := mm.FindLink(ctx, rootDirent, nil, p, 0)
+		maxTraversals = 0
+		d, err := mm.FindLink(ctx, rootDirent, nil, p, &maxTraversals)
 		if err != nil {
 			t.Fatalf("could not find path %q in mount manager: %v", p, err)
 		}
@@ -164,7 +166,8 @@ func TestMountSourceParentChildRelationship(t *testing.T) {
 	}
 
 	// "foo" mount should have two children: /foo/bar, and /foo/qux.
-	d, err := mm.FindLink(ctx, rootDirent, nil, "/foo", 0)
+	maxTraversals = 0
+	d, err := mm.FindLink(ctx, rootDirent, nil, "/foo", &maxTraversals)
 	if err != nil {
 		t.Fatalf("could not find path %q in mount manager: %v", "/foo", err)
 	}
@@ -185,7 +188,8 @@ func TestMountSourceParentChildRelationship(t *testing.T) {
 	}
 
 	// "waldo" mount should have no submounts or children.
-	waldo, err := mm.FindLink(ctx, rootDirent, nil, "/waldo", 0)
+	maxTraversals = 0
+	waldo, err := mm.FindLink(ctx, rootDirent, nil, "/waldo", &maxTraversals)
 	if err != nil {
 		t.Fatalf("could not find path %q in mount manager: %v", "/waldo", err)
 	}

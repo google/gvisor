@@ -70,7 +70,8 @@ func TestMakeDirectoryTree(t *testing.T) {
 		defer mm.DecRef()
 
 		for _, p := range test.subdirs {
-			if _, err := mm.FindInode(ctx, root, nil, p, 0); err != nil {
+			maxTraversals := uint(0)
+			if _, err := mm.FindInode(ctx, root, nil, p, &maxTraversals); err != nil {
 				t.Errorf("%s: failed to find node %s: %v", test.name, p, err)
 				break
 			}

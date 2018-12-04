@@ -55,7 +55,7 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 // installed in the Task FDMap. The caller takes ownership of both.
 //
 // name must be a readable, executable, regular file.
-func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals uint, name string) (*fs.Dirent, *fs.File, error) {
+func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, name string) (*fs.Dirent, *fs.File, error) {
 	if name == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, nil, syserror.ENOENT
@@ -136,9 +136,9 @@ const (
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
 //  * Possibly updated argv
-func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals uint, fs *cpuid.FeatureSet, filename string, argv, envv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
-		d, f, err := openPath(ctx, mounts, root, wd, maxTraversals, filename)
+		d, f, err := openPath(ctx, mounts, root, wd, remainingTraversals, filename)
 		if err != nil {
 			ctx.Infof("Error opening %s: %v", filename, err)
 			return loadedELF{}, nil, nil, nil, err
@@ -163,7 +163,7 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 
 		switch {
 		case bytes.Equal(hdr[:], []byte(elfMagic)):
-			loaded, ac, err := loadELF(ctx, m, mounts, root, wd, maxTraversals, fs, f)
+			loaded, ac, err := loadELF(ctx, m, mounts, root, wd, remainingTraversals, fs, f)
 			if err != nil {
 				ctx.Infof("Error loading ELF: %v", err)
 				return loadedELF{}, nil, nil, nil, err
@@ -196,7 +196,7 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 // Preconditions:
 //  * The Task MemoryManager is empty.
 //  * Load is called on the Task goroutine.
-func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, error) {
+func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, error) {
 	// Load the binary itself.
 	loaded, ac, d, argv, err := loadPath(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv, envv)
 	if err != nil {

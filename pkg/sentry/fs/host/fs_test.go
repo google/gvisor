@@ -150,7 +150,8 @@ func allPaths(ctx context.Context, t *testing.T, m *fs.MountNamespace, base stri
 	root := m.Root()
 	defer root.DecRef()
 
-	d, err := m.FindLink(ctx, root, nil, base, 1)
+	maxTraversals := uint(1)
+	d, err := m.FindLink(ctx, root, nil, base, &maxTraversals)
 	if err != nil {
 		t.Logf("FindLink failed for %q", base)
 		return paths, err

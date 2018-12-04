@@ -170,7 +170,8 @@ func installWhitelist(ctx context.Context, m *fs.MountNamespace, paths []string)
 			current := paths[i][:j]
 
 			// Lookup the given component in the tree.
-			d, err := m.FindLink(ctx, root, nil, current, maxTraversals)
+			remainingTraversals := uint(maxTraversals)
+			d, err := m.FindLink(ctx, root, nil, current, &remainingTraversals)
 			if err != nil {
 				log.Warningf("populate failed for %q: %v", current, err)
 				continue

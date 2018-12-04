@@ -324,7 +324,8 @@ func TestCacheFlush(t *testing.T) {
 
 	for _, fileName := range []string{upperFileName, lowerFileName} {
 		// Walk to the file.
-		dirent, err := mns.FindInode(ctx, root, nil, fileName, 0)
+		maxTraversals := uint(0)
+		dirent, err := mns.FindInode(ctx, root, nil, fileName, &maxTraversals)
 		if err != nil {
 			t.Fatalf("FindInode(%q) failed: %v", fileName, err)
 		}
