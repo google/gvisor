@@ -36,7 +36,7 @@ const (
 // +stateify savable
 type tcpMem struct {
 	ramfs.Entry
-	s    inet.Stack
+	s    inet.Stack `state:"wait"`
 	size inet.TCPBufferSize
 	dir  tcpMemDir
 }
@@ -81,30 +81,33 @@ func (m *tcpMem) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, 
 
 	buf := []int32{int32(m.size.Min), int32(m.size.Default), int32(m.size.Max)}
 	n, cperr := usermem.CopyInt32StringsInVec(ctx, src.IO, src.Addrs, buf, src.Opts)
-	size := inet.TCPBufferSize{
+	m.size = inet.TCPBufferSize{
 		Min:     int(buf[0]),
 		Default: int(buf[1]),
 		Max:     int(buf[2]),
 	}
-	var err error
-	switch m.dir {
-	case tcpRMem:
-		err = m.s.SetTCPReceiveBufferSize(size)
-	case tcpWMem:
-		err = m.s.SetTCPSendBufferSize(size)
-	default:
-		panic(fmt.Sprintf("unknown tcpMem.dir: %v", m.dir))
-	}
-	if err != nil {
+	if err := m.writeSize(); err != nil {
 		return n, err
 	}
 	return n, cperr
 }
 
+func (m *tcpMem) writeSize() error {
+	switch m.dir {
+	case tcpRMem:
+		return m.s.SetTCPReceiveBufferSize(m.size)
+	case tcpWMem:
+		return m.s.SetTCPSendBufferSize(m.size)
+	default:
+		panic(fmt.Sprintf("unknown tcpMem.dir: %v", m.dir))
+	}
+}
+
 // +stateify savable
 type tcpSack struct {
 	ramfs.Entry
-	s inet.Stack
+	s       inet.Stack `state:"wait"`
+	enabled *bool
 }
 
 func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
@@ -124,13 +127,16 @@ func (s *tcpSack) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, 
 		return 0, io.EOF
 	}
 
-	sack, err := s.s.TCPSACKEnabled()
-	if err != nil {
-		return 0, err
+	if s.enabled == nil {
+		sack, err := s.s.TCPSACKEnabled()
+		if err != nil {
+			return 0, err
+		}
+		s.enabled = &sack
 	}
 
 	val := "0\n"
-	if sack {
+	if *s.enabled {
 		// Technically, this is not quite compatible with Linux. Linux
 		// stores these as an integer, so if you write "2" into
 		// tcp_sack, you should get 2 back. Tough luck.
@@ -157,7 +163,11 @@ func (s *tcpSack) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence,
 	if err != nil {
 		return n, err
 	}
-	return n, s.s.SetTCPSACKEnabled(v != 0)
+	if s.enabled == nil {
+		s.enabled = new(bool)
+	}
+	*s.enabled = v != 0
+	return n, s.s.SetTCPSACKEnabled(*s.enabled)
 }
 
 func (p *proc) newSysNetCore(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
