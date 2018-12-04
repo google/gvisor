@@ -411,7 +411,7 @@ func (s *sender) sendData() {
 		if seg.flags == 0 {
 			// Merge segments if allowed.
 			if seg.data.Size() != 0 {
-				available := int(seg.sequenceNumber.Size(end))
+				available := int(s.sndNxt.Size(end))
 				if available > limit {
 					available = limit
 				}
