@@ -87,6 +87,10 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 
 	case linux.PR_SET_MM:
+		if !t.HasCapability(linux.CAP_SYS_RESOURCE) {
+			return 0, nil, syscall.EPERM
+		}
+
 		switch args[1].Int() {
 		case linux.PR_SET_MM_EXE_FILE:
 			fd := kdefs.FD(args[2].Int())
