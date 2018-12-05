@@ -160,7 +160,7 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 
 		// Wait for requests to create threads.
 		for r := range requests {
-			t, err := firstThread.clone(&firstThread.initRegs)
+			t, err := firstThread.clone()
 			if err != nil {
 				// Should not happen: not recoverable.
 				panic(fmt.Sprintf("error initializing first thread: %v", err))

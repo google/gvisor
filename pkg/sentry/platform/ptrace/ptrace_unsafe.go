@@ -130,8 +130,8 @@ func (t *thread) getSignalInfo(si *arch.SignalInfo) error {
 // call attach on it.
 //
 // Precondition: the OS thread must be locked and own t.
-func (t *thread) clone(initRegs *syscall.PtraceRegs) (*thread, error) {
-	r, ok := usermem.Addr(initRegs.Rsp).RoundUp()
+func (t *thread) clone() (*thread, error) {
+	r, ok := usermem.Addr(t.initRegs.Rsp).RoundUp()
 	if !ok {
 		return nil, syscall.EINVAL
 	}
@@ -153,7 +153,7 @@ func (t *thread) clone(initRegs *syscall.PtraceRegs) (*thread, error) {
 		arch.SyscallArgument{},
 		// We use these registers initially, but really they
 		// could be anything. We're going to stop immediately.
-		arch.SyscallArgument{Value: uintptr(unsafe.Pointer(initRegs))})
+		arch.SyscallArgument{Value: uintptr(unsafe.Pointer(&t.initRegs))})
 	if err != nil {
 		return nil, err
 	}
