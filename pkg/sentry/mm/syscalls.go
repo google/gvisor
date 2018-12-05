@@ -463,6 +463,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			vma.id.IncRef()
 		}
 		mm.vmas.Add(newAR, vma)
+		mm.usageAS += uint64(newAR.Length())
 		return newAR.Start, nil
 	}
 
@@ -479,14 +480,13 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	// oldAR, so calling RemoveMapping could cause us to miss an invalidation
 	// overlapping oldAR.
 	//
-	// Call vseg.Value() (rather than vseg.ValuePtr()) first to make a copy of
-	// the vma.
+	// Call vseg.Value() (rather than vseg.ValuePtr()) to make a copy of the
+	// vma.
 	vseg = mm.vmas.Isolate(vseg, oldAR)
 	vma := vseg.Value()
 	mm.vmas.Remove(vseg)
-
-	// Insert the new vma, transferring the reference on vma.id.
 	mm.vmas.Add(newAR, vma)
+	mm.usageAS = mm.usageAS - uint64(oldAR.Length()) + uint64(newAR.Length())
 
 	// Move pmas. This is technically optional for non-private pmas, which
 	// could just go through memmap.Mappable.Translate again, but it's required
