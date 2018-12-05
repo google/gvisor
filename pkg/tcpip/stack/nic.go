@@ -119,16 +119,6 @@ func (n *NIC) getMainNICAddress(protocol tcpip.NetworkProtocolNumber) (tcpip.Add
 
 	}
 
-	// If no primary endpoints then check for other endpoints.
-	if r == nil {
-		for _, ref := range n.endpoints {
-			if ref.holdsInsertRef && ref.tryIncRef() {
-				r = ref
-				break
-			}
-		}
-	}
-
 	if r == nil {
 		return "", tcpip.Subnet{}, tcpip.ErrNoLinkAddress
 	}
