@@ -976,11 +976,23 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 					e.mu.Unlock()
 				}
 				if n&notifyClose != 0 && closeTimer == nil {
-					// Reset the connection 3 seconds after the
-					// endpoint has been closed.
+					// Reset the connection 3 seconds after
+					// the endpoint has been closed.
+					//
+					// The timer could fire in background
+					// when the endpoint is drained. That's
+					// OK as the loop here will not honor
+					// the firing until the undrain arrives.
 					closeTimer = time.AfterFunc(3*time.Second, func() {
 						closeWaker.Assert()
 					})
+				}
+
+				if n&notifyKeepaliveChanged != 0 {
+					// The timer could fire in background
+					// when the endpoint is drained. That's
+					// OK. See above.
+					e.resetKeepaliveTimer(true)
 				}
 
 				if n&notifyDrain != 0 {
@@ -989,12 +1001,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 							return err
 						}
 					}
-					close(e.drainDone)
-					<-e.undrain
-				}
-
-				if n&notifyKeepaliveChanged != 0 {
-					e.resetKeepaliveTimer(true)
+					if e.state != stateError {
+						close(e.drainDone)
+						<-e.undrain
+					}
 				}
 
 				return nil
