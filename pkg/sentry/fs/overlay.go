@@ -95,10 +95,10 @@ func isXattrOverlay(name string) bool {
 // - lower must not have dynamic file/directory content.
 func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags MountSourceFlags) (*Inode, error) {
 	if !IsDir(upper.StableAttr) {
-		return nil, fmt.Errorf("upper Inode is not a directory")
+		return nil, fmt.Errorf("upper Inode is a %v, not a directory", upper.StableAttr.Type)
 	}
 	if !IsDir(lower.StableAttr) {
-		return nil, fmt.Errorf("lower Inode is not a directory")
+		return nil, fmt.Errorf("lower Inode is a %v, not a directory", lower.StableAttr.Type)
 	}
 	if upper.overlay != nil {
 		return nil, fmt.Errorf("cannot nest overlay in upper file of another overlay")
