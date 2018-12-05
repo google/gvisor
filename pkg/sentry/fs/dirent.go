@@ -1461,6 +1461,10 @@ func checkSticky(ctx context.Context, dir *Dirent, victim *Dirent) error {
 //
 // Compare Linux kernel fs/namei.c:may_delete.
 func MayDelete(ctx context.Context, root, dir *Dirent, name string) error {
+	if err := dir.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
+		return err
+	}
+
 	victim, err := dir.Walk(ctx, root, name)
 	if err != nil {
 		return err
@@ -1470,11 +1474,11 @@ func MayDelete(ctx context.Context, root, dir *Dirent, name string) error {
 	return mayDelete(ctx, dir, victim)
 }
 
+// mayDelete determines whether `victim`, a child of `dir`, can be deleted or
+// renamed by `ctx`.
+//
+// Preconditions: `dir` is writable and executable by `ctx`.
 func mayDelete(ctx context.Context, dir, victim *Dirent) error {
-	if err := dir.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
-		return err
-	}
-
 	if err := checkSticky(ctx, dir, victim); err != nil {
 		return err
 	}
@@ -1510,6 +1514,15 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	}
 	if newParent.frozen && !newParent.Inode.IsVirtual() {
 		return syscall.ENOENT
+	}
+
+	// Do we have general permission to remove from oldParent and
+	// create/replace in newParent?
+	if err := oldParent.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
+		return err
+	}
+	if err := newParent.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
+		return err
 	}
 
 	// renamed is the dirent that will be renamed to something else.
@@ -1549,10 +1562,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 			return err
 		}
 
-		// Make sure we can create a new child in the new parent.
-		if err := newParent.Inode.CheckPermission(ctx, PermMask{Write: true, Execute: true}); err != nil {
-			return err
-		}
+		// newName doesn't exist; simply create it below.
 	} else {
 		// Check constraints on the dirent being replaced.
 
@@ -1560,7 +1570,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// across the Rename, so must call DecRef manually (no defer).
 
 		// Check that we can delete replaced.
-		if err := mayDelete(ctx, oldParent, renamed); err != nil {
+		if err := mayDelete(ctx, newParent, replaced); err != nil {
 			replaced.DecRef()
 			return err
 		}
