@@ -11,6 +11,7 @@ go_library(
         "linux64.go",
         "open.go",
         "ptrace.go",
+        "signal.go",
         "socket.go",
         "strace.go",
         "syscalls.go",

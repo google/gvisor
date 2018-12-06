@@ -170,6 +170,18 @@ const (
 
 	// ItimerType is an itimer type (ITIMER_REAL, etc).
 	ItimerType
+
+	// Signal is a signal number.
+	Signal
+
+	// SignalMaskAction is a signal mask action passed to rt_sigprocmask(2).
+	SignalMaskAction
+
+	// SigSet is a signal set.
+	SigSet
+
+	// PostSigSet is a signal set, formatted after syscall execution.
+	PostSigSet
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

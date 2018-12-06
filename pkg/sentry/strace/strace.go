@@ -333,6 +333,12 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, PtraceRequestSet.Parse(args[arg].Uint64()))
 		case ItimerType:
 			output = append(output, ItimerTypes.Parse(uint64(args[arg].Int())))
+		case Signal:
+			output = append(output, signalNames.ParseDecimal(args[arg].Uint64()))
+		case SignalMaskAction:
+			output = append(output, signalMaskActions.Parse(uint64(args[arg].Int())))
+		case SigSet:
+			output = append(output, sigSet(t, args[arg].Pointer()))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
@@ -391,6 +397,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = timeval(t, args[arg].Pointer())
 		case Rusage:
 			output[arg] = rusage(t, args[arg].Pointer())
+		case PostSigSet:
+			output[arg] = sigSet(t, args[arg].Pointer())
 		}
 	}
 }

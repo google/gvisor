@@ -59,6 +59,15 @@ func (s ValueSet) Parse(val uint64) string {
 	return fmt.Sprintf("%#x", val)
 }
 
+// ParseDecimal returns the name of the value associated with `val`. Unknown
+// values are converted to decimal.
+func (s ValueSet) ParseDecimal(val uint64) string {
+	if v, ok := s[val]; ok {
+		return v
+	}
+	return fmt.Sprintf("%d", val)
+}
+
 // ParseName returns the flag value associated with 'name'. Returns false
 // if no value is found.
 func (s ValueSet) ParseName(name string) (uint64, bool) {
