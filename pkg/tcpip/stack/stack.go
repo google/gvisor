@@ -716,11 +716,28 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return "", tcpip.Subnet{}, tcpip.ErrUnknownNICID
 }
 
+func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
+	if len(localAddr) == 0 {
+		return nic.primaryEndpoint(netProto)
+	}
+	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
+}
+
 // FindRoute creates a route to the given destination address, leaving through
 // the given nic and local address (if provided).
 func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (Route, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	// We don't require a route in the table to send a broadcast out on a NIC.
+	if id != 0 && remoteAddr == header.IPv4Broadcast {
+		if nic, ok := s.nics[id]; ok {
+			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref), nil
+			}
+		}
+		return Route{}, tcpip.ErrNoRoute
+	}
 
 	for i := range s.routeTable {
 		if (id != 0 && id != s.routeTable[i].NIC) || (len(remoteAddr) != 0 && !s.routeTable[i].Match(remoteAddr)) {
@@ -732,12 +749,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			continue
 		}
 
-		var ref *referencedNetworkEndpoint
-		if len(localAddr) != 0 {
-			ref = nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
-		} else {
-			ref = nic.primaryEndpoint(netProto)
-		}
+		ref := s.getRefEP(nic, localAddr, netProto)
 		if ref == nil {
 			continue
 		}

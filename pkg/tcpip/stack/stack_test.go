@@ -26,6 +26,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/channel"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
@@ -643,6 +644,42 @@ func TestAddressSpoofing(t *testing.T) {
 	}
 }
 
+func TestBroadcastNeedsNoRoute(t *testing.T) {
+	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
+
+	id, _ := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, id); err != nil {
+		t.Fatalf("CreateNIC failed: %v", err)
+	}
+	s.SetRouteTable([]tcpip.Route{})
+
+	// If there is no endpoint, it won't work.
+	if _, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber); err != tcpip.ErrNoRoute {
+		t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNoRoute)
+	}
+
+	if err := s.AddAddress(1, fakeNetNumber, header.IPv4Any); err != nil {
+		t.Fatalf("AddAddress(%v, %v) failed: %v", fakeNetNumber, header.IPv4Any, err)
+	}
+	r, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber)
+	if err != nil {
+		t.Fatalf("FindRoute(1, %v, %v, %v) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
+	}
+
+	if r.LocalAddress != header.IPv4Any {
+		t.Errorf("Bad local address: got %v, want = %v", r.LocalAddress, header.IPv4Any)
+	}
+
+	if r.RemoteAddress != header.IPv4Broadcast {
+		t.Errorf("Bad remote address: got %v, want = %v", r.RemoteAddress, header.IPv4Broadcast)
+	}
+
+	// If the NIC doesn't exist, it won't work.
+	if _, err := s.FindRoute(2, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber); err != tcpip.ErrNoRoute {
+		t.Fatalf("got FindRoute(2, %v, %v, %v) = %v want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNoRoute)
+	}
+}
+
 // Set the subnet, then check that packet is delivered.
 func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
@@ -849,7 +886,7 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 								if !ok {
 									t.Fatalf("GetMainNICAddress: got address = %v, wanted any in {%v}", gotAddress, primaryAddrAdded)
 								}
-								if expectedSubnet != gotSubnet {
+								if gotSubnet != expectedSubnet {
 									t.Fatalf("GetMainNICAddress: got subnet = %v, wanted %v", gotSubnet, expectedSubnet)
 								}
 							}
