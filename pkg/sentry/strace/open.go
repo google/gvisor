@@ -22,18 +22,9 @@ import (
 
 // OpenMode represents the mode to open(2) a file.
 var OpenMode = abi.ValueSet{
-	{
-		Value: syscall.O_RDWR,
-		Name:  "O_RDWR",
-	},
-	{
-		Value: syscall.O_WRONLY,
-		Name:  "O_WRONLY",
-	},
-	{
-		Value: syscall.O_RDONLY,
-		Name:  "O_RDONLY",
-	},
+	syscall.O_RDWR:   "O_RDWR",
+	syscall.O_WRONLY: "O_WRONLY",
+	syscall.O_RDONLY: "O_RDONLY",
 }
 
 // OpenFlagSet is the set of open(2) flags.

@@ -223,32 +223,11 @@ var modeExtraBits = abi.FlagSet{
 }
 
 var fileType = abi.ValueSet{
-	{
-		Value: ModeSocket,
-		Name:  "S_IFSOCK",
-	},
-	{
-		Value: ModeSymlink,
-		Name:  "S_IFLINK",
-	},
-	{
-		Value: ModeRegular,
-		Name:  "S_IFREG",
-	},
-	{
-		Value: ModeBlockDevice,
-		Name:  "S_IFBLK",
-	},
-	{
-		Value: ModeDirectory,
-		Name:  "S_IFDIR",
-	},
-	{
-		Value: ModeCharacterDevice,
-		Name:  "S_IFCHR",
-	},
-	{
-		Value: ModeNamedPipe,
-		Name:  "S_IFIFO",
-	},
+	ModeSocket:          "S_IFSOCK",
+	ModeSymlink:         "S_IFLINK",
+	ModeRegular:         "S_IFREG",
+	ModeBlockDevice:     "S_IFBLK",
+	ModeDirectory:       "S_IFDIR",
+	ModeCharacterDevice: "S_IFCHR",
+	ModeNamedPipe:       "S_IFIFO",
 }

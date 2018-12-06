@@ -21,58 +21,19 @@ import (
 
 // FutexCmd are the possible futex(2) commands.
 var FutexCmd = abi.ValueSet{
-	{
-		Value: linux.FUTEX_WAIT,
-		Name:  "FUTEX_WAIT",
-	},
-	{
-		Value: linux.FUTEX_WAKE,
-		Name:  "FUTEX_WAKE",
-	},
-	{
-		Value: linux.FUTEX_FD,
-		Name:  "FUTEX_FD",
-	},
-	{
-		Value: linux.FUTEX_REQUEUE,
-		Name:  "FUTEX_REQUEUE",
-	},
-	{
-		Value: linux.FUTEX_CMP_REQUEUE,
-		Name:  "FUTEX_CMP_REQUEUE",
-	},
-	{
-		Value: linux.FUTEX_WAKE_OP,
-		Name:  "FUTEX_WAKE_OP",
-	},
-	{
-		Value: linux.FUTEX_LOCK_PI,
-		Name:  "FUTEX_LOCK_PI",
-	},
-	{
-		Value: linux.FUTEX_UNLOCK_PI,
-		Name:  "FUTEX_UNLOCK_PI",
-	},
-	{
-		Value: linux.FUTEX_TRYLOCK_PI,
-		Name:  "FUTEX_TRYLOCK_PI",
-	},
-	{
-		Value: linux.FUTEX_WAIT_BITSET,
-		Name:  "FUTEX_WAIT_BITSET",
-	},
-	{
-		Value: linux.FUTEX_WAKE_BITSET,
-		Name:  "FUTEX_WAKE_BITSET",
-	},
-	{
-		Value: linux.FUTEX_WAIT_REQUEUE_PI,
-		Name:  "FUTEX_WAIT_REQUEUE_PI",
-	},
-	{
-		Value: linux.FUTEX_CMP_REQUEUE_PI,
-		Name:  "FUTEX_CMP_REQUEUE_PI",
-	},
+	linux.FUTEX_WAIT:            "FUTEX_WAIT",
+	linux.FUTEX_WAKE:            "FUTEX_WAKE",
+	linux.FUTEX_FD:              "FUTEX_FD",
+	linux.FUTEX_REQUEUE:         "FUTEX_REQUEUE",
+	linux.FUTEX_CMP_REQUEUE:     "FUTEX_CMP_REQUEUE",
+	linux.FUTEX_WAKE_OP:         "FUTEX_WAKE_OP",
+	linux.FUTEX_LOCK_PI:         "FUTEX_LOCK_PI",
+	linux.FUTEX_UNLOCK_PI:       "FUTEX_UNLOCK_PI",
+	linux.FUTEX_TRYLOCK_PI:      "FUTEX_TRYLOCK_PI",
+	linux.FUTEX_WAIT_BITSET:     "FUTEX_WAIT_BITSET",
+	linux.FUTEX_WAKE_BITSET:     "FUTEX_WAKE_BITSET",
+	linux.FUTEX_WAIT_REQUEUE_PI: "FUTEX_WAIT_REQUEUE_PI",
+	linux.FUTEX_CMP_REQUEUE_PI:  "FUTEX_CMP_REQUEUE_PI",
 }
 
 func futex(op uint64) string {

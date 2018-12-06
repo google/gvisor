@@ -21,156 +21,42 @@ import (
 
 // PtraceRequestSet are the possible ptrace(2) requests.
 var PtraceRequestSet = abi.ValueSet{
-	{
-		Value: linux.PTRACE_TRACEME,
-		Name:  "PTRACE_TRACEME",
-	},
-	{
-		Value: linux.PTRACE_PEEKTEXT,
-		Name:  "PTRACE_PEEKTEXT",
-	},
-	{
-		Value: linux.PTRACE_PEEKDATA,
-		Name:  "PTRACE_PEEKDATA",
-	},
-	{
-		Value: linux.PTRACE_PEEKUSR,
-		Name:  "PTRACE_PEEKUSR",
-	},
-	{
-		Value: linux.PTRACE_POKETEXT,
-		Name:  "PTRACE_POKETEXT",
-	},
-	{
-		Value: linux.PTRACE_POKEDATA,
-		Name:  "PTRACE_POKEDATA",
-	},
-	{
-		Value: linux.PTRACE_POKEUSR,
-		Name:  "PTRACE_POKEUSR",
-	},
-	{
-		Value: linux.PTRACE_CONT,
-		Name:  "PTRACE_CONT",
-	},
-	{
-		Value: linux.PTRACE_KILL,
-		Name:  "PTRACE_KILL",
-	},
-	{
-		Value: linux.PTRACE_SINGLESTEP,
-		Name:  "PTRACE_SINGLESTEP",
-	},
-	{
-		Value: linux.PTRACE_ATTACH,
-		Name:  "PTRACE_ATTACH",
-	},
-	{
-		Value: linux.PTRACE_DETACH,
-		Name:  "PTRACE_DETACH",
-	},
-	{
-		Value: linux.PTRACE_SYSCALL,
-		Name:  "PTRACE_SYSCALL",
-	},
-	{
-		Value: linux.PTRACE_SETOPTIONS,
-		Name:  "PTRACE_SETOPTIONS",
-	},
-	{
-		Value: linux.PTRACE_GETEVENTMSG,
-		Name:  "PTRACE_GETEVENTMSG",
-	},
-	{
-		Value: linux.PTRACE_GETSIGINFO,
-		Name:  "PTRACE_GETSIGINFO",
-	},
-	{
-		Value: linux.PTRACE_SETSIGINFO,
-		Name:  "PTRACE_SETSIGINFO",
-	},
-	{
-		Value: linux.PTRACE_GETREGSET,
-		Name:  "PTRACE_GETREGSET",
-	},
-	{
-		Value: linux.PTRACE_SETREGSET,
-		Name:  "PTRACE_SETREGSET",
-	},
-	{
-		Value: linux.PTRACE_SEIZE,
-		Name:  "PTRACE_SEIZE",
-	},
-	{
-		Value: linux.PTRACE_INTERRUPT,
-		Name:  "PTRACE_INTERRUPT",
-	},
-	{
-		Value: linux.PTRACE_LISTEN,
-		Name:  "PTRACE_LISTEN",
-	},
-	{
-		Value: linux.PTRACE_PEEKSIGINFO,
-		Name:  "PTRACE_PEEKSIGINFO",
-	},
-	{
-		Value: linux.PTRACE_GETSIGMASK,
-		Name:  "PTRACE_GETSIGMASK",
-	},
-	{
-		Value: linux.PTRACE_SETSIGMASK,
-		Name:  "PTRACE_SETSIGMASK",
-	},
-	{
-		Value: linux.PTRACE_GETREGS,
-		Name:  "PTRACE_GETREGS",
-	},
-	{
-		Value: linux.PTRACE_SETREGS,
-		Name:  "PTRACE_SETREGS",
-	},
-	{
-		Value: linux.PTRACE_GETFPREGS,
-		Name:  "PTRACE_GETFPREGS",
-	},
-	{
-		Value: linux.PTRACE_SETFPREGS,
-		Name:  "PTRACE_SETFPREGS",
-	},
-	{
-		Value: linux.PTRACE_GETFPXREGS,
-		Name:  "PTRACE_GETFPXREGS",
-	},
-	{
-		Value: linux.PTRACE_SETFPXREGS,
-		Name:  "PTRACE_SETFPXREGS",
-	},
-	{
-		Value: linux.PTRACE_OLDSETOPTIONS,
-		Name:  "PTRACE_OLDSETOPTIONS",
-	},
-	{
-		Value: linux.PTRACE_GET_THREAD_AREA,
-		Name:  "PTRACE_GET_THREAD_AREA",
-	},
-	{
-		Value: linux.PTRACE_SET_THREAD_AREA,
-		Name:  "PTRACE_SET_THREAD_AREA",
-	},
-	{
-		Value: linux.PTRACE_ARCH_PRCTL,
-		Name:  "PTRACE_ARCH_PRCTL",
-	},
-	{
-		Value: linux.PTRACE_SYSEMU,
-		Name:  "PTRACE_SYSEMU",
-	},
-	{
-		Value: linux.PTRACE_SYSEMU_SINGLESTEP,
-		Name:  "PTRACE_SYSEMU_SINGLESTEP",
-	},
-	{
-		Value: linux.PTRACE_SINGLEBLOCK,
-		Name:  "PTRACE_SINGLEBLOCK",
-	},
+	linux.PTRACE_TRACEME:           "PTRACE_TRACEME",
+	linux.PTRACE_PEEKTEXT:          "PTRACE_PEEKTEXT",
+	linux.PTRACE_PEEKDATA:          "PTRACE_PEEKDATA",
+	linux.PTRACE_PEEKUSR:           "PTRACE_PEEKUSR",
+	linux.PTRACE_POKETEXT:          "PTRACE_POKETEXT",
+	linux.PTRACE_POKEDATA:          "PTRACE_POKEDATA",
+	linux.PTRACE_POKEUSR:           "PTRACE_POKEUSR",
+	linux.PTRACE_CONT:              "PTRACE_CONT",
+	linux.PTRACE_KILL:              "PTRACE_KILL",
+	linux.PTRACE_SINGLESTEP:        "PTRACE_SINGLESTEP",
+	linux.PTRACE_ATTACH:            "PTRACE_ATTACH",
+	linux.PTRACE_DETACH:            "PTRACE_DETACH",
+	linux.PTRACE_SYSCALL:           "PTRACE_SYSCALL",
+	linux.PTRACE_SETOPTIONS:        "PTRACE_SETOPTIONS",
+	linux.PTRACE_GETEVENTMSG:       "PTRACE_GETEVENTMSG",
+	linux.PTRACE_GETSIGINFO:        "PTRACE_GETSIGINFO",
+	linux.PTRACE_SETSIGINFO:        "PTRACE_SETSIGINFO",
+	linux.PTRACE_GETREGSET:         "PTRACE_GETREGSET",
+	linux.PTRACE_SETREGSET:         "PTRACE_SETREGSET",
+	linux.PTRACE_SEIZE:             "PTRACE_SEIZE",
+	linux.PTRACE_INTERRUPT:         "PTRACE_INTERRUPT",
+	linux.PTRACE_LISTEN:            "PTRACE_LISTEN",
+	linux.PTRACE_PEEKSIGINFO:       "PTRACE_PEEKSIGINFO",
+	linux.PTRACE_GETSIGMASK:        "PTRACE_GETSIGMASK",
+	linux.PTRACE_SETSIGMASK:        "PTRACE_SETSIGMASK",
+	linux.PTRACE_GETREGS:           "PTRACE_GETREGS",
+	linux.PTRACE_SETREGS:           "PTRACE_SETREGS",
+	linux.PTRACE_GETFPREGS:         "PTRACE_GETFPREGS",
+	linux.PTRACE_SETFPREGS:         "PTRACE_SETFPREGS",
+	linux.PTRACE_GETFPXREGS:        "PTRACE_GETFPXREGS",
+	linux.PTRACE_SETFPXREGS:        "PTRACE_SETFPXREGS",
+	linux.PTRACE_OLDSETOPTIONS:     "PTRACE_OLDSETOPTIONS",
+	linux.PTRACE_GET_THREAD_AREA:   "PTRACE_GET_THREAD_AREA",
+	linux.PTRACE_SET_THREAD_AREA:   "PTRACE_SET_THREAD_AREA",
+	linux.PTRACE_ARCH_PRCTL:        "PTRACE_ARCH_PRCTL",
+	linux.PTRACE_SYSEMU:            "PTRACE_SYSEMU",
+	linux.PTRACE_SYSEMU_SINGLESTEP: "PTRACE_SYSEMU_SINGLESTEP",
+	linux.PTRACE_SINGLEBLOCK:       "PTRACE_SINGLEBLOCK",
 }

@@ -50,18 +50,9 @@ var EventMaximumSize uint
 
 // ItimerTypes are the possible itimer types.
 var ItimerTypes = abi.ValueSet{
-	{
-		Value: linux.ITIMER_REAL,
-		Name:  "ITIMER_REAL",
-	},
-	{
-		Value: linux.ITIMER_VIRTUAL,
-		Name:  "ITIMER_VIRTUAL",
-	},
-	{
-		Value: linux.ITIMER_PROF,
-		Name:  "ITIMER_PROF",
-	},
+	linux.ITIMER_REAL:    "ITIMER_REAL",
+	linux.ITIMER_VIRTUAL: "ITIMER_VIRTUAL",
+	linux.ITIMER_PROF:    "ITIMER_PROF",
 }
 
 func iovecs(t *kernel.Task, addr usermem.Addr, iovcnt int, printContent bool, maxBytes uint64) string {

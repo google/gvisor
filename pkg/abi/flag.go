@@ -46,30 +46,25 @@ func (s FlagSet) Parse(val uint64) string {
 	return strings.Join(flags, "|")
 }
 
-// ValueSet is a slice of syscall values and their name. Parse will replace
-// values that exactly match an entry with its name.
-type ValueSet []struct {
-	Value uint64
-	Name  string
-}
+// ValueSet is a map of syscall values to their name. Parse will use the name
+// or the value if unknown.
+type ValueSet map[uint64]string
 
 // Parse returns the name of the value associated with `val`. Unknown values
 // are converted to hex.
-func (e ValueSet) Parse(val uint64) string {
-	for _, f := range e {
-		if val == f.Value {
-			return f.Name
-		}
+func (s ValueSet) Parse(val uint64) string {
+	if v, ok := s[val]; ok {
+		return v
 	}
 	return fmt.Sprintf("%#x", val)
 }
 
 // ParseName returns the flag value associated with 'name'. Returns false
 // if no value is found.
-func (e ValueSet) ParseName(name string) (uint64, bool) {
-	for _, f := range e {
-		if name == f.Name {
-			return f.Value, true
+func (s ValueSet) ParseName(name string) (uint64, bool) {
+	for k, v := range s {
+		if v == name {
+			return k, true
 		}
 	}
 	return math.MaxUint64, false

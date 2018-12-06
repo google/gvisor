@@ -31,202 +31,58 @@ import (
 
 // SocketFamily are the possible socket(2) families.
 var SocketFamily = abi.ValueSet{
-	{
-		Value: linux.AF_UNSPEC,
-		Name:  "AF_UNSPEC",
-	},
-	{
-		Value: linux.AF_UNIX,
-		Name:  "AF_UNIX",
-	},
-	{
-		Value: linux.AF_INET,
-		Name:  "AF_INET",
-	},
-	{
-		Value: linux.AF_AX25,
-		Name:  "AF_AX25",
-	},
-	{
-		Value: linux.AF_IPX,
-		Name:  "AF_IPX",
-	},
-	{
-		Value: linux.AF_APPLETALK,
-		Name:  "AF_APPLETALK",
-	},
-	{
-		Value: linux.AF_NETROM,
-		Name:  "AF_NETROM",
-	},
-	{
-		Value: linux.AF_BRIDGE,
-		Name:  "AF_BRIDGE",
-	},
-	{
-		Value: linux.AF_ATMPVC,
-		Name:  "AF_ATMPVC",
-	},
-	{
-		Value: linux.AF_X25,
-		Name:  "AF_X25",
-	},
-	{
-		Value: linux.AF_INET6,
-		Name:  "AF_INET6",
-	},
-	{
-		Value: linux.AF_ROSE,
-		Name:  "AF_ROSE",
-	},
-	{
-		Value: linux.AF_DECnet,
-		Name:  "AF_DECnet",
-	},
-	{
-		Value: linux.AF_NETBEUI,
-		Name:  "AF_NETBEUI",
-	},
-	{
-		Value: linux.AF_SECURITY,
-		Name:  "AF_SECURITY",
-	},
-	{
-		Value: linux.AF_KEY,
-		Name:  "AF_KEY",
-	},
-	{
-		Value: linux.AF_NETLINK,
-		Name:  "AF_NETLINK",
-	},
-	{
-		Value: linux.AF_PACKET,
-		Name:  "AF_PACKET",
-	},
-	{
-		Value: linux.AF_ASH,
-		Name:  "AF_ASH",
-	},
-	{
-		Value: linux.AF_ECONET,
-		Name:  "AF_ECONET",
-	},
-	{
-		Value: linux.AF_ATMSVC,
-		Name:  "AF_ATMSVC",
-	},
-	{
-		Value: linux.AF_RDS,
-		Name:  "AF_RDS",
-	},
-	{
-		Value: linux.AF_SNA,
-		Name:  "AF_SNA",
-	},
-	{
-		Value: linux.AF_IRDA,
-		Name:  "AF_IRDA",
-	},
-	{
-		Value: linux.AF_PPPOX,
-		Name:  "AF_PPPOX",
-	},
-	{
-		Value: linux.AF_WANPIPE,
-		Name:  "AF_WANPIPE",
-	},
-	{
-		Value: linux.AF_LLC,
-		Name:  "AF_LLC",
-	},
-	{
-		Value: linux.AF_IB,
-		Name:  "AF_IB",
-	},
-	{
-		Value: linux.AF_MPLS,
-		Name:  "AF_MPLS",
-	},
-	{
-		Value: linux.AF_CAN,
-		Name:  "AF_CAN",
-	},
-	{
-		Value: linux.AF_TIPC,
-		Name:  "AF_TIPC",
-	},
-	{
-		Value: linux.AF_BLUETOOTH,
-		Name:  "AF_BLUETOOTH",
-	},
-	{
-		Value: linux.AF_IUCV,
-		Name:  "AF_IUCV",
-	},
-	{
-		Value: linux.AF_RXRPC,
-		Name:  "AF_RXRPC",
-	},
-	{
-		Value: linux.AF_ISDN,
-		Name:  "AF_ISDN",
-	},
-	{
-		Value: linux.AF_PHONET,
-		Name:  "AF_PHONET",
-	},
-	{
-		Value: linux.AF_IEEE802154,
-		Name:  "AF_IEEE802154",
-	},
-	{
-		Value: linux.AF_CAIF,
-		Name:  "AF_CAIF",
-	},
-	{
-		Value: linux.AF_ALG,
-		Name:  "AF_ALG",
-	},
-	{
-		Value: linux.AF_NFC,
-		Name:  "AF_NFC",
-	},
-	{
-		Value: linux.AF_VSOCK,
-		Name:  "AF_VSOCK",
-	},
+	linux.AF_UNSPEC:     "AF_UNSPEC",
+	linux.AF_UNIX:       "AF_UNIX",
+	linux.AF_INET:       "AF_INET",
+	linux.AF_AX25:       "AF_AX25",
+	linux.AF_IPX:        "AF_IPX",
+	linux.AF_APPLETALK:  "AF_APPLETALK",
+	linux.AF_NETROM:     "AF_NETROM",
+	linux.AF_BRIDGE:     "AF_BRIDGE",
+	linux.AF_ATMPVC:     "AF_ATMPVC",
+	linux.AF_X25:        "AF_X25",
+	linux.AF_INET6:      "AF_INET6",
+	linux.AF_ROSE:       "AF_ROSE",
+	linux.AF_DECnet:     "AF_DECnet",
+	linux.AF_NETBEUI:    "AF_NETBEUI",
+	linux.AF_SECURITY:   "AF_SECURITY",
+	linux.AF_KEY:        "AF_KEY",
+	linux.AF_NETLINK:    "AF_NETLINK",
+	linux.AF_PACKET:     "AF_PACKET",
+	linux.AF_ASH:        "AF_ASH",
+	linux.AF_ECONET:     "AF_ECONET",
+	linux.AF_ATMSVC:     "AF_ATMSVC",
+	linux.AF_RDS:        "AF_RDS",
+	linux.AF_SNA:        "AF_SNA",
+	linux.AF_IRDA:       "AF_IRDA",
+	linux.AF_PPPOX:      "AF_PPPOX",
+	linux.AF_WANPIPE:    "AF_WANPIPE",
+	linux.AF_LLC:        "AF_LLC",
+	linux.AF_IB:         "AF_IB",
+	linux.AF_MPLS:       "AF_MPLS",
+	linux.AF_CAN:        "AF_CAN",
+	linux.AF_TIPC:       "AF_TIPC",
+	linux.AF_BLUETOOTH:  "AF_BLUETOOTH",
+	linux.AF_IUCV:       "AF_IUCV",
+	linux.AF_RXRPC:      "AF_RXRPC",
+	linux.AF_ISDN:       "AF_ISDN",
+	linux.AF_PHONET:     "AF_PHONET",
+	linux.AF_IEEE802154: "AF_IEEE802154",
+	linux.AF_CAIF:       "AF_CAIF",
+	linux.AF_ALG:        "AF_ALG",
+	linux.AF_NFC:        "AF_NFC",
+	linux.AF_VSOCK:      "AF_VSOCK",
 }
 
 // SocketType are the possible socket(2) types.
 var SocketType = abi.ValueSet{
-	{
-		Value: linux.SOCK_STREAM,
-		Name:  "SOCK_STREAM",
-	},
-	{
-		Value: linux.SOCK_DGRAM,
-		Name:  "SOCK_DGRAM",
-	},
-	{
-		Value: linux.SOCK_RAW,
-		Name:  "SOCK_RAW",
-	},
-	{
-		Value: linux.SOCK_RDM,
-		Name:  "SOCK_RDM",
-	},
-	{
-		Value: linux.SOCK_SEQPACKET,
-		Name:  "SOCK_SEQPACKET",
-	},
-	{
-		Value: linux.SOCK_DCCP,
-		Name:  "SOCK_DCCP",
-	},
-	{
-		Value: linux.SOCK_PACKET,
-		Name:  "SOCK_PACKET",
-	},
+	linux.SOCK_STREAM:    "SOCK_STREAM",
+	linux.SOCK_DGRAM:     "SOCK_DGRAM",
+	linux.SOCK_RAW:       "SOCK_RAW",
+	linux.SOCK_RDM:       "SOCK_RDM",
+	linux.SOCK_SEQPACKET: "SOCK_SEQPACKET",
+	linux.SOCK_DCCP:      "SOCK_DCCP",
+	linux.SOCK_PACKET:    "SOCK_PACKET",
 }
 
 // SocketFlagSet are the possible socket(2) flags.
@@ -243,106 +99,31 @@ var SocketFlagSet = abi.FlagSet{
 
 // ipProtocol are the possible socket(2) types for INET and INET6 sockets.
 var ipProtocol = abi.ValueSet{
-	{
-		Value: linux.IPPROTO_IP,
-		Name:  "IPPROTO_IP",
-	},
-	{
-		Value: linux.IPPROTO_ICMP,
-		Name:  "IPPROTO_ICMP",
-	},
-	{
-		Value: linux.IPPROTO_IGMP,
-		Name:  "IPPROTO_IGMP",
-	},
-	{
-		Value: linux.IPPROTO_IPIP,
-		Name:  "IPPROTO_IPIP",
-	},
-	{
-		Value: linux.IPPROTO_TCP,
-		Name:  "IPPROTO_TCP",
-	},
-	{
-		Value: linux.IPPROTO_EGP,
-		Name:  "IPPROTO_EGP",
-	},
-	{
-		Value: linux.IPPROTO_PUP,
-		Name:  "IPPROTO_PUP",
-	},
-	{
-		Value: linux.IPPROTO_UDP,
-		Name:  "IPPROTO_UDP",
-	},
-	{
-		Value: linux.IPPROTO_IDP,
-		Name:  "IPPROTO_IDP",
-	},
-	{
-		Value: linux.IPPROTO_TP,
-		Name:  "IPPROTO_TP",
-	},
-	{
-		Value: linux.IPPROTO_DCCP,
-		Name:  "IPPROTO_DCCP",
-	},
-	{
-		Value: linux.IPPROTO_IPV6,
-		Name:  "IPPROTO_IPV6",
-	},
-	{
-		Value: linux.IPPROTO_RSVP,
-		Name:  "IPPROTO_RSVP",
-	},
-	{
-		Value: linux.IPPROTO_GRE,
-		Name:  "IPPROTO_GRE",
-	},
-	{
-		Value: linux.IPPROTO_ESP,
-		Name:  "IPPROTO_ESP",
-	},
-	{
-		Value: linux.IPPROTO_AH,
-		Name:  "IPPROTO_AH",
-	},
-	{
-		Value: linux.IPPROTO_MTP,
-		Name:  "IPPROTO_MTP",
-	},
-	{
-		Value: linux.IPPROTO_BEETPH,
-		Name:  "IPPROTO_BEETPH",
-	},
-	{
-		Value: linux.IPPROTO_ENCAP,
-		Name:  "IPPROTO_ENCAP",
-	},
-	{
-		Value: linux.IPPROTO_PIM,
-		Name:  "IPPROTO_PIM",
-	},
-	{
-		Value: linux.IPPROTO_COMP,
-		Name:  "IPPROTO_COMP",
-	},
-	{
-		Value: linux.IPPROTO_SCTP,
-		Name:  "IPPROTO_SCTP",
-	},
-	{
-		Value: linux.IPPROTO_UDPLITE,
-		Name:  "IPPROTO_UDPLITE",
-	},
-	{
-		Value: linux.IPPROTO_MPLS,
-		Name:  "IPPROTO_MPLS",
-	},
-	{
-		Value: linux.IPPROTO_RAW,
-		Name:  "IPPROTO_RAW",
-	},
+	linux.IPPROTO_IP:      "IPPROTO_IP",
+	linux.IPPROTO_ICMP:    "IPPROTO_ICMP",
+	linux.IPPROTO_IGMP:    "IPPROTO_IGMP",
+	linux.IPPROTO_IPIP:    "IPPROTO_IPIP",
+	linux.IPPROTO_TCP:     "IPPROTO_TCP",
+	linux.IPPROTO_EGP:     "IPPROTO_EGP",
+	linux.IPPROTO_PUP:     "IPPROTO_PUP",
+	linux.IPPROTO_UDP:     "IPPROTO_UDP",
+	linux.IPPROTO_IDP:     "IPPROTO_IDP",
+	linux.IPPROTO_TP:      "IPPROTO_TP",
+	linux.IPPROTO_DCCP:    "IPPROTO_DCCP",
+	linux.IPPROTO_IPV6:    "IPPROTO_IPV6",
+	linux.IPPROTO_RSVP:    "IPPROTO_RSVP",
+	linux.IPPROTO_GRE:     "IPPROTO_GRE",
+	linux.IPPROTO_ESP:     "IPPROTO_ESP",
+	linux.IPPROTO_AH:      "IPPROTO_AH",
+	linux.IPPROTO_MTP:     "IPPROTO_MTP",
+	linux.IPPROTO_BEETPH:  "IPPROTO_BEETPH",
+	linux.IPPROTO_ENCAP:   "IPPROTO_ENCAP",
+	linux.IPPROTO_PIM:     "IPPROTO_PIM",
+	linux.IPPROTO_COMP:    "IPPROTO_COMP",
+	linux.IPPROTO_SCTP:    "IPPROTO_SCTP",
+	linux.IPPROTO_UDPLITE: "IPPROTO_UDPLITE",
+	linux.IPPROTO_MPLS:    "IPPROTO_MPLS",
+	linux.IPPROTO_RAW:     "IPPROTO_RAW",
 }
 
 // SocketProtocol are the possible socket(2) protocols for each protocol family.
@@ -350,90 +131,27 @@ var SocketProtocol = map[int32]abi.ValueSet{
 	linux.AF_INET:  ipProtocol,
 	linux.AF_INET6: ipProtocol,
 	linux.AF_NETLINK: {
-		{
-			Value: linux.NETLINK_ROUTE,
-			Name:  "NETLINK_ROUTE",
-		},
-		{
-			Value: linux.NETLINK_UNUSED,
-			Name:  "NETLINK_UNUSED",
-		},
-		{
-			Value: linux.NETLINK_USERSOCK,
-			Name:  "NETLINK_USERSOCK",
-		},
-		{
-			Value: linux.NETLINK_FIREWALL,
-			Name:  "NETLINK_FIREWALL",
-		},
-		{
-			Value: linux.NETLINK_SOCK_DIAG,
-			Name:  "NETLINK_SOCK_DIAG",
-		},
-		{
-			Value: linux.NETLINK_NFLOG,
-			Name:  "NETLINK_NFLOG",
-		},
-		{
-			Value: linux.NETLINK_XFRM,
-			Name:  "NETLINK_XFRM",
-		},
-		{
-			Value: linux.NETLINK_SELINUX,
-			Name:  "NETLINK_SELINUX",
-		},
-		{
-			Value: linux.NETLINK_ISCSI,
-			Name:  "NETLINK_ISCSI",
-		},
-		{
-			Value: linux.NETLINK_AUDIT,
-			Name:  "NETLINK_AUDIT",
-		},
-		{
-			Value: linux.NETLINK_FIB_LOOKUP,
-			Name:  "NETLINK_FIB_LOOKUP",
-		},
-		{
-			Value: linux.NETLINK_CONNECTOR,
-			Name:  "NETLINK_CONNECTOR",
-		},
-		{
-			Value: linux.NETLINK_NETFILTER,
-			Name:  "NETLINK_NETFILTER",
-		},
-		{
-			Value: linux.NETLINK_IP6_FW,
-			Name:  "NETLINK_IP6_FW",
-		},
-		{
-			Value: linux.NETLINK_DNRTMSG,
-			Name:  "NETLINK_DNRTMSG",
-		},
-		{
-			Value: linux.NETLINK_KOBJECT_UEVENT,
-			Name:  "NETLINK_KOBJECT_UEVENT",
-		},
-		{
-			Value: linux.NETLINK_GENERIC,
-			Name:  "NETLINK_GENERIC",
-		},
-		{
-			Value: linux.NETLINK_SCSITRANSPORT,
-			Name:  "NETLINK_SCSITRANSPORT",
-		},
-		{
-			Value: linux.NETLINK_ECRYPTFS,
-			Name:  "NETLINK_ECRYPTFS",
-		},
-		{
-			Value: linux.NETLINK_RDMA,
-			Name:  "NETLINK_RDMA",
-		},
-		{
-			Value: linux.NETLINK_CRYPTO,
-			Name:  "NETLINK_CRYPTO",
-		},
+		linux.NETLINK_ROUTE:          "NETLINK_ROUTE",
+		linux.NETLINK_UNUSED:         "NETLINK_UNUSED",
+		linux.NETLINK_USERSOCK:       "NETLINK_USERSOCK",
+		linux.NETLINK_FIREWALL:       "NETLINK_FIREWALL",
+		linux.NETLINK_SOCK_DIAG:      "NETLINK_SOCK_DIAG",
+		linux.NETLINK_NFLOG:          "NETLINK_NFLOG",
+		linux.NETLINK_XFRM:           "NETLINK_XFRM",
+		linux.NETLINK_SELINUX:        "NETLINK_SELINUX",
+		linux.NETLINK_ISCSI:          "NETLINK_ISCSI",
+		linux.NETLINK_AUDIT:          "NETLINK_AUDIT",
+		linux.NETLINK_FIB_LOOKUP:     "NETLINK_FIB_LOOKUP",
+		linux.NETLINK_CONNECTOR:      "NETLINK_CONNECTOR",
+		linux.NETLINK_NETFILTER:      "NETLINK_NETFILTER",
+		linux.NETLINK_IP6_FW:         "NETLINK_IP6_FW",
+		linux.NETLINK_DNRTMSG:        "NETLINK_DNRTMSG",
+		linux.NETLINK_KOBJECT_UEVENT: "NETLINK_KOBJECT_UEVENT",
+		linux.NETLINK_GENERIC:        "NETLINK_GENERIC",
+		linux.NETLINK_SCSITRANSPORT:  "NETLINK_SCSITRANSPORT",
+		linux.NETLINK_ECRYPTFS:       "NETLINK_ECRYPTFS",
+		linux.NETLINK_RDMA:           "NETLINK_RDMA",
+		linux.NETLINK_CRYPTO:         "NETLINK_CRYPTO",
 	},
 }
 
