@@ -60,7 +60,7 @@ type Sandbox struct {
 	// is running in.
 	Chroot string `json:"chroot"`
 
-	// Ccroup has the cgroup configuration for the sandbox.
+	// Cgroup has the cgroup configuration for the sandbox.
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
 }
 
@@ -69,7 +69,7 @@ type Sandbox struct {
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 	// The Cleanup object cleans up partially created sandboxes when an error occurs.
-	// Any errors occuring during cleanup itself are ignored.
+	// Any errors occurring during cleanup itself are ignored.
 	c := specutils.MakeCleanup(func() { _ = s.destroy() })
 	defer c.Clean()
 
@@ -82,13 +82,25 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		}
 	}
 
-	// Create the sandbox process.
-	if err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles); err != nil {
-		return nil, err
+	// Create a socket pair to synchronize runsc and sandbox processes.
+	// It is used for the following:
+	// * to notify the sandbox process when it has been moved into cgroups.
+	// * to wait for the controller socket.
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error creating a start-sync socket pair %q: %v", s.ID, err)
 	}
+	startSyncFile := os.NewFile(uintptr(fds[0]), "start-sync socket")
+	defer startSyncFile.Close()
 
-	// Wait for the control server to come up (or timeout).
-	if err := s.waitForCreated(20 * time.Second); err != nil {
+	sandboxSyncFile := os.NewFile(uintptr(fds[1]), "sandbox start-sync socket")
+
+	// Create the sandbox process.
+	err = s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, sandboxSyncFile)
+	// sandboxSyncFile has to be closed to be able to detect
+	// when the sandbox process exits unexpectedly.
+	sandboxSyncFile.Close()
+	if err != nil {
 		return nil, err
 	}
 
@@ -96,6 +108,24 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		if err := s.Cgroup.Add(s.Pid); err != nil {
 			return nil, fmt.Errorf("error adding sandbox to cgroup: %v", err)
 		}
+	}
+
+	b := make([]byte, 1)
+	// Notify the sandbox process it has been moved into cgroups.
+	if l, err := startSyncFile.Write(b); err != nil || l != 1 {
+		return nil, fmt.Errorf("error writing into the start-sync descriptor: %v", err)
+	}
+	// Wait until the sandbox process has initialized the controller socket.
+	if l, err := startSyncFile.Read(b); err != nil || l != 1 {
+		return nil, fmt.Errorf("error reading from the start-sync descriptor: %v", err)
+	}
+	// startSyncFile is closed here to be sure that starting with this point
+	// the sandbox process will not write anything into it.
+	startSyncFile.Close()
+
+	// Wait for the control server to come up.
+	if err := s.waitForCreated(); err != nil {
+		return nil, err
 	}
 
 	c.Release()
@@ -282,7 +312,7 @@ func (s *Sandbox) connError(err error) error {
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) error {
+func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, startSyncFile *os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -344,6 +374,10 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	defer specFile.Close()
 	cmd.ExtraFiles = append(cmd.ExtraFiles, specFile)
 	cmd.Args = append(cmd.Args, "--spec-fd="+strconv.Itoa(nextFD))
+	nextFD++
+
+	cmd.ExtraFiles = append(cmd.ExtraFiles, startSyncFile)
+	cmd.Args = append(cmd.Args, "--start-sync-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
 	// If there is a gofer, sends all socket ends to the sandbox.
@@ -581,21 +615,8 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 // waitForCreated waits for the sandbox subprocess control server to be
 // running and for the loader to have been created, at which point the sandbox
 // is in Created state.
-func (s *Sandbox) waitForCreated(timeout time.Duration) error {
+func (s *Sandbox) waitForCreated() error {
 	log.Debugf("Waiting for sandbox %q creation", s.ID)
-
-	ready := func() (bool, error) {
-		c, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
-		if err != nil {
-			return false, nil
-		}
-		// It's alive!
-		c.Close()
-		return true, nil
-	}
-	if err := specutils.WaitForReady(s.Pid, timeout, ready); err != nil {
-		return fmt.Errorf("unexpected error waiting for sandbox %q, err: %v", s.ID, err)
-	}
 	conn, err := s.sandboxConnect()
 	if err != nil {
 		return err

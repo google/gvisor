@@ -69,6 +69,9 @@ type Boot struct {
 
 	// userLogFD is the file descriptor to write user logs to.
 	userLogFD int
+
+	// startSyncFD is the file descriptor to synchronize runsc and sandbox.
+	startSyncFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -99,12 +102,13 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
+	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
 // waiting state.
 func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if b.specFD == -1 || b.controllerFD == -1 || f.NArg() != 1 {
+	if b.specFD == -1 || b.controllerFD == -1 || b.startSyncFD == -1 || f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
@@ -155,6 +159,14 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		panic("setCapsAndCallSelf must never return success")
 	}
 
+	// Wait until this process has been moved into cgroups.
+	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
+	defer startSyncFile.Close()
+	buf := make([]byte, 1)
+	if r, err := startSyncFile.Read(buf); err != nil || r != 1 {
+		Fatalf("Unable to read from the start-sync descriptor: %v", err)
+	}
+
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:           f.Arg(0),
@@ -173,8 +185,18 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	if err != nil {
 		Fatalf("error creating loader: %v", err)
 	}
+
 	// Fatalf exits the process and doesn't run defers. 'l' must be destroyed
 	// explicitly!
+
+	// Notify the parent process the controller has been created.
+	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
+		l.Destroy()
+		Fatalf("Unable to write into the start-sync descriptor: %v", err)
+	}
+	// startSyncFile is closed here to be sure that starting with this point
+	// the runsc process will not write anything into it.
+	startSyncFile.Close()
 
 	// Notify other processes the loader has been created.
 	l.NotifyLoaderCreated()
