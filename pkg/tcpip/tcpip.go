@@ -312,7 +312,10 @@ type Endpoint interface {
 	// the caller should not use data[:n] after Write returns.
 	//
 	// Note that unlike io.Writer.Write, it is not an error for Write to
-	// perform a partial write.
+	// perform a partial write (if n > 0, no error may be returned). Only
+	// stream (TCP) Endpoints may return partial writes, and even then only
+	// in the case where writing additional data would block. Other Endpoints
+	// will either write the entire message or return an error.
 	//
 	// For UDP and Ping sockets if address resolution is required,
 	// ErrNoLinkAddress and a notification channel is returned for the caller to

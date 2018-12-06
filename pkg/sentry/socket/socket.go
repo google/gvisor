@@ -90,6 +90,8 @@ type Socket interface {
 
 	// SendMsg implements the sendmsg(2) linux syscall. SendMsg does not take
 	// ownership of the ControlMessage on error.
+	//
+	// If n > 0, err will either be nil or an error from t.Block.
 	SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages ControlMessages) (n int, err *syserr.Error)
 
 	// SetRecvTimeout sets the timeout (in ns) for recv operations. Zero means

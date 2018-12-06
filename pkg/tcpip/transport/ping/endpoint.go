@@ -299,7 +299,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		err = sendPing6(route, e.id.LocalPort, v)
 	}
 
-	return uintptr(len(v)), nil, err
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return uintptr(len(v)), nil, nil
 }
 
 // Peek only returns data from a single datagram, so do nothing here.

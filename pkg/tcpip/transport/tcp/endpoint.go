@@ -554,10 +554,6 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		return 0, nil, perr
 	}
 
-	var err *tcpip.Error
-	if p.Size() > avail {
-		err = tcpip.ErrWouldBlock
-	}
 	l := len(v)
 	s := newSegmentFromView(&e.route, e.id, v)
 
@@ -576,7 +572,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		// Let the protocol goroutine do the work.
 		e.sndWaker.Assert()
 	}
-	return uintptr(l), nil, err
+	return uintptr(l), nil, nil
 }
 
 // Peek reads data without consuming it from the endpoint.
