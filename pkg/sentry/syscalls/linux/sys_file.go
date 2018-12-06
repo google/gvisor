@@ -170,7 +170,7 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 			if dirPath {
 				return syserror.ENOTDIR
 			}
-			if fileFlags.Write && flags&linux.O_TRUNC != 0 {
+			if flags&linux.O_TRUNC != 0 {
 				if err := d.Inode.Truncate(t, d, 0); err != nil {
 					return err
 				}
