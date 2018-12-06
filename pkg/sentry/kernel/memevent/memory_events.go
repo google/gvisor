@@ -22,10 +22,14 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	pb "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 )
+
+var totalTicks = metric.MustCreateNewUint64Metric("/memory_events/ticks", false /*sync*/, "Total number of memory event periods that have elapsed since startup.")
+var totalEvents = metric.MustCreateNewUint64Metric("/memory_events/events", false /*sync*/, "Total number of memory events emitted.")
 
 // MemoryEvents describes the configuration for the global memory event emitter.
 type MemoryEvents struct {
@@ -71,6 +75,10 @@ func (m *MemoryEvents) Start() {
 func (m *MemoryEvents) run() {
 	m.done.Add(1)
 
+	// Emit the first event immediately on startup.
+	totalTicks.Increment()
+	m.emit()
+
 	ticker := time.NewTicker(m.period)
 	defer ticker.Stop()
 
@@ -80,6 +88,7 @@ func (m *MemoryEvents) run() {
 			m.done.Done()
 			return
 		case <-ticker.C:
+			totalTicks.Increment()
 			m.emit()
 		}
 	}
@@ -94,6 +103,7 @@ func (m *MemoryEvents) emit() {
 	snapshot, _ := usage.MemoryAccounting.Copy()
 	total := totalPlatform + snapshot.Mapped
 
+	totalEvents.Increment()
 	eventchannel.Emit(&pb.MemoryUsageEvent{
 		Mapped: snapshot.Mapped,
 		Total:  total,

@@ -12,6 +12,7 @@ go_library(
         ":memory_events_go_proto",
         "//pkg/eventchannel",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/sentry/kernel",
         "//pkg/sentry/usage",
     ],
