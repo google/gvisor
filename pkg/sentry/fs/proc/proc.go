@@ -251,7 +251,7 @@ func (p *proc) DeprecatedReaddir(ctx context.Context, dirCtx *fs.DirCtx, offset 
 	return offset, err
 }
 
-// newMountsSymlink returns a symlink to "self/mounts"
+// newMountsSymlink returns a symlink to "self/mounts".
 func newMountsSymlink(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	s := &ramfs.Symlink{}
 	s.InitSymlink(ctx, fs.RootOwner, "self/mounts")
