@@ -30,7 +30,7 @@ var linuxAMD64 = SyscallMap{
 	10:  makeSyscallInfo("mprotect", Hex, Hex, Hex),
 	11:  makeSyscallInfo("munmap", Hex, Hex),
 	12:  makeSyscallInfo("brk", Hex),
-	13:  makeSyscallInfo("rt_sigaction", Signal, Hex, Hex),
+	13:  makeSyscallInfo("rt_sigaction", Signal, SigAction, PostSigAction),
 	14:  makeSyscallInfo("rt_sigprocmask", SignalMaskAction, SigSet, PostSigSet, Hex),
 	15:  makeSyscallInfo("rt_sigreturn"),
 	16:  makeSyscallInfo("ioctl", Hex, Hex, Hex),

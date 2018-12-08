@@ -339,6 +339,8 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, signalMaskActions.Parse(uint64(args[arg].Int())))
 		case SigSet:
 			output = append(output, sigSet(t, args[arg].Pointer()))
+		case SigAction:
+			output = append(output, sigAction(t, args[arg].Pointer()))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
@@ -399,6 +401,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = rusage(t, args[arg].Pointer())
 		case PostSigSet:
 			output[arg] = sigSet(t, args[arg].Pointer())
+		case PostSigAction:
+			output[arg] = sigAction(t, args[arg].Pointer())
 		}
 	}
 }

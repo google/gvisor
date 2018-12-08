@@ -65,6 +65,41 @@ var signalMaskActions = abi.ValueSet{
 	linux.SIG_SETMASK: "SIG_SETMASK",
 }
 
+var sigActionFlags = abi.FlagSet{
+	{
+		Flag: linux.SA_NOCLDSTOP,
+		Name: "SA_NOCLDSTOP",
+	},
+	{
+		Flag: linux.SA_NOCLDWAIT,
+		Name: "SA_NOCLDWAIT",
+	},
+	{
+		Flag: linux.SA_SIGINFO,
+		Name: "SA_SIGINFO",
+	},
+	{
+		Flag: linux.SA_RESTORER,
+		Name: "SA_RESTORER",
+	},
+	{
+		Flag: linux.SA_ONSTACK,
+		Name: "SA_ONSTACK",
+	},
+	{
+		Flag: linux.SA_RESTART,
+		Name: "SA_RESTART",
+	},
+	{
+		Flag: linux.SA_NODEFER,
+		Name: "SA_NODEFER",
+	},
+	{
+		Flag: linux.SA_RESETHAND,
+		Name: "SA_RESETHAND",
+	},
+}
+
 func sigSet(t *kernel.Task, addr usermem.Addr) string {
 	if addr == 0 {
 		return "null"
@@ -77,10 +112,37 @@ func sigSet(t *kernel.Task, addr usermem.Addr) string {
 
 	set := linux.SignalSet(usermem.ByteOrder.Uint64(b[:]))
 
+	return fmt.Sprintf("%#x %s", addr, formatSigSet(set))
+}
+
+func formatSigSet(set linux.SignalSet) string {
 	var signals []string
 	linux.ForEachSignal(set, func(sig linux.Signal) {
 		signals = append(signals, signalNames.ParseDecimal(uint64(sig)))
 	})
 
-	return fmt.Sprintf("%#x [%v]", addr, strings.Join(signals, " "))
+	return fmt.Sprintf("[%v]", strings.Join(signals, " "))
+}
+
+func sigAction(t *kernel.Task, addr usermem.Addr) string {
+	if addr == 0 {
+		return "null"
+	}
+
+	sa, err := t.CopyInSignalAct(addr)
+	if err != nil {
+		return fmt.Sprintf("%#x (error copying sigaction: %v)", addr, err)
+	}
+
+	var handler string
+	switch sa.Handler {
+	case linux.SIG_IGN:
+		handler = "SIG_IGN"
+	case linux.SIG_DFL:
+		handler = "SIG_DFL"
+	default:
+		handler = fmt.Sprintf("%#x", sa.Handler)
+	}
+
+	return fmt.Sprintf("%#x {Handler: %s, Flags: %s, Restorer: %#x, Mask: %s}", addr, handler, sigActionFlags.Parse(sa.Flags), sa.Restorer, formatSigSet(sa.Mask))
 }

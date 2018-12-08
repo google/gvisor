@@ -182,6 +182,12 @@ const (
 
 	// PostSigSet is a signal set, formatted after syscall execution.
 	PostSigSet
+
+	// SigAction is a struct sigaction.
+	SigAction
+
+	// PostSigAction is a struct sigaction, formatted after syscall execution.
+	PostSigAction
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

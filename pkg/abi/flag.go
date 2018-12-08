@@ -43,6 +43,11 @@ func (s FlagSet) Parse(val uint64) string {
 		flags = append(flags, "0x"+strconv.FormatUint(val, 16))
 	}
 
+	if len(flags) == 0 {
+		// Prefer 0 to an empty string.
+		return "0x0"
+	}
+
 	return strings.Join(flags, "|")
 }
 
