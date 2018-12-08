@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/amutex"
-	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock"
@@ -251,13 +250,7 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 //
 // Otherwise same as Readv.
 func (f *File) Preadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
-	if !f.mu.Lock(ctx) {
-		return 0, syserror.ErrInterrupted
-	}
-
-	n, err := f.FileOperations.Read(ctx, f, dst, offset)
-	f.mu.Unlock()
-	return n, err
+	return f.FileOperations.Read(ctx, f, dst, offset)
 }
 
 // Writev calls f.FileOperations.Write with f as the File, advancing the
@@ -273,14 +266,26 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 		return 0, syserror.ErrInterrupted
 	}
 
-	offset, err := f.checkWriteLocked(ctx, &src, f.offset)
-	if err != nil {
+	// Check for append mode.
+	if err := f.checkAppend(ctx, &f.offset); err != nil {
 		f.mu.Unlock()
 		return 0, err
 	}
-	n, err := f.FileOperations.Write(ctx, f, src, offset)
+
+	// Enforce file limits.
+	limit, ok := f.checkLimit(ctx, f.offset)
+	switch {
+	case ok && limit == 0:
+		f.mu.Unlock()
+		return 0, syserror.ErrExceedsFileSizeLimit
+	case ok:
+		src = src.TakeFirst64(limit)
+	}
+
+	// We must hold the lock during the write.
+	n, err := f.FileOperations.Write(ctx, f, src, f.offset)
 	if n >= 0 {
-		atomic.StoreInt64(&f.offset, offset+n)
+		atomic.StoreInt64(&f.offset, f.offset+n)
 	}
 	f.mu.Unlock()
 	return n, err
@@ -292,51 +297,68 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 //
 // Otherwise same as Writev.
 func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	if !f.mu.Lock(ctx) {
-		return 0, syserror.ErrInterrupted
+	// "POSIX requires that opening a file with the O_APPEND flag should
+	// have no effect on the location at which pwrite() writes data.
+	// However, on Linux, if a file is opened with O_APPEND,  pwrite()
+	// appends data to the end of the file, regardless of the value of
+	// offset."
+	//
+	// In order to implement the standard, broken behavior, we simply treat
+	// this as a write when the append flag is set.
+	if f.Flags().Append {
+		return f.Writev(ctx, src)
 	}
 
-	offset, err := f.checkWriteLocked(ctx, &src, offset)
-	if err != nil {
-		f.mu.Unlock()
-		return 0, err
+	// Enforce file limits.
+	limit, ok := f.checkLimit(ctx, offset)
+	switch {
+	case ok && limit == 0:
+		return 0, syserror.ErrExceedsFileSizeLimit
+	case ok:
+		src = src.TakeFirst64(limit)
 	}
-	n, err := f.FileOperations.Write(ctx, f, src, offset)
-	f.mu.Unlock()
-	return n, err
+
+	return f.FileOperations.Write(ctx, f, src, offset)
 }
 
-// checkWriteLocked returns the offset to write at or an error if the write
-// would not succeed. May update src to fit a write operation into a file
-// size limit.
-func (f *File) checkWriteLocked(ctx context.Context, src *usermem.IOSequence, offset int64) (int64, error) {
-	// Handle append only files. Note that this is still racy for network
-	// filesystems.
+// checkAppend checks whether this file is in append mode, and if it is,
+// the given offset is updated appropriately.
+//
+// Note that this function does not acquire the file mutex. To guarantee safety
+// with respect to the underlying offset, the file must be held.
+func (f *File) checkAppend(ctx context.Context, offset *int64) error {
 	if f.Flags().Append {
 		uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 		if err != nil {
 			// This is an odd error, most likely it is evidence
-			// that something is terribly wrong with the filesystem.
-			// Return a generic EIO error.
-			log.Warningf("Failed to check write of inode %#v: %v", f.Dirent.Inode.StableAttr, err)
-			return offset, syserror.EIO
+			// that something is terribly wrong with the
+			// filesystem.
+			return syserror.EIO
 		}
-		offset = uattr.Size
+
+		// Update the offset.
+		*offset = uattr.Size
 	}
 
-	// Is this a regular file?
+	return nil
+}
+
+// checkLimit checks the offset that the write will be performed at. The
+// returned boolean indicates that the write must be limited. The returned
+// integer indicates the new maximum write length.
+func (f *File) checkLimit(ctx context.Context, offset int64) (int64, bool) {
 	if IsRegular(f.Dirent.Inode.StableAttr) {
 		// Enforce size limits.
 		fileSizeLimit := limits.FromContext(ctx).Get(limits.FileSize).Cur
 		if fileSizeLimit <= math.MaxInt64 {
 			if offset >= int64(fileSizeLimit) {
-				return offset, syserror.ErrExceedsFileSizeLimit
+				return 0, true
 			}
-			*src = src.TakeFirst64(int64(fileSizeLimit) - offset)
+			return int64(fileSizeLimit) - offset, true
 		}
 	}
 
-	return offset, nil
+	return 0, false
 }
 
 // Fsync calls f.FileOperations.Fsync with f as the File.

@@ -213,6 +213,20 @@ func (NoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 	return 0, syserror.ENOTTY
 }
 
+// NoSplice implements fs.FileOperations.ReadFrom and fs.FileOperations.WriteTo
+// for files that don't support splice-style operations.
+type NoSplice struct{}
+
+// WriteTo implements fs.FileOperations.WriteTo.
+func (NoSplice) WriteTo(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
+}
+
+// ReadFrom implements fs.FileOperations.ReadFrom.
+func (NoSplice) ReadFrom(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
+}
+
 // DirFileOperations implements FileOperations for directories.
 //
 // +stateify savable
@@ -263,7 +277,17 @@ func (*DirFileOperations) Read(context.Context, *fs.File, usermem.IOSequence, in
 	return 0, syserror.EISDIR
 }
 
+// WriteTo implements FileOperations.WriteTo.
+func (*DirFileOperations) WriteTo(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
+	return 0, syserror.EISDIR
+}
+
 // Write implements FileOperations.Write.
 func (*DirFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
+	return 0, syserror.EISDIR
+}
+
+// ReadFrom implements FileOperations.ReadFrom.
+func (*DirFileOperations) ReadFrom(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
 	return 0, syserror.EISDIR
 }

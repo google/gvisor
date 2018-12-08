@@ -32,6 +32,7 @@ import (
 type Handle struct {
 	NoopRelease      `state:"nosave"`
 	NoIoctl          `state:"nosave"`
+	NoSplice         `state:"nosave"`
 	HandleOperations fs.HandleOperations
 
 	// dirCursor is the directory cursor.

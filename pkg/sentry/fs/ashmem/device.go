@@ -40,6 +40,7 @@ type Device struct {
 	fsutil.NoMappable                `state:"nosave"`
 	fsutil.NoopWriteOut              `state:"nosave"`
 	fsutil.NotDirReaddir             `state:"nosave"`
+	fsutil.NoSplice                  `state:"nosave"`
 
 	mu       sync.Mutex `state:"nosave"`
 	unstable fs.UnstableAttr

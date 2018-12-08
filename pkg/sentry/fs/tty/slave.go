@@ -96,6 +96,7 @@ type slaveFileOperations struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 
 	// si is the inode operations.
 	si *slaveInodeOperations

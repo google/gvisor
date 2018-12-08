@@ -40,6 +40,7 @@ type ReaderWriter struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 	*Pipe
 }
 

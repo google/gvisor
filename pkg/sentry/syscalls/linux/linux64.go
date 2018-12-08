@@ -323,10 +323,10 @@ var AMD64 = &kernel.SyscallTable{
 		272: Unshare,
 		273: syscalls.Error(syscall.ENOSYS), // SetRobustList, obsolete
 		274: syscalls.Error(syscall.ENOSYS), // GetRobustList, obsolete
-		//     275: Splice, TODO
-		//     276: Tee, TODO
+		275: Splice,
+		276: Tee,
 		277: SyncFileRange,
-		//     278: Vmsplice, TODO
+		278: Vmsplice,
 		279: syscalls.CapError(linux.CAP_SYS_NICE), // MovePages, requires cap_sys_nice (mostly)
 		280: Utimensat,
 		281: EpollPwait,

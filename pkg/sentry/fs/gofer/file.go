@@ -38,6 +38,7 @@ var openedWX = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_fil
 // +stateify savable
 type fileOperations struct {
 	fsutil.NoIoctl     `state:"nosave"`
+	fsutil.NoSplice    `state:"nosplice"`
 	waiter.AlwaysReady `state:"nosave"`
 
 	// inodeOperations is the inodeOperations backing the file. It is protected

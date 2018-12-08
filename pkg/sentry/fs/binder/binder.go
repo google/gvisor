@@ -194,6 +194,7 @@ type Proc struct {
 	fsutil.NoFsync                  `state:"nosave"`
 	fsutil.DeprecatedFileOperations `state:"nosave"`
 	fsutil.NotDirReaddir            `state:"nosave"`
+	fsutil.NoSplice                 `state:"nosave"`
 
 	bd       *Device
 	task     *kernel.Task

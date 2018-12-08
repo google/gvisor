@@ -22,6 +22,38 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
+// SpliceOpts define how a splice works.
+type SpliceOpts struct {
+	// Length is the length of the splice operation.
+	Length int64
+
+	// SrcOffset indicates whether the existing source file offset should
+	// be used. If this is true, then the Start value below is used.
+	//
+	// When passed to FileOperations object, this should always be true as
+	// the offset will be provided by a layer above, unless the object in
+	// question is a pipe or socket. This value can be relied upon for such
+	// an indicator.
+	SrcOffset bool
+
+	// SrcStart is the start of the source file. This is used only if
+	// SrcOffset is false.
+	SrcStart int64
+
+	// Dup indicates that the contents should not be consumed from the
+	// source (e.g. in the case of a socket or a pipe), but duplicated.
+	Dup bool
+
+	// DstOffset indicates that the destination file offset should be used.
+	//
+	// See SrcOffset for additional information.
+	DstOffset bool
+
+	// DstStart is the start of the destination file. This is used only if
+	// DstOffset is false.
+	DstStart int64
+}
+
 // FileOperations are operations on a File that diverge per file system.
 //
 // Operations that take a *File may use only the following interfaces:
@@ -67,6 +99,13 @@ type FileOperations interface {
 	// Read must not be called if !FileFlags.Read.
 	Read(ctx context.Context, file *File, dst usermem.IOSequence, offset int64) (int64, error)
 
+	// WriteTo is a variant of read that takes a another file as a
+	// destination. Note that this is called before ReadFrom, and hence
+	// favored.
+	//
+	// The same preconditions as Read apply.
+	WriteTo(ctx context.Context, file *File, dst *File, opts SpliceOpts) (int64, error)
+
 	// Write writes src to file at offset and returns the number of bytes
 	// written which must be greater than or equal to 0. Like Read, file
 	// systems that do not support writing at an offset (i.e. pipefs, sockfs)
@@ -80,6 +119,13 @@ type FileOperations interface {
 	//
 	// Write must not be called if !FileFlags.Write.
 	Write(ctx context.Context, file *File, src usermem.IOSequence, offset int64) (int64, error)
+
+	// ReadFrom is a variant of write that takes a another file as a
+	// destination. Note that this is called after WriteTo, and is thus
+	// less favored.
+	//
+	// The same preconditions as Write apply; FileFlags.Write must be set.
+	ReadFrom(ctx context.Context, file *File, src *File, opts SpliceOpts) (int64, error)
 
 	// Fsync writes buffered modifications of file and/or flushes in-flight
 	// operations to backing storage based on syncType. The range to sync is

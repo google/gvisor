@@ -48,6 +48,7 @@ type byteReader struct {
 	fsutil.NoopFlush
 	fsutil.NoMMap
 	fsutil.NoIoctl
+	fsutil.NoSplice
 	waiter.AlwaysReady
 	data []byte
 }

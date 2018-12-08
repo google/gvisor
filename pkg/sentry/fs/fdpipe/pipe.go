@@ -43,6 +43,7 @@ type pipeOperations struct {
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 	waiter.Queue         `state:"nosave"`
 
 	// flags are the flags used to open the pipe.

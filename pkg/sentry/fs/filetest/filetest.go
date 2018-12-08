@@ -38,6 +38,7 @@ type TestFileOperations struct {
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 	waiter.AlwaysReady   `state:"nosave"`
 }
 

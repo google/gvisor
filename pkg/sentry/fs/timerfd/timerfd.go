@@ -39,6 +39,7 @@ type TimerOperations struct {
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 
 	events waiter.Queue `state:"zerovalue"`
 	timer  *ktime.Timer

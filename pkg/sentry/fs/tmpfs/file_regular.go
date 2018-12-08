@@ -35,6 +35,7 @@ type regularFileOperations struct {
 	fsutil.NoopFsync     `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 
 	// iops is the InodeOperations of a regular tmpfs file. It is
 	// guaranteed to be the same as file.Dirent.Inode.InodeOperations,

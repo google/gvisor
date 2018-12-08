@@ -45,6 +45,7 @@ type EventOperations struct {
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
 	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.NoSplice      `state:"nosave"`
 
 	// Mutex that protects accesses to the fields of this event.
 	mu sync.Mutex `state:"nosave"`

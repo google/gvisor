@@ -360,6 +360,7 @@ type dirFileOperations struct {
 	fsutil.NoopFlush   `state:"nosave"`
 	fsutil.NoMMap      `state:"nosave"`
 	fsutil.NoIoctl     `state:"nosave"`
+	fsutil.NoSplice    `state:"nosave"`
 
 	// di is the inode operations.
 	di *dirInodeOperations

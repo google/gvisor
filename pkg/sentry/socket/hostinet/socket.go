@@ -52,6 +52,7 @@ type socketOperations struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	fsutil.NoSplice      `state:"nosplice"`
 
 	fd    int // must be O_NONBLOCK
 	queue waiter.Queue

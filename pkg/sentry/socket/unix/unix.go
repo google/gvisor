@@ -52,6 +52,7 @@ type SocketOperations struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	fsutil.NoSplice      `staet:"nosave"`
 	ep                   transport.Endpoint
 	isPacket             bool
 }

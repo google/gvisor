@@ -34,6 +34,7 @@ go_library(
         "sys_shm.go",
         "sys_signal.go",
         "sys_socket.go",
+        "sys_splice.go",
         "sys_stat.go",
         "sys_sync.go",
         "sys_sysinfo.go",

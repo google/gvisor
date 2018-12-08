@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"io"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -1972,94 +1971,4 @@ func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	return 0, nil, nil
-}
-
-// Sendfile implements linux system call sendfile(2).
-func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	outFD := kdefs.FD(args[0].Int())
-	inFD := kdefs.FD(args[1].Int())
-	offsetAddr := args[2].Pointer()
-	count := int64(args[3].SizeT())
-
-	// Don't send a negative number of bytes.
-	if count < 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	// Get files.
-	outFile := t.FDMap().GetFile(outFD)
-	if outFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer outFile.DecRef()
-
-	inFile := t.FDMap().GetFile(inFD)
-	if inFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer inFile.DecRef()
-
-	// Verify that the outfile is writable.
-	outFlags := outFile.Flags()
-	if !outFlags.Write {
-		return 0, nil, syserror.EBADF
-	}
-
-	// Verify that the outfile Append flag is not set.
-	if outFlags.Append {
-		return 0, nil, syserror.EINVAL
-	}
-
-	// Verify that we have a regular infile.
-	// http://elixir.free-electrons.com/linux/latest/source/fs/splice.c#L933
-	if !fs.IsRegular(inFile.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
-	}
-
-	// Verify that the infile is readable.
-	if !inFile.Flags().Read {
-		return 0, nil, syserror.EBADF
-	}
-
-	// Setup for sending data.
-	var offset uint64
-	var n int64
-	var err error
-	w := &fs.FileWriter{t, outFile}
-	hasOffset := offsetAddr != 0
-	// If we have a provided offset.
-	if hasOffset {
-		// Verify that when offset address is not null, infile must be seekable
-		if !inFile.Flags().Pread {
-			return 0, nil, syserror.ESPIPE
-		}
-		// Copy in the offset.
-		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
-			return 0, nil, err
-		}
-		// Send data using Preadv.
-		r := io.NewSectionReader(&fs.FileReader{t, inFile}, int64(offset), count)
-		n, err = io.Copy(w, r)
-		// Copy out the new offset.
-		if _, err := t.CopyOut(offsetAddr, n+int64(offset)); err != nil {
-			return 0, nil, err
-		}
-		// If we don't have a provided offset.
-	} else {
-		// Send data using readv.
-		inOff := inFile.Offset()
-		r := &io.LimitedReader{R: &fs.FileReader{t, inFile}, N: count}
-		n, err = io.Copy(w, r)
-		inOff += n
-		if inFile.Offset() != inOff {
-			// Adjust file position in case more bytes were read than written.
-			if _, err := inFile.Seek(t, fs.SeekSet, inOff); err != nil {
-				return 0, nil, syserror.EIO
-			}
-		}
-	}
-
-	// We can only pass a single file to handleIOError, so pick inFile
-	// arbitrarily.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "sendfile", inFile)
 }

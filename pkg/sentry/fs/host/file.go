@@ -38,6 +38,7 @@ import (
 type fileOperations struct {
 	fsutil.NoIoctl     `state:"nosave"`
 	fsutil.NoopRelease `state:"nosave"`
+	fsutil.NoSplice    `state:"nosplice"`
 
 	// iops are the Inode operations for this file.
 	iops *inodeOperations `state:"wait"`
