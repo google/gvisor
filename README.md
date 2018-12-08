@@ -191,9 +191,9 @@ chmod a+x runsc
 sudo mv runsc /usr/local/bin
 ```
 
-### Configuring Docker
+### Running with Docker
 
-Next, configure Docker to use `runsc` by adding a runtime entry to your Docker
+To use gVisor with Docker you must add `runsc` as a runtime to your Docker
 configuration (`/etc/docker/daemon.json`). You may have to create this file if
 it does not exist. Also, some Docker versions also require you to
 [specify the `storage-driver` field][docker-storage-driver].
@@ -229,20 +229,16 @@ Terminal support works too:
 docker run --runtime=runsc -it ubuntu /bin/bash
 ```
 
-### Kubernetes Support (Experimental)
+### Running with Kubernetes
 
-gVisor can run sandboxed containers in a Kubernetes cluster with cri-o, although
-this is not recommended for production environments yet. Follow
-[these instructions][cri-o-k8s] to run [cri-o][cri-o] on a node in a Kubernetes
-cluster. Build `runsc` and put it on the node, and set it as the
-`runtime_untrusted_workload` in `/etc/crio/crio.conf`.
+gVisor can run sandboxed containers in a Kubernetes cluster with Minikube. After
+the gVisor addon is enabled, pods with `io.kubernetes.cri.untrusted-workload`
+set to true will execute with `runsc`. Follow [these instructions][minikube] to
+enable gVisor addon.
 
-Any Pod without the `io.kubernetes.cri-o.TrustedSandbox` annotation (or with the
-annotation set to false) will be run with `runsc`.
-
-Currently, gVisor only supports Pods with a single container (not counting the
-ever-present pause container). Support for multiple containers within a single
-Pod is coming soon.
+You can also setup Kubernetes node to use `gvisor-containerd-shim`. Pods with
+`io.kubernetes.cri.untrusted-workload` annotation will execute with `runsc`. You
+can find instructions [here][gvisor-containerd-shim].
 
 ## Advanced Usage
 
@@ -444,14 +440,14 @@ See [Contributing.md](CONTRIBUTING.md).
 [bazel]: https://bazel.build
 [bug]: https://github.com/google/gvisor/issues
 [checkpoint-restore]: https://gvisor.googlesource.com/gvisor/+/master/g3doc/checkpoint_restore.md
-[cri-o-k8s]: https://github.com/kubernetes-incubator/cri-o/blob/master/kubernetes.md
-[cri-o]: https://github.com/kubernetes-incubator/cri-o
 [docker-storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
 [docker]: https://www.docker.com
 [git]: https://git-scm.com
+[gvisor-containerd-shim]: https://github.com/google/gvisor-containerd-shim
 [gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [kvm]: https://www.linux-kvm.org
+[minikube]: https://github.com/kubernetes/minikube/blob/master/deploy/addons/gvisor/README.md
 [netstack]: https://github.com/google/netstack
 [oci]: https://www.opencontainers.org
 [python]: https://python.org
