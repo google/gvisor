@@ -30,6 +30,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 )
 
@@ -355,6 +356,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	networkStack, err := newEmptyNetworkStack(cm.l.conf, k)
 	if err != nil {
 		return fmt.Errorf("failed to create network: %v", err)
+	}
+	if eps, ok := networkStack.(*epsocket.Stack); ok {
+		stack.StackFromEnv = eps.Stack // FIXME
 	}
 	info, err := o.FilePayload.Files[0].Stat()
 	if err != nil {

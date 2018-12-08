@@ -85,8 +85,6 @@ func New(ctx context.Context, msrc *fs.MountSource) (*fs.Inode, error) {
 
 	p := &proc{k: k, pidns: pidns}
 	p.InitDir(ctx, map[string]*fs.Inode{
-		// Note that these are just the static members. There are
-		// dynamic members populated in Readdir and Lookup below.
 		"filesystems": seqfile.NewSeqFileInode(ctx, &filesystemsData{}, msrc),
 		"loadavg":     seqfile.NewSeqFileInode(ctx, &loadavgData{}, msrc),
 		"meminfo":     seqfile.NewSeqFileInode(ctx, &meminfoData{k}, msrc),
@@ -96,12 +94,23 @@ func New(ctx context.Context, msrc *fs.MountSource) (*fs.Inode, error) {
 	}, fs.RootOwner, fs.FilePermsFromMode(0555))
 
 	p.AddChild(ctx, "cpuinfo", p.newCPUInfo(ctx, msrc))
+	// If we're using rpcinet we will let it manage /proc/net.
+	if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
+		p.AddChild(ctx, "net", newRPCInetProcNet(ctx, msrc))
+	} else {
+		p.AddChild(ctx, "net", p.newNetDir(ctx, msrc))
+	}
+	p.AddChild(ctx, "self", p.newSelf(ctx, msrc))
+	p.AddChild(ctx, "sys", p.newSysDir(ctx, msrc))
+	p.AddChild(ctx, "thread-self", p.newThreadSelf(ctx, msrc))
 	p.AddChild(ctx, "uptime", p.newUptime(ctx, msrc))
 
 	return newFile(p, msrc, fs.SpecialDirectory, nil), nil
 }
 
 // self is a magical link.
+//
+// +stateify savable
 type self struct {
 	ramfs.Symlink
 
@@ -146,6 +155,8 @@ func (s *self) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 }
 
 // threadSelf is more magical than "self" link.
+//
+// +stateify savable
 type threadSelf struct {
 	ramfs.Symlink
 
@@ -169,27 +180,9 @@ func (s *threadSelf) Readlink(ctx context.Context, inode *fs.Inode) (string, err
 
 // Lookup loads an Inode at name into a Dirent.
 func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
-	// Is it one of the static ones?
 	dirent, walkErr := p.Dir.Lookup(ctx, dir, name)
 	if walkErr == nil {
 		return dirent, nil
-	}
-
-	// Is it a dynamic element?
-	nfs := map[string]func() *fs.Inode{
-		"net": func() *fs.Inode {
-			// If we're using rpcinet we will let it manage /proc/net.
-			if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
-				return newRPCInetProcNet(ctx, dir.MountSource)
-			}
-			return p.newNetDir(ctx, dir.MountSource)
-		},
-		"self":        func() *fs.Inode { return p.newSelf(ctx, dir.MountSource) },
-		"sys":         func() *fs.Inode { return p.newSysDir(ctx, dir.MountSource) },
-		"thread-self": func() *fs.Inode { return p.newThreadSelf(ctx, dir.MountSource) },
-	}
-	if nf, ok := nfs[name]; ok {
-		return fs.NewDirent(nf(), name), nil
 	}
 
 	// Try to lookup a corresponding task.
