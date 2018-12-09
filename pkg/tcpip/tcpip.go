@@ -436,6 +436,9 @@ type CorkOption int
 // should allow reuse of local address.
 type ReuseAddressOption int
 
+// QuickAckOption is stubbed out in SetSockOpt/GetSockOpt.
+type QuickAckOption int
+
 // PasscredOption is used by SetSockOpt/GetSockOpt to specify whether
 // SCM_CREDENTIALS socket control messages are enabled.
 //

@@ -177,6 +177,12 @@ type endpoint struct {
 	// options.
 	reuseAddr bool
 
+	// slowAck holds the negated state of quick ack. It is stubbed out and
+	// does nothing.
+	//
+	// slowAck is a boolean (0 is false) and must be accessed atomically.
+	slowAck uint32
+
 	// segmentQueue is used to hand received segments to the protocol
 	// goroutine. Segments are queued as long as the queue is not full,
 	// and dropped when it is.
@@ -677,6 +683,15 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.QuickAckOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.slowAck, 1)
+		} else {
+			atomic.StoreUint32(&e.slowAck, 0)
+		}
+
+		return nil
+
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -856,6 +871,13 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = 0
 		if v {
 			*o = 1
+		}
+		return nil
+
+	case *tcpip.QuickAckOption:
+		*o = 1
+		if v := atomic.LoadUint32(&e.slowAck); v != 0 {
+			*o = 0
 		}
 		return nil
 
