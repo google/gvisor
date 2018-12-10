@@ -73,6 +73,8 @@ go_library(
         "host_file_mapper_unsafe.go",
         "inode.go",
         "inode_cached.go",
+        "splice.go",
+        "splice_unsafe.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil",
     visibility = ["//pkg/sentry:internal"],

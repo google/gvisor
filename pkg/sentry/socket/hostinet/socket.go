@@ -52,7 +52,12 @@ type socketOperations struct {
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
-	fsutil.NoSplice      `state:"nosplice"`
+
+	// Note that we don't support splice operations directly, but we do
+	// support splice operations indirectly. For native files that do
+	// support splice (and pipes internally), we support fsutil.FDProvider
+	// for providing a host file descriptor.
+	fsutil.NoSplice `state:"nosplice"`
 
 	fd    int // must be O_NONBLOCK
 	queue waiter.Queue
@@ -137,6 +142,11 @@ func (s *socketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 		return writev(s.fd, iovecsFromBlockSeq(srcs))
 	}))
 	return int64(n), err
+}
+
+// FD implements fsutil.FDProvider.FD.
+func (s *socketOperations) FD() int {
+	return s.fd // Always available.
 }
 
 // Connect implements socket.Socket.Connect.

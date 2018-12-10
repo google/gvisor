@@ -280,7 +280,7 @@ func (i *inodeFileState) Sync(ctx context.Context) error {
 	return i.writeback.File.fsync(ctx)
 }
 
-// FD implements fsutil.CachedFileObject.FD.
+// FD implements fsutil.FDProvider.FD.
 //
 // FD meets the requirements of fsutil.CachedFileObject.FD because p9.File.Open
 // returns a host file descriptor to back _both_ readthrough and writeback or
@@ -293,20 +293,22 @@ func (i *inodeFileState) FD() int {
 	if i.writeback == nil && i.readthrough == nil {
 		panic("cannot get host FD for a file that was never opened")
 	}
-	// If this file is mapped, then it must have been opened
-	// read-write and i.writeback was upgraded to a read-write
-	// handle. Prefer that to map.
+
+	// If this file is mapped, then it must have been opened read-write and
+	// i.writeback was upgraded to a read-write handle. Prefer that to map.
 	if i.writeback != nil {
 		if i.writeback.Host == nil {
 			return -1
 		}
 		return int(i.writeback.Host.FD())
 	}
-	// Otherwise the file may only have been opened readable
-	// so far. That's the only way it can be accessed.
+
+	// Otherwise the file may only have been opened readable so far. That's
+	// the only way it can be accessed.
 	if i.readthrough.Host == nil {
 		return -1
 	}
+
 	return int(i.readthrough.Host.FD())
 }
 

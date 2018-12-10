@@ -75,7 +75,7 @@ func New(ctx context.Context, initVal uint64, semMode bool) *fs.File {
 	})
 }
 
-// HostFD returns the host eventfd associated with this event.
+// HostFD implements fsutil.HostFDProvider.
 func (e *EventOperations) HostFD() (int, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

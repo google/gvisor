@@ -136,16 +136,9 @@ type CachedFileObject interface {
 	// Sync instructs the remote filesystem to sync the file to stable storage.
 	Sync(ctx context.Context) error
 
-	// FD returns a host file descriptor. Return value must be -1 or not -1
-	// for the lifetime of the CachedFileObject.
-	//
-	// FD is called iff the file has been memory mapped. This implies that
-	// the file was opened (see fs.InodeOperations.GetFile).
-	//
-	// FIXME: This interface seems to be
-	// fundamentally broken.  We should clarify CachingInodeOperation's
-	// behavior with metadata.
-	FD() int
+	// CachedFileObjects may optionally provided a host FD, which must be
+	// consistent for the lifetime of the object.
+	FDProvider
 }
 
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by

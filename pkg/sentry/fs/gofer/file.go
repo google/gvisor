@@ -38,7 +38,6 @@ var openedWX = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_fil
 // +stateify savable
 type fileOperations struct {
 	fsutil.NoIoctl     `state:"nosave"`
-	fsutil.NoSplice    `state:"nosplice"`
 	waiter.AlwaysReady `state:"nosave"`
 
 	// inodeOperations is the inodeOperations backing the file. It is protected
@@ -219,6 +218,14 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 	return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 }
 
+// ReadFrom implements fs.FileOperations.ReadFrom.
+func (f *fileOperations) ReadFrom(ctx context.Context, file *fs.File, src *fs.File, opts fs.SpliceOpts) (int64, error) {
+	// Like host-native files, we don't implement ReadFrom. This generally
+	// relies on internal details from the source file, so we rely on
+	// Splice succeeding with WriteAt when this occurs.
+	return 0, syserror.ENOSYS
+}
+
 // Read implements fs.FileOperations.Read.
 func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
@@ -230,6 +237,11 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 		return f.inodeOperations.cachingInodeOps.Read(ctx, file, dst, offset)
 	}
 	return dst.CopyOutFrom(ctx, f.handles.readWriterAt(ctx, offset))
+}
+
+// WriteTo implements fs.FileOperations.WriteTo.
+func (f *fileOperations) WriteTo(ctx context.Context, file *fs.File, dst *fs.File, opts fs.SpliceOpts) (int64, error) {
+	return fsutil.WriteTo(ctx, file, dst, opts)
 }
 
 // Fsync implements fs.FileOperations.Fsync.
@@ -277,4 +289,12 @@ func (f *fileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts 
 // Seek implements fs.FileOperations.Seek.
 func (f *fileOperations) Seek(ctx context.Context, file *fs.File, whence fs.SeekWhence, offset int64) (int64, error) {
 	return fsutil.SeekWithDirCursor(ctx, file, whence, offset, &f.dirCursor)
+}
+
+// FD implements fsutil.FDProvider.FD.
+func (f *fileOperations) FD() int {
+	if f.handles.Host != nil {
+		return f.handles.Host.FD()
+	}
+	return -1 // Not available.
 }

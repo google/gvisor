@@ -38,7 +38,6 @@ import (
 type fileOperations struct {
 	fsutil.NoIoctl     `state:"nosave"`
 	fsutil.NoopRelease `state:"nosave"`
-	fsutil.NoSplice    `state:"nosplice"`
 
 	// iops are the Inode operations for this file.
 	iops *inodeOperations `state:"wait"`
@@ -215,6 +214,17 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 	return f.iops.cachingInodeOps.Write(ctx, src, offset)
 }
 
+// ReadFrom implements fs.FileOperations.ReadFrom.
+func (f *fileOperations) ReadFrom(ctx context.Context, file *fs.File, dst *fs.File, opts fs.SpliceOpts) (int64, error) {
+	// Native files do not implement ReadFrom; we only implement WriteTo.
+	// This is because ReadFrom more generally must reach into the
+	// underlying implementation to efficient extract data. Implementing
+	// WriteTo only actually covers all the cases that we care about.
+	// Interal files and pipes will be covered by the fact that they will
+	// support both ReadFrom and WriteTo.
+	return 0, syserror.ENOSYS
+}
+
 // Read implements fs.FileOperations.Read.
 func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	// Would this file block?
@@ -245,6 +255,11 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 		return dst.CopyOutFrom(ctx, safemem.FromIOReader{reader})
 	}
 	return f.iops.cachingInodeOps.Read(ctx, file, dst, offset)
+}
+
+// WriteTo implements fs.FileOperations.WriteTo.
+func (f *fileOperations) WriteTo(ctx context.Context, file *fs.File, dst *fs.File, opts fs.SpliceOpts) (int64, error) {
+	return fsutil.WriteTo(ctx, file, dst, opts)
 }
 
 // Fsync implements fs.FileOperations.Fsync.
@@ -280,4 +295,9 @@ func (f *fileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts 
 // Seek implements fs.FileOperations.Seek.
 func (f *fileOperations) Seek(ctx context.Context, file *fs.File, whence fs.SeekWhence, offset int64) (int64, error) {
 	return fsutil.SeekWithDirCursor(ctx, file, whence, offset, &f.dirCursor)
+}
+
+// FD implements fsutil.FDProvider.FD.
+func (f *fileOperations) FD() int {
+	return f.iops.fileState.FD()
 }

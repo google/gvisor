@@ -247,12 +247,14 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK:     {},
+	syscall.SYS_SENDFILE:        {},
 	syscall.SYS_SYNC_FILE_RANGE: {},
 	syscall.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.AllowValue(uint64(os.Getpid())),
 		},
 	},
+	syscall.SYS_TEE:   {},
 	syscall.SYS_WRITE: {},
 	syscall.SYS_WRITEV: []seccomp.Rule{
 		{
