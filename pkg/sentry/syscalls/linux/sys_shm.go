@@ -24,7 +24,7 @@ import (
 
 // Shmget implements shmget(2).
 func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	key := args[0].Int()
+	key := shm.Key(args[0].Int())
 	size := uint64(args[1].SizeT())
 	flag := args[2].Int()
 
@@ -43,7 +43,7 @@ func Shmget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // findSegment retrives a shm segment by the given id.
-func findSegment(t *kernel.Task, id int32) (*shm.Shm, error) {
+func findSegment(t *kernel.Task, id shm.ID) (*shm.Shm, error) {
 	r := t.IPCNamespace().ShmRegistry()
 	segment := r.FindByID(id)
 	if segment == nil {
@@ -55,7 +55,7 @@ func findSegment(t *kernel.Task, id int32) (*shm.Shm, error) {
 
 // Shmat implements shmat(2).
 func Shmat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	id := args[0].Int()
+	id := shm.ID(args[0].Int())
 	addr := args[1].Pointer()
 	flag := args[2].Int()
 
@@ -86,7 +86,7 @@ func Shmdt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Shmctl implements shmctl(2).
 func Shmctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	id := args[0].Int()
+	id := shm.ID(args[0].Int())
 	cmd := args[1].Int()
 	buf := args[2].Pointer()
 
