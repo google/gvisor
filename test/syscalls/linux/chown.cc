@@ -1,0 +1,200 @@
+// Copyright 2018 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <fcntl.h>
+#include <grp.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <vector>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
+#include "absl/synchronization/notification.h"
+#include "test/util/capability_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/temp_path.h"
+#include "test/util/test_util.h"
+#include "test/util/thread_util.h"
+
+DEFINE_int32(scratch_uid1, 65534, "first scratch UID");
+DEFINE_int32(scratch_uid2, 65533, "second scratch UID");
+DEFINE_int32(scratch_gid, 65534, "first scratch GID");
+
+namespace gvisor {
+namespace testing {
+
+namespace {
+
+TEST(ChownTest, FchownBadF) {
+  ASSERT_THAT(fchown(-1, 0, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(ChownTest, FchownatBadF) {
+  ASSERT_THAT(fchownat(-1, "fff", 0, 0, 0), SyscallFailsWithErrno(EBADF));
+}
+
+TEST(ChownTest, FchownatEmptyPath) {
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_RDONLY));
+  ASSERT_THAT(fchownat(fd.get(), "", 0, 0, 0), SyscallFailsWithErrno(ENOENT));
+}
+
+using Chown =
+    std::function<PosixError(const std::string&, uid_t owner, gid_t group)>;
+
+class ChownParamTest : public ::testing::TestWithParam<Chown> {};
+
+TEST_P(ChownParamTest, ChownFileSucceeds) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN))) {
+    ASSERT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
+  }
+
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // At least *try* setting to a group other than the EGID.
+  gid_t gid;
+  EXPECT_THAT(gid = getegid(), SyscallSucceeds());
+  int num_groups;
+  EXPECT_THAT(num_groups = getgroups(0, nullptr), SyscallSucceeds());
+  if (num_groups > 0) {
+    std::vector<gid_t> list(num_groups);
+    EXPECT_THAT(getgroups(list.size(), list.data()), SyscallSucceeds());
+    gid = list[0];
+  }
+
+  EXPECT_NO_ERRNO(GetParam()(file.path(), geteuid(), gid));
+
+  struct stat s = {};
+  ASSERT_THAT(stat(file.path().c_str(), &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_uid, geteuid());
+  EXPECT_EQ(s.st_gid, gid);
+}
+
+TEST_P(ChownParamTest, ChownFilePermissionDenied) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0777));
+
+  // Drop privileges and change IDs only in child thread, or else this parent
+  // thread won't be able to open some log files after the test ends.
+  ScopedThread([&] {
+    // Drop privileges.
+    if (HaveCapability(CAP_CHOWN).ValueOrDie()) {
+      EXPECT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
+    }
+
+    // Change EUID and EGID.
+    //
+    // See note about POSIX below.
+    EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
+                SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid1, -1),
+                SyscallSucceeds());
+
+    EXPECT_THAT(GetParam()(file.path(), geteuid(), getegid()),
+                PosixErrorIs(EPERM, ::testing::ContainsRegex("chown")));
+  });
+}
+
+TEST_P(ChownParamTest, ChownFileSucceedsAsRoot) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_CHOWN))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_SETUID))));
+
+  const std::string filename = NewTempAbsPath();
+
+  absl::Notification fileCreated, fileChowned;
+  // Change UID only in child thread, or else this parent thread won't be able
+  // to open some log files after the test ends.
+  ScopedThread t([&] {
+    // POSIX requires that all threads in a process share the same UIDs, so
+    // the NPTL setresuid wrappers use signals to make all threads execute the
+    // setresuid syscall. However, we want this thread to have its own set of
+    // credentials different from the parent process, so we use the raw
+    // syscall.
+    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid2, -1),
+                SyscallSucceeds());
+
+    // Create file and immediately close it.
+    FileDescriptor fd =
+        ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_CREAT | O_RDWR, 0644));
+    fd.reset();  // Close the fd.
+
+    fileCreated.Notify();
+    fileChowned.WaitForNotification();
+
+    EXPECT_THAT(open(filename.c_str(), O_RDWR), SyscallFailsWithErrno(EACCES));
+    FileDescriptor fd2 = ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDONLY));
+  });
+
+  fileCreated.WaitForNotification();
+
+  // Set file's owners to someone different.
+  EXPECT_NO_ERRNO(GetParam()(filename, FLAGS_scratch_uid1, FLAGS_scratch_gid));
+
+  struct stat s;
+  EXPECT_THAT(stat(filename.c_str(), &s), SyscallSucceeds());
+  EXPECT_EQ(s.st_uid, FLAGS_scratch_uid1);
+  EXPECT_EQ(s.st_gid, FLAGS_scratch_gid);
+
+  fileChowned.Notify();
+}
+
+PosixError errorFromReturn(const std::string& name, int ret) {
+  if (ret == -1) {
+    return PosixError(errno, absl::StrCat(name, " failed"));
+  }
+  return NoError();
+}
+
+INSTANTIATE_TEST_CASE_P(
+    ChownKinds, ChownParamTest,
+    ::testing::Values(
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          int rc = chown(path.c_str(), owner, group);
+          MaybeSave();
+          return errorFromReturn("chown", rc);
+        },
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          int rc = lchown(path.c_str(), owner, group);
+          MaybeSave();
+          return errorFromReturn("lchown", rc);
+        },
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          ASSIGN_OR_RETURN_ERRNO(auto fd, Open(path, O_RDWR));
+          int rc = fchown(fd.get(), owner, group);
+          MaybeSave();
+          return errorFromReturn("fchown", rc);
+        },
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          ASSIGN_OR_RETURN_ERRNO(auto fd, Open(path, O_RDWR));
+          int rc = fchownat(fd.get(), "", owner, group, AT_EMPTY_PATH);
+          MaybeSave();
+          return errorFromReturn("fchownat-fd", rc);
+        },
+        [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
+          ASSIGN_OR_RETURN_ERRNO(
+              auto dirfd, Open(std::string(Dirname(path)), O_DIRECTORY | O_RDONLY));
+          int rc = fchownat(dirfd.get(), std::string(Basename(path)).c_str(), owner,
+                            group, 0);
+          MaybeSave();
+          return errorFromReturn("fchownat-dirfd", rc);
+        }));
+
+}  // namespace
+
+}  // namespace testing
+}  // namespace gvisor

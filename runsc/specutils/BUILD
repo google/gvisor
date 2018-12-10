@@ -11,6 +11,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/runsc/specutils",
     visibility = [
         "//runsc:__subpackages__",
+        "//test:__subpackages__",
     ],
     deps = [
         "//pkg/abi/linux",

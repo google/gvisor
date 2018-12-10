@@ -28,8 +28,8 @@ bazel version
 
 cd git/repo
 
-# Build everything.
-bazel build //...
+# Build everything except //test.
+bazel build //pkg/... //runsc/... //tools/...
 
 # Test use this variable to determine what runtime to use.
 runtime=runsc_test_$((RANDOM))
@@ -45,7 +45,10 @@ uninstallRuntime() {
 # We turn off "-e" flag because we must move the log files even if the test
 # fails.
 set +e
-bazel test --test_output=errors //...
+
+# Note: We do not run the tests in the //test folder as these would take
+# too long.
+bazel test --test_output=errors //pkg/... //runsc/... //tools/...
 exit_code=${?}
 
 # This function spawns a subshell to install crictl and containerd.
