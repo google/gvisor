@@ -353,10 +353,10 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 	if !isUserSegmentSelector(regs.Ss) {
 		return 0, syscall.EIO
 	}
-	if regs.Fs_base >= uint64(maxAddr64) {
+	if !isValidSegmentBase(regs.Fs_base) {
 		return 0, syscall.EIO
 	}
-	if regs.Gs_base >= uint64(maxAddr64) {
+	if !isValidSegmentBase(regs.Gs_base) {
 		return 0, syscall.EIO
 	}
 	// CS and SS are validated, but changes to them are otherwise silently
@@ -387,6 +387,12 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 // privilege level of 3 (USER_RPL).
 func isUserSegmentSelector(reg uint64) bool {
 	return reg&3 == 3
+}
+
+// isValidSegmentBase returns true if the given segment base specifies a
+// canonical user address.
+func isValidSegmentBase(reg uint64) bool {
+	return reg < uint64(maxAddr64)
 }
 
 // ptraceFPRegsSize is the size in bytes of Linux's user_i387_struct, the type

@@ -158,6 +158,22 @@ func (c *context64) SetStack(value uintptr) {
 	c.Regs.Rsp = uint64(value)
 }
 
+// TLS returns the current TLS pointer.
+func (c *context64) TLS() uintptr {
+	return uintptr(c.Regs.Fs_base)
+}
+
+// SetTLS sets the current TLS pointer. Returns false if value is invalid.
+func (c *context64) SetTLS(value uintptr) bool {
+	if !isValidSegmentBase(uint64(value)) {
+		return false
+	}
+
+	c.Regs.Fs = 0
+	c.Regs.Fs_base = uint64(value)
+	return true
+}
+
 // SetRSEQInterruptedIP implements Context.SetRSEQInterruptedIP.
 func (c *context64) SetRSEQInterruptedIP(value uintptr) {
 	c.Regs.R10 = uint64(value)

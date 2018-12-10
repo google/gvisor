@@ -115,6 +115,12 @@ type Context interface {
 	// SetStack sets the current stack pointer.
 	SetStack(value uintptr)
 
+	// TLS returns the current TLS pointer.
+	TLS() uintptr
+
+	// SetTLS sets the current TLS pointer. Returns false if value is invalid.
+	SetTLS(value uintptr) bool
+
 	// SetRSEQInterruptedIP sets the register that contains the old IP when a
 	// restartable sequence is interrupted.
 	SetRSEQInterruptedIP(value uintptr)

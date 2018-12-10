@@ -480,10 +480,10 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 
 	// Set registers.
 	if err := t.setRegs(regs); err != nil {
-		panic(fmt.Sprintf("ptrace set regs failed: %v", err))
+		panic(fmt.Sprintf("ptrace set regs (%+v) failed: %v", regs, err))
 	}
 	if err := t.setFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
-		panic(fmt.Sprintf("ptrace set fpregs failed: %v", err))
+		panic(fmt.Sprintf("ptrace set fpregs (%+v) failed: %v", fpState, err))
 	}
 
 	for {

@@ -210,7 +210,9 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		tc.Arch.SetStack(uintptr(opts.Stack))
 	}
 	if opts.SetTLS {
-		tc.Arch.StateData().Regs.Fs_base = uint64(opts.TLS)
+		if !tc.Arch.SetTLS(uintptr(opts.TLS)) {
+			return 0, nil, syserror.EPERM
+		}
 	}
 
 	var fsc *FSContext
