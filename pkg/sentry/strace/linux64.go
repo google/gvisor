@@ -289,7 +289,7 @@ var linuxAMD64 = SyscallMap{
 	269: makeSyscallInfo("faccessat", Hex, Path, Oct, Hex),
 	270: makeSyscallInfo("pselect6", Hex, Hex, Hex, Hex, Hex, Hex),
 	271: makeSyscallInfo("ppoll", Hex, Hex, Timespec, SigSet, Hex),
-	272: makeSyscallInfo("unshare", Hex),
+	272: makeSyscallInfo("unshare", CloneFlags),
 	273: makeSyscallInfo("set_robust_list", Hex, Hex),
 	274: makeSyscallInfo("get_robust_list", Hex, Hex, Hex),
 	275: makeSyscallInfo("splice", Hex, Hex, Hex, Hex, Hex, Hex),
