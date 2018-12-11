@@ -236,7 +236,8 @@ the gVisor addon is enabled, pods with `io.kubernetes.cri.untrusted-workload`
 set to true will execute with `runsc`. Follow [these instructions][minikube] to
 enable gVisor addon.
 
-You can also setup Kubernetes node to use `gvisor-containerd-shim`. Pods with
+You can also setup Kubernetes nodes to run pods in gvisor using the `containerd`
+CRI runtime and the `gvisor-containerd-shim`. Pods with the
 `io.kubernetes.cri.untrusted-workload` annotation will execute with `runsc`. You
 can find instructions [here][gvisor-containerd-shim].
 
