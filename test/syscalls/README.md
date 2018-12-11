@@ -86,7 +86,7 @@ SyscallFailsWithErrno(...)
 The test utilties are written as RAII classes. These utilities should be
 preferred over custom test harnesses.
 
-Local class instances should be preferred, whereever possible, over full test
+Local class instances should be preferred, wherever possible, over full test
 fixtures.
 
 A test utility should be created when there is more than one test that requires
