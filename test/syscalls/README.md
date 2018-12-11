@@ -1,7 +1,7 @@
 # gVisor system call test suite
 
 This is a test suite for Linux system calls. It runs under both gVisor and
-Linux, and ensures compatability between the two.
+Linux, and ensures compatibility between the two.
 
 When adding support for a new syscall (or syscall argument) to gVisor, a
 corresponding syscall test should be added. It's usually recommended to write
