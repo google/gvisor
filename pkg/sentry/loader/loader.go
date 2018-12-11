@@ -136,7 +136,7 @@ const (
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
 //  * Possibly updated argv
-func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, fs *cpuid.FeatureSet, filename string, argv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		d, f, err := openPath(ctx, mounts, root, wd, remainingTraversals, filename)
 		if err != nil {
@@ -172,7 +172,7 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 			d.IncRef()
 			return loaded, ac, d, argv, err
 		case bytes.Equal(hdr[:2], []byte(interpreterScriptMagic)):
-			newpath, newargv, err := parseInterpreterScript(ctx, filename, f, argv, envv)
+			newpath, newargv, err := parseInterpreterScript(ctx, filename, f, argv)
 			if err != nil {
 				ctx.Infof("Error loading interpreter script: %v", err)
 				return loadedELF{}, nil, nil, nil, err
@@ -198,7 +198,7 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 //  * Load is called on the Task goroutine.
 func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, error) {
 	// Load the binary itself.
-	loaded, ac, d, argv, err := loadPath(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv, envv)
+	loaded, ac, d, argv, err := loadPath(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv)
 	if err != nil {
 		ctx.Infof("Failed to load %s: %v", filename, err)
 		return 0, nil, "", err

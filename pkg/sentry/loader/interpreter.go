@@ -37,7 +37,7 @@ const (
 )
 
 // parseInterpreterScript returns the interpreter path and argv.
-func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, argv, envv []string) (newpath string, newargv []string, err error) {
+func parseInterpreterScript(ctx context.Context, filename string, f *fs.File, argv []string) (newpath string, newargv []string, err error) {
 	line := make([]byte, interpMaxLineLength)
 	n, err := readFull(ctx, f, usermem.BytesIOSequence(line), 0)
 	// Short read is OK.
