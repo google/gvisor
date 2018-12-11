@@ -31,8 +31,6 @@ namespace gvisor {
 namespace testing {
 
 TEST_P(BlockingNonStreamSocketPairTest, RecvLessThanBufferWaitAll) {
-  SKIP_IF(IsRunningOnGvisor());  // FIXME: Support MSG_WAITALL.
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[100];

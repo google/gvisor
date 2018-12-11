@@ -383,8 +383,6 @@ TEST_P(AllSocketPairTest, RecvmsgTimeoutOneSecondSucceeds) {
 }
 
 TEST_P(AllSocketPairTest, RecvWaitAll) {
-  SKIP_IF(IsRunningOnGvisor());  // FIXME: Support MSG_WAITALL.
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[100];
@@ -397,6 +395,15 @@ TEST_P(AllSocketPairTest, RecvWaitAll) {
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data,
                                sizeof(received_data), MSG_WAITALL),
               SyscallSucceedsWithValue(sizeof(sent_data)));
+}
+
+TEST_P(AllSocketPairTest, RecvWaitAllDontWait) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char data[100] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), data, sizeof(data),
+                               MSG_WAITALL | MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
 }
 
 }  // namespace testing

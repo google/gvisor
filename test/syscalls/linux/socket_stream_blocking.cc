@@ -99,8 +99,6 @@ TEST_P(BlockingStreamSocketPairTest, RecvLessThanBuffer) {
 }
 
 TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll) {
-  SKIP_IF(IsRunningOnGvisor());  // FIXME: Support MSG_WAITALL.
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[100];
