@@ -39,13 +39,13 @@ tag:
 
 ```bash
 # Run all tests in native environment:
-$ bazel test --test_tag_filter=native //test/syscalls:*
+$ bazel test --test_tag_filters=native //test/syscalls/...
 
 # Run all tests in runsc with ptrace:
-$ bazel test --test_tag_filter=runsc_ptrace //test/syscalls:*
+$ bazel test --test_tag_filters=runsc_ptrace //test/syscalls/...
 
 # Run all tests in runsc with kvm:
-$ bazel test --test_tag_filter=runsc_kvm //test/syscalls:*
+$ bazel test --test_tag_filters=runsc_kvm //test/syscalls/...
 ```
 
 You can also run all the tests on every platform. (Warning, this may take a
@@ -53,7 +53,7 @@ while to run.)
 
 ```bash
 # Run all tests on every platform:
-$ bazel test //test/syscalls:*
+$ bazel test //test/syscalls/...
 ```
 
 ## Writing new tests
