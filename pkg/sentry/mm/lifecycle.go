@@ -81,7 +81,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		vmaAR := srcvseg.Range()
 		// Inform the Mappable, if any, of the new mapping.
 		if vma.mappable != nil {
-			if err := vma.mappable.AddMapping(ctx, mm2, vmaAR, vma.off); err != nil {
+			if err := vma.mappable.AddMapping(ctx, mm2, vmaAR, vma.off, vma.isMappableAsWritable()); err != nil {
 				mm2.removeVMAsLocked(ctx, mm2.applicationAddrRange())
 				return nil, err
 			}

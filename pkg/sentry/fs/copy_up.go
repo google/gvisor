@@ -270,13 +270,13 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		for seg := next.Inode.overlay.mappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 			added := make(memmap.MappingsOfRange)
 			for m := range seg.Value() {
-				if err := upperMappable.AddMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start()); err != nil {
+				if err := upperMappable.AddMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable); err != nil {
 					for m := range added {
-						upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start())
+						upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable)
 					}
 					for mr, mappings := range allAdded {
 						for m := range mappings {
-							upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, mr.Start)
+							upperMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, mr.Start, m.Writable)
 						}
 					}
 					return err
@@ -301,7 +301,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	if lowerMappable != nil {
 		for seg := next.Inode.overlay.mappings.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 			for m := range seg.Value() {
-				lowerMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start())
+				lowerMappable.RemoveMapping(ctx, m.MappingSpace, m.AddrRange, seg.Start(), m.Writable)
 			}
 		}
 	}

@@ -259,32 +259,32 @@ func (o *overlayEntry) isMappableLocked() bool {
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (o *overlayEntry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) error {
+func (o *overlayEntry) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
-	if err := o.inodeLocked().Mappable().AddMapping(ctx, ms, ar, offset); err != nil {
+	if err := o.inodeLocked().Mappable().AddMapping(ctx, ms, ar, offset, writable); err != nil {
 		return err
 	}
-	o.mappings.AddMapping(ms, ar, offset)
+	o.mappings.AddMapping(ms, ar, offset, writable)
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (o *overlayEntry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) {
+func (o *overlayEntry) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
-	o.inodeLocked().Mappable().RemoveMapping(ctx, ms, ar, offset)
-	o.mappings.RemoveMapping(ms, ar, offset)
+	o.inodeLocked().Mappable().RemoveMapping(ctx, ms, ar, offset, writable)
+	o.mappings.RemoveMapping(ms, ar, offset, writable)
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (o *overlayEntry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error {
+func (o *overlayEntry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
 	o.mapsMu.Lock()
 	defer o.mapsMu.Unlock()
-	if err := o.inodeLocked().Mappable().CopyMapping(ctx, ms, srcAR, dstAR, offset); err != nil {
+	if err := o.inodeLocked().Mappable().CopyMapping(ctx, ms, srcAR, dstAR, offset, writable); err != nil {
 		return err
 	}
-	o.mappings.AddMapping(ms, dstAR, offset)
+	o.mappings.AddMapping(ms, dstAR, offset, writable)
 	return nil
 }
 

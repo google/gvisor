@@ -36,16 +36,22 @@ type Mappable interface {
 	// AddMapping notifies the Mappable of a mapping from addresses ar in ms to
 	// offsets [offset, offset+ar.Length()) in this Mappable.
 	//
+	// The writable flag indicates whether the backing data for a Mappable can
+	// be modified through the mapping. Effectively, this means a shared mapping
+	// where Translate may be called with at.Write == true. This is a property
+	// established at mapping creation and must remain constant throughout the
+	// lifetime of the mapping.
+	//
 	// Preconditions: offset+ar.Length() does not overflow.
-	AddMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64) error
+	AddMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error
 
 	// RemoveMapping notifies the Mappable of the removal of a mapping from
 	// addresses ar in ms to offsets [offset, offset+ar.Length()) in this
 	// Mappable.
 	//
 	// Preconditions: offset+ar.Length() does not overflow. The removed mapping
-	// must exist.
-	RemoveMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64)
+	// must exist. writable must match the corresponding call to AddMapping.
+	RemoveMapping(ctx context.Context, ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool)
 
 	// CopyMapping notifies the Mappable of an attempt to copy a mapping in ms
 	// from srcAR to dstAR. For most Mappables, this is equivalent to
@@ -56,8 +62,9 @@ type Mappable interface {
 	// MappingSpace; it is analogous to Linux's vm_operations_struct::mremap.
 	//
 	// Preconditions: offset+srcAR.Length() and offset+dstAR.Length() do not
-	// overflow. The mapping at srcAR must exist.
-	CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error
+	// overflow. The mapping at srcAR must exist. writable must match the
+	// corresponding call to AddMapping.
+	CopyMapping(ctx context.Context, ms MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error
 
 	// Translate returns the Mappable's current mappings for at least the range
 	// of offsets specified by required, and at most the range of offsets

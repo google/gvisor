@@ -443,7 +443,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			return 0, syserror.EINVAL
 		}
 		// Inform the Mappable, if any, of the new mapping.
-		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start)); err != nil {
+		if err := vma.mappable.CopyMapping(ctx, mm, oldAR, newAR, vseg.mappableOffsetAt(oldAR.Start), vma.isMappableAsWritable()); err != nil {
 			return 0, err
 		}
 	}
@@ -498,7 +498,7 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	// Now that pmas have been moved to newAR, we can notify vma.mappable that
 	// oldAR is no longer mapped.
 	if vma.mappable != nil {
-		vma.mappable.RemoveMapping(ctx, mm, oldAR, vma.off)
+		vma.mappable.RemoveMapping(ctx, mm, oldAR, vma.off, vma.isMappableAsWritable())
 	}
 
 	return newAR.Start, nil

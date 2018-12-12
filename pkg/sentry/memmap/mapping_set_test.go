@@ -40,7 +40,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	set := MappingSet{}
 	ms := &testMappingSpace{}
 
-	mapped := set.AddMapping(ms, usermem.AddrRange{0x10000, 0x12000}, 0x1000)
+	mapped := set.AddMapping(ms, usermem.AddrRange{0x10000, 0x12000}, 0x1000, true)
 	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
@@ -49,7 +49,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x10000, 0x12000) => [0x1000, 0x3000)
 	t.Log(&set)
 
-	mapped = set.AddMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000)
+	mapped = set.AddMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000, true)
 	if len(mapped) != 0 {
 		t.Errorf("AddMapping: got %+v, wanted []", mapped)
 	}
@@ -59,7 +59,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x11000, 0x12000) and [0x20000, 0x21000) => [0x2000, 0x3000)
 	t.Log(&set)
 
-	mapped = set.AddMapping(ms, usermem.AddrRange{0x30000, 0x31000}, 0x4000)
+	mapped = set.AddMapping(ms, usermem.AddrRange{0x30000, 0x31000}, 0x4000, true)
 	if got, want := mapped, []MappableRange{{0x4000, 0x5000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
@@ -70,7 +70,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x30000, 0x31000) => [0x4000, 0x5000)
 	t.Log(&set)
 
-	mapped = set.AddMapping(ms, usermem.AddrRange{0x12000, 0x15000}, 0x3000)
+	mapped = set.AddMapping(ms, usermem.AddrRange{0x12000, 0x15000}, 0x3000, true)
 	if got, want := mapped, []MappableRange{{0x3000, 0x4000}, {0x5000, 0x6000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
 	}
@@ -83,7 +83,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x14000, 0x15000) => [0x5000, 0x6000)
 	t.Log(&set)
 
-	unmapped := set.RemoveMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0x1000)
+	unmapped := set.RemoveMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0x1000, true)
 	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
@@ -95,7 +95,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x14000, 0x15000) => [0x5000, 0x6000)
 	t.Log(&set)
 
-	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000)
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000, true)
 	if len(unmapped) != 0 {
 		t.Errorf("RemoveMapping: got %+v, wanted []", unmapped)
 	}
@@ -106,7 +106,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x14000, 0x15000) => [0x5000, 0x6000)
 	t.Log(&set)
 
-	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x11000, 0x15000}, 0x2000)
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x11000, 0x15000}, 0x2000, true)
 	if got, want := unmapped, []MappableRange{{0x2000, 0x4000}, {0x5000, 0x6000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
@@ -115,7 +115,7 @@ func TestAddRemoveMapping(t *testing.T) {
 	// [0x30000, 0x31000) => [0x4000, 0x5000)
 	t.Log(&set)
 
-	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x30000, 0x31000}, 0x4000)
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x30000, 0x31000}, 0x4000, true)
 	if got, want := unmapped, []MappableRange{{0x4000, 0x5000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
@@ -125,7 +125,7 @@ func TestInvalidateWholeMapping(t *testing.T) {
 	set := MappingSet{}
 	ms := &testMappingSpace{}
 
-	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0)
+	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0, true)
 	// Mappings:
 	// [0x10000, 0x11000) => [0, 0x1000)
 	t.Log(&set)
@@ -139,7 +139,7 @@ func TestInvalidatePartialMapping(t *testing.T) {
 	set := MappingSet{}
 	ms := &testMappingSpace{}
 
-	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x13000}, 0)
+	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x13000}, 0, true)
 	// Mappings:
 	// [0x10000, 0x13000) => [0, 0x3000)
 	t.Log(&set)
@@ -153,8 +153,8 @@ func TestInvalidateMultipleMappings(t *testing.T) {
 	set := MappingSet{}
 	ms := &testMappingSpace{}
 
-	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0)
-	set.AddMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000)
+	set.AddMapping(ms, usermem.AddrRange{0x10000, 0x11000}, 0, true)
+	set.AddMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000, true)
 	// Mappings:
 	// [0x10000, 0x11000) => [0, 0x1000)
 	// [0x12000, 0x13000) => [0x2000, 0x3000)
@@ -170,8 +170,8 @@ func TestInvalidateOverlappingMappings(t *testing.T) {
 	ms1 := &testMappingSpace{}
 	ms2 := &testMappingSpace{}
 
-	set.AddMapping(ms1, usermem.AddrRange{0x10000, 0x12000}, 0)
-	set.AddMapping(ms2, usermem.AddrRange{0x20000, 0x22000}, 0x1000)
+	set.AddMapping(ms1, usermem.AddrRange{0x10000, 0x12000}, 0, true)
+	set.AddMapping(ms2, usermem.AddrRange{0x20000, 0x22000}, 0x1000, true)
 	// Mappings:
 	// ms1:[0x10000, 0x12000) => [0, 0x2000)
 	// ms2:[0x11000, 0x13000) => [0x1000, 0x3000)
@@ -182,5 +182,79 @@ func TestInvalidateOverlappingMappings(t *testing.T) {
 	}
 	if got, want := ms2.inv, []usermem.AddrRange{{0x20000, 0x21000}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Invalidate: ms1: got %+v, wanted %+v", got, want)
+	}
+}
+
+func TestMixedWritableMappings(t *testing.T) {
+	set := MappingSet{}
+	ms := &testMappingSpace{}
+
+	mapped := set.AddMapping(ms, usermem.AddrRange{0x10000, 0x12000}, 0x1000, true)
+	if got, want := mapped, []MappableRange{{0x1000, 0x3000}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
+	}
+
+	// Mappings:
+	// [0x10000, 0x12000) writable => [0x1000, 0x3000)
+	t.Log(&set)
+
+	mapped = set.AddMapping(ms, usermem.AddrRange{0x20000, 0x22000}, 0x2000, false)
+	if got, want := mapped, []MappableRange{{0x3000, 0x4000}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("AddMapping: got %+v, wanted %+v", got, want)
+	}
+
+	// Mappings:
+	// [0x10000, 0x11000) writable => [0x1000, 0x2000)
+	// [0x11000, 0x12000) writable and [0x20000, 0x21000) readonly => [0x2000, 0x3000)
+	// [0x21000, 0x22000) readonly => [0x3000, 0x4000)
+	t.Log(&set)
+
+	// Unmap should fail because we specified the readonly map address range, but
+	// asked to unmap a writable segment.
+	unmapped := set.RemoveMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000, true)
+	if len(unmapped) != 0 {
+		t.Errorf("RemoveMapping: got %+v, wanted []", unmapped)
+	}
+
+	// Readonly mapping removed, but writable mapping still exists in the range,
+	// so no mappable range fully unmapped.
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x20000, 0x21000}, 0x2000, false)
+	if len(unmapped) != 0 {
+		t.Errorf("RemoveMapping: got %+v, wanted []", unmapped)
+	}
+
+	// Mappings:
+	// [0x10000, 0x12000) writable => [0x1000, 0x3000)
+	// [0x21000, 0x22000) readonly => [0x3000, 0x4000)
+	t.Log(&set)
+
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x11000, 0x12000}, 0x2000, true)
+	if got, want := unmapped, []MappableRange{{0x2000, 0x3000}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
+	}
+
+	// Mappings:
+	// [0x10000, 0x12000) writable => [0x1000, 0x3000)
+	// [0x21000, 0x22000) readonly => [0x3000, 0x4000)
+	t.Log(&set)
+
+	// Unmap should fail since writable bit doesn't match.
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x10000, 0x12000}, 0x1000, false)
+	if len(unmapped) != 0 {
+		t.Errorf("RemoveMapping: got %+v, wanted []", unmapped)
+	}
+
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x10000, 0x12000}, 0x1000, true)
+	if got, want := unmapped, []MappableRange{{0x1000, 0x2000}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
+	}
+
+	// Mappings:
+	// [0x21000, 0x22000) readonly => [0x3000, 0x4000)
+	t.Log(&set)
+
+	unmapped = set.RemoveMapping(ms, usermem.AddrRange{0x21000, 0x22000}, 0x3000, false)
+	if got, want := unmapped, []MappableRange{{0x3000, 0x4000}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("RemoveMapping: got %+v, wanted %+v", got, want)
 	}
 }

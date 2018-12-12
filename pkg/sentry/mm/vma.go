@@ -65,7 +65,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Inform the Mappable, if any, of the new mapping.
 	if opts.Mappable != nil {
-		if err := opts.Mappable.AddMapping(ctx, mm, ar, opts.Offset); err != nil {
+		if err := opts.Mappable.AddMapping(ctx, mm, ar, opts.Offset, !opts.Private && opts.MaxPerms.Write); err != nil {
 			return vmaIterator{}, usermem.AddrRange{}, err
 		}
 	}
@@ -332,7 +332,7 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 		vmaAR := vseg.Range()
 		vma := vseg.ValuePtr()
 		if vma.mappable != nil {
-			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off)
+			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off, vma.isMappableAsWritable())
 		}
 		if vma.id != nil {
 			vma.id.DecRef()

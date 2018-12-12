@@ -302,7 +302,7 @@ func (bp *Proc) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgum
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (bp *Proc) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) error {
+func (bp *Proc) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 	if bp.mapped.Length() != 0 {
@@ -320,12 +320,12 @@ func (bp *Proc) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar userm
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (bp *Proc) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) {
+func (*Proc) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
 	// Nothing to do. Notably, we don't free bp.mapped to allow another mmap.
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (bp *Proc) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error {
+func (bp *Proc) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, _ bool) error {
 	// Nothing to do. Notably, this is one case where CopyMapping isn't
 	// equivalent to AddMapping, as AddMapping would return EBUSY.
 	return nil

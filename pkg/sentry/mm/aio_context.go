@@ -244,7 +244,7 @@ func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error 
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (m *aioMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) error {
+func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(ar.Length()) != aioRingBufferSize {
@@ -254,11 +254,11 @@ func (m *aioMappable) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (m *aioMappable) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) {
+func (m *aioMappable) RemoveMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error {
+func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(dstAR.Length()) != aioRingBufferSize {

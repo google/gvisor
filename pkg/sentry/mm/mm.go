@@ -349,6 +349,10 @@ func (v *vma) loadRealPerms(b int) {
 	}
 }
 
+func (v *vma) isMappableAsWritable() bool {
+	return !v.private && v.maxPerms.Write
+}
+
 // pma represents a platform mapping area.
 //
 // +stateify savable

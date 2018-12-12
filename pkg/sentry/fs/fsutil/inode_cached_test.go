@@ -305,7 +305,7 @@ func TestRead(t *testing.T) {
 	// be cached.
 	var ms noopMappingSpace
 	ar := usermem.AddrRange{usermem.PageSize, 2 * usermem.PageSize}
-	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize); err != nil {
+	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize, true); err != nil {
 		t.Fatalf("AddMapping got %v, want nil", err)
 	}
 	mr := memmap.MappableRange{usermem.PageSize, 2 * usermem.PageSize}
@@ -334,7 +334,7 @@ func TestRead(t *testing.T) {
 
 	// Delete the memory mapping and expect it to cause the cached page to be
 	// uncached.
-	iops.RemoveMapping(ctx, ms, ar, usermem.PageSize)
+	iops.RemoveMapping(ctx, ms, ar, usermem.PageSize, true)
 	if cached := iops.cache.Span(); cached != 0 {
 		t.Fatalf("Span got %d, want 0", cached)
 	}
@@ -363,10 +363,10 @@ func TestWrite(t *testing.T) {
 	// Translate to force them to be cached.
 	var ms noopMappingSpace
 	ar := usermem.AddrRange{usermem.PageSize, 3 * usermem.PageSize}
-	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize); err != nil {
+	if err := iops.AddMapping(ctx, ms, ar, usermem.PageSize, true); err != nil {
 		t.Fatalf("AddMapping got %v, want nil", err)
 	}
-	defer iops.RemoveMapping(ctx, ms, ar, usermem.PageSize)
+	defer iops.RemoveMapping(ctx, ms, ar, usermem.PageSize, true)
 	mr := memmap.MappableRange{usermem.PageSize, 3 * usermem.PageSize}
 	if _, err := iops.Translate(ctx, mr, mr, usermem.Read); err != nil {
 		t.Fatalf("Translate got %v, want nil", err)

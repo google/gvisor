@@ -686,10 +686,10 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) error {
+func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
 	// Hot path. Avoid defers.
 	c.mapsMu.Lock()
-	mapped := c.mappings.AddMapping(ms, ar, offset)
+	mapped := c.mappings.AddMapping(ms, ar, offset, writable)
 	// Do this unconditionally since whether we have c.backingFile.FD() >= 0
 	// can change across save/restore.
 	for _, r := range mapped {
@@ -705,10 +705,10 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) {
+func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
 	// Hot path. Avoid defers.
 	c.mapsMu.Lock()
-	unmapped := c.mappings.RemoveMapping(ms, ar, offset)
+	unmapped := c.mappings.RemoveMapping(ms, ar, offset, writable)
 	for _, r := range unmapped {
 		c.hostFileMapper.DecRefOn(r)
 	}
@@ -739,8 +739,8 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error {
-	return c.AddMapping(ctx, ms, dstAR, offset)
+func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+	return c.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.

@@ -426,23 +426,23 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (f *fileInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) error {
+func (f *fileInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
-	f.mappings.AddMapping(ms, ar, offset)
+	f.mappings.AddMapping(ms, ar, offset, writable)
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (f *fileInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64) {
+func (f *fileInodeOperations) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) {
 	f.mapsMu.Lock()
 	defer f.mapsMu.Unlock()
-	f.mappings.RemoveMapping(ms, ar, offset)
+	f.mappings.RemoveMapping(ms, ar, offset, writable)
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (f *fileInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64) error {
-	return f.AddMapping(ctx, ms, dstAR, offset)
+func (f *fileInodeOperations) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR usermem.AddrRange, offset uint64, writable bool) error {
+	return f.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
 // Translate implements memmap.Mappable.Translate.

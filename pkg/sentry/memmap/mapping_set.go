@@ -40,6 +40,7 @@ type MappingsOfRange map[MappingOfRange]struct{}
 type MappingOfRange struct {
 	MappingSpace MappingSpace
 	AddrRange    usermem.AddrRange
+	Writable     bool
 }
 
 func (r MappingOfRange) invalidate(opts InvalidateOpts) {
@@ -92,6 +93,7 @@ func (mappingSetFunctions) Merge(r1 MappableRange, val1 MappingsOfRange, r2 Mapp
 				Start: k1.AddrRange.End,
 				End:   k1.AddrRange.End + usermem.Addr(r2.Length()),
 			},
+			Writable: k1.Writable,
 		}
 		if _, ok := val2[k2]; !ok {
 			return nil, false
@@ -104,6 +106,7 @@ func (mappingSetFunctions) Merge(r1 MappableRange, val1 MappingsOfRange, r2 Mapp
 				Start: k1.AddrRange.Start,
 				End:   k2.AddrRange.End,
 			},
+			Writable: k1.Writable,
 		}] = struct{}{}
 	}
 
@@ -129,6 +132,7 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 				Start: k.AddrRange.Start,
 				End:   k.AddrRange.Start + offset,
 			},
+			Writable: k.Writable,
 		}
 		m1[k1] = struct{}{}
 
@@ -138,6 +142,7 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 				Start: k.AddrRange.Start + offset,
 				End:   k.AddrRange.End,
 			},
+			Writable: k.Writable,
 		}
 		m2[k2] = struct{}{}
 	}
@@ -152,7 +157,7 @@ func (mappingSetFunctions) Split(r MappableRange, val MappingsOfRange, split uin
 // indicating that ms maps addresses [0x4000, 0x6000) to MappableRange [0x0,
 // 0x2000). Then for subsetRange = [0x1000, 0x2000), subsetMapping returns a
 // MappingOfRange for which AddrRange = [0x5000, 0x6000).
-func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr usermem.Addr) MappingOfRange {
+func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr usermem.Addr, writable bool) MappingOfRange {
 	if !wholeRange.IsSupersetOf(subsetRange) {
 		panic(fmt.Sprintf("%v is not a superset of %v", wholeRange, subsetRange))
 	}
@@ -165,6 +170,7 @@ func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr 
 			Start: start,
 			End:   start + usermem.Addr(subsetRange.Length()),
 		},
+		Writable: writable,
 	}
 }
 
@@ -172,7 +178,7 @@ func subsetMapping(wholeRange, subsetRange MappableRange, ms MappingSpace, addr 
 // previously had no mappings.
 //
 // Preconditions: As for Mappable.AddMapping.
-func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64) []MappableRange {
+func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var mapped []MappableRange
 	seg, gap := s.Find(mr.Start)
@@ -180,7 +186,7 @@ func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset ui
 		switch {
 		case seg.Ok() && seg.Start() < mr.End:
 			seg = s.Isolate(seg, mr)
-			seg.Value()[subsetMapping(mr, seg.Range(), ms, ar.Start)] = struct{}{}
+			seg.Value()[subsetMapping(mr, seg.Range(), ms, ar.Start, writable)] = struct{}{}
 			seg, gap = seg.NextNonEmpty()
 
 		case gap.Ok() && gap.Start() < mr.End:
@@ -199,7 +205,7 @@ func (s *MappingSet) AddMapping(ms MappingSpace, ar usermem.AddrRange, offset ui
 // MappableRanges that now have no mappings.
 //
 // Preconditions: As for Mappable.RemoveMapping.
-func (s *MappingSet) RemoveMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64) []MappableRange {
+func (s *MappingSet) RemoveMapping(ms MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) []MappableRange {
 	mr := MappableRange{offset, offset + uint64(ar.Length())}
 	var unmapped []MappableRange
 
@@ -213,7 +219,7 @@ func (s *MappingSet) RemoveMapping(ms MappingSpace, ar usermem.AddrRange, offset
 
 		// Remove this part of the mapping.
 		mappings := seg.Value()
-		delete(mappings, subsetMapping(mr, seg.Range(), ms, ar.Start))
+		delete(mappings, subsetMapping(mr, seg.Range(), ms, ar.Start, writable))
 
 		if len(mappings) == 0 {
 			unmapped = append(unmapped, seg.Range())
@@ -231,7 +237,7 @@ func (s *MappingSet) Invalidate(mr MappableRange, opts InvalidateOpts) {
 	for seg := s.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
 		segMR := seg.Range()
 		for m := range seg.Value() {
-			region := subsetMapping(segMR, segMR.Intersect(mr), m.MappingSpace, m.AddrRange.Start)
+			region := subsetMapping(segMR, segMR.Intersect(mr), m.MappingSpace, m.AddrRange.Start, m.Writable)
 			region.invalidate(opts)
 		}
 	}
