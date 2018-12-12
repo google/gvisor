@@ -66,24 +66,30 @@ type Registry struct {
 	// userNS owns the IPC namespace this registry belong to. Immutable.
 	userNS *auth.UserNamespace
 
+	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
 
-	// shms maps segment ids to segments. Protected by mu.
+	// shms maps segment ids to segments.
 	shms map[ID]*Shm
 
+	// keysToShms maps segment keys to segments.
+	keysToShms map[Key]*Shm
+
 	// Sum of the sizes of all existing segments rounded up to page size, in
-	// units of page size. Protected by mu.
+	// units of page size.
 	totalPages uint64
 
-	// lastIDUsed is protected by mu.
+	// ID assigned to the last created segment. Used to quickly find the next
+	// unused ID.
 	lastIDUsed ID
 }
 
 // NewRegistry creates a new shm registry.
 func NewRegistry(userNS *auth.UserNamespace) *Registry {
 	return &Registry{
-		userNS: userNS,
-		shms:   make(map[ID]*Shm),
+		userNS:     userNS,
+		shms:       make(map[ID]*Shm),
+		keysToShms: make(map[Key]*Shm),
 	}
 }
 
@@ -94,14 +100,20 @@ func (r *Registry) FindByID(id ID) *Shm {
 	return r.shms[id]
 }
 
-// Precondition: Caller must hold r.mu.
-func (r *Registry) findByKey(key Key) *Shm {
-	for _, v := range r.shms {
-		if v.key == key {
-			return v
-		}
+// dissociateKey removes the association between a segment and its key,
+// preventing it from being discovered in the registry. This doesn't necessarily
+// mean the segment is about to be destroyed. This is analogous to unlinking a
+// file; the segment can still be used by a process already referencing it, but
+// cannot be discovered by a new process.
+func (r *Registry) dissociateKey(s *Shm) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.key != linux.IPC_PRIVATE {
+		delete(r.keysToShms, s.key)
+		s.key = linux.IPC_PRIVATE
 	}
-	return nil
 }
 
 // FindOrCreate looks up or creates a segment in the registry. It's functionally
@@ -127,7 +139,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 
 	if !private {
 		// Look up an existing segment.
-		if shm := r.findByKey(key); shm != nil {
+		if shm := r.keysToShms[key]; shm != nil {
 			shm.mu.Lock()
 			defer shm.mu.Unlock()
 
@@ -184,6 +196,8 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 }
 
 // newShm creates a new segment in the registry.
+//
+// Precondition: Caller must hold r.mu.
 func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
 	p := platform.FromContext(ctx)
 	if p == nil {
@@ -219,8 +233,10 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 		}
 		if r.shms[id] == nil {
 			r.lastIDUsed = id
-			r.shms[id] = shm
+
 			shm.ID = id
+			r.shms[id] = shm
+			r.keysToShms[key] = shm
 
 			r.totalPages += effectiveSize / usermem.PageSize
 
@@ -258,13 +274,20 @@ func (r *Registry) ShmInfo() *linux.ShmInfo {
 	}
 }
 
-// remove unregisters a segment from this registry, preventing it from being
-// discovered in the future. Caller is responsible for ensuring s is destroyed.
+// remove deletes a segment from this registry, deaccounting the memory used by
+// the segment.
 //
-// Precondition: To preserve lock ordering, caller must not hold s.mu.
+// Precondition: Must follow a call to r.dissociateKey(s).
 func (r *Registry) remove(s *Shm) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.key != linux.IPC_PRIVATE {
+		panic(fmt.Sprintf("Attempted to remove shm segment %+v from the registry whose key is still associated", s))
+	}
+
 	delete(r.shms, s.ID)
 	r.totalPages -= s.effectiveSize / usermem.PageSize
 }
@@ -314,11 +337,11 @@ type Shm struct {
 	// segment. Immutable.
 	fr platform.FileRange
 
-	// key is the public identifier for this segment.
-	key Key
-
 	// mu protects all fields below.
 	mu sync.Mutex `state:"nosave"`
+
+	// key is the public identifier for this segment.
+	key Key
 
 	// perms is the access permissions for the segment.
 	perms fs.FilePermissions
@@ -342,12 +365,14 @@ type Shm struct {
 	// pendingDestruction indicates the segment was marked as destroyed through
 	// shmctl(IPC_RMID). When marked as destroyed, the segment will not be found
 	// in the registry and can no longer be attached. When the last user
-	// detaches from the segment, it is destroyed. Protected by mu.
+	// detaches from the segment, it is destroyed.
 	pendingDestruction bool
 }
 
 // MappedName implements memmap.MappingIdentity.MappedName.
 func (s *Shm) MappedName(ctx context.Context) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return fmt.Sprintf("SYSV%08d", s.key)
 }
 
@@ -364,6 +389,8 @@ func (s *Shm) InodeID() uint64 {
 }
 
 // DecRef overrides refs.RefCount.DecRef with a destructor.
+//
+// Precondition: Caller must not hold s.mu.
 func (s *Shm) DecRef() {
 	s.DecRefWithDestructor(s.destroy)
 }
@@ -572,28 +599,30 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 }
 
 func (s *Shm) destroy() {
-	s.registry.remove(s)
 	s.p.Memory().DecRef(s.fr)
+	s.registry.remove(s)
 }
 
-// MarkDestroyed marks a shm for destruction. The shm is actually destroyed once
-// it has no references. See shmctl(IPC_RMID).
+// MarkDestroyed marks a segment for destruction. The segment is actually
+// destroyed once it has no references. MarkDestroyed may be called multiple
+// times, and is safe to call after a segment has already been destroyed. See
+// shmctl(IPC_RMID).
 func (s *Shm) MarkDestroyed() {
+	s.registry.dissociateKey(s)
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Prevent the segment from being found in the registry.
-	s.key = linux.IPC_PRIVATE
-
 	// Only drop the segment's self-reference once, when destruction is
-	// requested. Otherwise, repeated calls shmctl(IPC_RMID) would force a
+	// requested. Otherwise, repeated calls to shmctl(IPC_RMID) would force a
 	// segment to be destroyed prematurely, potentially with active maps to the
 	// segment's address range. Remaining references are dropped when the
 	// segment is detached or unmaped.
 	if !s.pendingDestruction {
 		s.pendingDestruction = true
+		s.mu.Unlock() // Must release s.mu before calling s.DecRef.
 		s.DecRef()
+		return
 	}
+	s.mu.Unlock()
 }
 
 // checkOwnership verifies whether a segment may be accessed by ctx as an
