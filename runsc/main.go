@@ -62,7 +62,8 @@ var (
 	fileAccess     = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
 	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
-	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
+	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it. This takes precendence over -trace-signal.")
+	traceSignal    = flag.Int("trace-signal", -1, "register signal handling that logs a traceback of all goroutines. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 )
 
 // gitRevision is set during linking.
@@ -144,6 +145,7 @@ func main() {
 		StraceLogSize:  *straceLogSize,
 		WatchdogAction: wa,
 		PanicSignal:    *panicSignal,
+		TraceSignal:    *traceSignal,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")

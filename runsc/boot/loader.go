@@ -324,9 +324,13 @@ func New(args Args) (*Loader, error) {
 	// Handle signals by forwarding them to the root container process
 	// (except for panic signal, which should cause a panic).
 	l.startSignalForwarding = sighandling.PrepareHandler(func(sig linux.Signal) {
-		// Panic signal should cause a panic.
+		// Tracing signals should cause their respective actions.
 		if args.Conf.PanicSignal != -1 && sig == linux.Signal(args.Conf.PanicSignal) {
 			panic("Signal-induced panic")
+		}
+		if args.Conf.TraceSignal != -1 && sig == linux.Signal(args.Conf.TraceSignal) {
+			log.TracebackAll("Signal-induced traceback")
+			return
 		}
 
 		// Otherwise forward to root container.
