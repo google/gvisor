@@ -103,8 +103,10 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   bool ok() const;
 
   // Returns a reference to our current value, or CHECK-fails if !this->ok().
-  const T& ValueOrDie() const;
-  T& ValueOrDie();
+  const T& ValueOrDie() const&;
+  T& ValueOrDie() &;
+  const T&& ValueOrDie() const&&;
+  T&& ValueOrDie() &&;
 
   // Ignores any errors. This method does nothing except potentially suppress
   // complaints from any tools that are checking that errors are not dropped on
@@ -179,15 +181,27 @@ bool PosixErrorOr<T>::ok() const {
 }
 
 template <typename T>
-const T& PosixErrorOr<T>::ValueOrDie() const {
+const T& PosixErrorOr<T>::ValueOrDie() const& {
   TEST_CHECK(absl::holds_alternative<T>(value_));
   return absl::get<T>(value_);
 }
 
 template <typename T>
-T& PosixErrorOr<T>::ValueOrDie() {
+T& PosixErrorOr<T>::ValueOrDie() & {
   TEST_CHECK(absl::holds_alternative<T>(value_));
   return absl::get<T>(value_);
+}
+
+template <typename T>
+const T&& PosixErrorOr<T>::ValueOrDie() const&& {
+  TEST_CHECK(absl::holds_alternative<T>(value_));
+  return std::move(absl::get<T>(value_));
+}
+
+template <typename T>
+T&& PosixErrorOr<T>::ValueOrDie() && {
+  TEST_CHECK(absl::holds_alternative<T>(value_));
+  return std::move(absl::get<T>(value_));
 }
 
 extern ::std::ostream& operator<<(::std::ostream& os, const PosixError& e);
@@ -399,7 +413,7 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
   if (!posixerroror.ok()) {                                          \
     return (posixerroror.error());                                   \
   }                                                                  \
-  lhs = std::move(posixerroror.ValueOrDie())
+  lhs = std::move(posixerroror).ValueOrDie()
 
 #define EXPECT_NO_ERRNO(expression) \
   EXPECT_THAT(expression, IsPosixErrorOkMatcher())
@@ -419,7 +433,7 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
   ({                                      \
     auto _expr_result = (expr);           \
     ASSERT_NO_ERRNO(_expr_result);        \
-    std::move(_expr_result.ValueOrDie()); \
+    std::move(_expr_result).ValueOrDie(); \
   })
 
 }  // namespace testing

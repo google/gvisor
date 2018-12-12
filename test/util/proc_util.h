@@ -115,7 +115,7 @@ MATCHER_P(ContainsMappings, mappings,
     return false;
   }
 
-  auto maps = std::move(maps_or.ValueOrDie());
+  auto maps = std::move(maps_or).ValueOrDie();
 
   // Does maps contain all elements in mappings? The comparator ignores
   // the major, minor, and inode fields.

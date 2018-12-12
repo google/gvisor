@@ -126,7 +126,7 @@ SignalTestResult ItimerSignalTest(int id, clock_t main_clock,
   sa.sa_handler = &SignalTestSignalHandler;
   sa.sa_flags = SA_RESTART;
   sigemptyset(&sa.sa_mask);
-  auto sigaction_cleanup = std::move(ScopedSigaction(signal, sa).ValueOrDie());
+  auto sigaction_cleanup = ScopedSigaction(signal, sa).ValueOrDie();
 
   int socketfds[2];
   TEST_PCHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, socketfds) == 0);
@@ -167,7 +167,7 @@ SignalTestResult ItimerSignalTest(int id, clock_t main_clock,
   struct itimerval timer = {};
   timer.it_value = absl::ToTimeval(kPeriod);
   timer.it_interval = absl::ToTimeval(kPeriod);
-  auto cleanup_itimer = std::move(ScopedItimer(id, timer).ValueOrDie());
+  auto cleanup_itimer = ScopedItimer(id, timer).ValueOrDie();
 
   // Unblock th1.
   //
