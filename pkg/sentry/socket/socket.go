@@ -86,6 +86,8 @@ type Socket interface {
 	//
 	// senderAddrLen is the address length to be returned to the application,
 	// not necessarily the actual length of the address.
+	//
+	// If err != nil, the recv was not successful.
 	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, senderAddr interface{}, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
 
 	// SendMsg implements the sendmsg(2) linux syscall. SendMsg does not take

@@ -538,6 +538,9 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			}
 			total += n
 			if err != nil || !waitAll || s.isPacket || n >= dst.NumBytes() {
+				if total > 0 {
+					err = nil
+				}
 				return int(total), from, fromLen, socket.ControlMessages{Unix: r.Control}, syserr.FromError(err)
 			}
 
@@ -546,10 +549,13 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
-			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
+			if total > 0 {
+				err = nil
 			}
-			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
+			if err == syserror.ETIMEDOUT {
+				return int(total), nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
+			}
+			return int(total), nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }

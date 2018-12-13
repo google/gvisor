@@ -1352,6 +1352,9 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		dst = dst.DropFirst(rn)
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+			if n > 0 {
+				return n, senderAddr, senderAddrLen, controlMessages, nil
+			}
 			if err == syserror.ETIMEDOUT {
 				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}

@@ -395,6 +395,8 @@ TEST_P(AllSocketPairTest, RecvWaitAll) {
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data,
                                sizeof(received_data), MSG_WAITALL),
               SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 }
 
 TEST_P(AllSocketPairTest, RecvWaitAllDontWait) {
@@ -404,6 +406,30 @@ TEST_P(AllSocketPairTest, RecvWaitAllDontWait) {
   ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), data, sizeof(data),
                                MSG_WAITALL | MSG_DONTWAIT),
               SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST_P(AllSocketPairTest, RecvTimeoutWaitAll) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 200000  // 200ms
+  };
+  EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
+                         sizeof(tv)),
+              SyscallSucceeds());
+
+  char sent_data[100];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  ASSERT_THAT(write(sockets->first_fd(), sent_data, sizeof(sent_data)),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data) * 2] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data,
+                               sizeof(received_data), MSG_WAITALL),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 }
 
 }  // namespace testing
