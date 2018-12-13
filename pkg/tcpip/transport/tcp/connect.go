@@ -86,18 +86,15 @@ type handshake struct {
 	rcvWndScale int
 }
 
-func newHandshake(ep *endpoint, rcvWnd seqnum.Size) (handshake, *tcpip.Error) {
+func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
 	h := handshake{
 		ep:          ep,
 		active:      true,
 		rcvWnd:      rcvWnd,
 		rcvWndScale: FindWndScale(rcvWnd),
 	}
-	if err := h.resetState(); err != nil {
-		return handshake{}, err
-	}
-
-	return h, nil
+	h.resetState()
+	return h
 }
 
 // FindWndScale determines the window scale to use for the given maximum window
@@ -119,7 +116,7 @@ func FindWndScale(wnd seqnum.Size) int {
 
 // resetState resets the state of the handshake object such that it becomes
 // ready for a new 3-way handshake.
-func (h *handshake) resetState() *tcpip.Error {
+func (h *handshake) resetState() {
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -130,8 +127,6 @@ func (h *handshake) resetState() *tcpip.Error {
 	h.ackNum = 0
 	h.mss = 0
 	h.iss = seqnum.Value(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
-
-	return nil
 }
 
 // effectiveRcvWndScale returns the effective receive window scale to be used.
@@ -269,9 +264,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			return tcpip.ErrInvalidEndpointState
 		}
 
-		if err := h.resetState(); err != nil {
-			return err
-		}
+		h.resetState()
 		synOpts := header.TCPSynOptions{
 			WS:            h.rcvWndScale,
 			TS:            h.ep.sendTSOk,
@@ -868,11 +861,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		// This is an active connection, so we must initiate the 3-way
 		// handshake, and then inform potential waiters about its
 		// completion.
-		h, err := newHandshake(e, seqnum.Size(e.receiveBufferAvailable()))
-		if err == nil {
-			err = h.execute()
-		}
-		if err != nil {
+		h := newHandshake(e, seqnum.Size(e.receiveBufferAvailable()))
+		if err := h.execute(); err != nil {
 			e.lastErrorMu.Lock()
 			e.lastError = err
 			e.lastErrorMu.Unlock()

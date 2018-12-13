@@ -245,11 +245,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
-	h, err := newHandshake(ep, l.rcvWnd)
-	if err != nil {
-		ep.Close()
-		return nil, err
-	}
+	h := newHandshake(ep, l.rcvWnd)
 
 	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
