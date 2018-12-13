@@ -94,9 +94,9 @@ go_test(
     deps = [
         ":fs",
         "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs/ramfs/test",
         "//pkg/sentry/fs/tmpfs",
+        "//pkg/sentry/kernel/contexttest",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
     ],

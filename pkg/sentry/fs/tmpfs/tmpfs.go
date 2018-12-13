@@ -20,8 +20,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/pipe"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -54,13 +54,13 @@ func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent 
 type Dir struct {
 	ramfs.Dir
 
-	// platform is used to allocate storage for tmpfs Files.
-	platform platform.Platform
+	// kernel is used to allocate platform memory as storage for tmpfs Files.
+	kernel *kernel.Kernel
 }
 
 // NewDir returns a new directory.
-func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource, platform platform.Platform) *fs.Inode {
-	d := &Dir{platform: platform}
+func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource, kernel *kernel.Kernel) *fs.Inode {
+	d := &Dir{kernel: kernel}
 	d.InitDir(ctx, contents, owner, perms)
 
 	// Manually set the CreateOps.
@@ -84,7 +84,7 @@ func (d *Dir) afterLoad() {
 func (d *Dir) newCreateOps() *ramfs.CreateOps {
 	return &ramfs.CreateOps{
 		NewDir: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
-			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource, d.platform), nil
+			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource, d.kernel), nil
 		},
 		NewFile: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
 			uattr := fs.WithCurrentTime(ctx, fs.UnstableAttr{
@@ -93,7 +93,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 				// Always start unlinked.
 				Links: 0,
 			})
-			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr, d.platform)
+			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr, d.kernel)
 			return fs.NewInode(iops, dir.MountSource, fs.StableAttr{
 				DeviceID:  tmpfsDevice.DeviceID(),
 				InodeID:   tmpfsDevice.NextIno(),

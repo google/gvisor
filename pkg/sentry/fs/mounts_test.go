@@ -18,9 +18,9 @@ import (
 	"testing"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 )
 
 // Creates a new MountNamespace with filesystem:

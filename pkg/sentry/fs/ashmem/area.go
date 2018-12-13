@@ -23,8 +23,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
@@ -117,11 +117,11 @@ func (a *Area) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MM
 	opts.MaxPerms = opts.MaxPerms.Intersect(a.perms)
 
 	if a.tmpfsFile == nil {
-		p := platform.FromContext(ctx)
-		if p == nil {
+		k := kernel.KernelFromContext(ctx)
+		if k == nil {
 			return syserror.ENOMEM
 		}
-		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{}, p)
+		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{}, k)
 		// This is not backed by a real filesystem, so we pass in nil.
 		tmpfsInode := fs.NewInode(tmpfsInodeOps, fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{})
 		dirent := fs.NewDirent(tmpfsInode, namePrefix+"/"+a.name)

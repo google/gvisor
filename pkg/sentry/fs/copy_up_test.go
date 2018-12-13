@@ -22,9 +22,9 @@ import (
 	"sync"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 

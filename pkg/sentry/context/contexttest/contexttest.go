@@ -31,23 +31,30 @@ import (
 
 // Context returns a Context that may be used in tests. Uses ptrace as the
 // platform.Platform.
+//
+// Note that some filesystems may require a minimal kernel for testing, which
+// this test context does not provide. For such tests, see kernel/contexttest.
 func Context(tb testing.TB) context.Context {
 	p, err := ptrace.New()
 	if err != nil {
 		tb.Fatal(err)
 	}
 	// Test usage of context.Background is fine.
-	return &testContext{
-		Context:  context.Background(),
-		l:        limits.NewLimitSet(),
-		platform: p,
+	return &TestContext{
+		Context:     context.Background(),
+		l:           limits.NewLimitSet(),
+		platform:    p,
+		otherValues: make(map[interface{}]interface{}),
 	}
 }
 
-type testContext struct {
+// TestContext represents a context with minimal functionality suitable for
+// running tests.
+type TestContext struct {
 	context.Context
-	l        *limits.LimitSet
-	platform platform.Platform
+	l           *limits.LimitSet
+	platform    platform.Platform
+	otherValues map[interface{}]interface{}
 }
 
 // globalUniqueID tracks incremental unique identifiers for tests.
@@ -76,8 +83,14 @@ func (hostClock) Now() ktime.Time {
 	return ktime.FromNanoseconds(time.Now().UnixNano())
 }
 
+// RegisterValue registers additional values with this test context. Useful for
+// providing values from external packages that contexttest can't depend on.
+func (t *TestContext) RegisterValue(key, value interface{}) {
+	t.otherValues[key] = value
+}
+
 // Value implements context.Context.
-func (t *testContext) Value(key interface{}) interface{} {
+func (t *TestContext) Value(key interface{}) interface{} {
 	switch key {
 	case limits.CtxLimits:
 		return t.l
@@ -92,6 +105,9 @@ func (t *testContext) Value(key interface{}) interface{} {
 	case ktime.CtxRealtimeClock:
 		return hostClock{}
 	default:
+		if val, ok := t.otherValues[key]; ok {
+			return val
+		}
 		return t.Context.Value(key)
 	}
 }

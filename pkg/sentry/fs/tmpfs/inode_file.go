@@ -21,8 +21,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -52,8 +52,8 @@ type fileInodeOperations struct {
 	fsutil.InodeNotSymlink          `state:"nosave"`
 	fsutil.NoopWriteOut             `state:"nosave"`
 
-	// platform is used to allocate memory that stores the file's contents.
-	platform platform.Platform
+	// kernel is used to allocate platform memory that stores the file's contents.
+	kernel *kernel.Kernel
 
 	// memUsage is the default memory usage that will be reported by this file.
 	memUsage usage.MemoryKind
@@ -84,12 +84,12 @@ type fileInodeOperations struct {
 }
 
 // NewInMemoryFile returns a new file backed by p.Memory().
-func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr, p platform.Platform) fs.InodeOperations {
+func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr, k *kernel.Kernel) fs.InodeOperations {
 	return &fileInodeOperations{
 		attr: fsutil.InMemoryAttributes{
 			Unstable: uattr,
 		},
-		platform: p,
+		kernel:   k,
 		memUsage: usage,
 	}
 }
@@ -98,7 +98,7 @@ func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.Unsta
 func (f *fileInodeOperations) Release(context.Context) {
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.DropAll(f.platform.Memory())
+	f.data.DropAll(f.kernel.Platform.Memory())
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -212,7 +212,7 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, siz
 	// and can remove them.
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.Truncate(uint64(size), f.platform.Memory())
+	f.data.Truncate(uint64(size), f.kernel.Platform.Memory())
 
 	return nil
 }
@@ -310,7 +310,7 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		return 0, nil
 	}
 
-	mem := rw.f.platform.Memory()
+	mem := rw.f.kernel.Platform.Memory()
 	var done uint64
 	seg, gap := rw.f.data.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -376,7 +376,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		}
 	}()
 
-	mem := rw.f.platform.Memory()
+	mem := rw.f.kernel.Platform.Memory()
 	// Page-aligned mr for when we need to allocate memory. RoundUp can't
 	// overflow since end is an int64.
 	pgstartaddr := usermem.Addr(rw.offset).RoundDown()
@@ -465,7 +465,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 		optional.End = pgend
 	}
 
-	mem := f.platform.Memory()
+	mem := f.kernel.Platform.Memory()
 	cerr := f.data.Fill(ctx, required, optional, mem, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil

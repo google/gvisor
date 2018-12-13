@@ -22,7 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/binder"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -86,7 +86,7 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 		"random":  newCharacterDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc),
 		"urandom": newCharacterDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc),
 
-		"shm": tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc, platform.FromContext(ctx)),
+		"shm": tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc, kernel.KernelFromContext(ctx)),
 
 		// A devpts is typically mounted at /dev/pts to provide
 		// pseudoterminal support. Place an empty directory there for
