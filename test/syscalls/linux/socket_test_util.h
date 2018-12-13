@@ -379,6 +379,7 @@ class SocketPairTest : public ::testing::TestWithParam<SocketPairKind> {
   SocketPairTest() {
     // gUnit uses printf, so so will we.
     printf("Testing with %s\n", GetParam().description.c_str());
+    fflush(stdout);
   }
 
   PosixErrorOr<std::unique_ptr<SocketPair>> NewSocketPair() const {
