@@ -626,20 +626,36 @@ func (c *Container) Processes() ([]*control.Process, error) {
 }
 
 // Destroy stops all processes and frees all resources associated with the
-// container. It fails fast and is idempotent.
+// container.
 func (c *Container) Destroy() error {
 	log.Debugf("Destroy container %q", c.ID)
 
+	// We must perform the following cleanup steps:
+	// * stop the container and gofer processes,
+	// * remove the container filesystem on the host, and
+	// * delete the container metadata directory.
+	//
+	// It's possible for one or more of these steps to fail, but we should
+	// do our best to perform all of the cleanups. Hence, we keep a slice
+	// of errors return their concatenation.
+	var errs []string
+
 	if err := c.stop(); err != nil {
-		return fmt.Errorf("error stopping container: %v", err)
+		err = fmt.Errorf("error stopping container: %v", err)
+		log.Warningf("%v", err)
+		errs = append(errs, err.Error())
 	}
 
 	if err := destroyFS(c.Spec); err != nil {
-		return fmt.Errorf("error destroying container fs: %v", err)
+		err = fmt.Errorf("error destroying container fs: %v", err)
+		log.Warningf("%v", err)
+		errs = append(errs, err.Error())
 	}
 
 	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
+		err = fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
+		log.Warningf("%v", err)
+		errs = append(errs, err.Error())
 	}
 
 	// "If any poststop hook fails, the runtime MUST log a warning, but the
@@ -655,7 +671,11 @@ func (c *Container) Destroy() error {
 	}
 
 	c.changeStatus(Stopped)
-	return nil
+
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf(strings.Join(errs, "\n"))
 }
 
 // save saves the container metadata to a file.
