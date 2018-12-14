@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package syscall_test runs the syscall test suites in gVisor containers. It
-// is meant to be run with "go test", and will panic if run on its own.
-package syscall_test
+// Binary syscall_test_runner runs the syscall test suites in gVisor
+// containers and on the host platform.
+package main
 
 import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -46,62 +48,6 @@ var (
 	platform = flag.String("platform", "ptrace", "platform to run on")
 	parallel = flag.Bool("parallel", false, "run tests in parallel")
 )
-
-func TestSyscalls(t *testing.T) {
-	if *testName == "" {
-		t.Fatalf("test-name flag must be provided")
-	}
-
-	// Get path to test binary.
-	fullTestName := filepath.Join(testDir, *testName)
-	testBin, err := testutil.FindFile(fullTestName)
-	if err != nil {
-		t.Fatalf("FindFile(%q) failed: %v", fullTestName, err)
-	}
-
-	// Get all test cases in each binary.
-	testCases, err := gtest.ParseTestCases(testBin)
-	if err != nil {
-		t.Fatalf("ParseTestCases(%q) failed: %v", testBin, err)
-	}
-
-	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
-	// from outside the sandbox can (and will) stomp on logs from inside
-	// the sandbox.
-	for _, f := range []*os.File{os.Stdout, os.Stderr} {
-		flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFL, 0)
-		if err != nil {
-			t.Fatalf("error getting file flags for %v: %v", f, err)
-		}
-		if flags&unix.O_APPEND == 0 {
-			flags |= unix.O_APPEND
-			if _, err := unix.FcntlInt(f.Fd(), unix.F_SETFL, flags); err != nil {
-				t.Fatalf("error setting file flags for %v: %v", f, err)
-			}
-		}
-	}
-
-	for _, tc := range testCases {
-		// Capture tc.
-		tc := tc
-
-		testName := fmt.Sprintf("%s_%s", tc.Suite, tc.Name)
-		t.Run(testName, func(t *testing.T) {
-			if *parallel {
-				t.Parallel()
-			}
-
-			if *platform == "native" {
-				// Run the test case on host.
-				runTestCaseNative(testBin, tc, t)
-				return
-			}
-
-			// Run the test case in runsc.
-			runTestCaseRunsc(testBin, tc, t)
-		})
-	}
-}
 
 // runTestCaseNative runs the test case directly on the host machine.
 func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
@@ -128,9 +74,14 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	if !found {
 		env = append(env, newEnvVar)
 	}
-	// Remove the TEST_PREMATURE_EXIT_FILE variable and XML_OUTPUT_FILE
-	// from the environment.
-	env = filterEnv(env, []string{"TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
+	// Remove env variables that cause the gunit binary to write output
+	// files, since they will stomp on eachother, and on the output files
+	// from this go test.
+	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
+
+	// Remove shard env variables so that the gunit binary does not try to
+	// intepret them.
+	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS"})
 
 	cmd := exec.Command(testBin, gtest.FilterTestFlag+"="+tc.FullName())
 	cmd.Env = env
@@ -173,9 +124,14 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	platformVar := "TEST_ON_GVISOR"
 	env := append(os.Environ(), platformVar+"="+*platform)
 
-	// Remove the TEST_PREMATURE_EXIT_FILE variable and XML_OUTPUT_FILE
-	// from the environment.
-	env = filterEnv(env, []string{"TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
+	// Remove env variables that cause the gunit binary to write output
+	// files, since they will stomp on eachother, and on the output files
+	// from this go test.
+	env = filterEnv(env, []string{"GUNIT_OUTPUT", "TEST_PREMATURE_EXIT_FILE", "XML_OUTPUT_FILE"})
+
+	// Remove shard env variables so that the gunit binary does not try to
+	// intepret them.
+	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS"})
 
 	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
 	// be backed by tmpfs.
@@ -224,22 +180,110 @@ func filterEnv(env, blacklist []string) []string {
 	return out
 }
 
-func TestMain(m *testing.M) {
+func fatalf(s string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, s+"\n", args...)
+	os.Exit(1)
+}
+
+func matchString(a, b string) (bool, error) {
+	return a == b, nil
+}
+
+func main() {
 	flag.Parse()
+	if *testName == "" {
+		fatalf("test-name flag must be provided")
+	}
 
 	log.SetLevel(log.Warning)
 	if *debug {
 		log.SetLevel(log.Debug)
 	}
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
-	}
 
 	if *platform != "native" {
+		if err := testutil.ConfigureExePath(); err != nil {
+			panic(err.Error())
+		}
 		// The native tests don't expect to be running as root, but
 		// runsc requires it.
 		testutil.RunAsRoot()
 	}
 
-	os.Exit(m.Run())
+	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
+	// from outside the sandbox can (and will) stomp on logs from inside
+	// the sandbox.
+	for _, f := range []*os.File{os.Stdout, os.Stderr} {
+		flags, err := unix.FcntlInt(f.Fd(), unix.F_GETFL, 0)
+		if err != nil {
+			fatalf("error getting file flags for %v: %v", f, err)
+		}
+		if flags&unix.O_APPEND == 0 {
+			flags |= unix.O_APPEND
+			if _, err := unix.FcntlInt(f.Fd(), unix.F_SETFL, flags); err != nil {
+				fatalf("error setting file flags for %v: %v", f, err)
+			}
+		}
+	}
+
+	// Get path to test binary.
+	fullTestName := filepath.Join(testDir, *testName)
+	testBin, err := testutil.FindFile(fullTestName)
+	if err != nil {
+		fatalf("FindFile(%q) failed: %v", fullTestName, err)
+	}
+
+	// Get all test cases in each binary.
+	testCases, err := gtest.ParseTestCases(testBin)
+	if err != nil {
+		fatalf("ParseTestCases(%q) failed: %v", testBin, err)
+	}
+
+	// If sharding, then get the subset of tests to run based on the shard index.
+	if indexStr, totalStr := os.Getenv("TEST_SHARD_INDEX"), os.Getenv("TEST_TOTAL_SHARDS"); indexStr != "" && totalStr != "" {
+		// Parse index and total to ints.
+		index, err := strconv.Atoi(indexStr)
+		if err != nil {
+			fatalf("invalid TEST_SHARD_INDEX %q: %v", indexStr, err)
+		}
+		total, err := strconv.Atoi(totalStr)
+		if err != nil {
+			fatalf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
+		}
+		// Calculate subslice of tests to run.
+		shardSize := int(math.Ceil(float64(len(testCases)) / float64(total)))
+		begin := index * shardSize
+		end := ((index + 1) * shardSize) - 1
+		if begin > len(testCases) {
+			// Nothing to run.
+			return
+		}
+		if end > len(testCases) {
+			end = len(testCases)
+		}
+		testCases = testCases[begin:end]
+	}
+
+	var tests []testing.InternalTest
+	for _, tc := range testCases {
+		// Capture tc.
+		tc := tc
+		testName := fmt.Sprintf("%s_%s", tc.Suite, tc.Name)
+		tests = append(tests, testing.InternalTest{
+			Name: testName,
+			F: func(t *testing.T) {
+				if *parallel {
+					t.Parallel()
+				}
+				if *platform == "native" {
+					// Run the test case on host.
+					runTestCaseNative(testBin, tc, t)
+				} else {
+					// Run the test case in runsc.
+					runTestCaseRunsc(testBin, tc, t)
+				}
+			},
+		})
+	}
+
+	testing.Main(matchString, tests, nil, nil)
 }

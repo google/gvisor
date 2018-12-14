@@ -1,15 +1,15 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("//test/syscalls:build_defs.bzl", "syscall_test")
 
 package(licenses = ["notice"])  # Apache 2.0
-
-load("//test/syscalls:build_defs.bzl", "syscall_test")
 
 syscall_test(test = "//test/syscalls/linux:32bit_test")
 
 syscall_test(test = "//test/syscalls/linux:accept_bind_stream_test")
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:accept_bind_test",
 )
 
@@ -106,6 +106,7 @@ syscall_test(test = "//test/syscalls/linux:fsync_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 20,
     test = "//test/syscalls/linux:futex_test",
 )
 
@@ -154,6 +155,7 @@ syscall_test(test = "//test/syscalls/linux:mknod_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 10,
     test = "//test/syscalls/linux:mmap_test",
 )
 
@@ -248,7 +250,10 @@ syscall_test(test = "//test/syscalls/linux:seccomp_test")
 
 syscall_test(test = "//test/syscalls/linux:select_test")
 
-syscall_test(test = "//test/syscalls/linux:semaphore_test")
+syscall_test(
+    shard_count = 20,
+    test = "//test/syscalls/linux:semaphore_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:sendfile_socket_test")
 
@@ -281,7 +286,8 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
 
@@ -291,7 +297,8 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_domain_test",
 )
 
@@ -301,7 +308,8 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
 
@@ -312,6 +320,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
 
@@ -322,11 +331,13 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
 
@@ -337,6 +348,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
@@ -369,7 +381,8 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_abstract_test",
 )
 
@@ -385,12 +398,14 @@ syscall_test(
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_filesystem_test",
 )
 
 syscall_test(
-    size = "enormous",
+    size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
 
@@ -415,15 +430,20 @@ syscall_test(
     test = "//test/syscalls/linux:socket_unix_unbound_dgram_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:socket_unix_unbound_filesystem_test")
+syscall_test(
+    size = "medium",
+    test = "//test/syscalls/linux:socket_unix_unbound_filesystem_test",
+)
 
 syscall_test(
     size = "medium",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_unbound_seqpacket_test",
 )
 
 syscall_test(
     size = "large",
+    shard_count = 50,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
 
@@ -449,6 +469,7 @@ syscall_test(test = "//test/syscalls/linux:sysret_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 50,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
 
@@ -468,6 +489,7 @@ syscall_test(test = "//test/syscalls/linux:udp_bind_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 50,
     test = "//test/syscalls/linux:udp_socket_test",
 )
 
@@ -499,16 +521,11 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:write_test")
 
-go_test(
-    name = "syscall_test",
-    srcs = ["syscall_test.go"],
+go_binary(
+    name = "syscall_test_runner",
+    srcs = ["syscall_test_runner.go"],
     data = [
         "//runsc",
-    ],
-    # Running this test by itself does not make sense. It should only be run
-    # via the syscall_test macro.
-    tags = [
-        "manual",
     ],
     deps = [
         "//pkg/log",

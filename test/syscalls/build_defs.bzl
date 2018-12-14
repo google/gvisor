@@ -2,12 +2,12 @@
 
 # syscall_test is a macro that will create targets to run the given test target
 # on the host (native) and runsc.
-def syscall_test(test, size = "small"):
-    _syscall_test(test, size, "native")
-    _syscall_test(test, size, "kvm")
-    _syscall_test(test, size, "ptrace")
+def syscall_test(test, shard_count = 1, size = "small"):
+    _syscall_test(test, shard_count, size, "native")
+    _syscall_test(test, shard_count, size, "kvm")
+    _syscall_test(test, shard_count, size, "ptrace")
 
-def _syscall_test(test, size, platform):
+def _syscall_test(test, shard_count, size, platform):
     test_name = test.split(":")[1]
 
     # Prepend "runsc" to non-native platform names.
@@ -30,13 +30,13 @@ def _syscall_test(test, size, platform):
         srcs = ["syscall_test_runner.sh"],
         name = test_name + "_" + full_platform,
         data = [
-            ":syscall_test",
+            ":syscall_test_runner",
             test,
         ],
         args = [
-            # First argument is location to syscall_test binary.
-            "$(location :syscall_test)",
-            # Rest of arguments are passed directly to syscall_test binary.
+            # First argument is location to syscall_test_runner go binary.
+            "$(location :syscall_test_runner)",
+            # Rest of arguments are passed directly to syscall_test_runner binary.
             "--test-name=" + test_name,
             "--platform=" + platform,
             "--debug=false",
@@ -45,6 +45,7 @@ def _syscall_test(test, size, platform):
         ],
         size = size,
         tags = tags,
+        shard_count = shard_count,
     )
 
 def sh_test(**kwargs):
