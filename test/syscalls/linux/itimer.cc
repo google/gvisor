@@ -54,7 +54,6 @@ constexpr absl::Duration kTestDuration = absl::Seconds(20);
 constexpr int kIterations = 10000000;
 // Allow deviation in the number of samples.
 constexpr double kNumSamplesDeviationRatio = 0.2;
-constexpr double kNumSamplesMinRatio = 0.5;
 
 TEST(ItimerTest, ItimervalUpdatedBeforeExpiration) {
   constexpr int kSleepSecs = 10;
