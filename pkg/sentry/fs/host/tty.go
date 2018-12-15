@@ -35,7 +35,7 @@ type TTYFileOperations struct {
 	fileOperations
 
 	// mu protects the fields below.
-	mu sync.Mutex
+	mu sync.Mutex `state:"nosave"`
 
 	// FGProcessGroup is the foreground process group this TTY.  Will be
 	// nil if not set or if this file has been released.
