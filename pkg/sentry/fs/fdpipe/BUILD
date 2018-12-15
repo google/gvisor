@@ -14,6 +14,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/log",
         "//pkg/secio",
         "//pkg/sentry/context",
@@ -23,7 +24,6 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/syserror",
         "//pkg/waiter",
-        "//pkg/waiter/fdnotifier",
     ],
 )
 
@@ -37,12 +37,12 @@ go_test(
     embed = [":fdpipe"],
     deps = [
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
-        "//pkg/waiter/fdnotifier",
         "@com_github_google_uuid//:go_default_library",
     ],
 )

@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
@@ -28,7 +29,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
-	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 var (

@@ -17,6 +17,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/fdnotifier",
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
@@ -34,6 +35,5 @@ go_library(
         "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/waiter",
-        "//pkg/waiter/fdnotifier",
     ],
 )

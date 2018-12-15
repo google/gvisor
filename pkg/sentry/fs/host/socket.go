@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -32,7 +33,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
-	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 // maxSendBufferSize is the maximum host send buffer size allowed for endpoint.

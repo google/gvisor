@@ -9,6 +9,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/fdnotifier",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
@@ -16,7 +17,6 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/syserror",
         "//pkg/waiter",
-        "//pkg/waiter/fdnotifier",
     ],
 )
 

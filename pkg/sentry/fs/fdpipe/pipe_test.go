@@ -22,11 +22,11 @@ import (
 	"testing"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 func singlePipeFD() (int, error) {

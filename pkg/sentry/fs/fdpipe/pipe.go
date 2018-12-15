@@ -21,6 +21,7 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/secio"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -30,7 +31,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
-	"gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier"
 )
 
 // pipeOperations are the fs.FileOperations of a host pipe.

@@ -8,7 +8,7 @@ go_library(
         "fdnotifier.go",
         "poll_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/waiter/fdnotifier",
+    importpath = "gvisor.googlesource.com/gvisor/pkg/fdnotifier",
     visibility = ["//:sandbox"],
     deps = ["//pkg/waiter"],
 )

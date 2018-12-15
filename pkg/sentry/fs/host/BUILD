@@ -27,6 +27,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/secio",
@@ -51,7 +52,6 @@ go_library(
         "//pkg/tcpip",
         "//pkg/unet",
         "//pkg/waiter",
-        "//pkg/waiter/fdnotifier",
     ],
 )
 
@@ -68,6 +68,7 @@ go_test(
     embed = [":host"],
     deps = [
         "//pkg/fd",
+        "//pkg/fdnotifier",
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
@@ -78,6 +79,5 @@ go_test(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/waiter",
-        "//pkg/waiter/fdnotifier",
     ],
 )
