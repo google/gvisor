@@ -2149,6 +2149,27 @@ cc_library(
 )
 
 cc_library(
+    name = "socket_blocking_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_blocking.cc",
+    ],
+    hdrs = [
+        "socket_blocking.h",
+    ],
+    deps = [
+        ":socket_test_util",
+        ":unix_domain_socket_test_util",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "//test/util:timer_util",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
     name = "socket_unix_test_cases",
     testonly = 1,
     srcs = [
@@ -2202,6 +2223,27 @@ cc_library(
         ":socket_test_util",
         ":unix_domain_socket_test_util",
         "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "socket_non_stream_blocking_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_non_stream_blocking.cc",
+    ],
+    hdrs = [
+        "socket_non_stream_blocking.h",
+    ],
+    deps = [
+        ":socket_test_util",
+        ":unix_domain_socket_test_util",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "//test/util:timer_util",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
     ],
     alwayslink = 1,
@@ -2346,25 +2388,38 @@ cc_binary(
     ],
 )
 
-cc_library(
-    name = "socket_non_stream_blocking_test_cases",
+cc_binary(
+    name = "socket_blocking_local_test",
     testonly = 1,
     srcs = [
-        "socket_non_stream_blocking.cc",
+        "socket_unix_blocking_local.cc",
     ],
-    hdrs = [
-        "socket_non_stream_blocking.h",
-    ],
+    linkstatic = 1,
     deps = [
+        ":socket_blocking_test_cases",
         ":socket_test_util",
         ":unix_domain_socket_test_util",
+        "//test/util:test_main",
         "//test/util:test_util",
-        "//test/util:thread_util",
-        "//test/util:timer_util",
-        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
     ],
-    alwayslink = 1,
+)
+
+cc_binary(
+    name = "socket_blocking_ip_test",
+    testonly = 1,
+    srcs = [
+        "socket_ip_loopback_blocking.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_blocking_test_cases",
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
 )
 
 cc_binary(

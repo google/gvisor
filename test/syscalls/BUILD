@@ -356,6 +356,10 @@ syscall_test(test = "//test/syscalls/linux:socket_netdevice_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_netlink_route_test")
 
+syscall_test(test = "//test/syscalls/linux:socket_blocking_local_test")
+
+syscall_test(test = "//test/syscalls/linux:socket_blocking_ip_test")
+
 syscall_test(test = "//test/syscalls/linux:socket_non_stream_blocking_local_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_non_stream_blocking_udp_test")
