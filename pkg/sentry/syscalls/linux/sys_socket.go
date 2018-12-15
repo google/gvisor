@@ -612,9 +612,11 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	var haveDeadline bool
 	var deadline ktime.Time
-	if dl := s.RecvTimeout(); dl != 0 {
+	if dl := s.RecvTimeout(); dl > 0 {
 		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
 		haveDeadline = true
+	} else if dl < 0 {
+		flags |= linux.MSG_DONTWAIT
 	}
 
 	n, err := recvSingleMsg(t, s, msgPtr, flags, haveDeadline, deadline)
@@ -671,10 +673,11 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	if !haveDeadline {
-		dl := s.RecvTimeout()
-		if dl != 0 {
+		if dl := s.RecvTimeout(); dl > 0 {
 			deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
 			haveDeadline = true
+		} else if dl < 0 {
+			flags |= linux.MSG_DONTWAIT
 		}
 	}
 
@@ -821,10 +824,11 @@ func recvFrom(t *kernel.Task, fd kdefs.FD, bufPtr usermem.Addr, bufLen uint64, f
 
 	var haveDeadline bool
 	var deadline ktime.Time
-
-	if dl := s.RecvTimeout(); dl != 0 {
+	if dl := s.RecvTimeout(); dl > 0 {
 		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
 		haveDeadline = true
+	} else if dl < 0 {
+		flags |= linux.MSG_DONTWAIT
 	}
 
 	n, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
@@ -1001,8 +1005,17 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr userme
 		return 0, err
 	}
 
+	var haveDeadline bool
+	var deadline ktime.Time
+	if dl := s.SendTimeout(); dl > 0 {
+		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
+		haveDeadline = true
+	} else if dl < 0 {
+		flags |= linux.MSG_DONTWAIT
+	}
+
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), socket.ControlMessages{Unix: controlMessages})
+	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: controlMessages})
 	err = handleIOError(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendmsg", file)
 	if err != nil {
 		controlMessages.Release()
@@ -1052,8 +1065,17 @@ func sendTo(t *kernel.Task, fd kdefs.FD, bufPtr usermem.Addr, bufLen uint64, fla
 		return 0, err
 	}
 
+	var haveDeadline bool
+	var deadline ktime.Time
+	if dl := s.SendTimeout(); dl > 0 {
+		deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
+		haveDeadline = true
+	} else if dl < 0 {
+		flags |= linux.MSG_DONTWAIT
+	}
+
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), socket.ControlMessages{Unix: control.New(t, s, nil)})
+	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: control.New(t, s, nil)})
 	return uintptr(n), handleIOError(t, n != 0, e.ToError(), kernel.ERESTARTSYS, "sendto", file)
 }
 

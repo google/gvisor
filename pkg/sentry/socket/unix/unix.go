@@ -45,15 +45,16 @@ import (
 //
 // +stateify savable
 type SocketOperations struct {
-	refs.AtomicRefCount
-	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
-	ep                   transport.Endpoint
-	isPacket             bool
+	refs.AtomicRefCount
+	socket.SendReceiveTimeout
+
+	ep       transport.Endpoint
+	isPacket bool
 }
 
 // New creates a new unix socket.
@@ -367,7 +368,7 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 
 // SendMsg implements the linux syscall sendmsg(2) for unix sockets backed by
 // a transport.Endpoint.
-func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	w := EndpointWriter{
 		Endpoint: s.ep,
 		Control:  controlMessages.Unix,
@@ -404,7 +405,10 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 			break
 		}
 
-		if err := t.Block(ch); err != nil {
+		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}

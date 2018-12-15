@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
@@ -137,12 +138,12 @@ type commonEndpoint interface {
 //
 // +stateify savable
 type SocketOperations struct {
-	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	socket.SendReceiveTimeout
 	*waiter.Queue
 
 	family   int
@@ -643,7 +644,16 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		}
 		return syscall.Linger{}, nil
 
+	case linux.SO_SNDTIMEO:
+		// TODO: Linux allows shorter lengths for partial results.
+		if outLen < linux.SizeOfTimeval {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		return linux.NsecToTimeval(s.SendTimeout()), nil
+
 	case linux.SO_RCVTIMEO:
+		// TODO: Linux allows shorter lengths for partial results.
 		if outLen < linux.SizeOfTimeval {
 			return nil, syserr.ErrInvalidArgument
 		}
@@ -833,6 +843,19 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.PasscredOption(v)))
 
+	case linux.SO_SNDTIMEO:
+		if len(optVal) < linux.SizeOfTimeval {
+			return syserr.ErrInvalidArgument
+		}
+
+		var v linux.Timeval
+		binary.Unmarshal(optVal[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+			return syserr.ErrDomain
+		}
+		s.SetSendTimeout(v.ToNsecCapped())
+		return nil
+
 	case linux.SO_RCVTIMEO:
 		if len(optVal) < linux.SizeOfTimeval {
 			return syserr.ErrInvalidArgument
@@ -840,6 +863,9 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 		var v linux.Timeval
 		binary.Unmarshal(optVal[:linux.SizeOfTimeval], usermem.ByteOrder, &v)
+		if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+			return syserr.ErrDomain
+		}
 		s.SetRecvTimeout(v.ToNsecCapped())
 		return nil
 
@@ -1365,7 +1391,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 
 // SendMsg implements the linux syscall sendmsg(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Reject Unix control messages.
 	if !controlMessages.Unix.Empty() {
 		return 0, syserr.ErrInvalidArgument
@@ -1431,7 +1457,10 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 			return int(total), nil
 		}
 
-		if err := t.Block(ch); err != nil {
+		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				return int(total), syserr.ErrTryAgain
+			}
 			// handleIOError will consume errors from t.Block if needed.
 			return int(total), syserr.FromError(err)
 		}

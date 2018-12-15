@@ -94,15 +94,23 @@ type Socket interface {
 	// ownership of the ControlMessage on error.
 	//
 	// If n > 0, err will either be nil or an error from t.Block.
-	SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages ControlMessages) (n int, err *syserr.Error)
+	SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages ControlMessages) (n int, err *syserr.Error)
 
 	// SetRecvTimeout sets the timeout (in ns) for recv operations. Zero means
-	// no timeout.
+	// no timeout, and negative means DONTWAIT.
 	SetRecvTimeout(nanoseconds int64)
 
 	// RecvTimeout gets the current timeout (in ns) for recv operations. Zero
-	// means no timeout.
+	// means no timeout, and negative means DONTWAIT.
 	RecvTimeout() int64
+
+	// SetSendTimeout sets the timeout (in ns) for send operations. Zero means
+	// no timeout, and negative means DONTWAIT.
+	SetSendTimeout(nanoseconds int64)
+
+	// SendTimeout gets the current timeout (in ns) for send operations. Zero
+	// means no timeout, and negative means DONTWAIT.
+	SendTimeout() int64
 }
 
 // Provider is the interface implemented by providers of sockets for specific
@@ -192,30 +200,45 @@ func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 	return fs.NewDirent(inode, fmt.Sprintf("socket:[%d]", ino))
 }
 
-// ReceiveTimeout stores a timeout for receive calls.
+// SendReceiveTimeout stores timeouts for send and receive calls.
 //
 // It is meant to be embedded into Socket implementations to help satisfy the
 // interface.
 //
-// Care must be taken when copying ReceiveTimeout as it contains atomic
+// Care must be taken when copying SendReceiveTimeout as it contains atomic
 // variables.
 //
 // +stateify savable
-type ReceiveTimeout struct {
-	// ns is length of the timeout in nanoseconds.
+type SendReceiveTimeout struct {
+	// send is length of the send timeout in nanoseconds.
 	//
-	// ns must be accessed atomically.
-	ns int64
+	// send must be accessed atomically.
+	send int64
+
+	// recv is length of the receive timeout in nanoseconds.
+	//
+	// recv must be accessed atomically.
+	recv int64
 }
 
 // SetRecvTimeout implements Socket.SetRecvTimeout.
-func (rt *ReceiveTimeout) SetRecvTimeout(nanoseconds int64) {
-	atomic.StoreInt64(&rt.ns, nanoseconds)
+func (to *SendReceiveTimeout) SetRecvTimeout(nanoseconds int64) {
+	atomic.StoreInt64(&to.recv, nanoseconds)
 }
 
 // RecvTimeout implements Socket.RecvTimeout.
-func (rt *ReceiveTimeout) RecvTimeout() int64 {
-	return atomic.LoadInt64(&rt.ns)
+func (to *SendReceiveTimeout) RecvTimeout() int64 {
+	return atomic.LoadInt64(&to.recv)
+}
+
+// SetSendTimeout implements Socket.SetSendTimeout.
+func (to *SendReceiveTimeout) SetSendTimeout(nanoseconds int64) {
+	atomic.StoreInt64(&to.send, nanoseconds)
+}
+
+// SendTimeout implements Socket.SendTimeout.
+func (to *SendReceiveTimeout) SendTimeout() int64 {
+	return atomic.LoadInt64(&to.send)
 }
 
 // GetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.

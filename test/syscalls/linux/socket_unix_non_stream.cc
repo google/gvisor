@@ -225,5 +225,27 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
   EXPECT_EQ(0, memcmp(write_buf.data(), ptr, buffer_size));
 }
 
+TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 10
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  char buf[100] = {};
+  for (;;) {
+    int ret;
+    ASSERT_THAT(
+        ret = RetryEINTR(send)(sockets->first_fd(), buf, sizeof(buf), 0),
+        ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));
+    if (ret == -1) {
+      break;
+    }
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor

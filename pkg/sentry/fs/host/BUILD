@@ -71,6 +71,7 @@ go_test(
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
+        "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",

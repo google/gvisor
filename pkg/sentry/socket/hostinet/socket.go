@@ -46,12 +46,12 @@ const (
 // socketOperations implements fs.FileOperations and socket.Socket for a socket
 // implemented using a host socket.
 type socketOperations struct {
-	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	socket.SendReceiveTimeout
 
 	fd    int // must be O_NONBLOCK
 	queue waiter.Queue
@@ -418,7 +418,7 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Whitelist flags.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_EOR|syscall.MSG_FASTOPEN|syscall.MSG_MORE|syscall.MSG_NOSIGNAL) != 0 {
 		return 0, syserr.ErrInvalidArgument
@@ -468,7 +468,10 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 				panic(fmt.Sprintf("CopyInTo: got (%d, %v), wanted (0, %v)", n, err, err))
 			}
 			if ch != nil {
-				if err = t.Block(ch); err != nil {
+				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+					if err == syserror.ETIMEDOUT {
+						err = syserror.ErrWouldBlock
+					}
 					break
 				}
 			} else {

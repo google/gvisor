@@ -332,6 +332,35 @@ TEST_P(AllSocketPairTest, RecvmsgTimeoutSucceeds) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
+TEST_P(AllSocketPairTest, SendTimeoutAllowsSend) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 10
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  char buf[20] = {};
+  ASSERT_THAT(RetryEINTR(send)(sockets->first_fd(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
+TEST_P(AllSocketPairTest, SendmsgTimeoutAllowsSend) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 10
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  char buf[20] = {};
+  ASSERT_NO_FATAL_FAILURE(SendNullCmsg(sockets->first_fd(), buf, sizeof(buf)));
+}
+
 TEST_P(AllSocketPairTest, SoRcvTimeoIsSet) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -365,6 +394,87 @@ TEST_P(AllSocketPairTest, RecvmsgTimeoutOneSecondSucceeds) {
 
   struct timeval tv {
     .tv_sec = 1, .tv_usec = 0
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  struct msghdr msg = {};
+  char buf[20] = {};
+  struct iovec iov;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  EXPECT_THAT(RetryEINTR(recvmsg)(sockets->first_fd(), &msg, 0),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST_P(AllSocketPairTest, RecvTimeoutUsecTooLarge) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
+      SyscallFailsWithErrno(EDOM));
+}
+
+TEST_P(AllSocketPairTest, SendTimeoutUsecTooLarge) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 2000000  // 2 seconds.
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallFailsWithErrno(EDOM));
+}
+
+TEST_P(AllSocketPairTest, RecvTimeoutUsecNeg) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = -1
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
+      SyscallFailsWithErrno(EDOM));
+}
+
+TEST_P(AllSocketPairTest, SendTimeoutUsecNeg) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = -1
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
+      SyscallFailsWithErrno(EDOM));
+}
+
+TEST_P(AllSocketPairTest, RecvTimeoutNegSec) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = -1, .tv_usec = 0
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  char buf[20] = {};
+  EXPECT_THAT(RetryEINTR(recv)(sockets->first_fd(), buf, sizeof(buf), 0),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST_P(AllSocketPairTest, RecvmsgTimeoutNegSec) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct timeval tv {
+    .tv_sec = -1, .tv_usec = 0
   };
   EXPECT_THAT(
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),

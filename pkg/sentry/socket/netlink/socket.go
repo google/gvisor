@@ -65,12 +65,12 @@ var netlinkSocketDevice = device.NewAnonDevice()
 //
 // +stateify savable
 type Socket struct {
-	socket.ReceiveTimeout
 	fsutil.PipeSeek      `state:"nosave"`
 	fsutil.NotDirReaddir `state:"nosave"`
 	fsutil.NoFsync       `state:"nosave"`
 	fsutil.NoopFlush     `state:"nosave"`
 	fsutil.NoMMap        `state:"nosave"`
+	socket.SendReceiveTimeout
 
 	// ports provides netlink port allocation.
 	ports *port.Manager
@@ -593,7 +593,7 @@ func (s *Socket) sendMsg(ctx context.Context, src usermem.IOSequence, to []byte,
 }
 
 // SendMsg implements socket.Socket.SendMsg.
-func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	return s.sendMsg(t, src, to, flags, controlMessages)
 }
 

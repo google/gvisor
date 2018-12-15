@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
+	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -142,7 +143,7 @@ func TestSocketSendMsgLen0(t *testing.T) {
 	defer sfile.DecRef()
 
 	s := sfile.FileOperations.(socket.Socket)
-	n, terr := s.SendMsg(nil, usermem.BytesIOSequence(nil), []byte{}, 0, socket.ControlMessages{})
+	n, terr := s.SendMsg(nil, usermem.BytesIOSequence(nil), []byte{}, 0, false, ktime.Time{}, socket.ControlMessages{})
 	if n != 0 {
 		t.Fatalf("socket sendmsg() failed: %v wrote: %d", terr, n)
 	}
