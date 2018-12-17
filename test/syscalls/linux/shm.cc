@@ -427,6 +427,13 @@ TEST(ShmTest, RequestingDuplicateCreationFails) {
               PosixErrorIs(EEXIST, _));
 }
 
+TEST(ShmTest, NonExistentSegmentsAreNotFound) {
+  const TempPath keyfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const key_t key = ftok(keyfile.path().c_str(), 1);
+  // Do not request creation.
+  EXPECT_THAT(Shmget(key, kAllocSize, 0777), PosixErrorIs(ENOENT, _));
+}
+
 TEST(ShmTest, SegmentsSizeFixedOnCreation) {
   const TempPath keyfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const key_t key = ftok(keyfile.path().c_str(), 1);
