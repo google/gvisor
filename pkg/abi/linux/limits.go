@@ -60,7 +60,7 @@ const (
 	DefaultNofileHardLimit = 4096
 
 	// DefaultMemlockLimit is called MLOCK_LIMIT in Linux.
-	DefaultMemlockLimit = 64 * 1094
+	DefaultMemlockLimit = 64 * 1024
 
 	// DefaultMsgqueueLimit is called MQ_BYTES_MAX in Linux.
 	DefaultMsgqueueLimit = 819200

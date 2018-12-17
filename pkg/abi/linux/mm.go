@@ -49,6 +49,18 @@ const (
 	MREMAP_FIXED   = 1 << 1
 )
 
+// Flags for mlock2(2).
+const (
+	MLOCK_ONFAULT = 0x01
+)
+
+// Flags for mlockall(2).
+const (
+	MCL_CURRENT = 1
+	MCL_FUTURE  = 2
+	MCL_ONFAULT = 4
+)
+
 // Advice for madvise(2).
 const (
 	MADV_NORMAL       = 0

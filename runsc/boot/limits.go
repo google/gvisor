@@ -29,7 +29,7 @@ var fromLinuxResource = map[string]limits.LimitType{
 	"RLIMIT_DATA":       limits.Data,
 	"RLIMIT_FSIZE":      limits.FileSize,
 	"RLIMIT_LOCKS":      limits.Locks,
-	"RLIMIT_MEMLOCK":    limits.MemoryPagesLocked,
+	"RLIMIT_MEMLOCK":    limits.MemoryLocked,
 	"RLIMIT_MSGQUEUE":   limits.MessageQueueBytes,
 	"RLIMIT_NICE":       limits.Nice,
 	"RLIMIT_NOFILE":     limits.NumberOfFiles,
@@ -55,7 +55,7 @@ func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
 	ls.SetUnchecked(limits.Data, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
 	ls.SetUnchecked(limits.FileSize, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
 	ls.SetUnchecked(limits.Locks, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
-	ls.SetUnchecked(limits.MemoryPagesLocked, limits.Limit{Cur: 65536, Max: 65536})
+	ls.SetUnchecked(limits.MemoryLocked, limits.Limit{Cur: 65536, Max: 65536})
 	ls.SetUnchecked(limits.MessageQueueBytes, limits.Limit{Cur: 819200, Max: 819200})
 	ls.SetUnchecked(limits.Nice, limits.Limit{Cur: 0, Max: 0})
 	ls.SetUnchecked(limits.NumberOfFiles, limits.Limit{Cur: 1048576, Max: 1048576})
