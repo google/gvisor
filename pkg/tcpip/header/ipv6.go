@@ -77,6 +77,9 @@ const (
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,
 	// section 5.
 	IPv6MinimumMTU = 1280
+
+	// IPv6Any is the non-routable IPv6 "any" meta address.
+	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 )
 
 // PayloadLength returns the value of the "payload length" field of the ipv6
@@ -233,4 +236,13 @@ func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
 		15: linkAddr[5],
 	}
 	return tcpip.Address(lladdrb[:])
+}
+
+// IsV6LinkLocalAddress determines if the provided address is an IPv6
+// link-local address (fe80::/10).
+func IsV6LinkLocalAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv6AddressSize {
+		return false
+	}
+	return addr[0] == 0xfe && (addr[1]&0xc0) == 0x80
 }

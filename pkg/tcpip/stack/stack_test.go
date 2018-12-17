@@ -680,6 +680,92 @@ func TestBroadcastNeedsNoRoute(t *testing.T) {
 	}
 }
 
+func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		routeNeeded bool
+		address     tcpip.Address
+	}{
+		// IPv4 multicast address range: 224.0.0.0 - 239.255.255.255
+		//                <=>  0xe0.0x00.0x00.0x00 - 0xef.0xff.0xff.0xff
+		{"IPv4 Multicast 1", false, "\xe0\x00\x00\x00"},
+		{"IPv4 Multicast 2", false, "\xef\xff\xff\xff"},
+		{"IPv4 Unicast 1", true, "\xdf\xff\xff\xff"},
+		{"IPv4 Unicast 2", true, "\xf0\x00\x00\x00"},
+		{"IPv4 Unicast 3", true, "\x00\x00\x00\x00"},
+
+		// IPv6 multicast address is 0xff[8] + flags[4] + scope[4] + groupId[112]
+		{"IPv6 Multicast 1", false, "\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Multicast 2", false, "\xff\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Multicast 3", false, "\xff\x0f\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"},
+
+		// IPv6 link-local address starts with fe80::/10.
+		{"IPv6 Unicast Link-Local 1", false, "\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Link-Local 2", false, "\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"},
+		{"IPv6 Unicast Link-Local 3", false, "\xfe\x80\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff"},
+		{"IPv6 Unicast Link-Local 4", false, "\xfe\xbf\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Link-Local 5", false, "\xfe\xbf\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"},
+
+		// IPv6 addresses that are neither multicast nor link-local.
+		{"IPv6 Unicast Not Link-Local 1", true, "\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Not Link-Local 2", true, "\xf0\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff"},
+		{"IPv6 Unicast Not Link-local 3", true, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Not Link-Local 4", true, "\xfe\xc0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Not Link-Local 5", true, "\xfe\xdf\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Not Link-Local 6", true, "\xfd\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+		{"IPv6 Unicast Not Link-Local 7", true, "\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
+
+			id, _ := channel.New(10, defaultMTU, "")
+			if err := s.CreateNIC(1, id); err != nil {
+				t.Fatalf("CreateNIC failed: %v", err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{})
+
+			var anyAddr tcpip.Address
+			if len(tc.address) == header.IPv4AddressSize {
+				anyAddr = header.IPv4Any
+			} else {
+				anyAddr = header.IPv6Any
+			}
+
+			// If there is no endpoint, it won't work.
+			if _, err := s.FindRoute(1, anyAddr, tc.address, fakeNetNumber); err != tcpip.ErrNoRoute {
+				t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, tcpip.ErrNoRoute)
+			}
+
+			if err := s.AddAddress(1, fakeNetNumber, anyAddr); err != nil {
+				t.Fatalf("AddAddress(%v, %v) failed: %v", fakeNetNumber, anyAddr, err)
+			}
+
+			r, err := s.FindRoute(1, anyAddr, tc.address, fakeNetNumber)
+			if tc.routeNeeded {
+				// Route table is empty but we need a route, this should cause an error.
+				if err != tcpip.ErrNoRoute {
+					t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %v", anyAddr, tc.address, fakeNetNumber, err, tcpip.ErrNoRoute)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("FindRoute(1, %v, %v, %v) failed: %v", anyAddr, tc.address, fakeNetNumber, err)
+				}
+				if r.LocalAddress != anyAddr {
+					t.Errorf("Bad local address: got %v, want = %v", r.LocalAddress, anyAddr)
+				}
+				if r.RemoteAddress != tc.address {
+					t.Errorf("Bad remote address: got %v, want = %v", r.RemoteAddress, tc.address)
+				}
+			}
+			// If the NIC doesn't exist, it won't work.
+			if _, err := s.FindRoute(2, anyAddr, tc.address, fakeNetNumber); err != tcpip.ErrNoRoute {
+				t.Fatalf("got FindRoute(2, %v, %v, %v) = %v want = %v", anyAddr, tc.address, fakeNetNumber, err, tcpip.ErrNoRoute)
+			}
+		})
+	}
+}
+
 // Set the subnet, then check that packet is delivered.
 func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})

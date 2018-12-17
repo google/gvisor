@@ -729,8 +729,11 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// We don't require a route in the table to send a broadcast out on a NIC.
-	if id != 0 && remoteAddr == header.IPv4Broadcast {
+	// We don't require a route in the table to send a broadcast, multicast or
+	// IPv6 link-local packet out on a NIC.
+	isBroadcast := remoteAddr == header.IPv4Broadcast
+	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
+	if id != 0 && (isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr)) {
 		if nic, ok := s.nics[id]; ok {
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref), nil
