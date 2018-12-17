@@ -390,8 +390,12 @@ func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint 
 	if o.upper != nil {
 		return o.upper.InodeOperations.BoundEndpoint(o.upper, path)
 	}
-	// If a socket is already in the lower file system, allow connections
-	// to it.
+
+	// If the lower is itself an overlay, recurse.
+	if o.lower.overlay != nil {
+		return overlayBoundEndpoint(o.lower.overlay, path)
+	}
+	// Lower is not an overlay. Call BoundEndpoint directly.
 	return o.lower.InodeOperations.BoundEndpoint(o.lower, path)
 }
 
