@@ -78,10 +78,10 @@ $ cat > sandbox.json << EOL
         "name": "nginx-sandbox",
         "namespace": "default",
         "attempt": 1,
-        "uid": "hdishd83djaidwnduwk28bcsb",
-        "annotations": {
-          "io.kubernetes.cri.untrusted-workload": "true"
-        }
+        "uid": "hdishd83djaidwnduwk28bcsb"
+    },
+    "annotations": {
+      "io.kubernetes.cri.untrusted-workload": "true"
     },
     "linux": {
     },
