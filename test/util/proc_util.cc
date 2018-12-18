@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
@@ -29,10 +30,15 @@ namespace testing {
 // Parses a single line from /proc/<xxx>/maps.
 PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line) {
   ProcMapsEntry map_entry = {};
-  std::vector<std::string> parts = absl::StrSplit(line, ' ', absl::SkipEmpty());
 
-  // A size of 5 means there is no file name specified.
-  if (parts.size() != 5 && parts.size() != 6) {
+  // Limit splitting to 6 parts so that if there is a file path and it contains
+  // spaces, the file path is not split.
+  std::vector<std::string> parts =
+      absl::StrSplit(line, absl::MaxSplits(' ', 5), absl::SkipEmpty());
+
+  // parts.size() should be 6 if there is a file name specified, and 5
+  // otherwise.
+  if (parts.size() < 5) {
     return PosixError(EINVAL, absl::StrCat("Invalid line: ", line));
   }
 
@@ -67,8 +73,9 @@ PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line) {
 
   ASSIGN_OR_RETURN_ERRNO(map_entry.inode, Atoi<int64_t>(parts[4]));
   if (parts.size() == 6) {
-    // A filename is present.
-    map_entry.filename = parts[5];
+    // A filename is present. However, absl::StrSplit retained the whitespace
+    // between the inode number and the filename.
+    map_entry.filename = std::string(absl::StripLeadingAsciiWhitespace(parts[5]));
   }
 
   return map_entry;

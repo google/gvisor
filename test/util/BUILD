@@ -46,6 +46,16 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "proc_util_test",
+    size = "small",
+    srcs = ["proc_util_test.cc"],
+    deps = [
+        ":proc_util",
+        ":test_util",
+    ],
+)
+
 cc_library(
     name = "cleanup",
     testonly = 1,
