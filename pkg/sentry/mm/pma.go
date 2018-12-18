@@ -138,6 +138,10 @@ func (mm *MemoryManager) getPMAsLocked(ctx context.Context, vseg vmaIterator, ar
 
 	var cowerr error
 	if opts.breakCOW {
+		if pend.Start() < ar.End {
+			// Adjust ar to reflect missing pmas.
+			ar.End = pend.Start()
+		}
 		var invalidated bool
 		pend, invalidated, cowerr = mm.breakCopyOnWriteLocked(pstart, ar)
 		if pend.Start() <= ar.Start {
@@ -188,6 +192,10 @@ func (mm *MemoryManager) getVecPMAsLocked(ctx context.Context, ars usermem.AddrR
 		if opts.breakCOW {
 			if !pstart.Ok() {
 				pstart = mm.findOrSeekPrevUpperBoundPMA(ar.Start, pend)
+			}
+			if pend.Start() < ar.End {
+				// Adjust ar to reflect missing pmas.
+				ar.End = pend.Start()
 			}
 			pend, _, cowerr = mm.breakCopyOnWriteLocked(pstart, ar)
 		}
