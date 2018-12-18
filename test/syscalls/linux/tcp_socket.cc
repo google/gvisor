@@ -381,7 +381,7 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
               SyscallSucceeds());
 
   // Create a large buffer that will be used for sending.
-  std::vector<char> buf(5 * sendbuf_size_);
+  std::vector<char> buf(10 * sendbuf_size_);
 
   // Write until we receive an error.
   while (RetryEINTR(send)(s_, buf.data(), buf.size(), 0) != -1) {
