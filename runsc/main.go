@@ -64,6 +64,8 @@ var (
 	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it. This takes precendence over -trace-signal.")
 	traceSignal    = flag.Int("trace-signal", -1, "register signal handling that logs a traceback of all goroutines. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
+
+	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 )
 
 // gitRevision is set during linking.
@@ -146,6 +148,7 @@ func main() {
 		WatchdogAction: wa,
 		PanicSignal:    *panicSignal,
 		TraceSignal:    *traceSignal,
+		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")

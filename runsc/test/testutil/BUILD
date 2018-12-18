@@ -11,10 +11,7 @@ go_library(
         "testutil_race.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/runsc/test/testutil",
-    visibility = [
-        "//runsc:__subpackages__",
-        "//test:__subpackages__",
-    ],
+    visibility = ["//:sandbox"],
     deps = [
         "//runsc/boot",
         "//runsc/specutils",

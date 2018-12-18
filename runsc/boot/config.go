@@ -218,7 +218,7 @@ type Config struct {
 
 // ToFlags returns a slice of flags that correspond to the given Config.
 func (c *Config) ToFlags() []string {
-	return []string{
+	f := []string{
 		"--root=" + c.RootDir,
 		"--debug=" + strconv.FormatBool(c.Debug),
 		"--log=" + c.LogFilename,
@@ -237,4 +237,9 @@ func (c *Config) ToFlags() []string {
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 		"--trace-signal=" + strconv.Itoa(c.TraceSignal),
 	}
+	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// Only include if set since it is never to be used by users.
+		f = append(f, "-TESTONLY-unsafe-nonroot=true")
+	}
+	return f
 }
