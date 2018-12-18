@@ -679,7 +679,7 @@ func Unpin(prs []PinnedRange) {
 // movePMAsLocked moves all pmas in oldAR to newAR.
 //
 // Preconditions: mm.activeMu must be locked for writing. oldAR.Length() != 0.
-// oldAR.Length() == newAR.Length(). !oldAR.Overlaps(newAR).
+// oldAR.Length() <= newAR.Length(). !oldAR.Overlaps(newAR).
 // mm.pmas.IsEmptyRange(newAR). oldAR and newAR must be page-aligned.
 func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 	if checkInvariants {
@@ -689,8 +689,8 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 		if !newAR.WellFormed() || newAR.Length() <= 0 || !newAR.IsPageAligned() {
 			panic(fmt.Sprintf("invalid newAR: %v", newAR))
 		}
-		if oldAR.Length() != newAR.Length() {
-			panic(fmt.Sprintf("old and new address ranges have different lengths: %v, %v", oldAR, newAR))
+		if oldAR.Length() > newAR.Length() {
+			panic(fmt.Sprintf("old address range %v may contain pmas that will not fit in new address range %v", oldAR, newAR))
 		}
 		if oldAR.Overlaps(newAR) {
 			panic(fmt.Sprintf("old and new address ranges overlap: %v, %v", oldAR, newAR))
@@ -710,8 +710,9 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 			oldAR: pseg.Range(),
 			pma:   pseg.Value(),
 		})
-		mm.removeRSSLocked(pseg.Range())
 		pseg = mm.pmas.Remove(pseg).NextSegment()
+		// No RSS change is needed since we're re-inserting the same pmas
+		// below.
 	}
 
 	off := newAR.Start - oldAR.Start
@@ -719,7 +720,6 @@ func (mm *MemoryManager) movePMAsLocked(oldAR, newAR usermem.AddrRange) {
 	for i := range movedPMAs {
 		mpma := &movedPMAs[i]
 		pmaNewAR := usermem.AddrRange{mpma.oldAR.Start + off, mpma.oldAR.End + off}
-		mm.addRSSLocked(pmaNewAR)
 		pgap = mm.pmas.Insert(pgap, pmaNewAR, mpma.pma).NextGap()
 	}
 
