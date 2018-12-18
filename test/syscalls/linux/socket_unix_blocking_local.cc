@@ -33,14 +33,12 @@ std::vector<SocketPairKind> GetSocketPairs() {
       ApplyVec<SocketPairKind>(
           FilesystemBoundUnixDomainSocketPair,
           AllBitwiseCombinations(
-              // FIXME: Add SOCK_DGRAM once blocking is fixed.
-              List<int>{SOCK_STREAM, SOCK_SEQPACKET},
+              List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
               List<int>{0, SOCK_CLOEXEC})),
       ApplyVec<SocketPairKind>(
           AbstractBoundUnixDomainSocketPair,
           AllBitwiseCombinations(
-              // FIXME: Add SOCK_DGRAM once blocking is fixed.
-              List<int>{SOCK_STREAM, SOCK_SEQPACKET},
+              List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
               List<int>{0, SOCK_CLOEXEC})));
 }
 

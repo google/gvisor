@@ -34,7 +34,7 @@ type connectionlessEndpoint struct {
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless() Endpoint {
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
-	ep.receiver = &queueReceiver{readQueue: newQueue(&waiter.Queue{}, ep.Queue, initialLimit)}
+	ep.receiver = &queueReceiver{readQueue: &queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}}
 	return ep
 }
 

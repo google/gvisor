@@ -38,11 +38,6 @@ type queue struct {
 	dataList messageList
 }
 
-// newQueue allocates and initializes a new queue.
-func newQueue(ReaderQueue *waiter.Queue, WriterQueue *waiter.Queue, limit int64) *queue {
-	return &queue{ReaderQueue: ReaderQueue, WriterQueue: WriterQueue, limit: limit}
-}
-
 // Close closes q for reading and writing. It is immediately not writable and
 // will become unreadable when no more data is pending.
 //

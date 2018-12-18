@@ -135,8 +135,8 @@ func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 		stype:        stype,
 	}
 
-	q1 := newQueue(a.Queue, b.Queue, initialLimit)
-	q2 := newQueue(b.Queue, a.Queue, initialLimit)
+	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
+	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: initialLimit}
 
 	if stype == SockStream {
 		a.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q1}}
@@ -286,13 +286,13 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 		stype:       e.stype,
 	}
 
-	readQueue := newQueue(ce.WaiterQueue(), ne.Queue, initialLimit)
+	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
 	ne.connected = &connectedEndpoint{
 		endpoint:   ce,
 		writeQueue: readQueue,
 	}
 
-	writeQueue := newQueue(ne.Queue, ce.WaiterQueue(), initialLimit)
+	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: initialLimit}
 	if e.stype == SockStream {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
 	} else {
