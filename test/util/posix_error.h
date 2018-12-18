@@ -74,9 +74,9 @@ class ABSL_MUST_USE_RESULT PosixError {
 template <typename T>
 class ABSL_MUST_USE_RESULT PosixErrorOr {
  public:
-  PosixErrorOr(const PosixError& error);  // NOLINT
-  explicit PosixErrorOr(const T& value);
-  PosixErrorOr(T&& value);  // NOLINT
+  PosixErrorOr(const PosixError& error);
+  PosixErrorOr(const T& value);
+  PosixErrorOr(T&& value);
 
   PosixErrorOr(PosixErrorOr&& other) = default;
   PosixErrorOr& operator=(PosixErrorOr&& other) = default;
