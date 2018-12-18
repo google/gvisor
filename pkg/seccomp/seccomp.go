@@ -33,16 +33,6 @@ const (
 	defaultLabel = "default_action"
 )
 
-func actionName(a uint32) string {
-	switch a {
-	case linux.SECCOMP_RET_KILL_PROCESS:
-		return "kill process"
-	case linux.SECCOMP_RET_TRAP:
-		return "trap"
-	}
-	panic(fmt.Sprintf("invalid action: %d", a))
-}
-
 // Install generates BPF code based on the set of syscalls provided. It only
 // allows syscalls that conform to the specification. Syscalls that violate the
 // specification will trigger RET_KILL_PROCESS, except for the cases below.
@@ -67,12 +57,12 @@ func Install(rules SyscallRules) error {
 	// Uncomment to get stack trace when there is a violation.
 	// defaultAction = uint32(linux.SECCOMP_RET_TRAP)
 
-	log.Infof("Installing seccomp filters for %d syscalls (action=%s)", len(rules), actionName(defaultAction))
+	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
 
 	instrs, err := BuildProgram([]RuleSet{
 		RuleSet{
 			Rules:  rules,
-			Action: uint32(linux.SECCOMP_RET_ALLOW),
+			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}, defaultAction)
 	if log.IsLogging(log.Debug) {
@@ -95,21 +85,21 @@ func Install(rules SyscallRules) error {
 	return nil
 }
 
-func defaultAction() (uint32, error) {
+func defaultAction() (linux.BPFAction, error) {
 	available, err := isKillProcessAvailable()
 	if err != nil {
 		return 0, err
 	}
 	if available {
-		return uint32(linux.SECCOMP_RET_KILL_PROCESS), nil
+		return linux.SECCOMP_RET_KILL_PROCESS, nil
 	}
-	return uint32(linux.SECCOMP_RET_TRAP), nil
+	return linux.SECCOMP_RET_TRAP, nil
 }
 
 // RuleSet is a set of rules and associated action.
 type RuleSet struct {
 	Rules  SyscallRules
-	Action uint32
+	Action linux.BPFAction
 
 	// Vsyscall indicates that a check is made for a function being called
 	// from kernel mappings. This is where the vsyscall page is located
@@ -127,7 +117,7 @@ var SyscallName = func(sysno uintptr) string {
 
 // BuildProgram builds a BPF program from the given map of actions to matching
 // SyscallRules. The single generated program covers all provided RuleSets.
-func BuildProgram(rules []RuleSet, defaultAction uint32) ([]linux.BPFInstruction, error) {
+func BuildProgram(rules []RuleSet, defaultAction linux.BPFAction) ([]linux.BPFInstruction, error) {
 	program := bpf.NewProgramBuilder()
 
 	// Be paranoid and check that syscall is done in the expected architecture.
@@ -147,7 +137,7 @@ func BuildProgram(rules []RuleSet, defaultAction uint32) ([]linux.BPFInstruction
 	if err := program.AddLabel(defaultLabel); err != nil {
 		return nil, err
 	}
-	program.AddStmt(bpf.Ret|bpf.K, defaultAction)
+	program.AddStmt(bpf.Ret|bpf.K, uint32(defaultAction))
 
 	return program.Instructions()
 }
@@ -217,7 +207,7 @@ func checkArgsLabel(sysno uintptr) string {
 // not insert a jump to the default action at the end and it is the
 // responsibility of the caller to insert an appropriate jump after calling
 // this function.
-func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action uint32, ruleSetIdx int, sysno uintptr) error {
+func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action linux.BPFAction, ruleSetIdx int, sysno uintptr) error {
 	for ruleidx, rule := range rules {
 		labelled := false
 		for i, arg := range rule {
@@ -240,7 +230,7 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action uint32, rul
 		}
 
 		// Matched, emit the given action.
-		p.AddStmt(bpf.Ret|bpf.K, action)
+		p.AddStmt(bpf.Ret|bpf.K, uint32(action))
 
 		// Label the end of the rule if necessary. This is added for
 		// the jumps above when the argument check fails.
@@ -319,7 +309,7 @@ func buildBSTProgram(n *node, rules []RuleSet, program *bpf.ProgramBuilder) erro
 			// Emit matchers.
 			if len(rs.Rules[sysno]) == 0 {
 				// This is a blanket action.
-				program.AddStmt(bpf.Ret|bpf.K, rs.Action)
+				program.AddStmt(bpf.Ret|bpf.K, uint32(rs.Action))
 				emitted = true
 			} else {
 				// Add an argument check for these particular

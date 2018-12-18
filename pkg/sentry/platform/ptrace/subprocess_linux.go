@@ -38,7 +38,7 @@ const syscallEvent syscall.Signal = 0x80
 // Precondition: the runtime OS thread must be locked.
 func probeSeccomp() bool {
 	// Create a completely new, destroyable process.
-	t, err := attachedThread(0, uint32(linux.SECCOMP_RET_ERRNO))
+	t, err := attachedThread(0, linux.SECCOMP_RET_ERRNO)
 	if err != nil {
 		panic(fmt.Sprintf("seccomp probe failed: %v", err))
 	}
@@ -112,14 +112,14 @@ func createStub() (*thread, error) {
 	// ptrace emulation check. This simplifies using SYSEMU, since seccomp
 	// will never run for emulation. Seccomp will only run for injected
 	// system calls, and thus we can use RET_KILL as our violation action.
-	var defaultAction uint32
+	var defaultAction linux.BPFAction
 	if probeSeccomp() {
 		log.Infof("Latest seccomp behavior found (kernel >= 4.8 likely)")
-		defaultAction = uint32(linux.SECCOMP_RET_KILL_THREAD)
+		defaultAction = linux.SECCOMP_RET_KILL_THREAD
 	} else {
 		// We must rely on SYSEMU behavior; tracing with SYSEMU is broken.
 		log.Infof("Legacy seccomp behavior found (kernel < 4.8 likely)")
-		defaultAction = uint32(linux.SECCOMP_RET_ALLOW)
+		defaultAction = linux.SECCOMP_RET_ALLOW
 	}
 
 	// When creating the new child process, we specify SIGKILL as the
@@ -135,7 +135,7 @@ func createStub() (*thread, error) {
 // attachedThread returns a new attached thread.
 //
 // Precondition: the runtime OS thread must be locked.
-func attachedThread(flags uintptr, defaultAction uint32) (*thread, error) {
+func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, error) {
 	// Create a BPF program that allows only the system calls needed by the
 	// stub and all its children. This is used to create child stubs
 	// (below), so we must include the ability to fork, but otherwise lock
@@ -148,11 +148,11 @@ func attachedThread(flags uintptr, defaultAction uint32) (*thread, error) {
 				syscall.SYS_TIME:         {},
 				309:                      {}, // SYS_GETCPU.
 			},
-			Action:   uint32(linux.SECCOMP_RET_TRAP),
+			Action:   linux.SECCOMP_RET_TRAP,
 			Vsyscall: true,
 		},
 	}
-	if defaultAction != uint32(linux.SECCOMP_RET_ALLOW) {
+	if defaultAction != linux.SECCOMP_RET_ALLOW {
 		rules = append(rules, seccomp.RuleSet{
 			Rules: seccomp.SyscallRules{
 				syscall.SYS_CLONE: []seccomp.Rule{
@@ -191,7 +191,7 @@ func attachedThread(flags uintptr, defaultAction uint32) (*thread, error) {
 				syscall.SYS_MMAP:   {},
 				syscall.SYS_MUNMAP: {},
 			},
-			Action: uint32(linux.SECCOMP_RET_ALLOW),
+			Action: linux.SECCOMP_RET_ALLOW,
 		})
 	}
 	instrs, err := seccomp.BuildProgram(rules, defaultAction)

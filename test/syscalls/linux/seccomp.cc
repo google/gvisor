@@ -215,6 +215,25 @@ TEST(SeccompTest, SeccompAppliesToVsyscall) {
       << "status " << status;
 }
 
+TEST(SeccompTest, RetKillVsyscallCausesDeathBySIGSYS) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsVsyscallEnabled()));
+
+  pid_t const pid = fork();
+  if (pid == 0) {
+    // Register a signal handler for SIGSYS that we don't expect to be invoked.
+    RegisterSignalHandler(
+        SIGSYS, +[](int, siginfo_t*, void*) { _exit(1); });
+    ApplySeccompFilter(SYS_time, SECCOMP_RET_KILL);
+    vsyscall_time(nullptr);  // Should result in death.
+    TEST_CHECK_MSG(false, "Survived invocation of test syscall");
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
+      << "status " << status;
+}
+
 TEST(SeccompTest, RetTraceWithoutPtracerReturnsENOSYS) {
   pid_t const pid = fork();
   if (pid == 0) {

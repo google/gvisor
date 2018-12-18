@@ -199,16 +199,16 @@ func (t *Task) doSyscall() taskRunState {
 	// is rare), not needed for correctness.
 	if t.syscallFilters.Load() != nil {
 		switch r := t.checkSeccompSyscall(int32(sysno), args, usermem.Addr(t.Arch().IP())); r {
-		case seccompResultDeny:
+		case linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_TRAP:
 			t.Debugf("Syscall %d: denied by seccomp", sysno)
 			return (*runSyscallExit)(nil)
-		case seccompResultAllow:
+		case linux.SECCOMP_RET_ALLOW:
 			// ok
-		case seccompResultKill:
+		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("Syscall %d: killed by seccomp", sysno)
 			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
 			return (*runExit)(nil)
-		case seccompResultTrace:
+		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("Syscall %d: stopping for PTRACE_EVENT_SECCOMP", sysno)
 			return (*runSyscallAfterPtraceEventSeccomp)(nil)
 		default:
@@ -345,14 +345,18 @@ func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
 	args := t.Arch().SyscallArgs()
 	if t.syscallFilters.Load() != nil {
 		switch r := t.checkSeccompSyscall(int32(sysno), args, addr); r {
-		case seccompResultDeny:
+		case linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_TRAP:
 			t.Debugf("vsyscall %d, caller %x: denied by seccomp", sysno, t.Arch().Value(caller))
 			return (*runApp)(nil)
-		case seccompResultAllow:
+		case linux.SECCOMP_RET_ALLOW:
 			// ok
-		case seccompResultTrace:
+		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("vsyscall %d, caller %x: stopping for PTRACE_EVENT_SECCOMP", sysno, t.Arch().Value(caller))
 			return &runVsyscallAfterPtraceEventSeccomp{addr, sysno, caller}
+		case linux.SECCOMP_RET_KILL_THREAD:
+			t.Debugf("vsyscall %d: killed by seccomp", sysno)
+			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+			return (*runExit)(nil)
 		default:
 			panic(fmt.Sprintf("Unknown seccomp result %d", r))
 		}

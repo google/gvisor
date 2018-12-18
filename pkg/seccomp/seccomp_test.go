@@ -72,12 +72,12 @@ func TestBasic(t *testing.T) {
 		data seccompData
 
 		// want is the expected return value of the BPF program.
-		want uint32
+		want linux.BPFAction
 	}
 
 	for _, test := range []struct {
 		ruleSets      []RuleSet
-		defaultAction uint32
+		defaultAction linux.BPFAction
 		specs         []spec
 	}{
 		{
@@ -357,7 +357,7 @@ func TestBasic(t *testing.T) {
 				t.Errorf("%s: bpf.Exec() got error: %v", spec.desc, err)
 				continue
 			}
-			if got != spec.want {
+			if got != uint32(spec.want) {
 				t.Errorf("%s: bpd.Exec() = %d, want: %d", spec.desc, got, spec.want)
 			}
 		}
@@ -380,9 +380,9 @@ func TestRandom(t *testing.T) {
 	instrs, err := BuildProgram([]RuleSet{
 		RuleSet{
 			Rules:  syscallRules,
-			Action: uint32(linux.SECCOMP_RET_ALLOW),
+			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, uint32(linux.SECCOMP_RET_TRAP))
+	}, linux.SECCOMP_RET_TRAP)
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
@@ -397,11 +397,11 @@ func TestRandom(t *testing.T) {
 			t.Errorf("bpf.Exec() got error: %v, for syscall %d", err, i)
 			continue
 		}
-		want := uint32(linux.SECCOMP_RET_TRAP)
+		want := linux.SECCOMP_RET_TRAP
 		if _, ok := syscallRules[uintptr(i)]; ok {
 			want = linux.SECCOMP_RET_ALLOW
 		}
-		if got != want {
+		if got != uint32(want) {
 			t.Errorf("bpf.Exec() = %d, want: %d, for syscall %d", got, want, i)
 		}
 	}

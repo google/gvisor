@@ -27,24 +27,6 @@ import (
 
 const maxSyscallFilterInstructions = 1 << 15
 
-type seccompResult int
-
-const (
-	// seccompResultDeny indicates that a syscall should not be executed.
-	seccompResultDeny seccompResult = iota
-
-	// seccompResultAllow indicates that a syscall should be executed.
-	seccompResultAllow
-
-	// seccompResultKill indicates that the task should be killed immediately,
-	// with the exit status indicating that the task was killed by SIGSYS.
-	seccompResultKill
-
-	// seccompResultTrace indicates that a ptracer was successfully notified as
-	// a result of a SECCOMP_RET_TRACE.
-	seccompResultTrace
-)
-
 // seccompData is equivalent to struct seccomp_data, which contains the data
 // passed to seccomp-bpf filters.
 type seccompData struct {
@@ -83,48 +65,47 @@ func seccompSiginfo(t *Task, errno, sysno int32, ip usermem.Addr) *arch.SignalIn
 // in because vsyscalls do not use the values in t.Arch().)
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip usermem.Addr) seccompResult {
-	result := t.evaluateSyscallFilters(sysno, args, ip)
-	switch result & linux.SECCOMP_RET_ACTION {
+func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip usermem.Addr) linux.BPFAction {
+	result := linux.BPFAction(t.evaluateSyscallFilters(sysno, args, ip))
+	action := result & linux.SECCOMP_RET_ACTION
+	switch action {
 	case linux.SECCOMP_RET_TRAP:
 		// "Results in the kernel sending a SIGSYS signal to the triggering
 		// task without executing the system call. ... The SECCOMP_RET_DATA
 		// portion of the return value will be passed as si_errno." -
 		// Documentation/prctl/seccomp_filter.txt
-		t.SendSignal(seccompSiginfo(t, int32(result&linux.SECCOMP_RET_DATA), sysno, ip))
-		return seccompResultDeny
+		t.SendSignal(seccompSiginfo(t, int32(result.Data()), sysno, ip))
 
 	case linux.SECCOMP_RET_ERRNO:
 		// "Results in the lower 16-bits of the return value being passed to
 		// userland as the errno without executing the system call."
-		t.Arch().SetReturn(-uintptr(result & linux.SECCOMP_RET_DATA))
-		return seccompResultDeny
+		t.Arch().SetReturn(-uintptr(result.Data()))
 
 	case linux.SECCOMP_RET_TRACE:
 		// "When returned, this value will cause the kernel to attempt to
 		// notify a ptrace()-based tracer prior to executing the system call.
 		// If there is no tracer present, -ENOSYS is returned to userland and
 		// the system call is not executed."
-		if t.ptraceSeccomp(uint16(result & linux.SECCOMP_RET_DATA)) {
-			return seccompResultTrace
+		if !t.ptraceSeccomp(result.Data()) {
+			// This useless-looking temporary is needed because Go.
+			tmp := uintptr(syscall.ENOSYS)
+			t.Arch().SetReturn(-tmp)
+			return linux.SECCOMP_RET_ERRNO
 		}
-		// This useless-looking temporary is needed because Go.
-		tmp := uintptr(syscall.ENOSYS)
-		t.Arch().SetReturn(-tmp)
-		return seccompResultDeny
 
 	case linux.SECCOMP_RET_ALLOW:
 		// "Results in the system call being executed."
-		return seccompResultAllow
 
 	case linux.SECCOMP_RET_KILL_THREAD:
 		// "Results in the task exiting immediately without executing the
 		// system call. The exit status of the task will be SIGSYS, not
 		// SIGKILL."
-		fallthrough
-	default: // consistent with Linux
-		return seccompResultKill
+
+	default:
+		// consistent with Linux
+		return linux.SECCOMP_RET_KILL_THREAD
 	}
+	return action
 }
 
 func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip usermem.Addr) uint32 {
@@ -155,7 +136,7 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 		thisRet, err := bpf.Exec(f.([]bpf.Program)[i], input)
 		if err != nil {
 			t.Debugf("seccomp-bpf filter %d returned error: %v", i, err)
-			thisRet = linux.SECCOMP_RET_KILL_THREAD
+			thisRet = uint32(linux.SECCOMP_RET_KILL_THREAD)
 		}
 		// "If multiple filters exist, the return value for the evaluation of a
 		// given system call will always use the highest precedent value." -
