@@ -33,7 +33,7 @@ const (
 	Rss
 	ProcessCount
 	NumberOfFiles
-	MemoryLocked
+	MemoryPagesLocked
 	AS
 	Locks
 	SignalsPending

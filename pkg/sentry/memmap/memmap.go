@@ -243,40 +243,6 @@ type MappingIdentity interface {
 	Msync(ctx context.Context, mr MappableRange) error
 }
 
-// MLockMode specifies the memory locking behavior of a memory mapping.
-type MLockMode int
-
-// Note that the ordering of MLockModes is significant; see
-// mm.MemoryManager.defMLockMode.
-const (
-	// MLockNone specifies that a mapping has no memory locking behavior.
-	//
-	// This must be the zero value for MLockMode.
-	MLockNone MLockMode = iota
-
-	// MLockEager specifies that a mapping is memory-locked, as by mlock() or
-	// similar. Pages in the mapping should be made, and kept, resident in
-	// physical memory as soon as possible.
-	//
-	// As of this writing, MLockEager does not cause memory-locking to be
-	// requested from the host; it only affects the sentry's memory management
-	// behavior.
-	//
-	// MLockEager is analogous to Linux's VM_LOCKED.
-	MLockEager
-
-	// MLockLazy specifies that a mapping is memory-locked, as by mlock() or
-	// similar. Pages in the mapping should be kept resident in physical memory
-	// once they have been made resident due to e.g. a page fault.
-	//
-	// As of this writing, MLockLazy does not cause memory-locking to be
-	// requested from the host; in fact, it has virtually no effect, except for
-	// interactions between mlocked pages and other syscalls.
-	//
-	// MLockLazy is analogous to Linux's VM_LOCKED | VM_LOCKONFAULT.
-	MLockLazy
-)
-
 // MMapOpts specifies a request to create a memory mapping.
 type MMapOpts struct {
 	// Length is the length of the mapping.
@@ -336,9 +302,6 @@ type MMapOpts struct {
 	// Precommit is true if the platform should eagerly commit resources to the
 	// mapping (see platform.AddressSpace.MapFile).
 	Precommit bool
-
-	// MLockMode specifies the memory locking behavior of the mapping.
-	MLockMode MLockMode
 
 	// Hint is the name used for the mapping in /proc/[pid]/maps. If Hint is
 	// empty, MappingIdentity.MappedName() will be used instead.

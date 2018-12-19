@@ -30,7 +30,7 @@ var FromLinuxResource = map[int]LimitType{
 	linux.RLIMIT_RSS:        Rss,
 	linux.RLIMIT_NPROC:      ProcessCount,
 	linux.RLIMIT_NOFILE:     NumberOfFiles,
-	linux.RLIMIT_MEMLOCK:    MemoryLocked,
+	linux.RLIMIT_MEMLOCK:    MemoryPagesLocked,
 	linux.RLIMIT_AS:         AS,
 	linux.RLIMIT_LOCKS:      Locks,
 	linux.RLIMIT_SIGPENDING: SignalsPending,

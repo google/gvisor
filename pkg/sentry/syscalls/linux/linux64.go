@@ -196,11 +196,11 @@ var AMD64 = &kernel.SyscallTable{
 		145: SchedGetscheduler,
 		146: SchedGetPriorityMax,
 		147: SchedGetPriorityMin,
-		148: syscalls.ErrorWithEvent(syscall.EPERM), // SchedRrGetInterval,
-		149: Mlock,
-		150: Munlock,
-		151: Mlockall,
-		152: Munlockall,
+		148: syscalls.ErrorWithEvent(syscall.EPERM),      // SchedRrGetInterval,
+		149: syscalls.Error(nil),                         // Mlock, TODO
+		150: syscalls.Error(nil),                         // Munlock, TODO
+		151: syscalls.Error(nil),                         // Mlockall, TODO
+		152: syscalls.Error(nil),                         // Munlockall, TODO
 		153: syscalls.CapError(linux.CAP_SYS_TTY_CONFIG), // Vhangup,
 		154: syscalls.Error(syscall.EPERM),               // ModifyLdt,
 		155: syscalls.Error(syscall.EPERM),               // PivotRoot,
@@ -373,9 +373,8 @@ var AMD64 = &kernel.SyscallTable{
 		//     322: Execveat, TODO
 		//     323: Userfaultfd, TODO
 		//     324: Membarrier, TODO
-		325: Mlock2,
-		// Syscalls after 325 are "backports" from versions of Linux after 4.4.
-		//	326: CopyFileRange,
+		// Syscalls after 325 are backports from 4.6.
+		325: syscalls.Error(nil), // Mlock2, TODO
 		327: Preadv2,
 		328: Pwritev2,
 	},

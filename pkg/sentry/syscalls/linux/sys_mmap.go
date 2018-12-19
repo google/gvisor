@@ -69,9 +69,6 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		GrowsDown: linux.MAP_GROWSDOWN&flags != 0,
 		Precommit: linux.MAP_POPULATE&flags != 0,
 	}
-	if linux.MAP_LOCKED&flags != 0 {
-		opts.MLockMode = memmap.MLockEager
-	}
 	defer func() {
 		if opts.MappingIdentity != nil {
 			opts.MappingIdentity.DecRef()
@@ -387,6 +384,16 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	length := args[1].SizeT()
 	flags := args[2].Int()
 
+	if addr != addr.RoundDown() {
+		return 0, nil, syserror.EINVAL
+	}
+	if length == 0 {
+		return 0, nil, nil
+	}
+	la, ok := usermem.Addr(length).RoundUp()
+	if !ok {
+		return 0, nil, syserror.ENOMEM
+	}
 	// "The flags argument should specify exactly one of MS_ASYNC and MS_SYNC,
 	// and may additionally include the MS_INVALIDATE bit. ... However, Linux
 	// permits a call to msync() that specifies neither of these flags, with
@@ -399,72 +406,39 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	if sync && flags&linux.MS_ASYNC != 0 {
 		return 0, nil, syserror.EINVAL
 	}
-	err := t.MemoryManager().MSync(t, addr, uint64(length), mm.MSyncOpts{
-		Sync:       sync,
-		Invalidate: flags&linux.MS_INVALIDATE != 0,
-	})
-	// MSync calls fsync, the same interrupt conversion rules apply, see
-	// mm/msync.c, fsync POSIX.1-2008.
-	return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
-}
 
-// Mlock implements linux syscall mlock(2).
-func Mlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	length := args[1].SizeT()
-
-	return 0, nil, t.MemoryManager().MLock(t, addr, uint64(length), memmap.MLockEager)
-}
-
-// Mlock2 implements linux syscall mlock2(2).
-func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	length := args[1].SizeT()
-	flags := args[2].Int()
-
-	if flags&^(linux.MLOCK_ONFAULT) != 0 {
+	// MS_INVALIDATE "asks to invalidate other mappings of the same file (so
+	// that they can be updated with the fresh values just written)". This is a
+	// no-op given that shared memory exists. However, MS_INVALIDATE can also
+	// be used to detect mlocks: "EBUSY: MS_INVALIDATE was specified in flags,
+	// and a memory lock exists for the specified address range." Given that
+	// mlock is stubbed out, it's unsafe to pass MS_INVALIDATE silently since
+	// some user program could be using it for synchronization.
+	if flags&linux.MS_INVALIDATE != 0 {
 		return 0, nil, syserror.EINVAL
 	}
-
-	mode := memmap.MLockEager
-	if flags&linux.MLOCK_ONFAULT != 0 {
-		mode = memmap.MLockLazy
+	// MS_SYNC "requests an update and waits for it to complete."
+	if sync {
+		err := t.MemoryManager().Sync(t, addr, uint64(la))
+		// Sync calls fsync, the same interrupt conversion rules apply, see
+		// mm/msync.c, fsync POSIX.1-2008.
+		return 0, nil, syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 	}
-	return 0, nil, t.MemoryManager().MLock(t, addr, uint64(length), mode)
-}
-
-// Munlock implements linux syscall munlock(2).
-func Munlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	length := args[1].SizeT()
-
-	return 0, nil, t.MemoryManager().MLock(t, addr, uint64(length), memmap.MLockNone)
-}
-
-// Mlockall implements linux syscall mlockall(2).
-func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	flags := args[0].Int()
-
-	if flags&^(linux.MCL_CURRENT|linux.MCL_FUTURE|linux.MCL_ONFAULT) != 0 {
-		return 0, nil, syserror.EINVAL
+	// MS_ASYNC "specifies that an update be scheduled, but the call returns
+	// immediately". As long as dirty pages are tracked and eventually written
+	// back, this is a no-op. (Correspondingly: "Since Linux 2.6.19, MS_ASYNC
+	// is in fact a no-op, since the kernel properly tracks dirty pages and
+	// flushes them to storage as necessary.")
+	//
+	// However: "ENOMEM: The indicated memory (or part of it) was not mapped."
+	// This applies even for MS_ASYNC.
+	ar, ok := addr.ToRange(uint64(la))
+	if !ok {
+		return 0, nil, syserror.ENOMEM
 	}
-
-	mode := memmap.MLockEager
-	if flags&linux.MCL_ONFAULT != 0 {
-		mode = memmap.MLockLazy
+	mapped := t.MemoryManager().VirtualMemorySizeRange(ar)
+	if mapped != uint64(la) {
+		return 0, nil, syserror.ENOMEM
 	}
-	return 0, nil, t.MemoryManager().MLockAll(t, mm.MLockAllOpts{
-		Current: flags&linux.MCL_CURRENT != 0,
-		Future:  flags&linux.MCL_FUTURE != 0,
-		Mode:    mode,
-	})
-}
-
-// Munlockall implements linux syscall munlockall(2).
-func Munlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, t.MemoryManager().MLockAll(t, mm.MLockAllOpts{
-		Current: true,
-		Future:  true,
-		Mode:    memmap.MLockNone,
-	})
+	return 0, nil, nil
 }

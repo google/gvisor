@@ -106,7 +106,6 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/proc/seqfile",
-        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/shm",
         "//pkg/sentry/limits",
