@@ -152,9 +152,10 @@ const (
 
 // Values for preadv2/pwritev2.
 const (
-	RWF_HIPRI = 0x0001
-	RWF_DSYNC = 0X0002
-	RWF_SYNC  = 0x0004
+	RWF_HIPRI = 0x00000001
+	RWF_DSYNC = 0x00000002
+	RWF_SYNC  = 0x00000004
+	RWF_VALID = RWF_HIPRI | RWF_DSYNC | RWF_SYNC
 )
 
 // Stat represents struct stat.

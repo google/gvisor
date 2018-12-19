@@ -217,13 +217,6 @@ void TestInit(int* argc, char*** argv);
     }                                                                        \
   } while (0)
 
-#define SKIP_BEFORE_KERNEL(maj, min)                              \
-  do {                                                            \
-    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion()); \
-    SKIP_IF(version.major < (maj) ||                              \
-            (version.major == (maj) && version.minor < (min)));   \
-  } while (0)
-
 enum class Platform {
   kNative,
   kKVM,

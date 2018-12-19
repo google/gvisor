@@ -188,14 +188,20 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Preadv2 implements linux syscall preadv2(2).
+// TODO: Implement RWF_HIPRI functionality.
 func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// While the syscall is
+	// preadv2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)
+	// the linux internal call
+	// (https://elixir.bootlin.com/linux/v4.18/source/fs/read_write.c#L1248)
+	// splits the offset argument into a high/low value for compatibility with
+	// 32-bit architectures. The flags argument is the 5th argument.
+
 	fd := kdefs.FD(args[0].Int())
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
 	offset := args[3].Int64()
-	flags := int(args[4].Int())
-
-	validFlags := linux.RWF_HIPRI
+	flags := int(args[5].Int())
 
 	file := t.FDMap().GetFile(fd)
 	if file == nil {
@@ -219,14 +225,8 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Check flags field.
-	if flags != 0 {
-		if flags&^validFlags != 0 {
-			return 0, nil, syserror.EINVAL
-		}
-		// RWF_HIPRI must be called on a file with O_DIRECT flag set.
-		if flags&linux.RWF_HIPRI != 0 && !file.Flags().Direct {
-			return 0, nil, syserror.EINVAL
-		}
+	if flags&^linux.RWF_VALID != 0 {
+		return 0, nil, syserror.EOPNOTSUPP
 	}
 
 	// Read the iovecs that specify the destination of the read.

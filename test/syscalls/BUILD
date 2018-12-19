@@ -219,6 +219,8 @@ syscall_test(
     test = "//test/syscalls/linux:pty_test",
 )
 
+syscall_test(test = "//test/syscalls/linux:pwritev2_test")
+
 syscall_test(test = "//test/syscalls/linux:pwrite64_test")
 
 syscall_test(test = "//test/syscalls/linux:read_test")

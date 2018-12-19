@@ -1338,18 +1338,18 @@ cc_binary(
     name = "preadv2_test",
     testonly = 1,
     srcs = [
+        "file_base.h",
         "preadv2.cc",
-        "readv_common.cc",
-        "readv_common.h",
     ],
     linkstatic = 1,
     deps = [
-        ":file_base",
         "//test/util:file_descriptor",
-        "//test/util:memory_util",
+        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -1448,6 +1448,25 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
+    name = "pwritev2_test",
+    testonly = 1,
+    srcs = [
+        "pwritev2.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":file_base",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest",
     ],
 )

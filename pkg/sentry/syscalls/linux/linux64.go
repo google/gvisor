@@ -377,7 +377,7 @@ var AMD64 = &kernel.SyscallTable{
 		// Syscalls after 325 are "backports" from versions of Linux after 4.4.
 		//	326: CopyFileRange,
 		327: Preadv2,
-		//	328: Pwritev2,  // Pwritev2, TODO
+		328: Pwritev2,
 	},
 
 	Emulate: map[usermem.Addr]uintptr{
