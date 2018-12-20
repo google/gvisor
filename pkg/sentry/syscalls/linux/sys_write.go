@@ -15,11 +15,15 @@
 package linux
 
 import (
+	"time"
+
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
+	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -263,6 +267,20 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 		return n, err
 	}
 
+	// Sockets support write timeouts.
+	var haveDeadline bool
+	var deadline ktime.Time
+	if s, ok := f.FileOperations.(socket.Socket); ok {
+		dl := s.SendTimeout()
+		if dl < 0 && err == syserror.ErrWouldBlock {
+			return n, err
+		}
+		if dl > 0 {
+			deadline = t.Kernel().MonotonicClock().Now().Add(time.Duration(dl) * time.Nanosecond)
+			haveDeadline = true
+		}
+	}
+
 	// Register for notifications.
 	w, ch := waiter.NewChannelEntry(nil)
 	f.EventRegister(&w, EventMaskWrite)
@@ -281,7 +299,10 @@ func writev(t *kernel.Task, f *fs.File, src usermem.IOSequence) (int64, error) {
 		}
 
 		// Wait for a notification that we should retry.
-		if err = t.Block(ch); err != nil {
+		if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+			if err == syserror.ETIMEDOUT {
+				err = syserror.ErrWouldBlock
+			}
 			break
 		}
 	}
