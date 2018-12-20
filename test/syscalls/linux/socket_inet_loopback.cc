@@ -185,7 +185,12 @@ TEST_P(SocketInetLoopbackTest, TCP) {
               SyscallSucceeds());
 
   // Accept the connection.
-  ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+  //
+  // We have to assign a name to the accepted socket, as unamed temporary
+  // objects are destructed upon full evaluation of the expression it is in,
+  // potentially causing the connecting socket to fail to shutdown properly.
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
 
   ASSERT_THAT(shutdown(listen_fd.get(), SHUT_RDWR), SyscallSucceeds());
 
