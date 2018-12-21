@@ -68,7 +68,13 @@ func rootTest(t *testing.T, name string, cp cachePolicy, fn func(context.Context
 		// Ensure that the cache is fully invalidated, so that any
 		// close actions actually take place before the full harness is
 		// torn down.
-		defer m.FlushDirentRefs()
+		defer func() {
+			m.FlushDirentRefs()
+
+			// Wait for all resources to be released, otherwise the
+			// operations may fail after we close the rootFile.
+			fs.AsyncBarrier()
+		}()
 
 		// Execute the test.
 		fn(ctx, h, root, rootInode)
