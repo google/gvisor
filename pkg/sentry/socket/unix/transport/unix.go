@@ -837,6 +837,7 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
 		return nil
+
 	case *tcpip.SendQueueSizeOption:
 		e.Lock()
 		if !e.Connected() {
@@ -850,6 +851,7 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		*o = qs
 		return nil
+
 	case *tcpip.ReceiveQueueSizeOption:
 		e.Lock()
 		if !e.Connected() {
@@ -863,6 +865,7 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		*o = qs
 		return nil
+
 	case *tcpip.PasscredOption:
 		if e.Passcred() {
 			*o = tcpip.PasscredOption(1)
@@ -870,6 +873,7 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			*o = tcpip.PasscredOption(0)
 		}
 		return nil
+
 	case *tcpip.SendBufferSizeOption:
 		e.Lock()
 		if !e.Connected() {
@@ -883,6 +887,7 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		*o = qs
 		return nil
+
 	case *tcpip.ReceiveBufferSizeOption:
 		e.Lock()
 		if e.receiver == nil {
@@ -896,8 +901,14 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		*o = qs
 		return nil
+
+	case *tcpip.KeepaliveEnabledOption:
+		*o = 0
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
 	}
-	return tcpip.ErrUnknownProtocolOption
 }
 
 // Shutdown closes the read and/or write end of the endpoint connection to its

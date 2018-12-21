@@ -505,15 +505,21 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			*o = 1
 		}
 		e.rcvMu.Unlock()
+		return nil
 
 	case *tcpip.MulticastTTLOption:
 		e.mu.Lock()
 		*o = tcpip.MulticastTTLOption(e.multicastTTL)
 		e.mu.Unlock()
 		return nil
-	}
 
-	return tcpip.ErrUnknownProtocolOption
+	case *tcpip.KeepaliveEnabledOption:
+		*o = 0
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // sendUDP sends a UDP segment via the provided network endpoint and under the

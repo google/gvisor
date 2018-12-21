@@ -358,9 +358,15 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			*o = 1
 		}
 		e.rcvMu.Unlock()
-	}
+		return nil
 
-	return tcpip.ErrUnknownProtocolOption
+	case *tcpip.KeepaliveEnabledOption:
+		*o = 0
+		return nil
+
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 func sendPing4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {

@@ -662,7 +662,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		} else {
 			atomic.StoreUint32(&e.delay, 1)
 		}
-
 		return nil
 
 	case tcpip.CorkOption:
@@ -674,7 +673,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		} else {
 			atomic.StoreUint32(&e.cork, 1)
 		}
-
 		return nil
 
 	case tcpip.ReuseAddressOption:
@@ -689,7 +687,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		} else {
 			atomic.StoreUint32(&e.slowAck, 0)
 		}
-
 		return nil
 
 	case tcpip.ReceiveBufferSizeOption:
@@ -754,7 +751,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.sndBufMu.Lock()
 		e.sndBufSize = size
 		e.sndBufMu.Unlock()
-
 		return nil
 
 	case tcpip.V6OnlyOption:
@@ -772,34 +768,39 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 
 		e.v6only = v != 0
+		return nil
 
 	case tcpip.KeepaliveEnabledOption:
 		e.keepalive.Lock()
 		e.keepalive.enabled = v != 0
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+		return nil
 
 	case tcpip.KeepaliveIdleOption:
 		e.keepalive.Lock()
 		e.keepalive.idle = time.Duration(v)
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+		return nil
 
 	case tcpip.KeepaliveIntervalOption:
 		e.keepalive.Lock()
 		e.keepalive.interval = time.Duration(v)
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+		return nil
 
 	case tcpip.KeepaliveCountOption:
 		e.keepalive.Lock()
 		e.keepalive.count = int(v)
 		e.keepalive.Unlock()
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
+		return nil
 
+	default:
+		return nil
 	}
-
-	return nil
 }
 
 // readyReceiveSize returns the number of bytes ready to be received.
@@ -908,7 +909,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			o.RTTVar = snd.rtt.rttvar
 			snd.rtt.Unlock()
 		}
-
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:
@@ -920,25 +920,29 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		if v {
 			*o = 1
 		}
+		return nil
 
 	case *tcpip.KeepaliveIdleOption:
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveIdleOption(e.keepalive.idle)
 		e.keepalive.Unlock()
+		return nil
 
 	case *tcpip.KeepaliveIntervalOption:
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveIntervalOption(e.keepalive.interval)
 		e.keepalive.Unlock()
+		return nil
 
 	case *tcpip.KeepaliveCountOption:
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveCountOption(e.keepalive.count)
 		e.keepalive.Unlock()
+		return nil
 
+	default:
+		return tcpip.ErrUnknownProtocolOption
 	}
-
-	return tcpip.ErrUnknownProtocolOption
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocolNumber, *tcpip.Error) {

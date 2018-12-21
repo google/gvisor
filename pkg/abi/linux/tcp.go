@@ -52,3 +52,9 @@ const (
 	TCP_ZEROCOPY_RECEIVE     = 35
 	TCP_INQ                  = 36
 )
+
+// Socket constants from include/net/tcp.h.
+const (
+	MAX_TCP_KEEPIDLE  = 32767
+	MAX_TCP_KEEPINTVL = 32767
+)

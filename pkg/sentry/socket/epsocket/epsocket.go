@@ -636,7 +636,13 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
 		}
-		return int32(0), nil
+
+		var v tcpip.KeepaliveEnabledOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
 
 	case linux.SO_LINGER:
 		if outLen < syscall.SizeofLinger {
@@ -719,6 +725,30 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 		}
 
 		return int32(v), nil
+
+	case linux.TCP_KEEPIDLE:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.KeepaliveIdleOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(time.Duration(v) / time.Second), nil
+
+	case linux.TCP_KEEPINTVL:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.KeepaliveIntervalOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(time.Duration(v) / time.Second), nil
 
 	case linux.TCP_INFO:
 		var v tcpip.TCPInfoOption
@@ -843,6 +873,14 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.PasscredOption(v)))
 
+	case linux.SO_KEEPALIVE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveEnabledOption(v)))
+
 	case linux.SO_SNDTIMEO:
 		if len(optVal) < linux.SizeOfTimeval {
 			return syserr.ErrInvalidArgument
@@ -915,6 +953,28 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.QuickAckOption(v)))
+
+	case linux.TCP_KEEPIDLE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		if v < 1 || v > linux.MAX_TCP_KEEPIDLE {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIdleOption(time.Second * time.Duration(v))))
+
+	case linux.TCP_KEEPINTVL:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		if v < 1 || v > linux.MAX_TCP_KEEPINTVL {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIntervalOption(time.Second * time.Duration(v))))
 
 	case linux.TCP_REPAIR_OPTIONS:
 		t.Kernel().EmitUnimplementedEvent(t)
