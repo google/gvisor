@@ -90,6 +90,7 @@ var setableLimits = map[limits.LimitType]struct{}{
 	limits.CPU:           {},
 	limits.Data:          {},
 	limits.FileSize:      {},
+	limits.MemoryLocked:  {},
 	limits.Stack:         {},
 	// These are not enforced, but we include them here to avoid returning
 	// EPERM, since some apps expect them to succeed.

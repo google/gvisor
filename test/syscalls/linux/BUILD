@@ -1020,6 +1020,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "mlock_test",
+    testonly = 1,
+    srcs = ["mlock.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:memory_util",
+        "//test/util:multiprocess_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "mmap_test",
     testonly = 1,
     srcs = ["mmap.cc"],

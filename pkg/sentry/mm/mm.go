@@ -95,17 +95,29 @@ type MemoryManager struct {
 	// vmas is protected by mappingMu.
 	vmas vmaSet
 
-	// usageAS is vmas.Span(), cached to accelerate RLIMIT_AS checks.
-	//
-	// usageAS is protected by mappingMu.
-	usageAS uint64
-
 	// brk is the mm's brk, which is manipulated using the brk(2) system call.
 	// The brk is initially set up by the loader which maps an executable
 	// binary into the mm.
 	//
 	// brk is protected by mappingMu.
 	brk usermem.AddrRange
+
+	// usageAS is vmas.Span(), cached to accelerate RLIMIT_AS checks.
+	//
+	// usageAS is protected by mappingMu.
+	usageAS uint64
+
+	// lockedAS is the combined size in bytes of all vmas with vma.mlockMode !=
+	// memmap.MLockNone.
+	//
+	// lockedAS is protected by mappingMu.
+	lockedAS uint64
+
+	// New VMAs created by MMap use whichever of memmap.MMapOpts.MLockMode or
+	// defMLockMode is greater.
+	//
+	// defMLockMode is protected by mappingMu.
+	defMLockMode memmap.MLockMode
 
 	// activeMu is loosely analogous to Linux's struct
 	// mm_struct::page_table_lock.
@@ -251,6 +263,8 @@ type vma struct {
 	// architectures that can have VM_GROWSUP mappings are ia64, parisc, and
 	// metag, none of which we currently support.
 	growsDown bool `state:"manual"`
+
+	mlockMode memmap.MLockMode
 
 	// If id is not nil, it controls the lifecycle of mappable and provides vma
 	// metadata shown in /proc/[pid]/maps, and the vma holds a reference.
