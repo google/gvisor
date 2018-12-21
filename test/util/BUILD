@@ -52,7 +52,9 @@ cc_test(
     srcs = ["proc_util_test.cc"],
     deps = [
         ":proc_util",
+        ":test_main",
         ":test_util",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -84,7 +86,9 @@ cc_test(
         ":fs_util",
         ":posix_error",
         ":temp_path",
+        ":test_main",
         ":test_util",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -161,7 +165,11 @@ cc_test(
     name = "posix_error_test",
     size = "small",
     srcs = ["posix_error_test.cc"],
-    deps = [":posix_error"],
+    deps = [
+        ":posix_error",
+        ":test_main",
+        "@com_google_googletest//:gtest",
+    ],
 )
 
 cc_library(
@@ -238,7 +246,11 @@ cc_test(
     name = "test_util_test",
     size = "small",
     srcs = ["test_util_test.cc"],
-    deps = [":test_util"],
+    deps = [
+        ":test_main",
+        ":test_util",
+        "@com_google_googletest//:gtest",
+    ],
 )
 
 cc_library(
