@@ -271,7 +271,7 @@ var linuxAMD64 = SyscallMap{
 	251: makeSyscallInfo("ioprio_set", Hex, Hex, Hex),
 	252: makeSyscallInfo("ioprio_get", Hex, Hex),
 	253: makeSyscallInfo("inotify_init"),
-	254: makeSyscallInfo("inotify_add_watch", Hex, Hex, Hex),
+	254: makeSyscallInfo("inotify_add_watch", Hex, Path, Hex),
 	255: makeSyscallInfo("inotify_rm_watch", Hex, Hex),
 	256: makeSyscallInfo("migrate_pages", Hex, Hex, Hex, Hex),
 	257: makeSyscallInfo("openat", Hex, Path, OpenFlags, Mode),

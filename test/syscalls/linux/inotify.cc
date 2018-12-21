@@ -1484,6 +1484,34 @@ TEST(Inotify, MaskAddMergesWithExistingEventMask) {
   ASSERT_THAT(events, Are({Event(IN_CLOSE_WRITE, wd)}));
 }
 
+// Test that control events bits are not considered when checking event mask.
+TEST(Inotify, ControlEvents) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), dir.path(), IN_ACCESS));
+
+  // Check that events in the mask are dispatched and that control bits are
+  // part of the event mask.
+  std::vector<std::string> files =
+      ASSERT_NO_ERRNO_AND_VALUE(ListDir(dir.path(), false));
+  ASSERT_EQ(files.size(), 2);
+
+  const std::vector<Event> events1 =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(events1, Are({Event(IN_ACCESS | IN_ISDIR, wd)}));
+
+  // Check that events not in the mask are discarded.
+  const FileDescriptor dir_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+
+  const std::vector<Event> events2 =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(events2, Are({}));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
