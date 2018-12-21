@@ -17,6 +17,18 @@ go_register_toolchains(go_version="1.11.4")
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 gazelle_dependencies()
 
+# Load bazel_toolchain to support Remote Build Execution.
+# See releases at https://releases.bazel.build/bazel-toolchains.html
+http_archive(
+  name = "bazel_toolchains",
+  urls = [
+    "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/31b5dc8c4e9c7fd3f5f4d04c6714f2ce87b126c1.tar.gz",
+    "https://github.com/bazelbuild/bazel-toolchains/archive/31b5dc8c4e9c7fd3f5f4d04c6714f2ce87b126c1.tar.gz",
+  ],
+  strip_prefix = "bazel-toolchains-31b5dc8c4e9c7fd3f5f4d04c6714f2ce87b126c1",
+  sha256 = "07a81ee03f5feae354c9f98c884e8e886914856fb2b6a63cba4619ef10aaaf0b",
+)
+
 # External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
@@ -96,7 +108,13 @@ go_repository(
     commit = "0dd5e194bbf5eb84a39666eb4c98a4d007e4203a",
 )
 
-# System Call test dependencies
+go_repository(
+    name = "com_github_google_btree",
+    importpath = "github.com/google/btree",
+    commit = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306",
+)
+
+# System Call test dependencies.
 http_archive(
     name = "com_github_gflags_gflags",
     sha256 = "6e16c8bc91b1310a44f3965e616383dbda48f83e8c1eaa2370a215057b00cabe",
@@ -114,16 +132,6 @@ http_archive(
 )
 
 http_archive(
-    name = "com_google_googletest",
-    sha256 = "353ab86e35cea1cd386115279cf4b16695bbf21b897bfbf2721cf4cb5f64ade8",
-    strip_prefix = "googletest-997d343dd680e541ef96ce71ee54a91daf2577a0",
-    urls = [
-        "https://mirror.bazel.build/github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
-        "https://github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
-    ],
-)
-
-http_archive(
     name = "com_google_glog",
     sha256 = "eaabbfc16ecfacb36960ca9c8977f40172c51e4b03234331a1f84040a77ab12c",
     strip_prefix = "glog-781096619d3dd368cfebd33889e417a168493ce7",
@@ -133,8 +141,12 @@ http_archive(
     ],
 )
 
-go_repository(
-    name = "com_github_google_btree",
-    importpath = "github.com/google/btree",
-    commit = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306",
+http_archive(
+    name = "com_google_googletest",
+    sha256 = "353ab86e35cea1cd386115279cf4b16695bbf21b897bfbf2721cf4cb5f64ade8",
+    strip_prefix = "googletest-997d343dd680e541ef96ce71ee54a91daf2577a0",
+    urls = [
+        "https://mirror.bazel.build/github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
+        "https://github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
+    ],
 )

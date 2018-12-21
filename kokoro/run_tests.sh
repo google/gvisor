@@ -24,9 +24,16 @@ set -eux
 
 readonly WORKSPACE_DIR="${PWD}/git/repo"
 
+# Used to configure RBE.
+readonly CLOUD_PROJECT_ID="copybara-shentu"
+readonly RBE_PROJECT_ID="projects/${CLOUD_PROJECT_ID}/instances/default_instance"
+
 # Random runtime name to avoid collisions.
 readonly RUNTIME="runsc_test_$((RANDOM))"
 
+# Packages that will be built and tested.
+# TODO: Include syscall tests in "test" directory.
+readonly TEST_PACKAGES=("//pkg/..." "//runsc/..." "//tools/...")
 
 #######################
 # BAZEL CONFIGURATION #
@@ -37,6 +44,27 @@ use_bazel.sh latest
 which bazel
 bazel version
 
+# Bazel start-up flags for RBE.
+BAZEL_RBE_FLAGS=(
+  "--bazelrc=${WORKSPACE_DIR}/.bazelrc_rbe"
+)
+
+# General Bazel build/test flags.
+BAZEL_BUILD_FLAGS=(
+  "--show_timestamps"
+  "--test_output=errors"
+  "--keep_going"
+  "--verbose_failures=true"
+)
+
+# Bazel build/test for RBE, a super-set of BAZEL_BUILD_FLAGS.
+BAZEL_BUILD_RBE_FLAGS=(
+  "${BAZEL_BUILD_FLAGS[@]}"
+  "--config=remote"
+  "--project_id=${CLOUD_PROJECT_ID}"
+  "--remote_instance_name=${RBE_PROJECT_ID}"
+  "--auth_credentials=${KOKORO_BAZEL_AUTH_CREDENTIAL}"
+)
 
 ####################
 # Helper Functions #
@@ -44,16 +72,20 @@ bazel version
 
 build_everything() {
   cd ${WORKSPACE_DIR}
-  # TODO: Include "test" directory.
-  bazel build //pkg/... //runsc/... //tools/...
+  bazel \
+    "${BAZEL_RBE_FLAGS[@]}" \
+    build \
+    "${BAZEL_BUILD_RBE_FLAGS[@]}" \
+    "${TEST_PACKAGES[@]}"
 }
 
 # Run simple tests runs the tests that require no special setup or
 # configuration.
 run_simple_tests() {
   cd ${WORKSPACE_DIR}
-  # TODO: Include "test" directory.
-  bazel test --test_output=errors //pkg/... //runsc/... //tools/...
+  bazel test \
+    "${BAZEL_BUILD_FLAGS[@]}" \
+    "${TEST_PACKAGES[@]}"
 }
 
 install_runtime() {
@@ -121,7 +153,9 @@ run_docker_tests() {
   declare -a variations=("" "-kvm" "-hostnet" "-overlay")
   for v in "${variations[@]}"; do
     # Run runsc tests with docker that are tagged manual.
-    bazel test --test_output=errors --test_env=RUNSC_RUNTIME="${RUNTIME}${v}" \
+    bazel test \
+      "${BAZEL_BUILD_FLAGS[@]}" \
+      --test_env=RUNSC_RUNTIME="${RUNTIME}${v}" \
       //runsc/test/image:image_test \
       //runsc/test/integration:integration_test
   done
