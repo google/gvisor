@@ -254,14 +254,15 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
+        # The heap check doesn't handle mremap properly.
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/strings",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -1081,6 +1082,9 @@ cc_binary(
     srcs = ["mremap.cc"],
     linkstatic = 1,
     deps = [
+        # The heap check fails due to MremapDeathTest
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/strings",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:memory_util",
@@ -1089,8 +1093,6 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest",
     ],
 )
 
