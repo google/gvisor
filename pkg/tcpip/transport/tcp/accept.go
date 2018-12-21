@@ -15,13 +15,13 @@
 package tcp
 
 import (
+	"crypto/sha1"
 	"encoding/binary"
 	"hash"
 	"io"
 	"sync"
 	"time"
 
-	"crypto/sha1"
 	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sleep"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"

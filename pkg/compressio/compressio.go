@@ -46,14 +46,14 @@ package compressio
 import (
 	"bytes"
 	"compress/flate"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"hash"
 	"io"
 	"runtime"
 	"sync"
 
-	"crypto/hmac"
-	"crypto/sha256"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
 )
 

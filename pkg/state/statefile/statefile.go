@@ -46,6 +46,8 @@ package statefile
 import (
 	"bytes"
 	"compress/flate"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"hash"
@@ -53,8 +55,6 @@ import (
 	"strings"
 	"time"
 
-	"crypto/hmac"
-	"crypto/sha256"
 	"gvisor.googlesource.com/gvisor/pkg/binary"
 	"gvisor.googlesource.com/gvisor/pkg/compressio"
 )
