@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/socket.h>
+
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
-#include <sys/socket.h>
 #include <vector>
 
 #include "absl/strings/str_cat.h"

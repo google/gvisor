@@ -32,7 +32,9 @@ readonly RBE_PROJECT_ID="projects/${CLOUD_PROJECT_ID}/instances/default_instance
 readonly RUNTIME="runsc_test_$((RANDOM))"
 
 # Packages that will be built and tested.
-# TODO: Include syscall tests in "test" directory.
+readonly BUILD_PACKAGES=("//...")
+# TODO: Include syscall tests in "test" directory once all tests
+# pass on RBE.
 readonly TEST_PACKAGES=("//pkg/..." "//runsc/..." "//tools/...")
 
 #######################
@@ -76,14 +78,16 @@ build_everything() {
     "${BAZEL_RBE_FLAGS[@]}" \
     build \
     "${BAZEL_BUILD_RBE_FLAGS[@]}" \
-    "${TEST_PACKAGES[@]}"
+    "${BUILD_PACKAGES[@]}"
 }
 
 # Run simple tests runs the tests that require no special setup or
 # configuration.
+# TODO: Use RBE here once tests pass with RBE.
 run_simple_tests() {
   cd ${WORKSPACE_DIR}
-  bazel test \
+  bazel \
+    test \
     "${BAZEL_BUILD_FLAGS[@]}" \
     "${TEST_PACKAGES[@]}"
 }
