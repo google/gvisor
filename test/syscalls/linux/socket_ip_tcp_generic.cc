@@ -522,5 +522,21 @@ TEST_P(TCPSocketPairTest, SetTCPKeepintvlToMax) {
   EXPECT_EQ(get, MAX_TCP_KEEPINTVL);
 }
 
+TEST_P(TCPSocketPairTest, SetOOBInline) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_OOBINLINE,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  int get = -1;
+  socklen_t get_len = sizeof(get);
+  EXPECT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_OOBINLINE, &get, &get_len),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(get_len, sizeof(get));
+  EXPECT_EQ(get, kSockOptOn);
+}
+
 }  // namespace testing
 }  // namespace gvisor

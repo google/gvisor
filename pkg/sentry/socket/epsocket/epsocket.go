@@ -678,6 +678,18 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		return int32(v), nil
 
+	case linux.SO_OOBINLINE:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.OutOfBandInlineOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
+
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}

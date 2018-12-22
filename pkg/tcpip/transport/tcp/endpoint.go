@@ -940,6 +940,11 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.keepalive.Unlock()
 		return nil
 
+	case *tcpip.OutOfBandInlineOption:
+		// We don't currently support disabling this option.
+		*o = 1
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
