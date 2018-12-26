@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	ucspb "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -184,6 +186,23 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 	case SignalActionTerm, SignalActionCore:
 		// "Default action is to terminate the process." - signal(7)
 		t.Debugf("Signal %d: terminating thread group", info.Signo)
+
+		// Emit an event channel messages related to this uncaught signal.
+		ucs := &ucspb.UncaughtSignal{
+			Tid:          int32(t.Kernel().TaskSet().Root.IDOfTask(t)),
+			Pid:          int32(t.Kernel().TaskSet().Root.IDOfThreadGroup(t.ThreadGroup())),
+			Registers:    t.Arch().StateData().Proto(),
+			SignalNumber: info.Signo,
+		}
+
+		// Attach an fault address if appropriate.
+		switch linux.Signal(info.Signo) {
+		case linux.SIGSEGV, linux.SIGFPE, linux.SIGILL, linux.SIGTRAP, linux.SIGBUS:
+			ucs.FaultAddr = info.Addr()
+		}
+
+		eventchannel.Emit(ucs)
+
 		t.PrepareGroupExit(ExitStatus{Signo: int(info.Signo)})
 		return (*runExit)(nil)
 
