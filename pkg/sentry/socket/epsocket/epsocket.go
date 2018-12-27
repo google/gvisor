@@ -531,8 +531,10 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 	case linux.SOL_IPV6:
 		return getSockOptIPv6(t, ep, name, outLen)
 
-	case linux.SOL_IP,
-		linux.SOL_UDP,
+	case linux.SOL_IP:
+		return getSockOptIP(t, ep, name, outLen)
+
+	case linux.SOL_UDP,
 		linux.SOL_ICMPV6,
 		linux.SOL_RAW,
 		linux.SOL_PACKET:
@@ -787,7 +789,7 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 		t.Kernel().EmitUnimplementedEvent(t)
 
 	default:
-		emitUmplementedEventTCP(t, name)
+		emitUnimplementedEventTCP(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -811,7 +813,28 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 		t.Kernel().EmitUnimplementedEvent(t)
 
 	default:
-		emitUmplementedEventIPv6(t, name)
+		emitUnimplementedEventIPv6(t, name)
+	}
+	return nil, syserr.ErrProtocolNotAvailable
+}
+
+// getSockOptIP implements GetSockOpt when level is SOL_IP.
+func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interface{}, *syserr.Error) {
+	switch name {
+	case linux.IP_MULTICAST_TTL:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.MulticastTTLOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
+
+	default:
+		emitUnimplementedEventIP(t, name)
 	}
 	return nil, syserr.ErrProtocolNotAvailable
 }
@@ -992,7 +1015,7 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		t.Kernel().EmitUnimplementedEvent(t)
 
 	default:
-		emitUmplementedEventTCP(t, name)
+		emitUnimplementedEventTCP(t, name)
 	}
 
 	// Default to the old behavior; hand off to network stack.
@@ -1028,7 +1051,7 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 		t.Kernel().EmitUnimplementedEvent(t)
 
 	default:
-		emitUmplementedEventIPv6(t, name)
+		emitUnimplementedEventIPv6(t, name)
 	}
 
 	// Default to the old behavior; hand off to network stack.
@@ -1038,6 +1061,21 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 // setSockOptIP implements SetSockOpt when level is SOL_IP.
 func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
+	case linux.IP_MULTICAST_TTL:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := int32(usermem.ByteOrder.Uint32(optVal))
+		if v == -1 {
+			// Linux translates -1 to 1.
+			v = 1
+		}
+		if v < 0 || v > 255 {
+			return syserr.ErrInvalidArgument
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.MulticastTTLOption(v)))
+
 	case linux.IP_ADD_MEMBERSHIP, linux.MCAST_JOIN_GROUP, linux.IP_MULTICAST_IF:
 		// FIXME: Disallow IP-level multicast group options by
 		// default. These will need to be supported by appropriately plumbing
@@ -1060,7 +1098,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_MTU_DISCOVER,
 		linux.IP_MULTICAST_ALL,
 		linux.IP_MULTICAST_LOOP,
-		linux.IP_MULTICAST_TTL,
 		linux.IP_NODEFRAG,
 		linux.IP_OPTIONS,
 		linux.IP_PASSSEC,
@@ -1092,10 +1129,10 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 	return syserr.TranslateNetstackError(ep.SetSockOpt(struct{}{}))
 }
 
-// emitUmplementedEventTCP emits unimplemented event if name is valid. This
+// emitUnimplementedEventTCP emits unimplemented event if name is valid. This
 // function contains names that are common between Get and SetSockOpt when
 // level is SOL_TCP.
-func emitUmplementedEventTCP(t *kernel.Task, name int) {
+func emitUnimplementedEventTCP(t *kernel.Task, name int) {
 	switch name {
 	case linux.TCP_CONGESTION,
 		linux.TCP_CORK,
@@ -1129,10 +1166,10 @@ func emitUmplementedEventTCP(t *kernel.Task, name int) {
 	}
 }
 
-// emitUmplementedEventIPv6 emits unimplemented event if name is valid. It
+// emitUnimplementedEventIPv6 emits unimplemented event if name is valid. It
 // contains names that are common between Get and SetSockOpt when level is
 // SOL_IPV6.
-func emitUmplementedEventIPv6(t *kernel.Task, name int) {
+func emitUnimplementedEventIPv6(t *kernel.Task, name int) {
 	switch name {
 	case linux.IPV6_2292DSTOPTS,
 		linux.IPV6_2292HOPLIMIT,
@@ -1174,6 +1211,60 @@ func emitUmplementedEventIPv6(t *kernel.Task, name int) {
 		linux.IPV6_UNICAST_IF,
 		linux.MCAST_MSFILTER,
 		linux.IPV6_ADDRFORM:
+
+		t.Kernel().EmitUnimplementedEvent(t)
+	}
+}
+
+// emitUnimplementedEventIP emits unimplemented event if name is valid. It
+// contains names that are common between Get and SetSockOpt when level is
+// SOL_IP.
+func emitUnimplementedEventIP(t *kernel.Task, name int) {
+	switch name {
+	case linux.IP_TOS,
+		linux.IP_TTL,
+		linux.IP_HDRINCL,
+		linux.IP_OPTIONS,
+		linux.IP_ROUTER_ALERT,
+		linux.IP_RECVOPTS,
+		linux.IP_RETOPTS,
+		linux.IP_PKTINFO,
+		linux.IP_PKTOPTIONS,
+		linux.IP_MTU_DISCOVER,
+		linux.IP_RECVERR,
+		linux.IP_RECVTTL,
+		linux.IP_RECVTOS,
+		linux.IP_MTU,
+		linux.IP_FREEBIND,
+		linux.IP_IPSEC_POLICY,
+		linux.IP_XFRM_POLICY,
+		linux.IP_PASSSEC,
+		linux.IP_TRANSPARENT,
+		linux.IP_ORIGDSTADDR,
+		linux.IP_MINTTL,
+		linux.IP_NODEFRAG,
+		linux.IP_CHECKSUM,
+		linux.IP_BIND_ADDRESS_NO_PORT,
+		linux.IP_RECVFRAGSIZE,
+		linux.IP_MULTICAST_IF,
+		linux.IP_MULTICAST_TTL,
+		linux.IP_MULTICAST_LOOP,
+		linux.IP_ADD_MEMBERSHIP,
+		linux.IP_DROP_MEMBERSHIP,
+		linux.IP_UNBLOCK_SOURCE,
+		linux.IP_BLOCK_SOURCE,
+		linux.IP_ADD_SOURCE_MEMBERSHIP,
+		linux.IP_DROP_SOURCE_MEMBERSHIP,
+		linux.IP_MSFILTER,
+		linux.MCAST_JOIN_GROUP,
+		linux.MCAST_BLOCK_SOURCE,
+		linux.MCAST_UNBLOCK_SOURCE,
+		linux.MCAST_LEAVE_GROUP,
+		linux.MCAST_JOIN_SOURCE_GROUP,
+		linux.MCAST_LEAVE_SOURCE_GROUP,
+		linux.MCAST_MSFILTER,
+		linux.IP_MULTICAST_ALL,
+		linux.IP_UNICAST_IF:
 
 		t.Kernel().EmitUnimplementedEvent(t)
 	}

@@ -16,6 +16,7 @@
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_generic.h"
+#include "test/syscalls/linux/socket_ip_udp_generic.h"
 #include "test/syscalls/linux/socket_non_stream.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
@@ -42,6 +43,10 @@ INSTANTIATE_TEST_CASE_P(
 
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, NonStreamSocketPairTest,
+    ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
+
+INSTANTIATE_TEST_CASE_P(
+    UDPSockets, UDPSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing
