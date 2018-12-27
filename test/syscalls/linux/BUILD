@@ -496,6 +496,7 @@ cc_binary(
     srcs = ["epoll.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:test_main",
@@ -844,6 +845,7 @@ cc_binary(
     srcs = ["inotify.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:temp_path",
@@ -852,6 +854,7 @@ cc_binary(
         "//test/util:thread_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
     ],
 )
 

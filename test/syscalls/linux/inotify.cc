@@ -14,9 +14,12 @@
 
 #include <fcntl.h>
 #include <libgen.h>
+#include <sched.h>
+#include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 
+#include <atomic>
 #include <list>
 #include <string>
 #include <vector>
@@ -24,6 +27,9 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
@@ -1510,6 +1516,55 @@ TEST(Inotify, ControlEvents) {
   const std::vector<Event> events2 =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
   ASSERT_THAT(events2, Are({}));
+}
+
+// Regression test to ensure epoll and directory access doesn't deadlock.
+TEST(Inotify, EpollNoDeadlock) {
+  const DisableSave ds;  // Too many syscalls.
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+
+  // Create lots of directories and watch all of them.
+  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  std::vector<TempPath> children;
+  for (size_t i = 0; i < 1000; ++i) {
+    auto child = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+    ASSERT_NO_ERRNO_AND_VALUE(
+        InotifyAddWatch(fd.get(), child.path(), IN_ACCESS));
+    children.emplace_back(std::move(child));
+  }
+
+  // Run epoll_wait constantly in a separate thread.
+  std::atomic<bool> done(false);
+  ScopedThread th([&fd, &done] {
+    for (auto start = absl::Now(); absl::Now() - start < absl::Seconds(5);) {
+      FileDescriptor epoll_fd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+      ASSERT_NO_ERRNO(RegisterEpollFD(epoll_fd.get(), fd.get(),
+                                      EPOLLIN | EPOLLOUT | EPOLLET, 0));
+      struct epoll_event result[1];
+      EXPECT_THAT(RetryEINTR(epoll_wait)(epoll_fd.get(), result, 1, -1),
+                  SyscallSucceedsWithValue(1));
+
+      sched_yield();
+    }
+    done = true;
+  });
+
+  // While epoll thread is running, constantly access all directories to
+  // generate inotify events.
+  while (!done) {
+    std::vector<std::string> files =
+        ASSERT_NO_ERRNO_AND_VALUE(ListDir(root.path(), false));
+    ASSERT_EQ(files.size(), 1002);
+    for (const auto& child : files) {
+      if (child == "." || child == "..") {
+        continue;
+      }
+      ASSERT_NO_ERRNO_AND_VALUE(ListDir(JoinPath(root.path(), child), false));
+    }
+    sched_yield();
+  }
 }
 
 }  // namespace

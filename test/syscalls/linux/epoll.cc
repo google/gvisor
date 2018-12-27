@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -37,18 +38,6 @@ namespace {
 constexpr int kFDsPerEpoll = 3;
 constexpr uint64_t kMagicConstant = 0x0102030405060708;
 
-// Returns a new epoll file descriptor.
-PosixErrorOr<FileDescriptor> NewEpollFD() {
-  // "Since Linux 2.6.8, the size argument is ignored, but must be greater than
-  // zero." - epoll_create(2)
-  int fd = epoll_create(/* size = */ 1);
-  MaybeSave();
-  if (fd < 0) {
-    return PosixError(errno, "epoll_create");
-  }
-  return FileDescriptor(fd);
-}
-
 // Returns a new eventfd.
 PosixErrorOr<FileDescriptor> NewEventFD() {
   int fd = eventfd(/* initval = */ 0, /* flags = */ 0);
@@ -57,22 +46,6 @@ PosixErrorOr<FileDescriptor> NewEventFD() {
     return PosixError(errno, "eventfd");
   }
   return FileDescriptor(fd);
-}
-
-// Registers `target_fd` with the epoll instance represented by `epoll_fd` for
-// the epoll events `events`. Events on `target_fd` will be indicated by setting
-// data.u64 to `data` in the returned epoll_event.
-PosixError RegisterEpollFD(int epoll_fd, int target_fd, int events,
-                           uint64_t data) {
-  struct epoll_event event;
-  event.events = events;
-  event.data.u64 = data;
-  int rc = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, target_fd, &event);
-  MaybeSave();
-  if (rc < 0) {
-    return PosixError(errno, "epoll_ctl");
-  }
-  return NoError();
 }
 
 uint64_t ms_elapsed(const struct timespec* begin, const struct timespec* end) {

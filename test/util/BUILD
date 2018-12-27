@@ -259,3 +259,16 @@ cc_library(
     srcs = ["test_main.cc"],
     deps = [":test_util"],
 )
+
+cc_library(
+    name = "epoll_util",
+    testonly = 1,
+    srcs = ["epoll_util.cc"],
+    hdrs = ["epoll_util.h"],
+    deps = [
+        ":file_descriptor",
+        ":posix_error",
+        ":save_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
