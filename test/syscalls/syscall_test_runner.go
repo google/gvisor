@@ -118,6 +118,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	// Mark the root as writeable, as some tests attempt to
 	// write to the rootfs, and expect EACCES, not EROFS.
 	spec.Root.Readonly = false
+	spec.Mounts = nil
 
 	// Set environment variable that indicates we are
 	// running in gVisor and with the given platform.

@@ -634,6 +634,18 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		return int32(v), nil
 
+	case linux.SO_REUSEPORT:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.ReusePortOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
+
 	case linux.SO_KEEPALIVE:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -899,6 +911,14 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.ReuseAddressOption(v)))
+
+	case linux.SO_REUSEPORT:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.ReusePortOption(v)))
 
 	case linux.SO_PASSCRED:
 		if len(optVal) < sizeOfInt32 {

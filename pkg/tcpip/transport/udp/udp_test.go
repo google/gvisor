@@ -16,6 +16,7 @@ package udp_test
 
 import (
 	"bytes"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -252,6 +253,90 @@ func newPayload() []byte {
 		b[i] = byte(rand.Intn(256))
 	}
 	return b
+}
+
+func TestBindPortReuse(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	c.createV6Endpoint(false)
+
+	var eps [5]tcpip.Endpoint
+	reusePortOpt := tcpip.ReusePortOption(1)
+
+	pollChannel := make(chan tcpip.Endpoint)
+	for i := 0; i < len(eps); i++ {
+		// Try to receive the data.
+		wq := waiter.Queue{}
+		we, ch := waiter.NewChannelEntry(nil)
+		wq.EventRegister(&we, waiter.EventIn)
+		defer wq.EventUnregister(&we)
+		defer close(ch)
+
+		var err *tcpip.Error
+		eps[i], err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
+		if err != nil {
+			c.t.Fatalf("NewEndpoint failed: %v", err)
+		}
+
+		go func(ep tcpip.Endpoint) {
+			for range ch {
+				pollChannel <- ep
+			}
+		}(eps[i])
+
+		defer eps[i].Close()
+		if err := eps[i].SetSockOpt(reusePortOpt); err != nil {
+			c.t.Fatalf("SetSockOpt failed failed: %v", err)
+		}
+		if err := eps[i].Bind(tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort}, nil); err != nil {
+			t.Fatalf("ep.Bind(...) failed: %v", err)
+		}
+	}
+
+	npackets := 100000
+	nports := 10000
+	ports := make(map[uint16]tcpip.Endpoint)
+	stats := make(map[tcpip.Endpoint]int)
+	for i := 0; i < npackets; i++ {
+		// Send a packet.
+		port := uint16(i % nports)
+		payload := newPayload()
+		c.sendV6Packet(payload, &headers{
+			srcPort: testPort + port,
+			dstPort: stackPort,
+		})
+
+		var addr tcpip.FullAddress
+		ep := <-pollChannel
+		_, _, err := ep.Read(&addr)
+		if err != nil {
+			c.t.Fatalf("Read failed: %v", err)
+		}
+		stats[ep]++
+		if i < nports {
+			ports[uint16(i)] = ep
+		} else {
+			// Check that all packets from one client are handled
+			// by the same socket.
+			if ports[port] != ep {
+				t.Fatalf("Port mismatch")
+			}
+		}
+	}
+
+	if len(stats) != len(eps) {
+		t.Fatalf("Only %d(expected %d) sockets received packets", len(stats), len(eps))
+	}
+
+	// Check that a packet distribution is fair between sockets.
+	for _, c := range stats {
+		n := float64(npackets) / float64(len(eps))
+		// The deviation is less than 10%.
+		if math.Abs(float64(c)-n) > n/10 {
+			t.Fatal(c, n)
+		}
+	}
 }
 
 func testV4Read(c *testContext) {

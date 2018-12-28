@@ -285,7 +285,10 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if blocking && se == syserr.ErrTryAgain {
 		// Register for notifications.
 		e, ch := waiter.NewChannelEntry(nil)
-		s.EventRegister(&e, waiter.EventIn)
+		// FIXME: This waiter.EventHUp is a partial
+		// measure, need to figure out how to translate linux events to
+		// internal events.
+		s.EventRegister(&e, waiter.EventIn|waiter.EventHUp)
 		defer s.EventUnregister(&e)
 
 		// Try to accept the connection again; if it fails, then wait until we

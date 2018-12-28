@@ -162,6 +162,9 @@ type endpoint struct {
 	// sack holds TCP SACK related information for this endpoint.
 	sack SACKInfo
 
+	// reusePort is set to true if SO_REUSEPORT is enabled.
+	reusePort bool
+
 	// delay enables Nagle's algorithm.
 	//
 	// delay is a boolean (0 is false) and must be accessed atomically.
@@ -416,7 +419,7 @@ func (e *endpoint) Close() {
 		e.isPortReserved = false
 
 		if e.isRegistered {
-			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id)
+			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
 			e.isRegistered = false
 		}
 	}
@@ -453,7 +456,7 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id)
+		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
 	}
 
 	e.route.Release()
@@ -681,6 +684,12 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.ReusePortOption:
+		e.mu.Lock()
+		e.reusePort = v != 0
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.QuickAckOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.slowAck, 1)
@@ -875,6 +884,17 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		return nil
 
+	case *tcpip.ReusePortOption:
+		e.mu.RLock()
+		v := e.reusePort
+		e.mu.RUnlock()
+
+		*o = 0
+		if v {
+			*o = 1
+		}
+		return nil
+
 	case *tcpip.QuickAckOption:
 		*o = 1
 		if v := atomic.LoadUint32(&e.slowAck); v != 0 {
@@ -1057,7 +1077,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 
 	if e.id.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e, e.reusePort)
 		if err != nil {
 			return err
 		}
@@ -1071,13 +1091,13 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 			if sameAddr && p == e.id.RemotePort {
 				return false, nil
 			}
-			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p) {
+			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p, false) {
 				return false, nil
 			}
 
 			id := e.id
 			id.LocalPort = p
-			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e) {
+			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort) {
 			case nil:
 				e.id = id
 				return true, nil
@@ -1234,7 +1254,7 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	}
 
 	// Register the endpoint.
-	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e); err != nil {
+	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.reusePort); err != nil {
 		return err
 	}
 
@@ -1315,7 +1335,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (err
 		}
 	}
 
-	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port)
+	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.reusePort)
 	if err != nil {
 		return err
 	}

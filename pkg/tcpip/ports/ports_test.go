@@ -28,67 +28,99 @@ const (
 	fakeIPAddress1 = tcpip.Address("\x08\x08\x08\x09")
 )
 
-func TestPortReservation(t *testing.T) {
-	pm := NewPortManager()
-	net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
+type portReserveTestAction struct {
+	port    uint16
+	ip      tcpip.Address
+	want    *tcpip.Error
+	reuse   bool
+	release bool
+}
 
+func TestPortReservation(t *testing.T) {
 	for _, test := range []struct {
-		port uint16
-		ip   tcpip.Address
-		want *tcpip.Error
+		tname   string
+		actions []portReserveTestAction
 	}{
 		{
-			port: 80,
-			ip:   fakeIPAddress,
-			want: nil,
+			tname: "bind to ip",
+			actions: []portReserveTestAction{
+				{port: 80, ip: fakeIPAddress, want: nil},
+				{port: 80, ip: fakeIPAddress1, want: nil},
+				/* N.B. Order of tests matters! */
+				{port: 80, ip: anyIPAddress, want: tcpip.ErrPortInUse},
+				{port: 80, ip: fakeIPAddress, want: tcpip.ErrPortInUse, reuse: true},
+			},
 		},
 		{
-			port: 80,
-			ip:   fakeIPAddress1,
-			want: nil,
-		},
-		{
-			/* N.B. Order of tests matters! */
-			port: 80,
-			ip:   anyIPAddress,
-			want: tcpip.ErrPortInUse,
-		},
-		{
-			port: 22,
-			ip:   anyIPAddress,
-			want: nil,
-		},
-		{
-			port: 22,
-			ip:   fakeIPAddress,
-			want: tcpip.ErrPortInUse,
-		},
-		{
-			port: 0,
-			ip:   fakeIPAddress,
-			want: nil,
-		},
-		{
-			port: 0,
-			ip:   fakeIPAddress,
-			want: nil,
+			tname: "bind to inaddr any",
+			actions: []portReserveTestAction{
+				{port: 22, ip: anyIPAddress, want: nil},
+				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
+				/* release fakeIPAddress, but anyIPAddress is still inuse */
+				{port: 22, ip: fakeIPAddress, release: true},
+				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
+				{port: 22, ip: fakeIPAddress, want: tcpip.ErrPortInUse, reuse: true},
+				/* Release port 22 from any IP address, then try to reserve fake IP address on 22 */
+				{port: 22, ip: anyIPAddress, want: nil, release: true},
+				{port: 22, ip: fakeIPAddress, want: nil},
+			},
+		}, {
+			tname: "bind to zero port",
+			actions: []portReserveTestAction{
+				{port: 00, ip: fakeIPAddress, want: nil},
+				{port: 00, ip: fakeIPAddress, want: nil},
+				{port: 00, ip: fakeIPAddress, reuse: true, want: nil},
+			},
+		}, {
+			tname: "bind to ip with reuseport",
+			actions: []portReserveTestAction{
+				{port: 25, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 25, ip: fakeIPAddress, reuse: true, want: nil},
+
+				{port: 25, ip: fakeIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 25, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+
+				{port: 25, ip: anyIPAddress, reuse: true, want: nil},
+			},
+		}, {
+			tname: "bind to inaddr any with reuseport",
+			actions: []portReserveTestAction{
+				{port: 24, ip: anyIPAddress, reuse: true, want: nil},
+				{port: 24, ip: anyIPAddress, reuse: true, want: nil},
+
+				{port: 24, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+
+				{port: 24, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, release: true, want: nil},
+
+				{port: 24, ip: anyIPAddress, release: true},
+				{port: 24, ip: anyIPAddress, reuse: false, want: tcpip.ErrPortInUse},
+
+				{port: 24, ip: anyIPAddress, release: true},
+				{port: 24, ip: anyIPAddress, reuse: false, want: nil},
+			},
 		},
 	} {
-		gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port)
-		if err != test.want {
-			t.Fatalf("ReservePort(.., .., %s, %d) = %v, want %v", test.ip, test.port, err, test.want)
-		}
-		if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
-			t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
-		}
-	}
+		t.Run(test.tname, func(t *testing.T) {
+			pm := NewPortManager()
+			net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
 
-	// Release port 22 from any IP address, then try to reserve fake IP
-	// address on 22.
-	pm.ReleasePort(net, fakeTransNumber, anyIPAddress, 22)
+			for _, test := range test.actions {
+				if test.release {
+					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port)
+					continue
+				}
+				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.reuse)
+				if err != test.want {
+					t.Fatalf("ReservePort(.., .., %s, %d, %t) = %v, want %v", test.ip, test.port, test.release, err, test.want)
+				}
+				if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
+					t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
+				}
+			}
+		})
 
-	if port, err := pm.ReservePort(net, fakeTransNumber, fakeIPAddress, 22); port != 22 || err != nil {
-		t.Fatalf("ReservePort(.., .., .., %d) = (port %d, err %v), want (22, nil); failed to reserve port after it should have been released", 22, port, err)
 	}
 }
 

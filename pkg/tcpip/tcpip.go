@@ -436,6 +436,10 @@ type CorkOption int
 // should allow reuse of local address.
 type ReuseAddressOption int
 
+// ReusePortOption is used by SetSockOpt/GetSockOpt to permit multiple sockets
+// to be bound to an identical socket address.
+type ReusePortOption int
+
 // QuickAckOption is stubbed out in SetSockOpt/GetSockOpt.
 type QuickAckOption int
 

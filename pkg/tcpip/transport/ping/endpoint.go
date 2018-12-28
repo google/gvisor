@@ -100,7 +100,7 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id)
+		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id, e)
 	}
 
 	// Close the receive list and drain it.
@@ -541,14 +541,14 @@ func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.Networ
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
 	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false)
 		switch err {
 		case nil:
 			return true, nil
@@ -597,7 +597,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error
 	if commit != nil {
 		if err := commit(); err != nil {
 			// Unregister, the commit failed.
-			e.stack.UnregisterTransportEndpoint(addr.NIC, netProtos, e.transProto, id)
+			e.stack.UnregisterTransportEndpoint(addr.NIC, netProtos, e.transProto, id, e)
 			return err
 		}
 	}
