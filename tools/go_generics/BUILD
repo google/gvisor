@@ -13,14 +13,6 @@ go_binary(
     deps = ["//tools/go_generics/globals"],
 )
 
-go_binary(
-    name = "go_merge",
-    srcs = [
-        "merge.go",
-    ],
-    visibility = ["//visibility:public"],
-)
-
 genrule(
     name = "go_generics_tests",
     srcs = glob(["generics_tests/**"]) + [":go_generics"],

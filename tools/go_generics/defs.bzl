@@ -48,7 +48,7 @@ go_template = rule(
         "opt_types": attr.string_list(),
         "consts": attr.string_list(),
         "opt_consts": attr.string_list(),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics:go_merge")),
+        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics/go_merge")),
     },
     outputs = {
         "out": "%{name}_template.go",
