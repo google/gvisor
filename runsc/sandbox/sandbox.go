@@ -65,7 +65,8 @@ type Sandbox struct {
 }
 
 // Create creates the sandbox process. The caller must call Destroy() on the
-// sandbox.
+// sandbox. If spec specified a cgroup, the current process will have joined
+// the cgroup upon return.
 func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) (*Sandbox, error) {
 	s := &Sandbox{ID: id}
 	// The Cleanup object cleans up partially created sandboxes when an error occurs.
@@ -78,54 +79,40 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 		// If there is cgroup config, install it before creating sandbox process.
 		if err := s.Cgroup.Install(spec.Linux.Resources); err != nil {
-			return nil, fmt.Errorf("error configuring cgroup: %v", err)
+			return nil, fmt.Errorf("configuring cgroup: %v", err)
+		}
+
+		// Make this process join the cgroup to ensure the sandbox (and all its
+		// children processes) are part of the cgroup from the start. Don't bother
+		// moving out because the caller is about to exit anyways.
+		if err := cg.Join(); err != nil {
+			return nil, fmt.Errorf("joining cgroup: %v", err)
 		}
 	}
 
-	// Create a socket pair to synchronize runsc and sandbox processes.
-	// It is used for the following:
-	// * to notify the sandbox process when it has been moved into cgroups.
-	// * to wait for the controller socket.
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
-	if err != nil {
-		return nil, fmt.Errorf("error creating a start-sync socket pair %q: %v", s.ID, err)
+	// Create pipe to synchronize when sandbox process has been booted.
+	fds := make([]int, 2)
+	if err := syscall.Pipe(fds); err != nil {
+		return nil, fmt.Errorf("creating pipe for sandbox %q: %v", s.ID, err)
 	}
-	startSyncFile := os.NewFile(uintptr(fds[0]), "start-sync socket")
-	defer startSyncFile.Close()
+	clientSyncFile := os.NewFile(uintptr(fds[0]), "client sandbox sync")
+	defer clientSyncFile.Close()
 
-	sandboxSyncFile := os.NewFile(uintptr(fds[1]), "sandbox start-sync socket")
+	sandboxSyncFile := os.NewFile(uintptr(fds[1]), "sandbox sync")
 
 	// Create the sandbox process.
-	err = s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, sandboxSyncFile)
-	// sandboxSyncFile has to be closed to be able to detect
-	// when the sandbox process exits unexpectedly.
+	err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, sandboxSyncFile)
+	// sandboxSyncFile has to be closed to be able to detect when the sandbox
+	// process exits unexpectedly.
 	sandboxSyncFile.Close()
 	if err != nil {
 		return nil, err
 	}
 
-	if s.Cgroup != nil {
-		if err := s.Cgroup.Add(s.Pid); err != nil {
-			return nil, fmt.Errorf("error adding sandbox to cgroup: %v", err)
-		}
-	}
-
+	// Wait until the sandbox has booted.
 	b := make([]byte, 1)
-	// Notify the sandbox process it has been moved into cgroups.
-	if l, err := startSyncFile.Write(b); err != nil || l != 1 {
-		return nil, fmt.Errorf("error writing into the start-sync descriptor: %v", err)
-	}
-	// Wait until the sandbox process has initialized the controller socket.
-	if l, err := startSyncFile.Read(b); err != nil || l != 1 {
+	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
 		return nil, fmt.Errorf("error reading from the start-sync descriptor: %v", err)
-	}
-	// startSyncFile is closed here to be sure that starting with this point
-	// the sandbox process will not write anything into it.
-	startSyncFile.Close()
-
-	// Wait for the control server to come up.
-	if err := s.waitForCreated(); err != nil {
-		return nil, err
 	}
 
 	c.Release()
@@ -609,23 +596,6 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	s.Pid = cmd.Process.Pid
 	log.Infof("Sandbox started, PID: %d", s.Pid)
 
-	return nil
-}
-
-// waitForCreated waits for the sandbox subprocess control server to be
-// running and for the loader to have been created, at which point the sandbox
-// is in Created state.
-func (s *Sandbox) waitForCreated() error {
-	log.Debugf("Waiting for sandbox %q creation", s.ID)
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if err := conn.Call(boot.ContainerWaitForLoader, nil, nil); err != nil {
-		return fmt.Errorf("err waiting on loader on sandbox %q, err: %v", s.ID, err)
-	}
 	return nil
 }
 

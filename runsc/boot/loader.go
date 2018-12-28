@@ -277,20 +277,6 @@ func New(args Args) (*Loader, error) {
 	// Create a watchdog.
 	watchdog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
 
-	// Create the control server using the provided FD.
-	//
-	// This must be done *after* we have initialized the kernel since the
-	// controller is used to configure the kernel's network stack.
-	//
-	// This should also be *before* we create the process, since a
-	// misconfigured process will cause an error, and we want the control
-	// server up before that so that we don't time out trying to connect to
-	// it.
-	ctrl, err := newController(args.ControllerFD, k, watchdog)
-	if err != nil {
-		return nil, fmt.Errorf("error creating control server: %v", err)
-	}
-
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create init process for root container: %v", err)
@@ -303,7 +289,6 @@ func New(args Args) (*Loader, error) {
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
-		ctrl:         ctrl,
 		conf:         args.Conf,
 		console:      args.Console,
 		watchdog:     watchdog,
@@ -348,7 +333,22 @@ func New(args Args) (*Loader, error) {
 		}
 	})
 
-	ctrl.manager.l = l
+	// Create the control server using the provided FD.
+	//
+	// This must be done *after* we have initialized the kernel since the
+	// controller is used to configure the kernel's network stack.
+	ctrl, err := newController(args.ControllerFD, l)
+	if err != nil {
+		return nil, fmt.Errorf("creating control server: %v", err)
+	}
+	l.ctrl = ctrl
+
+	// Only start serving after Loader is set to controller and controller is set
+	// to Loader, because they are both used in the urpc methods.
+	if err := ctrl.srv.StartServing(); err != nil {
+		return nil, fmt.Errorf("starting control server: %v", err)
+	}
+
 	return l, nil
 }
 
@@ -743,12 +743,6 @@ func (l *Loader) wait(tg *kernel.ThreadGroup) uint32 {
 // WaitForStartSignal waits for a start signal from the control server.
 func (l *Loader) WaitForStartSignal() {
 	<-l.ctrl.manager.startChan
-}
-
-// NotifyLoaderCreated sends a signal to the container manager that this
-// loader has been created.
-func (l *Loader) NotifyLoaderCreated() {
-	l.ctrl.manager.loaderCreatedChan <- struct{}{}
 }
 
 // WaitExit waits for the root container to exit, and returns its exit status.

@@ -18,6 +18,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -123,6 +124,8 @@ func TestCgroup(t *testing.T) {
 		t.Fatalf("Docker.ID() failed: %v", err)
 	}
 	t.Logf("cgroup ID: %s", gid)
+
+	// Check list of attributes defined above.
 	for _, attr := range attrs {
 		path := filepath.Join("/sys/fs/cgroup", attr.ctrl, "docker", gid, attr.file)
 		out, err := ioutil.ReadFile(path)
@@ -135,6 +138,35 @@ func TestCgroup(t *testing.T) {
 		}
 		if got := strings.TrimSpace(string(out)); got != attr.want {
 			t.Errorf("arg: %q, cgroup attribute %s/%s, got: %q, want: %q", attr.arg, attr.ctrl, attr.file, got, attr.want)
+		}
+	}
+
+	// Check that sandbox is inside cgroup.
+	controllers := []string{
+		"blkio",
+		"cpu",
+		"cpuset",
+		"memory",
+		"net_cls",
+		"net_prio",
+		"devices",
+		"freezer",
+		"perf_event",
+		"pids",
+		"systemd",
+	}
+	pid, err := d.SandboxPid()
+	if err != nil {
+		t.Fatalf("SandboxPid: %v", err)
+	}
+	for _, ctrl := range controllers {
+		path := filepath.Join("/sys/fs/cgroup", ctrl, "docker", gid, "cgroup.procs")
+		out, err := ioutil.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read %q: %v", path, err)
+		}
+		if got := string(out); !strings.Contains(got, strconv.Itoa(pid)) {
+			t.Errorf("cgroup control %s processes, got: %q, want: %q", ctrl, got, pid)
 		}
 	}
 }

@@ -159,14 +159,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		panic("setCapsAndCallSelf must never return success")
 	}
 
-	// Wait until this process has been moved into cgroups.
-	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
-	defer startSyncFile.Close()
-	buf := make([]byte, 1)
-	if r, err := startSyncFile.Read(buf); err != nil || r != 1 {
-		Fatalf("Unable to read from the start-sync descriptor: %v", err)
-	}
-
 	// Create the loader.
 	bootArgs := boot.Args{
 		ID:           f.Arg(0),
@@ -186,20 +178,19 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Fatalf("error creating loader: %v", err)
 	}
 
-	// Fatalf exits the process and doesn't run defers. 'l' must be destroyed
-	// explicitly!
+	// Fatalf exits the process and doesn't run defers.
+	// 'l' must be destroyed explicitly after this point!
 
-	// Notify the parent process the controller has been created.
+	// Notify the parent process the sandbox has booted (and that the controller
+	// is up).
+	startSyncFile := os.NewFile(uintptr(b.startSyncFD), "start-sync file")
+	buf := make([]byte, 1)
 	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
 		l.Destroy()
 		Fatalf("Unable to write into the start-sync descriptor: %v", err)
 	}
-	// startSyncFile is closed here to be sure that starting with this point
-	// the runsc process will not write anything into it.
+	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
 	startSyncFile.Close()
-
-	// Notify other processes the loader has been created.
-	l.NotifyLoaderCreated()
 
 	// Wait for the start signal from runsc.
 	l.WaitForStartSignal()

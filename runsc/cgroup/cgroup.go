@@ -241,6 +241,11 @@ func (c *Cgroup) Uninstall() error {
 	return nil
 }
 
+// Join adds the current process to the all controllers.
+func (c *Cgroup) Join() error {
+	return c.Add(0)
+}
+
 // Add adds given process to all controllers.
 func (c *Cgroup) Add(pid int) error {
 	for key := range controllers {

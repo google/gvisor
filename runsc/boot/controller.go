@@ -81,9 +81,6 @@ const (
 	// and return its ExitStatus.
 	ContainerWait = "containerManager.Wait"
 
-	// ContainerWaitForLoader blocks until the container's loader has been created.
-	ContainerWaitForLoader = "containerManager.WaitForLoader"
-
 	// ContainerWaitPID is used to wait on a process with a certain PID in
 	// the sandbox and return its ExitStatus.
 	ContainerWaitPID = "containerManager.WaitPID"
@@ -115,21 +112,22 @@ type controller struct {
 	manager *containerManager
 }
 
-// newController creates a new controller and starts it listening.
-func newController(fd int, k *kernel.Kernel, w *watchdog.Watchdog) (*controller, error) {
+// newController creates a new controller. The caller must call
+// controller.srv.StartServing() to start the controller.
+func newController(fd int, l *Loader) (*controller, error) {
 	srv, err := server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
 	manager := &containerManager{
-		startChan:         make(chan struct{}),
-		startResultChan:   make(chan error),
-		loaderCreatedChan: make(chan struct{}),
+		startChan:       make(chan struct{}),
+		startResultChan: make(chan error),
+		l:               l,
 	}
 	srv.Register(manager)
 
-	if eps, ok := k.NetworkStack().(*epsocket.Stack); ok {
+	if eps, ok := l.k.NetworkStack().(*epsocket.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
@@ -137,10 +135,6 @@ func newController(fd int, k *kernel.Kernel, w *watchdog.Watchdog) (*controller,
 	}
 
 	srv.Register(&debug{})
-
-	if err := srv.StartServing(); err != nil {
-		return nil, err
-	}
 
 	return &controller{
 		srv:     srv,
@@ -161,11 +155,6 @@ type containerManager struct {
 
 	// l is the loader that creates containers and sandboxes.
 	l *Loader
-
-	// loaderCreatedChan is used to signal when the loader has been created.
-	// After a loader is created, a notify method is called that writes to
-	// this channel.
-	loaderCreatedChan chan struct{}
 }
 
 // StartRoot will start the root container process.
@@ -288,13 +277,6 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 func (cm *containerManager) Pause(_, _ *struct{}) error {
 	log.Debugf("containerManager.Pause")
 	cm.l.k.Pause()
-	return nil
-}
-
-// WaitForLoader blocks until the container's loader has been created.
-func (cm *containerManager) WaitForLoader(_, _ *struct{}) error {
-	log.Debugf("containerManager.WaitForLoader")
-	<-cm.loaderCreatedChan
 	return nil
 }
 
