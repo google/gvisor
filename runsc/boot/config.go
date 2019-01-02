@@ -200,14 +200,7 @@ type Config struct {
 
 	// PanicSignal registers signal handling that panics. Usually set to
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
-	//
-	// PanicSignal takes precedence over TraceSignal.
 	PanicSignal int
-
-	// TraceSignal registers signal handling that logs a traceback of all
-	// goroutines. Usually set to SIGUSR2(12) to troubleshoot hangs. -1
-	// disables it.
-	TraceSignal int
 
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
@@ -235,7 +228,6 @@ func (c *Config) ToFlags() []string {
 		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),
 		"--watchdog-action=" + c.WatchdogAction.String(),
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
-		"--trace-signal=" + strconv.Itoa(c.TraceSignal),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.
