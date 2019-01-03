@@ -68,8 +68,21 @@ func New(message string, linuxTranslation *linux.Errno) *Error {
 	return err
 }
 
+// NewDynamic creates a new error with a dynamic error message and an errno
+// translation.
+//
+// NewDynamic should only be used sparingly and not be used for static error
+// messages. Errors with static error messages should be declared with New as
+// global variables.
+func NewDynamic(message string, linuxTranslation *linux.Errno) *Error {
+	return &Error{message: message, errno: linuxTranslation}
+}
+
 // NewWithoutTranslation creates a new Error. If translation is attempted on
 // the error, translation will fail.
+//
+// NewWithoutTranslation may be called at any time, but static errors should
+// be declared as global variables and dynamic errors should be used sparingly.
 func NewWithoutTranslation(message string) *Error {
 	return &Error{message: message, noTranslation: true}
 }
