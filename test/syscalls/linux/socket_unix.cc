@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_unix.h"
 
+#include <errno.h>
 #include <net/if.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -1173,6 +1174,17 @@ TEST_P(UnixSocketPairTest, SocketShutdown) {
   ASSERT_THAT(ReadFd(sockets->second_fd(), buf, 3),
               SyscallSucceedsWithValue(3));
   EXPECT_EQ(data, absl::string_view(buf, 3));
+}
+
+// TODO: We should be returning ENXIO and NOT EIO.
+TEST_P(UnixSocketPairTest, DISABLED_SocketReopenFromProcfs) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Opening a socket pair via /proc/self/fd/X is a ENXIO.
+  for (const int fd : {sockets->first_fd(), sockets->second_fd()}) {
+    ASSERT_THAT(Open(absl::StrCat("/proc/self/fd/", fd), O_WRONLY),
+                PosixErrorIs(ENXIO, ::testing::_));
+  }
 }
 
 }  // namespace
