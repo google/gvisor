@@ -529,25 +529,27 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
+	}
 
-		// If we have CAP_SYS_ADMIN, we can create an empty chroot and
-		// bind-mount the executable inside it.
-		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
-		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
-			log.Infof("Sandbox will be started in minimal chroot")
-			chroot, err := setUpChroot()
-			if err != nil {
-				return fmt.Errorf("error setting up chroot: %v", err)
-			}
-			s.Chroot = chroot // Remember path so it can cleaned up.
-			cmd.SysProcAttr.Chroot = chroot
-			cmd.Dir = "/"
-			cmd.Args[0] = "/runsc"
-			cmd.Path = "/runsc"
-		} else {
-			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN and CAP_SYS_CHROOT")
+	// If we have CAP_SYS_ADMIN, we can create an empty chroot and
+	// bind-mount the executable inside it.
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
+
+	} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
+		log.Infof("Sandbox will be started in minimal chroot")
+		chroot, err := setUpChroot()
+		if err != nil {
+			return fmt.Errorf("error setting up chroot: %v", err)
 		}
+		s.Chroot = chroot // Remember path so it can cleaned up.
+		cmd.SysProcAttr.Chroot = chroot
+		cmd.Dir = "/"
+		cmd.Args[0] = "/runsc"
+		cmd.Path = "/runsc"
+
+	} else {
+		return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN and CAP_SYS_CHROOT")
 	}
 
 	if s.Cgroup != nil {
