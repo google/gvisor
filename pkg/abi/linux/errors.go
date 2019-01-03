@@ -25,8 +25,8 @@ func (e *Errno) Number() int {
 	return e.number
 }
 
-// Error implements error.Error.
-func (e *Errno) Error() string {
+// String implements fmt.Stringer.String.
+func (e *Errno) String() string {
 	return e.name
 }
 
