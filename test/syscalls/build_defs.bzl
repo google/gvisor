@@ -2,7 +2,7 @@
 
 # syscall_test is a macro that will create targets to run the given test target
 # on the host (native) and runsc.
-def syscall_test(test, shard_count = 1, size = "small"):
+def syscall_test(test, shard_count = 5, size = "small"):
     _syscall_test(test, shard_count, size, "native")
     _syscall_test(test, shard_count, size, "kvm")
     _syscall_test(test, shard_count, size, "ptrace")
