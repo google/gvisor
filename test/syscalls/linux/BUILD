@@ -1414,6 +1414,28 @@ cc_binary(
 )
 
 cc_binary(
+    name = "proc_pid_smaps_test",
+    testonly = 1,
+    srcs = ["proc_pid_smaps.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:memory_util",
+        "//test/util:posix_error",
+        "//test/util:proc_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "pselect_test",
     testonly = 1,
     srcs = ["pselect.cc"],

@@ -84,6 +84,8 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Inform the Mappable, if any, of the new mapping.
 	if opts.Mappable != nil {
+		// The expression for writable is vma.canWriteMappableLocked(), but we
+		// don't yet have a vma.
 		if err := opts.Mappable.AddMapping(ctx, mm, ar, opts.Offset, !opts.Private && opts.MaxPerms.Write); err != nil {
 			return vmaIterator{}, usermem.AddrRange{}, err
 		}
@@ -366,7 +368,7 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 		vmaAR := vseg.Range()
 		vma := vseg.ValuePtr()
 		if vma.mappable != nil {
-			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off, vma.isMappableAsWritable())
+			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off, vma.canWriteMappableLocked())
 		}
 		if vma.id != nil {
 			vma.id.DecRef()
@@ -379,6 +381,19 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 		vseg = vgap.NextSegment()
 	}
 	return vgap
+}
+
+// canWriteMappableLocked returns true if it is possible for vma.mappable to be
+// written to via this vma, i.e. if it is possible that
+// vma.mappable.Translate(at.Write=true) may be called as a result of this vma.
+// This includes via I/O with usermem.IOOpts.IgnorePermissions = true, such as
+// PTRACE_POKEDATA.
+//
+// canWriteMappableLocked is equivalent to Linux's VM_SHARED.
+//
+// Preconditions: mm.mappingMu must be locked.
+func (vma *vma) canWriteMappableLocked() bool {
+	return !vma.private && vma.maxPerms.Write
 }
 
 // vmaSetFunctions implements segment.Functions for vmaSet.

@@ -87,7 +87,7 @@ go_library(
         "mm.go",
         "pma.go",
         "pma_set.go",
-        "proc_pid_maps.go",
+        "procfs.go",
         "save_restore.go",
         "shm.go",
         "special_mappable.go",

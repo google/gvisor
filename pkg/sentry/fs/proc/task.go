@@ -82,6 +82,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
 		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
 		"ns":        newNamespaceDir(t, msrc),
+		"smaps":     newSmaps(t, msrc),
 		"stat":      newTaskStat(t, msrc, showSubtasks, pidns),
 		"statm":     newStatm(t, msrc),
 		"status":    newStatus(t, msrc, pidns),
@@ -316,7 +317,47 @@ func (md *mapsData) NeedsUpdate(generation int64) bool {
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
 func (md *mapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
 	if mm := md.mm(); mm != nil {
-		return mm.ReadSeqFileData(ctx, h)
+		return mm.ReadMapsSeqFileData(ctx, h)
+	}
+	return []seqfile.SeqData{}, 0
+}
+
+// smapsData implements seqfile.SeqSource for /proc/[pid]/smaps.
+//
+// +stateify savable
+type smapsData struct {
+	t *kernel.Task
+}
+
+func newSmaps(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
+	return newFile(seqfile.NewSeqFile(t, &smapsData{t}), msrc, fs.SpecialFile, t)
+}
+
+func (sd *smapsData) mm() *mm.MemoryManager {
+	var tmm *mm.MemoryManager
+	sd.t.WithMuLocked(func(t *kernel.Task) {
+		if mm := t.MemoryManager(); mm != nil {
+			// No additional reference is taken on mm here. This is safe
+			// because MemoryManager.destroy is required to leave the
+			// MemoryManager in a state where it's still usable as a SeqSource.
+			tmm = mm
+		}
+	})
+	return tmm
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (sd *smapsData) NeedsUpdate(generation int64) bool {
+	if mm := sd.mm(); mm != nil {
+		return mm.NeedsUpdate(generation)
+	}
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (sd *smapsData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if mm := sd.mm(); mm != nil {
+		return mm.ReadSmapsSeqFileData(ctx, h)
 	}
 	return []seqfile.SeqData{}, 0
 }
