@@ -1176,8 +1176,9 @@ TEST_P(UnixSocketPairTest, SocketShutdown) {
   EXPECT_EQ(data, absl::string_view(buf, 3));
 }
 
-// TODO: We should be returning ENXIO and NOT EIO.
-TEST_P(UnixSocketPairTest, DISABLED_SocketReopenFromProcfs) {
+TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
+  // TODO: We should be returning ENXIO and NOT EIO.
+  SKIP_IF(IsRunningOnGvisor());
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // Opening a socket pair via /proc/self/fd/X is a ENXIO.
