@@ -35,6 +35,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
 const (
@@ -379,19 +380,20 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
-	if err := fchown(fd, uid, gid); err != nil {
+	cu := specutils.MakeCleanup(func() {
 		syscall.Close(fd)
-		if e := syscall.Unlinkat(l.controlFD(), name); e != nil {
-			log.Warningf("error unlinking file %q after failed chown: %v", name, e)
+		// Best effort attempt to remove the file in case of failure.
+		if err := syscall.Unlinkat(l.controlFD(), name); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, name), err)
 		}
+	})
+	defer cu.Clean()
+
+	if err := fchown(fd, uid, gid); err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 	stat, err := stat(fd)
 	if err != nil {
-		syscall.Close(fd)
-		if e := syscall.Unlinkat(l.controlFD(), name); e != nil {
-			log.Warningf("error unlinking file %q after failed stat: %v", name, e)
-		}
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 
@@ -404,6 +406,8 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		openedFile:  f,
 		mode:        mode,
 	}
+
+	cu.Release()
 	return newFDMaybe(c.openedFile), c, l.attachPoint.makeQID(stat), 0, nil
 }
 
@@ -420,6 +424,13 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	if err := syscall.Mkdirat(l.controlFD(), name, uint32(perm.Permissions())); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
+	cu := specutils.MakeCleanup(func() {
+		// Best effort attempt to remove the dir in case of failure.
+		if err := unix.Unlinkat(l.controlFD(), name, unix.AT_REMOVEDIR); err != nil {
+			log.Warningf("error unlinking dir %q after failure: %v", path.Join(l.hostPath, name), err)
+		}
+	})
+	defer cu.Clean()
 
 	// Open directory to change ownership and stat it.
 	flags := syscall.O_DIRECTORY | syscall.O_RDONLY | openFlags
@@ -436,6 +447,8 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
+
+	cu.Release()
 	return l.attachPoint.makeQID(stat), nil
 }
 
@@ -759,6 +772,13 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	if err := unix.Symlinkat(target, l.controlFD(), newName); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
+	cu := specutils.MakeCleanup(func() {
+		// Best effort attempt to remove the symlink in case of failure.
+		if err := syscall.Unlinkat(l.controlFD(), newName); err != nil {
+			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, newName), err)
+		}
+	})
+	defer cu.Clean()
 
 	// Open symlink to change ownership and stat it.
 	fd, err := syscall.Openat(l.controlFD(), newName, unix.O_PATH|openFlags, 0)
@@ -774,6 +794,8 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
+
+	cu.Release()
 	return l.attachPoint.makeQID(stat), nil
 }
 
