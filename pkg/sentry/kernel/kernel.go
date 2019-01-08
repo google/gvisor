@@ -31,6 +31,7 @@
 package kernel
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -658,9 +659,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 
 	// Create a fresh task context.
 	remainingTraversals = uint(args.MaxSymlinkTraversals)
-	tc, err := k.LoadTaskImage(ctx, k.mounts, root, wd, &remainingTraversals, args.Filename, args.Argv, args.Envv, k.featureSet)
-	if err != nil {
-		return nil, 0, err
+	tc, se := k.LoadTaskImage(ctx, k.mounts, root, wd, &remainingTraversals, args.Filename, args.Argv, args.Envv, k.featureSet)
+	if se != nil {
+		return nil, 0, errors.New(se.String())
 	}
 
 	// Take a reference on the FDMap, which will be transferred to

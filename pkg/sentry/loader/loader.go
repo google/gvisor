@@ -17,6 +17,7 @@ package loader
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"path"
 
@@ -30,6 +31,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -196,20 +198,18 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 // Preconditions:
 //  * The Task MemoryManager is empty.
 //  * Load is called on the Task goroutine.
-func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, error) {
+func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the binary itself.
 	loaded, ac, d, argv, err := loadPath(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv)
 	if err != nil {
-		ctx.Infof("Failed to load %s: %v", filename, err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer d.DecRef()
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, m, vdso, loaded)
 	if err != nil {
-		ctx.Infof("Error loading VDSO: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
@@ -217,35 +217,30 @@ func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, r
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()
 	if !ok {
-		ctx.Warningf("brk overflows: %#x", loaded.end)
-		return 0, nil, "", syserror.ENOEXEC
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), linux.ENOEXEC)
 	}
 	m.BrkSetup(ctx, e)
 
 	// Allocate our stack.
 	stack, err := allocStack(ctx, m, ac)
 	if err != nil {
-		ctx.Infof("Failed to allocate stack: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Push the original filename to the stack, for AT_EXECFN.
 	execfn, err := stack.Push(filename)
 	if err != nil {
-		ctx.Infof("Failed to push exec filename: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Push 16 random bytes on the stack which AT_RANDOM will point to.
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		ctx.Infof("Failed to read random bytes: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 	random, err := stack.Push(b)
 	if err != nil {
-		ctx.Infof("Failed to push random bytes: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	c := auth.CredentialsFromContext(ctx)
@@ -266,8 +261,7 @@ func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, r
 
 	sl, err := stack.Load(argv, envv, auxv)
 	if err != nil {
-		ctx.Infof("Failed to load stack: %v", err)
-		return 0, nil, "", err
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	m.SetArgvStart(sl.ArgvStart)

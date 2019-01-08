@@ -15,9 +15,9 @@
 package kernel
 
 import (
-	"errors"
 	"fmt"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -26,10 +26,10 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserr"
 )
 
-// ErrNoSyscalls is returned if there is no syscall table.
-var ErrNoSyscalls = errors.New("no syscall table found")
+var errNoSyscalls = syserr.New("no syscall table found", linux.ENOEXEC)
 
 // Auxmap contains miscellaneous data for the task.
 type Auxmap map[string]interface{}
@@ -142,7 +142,7 @@ func (t *Task) Stack() *arch.Stack {
 //  * argv: Binary argv
 //  * envv: Binary envv
 //  * fs: Binary FeatureSet
-func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, error) {
+func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
 	// Prepare a new user address space to load into.
 	m := mm.NewMemoryManager(k)
 	defer m.DecUsers(ctx)
@@ -155,8 +155,9 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, r
 	// Lookup our new syscall table.
 	st, ok := LookupSyscallTable(os, ac.Arch())
 	if !ok {
-		// No syscall table found. Yikes.
-		return nil, ErrNoSyscalls
+		// No syscall table found. This means that the ELF binary does not match
+		// the architecture.
+		return nil, errNoSyscalls
 	}
 
 	if !m.IncUsers() {

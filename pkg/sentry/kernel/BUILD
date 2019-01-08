@@ -184,6 +184,7 @@ go_library(
         "//pkg/state",
         "//pkg/state/statefile",
         "//pkg/sync",
+        "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",

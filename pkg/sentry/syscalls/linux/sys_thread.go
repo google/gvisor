@@ -104,9 +104,9 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 	// Load the new TaskContext.
 	maxTraversals := uint(linux.MaxSymlinkTraversals)
-	tc, err := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, filename, argv, envv, t.Arch().FeatureSet())
-	if err != nil {
-		return 0, nil, err
+	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, filename, argv, envv, t.Arch().FeatureSet())
+	if se != nil {
+		return 0, nil, se.ToError()
 	}
 
 	ctrl, err := t.Execve(tc)

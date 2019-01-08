@@ -44,6 +44,7 @@ go_library(
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/waiter",
     ],
