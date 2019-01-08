@@ -15,7 +15,9 @@
 package tcpip
 
 import (
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -191,5 +193,25 @@ func TestAddressString(t *testing.T) {
 		if got := addr.String(); got != want {
 			t.Errorf("Address(%x).String() = '%s', want = '%s'", addr, got, want)
 		}
+	}
+}
+
+func TestStatsString(t *testing.T) {
+	got := fmt.Sprintf("%+v", Stats{}.FillIn())
+
+	matchers := []string{
+		// Print root-level stats correctly.
+		"UnknownProtocolRcvdPackets:0",
+		// Print protocol-specific stats correctly.
+		"TCP:{ActiveConnectionOpenings:0",
+	}
+
+	for _, m := range matchers {
+		if !strings.Contains(got, m) {
+			t.Errorf("string.Contains(got, %q) = false", m)
+		}
+	}
+	if t.Failed() {
+		t.Logf(`got = fmt.Sprintf("%%+v", Stats{}.FillIn()) = %q`, got)
 	}
 }

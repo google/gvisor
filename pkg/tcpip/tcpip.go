@@ -568,6 +568,10 @@ func (s *StatCounter) IncrementBy(v uint64) {
 	atomic.AddUint64(&s.count, v)
 }
 
+func (s *StatCounter) String() string {
+	return strconv.FormatUint(s.Value(), 10)
+}
+
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
 	// PacketsReceived is the total number of IP packets received from the link
