@@ -19,6 +19,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/control",
         "//runsc/boot",
+        "//runsc/cgroup",
         "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",

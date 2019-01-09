@@ -36,6 +36,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/cgroup"
 	"gvisor.googlesource.com/gvisor/runsc/sandbox"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
@@ -286,18 +287,26 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 			return nil, fmt.Errorf("writing clean spec: %v", err)
 		}
 
-		ioFiles, err := c.createGoferProcess(spec, conf, bundleDir)
-		if err != nil {
-			return nil, err
+		// Create and join cgroup before processes are created to ensure they are
+		// part of the cgroup from the start (and all tneir children processes).
+		cg := cgroup.New(spec)
+		if cg != nil {
+			// If there is cgroup config, install it before creating sandbox process.
+			if err := cg.Install(spec.Linux.Resources); err != nil {
+				return nil, fmt.Errorf("configuring cgroup: %v", err)
+			}
 		}
+		if err := runInCgroup(cg, func() error {
+			ioFiles, err := c.createGoferProcess(spec, conf, bundleDir)
+			if err != nil {
+				return err
+			}
 
-		// Start a new sandbox for this container. Any errors after this point
-		// must destroy the container.
-		c.Sandbox, err = sandbox.Create(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles)
-		if err != nil {
-			return nil, err
-		}
-		if err := c.Sandbox.AddGoferToCgroup(c.GoferPid); err != nil {
+			// Start a new sandbox for this container. Any errors after this point
+			// must destroy the container.
+			c.Sandbox, err = sandbox.New(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles, cg)
+			return err
+		}); err != nil {
 			return nil, err
 		}
 	} else {
@@ -381,15 +390,16 @@ func (c *Container) Start(conf *boot.Config) error {
 			return fmt.Errorf("writing clean spec: %v", err)
 		}
 
-		// Create the gofer process.
-		ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
-		if err != nil {
-			return err
-		}
-		if err := c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles); err != nil {
-			return err
-		}
-		if err := c.Sandbox.AddGoferToCgroup(c.GoferPid); err != nil {
+		// Join cgroup to strt gofer process to ensure it's part of the cgroup from
+		// the start (and all tneir children processes).
+		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
+			// Create the gofer process.
+			ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
+			if err != nil {
+				return err
+			}
+			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles)
+		}); err != nil {
 			return err
 		}
 	}
@@ -882,4 +892,18 @@ func lockContainerMetadata(containerRootDir string) (func() error, error) {
 		return nil, fmt.Errorf("error acquiring lock on container lock file %q: %v", f, err)
 	}
 	return l.Unlock, nil
+}
+
+// runInCgroup executes fn inside the specified cgroup. If cg is nil, execute
+// it in the current context.
+func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
+	if cg == nil {
+		return fn()
+	}
+	restore, err := cg.Join()
+	defer restore()
+	if err != nil {
+		return err
+	}
+	return fn()
 }

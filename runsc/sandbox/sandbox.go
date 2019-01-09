@@ -64,31 +64,14 @@ type Sandbox struct {
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
 }
 
-// Create creates the sandbox process. The caller must call Destroy() on the
-// sandbox. If spec specified a cgroup, the current process will have joined
-// the cgroup upon return.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File) (*Sandbox, error) {
-	s := &Sandbox{ID: id}
-	// The Cleanup object cleans up partially created sandboxes when an error occurs.
-	// Any errors occurring during cleanup itself are ignored.
+// New creates the sandbox process. The caller must call Destroy() on the
+// sandbox.
+func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, cg *cgroup.Cgroup) (*Sandbox, error) {
+	s := &Sandbox{ID: id, Cgroup: cg}
+	// The Cleanup object cleans up partially created sandboxes when an error
+	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := specutils.MakeCleanup(func() { _ = s.destroy() })
 	defer c.Clean()
-
-	if cg, ok := cgroup.New(spec); ok {
-		s.Cgroup = cg
-
-		// If there is cgroup config, install it before creating sandbox process.
-		if err := s.Cgroup.Install(spec.Linux.Resources); err != nil {
-			return nil, fmt.Errorf("configuring cgroup: %v", err)
-		}
-
-		// Make this process join the cgroup to ensure the sandbox (and all its
-		// children processes) are part of the cgroup from the start. Don't bother
-		// moving out because the caller is about to exit anyways.
-		if err := cg.Join(); err != nil {
-			return nil, fmt.Errorf("joining cgroup: %v", err)
-		}
-	}
 
 	// Create pipe to synchronize when sandbox process has been booted.
 	fds := make([]int, 2)
@@ -869,14 +852,6 @@ func (s *Sandbox) waitForStopped() error {
 		return nil
 	}
 	return backoff.Retry(op, b)
-}
-
-// AddGoferToCgroup adds the gofer process to the sandbox's cgroup.
-func (s *Sandbox) AddGoferToCgroup(pid int) error {
-	if s.Cgroup != nil {
-		return s.Cgroup.Add(pid)
-	}
-	return nil
 }
 
 // deviceFileForPlatform opens the device file for the given platform. If the

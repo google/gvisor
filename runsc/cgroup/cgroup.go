@@ -17,6 +17,7 @@
 package cgroup
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -168,12 +169,12 @@ type Cgroup struct {
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
-// Otherwise it returns nil and false.
-func New(spec *specs.Spec) (*Cgroup, bool) {
+// Returns nil otherwise.
+func New(spec *specs.Spec) *Cgroup {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
-		return nil, false
+		return nil
 	}
-	return &Cgroup{Name: spec.Linux.CgroupsPath}, true
+	return &Cgroup{Name: spec.Linux.CgroupsPath}
 }
 
 // Install creates and configures cgroups according to 'res'. If cgroup path
@@ -241,19 +242,57 @@ func (c *Cgroup) Uninstall() error {
 	return nil
 }
 
-// Join adds the current process to the all controllers.
-func (c *Cgroup) Join() error {
-	return c.Add(0)
-}
+// Join adds the current process to the all controllers. Returns function that
+// restores cgroup to the original state.
+func (c *Cgroup) Join() (func(), error) {
+	// First save the current state so it can be restored.
+	undo := func() {}
+	f, err := os.Open("/proc/self/cgroup")
+	if err != nil {
+		return undo, err
+	}
+	defer f.Close()
 
-// Add adds given process to all controllers.
-func (c *Cgroup) Add(pid int) error {
-	for key := range controllers {
-		if err := setValue(c.makePath(key), "cgroup.procs", strconv.Itoa(pid)); err != nil {
-			return err
+	var undoPaths []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// Format: ID:controller1,controller2:path
+		// Example: 2:cpu,cpuacct:/user.slice
+		tokens := strings.Split(scanner.Text(), ":")
+		if len(tokens) != 3 {
+			return undo, fmt.Errorf("formatting cgroups file, line: %q", scanner.Text())
+		}
+		for _, ctrlr := range strings.Split(tokens[1], ",") {
+			// Skip controllers we don't handle.
+			if _, ok := controllers[ctrlr]; ok {
+				undoPaths = append(undoPaths, filepath.Join(cgroupRoot, ctrlr, tokens[2]))
+				break
+			}
 		}
 	}
-	return nil
+	if err := scanner.Err(); err != nil {
+		return undo, err
+	}
+
+	// Replace empty undo with the real thing before changes are made to cgroups.
+	undo = func() {
+		for _, path := range undoPaths {
+			log.Debugf("Restoring cgroup %q", path)
+			if err := setValue(path, "cgroup.procs", "0"); err != nil {
+				log.Warningf("Error restoring cgroup %q: %v", path, err)
+			}
+		}
+	}
+
+	// Now join the cgroups.
+	for key := range controllers {
+		path := c.makePath(key)
+		log.Debugf("Joining cgroup %q", path)
+		if err := setValue(path, "cgroup.procs", "0"); err != nil {
+			return undo, err
+		}
+	}
+	return undo, nil
 }
 
 // NumCPU returns the number of CPUs configured in 'cpuset/cpuset.cpus'.

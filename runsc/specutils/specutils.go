@@ -470,8 +470,7 @@ func ContainsStr(strs []string, str string) bool {
 // c.Release() // on success, aborts closing the file and return it.
 // return f
 type Cleanup struct {
-	clean    func()
-	released bool
+	clean func()
 }
 
 // MakeCleanup creates a new Cleanup object.
@@ -481,13 +480,14 @@ func MakeCleanup(f func()) Cleanup {
 
 // Clean calls the cleanup function.
 func (c *Cleanup) Clean() {
-	if !c.released {
+	if c.clean != nil {
 		c.clean()
+		c.clean = nil
 	}
 }
 
 // Release releases the cleanup from its duties, i.e. cleanup function is not
 // called after this point.
 func (c *Cleanup) Release() {
-	c.released = true
+	c.clean = nil
 }
