@@ -535,8 +535,6 @@ go_binary(
     ],
     deps = [
         "//pkg/log",
-        "//runsc/boot",
-        "//runsc/container",
         "//runsc/specutils",
         "//runsc/test/testutil",
         "//test/syscalls/gtest",

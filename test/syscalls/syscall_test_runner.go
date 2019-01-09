@@ -31,8 +31,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 	"gvisor.googlesource.com/gvisor/test/syscalls/gtest"
@@ -42,11 +40,12 @@ import (
 const testDir = "test/syscalls/linux"
 
 var (
-	testName = flag.String("test-name", "", "name of test binary to run")
-	debug    = flag.Bool("debug", false, "enable debug logs")
-	strace   = flag.Bool("strace", false, "enable strace logs")
-	platform = flag.String("platform", "ptrace", "platform to run on")
-	parallel = flag.Bool("parallel", false, "run tests in parallel")
+	testName  = flag.String("test-name", "", "name of test binary to run")
+	debug     = flag.Bool("debug", false, "enable debug logs")
+	strace    = flag.Bool("strace", false, "enable strace logs")
+	platform  = flag.String("platform", "ptrace", "platform to run on")
+	parallel  = flag.Bool("parallel", false, "run tests in parallel")
+	runscPath = flag.String("runsc", "", "path to runsc binary")
 )
 
 // runTestCaseNative runs the test case directly on the host machine.
@@ -101,16 +100,6 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfig()
-	conf.RootDir = rootDir
-	conf.Debug = *debug
-	conf.Strace = *strace
-	p, err := boot.MakePlatformType(*platform)
-	if err != nil {
-		t.Fatalf("error getting platform %q: %v", *platform, err)
-	}
-	conf.Platform = p
-
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
 	spec := testutil.NewSpecWithArgs(testBin, gtest.FilterTestFlag+"="+tc.FullName())
@@ -154,12 +143,43 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	id := testutil.UniqueContainerID()
 	log.Infof("Running test %q in container %q", tc.FullName(), id)
 	specutils.LogSpec(spec)
-	ws, err := container.Run(id, spec, conf, bundleDir, "", "", "")
-	if err != nil {
-		t.Fatalf("container.Run failed: %v", err)
+
+	args := []string{
+		"-platform", *platform,
+		"-root", rootDir,
+		"--network=none",
+		"-log-format=text",
+		"-TESTONLY-unsafe-nonroot=true",
 	}
-	if got := ws.ExitStatus(); got != 0 {
-		t.Errorf("test %q exited with status %d, want 0", tc.FullName(), ws.ExitStatus())
+	if *debug {
+		args = append(args, "-debug", "-log-packets=true")
+	}
+	if *strace {
+		args = append(args, "-strace")
+	}
+	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
+	// as root inside that namespace to get it.
+	args = append(args, "run", "--bundle", bundleDir, id)
+	cmd := exec.Command(*runscPath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+		// Set current user/group as root inside the namespace.
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
+		GidMappingsEnableSetgroups: false,
+		Credential: &syscall.Credential{
+			Uid: 0,
+			Gid: 0,
+		},
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err = cmd.Run(); err != nil {
+		t.Errorf("test %q exited with status %v, want 0", tc.FullName(), err)
 	}
 }
 
@@ -201,13 +221,11 @@ func main() {
 		log.SetLevel(log.Debug)
 	}
 
-	if *platform != "native" {
+	if *platform != "native" && *runscPath == "" {
 		if err := testutil.ConfigureExePath(); err != nil {
 			panic(err.Error())
 		}
-		// The native tests don't expect to be running as root, but
-		// runsc requires it.
-		testutil.RunAsRoot()
+		*runscPath = specutils.ExePath
 	}
 
 	// Make sure stdout and stderr are opened with O_APPEND, otherwise logs
