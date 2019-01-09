@@ -27,9 +27,23 @@ namespace gvisor {
 namespace testing {
 namespace {
 
+enum class CooperativeSaveMode {
+  kUnknown = 0,  // cooperative_save_mode is statically-initialized to 0
+  kAvailable,
+  kNotAvailable,
+};
+
+std::atomic<CooperativeSaveMode> cooperative_save_mode;
+
 bool CooperativeSaveEnabled() {
-  static bool enabled = getenv(GVISOR_COOPERATIVE_SAVE_TEST) != nullptr;
-  return enabled;
+  auto mode = cooperative_save_mode.load();
+  if (mode == CooperativeSaveMode::kUnknown) {
+    mode = (getenv(GVISOR_COOPERATIVE_SAVE_TEST) != nullptr)
+               ? CooperativeSaveMode::kAvailable
+               : CooperativeSaveMode::kNotAvailable;
+    cooperative_save_mode.store(mode);
+  }
+  return mode == CooperativeSaveMode::kAvailable;
 }
 
 std::atomic<int> save_disable;
