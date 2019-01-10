@@ -34,9 +34,7 @@ def _syscall_test(test, shard_count, size, platform):
             test,
         ],
         args = [
-            # First argument is location to syscall_test_runner go binary.
-            "$(location :syscall_test_runner)",
-            # Rest of arguments are passed directly to syscall_test_runner binary.
+            # Arguments are passed directly to syscall_test_runner binary.
             "--test-name=" + test_name,
             "--platform=" + platform,
             "--debug=false",

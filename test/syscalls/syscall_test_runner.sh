@@ -20,6 +20,8 @@
 
 set -euf -o pipefail
 
-# The syscall test runner binary and arguments have all been passed as arguments
-# to this shell script.
-exec "$@"
+# Get location of syscall_test_runner binary.
+readonly runner=$(find ${TEST_SRCDIR} -name syscall_test_runner)
+
+# Pass the arguments of this script directly to the runner.
+exec "${runner}" "$@"
