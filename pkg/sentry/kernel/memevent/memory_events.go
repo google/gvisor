@@ -69,11 +69,12 @@ func (m *MemoryEvents) Start() {
 	if m.period == 0 {
 		return
 	}
+	m.done.Add(1)
 	go m.run() // S/R-SAFE: doesn't interact with saved state.
 }
 
 func (m *MemoryEvents) run() {
-	m.done.Add(1)
+	defer m.done.Done()
 
 	// Emit the first event immediately on startup.
 	totalTicks.Increment()
@@ -85,7 +86,6 @@ func (m *MemoryEvents) run() {
 	for {
 		select {
 		case <-m.stop:
-			m.done.Done()
 			return
 		case <-ticker.C:
 			totalTicks.Increment()
