@@ -272,3 +272,16 @@ cc_library(
         "@com_google_googletest//:gtest",
     ],
 )
+
+cc_library(
+    name = "rlimit_util",
+    testonly = 1,
+    srcs = ["rlimit_util.cc"],
+    hdrs = ["rlimit_util.h"],
+    deps = [
+        ":cleanup",
+        ":logging",
+        ":posix_error",
+        ":test_util",
+    ],
+)

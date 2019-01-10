@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <errno.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <cerrno>
+#include <cstring>
 
 #include "gmock/gmock.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/memory_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/rlimit_util.h"
 #include "test/util/test_util.h"
 
 using ::testing::_;
@@ -58,20 +59,6 @@ bool IsPageMlocked(uintptr_t addr) {
   return true;
 }
 
-PosixErrorOr<Cleanup> ScopedSetSoftRlimit(int resource, rlim_t newval) {
-  struct rlimit old_rlim;
-  if (getrlimit(resource, &old_rlim) != 0) {
-    return PosixError(errno, "getrlimit failed");
-  }
-  struct rlimit new_rlim = old_rlim;
-  new_rlim.rlim_cur = newval;
-  if (setrlimit(resource, &new_rlim) != 0) {
-    return PosixError(errno, "setrlimit failed");
-  }
-  return Cleanup([resource, old_rlim] {
-    TEST_PCHECK(setrlimit(resource, &old_rlim) == 0);
-  });
-}
 
 TEST(MlockTest, Basic) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanMlock()));

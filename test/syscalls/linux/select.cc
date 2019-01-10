@@ -12,14 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <limits.h>
-#include <signal.h>
+#include <fcntl.h>
+#include <sys/resource.h>
 #include <sys/select.h>
+#include <sys/time.h>
+#include <climits>
+#include <csignal>
+#include <cstdio>
 
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/base_poll_test.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/rlimit_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -57,15 +66,27 @@ TEST_F(SelectTest, NegativeNfds) {
 }
 
 TEST_F(SelectTest, ClosedFds) {
-  fd_set read_set;
-  FD_ZERO(&read_set);
-  int fd;
-  ASSERT_THAT(fd = dup(1), SyscallSucceeds());
-  ASSERT_THAT(close(fd), SyscallSucceeds());
-  FD_SET(fd, &read_set);
-  struct timeval timeout = absl::ToTimeval(absl::Milliseconds(10));
-  EXPECT_THAT(select(fd + 1, &read_set, nullptr, nullptr, &timeout),
-              SyscallFailsWithErrno(EBADF));
+  auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDONLY));
+
+  // We can't rely on a file descriptor being closed in a multi threaded
+  // application so fork to get a clean process.
+  EXPECT_THAT(InForkedProcess([&] {
+                int fd_num = fd.get();
+                fd.reset();
+
+                fd_set read_set;
+                FD_ZERO(&read_set);
+                FD_SET(fd_num, &read_set);
+
+                struct timeval timeout =
+                    absl::ToTimeval(absl::Milliseconds(10));
+                TEST_PCHECK(select(fd_num + 1, &read_set, nullptr, nullptr,
+                                   &timeout) != 0);
+                TEST_PCHECK(errno == EBADF);
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST_F(SelectTest, ZeroTimeout) {
@@ -121,6 +142,25 @@ TEST_F(SelectTest, IgnoreBitsAboveNfds) {
   struct timeval timeout = {};
   EXPECT_THAT(select(kNfds, &read_set, nullptr, nullptr, &timeout),
               SyscallSucceedsWithValue(0));
+}
+
+// This test illustrates Linux's behavior of 'select' calls passing after
+// setrlimit RLIMIT_NOFILE is called. In particular, versions of sshd rely on
+// this behavior.
+TEST_F(SelectTest, SetrlimitCallNOFILE) {
+  fd_set read_set;
+  FD_ZERO(&read_set);
+  timeval timeout = {};
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(NewTempAbsPath(), O_RDONLY | O_CREAT, S_IRUSR));
+
+  Cleanup reset_rlimit =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_NOFILE, 0));
+
+  FD_SET(fd.get(), &read_set);
+  // this call with zero timeout should return immediately
+  EXPECT_THAT(select(fd.get() + 1, &read_set, nullptr, nullptr, &timeout),
+              SyscallSucceeds());
 }
 
 }  // namespace
