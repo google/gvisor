@@ -280,6 +280,7 @@ TEST(ChrootTest, ProcMemSelfMapsNoEscapeProcOpen) {
 // /proc/self/mountinfo.
 TEST(ChrootTest, ProcMountsMountinfoNoEscape) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
 
   // We are going to create some mounts and then chroot. In order to be able to
   // unmount the mounts after the test run, we must chdir to the root and use
