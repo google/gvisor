@@ -359,7 +359,7 @@ func TestMultiContainerSignal(t *testing.T) {
 			cpid, err := syscall.Wait4(goferPid, nil, 0, nil)
 			return uintptr(cpid), 0, err
 		})
-		if err != nil && err != syscall.ECHILD {
+		if err != syscall.ECHILD {
 			t.Errorf("error waiting for gofer to exit: %v", err)
 		}
 		// Make sure process 1 is still running.
@@ -379,18 +379,12 @@ func TestMultiContainerSignal(t *testing.T) {
 		}
 
 		// Ensure that container's gofer and sandbox process are no more.
-		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
-			cpid, err := syscall.Wait4(containers[0].GoferPid, nil, 0, nil)
-			return uintptr(cpid), 0, err
-		})
+		err = blockUntilWaitable(containers[0].GoferPid)
 		if err != nil && err != syscall.ECHILD {
 			t.Errorf("error waiting for gofer to exit: %v", err)
 		}
 
-		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
-			cpid, err := syscall.Wait4(containers[0].Sandbox.Pid, nil, 0, nil)
-			return uintptr(cpid), 0, err
-		})
+		err = blockUntilWaitable(containers[0].Sandbox.Pid)
 		if err != nil && err != syscall.ECHILD {
 			t.Errorf("error waiting for sandbox to exit: %v", err)
 		}
@@ -398,6 +392,10 @@ func TestMultiContainerSignal(t *testing.T) {
 		// The sentry should be gone, so signaling should yield an error.
 		if err := containers[0].SignalContainer(syscall.SIGKILL, false); err == nil {
 			t.Errorf("sandbox %q shouldn't exist, but we were able to signal it", containers[0].Sandbox.ID)
+		}
+
+		if err := containers[0].Destroy(); err != nil {
+			t.Errorf("failed to destroy container: %v", err)
 		}
 	}
 }

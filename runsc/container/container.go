@@ -119,6 +119,12 @@ type Container struct {
 	// be 0 if the gofer has been killed.
 	GoferPid int `json:"goferPid"`
 
+	// goferIsChild is set if a gofer process is a child of the current process.
+	//
+	// This field isn't saved to json, because only a creator of a gofer
+	// process will have it as a child process.
+	goferIsChild bool
+
 	// Sandbox is the sandbox this container is running in. It's set when the
 	// container is created and reset when the sandbox is destroyed.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
@@ -708,11 +714,14 @@ func (c *Container) save() error {
 // root containers), and waits for the container or sandbox and the gofer
 // to stop. If any of them doesn't stop before timeout, an error is returned.
 func (c *Container) stop() error {
+	var cgroup *cgroup.Cgroup
+
 	if c.Sandbox != nil {
 		log.Debugf("Destroying container %q", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
 			return fmt.Errorf("error destroying container %q: %v", c.ID, err)
 		}
+		cgroup = c.Sandbox.Cgroup
 		// Only set sandbox to nil after it has been told to destroy the container.
 		c.Sandbox = nil
 	}
@@ -725,7 +734,18 @@ func (c *Container) stop() error {
 			log.Warningf("Error sending signal %d to gofer %d: %v", syscall.SIGKILL, c.GoferPid, err)
 		}
 	}
-	return c.waitForStopped()
+
+	if err := c.waitForStopped(); err != nil {
+		return err
+	}
+
+	// Gofer is running in cgroups, so Cgroup.Uninstall has to be called after it.
+	if cgroup != nil {
+		if err := cgroup.Uninstall(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Container) waitForStopped() error {
@@ -738,12 +758,24 @@ func (c *Container) waitForStopped() error {
 				return fmt.Errorf("container is still running")
 			}
 		}
-		if c.GoferPid != 0 {
-			if err := syscall.Kill(c.GoferPid, 0); err == nil {
+		if c.GoferPid == 0 {
+			return nil
+		}
+		if c.goferIsChild {
+			// The gofer process is a child of the current process,
+			// so we can wait it and collect its zombie.
+			wpid, err := syscall.Wait4(int(c.GoferPid), nil, syscall.WNOHANG, nil)
+			if err != nil {
+				return fmt.Errorf("error waiting the gofer process: %v", err)
+			}
+			if wpid == 0 {
 				return fmt.Errorf("gofer is still running")
 			}
-			c.GoferPid = 0
+
+		} else if err := syscall.Kill(c.GoferPid, 0); err == nil {
+			return fmt.Errorf("gofer is still running")
 		}
+		c.GoferPid = 0
 		return nil
 	}
 	return backoff.Retry(op, b)
@@ -816,6 +848,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
+	c.goferIsChild = true
 	return sandEnds, nil
 }
 

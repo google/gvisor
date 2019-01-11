@@ -39,9 +39,6 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
-// childReaper reaps child processes.
-var childReaper *testutil.Reaper
-
 // waitForProcessList waits for the given process list to show up in the container.
 func waitForProcessList(cont *Container, want []*control.Process) error {
 	cb := func() error {
@@ -73,6 +70,18 @@ func waitForProcessCount(cont *Container, want int) error {
 	}
 	// Gives plenty of time as tests can run slow under --race.
 	return testutil.Poll(cb, 30*time.Second)
+}
+
+func blockUntilWaitable(pid int) error {
+	_, _, err := testutil.RetryEintr(func() (uintptr, uintptr, error) {
+		var err error
+		_, _, err1 := syscall.Syscall6(syscall.SYS_WAITID, 1, uintptr(pid), 0, syscall.WEXITED|syscall.WNOWAIT, 0, 0)
+		if err1 != 0 {
+			err = err1
+		}
+		return 0, 0, err
+	})
+	return err
 }
 
 // procListsEqual is used to check whether 2 Process lists are equal for all
@@ -256,6 +265,11 @@ func configs(opts ...configOption) []*boot.Config {
 // It verifies after each step that the container can be loaded from disk, and
 // has the correct status.
 func TestLifecycle(t *testing.T) {
+	// Start the child reaper.
+	childReaper := &testutil.Reaper{}
+	childReaper.Start()
+	defer childReaper.Stop()
+
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 		// The container will just sleep for a long time.  We will kill it before
@@ -1505,10 +1519,7 @@ func TestGoferExits(t *testing.T) {
 		t.Fatalf("error killing sandbox process: %v", err)
 	}
 
-	_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
-		cpid, err := syscall.Wait4(c.GoferPid, nil, 0, nil)
-		return uintptr(cpid), 0, err
-	})
+	err = blockUntilWaitable(c.GoferPid)
 	if err != nil && err != syscall.ECHILD {
 		t.Errorf("error waiting for gofer to exit: %v", err)
 	}
@@ -1576,10 +1587,6 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	// Disable the childReaper for this test.
-	childReaper.Stop()
-	defer childReaper.Start()
-
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
@@ -1711,11 +1718,6 @@ func TestMain(m *testing.M) {
 		panic(err.Error())
 	}
 	testutil.RunAsRoot()
-
-	// Start the child reaper.
-	childReaper = &testutil.Reaper{}
-	childReaper.Start()
-	defer childReaper.Stop()
 
 	os.Exit(m.Run())
 }

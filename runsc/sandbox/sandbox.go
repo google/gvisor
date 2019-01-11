@@ -62,6 +62,12 @@ type Sandbox struct {
 
 	// Cgroup has the cgroup configuration for the sandbox.
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
+
+	// child is set if a sandbox process is a child of the current process.
+	//
+	// This field isn't saved to json, because only a creator of sandbox
+	// will have it as a child process.
+	child bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -70,7 +76,10 @@ func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	s := &Sandbox{ID: id, Cgroup: cg}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
-	c := specutils.MakeCleanup(func() { _ = s.destroy() })
+	c := specutils.MakeCleanup(func() {
+		err := s.destroy()
+		log.Warningf("error destroying sandbox: %v", err)
+	})
 	defer c.Clean()
 
 	// Create pipe to synchronize when sandbox process has been booted.
@@ -578,6 +587,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return err
 	}
+	s.child = true
 	s.Pid = cmd.Process.Pid
 	log.Infof("Sandbox started, PID: %d", s.Pid)
 
@@ -666,11 +676,6 @@ func (s *Sandbox) destroy() error {
 		}
 	}
 
-	if s.Cgroup != nil {
-		if err := s.Cgroup.Uninstall(); err != nil {
-			return err
-		}
-	}
 	if s.Chroot != "" {
 		if err := tearDownChroot(s.Chroot); err != nil {
 			return err
@@ -846,7 +851,18 @@ func (s *Sandbox) waitForStopped() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if s.IsRunning() {
+		if s.child && s.Pid != 0 {
+			// The sandbox process is a child of the current process,
+			// so we can wait it and collect its zombie.
+			wpid, err := syscall.Wait4(int(s.Pid), nil, syscall.WNOHANG, nil)
+			if err != nil {
+				return fmt.Errorf("error waiting the sandbox process: %v", err)
+			}
+			if wpid == 0 {
+				return fmt.Errorf("sandbox is still running")
+			}
+			s.Pid = 0
+		} else if s.IsRunning() {
 			return fmt.Errorf("sandbox is still running")
 		}
 		return nil
