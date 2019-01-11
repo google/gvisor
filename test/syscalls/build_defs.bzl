@@ -13,6 +13,8 @@ def _syscall_test(test, shard_count, size, platform):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
 
+    name = test_name + "_" + full_platform
+
     # Add the full_platform in a tag to make it easier to run all the tests on
     # a specific platform.
     tags = [full_platform]
@@ -28,7 +30,7 @@ def _syscall_test(test, shard_count, size, platform):
 
     sh_test(
         srcs = ["syscall_test_runner.sh"],
-        name = test_name + "_" + full_platform,
+        name = name,
         data = [
             ":syscall_test_runner",
             test,
