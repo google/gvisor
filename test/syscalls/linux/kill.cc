@@ -70,7 +70,7 @@ TEST(KillTest, CanKillAllPIDs) {
     sa.sa_sigaction = SigHandler;
     sigfillset(&sa.sa_mask);
     sa.sa_flags = SA_SIGINFO;
-    auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGWINCH, sa));
+    auto cleanup = ScopedSigaction(SIGWINCH, sa).ValueOrDie();
 
     // Indicate to the parent that we're ready.
     write_fd.reset();
@@ -81,7 +81,7 @@ TEST(KillTest, CanKillAllPIDs) {
     }
   }
 
-  EXPECT_THAT(pid, SyscallSucceeds());
+  ASSERT_THAT(pid, SyscallSucceeds());
 
   write_fd.reset();
 
@@ -111,7 +111,7 @@ TEST(KillTest, CannotKillInvalidPID) {
     _exit(0);
   }
 
-  EXPECT_THAT(fake_pid, SyscallSucceeds());
+  ASSERT_THAT(fake_pid, SyscallSucceeds());
 
   int status;
   ASSERT_THAT(RetryEINTR(waitpid)(fake_pid, &status, 0),
@@ -134,7 +134,7 @@ TEST(KillTest, CanKillRemoteProcess) {
     }
   }
 
-  EXPECT_THAT(pid, SyscallSucceeds());
+  ASSERT_THAT(pid, SyscallSucceeds());
 
   EXPECT_THAT(kill(pid, SIGKILL), SyscallSucceeds());
 
@@ -182,7 +182,7 @@ TEST(KillTest, SetPgid) {
       }
     }
 
-    EXPECT_THAT(pid, SyscallSucceeds());
+    ASSERT_THAT(pid, SyscallSucceeds());
 
     // Set the child's group and exit.
     ASSERT_THAT(setpgid(pid, pid), SyscallSucceeds());
@@ -208,7 +208,7 @@ TEST(KillTest, ProcessGroups) {
       pause();
     }
   }
-  EXPECT_THAT(child, SyscallSucceeds());
+  ASSERT_THAT(child, SyscallSucceeds());
 
   pid_t other_child = fork();
   if (other_child == 0) {
@@ -216,6 +216,7 @@ TEST(KillTest, ProcessGroups) {
       pause();
     }
   }
+  ASSERT_THAT(other_child, SyscallSucceeds());
 
   // Ensure the kill does not succeed without the new group.
   EXPECT_THAT(kill(-child, SIGKILL), SyscallFailsWithErrno(ESRCH));
@@ -298,7 +299,7 @@ TEST(KillTest, ChildDropsPrivsCannotKill) {
     _exit(0);
   }
 
-  EXPECT_THAT(pid, SyscallSucceeds());
+  ASSERT_THAT(pid, SyscallSucceeds());
 
   int status;
   EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
@@ -316,7 +317,7 @@ TEST(KillTest, CanSIGCONTSameSession) {
     _exit(0);
   }
 
-  EXPECT_THAT(stopped_child, SyscallSucceeds());
+  ASSERT_THAT(stopped_child, SyscallSucceeds());
 
   // Put the child in its own process group. The child and parent process
   // groups also share a session.
@@ -359,7 +360,7 @@ TEST(KillTest, CanSIGCONTSameSession) {
     _exit(0);
   }
 
-  EXPECT_THAT(stopped_child, SyscallSucceeds());
+  ASSERT_THAT(stopped_child, SyscallSucceeds());
 
   // Make sure child exited normally.
   EXPECT_THAT(RetryEINTR(waitpid)(stopped_child, &status, 0),

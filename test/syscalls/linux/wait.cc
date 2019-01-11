@@ -547,6 +547,7 @@ TEST_P(WaitSpecificChildTest, AfterChildExecve) {
         const_cast<char**>(child_argv));
     _exit(errno);
   }
+  ASSERT_THAT(child, SyscallSucceeds());
   EXPECT_NO_ERRNO(WaitFor(child, 0));
 }
 

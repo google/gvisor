@@ -92,6 +92,7 @@ TEST(TimerTest, ProcessKilledOnCPUSoftLimit) {
     for (;;) {
     }
   }
+  ASSERT_THAT(pid, SyscallSucceeds());
   auto c = Cleanup([pid] {
     int status;
     EXPECT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
@@ -150,6 +151,7 @@ TEST(TimerTest, ProcessPingedRepeatedlyAfterCPUSoftLimit) {
     for (;;) {
     }
   }
+  ASSERT_THAT(pid, SyscallSucceeds());
   auto c = Cleanup([pid] {
     int status;
     EXPECT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
@@ -195,6 +197,7 @@ TEST(TimerTest, ProcessKilledOnCPUHardLimit) {
     for (;;) {
     }
   }
+  ASSERT_THAT(pid, SyscallSucceeds());
   auto c = Cleanup([pid] {
     int status;
     EXPECT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));

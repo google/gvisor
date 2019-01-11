@@ -70,6 +70,7 @@ TEST(SyncFileRangeTest, CannotSyncFileRangeOnUnopenedFd) {
     TEST_PCHECK(errno == EBADF);
     _exit(0);
   }
+  ASSERT_THAT(pid, SyscallSucceeds());
 
   int status = 0;
   ASSERT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));

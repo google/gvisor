@@ -34,6 +34,11 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
+DEFINE_bool(ptrace_test_execve_child, false,
+            "If true, run the "
+            "PtraceExecveTest_Execve_GetRegs_PeekUser_SIGKILL_TraceClone_"
+            "TraceExit child workload.");
+
 namespace gvisor {
 namespace testing {
 
@@ -457,26 +462,18 @@ class PtraceExecveTest : public ::testing::TestWithParam<bool> {
 };
 
 TEST_P(PtraceExecveTest, Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit) {
+  ExecveArray const owned_child_argv = {"/proc/self/exe",
+                                        "--ptrace_test_execve_child"};
+  char* const* const child_argv = owned_child_argv.get();
+
   pid_t const child_pid = fork();
   if (child_pid == 0) {
-    // In child process.
-
-    // Enable tracing, then raise SIGSTOP and expect our parent to suppress it.
-    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
-    MaybeSave();
-    RaiseSignal(SIGSTOP);
-    MaybeSave();
-
-    // Call execve in a non-leader thread.
-    ExecveArray const owned_child_argv = {"/proc/self/exe"};
-    char* const* const child_argv = owned_child_argv.get();
-    ScopedThread t([&] {
-      execve(child_argv[0], child_argv, /* envp = */ nullptr);
-      TEST_CHECK_MSG(false, "Survived execve? (thread)");
-    });
-    t.Join();
-    TEST_CHECK_MSG(false, "Survived execve? (main)");
-    _exit(1);
+    // In child process. The test relies on calling execve() in a non-leader
+    // thread; pthread_create() isn't async-signal-safe, so the safest way to
+    // do this is to execve() first, then enable tracing and run the expected
+    // child process behavior in the new subprocess.
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve to test child");
   }
   // In parent process.
   ASSERT_THAT(child_pid, SyscallSucceeds());
@@ -593,6 +590,28 @@ TEST_P(PtraceExecveTest, Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit) {
               SyscallSucceedsWithValue(leader_tid));
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
       << " status " << status;
+}
+
+[[noreturn]] void RunExecveChild() {
+  // Enable tracing, then raise SIGSTOP and expect our parent to suppress it.
+  TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+  MaybeSave();
+  RaiseSignal(SIGSTOP);
+  MaybeSave();
+
+  // Call execve() in a non-leader thread. As long as execve() succeeds, what
+  // exactly we execve() shouldn't really matter, since the tracer should kill
+  // us after execve() completes.
+  ScopedThread t([&] {
+    ExecveArray const owned_child_argv = {"/proc/self/exe",
+                                          "--this_flag_shouldnt_exist"};
+    char* const* const child_argv = owned_child_argv.get();
+    execve(child_argv[0], child_argv, /* envp = */ nullptr);
+    TEST_PCHECK_MSG(false, "Survived execve? (thread)");
+  });
+  t.Join();
+  TEST_CHECK_MSG(false, "Survived execve? (main)");
+  _exit(1);
 }
 
 INSTANTIATE_TEST_CASE_P(TraceExec, PtraceExecveTest, ::testing::Bool());
@@ -946,3 +965,13 @@ TEST(PtraceTest, ERESTART_NoRandomSave) {
 
 }  // namespace testing
 }  // namespace gvisor
+
+int main(int argc, char** argv) {
+  gvisor::testing::TestInit(&argc, &argv);
+
+  if (FLAGS_ptrace_test_execve_child) {
+    gvisor::testing::RunExecveChild();
+  }
+
+  return RUN_ALL_TESTS();
+}

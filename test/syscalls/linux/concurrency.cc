@@ -72,8 +72,7 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
     }
   });
 
-  pid_t child_pid;
-  ASSERT_THAT(child_pid = fork(), SyscallSucceeds());
+  pid_t child_pid = fork();
   if (child_pid == 0) {
     // Busy wait without making any blocking syscalls.
     auto end = absl::Now() + absl::Seconds(5);
@@ -81,6 +80,7 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
     }
     _exit(0);
   }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
 
   absl::SleepFor(absl::Seconds(1));
 
@@ -99,13 +99,13 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
 // never yields.
 TEST(ConcurrencyTest, MultiProcessConcurrency) {
 
-  pid_t child_pid;
-  ASSERT_THAT(child_pid = fork(), SyscallSucceeds());
+  pid_t child_pid = fork();
   if (child_pid == 0) {
     while (true) {
     }
     __builtin_unreachable();
   }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
 
   absl::SleepFor(absl::Seconds(5));
 
