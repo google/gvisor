@@ -20,7 +20,7 @@
 //
 // func blockingPoll(fds *pollEvent, nfds int, timeout int64) (n int, err syscall.Errno)
 TEXT ·blockingPoll(SB),NOSPLIT,$0-40
-	CALL	runtime·entersyscallblock(SB)
+	CALL	·callEntersyscallblock(SB)
 	MOVQ	fds+0(FP), DI
 	MOVQ	nfds+8(FP), SI
 	MOVQ	timeout+16(FP), DX
@@ -31,10 +31,10 @@ TEXT ·blockingPoll(SB),NOSPLIT,$0-40
 	MOVQ	$-1, n+24(FP)
 	NEGQ	AX
 	MOVQ	AX, err+32(FP)
-	CALL	runtime·exitsyscall(SB)
+	CALL	·callExitsyscall(SB)
 	RET
 ok:
 	MOVQ	AX, n+24(FP)
 	MOVQ	$0, err+32(FP)
-	CALL	runtime·exitsyscall(SB)
+	CALL	·callExitsyscall(SB)
 	RET
