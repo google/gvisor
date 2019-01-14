@@ -56,10 +56,6 @@ type Sandbox struct {
 	// is not running.
 	Pid int `json:"pid"`
 
-	// Chroot is the path to the chroot directory that the sandbox process
-	// is running in.
-	Chroot string `json:"chroot"`
-
 	// Cgroup has the cgroup configuration for the sandbox.
 	Cgroup *cgroup.Cgroup `json:"cgroup"`
 
@@ -491,6 +487,17 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		// rules.
 		cmd.Args = append(cmd.Args, "--apply-caps=true")
 
+		// If we have CAP_SYS_ADMIN, we can create an empty chroot and
+		// bind-mount the executable inside it.
+		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
+
+		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
+			log.Infof("Sandbox will be started in minimal chroot")
+			cmd.Args = append(cmd.Args, "--setup-root")
+		} else {
+			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
+		}
 	} else {
 		log.Infof("Sandbox will be started in new user namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
@@ -499,50 +506,53 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		// as user nobody.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
+			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
 		} else if specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
 			// Map nobody in the new namespace to nobody in the parent namespace.
+			//
+			// A sandbox process will construct an empty
+			// root for itself, so it has to have the CAP_SYS_ADMIN
+			// capability.
+			//
+			// FIXME: The current implementations of
+			// os/exec doesn't allow to set ambient capabilities if
+			// a process is started in a new user namespace. As a
+			// workaround, we start the sandbox process with the 0
+			// UID and then it constructs a chroot and sets UID to
+			// nobody.  https://github.com/golang/go/issues/2315
 			const nobody = 65534
-			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{{
-				ContainerID: int(nobody),
-				HostID:      int(nobody),
-				Size:        int(1),
-			}}
-			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{{
-				ContainerID: int(nobody),
-				HostID:      int(nobody),
-				Size:        int(1),
-			}}
+			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+				{
+					ContainerID: int(0),
+					HostID:      int(nobody - 1),
+					Size:        int(1),
+				},
+				{
+					ContainerID: int(nobody),
+					HostID:      int(nobody),
+					Size:        int(1),
+				},
+			}
+			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+				{
+					ContainerID: int(nobody),
+					HostID:      int(nobody),
+					Size:        int(1),
+				},
+			}
 
 			// Set credentials to run as user and group nobody.
 			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid: nobody,
+				Uid: 0,
 				Gid: nobody,
 			}
+			cmd.Args = append(cmd.Args, "--setup-root")
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
 	}
 
-	// If we have CAP_SYS_ADMIN, we can create an empty chroot and
-	// bind-mount the executable inside it.
-	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
-
-	} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT) {
-		log.Infof("Sandbox will be started in minimal chroot")
-		chroot, err := setUpChroot()
-		if err != nil {
-			return fmt.Errorf("error setting up chroot: %v", err)
-		}
-		s.Chroot = chroot // Remember path so it can cleaned up.
-		cmd.SysProcAttr.Chroot = chroot
-		cmd.Dir = "/"
-		cmd.Args[0] = "/runsc"
-		cmd.Path = "/runsc"
-
-	} else {
-		return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN and CAP_SYS_CHROOT")
-	}
+	cmd.Args[0] = "runsc-sandbox"
 
 	if s.Cgroup != nil {
 		cpuNum, err := s.Cgroup.NumCPU()
@@ -673,12 +683,6 @@ func (s *Sandbox) destroy() error {
 		}
 		if err := s.waitForStopped(); err != nil {
 			return fmt.Errorf("error waiting sandbox %q stop: %v", s.ID, err)
-		}
-	}
-
-	if s.Chroot != "" {
-		if err := tearDownChroot(s.Chroot); err != nil {
-			return err
 		}
 	}
 

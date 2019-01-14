@@ -8,6 +8,7 @@ go_library(
         "boot.go",
         "capability.go",
         "checkpoint.go",
+        "chroot.go",
         "cmd.go",
         "create.go",
         "debug.go",

@@ -60,6 +60,9 @@ type Boot struct {
 	// to the process.
 	applyCaps bool
 
+	// setUpChroot is set to true if the sandbox is started in an empty root.
+	setUpRoot bool
+
 	// cpuNum number of CPUs to create inside the sandbox.
 	cpuNum int
 
@@ -99,6 +102,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
+	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
@@ -115,6 +119,31 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
 	debug.SetTraceback("all")
+
+	if b.setUpRoot {
+		if err := setUpChroot(); err != nil {
+			Fatalf("error setting up chroot: %v", err)
+		}
+
+		specutils.ExePath = "/runsc"
+		if !b.applyCaps {
+			// Remove --setup-root arg to call myself.
+			var args []string
+			for _, arg := range os.Args {
+				if !strings.Contains(arg, "setup-root") {
+					args = append(args, arg)
+				}
+			}
+			// Note that we've already read the spec from the spec FD, and
+			// we will read it again after the exec call. This works
+			// because the ReadSpecFromFile function seeks to the beginning
+			// of the file before reading.
+			if err := callSelfAsNobody(args); err != nil {
+				Fatalf("%v", err)
+			}
+			panic("callSelfAsNobody must never return success")
+		}
+	}
 
 	// Get the spec from the specFD.
 	specFile := os.NewFile(uintptr(b.specFD), "spec file")
@@ -144,7 +173,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		// Remove --apply-caps arg to call myself.
 		var args []string
 		for _, arg := range os.Args {
-			if !strings.Contains(arg, "apply-caps") {
+			if !strings.Contains(arg, "setup-root") && !strings.Contains(arg, "apply-caps") {
 				args = append(args, arg)
 			}
 		}

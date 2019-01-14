@@ -52,12 +52,13 @@ func TestChroot(t *testing.T) {
 	}
 
 	// Check that sandbox is chroot'ed.
-	chroot, err := filepath.EvalSymlinks(filepath.Join("/proc", strconv.Itoa(pid), "root"))
+	procRoot := filepath.Join("/proc", strconv.Itoa(pid), "root")
+	chroot, err := filepath.EvalSymlinks(procRoot)
 	if err != nil {
 		t.Fatalf("error resolving /proc/<pid>/root symlink: %v", err)
 	}
-	if want := "/tmp/runsc-sandbox-chroot-"; !strings.HasPrefix(chroot, want) {
-		t.Errorf("sandbox is not chroot'd, it should be inside: %q, got: %q", want, chroot)
+	if chroot != "/" {
+		t.Errorf("sandbox is not chroot'd, it should be inside: /, got: %q", chroot)
 	}
 
 	path, err := filepath.EvalSymlinks(filepath.Join("/proc", strconv.Itoa(pid), "cwd"))
@@ -68,12 +69,12 @@ func TestChroot(t *testing.T) {
 		t.Errorf("sandbox current dir is wrong, want: %q, got: %q", chroot, path)
 	}
 
-	fi, err := ioutil.ReadDir(chroot)
+	fi, err := ioutil.ReadDir(procRoot)
 	if err != nil {
 		t.Fatalf("error listing %q: %v", chroot, err)
 	}
 	if want, got := 2, len(fi); want != got {
-		t.Fatalf("chroot dir got %d entries, want %d", want, got)
+		t.Fatalf("chroot dir got %d entries, want %d", got, want)
 	}
 
 	// chroot dir is prepared by runsc and should contains only the executable
@@ -85,11 +86,6 @@ func TestChroot(t *testing.T) {
 	}
 
 	d.CleanUp()
-
-	// Check that chroot directory was cleaned up.
-	if _, err := os.Stat(chroot); err == nil || !os.IsNotExist(err) {
-		t.Errorf("chroot directory %q was not deleted: %v", chroot, err)
-	}
 }
 
 func TestChrootGofer(t *testing.T) {

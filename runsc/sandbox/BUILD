@@ -5,7 +5,6 @@ package(licenses = ["notice"])  # Apache 2.0
 go_library(
     name = "sandbox",
     srcs = [
-        "chroot.go",
         "network.go",
         "sandbox.go",
     ],

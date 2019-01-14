@@ -86,6 +86,28 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	}
 
 	log.Infof("Execve %q again, bye!", binPath)
-	syscall.Exec(binPath, args, []string{})
-	panic("unreachable")
+	err = syscall.Exec(binPath, args, []string{})
+	return fmt.Errorf("error executing %s: %v", binPath, err)
+}
+
+// callSelfAsNobody sets UID and GID to nobody and then execve's itself again.
+func callSelfAsNobody(args []string) error {
+	// Keep thread locked while user/group are changed.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	const nobody = 65534
+
+	if _, _, err := syscall.RawSyscall(syscall.SYS_SETGID, uintptr(nobody), 0, 0); err != 0 {
+		return fmt.Errorf("error setting uid: %v", err)
+	}
+	if _, _, err := syscall.RawSyscall(syscall.SYS_SETUID, uintptr(nobody), 0, 0); err != 0 {
+		return fmt.Errorf("error setting gid: %v", err)
+	}
+
+	binPath := "/runsc"
+
+	log.Infof("Execve %q again, bye!", binPath)
+	err := syscall.Exec(binPath, args, []string{})
+	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
