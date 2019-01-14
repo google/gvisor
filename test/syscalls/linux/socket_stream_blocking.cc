@@ -98,7 +98,10 @@ TEST_P(BlockingStreamSocketPairTest, RecvLessThanBuffer) {
               SyscallSucceedsWithValue(sizeof(sent_data)));
 }
 
-TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll) {
+// Test that MSG_WAITALL causes recv to block until all requested data is
+// received. Random save can interrupt blocking and cause received data to be
+// returned, even if the amount received is less than the full requested amount.
+TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll_NoRandomSave) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[100];
@@ -112,6 +115,10 @@ TEST_P(BlockingStreamSocketPairTest, RecvLessThanBufferWaitAll) {
 
   const ScopedThread t([&]() {
     absl::SleepFor(kDuration);
+
+    // Don't let saving after the write interrupt the blocking recv.
+    const DisableSave ds;
+
     ASSERT_THAT(write(sockets->first_fd(), sent_data, sizeof(sent_data)),
                 SyscallSucceedsWithValue(sizeof(sent_data)));
   });
