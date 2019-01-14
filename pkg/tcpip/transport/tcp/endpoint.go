@@ -410,18 +410,18 @@ func (e *endpoint) Close() {
 
 	e.mu.Lock()
 
-	// We always release ports inline so that they are immediately available
-	// for reuse after Close() is called. If also registered, it means this
-	// is a listening socket, so we must unregister as well otherwise the
-	// next user would fail in Listen() when trying to register.
-	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
-		e.isPortReserved = false
-
+	// For listening sockets, we always release ports inline so that they
+	// are immediately available for reuse after Close() is called. If also
+	// registered, we unregister as well otherwise the next user would fail
+	// in Listen() when trying to register.
+	if e.state == stateListen && e.isPortReserved {
 		if e.isRegistered {
 			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
 			e.isRegistered = false
 		}
+
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.isPortReserved = false
 	}
 
 	// Either perform the local cleanup or kick the worker to make sure it
@@ -457,6 +457,12 @@ func (e *endpoint) cleanupLocked() {
 
 	if e.isRegistered {
 		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+		e.isRegistered = false
+	}
+
+	if e.isPortReserved {
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.isPortReserved = false
 	}
 
 	e.route.Release()
