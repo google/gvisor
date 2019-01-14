@@ -529,7 +529,6 @@ syscall_test(test = "//test/syscalls/linux:write_test")
 
 go_binary(
     name = "syscall_test_runner",
-    testonly = True,
     srcs = ["syscall_test_runner.go"],
     data = [
         "//runsc",
