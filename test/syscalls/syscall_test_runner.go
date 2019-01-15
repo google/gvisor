@@ -271,7 +271,8 @@ func main() {
 		// Calculate subslice of tests to run.
 		shardSize := int(math.Ceil(float64(len(testCases)) / float64(total)))
 		begin := index * shardSize
-		end := ((index + 1) * shardSize) - 1
+		// Set end as begin of next subslice.
+		end := ((index + 1) * shardSize)
 		if begin > len(testCases) {
 			// Nothing to run.
 			return
