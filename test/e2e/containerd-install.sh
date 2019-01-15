@@ -4,10 +4,10 @@
 
 wget -q --https-only \
     https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz \
-    https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz
+    https://github.com/containernetworking/plugins/releases/download/v0.7.0/cni-plugins-amd64-v0.7.0.tgz
 
 sudo mkdir -p /etc/containerd /etc/cni/net.d /opt/cni/bin
-sudo tar -xvf cni-plugins-amd64-v0.6.0.tgz -C /opt/cni/bin/
+sudo tar -xvf cni-plugins-amd64-v0.7.0.tgz -C /opt/cni/bin/
 sudo tar -xvf containerd-${CONTAINERD_VERSION}.linux-amd64.tar.gz -C /
 
 cat <<EOF | sudo tee /etc/cni/net.d/10-bridge.conf
