@@ -1699,6 +1699,27 @@ func TestDestroyStarting(t *testing.T) {
 	}
 }
 
+func TestCreateWorkingDir(t *testing.T) {
+	for _, conf := range configs(overlay) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir() failed: %v", err)
+		}
+		dir := path.Join(tmpDir, "new/working/dir")
+
+		// touch will fail if the directory doesn't exist.
+		spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
+		spec.Process.Cwd = dir
+		spec.Root.Readonly = true
+
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("Error running container: %v", err)
+		}
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

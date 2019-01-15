@@ -87,7 +87,7 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]specs.Mou
 		// container.
 		dst, err := resolveSymlinks(spec.Root.Path, m.Destination)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve symlinks: %v", err)
+			return nil, fmt.Errorf("resolving symlinks to %q: %v", m.Destination, err)
 		}
 
 		flags := optionsToFlags(m.Options)
@@ -111,6 +111,16 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]specs.Mou
 		}
 		cpy.Destination = filepath.Join("/", relDst)
 		rv = append(rv, cpy)
+	}
+
+	if spec.Process.Cwd != "" {
+		dst, err := resolveSymlinks(spec.Root.Path, spec.Process.Cwd)
+		if err != nil {
+			return nil, fmt.Errorf("resolving symlinks to %q: %v", spec.Process.Cwd, err)
+		}
+		if err := os.MkdirAll(dst, 0755); err != nil {
+			return nil, err
+		}
 	}
 
 	// If root is read only, check if it needs to be remounted as readonly.
