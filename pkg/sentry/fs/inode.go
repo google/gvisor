@@ -356,11 +356,10 @@ func (i *Inode) AddLink() {
 	if i.overlay != nil {
 		// FIXME: Remove this from InodeOperations altogether.
 		//
-		// This interface (including DropLink and NotifyStatusChange)
-		// is only used by ramfs to update metadata of children. These
-		// filesystems should _never_ have overlay Inodes cached as
-		// children. So explicitly disallow this scenario and avoid plumbing
-		// Dirents through to do copy up.
+		// This interface is only used by ramfs to update metadata of
+		// children. These filesystems should _never_ have overlay
+		// Inodes cached as children. So explicitly disallow this
+		// scenario and avoid plumbing Dirents through to do copy up.
 		panic("overlay Inodes cached in ramfs directories are not supported")
 	}
 	i.InodeOperations.AddLink()
@@ -373,15 +372,6 @@ func (i *Inode) DropLink() {
 		panic("overlay Inodes cached in ramfs directories are not supported")
 	}
 	i.InodeOperations.DropLink()
-}
-
-// NotifyStatusChange calls i.InodeOperations.NotifyStatusChange.
-func (i *Inode) NotifyStatusChange(ctx context.Context) {
-	if i.overlay != nil {
-		// Same as AddLink.
-		panic("overlay Inodes cached in ramfs directories are not supported")
-	}
-	i.InodeOperations.NotifyStatusChange(ctx)
 }
 
 // IsVirtual calls i.InodeOperations.IsVirtual.
@@ -399,17 +389,6 @@ func (i *Inode) StatFS(ctx context.Context) (Info, error) {
 		return overlayStatFS(ctx, i.overlay)
 	}
 	return i.InodeOperations.StatFS(ctx)
-}
-
-// HandleOps extracts HandleOperations from i.
-func (i *Inode) HandleOps() HandleOperations {
-	if i.overlay != nil {
-		return overlayHandleOps(i.overlay)
-	}
-	if h, ok := i.InodeOperations.(HandleOperations); ok {
-		return h
-	}
-	return nil
 }
 
 // CheckOwnership checks whether `ctx` owns this Inode or may act as its owner.

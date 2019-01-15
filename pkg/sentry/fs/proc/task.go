@@ -24,6 +24,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
@@ -32,6 +33,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // getTaskMM returns t's MemoryManager. If getTaskMM succeeds, the MemoryManager's
@@ -57,19 +59,19 @@ func getTaskMM(t *kernel.Task) (*mm.MemoryManager, error) {
 type taskDir struct {
 	ramfs.Dir
 
-	// t is the associated kernel task that owns this file.
-	t *kernel.Task
+	t     *kernel.Task
+	pidns *kernel.PIDNamespace
 }
+
+var _ fs.InodeOperations = (*taskDir)(nil)
 
 // newTaskDir creates a new proc task entry.
 func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace, showSubtasks bool) *fs.Inode {
-	d := &taskDir{t: t}
-	// TODO: Set EUID/EGID based on dumpability.
-	d.InitDir(t, map[string]*fs.Inode{
+	contents := map[string]*fs.Inode{
 		"auxv":    newAuxvec(t, msrc),
-		"cmdline": newExecArgFile(t, msrc, cmdlineExecArg),
+		"cmdline": newExecArgInode(t, msrc, cmdlineExecArg),
 		"comm":    newComm(t, msrc),
-		"environ": newExecArgFile(t, msrc, environExecArg),
+		"environ": newExecArgInode(t, msrc, environExecArg),
 		"exe":     newExe(t, msrc),
 		"fd":      newFdDir(t, msrc),
 		"fdinfo":  newFdInfoDir(t, msrc),
@@ -87,11 +89,18 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"statm":     newStatm(t, msrc),
 		"status":    newStatus(t, msrc, pidns),
 		"uid_map":   newUIDMap(t, msrc),
-	}, fs.RootOwner, fs.FilePermsFromMode(0555))
-	if showSubtasks {
-		d.AddChild(t, "task", newSubtasks(t, msrc, pidns))
 	}
-	return newFile(d, msrc, fs.SpecialDirectory, t)
+	if showSubtasks {
+		contents["task"] = newSubtasks(t, msrc, pidns)
+	}
+
+	// TODO: Set EUID/EGID based on dumpability.
+	d := &taskDir{
+		Dir:   *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		t:     t,
+		pidns: pidns,
+	}
+	return newProcInode(d, msrc, fs.SpecialDirectory, t)
 }
 
 // subtasks represents a /proc/TID/task directory.
@@ -100,15 +109,19 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 type subtasks struct {
 	ramfs.Dir
 
-	t *kernel.Task
-
+	t     *kernel.Task
 	pidns *kernel.PIDNamespace
 }
 
+var _ fs.InodeOperations = (*subtasks)(nil)
+
 func newSubtasks(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace) *fs.Inode {
-	s := &subtasks{t: t, pidns: pidns}
-	s.InitDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newFile(s, msrc, fs.SpecialDirectory, t)
+	s := &subtasks{
+		Dir:   *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		t:     t,
+		pidns: pidns,
+	}
+	return newProcInode(s, msrc, fs.SpecialDirectory, t)
 }
 
 // UnstableAttr returns unstable attributes of the subtasks.
@@ -122,6 +135,73 @@ func (s *subtasks) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.Unstab
 	uattr.Links = uint64(2 + s.t.ThreadGroup().Count())
 	return uattr, nil
 }
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (s *subtasks) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &subtasksFile{t: s.t, pidns: s.pidns}), nil
+}
+
+// +stateify savable
+type subtasksFile struct {
+	fsutil.DirFileOperations `state:"nosave"`
+
+	t     *kernel.Task
+	pidns *kernel.PIDNamespace
+}
+
+// Readdir implements fs.FileOperations.Readdir.
+func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySerializer) (int64, error) {
+	dirCtx := fs.DirCtx{
+		Serializer: ser,
+	}
+
+	// Note that unlike most Readdir implementations, the offset here is
+	// not an index into the subtasks, but rather the TID of the next
+	// subtask to emit.
+	offset := file.Offset()
+
+	if offset == 0 {
+		// Serialize "." and "..".
+		root := fs.RootFromContext(ctx)
+		defer root.DecRef()
+		dot, dotdot := file.Dirent.GetDotAttrs(root)
+		if err := dirCtx.DirEmit(".", dot); err != nil {
+			return offset, err
+		}
+		if err := dirCtx.DirEmit("..", dotdot); err != nil {
+			return offset, err
+		}
+	}
+
+	// Serialize tasks.
+	tasks := f.t.ThreadGroup().MemberIDs(f.pidns)
+	taskInts := make([]int, 0, len(tasks))
+	for _, tid := range tasks {
+		taskInts = append(taskInts, int(tid))
+	}
+
+	// Find the task to start at.
+	idx := sort.SearchInts(taskInts, int(offset))
+	if idx == len(taskInts) {
+		return offset, nil
+	}
+	taskInts = taskInts[idx:]
+
+	var tid int
+	for _, tid = range taskInts {
+		name := strconv.FormatUint(uint64(tid), 10)
+		attr := fs.GenericDentAttr(fs.SpecialDirectory, device.ProcDevice)
+		if err := dirCtx.DirEmit(name, attr); err != nil {
+			// Returned offset is next tid to serialize.
+			return int64(tid), err
+		}
+	}
+	// We serialized them all.  Next offset should be higher than last
+	// serialized tid.
+	return int64(tid) + 1, nil
+}
+
+var _ fs.FileOperations = (*subtasksFile)(nil)
 
 // Lookup loads an Inode in a task's subtask directory into a Dirent.
 func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent, error) {
@@ -142,35 +222,6 @@ func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dir
 	return fs.NewDirent(td, p), nil
 }
 
-// DeprecatedReaddir lists a task's subtask directory.
-func (s *subtasks) DeprecatedReaddir(ctx context.Context, dirCtx *fs.DirCtx, offset int) (int, error) {
-	tasks := s.t.ThreadGroup().MemberIDs(s.pidns)
-	taskInts := make([]int, 0, len(tasks))
-	for _, tid := range tasks {
-		taskInts = append(taskInts, int(tid))
-	}
-
-	// Find the task to start at.
-	idx := sort.SearchInts(taskInts, offset)
-	if idx == len(taskInts) {
-		return offset, nil
-	}
-	taskInts = taskInts[idx:]
-
-	var tid int
-	for _, tid = range taskInts {
-		name := strconv.FormatUint(uint64(tid), 10)
-		attr := fs.GenericDentAttr(fs.SpecialDirectory, device.ProcDevice)
-		if err := dirCtx.DirEmit(name, attr); err != nil {
-			// Returned offset is next tid to serialize.
-			return tid, err
-		}
-	}
-	// We serialized them all.  Next offset should be higher than last
-	// serialized tid.
-	return tid + 1, nil
-}
-
 // exe is an fs.InodeOperations symlink for the /proc/PID/exe file.
 //
 // +stateify savable
@@ -181,9 +232,11 @@ type exe struct {
 }
 
 func newExe(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	exeSymlink := &exe{t: t}
-	exeSymlink.InitSymlink(t, fs.RootOwner, "")
-	return newFile(exeSymlink, msrc, fs.Symlink, t)
+	exeSymlink := &exe{
+		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
+		t:       t,
+	}
+	return newProcInode(exeSymlink, msrc, fs.Symlink, t)
 }
 
 func (e *exe) executable() (d *fs.Dirent, err error) {
@@ -231,55 +284,48 @@ func (e *exe) Readlink(ctx context.Context, inode *fs.Inode) (string, error) {
 	return n, nil
 }
 
-// namespaceFile represents a file in the namespacefs, such as the files in
-// /proc/<pid>/ns.
+// namespaceSymlink represents a symlink in the namespacefs, such as the files
+// in /proc/<pid>/ns.
 //
 // +stateify savable
-type namespaceFile struct {
+type namespaceSymlink struct {
 	ramfs.Symlink
 
 	t *kernel.Task
 }
 
-func newNamespaceFile(t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
-	n := &namespaceFile{t: t}
-	n.InitSymlink(t, fs.RootOwner, "")
-
+func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
 	// TODO: Namespace symlinks should contain the namespace name and the
 	// inode number for the namespace instance, so for example user:[123456]. We
 	// currently fake the inode number by sticking the symlink inode in its
 	// place.
-	n.Target = fmt.Sprintf("%s:[%d]", name, device.ProcDevice.NextIno())
-
-	return newFile(n, msrc, fs.Symlink, t)
+	target := fmt.Sprintf("%s:[%d]", name, device.ProcDevice.NextIno())
+	n := &namespaceSymlink{
+		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, target),
+		t:       t,
+	}
+	return newProcInode(n, msrc, fs.Symlink, t)
 }
 
 // Getlink implements fs.InodeOperations.Getlink.
-func (n *namespaceFile) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Dirent, error) {
+func (n *namespaceSymlink) Getlink(ctx context.Context, inode *fs.Inode) (*fs.Dirent, error) {
 	if !kernel.ContextCanTrace(ctx, n.t, false) {
 		return nil, syserror.EACCES
 	}
 
 	// Create a new regular file to fake the namespace file.
-	node := &ramfs.Entry{}
-	node.InitEntry(ctx, fs.RootOwner, fs.FilePermsFromMode(0777))
-	sattr := fs.StableAttr{
-		DeviceID:  device.ProcDevice.DeviceID(),
-		InodeID:   device.ProcDevice.NextIno(),
-		BlockSize: usermem.PageSize,
-		Type:      fs.RegularFile,
-	}
-	return fs.NewDirent(fs.NewInode(node, inode.MountSource, sattr), n.Symlink.Target), nil
+	iops := fsutil.NewNoReadWriteFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0777), linux.PROC_SUPER_MAGIC)
+	return fs.NewDirent(newProcInode(iops, inode.MountSource, fs.RegularFile, nil), n.Symlink.Target), nil
 }
 
 func newNamespaceDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	d := &ramfs.Dir{}
-	d.InitDir(t, map[string]*fs.Inode{
-		"net":  newNamespaceFile(t, msrc, "net"),
-		"pid":  newNamespaceFile(t, msrc, "pid"),
-		"user": newNamespaceFile(t, msrc, "user"),
-	}, fs.RootOwner, fs.FilePermsFromMode(0511))
-	return newFile(d, msrc, fs.SpecialDirectory, t)
+	contents := map[string]*fs.Inode{
+		"net":  newNamespaceSymlink(t, msrc, "net"),
+		"pid":  newNamespaceSymlink(t, msrc, "pid"),
+		"user": newNamespaceSymlink(t, msrc, "user"),
+	}
+	d := ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0511))
+	return newProcInode(d, msrc, fs.SpecialDirectory, t)
 }
 
 // mapsData implements seqfile.SeqSource for /proc/[pid]/maps.
@@ -290,7 +336,7 @@ type mapsData struct {
 }
 
 func newMaps(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &mapsData{t}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &mapsData{t}), msrc, fs.SpecialFile, t)
 }
 
 func (md *mapsData) mm() *mm.MemoryManager {
@@ -330,7 +376,7 @@ type smapsData struct {
 }
 
 func newSmaps(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &smapsData{t}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &smapsData{t}), msrc, fs.SpecialFile, t)
 }
 
 func (sd *smapsData) mm() *mm.MemoryManager {
@@ -376,7 +422,7 @@ type taskStatData struct {
 }
 
 func newTaskStat(t *kernel.Task, msrc *fs.MountSource, showSubtasks bool, pidns *kernel.PIDNamespace) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &taskStatData{t, showSubtasks /* tgstats */, pidns}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &taskStatData{t, showSubtasks /* tgstats */, pidns}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate returns whether the generation is old or not.
@@ -450,7 +496,7 @@ type statmData struct {
 }
 
 func newStatm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &statmData{t}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &statmData{t}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
@@ -487,7 +533,7 @@ type statusData struct {
 }
 
 func newStatus(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &statusData{t, pidns}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &statusData{t, pidns}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
@@ -552,7 +598,7 @@ type ioData struct {
 }
 
 func newIO(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	return newFile(seqfile.NewSeqFile(t, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
+	return newProcInode(seqfile.NewSeqFile(t, &ioData{t.ThreadGroup()}), msrc, fs.SpecialFile, t)
 }
 
 // NeedsUpdate returns whether the generation is old or not.
@@ -590,25 +636,49 @@ func (i *ioData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 //
 // +stateify savable
 type comm struct {
-	ramfs.Entry
+	fsutil.SimpleFileInode
 
 	t *kernel.Task
 }
 
 // newComm returns a new comm file.
 func newComm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	c := &comm{t: t}
-	c.InitEntry(t, fs.RootOwner, fs.FilePermsFromMode(0444))
-	return newFile(c, msrc, fs.SpecialFile, t)
+	c := &comm{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		t:               t,
+	}
+	return newProcInode(c, msrc, fs.SpecialFile, t)
 }
 
-// DeprecatedPreadv reads the current command name.
-func (c *comm) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+// GetFile implements fs.InodeOperations.GetFile.
+func (c *comm) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &commFile{t: c.t}), nil
+}
+
+// +stateify savable
+type commFile struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoWrite       `state:"nosave"`
+
+	t *kernel.Task
+}
+
+var _ fs.FileOperations = (*commFile)(nil)
+
+// Read implements fs.FileOperations.Read.
+func (f *commFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
 
-	buf := []byte(c.t.Name() + "\n")
+	buf := []byte(f.t.Name() + "\n")
 	if offset >= int64(len(buf)) {
 		return 0, io.EOF
 	}
@@ -621,25 +691,47 @@ func (c *comm) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, off
 //
 // +stateify savable
 type auxvec struct {
-	ramfs.Entry
+	fsutil.SimpleFileInode
 
 	t *kernel.Task
 }
 
 // newAuxvec returns a new auxvec file.
 func newAuxvec(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
-	a := &auxvec{t: t}
-	a.InitEntry(t, fs.RootOwner, fs.FilePermsFromMode(0400))
-	return newFile(a, msrc, fs.SpecialFile, t)
+	a := &auxvec{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		t:               t,
+	}
+	return newProcInode(a, msrc, fs.SpecialFile, t)
 }
 
-// DeprecatedPreadv reads the current auxiliary vector.
-func (a *auxvec) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+// GetFile implements fs.InodeOperations.GetFile.
+func (a *auxvec) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &auxvecFile{t: a.t}), nil
+}
+
+// +stateify savable
+type auxvecFile struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoWrite       `state:"nosave"`
+
+	t *kernel.Task
+}
+
+// Read implements fs.FileOperations.Read.
+func (f *auxvecFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}
 
-	m, err := getTaskMM(a.t)
+	m, err := getTaskMM(f.t)
 	if err != nil {
 		return 0, err
 	}

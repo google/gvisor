@@ -16,17 +16,26 @@ package proc
 
 import "fmt"
 
+// beforeSave is invoked by stateify.
+func (t *tcpMemInode) beforeSave() {
+	size, err := readSize(t.dir, t.s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to read TCP send / receive buffer sizes: %v", err))
+	}
+	t.size = size
+}
+
 // afterLoad is invoked by stateify.
-func (m *tcpMem) afterLoad() {
-	if err := m.writeSize(); err != nil {
-		panic(fmt.Sprintf("failed to write previous TCP send / receive buffer sizes [%v]: %v", m.size, err))
+func (t *tcpMemInode) afterLoad() {
+	if err := writeSize(t.dir, t.s, t.size); err != nil {
+		panic(fmt.Sprintf("failed to write previous TCP send / receive buffer sizes [%v]: %v", t.size, err))
 	}
 }
 
 // afterLoad is invoked by stateify.
 func (s *tcpSack) afterLoad() {
 	if s.enabled != nil {
-		if err := s.s.SetTCPSACKEnabled(*s.enabled); err != nil {
+		if err := s.stack.SetTCPSACKEnabled(*s.enabled); err != nil {
 			panic(fmt.Sprintf("failed to set previous TCP sack configuration [%v]: %v", *s.enabled, err))
 		}
 	}

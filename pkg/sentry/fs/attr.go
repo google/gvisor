@@ -180,6 +180,53 @@ type UnstableAttr struct {
 	Links uint64
 }
 
+// SetOwner sets the owner and group if they are valid.
+//
+// This method is NOT thread-safe. Callers must prevent concurrent calls.
+func (ua *UnstableAttr) SetOwner(ctx context.Context, owner FileOwner) {
+	if owner.UID.Ok() {
+		ua.Owner.UID = owner.UID
+	}
+	if owner.GID.Ok() {
+		ua.Owner.GID = owner.GID
+	}
+	ua.StatusChangeTime = ktime.NowFromContext(ctx)
+}
+
+// SetPermissions sets the permissions.
+//
+// This method is NOT thread-safe. Callers must prevent concurrent calls.
+func (ua *UnstableAttr) SetPermissions(ctx context.Context, p FilePermissions) {
+	ua.Perms = p
+	ua.StatusChangeTime = ktime.NowFromContext(ctx)
+}
+
+// SetTimestamps sets the timestamps according to the TimeSpec.
+//
+// This method is NOT thread-safe. Callers must prevent concurrent calls.
+func (ua *UnstableAttr) SetTimestamps(ctx context.Context, ts TimeSpec) {
+	if ts.ATimeOmit && ts.MTimeOmit {
+		return
+	}
+
+	now := ktime.NowFromContext(ctx)
+	if !ts.ATimeOmit {
+		if ts.ATimeSetSystemTime {
+			ua.AccessTime = now
+		} else {
+			ua.AccessTime = ts.ATime
+		}
+	}
+	if !ts.MTimeOmit {
+		if ts.MTimeSetSystemTime {
+			ua.ModificationTime = now
+		} else {
+			ua.ModificationTime = ts.MTime
+		}
+	}
+	ua.StatusChangeTime = now
+}
+
 // WithCurrentTime returns u with AccessTime == ModificationTime == current time.
 func WithCurrentTime(ctx context.Context, u UnstableAttr) UnstableAttr {
 	t := ktime.NowFromContext(ctx)

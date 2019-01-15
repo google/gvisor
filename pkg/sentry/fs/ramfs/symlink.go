@@ -15,42 +15,53 @@
 package ramfs
 
 import (
-	"sync"
-
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // Symlink represents a symlink.
 //
 // +stateify savable
 type Symlink struct {
-	Entry
+	fsutil.InodeGenericChecker `state:"nosave"`
+	fsutil.InodeNoopRelease    `state:"nosave"`
+	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotDirectory   `state:"nosave"`
+	fsutil.InodeNotMappable    `state:"nosave"`
+	fsutil.InodeNotTruncatable `state:"nosave"`
+	fsutil.InodeNotSocket      `state:"nosave"`
+	fsutil.InodeVirtual        `state:"nosave"`
 
-	mu sync.Mutex `state:"nosave"`
+	fsutil.InodeSimpleAttributes
+	fsutil.InodeSimpleExtendedAttributes
 
 	// Target is the symlink target.
 	Target string
 }
 
-// InitSymlink initializes a symlink, pointing to the given target.
-// A symlink is assumed to always have permissions 0777.
-func (s *Symlink) InitSymlink(ctx context.Context, owner fs.FileOwner, target string) {
-	s.InitEntry(ctx, owner, fs.FilePermsFromMode(0777))
-	s.Target = target
+var _ fs.InodeOperations = (*Symlink)(nil)
+
+// NewSymlink returns a new Symlink.
+func NewSymlink(ctx context.Context, owner fs.FileOwner, target string) *Symlink {
+	// A symlink is assumed to always have permissions 0777.
+	return &Symlink{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, owner, fs.FilePermsFromMode(0777), linux.RAMFS_MAGIC),
+		Target:                target,
+	}
 }
 
 // UnstableAttr returns all attributes of this ramfs symlink.
 func (s *Symlink) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
-	uattr, _ := s.Entry.UnstableAttr(ctx, inode)
+	uattr, err := s.InodeSimpleAttributes.UnstableAttr(ctx, inode)
+	if err != nil {
+		return fs.UnstableAttr{}, err
+	}
 	uattr.Size = int64(len(s.Target))
 	uattr.Usage = uattr.Size
 	return uattr, nil
-}
-
-// Check implements InodeOperations.Check.
-func (s *Symlink) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
-	return fs.ContextCanAccessFile(ctx, inode, p)
 }
 
 // SetPermissions on a symlink is always rejected.
@@ -60,10 +71,7 @@ func (s *Symlink) SetPermissions(context.Context, *fs.Inode, fs.FilePermissions)
 
 // Readlink reads the symlink value.
 func (s *Symlink) Readlink(ctx context.Context, _ *fs.Inode) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Entry.NotifyAccess(ctx)
+	s.NotifyAccess(ctx)
 	return s.Target, nil
 }
 
@@ -72,3 +80,24 @@ func (s *Symlink) Readlink(ctx context.Context, _ *fs.Inode) (string, error) {
 func (*Symlink) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 	return nil, fs.ErrResolveViaReadlink
 }
+
+// GetFile implements fs.FileOperations.GetFile.
+func (s *Symlink) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &symlinkFileOperations{}), nil
+}
+
+// +stateify savable
+type symlinkFileOperations struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNoRead        `state:"nosave"`
+	fsutil.FileNoSeek        `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoWrite       `state:"nosave"`
+}
+
+var _ fs.FileOperations = (*symlinkFileOperations)(nil)

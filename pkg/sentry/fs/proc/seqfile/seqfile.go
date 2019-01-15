@@ -18,12 +18,15 @@ import (
 	"io"
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // SeqHandle is a helper handle to seek in the file.
@@ -87,7 +90,18 @@ func (s *SeqGenerationCounter) IsCurrent(generation int64) bool {
 //
 // +stateify savable
 type SeqFile struct {
-	ramfs.Entry
+	fsutil.InodeGenericChecker `state:"nosave"`
+	fsutil.InodeNoopRelease    `state:"nosave"`
+	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotDirectory   `state:"nosave"`
+	fsutil.InodeNotMappable    `state:"nosave"`
+	fsutil.InodeNotSocket      `state:"nosave"`
+	fsutil.InodeNotSymlink     `state:"nosave"`
+	fsutil.InodeNotTruncatable `state:"nosave"`
+	fsutil.InodeVirtual        `state:"nosave"`
+
+	fsutil.InodeSimpleExtendedAttributes
+	fsutil.InodeSimpleAttributes
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -99,11 +113,14 @@ type SeqFile struct {
 	lastRead   int64
 }
 
+var _ fs.InodeOperations = (*SeqFile)(nil)
+
 // NewSeqFile returns a seqfile suitable for use by external consumers.
 func NewSeqFile(ctx context.Context, source SeqSource) *SeqFile {
-	s := &SeqFile{SeqSource: source}
-	s.InitEntry(ctx, fs.RootOwner, fs.FilePermsFromMode(0444))
-	return s
+	return &SeqFile{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		SeqSource:             source,
+	}
 }
 
 // NewSeqFileInode returns an Inode with SeqFile InodeOperations.
@@ -120,9 +137,17 @@ func NewSeqFileInode(ctx context.Context, source SeqSource, msrc *fs.MountSource
 
 // UnstableAttr returns unstable attributes of the SeqFile.
 func (s *SeqFile) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
-	uattr, _ := s.Entry.UnstableAttr(ctx, inode)
+	uattr, err := s.InodeSimpleAttributes.UnstableAttr(ctx, inode)
+	if err != nil {
+		return fs.UnstableAttr{}, err
+	}
 	uattr.ModificationTime = ktime.NowFromContext(ctx)
 	return uattr, nil
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (s *SeqFile) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &seqFileOperations{seqFile: s}), nil
 }
 
 // findIndexAndOffset finds the unit that corresponds to a certain offset.
@@ -137,82 +162,6 @@ func findIndexAndOffset(data []SeqData, offset int64) (int, int64) {
 		offset -= l
 	}
 	return len(data), offset
-}
-
-// DeprecatedPreadv reads from the file at the given offset.
-func (s *SeqFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Entry.NotifyAccess(ctx)
-	defer func() { s.lastRead = offset }()
-
-	updated := false
-
-	// Try to find where we should start reading this file.
-	i, recordOffset := findIndexAndOffset(s.source, offset)
-	if i == len(s.source) {
-		// Ok, we're at EOF. Let's first check to see if there might be
-		// more data available to us. If there is more data, add it to
-		// the end and try reading again.
-		if !s.SeqSource.NeedsUpdate(s.generation) {
-			return 0, io.EOF
-		}
-		oldLen := len(s.source)
-		s.updateSourceLocked(ctx, len(s.source))
-		updated = true
-		// We know that we had consumed everything up until this point
-		// so we search in the new slice instead of starting over.
-		i, recordOffset = findIndexAndOffset(s.source[oldLen:], recordOffset)
-		i += oldLen
-		// i is at most the length of the slice which is
-		// len(s.source) - oldLen. So at most i will be equal to
-		// len(s.source).
-		if i == len(s.source) {
-			return 0, io.EOF
-		}
-	}
-
-	var done int64
-	// We're reading parts of a record, finish reading the current object
-	// before continuing on to the next. We don't refresh our data source
-	// before this record is completed.
-	if recordOffset != 0 {
-		n, err := dst.CopyOut(ctx, s.source[i].Buf[recordOffset:])
-		done += int64(n)
-		dst = dst.DropFirst(n)
-		if dst.NumBytes() == 0 || err != nil {
-			return done, err
-		}
-		i++
-	}
-
-	// Next/New unit, update the source file if necessary. Make an extra
-	// check to see if we've seeked backwards and if so always update our
-	// data source.
-	if !updated && (s.SeqSource.NeedsUpdate(s.generation) || s.lastRead > offset) {
-		s.updateSourceLocked(ctx, i)
-		// recordOffset is 0 here and we won't update records behind the
-		// current one so recordOffset is still 0 even though source
-		// just got updated. Just read the next record.
-	}
-
-	// Finish by reading all the available data.
-	for _, buf := range s.source[i:] {
-		n, err := dst.CopyOut(ctx, buf.Buf)
-		done += int64(n)
-		dst = dst.DropFirst(n)
-		if dst.NumBytes() == 0 || err != nil {
-			return done, err
-		}
-	}
-
-	// If the file shrank (entries not yet read were removed above)
-	// while we tried to read we can end up with nothing read.
-	if done == 0 && dst.NumBytes() != 0 {
-		return 0, io.EOF
-	}
-	return done, nil
 }
 
 // updateSourceLocked requires that s.mu is held.
@@ -230,7 +179,101 @@ func (s *SeqFile) updateSourceLocked(ctx context.Context, record int) {
 	s.source = append(s.source, newSource...)
 }
 
-// DeprecatedPwritev is always denied.
-func (*SeqFile) DeprecatedPwritev(context.Context, usermem.IOSequence, int64) (int64, error) {
-	return 0, ramfs.ErrDenied
+// seqFileOperations implements fs.FileOperations.
+//
+// +stateify savable
+type seqFileOperations struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+
+	seqFile *SeqFile
+}
+
+var _ fs.FileOperations = (*seqFileOperations)(nil)
+
+// Write implements fs.FileOperations.Write.
+func (*seqFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
+	return 0, syserror.EACCES
+}
+
+// Read implements fs.FileOperations.Read.
+func (sfo *seqFileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	sfo.seqFile.mu.Lock()
+	defer sfo.seqFile.mu.Unlock()
+
+	sfo.seqFile.NotifyAccess(ctx)
+	defer func() { sfo.seqFile.lastRead = offset }()
+
+	updated := false
+
+	// Try to find where we should start reading this file.
+	i, recordOffset := findIndexAndOffset(sfo.seqFile.source, offset)
+	if i == len(sfo.seqFile.source) {
+		// Ok, we're at EOF. Let's first check to see if there might be
+		// more data available to us. If there is more data, add it to
+		// the end and try reading again.
+		if !sfo.seqFile.SeqSource.NeedsUpdate(sfo.seqFile.generation) {
+			return 0, io.EOF
+		}
+		oldLen := len(sfo.seqFile.source)
+		sfo.seqFile.updateSourceLocked(ctx, len(sfo.seqFile.source))
+		updated = true
+		// We know that we had consumed everything up until this point
+		// so we search in the new slice instead of starting over.
+		i, recordOffset = findIndexAndOffset(sfo.seqFile.source[oldLen:], recordOffset)
+		i += oldLen
+		// i is at most the length of the slice which is
+		// len(sfo.seqFile.source) - oldLen. So at most i will be equal to
+		// len(sfo.seqFile.source).
+		if i == len(sfo.seqFile.source) {
+			return 0, io.EOF
+		}
+	}
+
+	var done int64
+	// We're reading parts of a record, finish reading the current object
+	// before continuing on to the next. We don't refresh our data source
+	// before this record is completed.
+	if recordOffset != 0 {
+		n, err := dst.CopyOut(ctx, sfo.seqFile.source[i].Buf[recordOffset:])
+		done += int64(n)
+		dst = dst.DropFirst(n)
+		if dst.NumBytes() == 0 || err != nil {
+			return done, err
+		}
+		i++
+	}
+
+	// Next/New unit, update the source file if necessary. Make an extra
+	// check to see if we've seeked backwards and if so always update our
+	// data source.
+	if !updated && (sfo.seqFile.SeqSource.NeedsUpdate(sfo.seqFile.generation) || sfo.seqFile.lastRead > offset) {
+		sfo.seqFile.updateSourceLocked(ctx, i)
+		// recordOffset is 0 here and we won't update records behind the
+		// current one so recordOffset is still 0 even though source
+		// just got updated. Just read the next record.
+	}
+
+	// Finish by reading all the available data.
+	for _, buf := range sfo.seqFile.source[i:] {
+		n, err := dst.CopyOut(ctx, buf.Buf)
+		done += int64(n)
+		dst = dst.DropFirst(n)
+		if dst.NumBytes() == 0 || err != nil {
+			return done, err
+		}
+	}
+
+	// If the file shrank (entries not yet read were removed above)
+	// while we tried to read we can end up with nothing read.
+	if done == 0 && dst.NumBytes() != 0 {
+		return 0, io.EOF
+	}
+	return done, nil
 }

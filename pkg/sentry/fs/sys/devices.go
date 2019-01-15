@@ -16,43 +16,50 @@ package sys
 
 import (
 	"fmt"
-	"io"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
 // +stateify savable
 type cpunum struct {
-	ramfs.Entry
+	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopRelease          `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotDirectory         `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.InodeNotVirtual           `state:"nosave"`
+	fsutil.InodeNotTruncatable       `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
+	fsutil.InodeStaticFileGetter
+
+	// k is the system kernel.
+	k *kernel.Kernel
 }
 
-func (c *cpunum) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
-	if offset < 0 {
-		return 0, syserror.EINVAL
-	}
-
-	k := kernel.KernelFromContext(ctx)
-	if k == nil {
-		return 0, io.EOF
-	}
-
-	str := []byte(fmt.Sprintf("0-%d\n", k.ApplicationCores()-1))
-	if offset >= int64(len(str)) {
-		return 0, io.EOF
-	}
-
-	n, err := dst.CopyOut(ctx, str[offset:])
-	return int64(n), err
-}
+var _ fs.InodeOperations = (*cpunum)(nil)
 
 func newPossible(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	c := &cpunum{}
-	c.InitEntry(ctx, fs.RootOwner, fs.FilePermsFromMode(0444))
+	var maxCore uint
+	k := kernel.KernelFromContext(ctx)
+	if k != nil {
+		maxCore = k.ApplicationCores() - 1
+	}
+	contents := []byte(fmt.Sprintf("0-%d\n", maxCore))
+
+	c := &cpunum{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.SYSFS_MAGIC),
+		InodeStaticFileGetter: fsutil.InodeStaticFileGetter{
+			Contents: contents,
+		},
+	}
 	return newFile(c, msrc)
 }
 

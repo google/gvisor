@@ -52,13 +52,17 @@ import (
 //
 // +stateify savable
 type dirInodeOperations struct {
-	fsutil.DeprecatedFileOperations  `state:"nosave"`
-	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
 	fsutil.InodeNotRenameable        `state:"nosave"`
 	fsutil.InodeNotSymlink           `state:"nosave"`
-	fsutil.InodeNoExtendedAttributes `state:"nosave"`
-	fsutil.NoMappable                `state:"nosave"`
-	fsutil.NoopWriteOut              `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotTruncatable       `state:"nosave"`
+	fsutil.InodeVirtual              `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
 
 	// msrc is the super block this directory is on.
 	//
@@ -67,9 +71,6 @@ type dirInodeOperations struct {
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
-
-	// attr contains the UnstableAttrs.
-	attr fsutil.InMemoryAttributes
 
 	// master is the master PTY inode.
 	master *fs.Inode
@@ -97,15 +98,10 @@ var _ fs.InodeOperations = (*dirInodeOperations)(nil)
 // newDir creates a new dir with a ptmx file and no terminals.
 func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 	d := &dirInodeOperations{
-		attr: fsutil.InMemoryAttributes{
-			Unstable: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-				Owner: fs.RootOwner,
-				Perms: fs.FilePermsFromMode(0555),
-			}),
-		},
-		msrc:      m,
-		slaves:    make(map[uint32]*fs.Inode),
-		dentryMap: fs.NewSortedDentryMap(nil),
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermsFromMode(0555), linux.DEVPTS_SUPER_MAGIC),
+		msrc:                  m,
+		slaves:                make(map[uint32]*fs.Inode),
+		dentryMap:             fs.NewSortedDentryMap(nil),
 	}
 	// Linux devpts uses a default mode of 0000 for ptmx which can be
 	// changed with the ptmxmode mount option. However, that default is not
@@ -224,70 +220,6 @@ func (d *dirInodeOperations) GetFile(ctx context.Context, dirent *fs.Dirent, fla
 	return fs.NewFile(ctx, dirent, flags, &dirFileOperations{di: d}), nil
 }
 
-// UnstableAttr implements fs.InodeOperations.UnstableAttr.
-func (d *dirInodeOperations) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.attr.Unstable, nil
-}
-
-// Check implements fs.InodeOperations.Check.
-func (d *dirInodeOperations) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
-	return fs.ContextCanAccessFile(ctx, inode, p)
-}
-
-// SetPermissions implements fs.InodeOperations.SetPermissions.
-func (d *dirInodeOperations) SetPermissions(ctx context.Context, inode *fs.Inode, p fs.FilePermissions) bool {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.attr.SetPermissions(ctx, p)
-}
-
-// SetOwner implements fs.InodeOperations.SetOwner.
-func (d *dirInodeOperations) SetOwner(ctx context.Context, inode *fs.Inode, owner fs.FileOwner) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.attr.SetOwner(ctx, owner)
-}
-
-// SetTimestamps implements fs.InodeOperations.SetTimestamps.
-func (d *dirInodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSpec) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.attr.SetTimestamps(ctx, ts)
-}
-
-// Truncate implements fs.InodeOperations.Truncate.
-func (d *dirInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, size int64) error {
-	return syserror.EINVAL
-}
-
-// AddLink implements fs.InodeOperations.AddLink.
-func (d *dirInodeOperations) AddLink() {}
-
-// DropLink implements fs.InodeOperations.DropLink.
-func (d *dirInodeOperations) DropLink() {}
-
-// NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-func (d *dirInodeOperations) NotifyStatusChange(ctx context.Context) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	d.attr.TouchStatusChangeTime(ctx)
-}
-
-// IsVirtual implements fs.InodeOperations.IsVirtual.
-func (d *dirInodeOperations) IsVirtual() bool {
-	return true
-}
-
-// StatFS implements fs.InodeOperations.StatFS.
-func (d *dirInodeOperations) StatFS(ctx context.Context) (fs.Info, error) {
-	return fs.Info{
-		Type: linux.DEVPTS_SUPER_MAGIC,
-	}, nil
-}
-
 // allocateTerminal creates a new Terminal and installs a pts node for it.
 //
 // The caller must call DecRef when done with the returned Terminal.
@@ -353,13 +285,13 @@ func (d *dirInodeOperations) masterClose(t *Terminal) {
 //
 // +stateify savable
 type dirFileOperations struct {
-	waiter.AlwaysReady `state:"nosave"`
-	fsutil.NoopRelease `state:"nosave"`
-	fsutil.GenericSeek `state:"nosave"`
-	fsutil.NoFsync     `state:"nosave"`
-	fsutil.NoopFlush   `state:"nosave"`
-	fsutil.NoMMap      `state:"nosave"`
-	fsutil.NoIoctl     `state:"nosave"`
+	waiter.AlwaysReady     `state:"nosave"`
+	fsutil.FileNoopRelease `state:"nosave"`
+	fsutil.FileGenericSeek `state:"nosave"`
+	fsutil.FileNoFsync     `state:"nosave"`
+	fsutil.FileNoopFlush   `state:"nosave"`
+	fsutil.FileNoMMap      `state:"nosave"`
+	fsutil.FileNoIoctl     `state:"nosave"`
 
 	// di is the inode operations.
 	di *dirInodeOperations

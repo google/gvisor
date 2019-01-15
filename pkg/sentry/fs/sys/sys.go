@@ -22,13 +22,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// sys is a root sys node.
-//
-// +stateify savable
-type sys struct {
-	ramfs.Dir
-}
-
 func newFile(node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
 	sattr := fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
@@ -40,8 +33,7 @@ func newFile(node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.Inode) *fs.Inode {
-	d := &sys{}
-	d.InitDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
+	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return fs.NewInode(d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),

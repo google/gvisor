@@ -31,14 +31,14 @@ import (
 // TestFileOperations is an implementation of the File interface. It provides all
 // required methods.
 type TestFileOperations struct {
-	fsutil.NoopRelease   `state:"nosave"`
-	fsutil.PipeSeek      `state:"nosave"`
-	fsutil.NotDirReaddir `state:"nosave"`
-	fsutil.NoFsync       `state:"nosave"`
-	fsutil.NoopFlush     `state:"nosave"`
-	fsutil.NoMMap        `state:"nosave"`
-	fsutil.NoIoctl       `state:"nosave"`
-	waiter.AlwaysReady   `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FilePipeSeek      `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	waiter.AlwaysReady       `state:"nosave"`
 }
 
 // NewTestFile creates and initializes a new test file.

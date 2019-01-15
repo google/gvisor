@@ -43,8 +43,6 @@ type DirentOperations interface {
 // MountSourceOperations contains filesystem specific operations.
 type MountSourceOperations interface {
 	// TODO: Add:
-	//
-	// StatFS() (Info, error)
 	// BlockSize() int64
 	// FS() Filesystem
 
@@ -249,7 +247,7 @@ func (msrc *MountSource) FlushDirentRefs() {
 }
 
 // NewCachingMountSource returns a generic mount that will cache dirents
-// aggressively. Filesystem may be nil if there is no backing filesystem.
+// aggressively.
 func NewCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(&SimpleMountSourceOperations{
 		keep:       true,
@@ -258,7 +256,6 @@ func NewCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *Mount
 }
 
 // NewNonCachingMountSource returns a generic mount that will never cache dirents.
-// Filesystem may be nil if there is no backing filesystem.
 func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(&SimpleMountSourceOperations{
 		keep:       false,
@@ -273,6 +270,15 @@ func NewRevalidatingMountSource(filesystem Filesystem, flags MountSourceFlags) *
 		keep:       true,
 		revalidate: true,
 	}, filesystem, flags)
+}
+
+// NewPseudoMountSource returns a "pseudo" mount source that is not backed by
+// an actual filesystem. It is always non-caching.
+func NewPseudoMountSource() *MountSource {
+	return NewMountSource(&SimpleMountSourceOperations{
+		keep:       false,
+		revalidate: false,
+	}, nil, MountSourceFlags{})
 }
 
 // SimpleMountSourceOperations implements MountSourceOperations.

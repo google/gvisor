@@ -15,213 +15,270 @@
 package fsutil
 
 import (
+	"sync"
+
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// NewSimpleInodeOperations constructs fs.InodeOperations from InodeSimpleAttributes.
-func NewSimpleInodeOperations(i InodeSimpleAttributes) fs.InodeOperations {
-	return &simpleInodeOperations{InodeSimpleAttributes: i}
-}
-
-// simpleInodeOperations is a simple implementation of Inode.
+// SimpleFileInode is a simple implementation of InodeOperations.
 //
 // +stateify savable
-type simpleInodeOperations struct {
-	DeprecatedFileOperations  `state:"nosave"`
-	InodeNotDirectory         `state:"nosave"`
-	InodeNotSocket            `state:"nosave"`
-	InodeNotRenameable        `state:"nosave"`
-	InodeNotOpenable          `state:"nosave"`
-	InodeNotVirtual           `state:"nosave"`
-	InodeNotSymlink           `state:"nosave"`
+type SimpleFileInode struct {
+	InodeGenericChecker       `state:"nosave"`
 	InodeNoExtendedAttributes `state:"nosave"`
-	NoMappable                `state:"nosave"`
-	NoopWriteOut              `state:"nosave"`
+	InodeNoopRelease          `state:"nosave"`
+	InodeNoopWriteOut         `state:"nosave"`
+	InodeNotDirectory         `state:"nosave"`
+	InodeNotMappable          `state:"nosave"`
+	InodeNotOpenable          `state:"nosave"`
+	InodeNotSocket            `state:"nosave"`
+	InodeNotSymlink           `state:"nosave"`
+	InodeNotTruncatable       `state:"nosave"`
+	InodeNotVirtual           `state:"nosave"`
 
 	InodeSimpleAttributes
 }
 
-// InodeSimpleAttributes implements a subset of the Inode interface. It provides
-// read-only access to attributes.
+// NewSimpleFileInode returns a new SimpleFileInode.
+func NewSimpleFileInode(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, typ uint64) *SimpleFileInode {
+	return &SimpleFileInode{
+		InodeSimpleAttributes: NewInodeSimpleAttributes(ctx, owner, perms, typ),
+	}
+}
+
+// NoReadWriteFileInode is an implementation of InodeOperations that supports
+// opening files that are not readable or writeable.
+//
+// +stateify savable
+type NoReadWriteFileInode struct {
+	InodeGenericChecker       `state:"nosave"`
+	InodeNoExtendedAttributes `state:"nosave"`
+	InodeNoopRelease          `state:"nosave"`
+	InodeNoopWriteOut         `state:"nosave"`
+	InodeNotDirectory         `state:"nosave"`
+	InodeNotMappable          `state:"nosave"`
+	InodeNotSocket            `state:"nosave"`
+	InodeNotSymlink           `state:"nosave"`
+	InodeNotTruncatable       `state:"nosave"`
+	InodeNotVirtual           `state:"nosave"`
+
+	InodeSimpleAttributes
+}
+
+// NewNoReadWriteFileInode returns a new NoReadWriteFileInode.
+func NewNoReadWriteFileInode(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, typ uint64) *NoReadWriteFileInode {
+	return &NoReadWriteFileInode{
+		InodeSimpleAttributes: NewInodeSimpleAttributes(ctx, owner, perms, typ),
+	}
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (*NoReadWriteFileInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &NoReadWriteFile{}), nil
+}
+
+// InodeSimpleAttributes implements methods for updating in-memory unstable
+// attributes.
 //
 // +stateify savable
 type InodeSimpleAttributes struct {
-	// FSType is the filesystem type reported by StatFS.
+	// FSType is the immutable filesystem type that will be returned by
+	// StatFS.
 	FSType uint64
 
-	// UAttr are the unstable attributes of the Inode.
-	UAttr fs.UnstableAttr
+	// mu protects unstable.
+	mu       sync.RWMutex `state:"nosave"`
+	Unstable fs.UnstableAttr
 }
 
-// Release implements fs.InodeOperations.Release.
-func (i *InodeSimpleAttributes) Release(context.Context) {}
-
-// StatFS implements fs.InodeOperations.StatFS.
-func (i *InodeSimpleAttributes) StatFS(context.Context) (fs.Info, error) {
-	return fs.Info{Type: i.FSType}, nil
+// NewInodeSimpleAttributes returns a new InodeSimpleAttributes.
+func NewInodeSimpleAttributes(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, typ uint64) InodeSimpleAttributes {
+	return InodeSimpleAttributes{
+		FSType: typ,
+		Unstable: fs.WithCurrentTime(ctx, fs.UnstableAttr{
+			Owner: owner,
+			Perms: perms,
+		}),
+	}
 }
 
 // UnstableAttr implements fs.InodeOperations.UnstableAttr.
-func (i *InodeSimpleAttributes) UnstableAttr(context.Context, *fs.Inode) (fs.UnstableAttr, error) {
-	return i.UAttr, nil
-}
-
-// Check implements fs.InodeOperations.Check.
-func (i *InodeSimpleAttributes) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
-	return fs.ContextCanAccessFile(ctx, inode, p)
-}
-
-// AddLink implements fs.InodeOperations.AddLink.
-func (*InodeSimpleAttributes) AddLink() {}
-
-// DropLink implements fs.InodeOperations.DropLink.
-func (*InodeSimpleAttributes) DropLink() {}
-
-// NotifyStatusChange implements fs.fs.InodeOperations.
-func (i *InodeSimpleAttributes) NotifyStatusChange(ctx context.Context) {
-	i.UAttr.StatusChangeTime = ktime.NowFromContext(ctx)
+func (i *InodeSimpleAttributes) UnstableAttr(ctx context.Context, _ *fs.Inode) (fs.UnstableAttr, error) {
+	i.mu.RLock()
+	u := i.Unstable
+	i.mu.RUnlock()
+	return u, nil
 }
 
 // SetPermissions implements fs.InodeOperations.SetPermissions.
-func (*InodeSimpleAttributes) SetPermissions(context.Context, *fs.Inode, fs.FilePermissions) bool {
-	return false
-}
-
-// SetOwner implements fs.InodeOperations.SetOwner.
-func (*InodeSimpleAttributes) SetOwner(context.Context, *fs.Inode, fs.FileOwner) error {
-	return syserror.EINVAL
-}
-
-// SetTimestamps implements fs.InodeOperations.SetTimestamps.
-func (*InodeSimpleAttributes) SetTimestamps(context.Context, *fs.Inode, fs.TimeSpec) error {
-	return syserror.EINVAL
-}
-
-// Truncate implements fs.InodeOperations.Truncate.
-func (*InodeSimpleAttributes) Truncate(context.Context, *fs.Inode, int64) error {
-	return syserror.EINVAL
-}
-
-// InMemoryAttributes implements utilities for updating in-memory unstable
-// attributes and extended attributes. It is not thread-safe.
-//
-// Users need not initialize Xattrs to non-nil (it will be initialized
-// when the first extended attribute is set.
-//
-// +stateify savable
-type InMemoryAttributes struct {
-	Unstable fs.UnstableAttr
-	Xattrs   map[string][]byte
-}
-
-// SetPermissions updates the permissions to p.
-func (i *InMemoryAttributes) SetPermissions(ctx context.Context, p fs.FilePermissions) bool {
-	i.Unstable.Perms = p
-	i.Unstable.StatusChangeTime = ktime.NowFromContext(ctx)
+func (i *InodeSimpleAttributes) SetPermissions(ctx context.Context, _ *fs.Inode, p fs.FilePermissions) bool {
+	i.mu.Lock()
+	i.Unstable.SetPermissions(ctx, p)
+	i.mu.Unlock()
 	return true
 }
 
-// SetOwner updates the file owner to owner.
-func (i *InMemoryAttributes) SetOwner(ctx context.Context, owner fs.FileOwner) error {
-	if owner.UID.Ok() {
-		i.Unstable.Owner.UID = owner.UID
-	}
-	if owner.GID.Ok() {
-		i.Unstable.Owner.GID = owner.GID
-	}
+// SetOwner implements fs.InodeOperations.SetOwner.
+func (i *InodeSimpleAttributes) SetOwner(ctx context.Context, _ *fs.Inode, owner fs.FileOwner) error {
+	i.mu.Lock()
+	i.Unstable.SetOwner(ctx, owner)
+	i.mu.Unlock()
 	return nil
 }
 
-// SetTimestamps sets the timestamps to ts.
-func (i *InMemoryAttributes) SetTimestamps(ctx context.Context, ts fs.TimeSpec) error {
-	if ts.ATimeOmit && ts.MTimeOmit {
-		return nil
-	}
-
-	now := ktime.NowFromContext(ctx)
-	if !ts.ATimeOmit {
-		if ts.ATimeSetSystemTime {
-			i.Unstable.AccessTime = now
-		} else {
-			i.Unstable.AccessTime = ts.ATime
-		}
-	}
-	if !ts.MTimeOmit {
-		if ts.MTimeSetSystemTime {
-			i.Unstable.ModificationTime = now
-		} else {
-			i.Unstable.ModificationTime = ts.MTime
-		}
-	}
-	i.Unstable.StatusChangeTime = now
+// SetTimestamps implements fs.InodeOperations.SetTimestamps.
+func (i *InodeSimpleAttributes) SetTimestamps(ctx context.Context, _ *fs.Inode, ts fs.TimeSpec) error {
+	i.mu.Lock()
+	i.Unstable.SetTimestamps(ctx, ts)
+	i.mu.Unlock()
 	return nil
 }
 
-// TouchAccessTime updates access time to the current time.
-func (i *InMemoryAttributes) TouchAccessTime(ctx context.Context) {
+// AddLink implements fs.InodeOperations.AddLink.
+func (i *InodeSimpleAttributes) AddLink() {
+	i.mu.Lock()
+	i.Unstable.Links++
+	i.mu.Unlock()
+}
+
+// DropLink implements fs.InodeOperations.DropLink.
+func (i *InodeSimpleAttributes) DropLink() {
+	i.mu.Lock()
+	i.Unstable.Links--
+	i.mu.Unlock()
+}
+
+// StatFS implements fs.InodeOperations.StatFS.
+func (i *InodeSimpleAttributes) StatFS(context.Context) (fs.Info, error) {
+	if i.FSType == 0 {
+		return fs.Info{}, syserror.ENOSYS
+	}
+	return fs.Info{Type: i.FSType}, nil
+}
+
+// NotifyAccess updates the access time.
+func (i *InodeSimpleAttributes) NotifyAccess(ctx context.Context) {
+	i.mu.Lock()
 	i.Unstable.AccessTime = ktime.NowFromContext(ctx)
+	i.mu.Unlock()
 }
 
-// TouchModificationTime updates modification and status change
-// time to the current time.
-func (i *InMemoryAttributes) TouchModificationTime(ctx context.Context) {
-	now := ktime.NowFromContext(ctx)
-	i.Unstable.ModificationTime = now
-	i.Unstable.StatusChangeTime = now
+// NotifyModification updates the modification time.
+func (i *InodeSimpleAttributes) NotifyModification(ctx context.Context) {
+	i.mu.Lock()
+	i.Unstable.ModificationTime = ktime.NowFromContext(ctx)
+	i.mu.Unlock()
 }
 
-// TouchStatusChangeTime updates status change time to the current time.
-func (i *InMemoryAttributes) TouchStatusChangeTime(ctx context.Context) {
+// NotifyStatusChange updates the status change time.
+func (i *InodeSimpleAttributes) NotifyStatusChange(ctx context.Context) {
+	i.mu.Lock()
 	i.Unstable.StatusChangeTime = ktime.NowFromContext(ctx)
+	i.mu.Unlock()
 }
 
-// Getxattr returns the extended attribute at name or ENOATTR if
-// it isn't set.
-func (i *InMemoryAttributes) Getxattr(name string) ([]byte, error) {
-	if value, ok := i.Xattrs[name]; ok {
-		return value, nil
-	}
-	return nil, syserror.ENOATTR
+// InodeSimpleExtendedAttributes implements
+// fs.InodeOperations.{Get,Set,List}xattr.
+//
+// +stateify savable
+type InodeSimpleExtendedAttributes struct {
+	// mu protects xattrs.
+	mu     sync.RWMutex `state:"nosave"`
+	xattrs map[string][]byte
 }
 
-// Setxattr sets the extended attribute at name to value.
-func (i *InMemoryAttributes) Setxattr(name string, value []byte) error {
-	if i.Xattrs == nil {
-		i.Xattrs = make(map[string][]byte)
+// Getxattr implements fs.InodeOperations.Getxattr.
+func (i *InodeSimpleExtendedAttributes) Getxattr(_ *fs.Inode, name string) ([]byte, error) {
+	i.mu.RLock()
+	value, ok := i.xattrs[name]
+	i.mu.RUnlock()
+	if !ok {
+		return nil, syserror.ENOATTR
 	}
-	i.Xattrs[name] = value
+	return value, nil
+}
+
+// Setxattr implements fs.InodeOperations.Setxattr.
+func (i *InodeSimpleExtendedAttributes) Setxattr(_ *fs.Inode, name string, value []byte) error {
+	i.mu.Lock()
+	if i.xattrs == nil {
+		i.xattrs = make(map[string][]byte)
+	}
+	i.xattrs[name] = value
+	i.mu.Unlock()
 	return nil
 }
 
-// Listxattr returns the set of all currently set extended attributes.
-func (i *InMemoryAttributes) Listxattr() (map[string]struct{}, error) {
-	names := make(map[string]struct{}, len(i.Xattrs))
-	for name := range i.Xattrs {
+// Listxattr implements fs.InodeOperations.Listxattr.
+func (i *InodeSimpleExtendedAttributes) Listxattr(_ *fs.Inode) (map[string]struct{}, error) {
+	i.mu.RLock()
+	names := make(map[string]struct{}, len(i.xattrs))
+	for name := range i.xattrs {
 		names[name] = struct{}{}
 	}
+	i.mu.RUnlock()
 	return names, nil
 }
 
-// NoMappable returns a nil memmap.Mappable.
-type NoMappable struct{}
+// staticFile is a file with static contents. It is returned by
+// InodeStaticFileGetter.GetFile.
+//
+// +stateify savable
+type staticFile struct {
+	waiter.AlwaysReady `state:"nosave"`
+	FileGenericSeek    `state:"nosave"`
+	FileNoIoctl        `state:"nosave"`
+	FileNoMMap         `state:"nosave"`
+	FileNoopFsync      `state:"nosave"`
+	FileNoopFlush      `state:"nosave"`
+	FileNoopRelease    `state:"nosave"`
+	FileNoopWrite      `state:"nosave"`
+	FileNotDirReaddir  `state:"nosave"`
+
+	FileStaticContentReader
+}
+
+// InodeNoStatFS implement StatFS by retuning ENOSYS.
+type InodeNoStatFS struct{}
+
+// StatFS implements fs.InodeOperations.StatFS.
+func (InodeNoStatFS) StatFS(context.Context) (fs.Info, error) {
+	return fs.Info{}, syserror.ENOSYS
+}
+
+// InodeStaticFileGetter implements GetFile for a file with static contents.
+//
+// +stateify savable
+type InodeStaticFileGetter struct {
+	Contents []byte
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (i *InodeStaticFileGetter) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &staticFile{
+		FileStaticContentReader: NewFileStaticContentReader(i.Contents),
+	}), nil
+}
+
+// InodeNotMappable returns a nil memmap.Mappable.
+type InodeNotMappable struct{}
 
 // Mappable implements fs.InodeOperations.Mappable.
-func (NoMappable) Mappable(*fs.Inode) memmap.Mappable {
+func (InodeNotMappable) Mappable(*fs.Inode) memmap.Mappable {
 	return nil
 }
 
-// NoopWriteOut is a no-op implementation of Inode.WriteOut.
-type NoopWriteOut struct{}
+// InodeNoopWriteOut is a no-op implementation of fs.InodeOperations.WriteOut.
+type InodeNoopWriteOut struct{}
 
 // WriteOut is a no-op.
-func (NoopWriteOut) WriteOut(context.Context, *fs.Inode) error {
+func (InodeNoopWriteOut) WriteOut(context.Context, *fs.Inode) error {
 	return nil
 }
 
@@ -273,6 +330,11 @@ func (InodeNotDirectory) RemoveDirectory(context.Context, *fs.Inode, string) err
 	return syserror.ENOTDIR
 }
 
+// Rename implements fs.FileOperations.Rename.
+func (InodeNotDirectory) Rename(context.Context, *fs.Inode, string, *fs.Inode, string) error {
+	return syserror.EINVAL
+}
+
 // InodeNotSocket can be used by Inodes that are not sockets.
 type InodeNotSocket struct{}
 
@@ -281,7 +343,31 @@ func (InodeNotSocket) BoundEndpoint(*fs.Inode, string) transport.BoundEndpoint {
 	return nil
 }
 
-// InodeNotRenameable can be used by Inodes that cannot be renamed.
+// InodeNotTruncatable can be used by Inodes that cannot be truncated.
+type InodeNotTruncatable struct{}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (InodeNotTruncatable) Truncate(context.Context, *fs.Inode, int64) error {
+	return syserror.EINVAL
+}
+
+// InodeIsDirTruncate implements fs.InodeOperations.Truncate for directories.
+type InodeIsDirTruncate struct{}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (InodeIsDirTruncate) Truncate(context.Context, *fs.Inode, int64) error {
+	return syserror.EISDIR
+}
+
+// InodeNoopTruncate implements fs.InodeOperations.Truncate as a noop.
+type InodeNoopTruncate struct{}
+
+// Truncate implements fs.InodeOperations.Truncate.
+func (InodeNoopTruncate) Truncate(context.Context, *fs.Inode, int64) error {
+	return nil
+}
+
+// InodeNotRenameable can be used by Inodes that cannot be truncated.
 type InodeNotRenameable struct{}
 
 // Rename implements fs.InodeOperations.Rename.
@@ -303,6 +389,14 @@ type InodeNotVirtual struct{}
 // IsVirtual implements fs.InodeOperations.IsVirtual.
 func (InodeNotVirtual) IsVirtual() bool {
 	return false
+}
+
+// InodeVirtual can be used by Inodes that are virtual.
+type InodeVirtual struct{}
+
+// IsVirtual implements fs.InodeOperations.IsVirtual.
+func (InodeVirtual) IsVirtual() bool {
+	return true
 }
 
 // InodeNotSymlink can be used by Inodes that are not symlinks.
@@ -337,50 +431,17 @@ func (InodeNoExtendedAttributes) Listxattr(*fs.Inode) (map[string]struct{}, erro
 	return nil, syserror.EOPNOTSUPP
 }
 
-// DeprecatedFileOperations panics if any deprecated Inode method is called.
-type DeprecatedFileOperations struct{}
+// InodeNoopRelease implements fs.InodeOperations.Release as a noop.
+type InodeNoopRelease struct{}
 
-// Readiness implements fs.InodeOperations.Waitable.Readiness.
-func (DeprecatedFileOperations) Readiness(waiter.EventMask) waiter.EventMask {
-	panic("not implemented")
-}
+// Release implements fs.InodeOperations.Release.
+func (InodeNoopRelease) Release(context.Context) {}
 
-// EventRegister implements fs.InodeOperations.Waitable.EventRegister.
-func (DeprecatedFileOperations) EventRegister(*waiter.Entry, waiter.EventMask) {
-	panic("not implemented")
-}
+// InodeGenericChecker implements fs.InodeOperations.Check with a generic
+// implementation.
+type InodeGenericChecker struct{}
 
-// EventUnregister implements fs.InodeOperations.Waitable.EventUnregister.
-func (DeprecatedFileOperations) EventUnregister(*waiter.Entry) {
-	panic("not implemented")
-}
-
-// DeprecatedPreadv implements fs.InodeOperations.DeprecatedPreadv.
-func (DeprecatedFileOperations) DeprecatedPreadv(context.Context, usermem.IOSequence, int64) (int64, error) {
-	panic("not implemented")
-}
-
-// DeprecatedPwritev implements fs.InodeOperations.DeprecatedPwritev.
-func (DeprecatedFileOperations) DeprecatedPwritev(context.Context, usermem.IOSequence, int64) (int64, error) {
-	panic("not implemented")
-}
-
-// DeprecatedReaddir implements fs.InodeOperations.DeprecatedReaddir.
-func (DeprecatedFileOperations) DeprecatedReaddir(context.Context, *fs.DirCtx, int) (int, error) {
-	panic("not implemented")
-}
-
-// DeprecatedFsync implements fs.InodeOperations.DeprecatedFsync.
-func (DeprecatedFileOperations) DeprecatedFsync() error {
-	panic("not implemented")
-}
-
-// DeprecatedFlush implements fs.InodeOperations.DeprecatedFlush.
-func (DeprecatedFileOperations) DeprecatedFlush() error {
-	panic("not implemented")
-}
-
-// DeprecatedMappable implements fs.InodeOperations.DeprecatedMappable.
-func (DeprecatedFileOperations) DeprecatedMappable(context.Context, *fs.Inode) (memmap.Mappable, bool) {
-	panic("not implemented")
+// Check implements fs.InodeOperations.Check.
+func (InodeGenericChecker) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
+	return fs.ContextCanAccessFile(ctx, inode, p)
 }

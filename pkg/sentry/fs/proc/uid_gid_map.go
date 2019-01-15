@@ -90,12 +90,13 @@ func newGIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newIDMap(t *kernel.Task, msrc *fs.MountSource, gids bool) *fs.Inode {
-	imsf := &idMapSeqFile{seqfile.SeqFile{SeqSource: &idMapSeqSource{
-		t:    t,
-		gids: gids,
-	}}}
-	imsf.InitEntry(t, fs.RootOwner, fs.FilePermsFromMode(0644))
-	return newFile(imsf, msrc, fs.SpecialFile, t)
+	imsf := &idMapSeqFile{
+		*seqfile.NewSeqFile(t, &idMapSeqSource{
+			t:    t,
+			gids: gids,
+		}),
+	}
+	return newProcInode(imsf, msrc, fs.SpecialFile, t)
 }
 
 func (imsf *idMapSeqFile) source() *idMapSeqSource {
@@ -106,8 +107,8 @@ func (imsf *idMapSeqFile) source() *idMapSeqSource {
 // Linux 3.18, the limit is five lines." - user_namespaces(7)
 const maxIDMapLines = 5
 
-// DeprecatedPwritev implements fs.InodeOperations.DeprecatedPwritev.
-func (imsf *idMapSeqFile) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+// Write implements fs.FileOperations.Write.
+func (imsf *idMapSeqFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	// "In addition, the number of bytes written to the file must be less than
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)

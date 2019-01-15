@@ -31,7 +31,7 @@ import (
 //
 // +stateify savable
 type masterInodeOperations struct {
-	inodeOperations
+	fsutil.SimpleFileInode
 
 	// d is the containing dir.
 	d *dirInodeOperations
@@ -42,15 +42,8 @@ var _ fs.InodeOperations = (*masterInodeOperations)(nil)
 // newMasterInode creates an Inode for the master end of a terminal.
 func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwner, p fs.FilePermissions) *fs.Inode {
 	iops := &masterInodeOperations{
-		inodeOperations: inodeOperations{
-			uattr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-				Owner: owner,
-				Perms: p,
-				Links: 1,
-				// Size and Blocks are always 0.
-			}),
-		},
-		d: d,
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, owner, p, linux.DEVPTS_SUPER_MAGIC),
+		d:               d,
 	}
 
 	return fs.NewInode(iops, d.msrc, fs.StableAttr{
@@ -102,11 +95,11 @@ func (mi *masterInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flag
 //
 // +stateify savable
 type masterFileOperations struct {
-	fsutil.PipeSeek      `state:"nosave"`
-	fsutil.NotDirReaddir `state:"nosave"`
-	fsutil.NoFsync       `state:"nosave"`
-	fsutil.NoopFlush     `state:"nosave"`
-	fsutil.NoMMap        `state:"nosave"`
+	fsutil.FilePipeSeek      `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
 
 	// d is the containing dir.
 	d *dirInodeOperations

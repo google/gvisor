@@ -22,7 +22,7 @@ import (
 )
 
 func TestMakeDirectoryTree(t *testing.T) {
-	mount := fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{})
+	mount := fs.NewPseudoMountSource()
 
 	for _, test := range []struct {
 		name    string

@@ -20,7 +20,5 @@
 // - For fs.Inodes that require a page cache to be memory mapped, see
 //   inode_cache.go.
 //
-// - For fs.Files that implement fs.HandleOps, see handle.go.
-//
 // - For anon fs.Inodes, see anon.go.
 package fsutil

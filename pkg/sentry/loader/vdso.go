@@ -20,7 +20,6 @@ import (
 	"io"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -38,20 +37,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// byteReaderFileOperations implements fs.FileOperations for reading
-// from a []byte source.
-type byteReader struct {
-	fsutil.NoopRelease
-	fsutil.PipeSeek
-	fsutil.NotDirReaddir
-	fsutil.NoFsync
-	fsutil.NoopFlush
-	fsutil.NoMMap
-	fsutil.NoIoctl
-	waiter.AlwaysReady
-	data []byte
-}
-
 type fileContext struct {
 	context.Context
 }
@@ -65,17 +50,34 @@ func (f *fileContext) Value(key interface{}) interface{} {
 	}
 }
 
+// byteReader implements fs.FileOperations for reading from a []byte source.
+type byteReader struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FilePipeSeek      `state:"nosave"`
+
+	data []byte
+}
+
+var _ fs.FileOperations = (*byteReader)(nil)
+
 // newByteReaderFile creates a fake file to read data from.
 func newByteReaderFile(data []byte) *fs.File {
 	// Create a fake inode.
-	inode := fs.NewInode(fsutil.NewSimpleInodeOperations(fsutil.InodeSimpleAttributes{
-		FSType: linux.ANON_INODE_FS_MAGIC,
-	}), fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
-		Type:      fs.Anonymous,
-		DeviceID:  anon.PseudoDevice.DeviceID(),
-		InodeID:   anon.PseudoDevice.NextIno(),
-		BlockSize: usermem.PageSize,
-	})
+	inode := fs.NewInode(
+		&fsutil.SimpleFileInode{},
+		fs.NewPseudoMountSource(),
+		fs.StableAttr{
+			Type:      fs.Anonymous,
+			DeviceID:  anon.PseudoDevice.DeviceID(),
+			InodeID:   anon.PseudoDevice.NextIno(),
+			BlockSize: usermem.PageSize,
+		})
 
 	// Use the fake inode to create a fake dirent.
 	dirent := fs.NewTransientDirent(inode)

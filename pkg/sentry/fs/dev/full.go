@@ -15,41 +15,64 @@
 package dev
 
 import (
-	"math"
-
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // fullDevice is used to implement /dev/full.
 //
 // +stateify savable
 type fullDevice struct {
-	ramfs.Entry
+	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopRelease          `state:"nosave"`
+	fsutil.InodeNoopTruncate         `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotDirectory         `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.InodeVirtual              `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
 }
 
+var _ fs.InodeOperations = (*fullDevice)(nil)
+
 func newFullDevice(ctx context.Context, owner fs.FileOwner, mode linux.FileMode) *fullDevice {
-	f := &fullDevice{}
-	f.InitEntry(ctx, owner, fs.FilePermsFromMode(mode))
+	f := &fullDevice{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, owner, fs.FilePermsFromMode(mode), linux.TMPFS_MAGIC),
+	}
 	return f
 }
 
-// DeprecatedPwritev implements fs.InodeOperations.DeprecatedPwritev by
-// returining ENOSPC.
-func (f *fullDevice) DeprecatedPwritev(_ context.Context, _ usermem.IOSequence, _ int64) (int64, error) {
+// GetFile implements fs.InodeOperations.GetFile.
+func (f *fullDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	return fs.NewFile(ctx, dirent, flags, &fullFileOperations{}), nil
+}
+
+// +stateify savable
+type fullFileOperations struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	readZeros                `state:"nosave"`
+}
+
+var _ fs.FileOperations = (*fullFileOperations)(nil)
+
+// Write implements FileOperations.Write.
+func (fullFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
 	return 0, syserror.ENOSPC
-}
-
-// DeprecatedPreadv implements fs.InodeOperations.DeprecatedPreadv.
-func (f *fullDevice) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, _ int64) (int64, error) {
-	return dst.ZeroOut(ctx, math.MaxInt64)
-}
-
-// Truncate should be simply ignored for character devices on linux.
-func (f *fullDevice) Truncate(context.Context, *fs.Inode, int64) error {
-	return nil
 }

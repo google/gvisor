@@ -23,11 +23,13 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
+        "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/syserror",
         "//pkg/waiter",
     ],
 )

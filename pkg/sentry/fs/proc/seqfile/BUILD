@@ -8,12 +8,15 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
+        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/proc/device",
-        "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/usermem",
+        "//pkg/syserror",
+        "//pkg/waiter",
     ],
 )
 
@@ -26,7 +29,7 @@ go_test(
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
-        "//pkg/sentry/fs/ramfs/test",
+        "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/usermem",
     ],
 )

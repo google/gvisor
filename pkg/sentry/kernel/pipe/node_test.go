@@ -53,6 +53,10 @@ type openResult struct {
 	error
 }
 
+var perms fs.FilePermissions = fs.FilePermissions{
+	User: fs.PermMask{Read: true, Write: true},
+}
+
 func testOpenOrDie(ctx context.Context, t *testing.T, n fs.InodeOperations, flags fs.FileFlags, doneChan chan<- struct{}) (*fs.File, error) {
 	file, err := n.GetFile(ctx, nil, flags)
 	if err != nil {
@@ -93,8 +97,8 @@ func assertRecvBlocks(t *testing.T, c <-chan struct{}, blockDuration time.Durati
 }
 
 func TestReadOpenBlocksForWriteOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true}, rDone)
@@ -111,8 +115,8 @@ func TestReadOpenBlocksForWriteOpen(t *testing.T) {
 }
 
 func TestWriteOpenBlocksForReadOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Write: true}, wDone)
@@ -129,8 +133,8 @@ func TestWriteOpenBlocksForReadOpen(t *testing.T) {
 }
 
 func TestMultipleWriteOpenDoesntCountAsReadOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone1 := make(chan struct{})
 	rDone2 := make(chan struct{})
@@ -151,8 +155,8 @@ func TestMultipleWriteOpenDoesntCountAsReadOpen(t *testing.T) {
 }
 
 func TestClosedReaderBlocksWriteOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rFile, _ := testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true, NonBlocking: true}, nil)
 	rFile.DecRef()
@@ -172,8 +176,8 @@ func TestClosedReaderBlocksWriteOpen(t *testing.T) {
 }
 
 func TestReadWriteOpenNeverBlocks(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rwDone := make(chan struct{})
 	// Open for read-write never wait for a reader or writer, even if the
@@ -183,8 +187,8 @@ func TestReadWriteOpenNeverBlocks(t *testing.T) {
 }
 
 func TestReadWriteOpenUnblocksReadOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true}, rDone)
@@ -197,8 +201,8 @@ func TestReadWriteOpenUnblocksReadOpen(t *testing.T) {
 }
 
 func TestReadWriteOpenUnblocksWriteOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Write: true}, wDone)
@@ -211,8 +215,8 @@ func TestReadWriteOpenUnblocksWriteOpen(t *testing.T) {
 }
 
 func TestBlockedOpenIsCancellable(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	done := make(chan openResult)
 	go testOpen(ctx, t, f, fs.FileFlags{Read: true}, done)
@@ -233,18 +237,18 @@ func TestBlockedOpenIsCancellable(t *testing.T) {
 	}
 }
 
-func TestNonblockingReadOpenNoWriters(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
+func TestNonblockingReadOpenFileNoWriters(t *testing.T) {
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Read: true, NonBlocking: true}, nil); err != nil {
 		t.Fatalf("Nonblocking open for read failed with error %v.", err)
 	}
 }
 
-func TestNonblockingWriteOpenNoReaders(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
+func TestNonblockingWriteOpenFileNoReaders(t *testing.T) {
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true, NonBlocking: true}, nil); err != syserror.ENXIO {
 		t.Fatalf("Nonblocking open for write failed unexpected error %v.", err)
@@ -252,8 +256,8 @@ func TestNonblockingWriteOpenNoReaders(t *testing.T) {
 }
 
 func TestNonBlockingReadOpenWithWriter(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	wDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Write: true}, wDone)
@@ -271,8 +275,8 @@ func TestNonBlockingReadOpenWithWriter(t *testing.T) {
 }
 
 func TestNonBlockingWriteOpenWithReader(t *testing.T) {
-	f := NewInodeOperations(nil, newNamedPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newNamedPipe(t))
 
 	rDone := make(chan struct{})
 	go testOpenOrDie(ctx, t, f, fs.FileFlags{Read: true}, rDone)
@@ -290,8 +294,8 @@ func TestNonBlockingWriteOpenWithReader(t *testing.T) {
 }
 
 func TestAnonReadOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newAnonPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newAnonPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Read: true}, nil); err != nil {
 		t.Fatalf("open anon pipe for read failed: %v", err)
@@ -299,8 +303,8 @@ func TestAnonReadOpen(t *testing.T) {
 }
 
 func TestAnonWriteOpen(t *testing.T) {
-	f := NewInodeOperations(nil, newAnonPipe(t))
 	ctx := newSleeperContext(t)
+	f := NewInodeOperations(ctx, perms, newAnonPipe(t))
 
 	if _, err := testOpen(ctx, t, f, fs.FileFlags{Write: true}, nil); err != nil {
 		t.Fatalf("open anon pipe for write failed: %v", err)

@@ -8,9 +8,9 @@ go_library(
         "cpuinfo.go",
         "exec_args.go",
         "fds.go",
-        "file.go",
         "filesystems.go",
         "fs.go",
+        "inode.go",
         "loadavg.go",
         "meminfo.go",
         "mounts.go",
@@ -32,6 +32,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
+        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/proc/device",
         "//pkg/sentry/fs/proc/seqfile",
         "//pkg/sentry/fs/ramfs",
@@ -45,6 +46,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/waiter",
     ],
 )
 

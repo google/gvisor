@@ -19,37 +19,58 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // +stateify savable
 type randomDevice struct {
-	ramfs.Entry
+	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopRelease          `state:"nosave"`
+	fsutil.InodeNoopTruncate         `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotDirectory         `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.InodeVirtual              `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
 }
 
+var _ fs.InodeOperations = (*randomDevice)(nil)
+
 func newRandomDevice(ctx context.Context, owner fs.FileOwner, mode linux.FileMode) *randomDevice {
-	r := &randomDevice{}
-	r.InitEntry(ctx, owner, fs.FilePermsFromMode(mode))
+	r := &randomDevice{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, owner, fs.FilePermsFromMode(mode), linux.TMPFS_MAGIC),
+	}
 	return r
 }
 
-// DeprecatedPreadv reads random data.
-func (*randomDevice) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+// GetFile implements fs.InodeOperations.GetFile.
+func (randomDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &randomFileOperations{}), nil
+}
+
+// +stateify savable
+type randomFileOperations struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNoopWrite     `state:"nosave"`
+}
+
+var _ fs.FileOperations = (*randomFileOperations)(nil)
+
+// Read implements fs.FileOperations.Read.
+func (randomFileOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
 	return dst.CopyOutFrom(ctx, safemem.FromIOReader{rand.Reader})
-}
-
-// DeprecatedPwritev implements fs.HandleOperations.DeprecatedPwritev.
-func (*randomDevice) DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	// On Linux, "Writing to /dev/random or /dev/urandom will update the
-	// entropy pool with the data written, but this will not result in a higher
-	// entropy count" - random(4). We don't need to support this, but we do
-	// need to support the write, so just make it a no-op a la /dev/null.
-	return src.NumBytes(), nil
-}
-
-// Truncate should be simply ignored for character devices on linux.
-func (r *randomDevice) Truncate(context.Context, *fs.Inode, int64) error {
-	return nil
 }

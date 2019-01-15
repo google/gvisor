@@ -16,11 +16,11 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/waiter",
     ],
 )

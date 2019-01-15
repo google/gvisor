@@ -19,7 +19,8 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -376,7 +377,8 @@ type dir struct {
 	// List of negative child names.
 	negative []string
 
-	// Whether DeprecatedReaddir has been called on this dir.
+	// ReaddirCalled records whether Readdir was called on a file
+	// corresponding to this inode.
 	ReaddirCalled bool
 }
 
@@ -390,10 +392,19 @@ func (d *dir) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
 	return nil, syserror.ENOATTR
 }
 
-// DeprecatedReaddir implements InodeOperations.DeprecatedReaddir.
-func (d *dir) DeprecatedReaddir(ctx context.Context, dirctx *fs.DirCtx, offset int) (int, error) {
-	d.ReaddirCalled = true
-	return d.InodeOperations.DeprecatedReaddir(ctx, dirctx, offset)
+// GetFile implements InodeOperations.GetFile.
+func (d *dir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	file, err := d.InodeOperations.GetFile(ctx, dirent, flags)
+	if err != nil {
+		return nil, err
+	}
+	defer file.DecRef()
+	// Wrap the file's FileOperations in a dirFile.
+	fops := &dirFile{
+		FileOperations: file.FileOperations,
+		inode:          d,
+	}
+	return fs.NewFile(ctx, dirent, flags, fops), nil
 }
 
 type dirContent struct {
@@ -401,12 +412,45 @@ type dirContent struct {
 	dir  bool
 }
 
+type dirFile struct {
+	fs.FileOperations
+	inode *dir
+}
+
+type inode struct {
+	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopRelease          `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotDirectory         `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
+	fsutil.InodeNotSocket            `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
+	fsutil.InodeNotTruncatable       `state:"nosave"`
+	fsutil.InodeNotVirtual           `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
+	fsutil.InodeStaticFileGetter
+}
+
+// Readdir implements fs.FileOperations.Readdir. It sets the ReaddirCalled
+// field on the inode.
+func (f *dirFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySerializer) (int64, error) {
+	f.inode.ReaddirCalled = true
+	return f.FileOperations.Readdir(ctx, file, ser)
+}
+
 func newTestRamfsInode(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	return fs.NewInode(ramfstest.NewFile(ctx, fs.FilePermissions{}), msrc, fs.StableAttr{Type: fs.RegularFile})
+	inode := fs.NewInode(&inode{
+		InodeStaticFileGetter: fsutil.InodeStaticFileGetter{
+			Contents: []byte("foobar"),
+		},
+	}, msrc, fs.StableAttr{Type: fs.RegularFile})
+	return inode
 }
 
 func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []string) *fs.Inode {
-	msrc := fs.NewCachingMountSource(nil, fs.MountSourceFlags{})
+	msrc := fs.NewPseudoMountSource()
 	contents := make(map[string]*fs.Inode)
 	for _, c := range contains {
 		if c.dir {
@@ -415,7 +459,7 @@ func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []stri
 			contents[c.name] = newTestRamfsInode(ctx, msrc)
 		}
 	}
-	dops := ramfstest.NewDir(ctx, contents, fs.FilePermissions{
+	dops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermissions{
 		User: fs.PermMask{Read: true, Execute: true},
 	})
 	return fs.NewInode(&dir{

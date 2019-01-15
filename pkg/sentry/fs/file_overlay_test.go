@@ -20,7 +20,8 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 )
 
@@ -135,7 +136,7 @@ func TestReaddirRevalidation(t *testing.T) {
 
 	// Get a handle to the dirent in the upper filesystem so that we can
 	// modify it without going through the dirent.
-	upperDir := upper.InodeOperations.(*dir).InodeOperations.(*ramfstest.Dir)
+	upperDir := upper.InodeOperations.(*dir).InodeOperations.(*ramfs.Dir)
 
 	// Check that overlay returns the files from both upper and lower.
 	openDir, err := overlay.GetFile(ctx, fs.NewDirent(overlay, "stub"), fs.FileFlags{Read: true})
@@ -155,7 +156,7 @@ func TestReaddirRevalidation(t *testing.T) {
 	if err := upperDir.Remove(ctx, upper, "a"); err != nil {
 		t.Fatalf("error removing child: %v", err)
 	}
-	upperDir.AddChild(ctx, "c", fs.NewInode(ramfstest.NewFile(ctx, fs.FilePermissions{}),
+	upperDir.AddChild(ctx, "c", fs.NewInode(fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermissions{}, 0),
 		upper.MountSource, fs.StableAttr{Type: fs.RegularFile}))
 
 	// Seek to beginning of the directory and do the readdir again.

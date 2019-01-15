@@ -52,19 +52,19 @@ func TestGrow(t *testing.T) {
 	abuf := bytes.Repeat([]byte{'a'}, 68)
 	n, err := f.Pwritev(ctx, usermem.BytesIOSequence(abuf), 0)
 	if n != int64(len(abuf)) || err != nil {
-		t.Fatalf("DeprecatedPwritev got (%d, %v) want (%d, nil)", n, err, len(abuf))
+		t.Fatalf("Pwritev got (%d, %v) want (%d, nil)", n, err, len(abuf))
 	}
 
 	bbuf := bytes.Repeat([]byte{'b'}, 856)
 	n, err = f.Pwritev(ctx, usermem.BytesIOSequence(bbuf), 68)
 	if n != int64(len(bbuf)) || err != nil {
-		t.Fatalf("DeprecatedPwritev got (%d, %v) want (%d, nil)", n, err, len(bbuf))
+		t.Fatalf("Pwritev got (%d, %v) want (%d, nil)", n, err, len(bbuf))
 	}
 
 	rbuf := make([]byte, len(abuf)+len(bbuf))
 	n, err = f.Preadv(ctx, usermem.BytesIOSequence(rbuf), 0)
 	if n != int64(len(rbuf)) || err != nil {
-		t.Fatalf("DeprecatedPreadv got (%d, %v) want (%d, nil)", n, err, len(rbuf))
+		t.Fatalf("Preadv got (%d, %v) want (%d, nil)", n, err, len(rbuf))
 	}
 
 	if want := append(abuf, bbuf...); !bytes.Equal(rbuf, want) {

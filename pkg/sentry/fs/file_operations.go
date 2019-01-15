@@ -91,7 +91,7 @@ type FileOperations interface {
 	Flush(ctx context.Context, file *File) error
 
 	// ConfigureMMap mutates opts to implement mmap(2) for the file. Most
-	// implementations can either embed fsutil.NoMMap (if they don't support
+	// implementations can either embed fsutil.FileNoMMap (if they don't support
 	// memory mapping) or call fsutil.GenericConfigureMMap with the appropriate
 	// memmap.Mappable.
 	ConfigureMMap(ctx context.Context, file *File, opts *memmap.MMapOpts) error

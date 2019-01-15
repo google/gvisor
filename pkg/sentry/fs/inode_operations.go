@@ -21,8 +21,6 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 var (
@@ -303,83 +301,5 @@ type InodeOperations interface {
 	// StatFS returns a filesystem Info implementation or an error.  If
 	// the filesystem does not support this operation (maybe in the future
 	// it will), then ENOSYS should be returned.
-	//
-	// Move to MountSourceOperations.
 	StatFS(context.Context) (Info, error)
-
-	HandleOperations
-}
-
-// HandleOperations are extended InodeOperations that are only implemented
-// for file systems that use fs/handle.go:Handle to generate open Files.
-//
-// Handle is deprecated; these methods are deprecated as well.
-//
-// Filesystems are encouraged to implement the File interface directly
-// instead of using Handle. To indicate that the below methods should never
-// be called, embed DeprecatedFileOperations to satisfy this interface.
-type HandleOperations interface {
-	waiter.Waitable
-
-	// DeprecatedPreadv is deprecated in favor of filesystems
-	// implementing File.Preadv directly.
-	//
-	// DeprecatedPreadv reads up to dst.NumBytes() bytes into dst, starting at
-	// the given offset, and returns the number of bytes read.
-	//
-	// Preadv may return a partial read result before EOF is reached.
-	//
-	// If a symlink, Preadv reads the target value of the symlink.
-	//
-	// Preadv should not check for readable permissions.
-	DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error)
-
-	// DeprecatedPwritev is deprecated in favor of filesystems
-	// implementing File.Pwritev directly.
-	//
-	// DeprecatedPwritev writes up to src.NumBytes() bytes from src to the
-	// Inode, starting at the given offset and returns the number of bytes
-	// written.
-	//
-	// Pwritev should not check that the Inode has writable permissions.
-	DeprecatedPwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error)
-
-	// DeprecatedReaddir is deprecated in favor of filesystems
-	// implementing File.Readdir directly.
-	//
-	// DeprecatedReaddir emits directory entries by calling dirCtx.EmitDir,
-	// beginning with the entry at offset.
-	//
-	// Entries for "." and ".." must *not* be included.
-	//
-	// If the offset returned is the same as the argument offset, then
-	// nothing has been serialized.  This is equivalent to reaching EOF.
-	// In this case serializer.Written() should return 0.
-	//
-	// The order of entries to emit must be consistent between Readdir
-	// calls, and must start with the given offset.
-	//
-	// The caller must ensure that this operation is permitted.
-	DeprecatedReaddir(ctx context.Context, dirCtx *DirCtx, offset int) (int, error)
-
-	// DeprecatedFsync is deprecated in favor of filesystems implementing
-	// File.Fsync directly.
-	//
-	// DeprecatedFsync syncs a file.
-	DeprecatedFsync() error
-
-	// DeprecatedMappable is deprecated in favor of filesystems implementing
-	// File.Mappable directly.
-	//
-	// DeprecatedMappable returns a Mappable if the Inode can be mapped.
-	DeprecatedMappable(ctx context.Context, inode *Inode) (memmap.Mappable, bool)
-
-	// DeprecatedFlush is deprecated in favor of filesystems implementing
-	// File.Flush directly.
-	//
-	// DeprecatedFlush flushes a file.
-	//
-	// Implementations may choose to free up memory or complete pending I/O
-	// but also may implement Flush as a no-op.
-	DeprecatedFlush() error
 }

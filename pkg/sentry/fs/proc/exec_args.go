@@ -18,12 +18,14 @@ import (
 	"fmt"
 	"io"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 // execArgType enumerates the types of exec arguments that are exposed through
@@ -35,12 +37,12 @@ const (
 	environExecArg
 )
 
-// execArgFile is a file containing the exec args (either cmdline or environ)
+// execArgInode is a inode containing the exec args (either cmdline or environ)
 // for a given task.
 //
 // +stateify savable
-type execArgFile struct {
-	ramfs.Entry
+type execArgInode struct {
+	fsutil.SimpleFileInode
 
 	// arg is the type of exec argument this file contains.
 	arg execArgType
@@ -49,21 +51,52 @@ type execArgFile struct {
 	t *kernel.Task
 }
 
+var _ fs.InodeOperations = (*execArgInode)(nil)
+
 // newExecArgFile creates a file containing the exec args of the given type.
-func newExecArgFile(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.Inode {
+func newExecArgInode(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.Inode {
 	if arg != cmdlineExecArg && arg != environExecArg {
 		panic(fmt.Sprintf("unknown exec arg type %v", arg))
 	}
-	f := &execArgFile{
-		arg: arg,
-		t:   t,
+	f := &execArgInode{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(t, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		arg:             arg,
+		t:               t,
 	}
-	f.InitEntry(t, fs.RootOwner, fs.FilePermsFromMode(0444))
-	return newFile(f, msrc, fs.SpecialFile, t)
+	return newProcInode(f, msrc, fs.SpecialFile, t)
 }
 
-// DeprecatedPreadv reads the exec arg from the process's address space..
-func (f *execArgFile) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+// GetFile implements fs.InodeOperations.GetFile.
+func (i *execArgInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &execArgFile{
+		arg: i.arg,
+		t:   i.t,
+	}), nil
+}
+
+// +stateify savable
+type execArgFile struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopWrite     `state:"nosave"`
+
+	// arg is the type of exec argument this file contains.
+	arg execArgType
+
+	// t is the Task to read the exec arg line from.
+	t *kernel.Task
+}
+
+var _ fs.FileOperations = (*execArgFile)(nil)
+
+// Read reads the exec arg from the process's address space..
+func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
 		return 0, syserror.EINVAL
 	}

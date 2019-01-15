@@ -25,11 +25,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -50,7 +48,7 @@ type Pipe struct {
 	isNamed bool
 
 	// The dirent backing this pipe. Shared by all readers and writers.
-	dirent *fs.Dirent
+	Dirent *fs.Dirent
 
 	// The buffered byte queue.
 	data ilist.List
@@ -97,28 +95,19 @@ func NewPipe(ctx context.Context, isNamed bool, sizeBytes, atomicIOBytes int) *P
 
 	// Build the fs.Dirent of this pipe, shared by all fs.Files associated
 	// with this pipe.
+	perms := fs.FilePermissions{
+		User: fs.PermMask{Read: true, Write: true},
+	}
+	iops := NewInodeOperations(ctx, perms, p)
 	ino := pipeDevice.NextIno()
-	base := fsutil.NewSimpleInodeOperations(fsutil.InodeSimpleAttributes{
-		FSType: linux.PIPEFS_MAGIC,
-		UAttr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: fs.FileOwnerFromContext(ctx),
-			Perms: fs.FilePermissions{
-				User: fs.PermMask{Read: true, Write: true},
-			},
-			Links: 1,
-		}),
-	})
 	sattr := fs.StableAttr{
 		Type:      fs.Pipe,
 		DeviceID:  pipeDevice.DeviceID(),
 		InodeID:   ino,
 		BlockSize: int64(atomicIOBytes),
 	}
-	// There is no real filesystem backing this pipe, so we pass in a nil
-	// Filesystem.
-	sb := fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{})
-	p.dirent = fs.NewDirent(fs.NewInode(NewInodeOperations(base, p), sb, sattr), fmt.Sprintf("pipe:[%d]", ino))
-
+	ms := fs.NewPseudoMountSource()
+	p.Dirent = fs.NewDirent(fs.NewInode(iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
 	return p
 }
 
@@ -135,7 +124,7 @@ func NewConnectedPipe(ctx context.Context, sizeBytes int, atomicIOBytes int) (*f
 // ROpen opens the pipe for reading.
 func (p *Pipe) ROpen(ctx context.Context) *fs.File {
 	p.rOpen()
-	return fs.NewFile(ctx, p.dirent, fs.FileFlags{Read: true}, &Reader{
+	return fs.NewFile(ctx, p.Dirent, fs.FileFlags{Read: true}, &Reader{
 		ReaderWriter: ReaderWriter{Pipe: p},
 	})
 }
@@ -143,7 +132,7 @@ func (p *Pipe) ROpen(ctx context.Context) *fs.File {
 // WOpen opens the pipe for writing.
 func (p *Pipe) WOpen(ctx context.Context) *fs.File {
 	p.wOpen()
-	return fs.NewFile(ctx, p.dirent, fs.FileFlags{Write: true}, &Writer{
+	return fs.NewFile(ctx, p.Dirent, fs.FileFlags{Write: true}, &Writer{
 		ReaderWriter: ReaderWriter{Pipe: p},
 	})
 }
@@ -152,7 +141,7 @@ func (p *Pipe) WOpen(ctx context.Context) *fs.File {
 func (p *Pipe) RWOpen(ctx context.Context) *fs.File {
 	p.rOpen()
 	p.wOpen()
-	return fs.NewFile(ctx, p.dirent, fs.FileFlags{Read: true, Write: true}, &ReaderWriter{
+	return fs.NewFile(ctx, p.Dirent, fs.FileFlags{Read: true, Write: true}, &ReaderWriter{
 		Pipe: p,
 	})
 }

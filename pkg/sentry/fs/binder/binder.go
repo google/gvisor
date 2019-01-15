@@ -24,12 +24,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
 const (
@@ -43,33 +43,28 @@ const (
 //
 // +stateify savable
 type Device struct {
+	fsutil.InodeGenericChecker       `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopRelease          `state:"nosave"`
+	fsutil.InodeNoopTruncate         `state:"nosave"`
+	fsutil.InodeNoopWriteOut         `state:"nosave"`
 	fsutil.InodeNotDirectory         `state:"nosave"`
-	fsutil.InodeNotRenameable        `state:"nosave"`
+	fsutil.InodeNotMappable          `state:"nosave"`
 	fsutil.InodeNotSocket            `state:"nosave"`
 	fsutil.InodeNotSymlink           `state:"nosave"`
-	fsutil.NoMappable                `state:"nosave"`
-	fsutil.NoopWriteOut              `state:"nosave"`
-	fsutil.DeprecatedFileOperations  `state:"nosave"`
+	fsutil.InodeVirtual              `state:"nosave"`
 
-	// mu protects unstable.
-	mu       sync.Mutex `state:"nosave"`
-	unstable fs.UnstableAttr
+	fsutil.InodeSimpleAttributes
 }
+
+var _ fs.InodeOperations = (*Device)(nil)
 
 // NewDevice creates and intializes a Device structure.
 func NewDevice(ctx context.Context, owner fs.FileOwner, fp fs.FilePermissions) *Device {
 	return &Device{
-		unstable: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: owner,
-			Perms: fp,
-			Links: 1,
-		}),
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, owner, fp, 0),
 	}
 }
-
-// Release implements fs.InodeOperations.Release.
-func (bd *Device) Release(context.Context) {}
 
 // GetFile implements fs.InodeOperations.GetFile.
 //
@@ -85,115 +80,13 @@ func (bd *Device) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags)
 	}), nil
 }
 
-// UnstableAttr implements fs.InodeOperations.UnstableAttr.
-func (bd *Device) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.UnstableAttr, error) {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-	return bd.unstable, nil
-}
-
-// Check implements fs.InodeOperations.Check.
-func (bd *Device) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
-	return fs.ContextCanAccessFile(ctx, inode, p)
-}
-
-// SetPermissions implements fs.InodeOperations.SetPermissions.
-func (bd *Device) SetPermissions(ctx context.Context, inode *fs.Inode, fp fs.FilePermissions) bool {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-	bd.unstable.Perms = fp
-	bd.unstable.StatusChangeTime = time.NowFromContext(ctx)
-	return true
-}
-
-// SetOwner implements fs.InodeOperations.SetOwner.
-func (bd *Device) SetOwner(ctx context.Context, inode *fs.Inode, owner fs.FileOwner) error {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-	if owner.UID.Ok() {
-		bd.unstable.Owner.UID = owner.UID
-	}
-	if owner.GID.Ok() {
-		bd.unstable.Owner.GID = owner.GID
-	}
-	return nil
-}
-
-// SetTimestamps implements fs.InodeOperations.SetTimestamps.
-func (bd *Device) SetTimestamps(ctx context.Context, inode *fs.Inode, ts fs.TimeSpec) error {
-	if ts.ATimeOmit && ts.MTimeOmit {
-		return nil
-	}
-
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-
-	now := time.NowFromContext(ctx)
-	if !ts.ATimeOmit {
-		if ts.ATimeSetSystemTime {
-			bd.unstable.AccessTime = now
-		} else {
-			bd.unstable.AccessTime = ts.ATime
-		}
-	}
-	if !ts.MTimeOmit {
-		if ts.MTimeSetSystemTime {
-			bd.unstable.ModificationTime = now
-		} else {
-			bd.unstable.ModificationTime = ts.MTime
-		}
-	}
-	bd.unstable.StatusChangeTime = now
-	return nil
-}
-
-// Truncate implements fs.InodeOperations.WriteOut.
-//
-// Ignored for a character device, such as Binder.
-func (bd *Device) Truncate(ctx context.Context, inode *fs.Inode, size int64) error {
-	return nil
-}
-
-// AddLink implements fs.InodeOperations.AddLink.
-//
-// Binder doesn't support links, no-op.
-func (bd *Device) AddLink() {}
-
-// DropLink implements fs.InodeOperations.DropLink.
-//
-// Binder doesn't support links, no-op.
-func (bd *Device) DropLink() {}
-
-// NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-func (bd *Device) NotifyStatusChange(ctx context.Context) {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-	now := time.NowFromContext(ctx)
-	bd.unstable.ModificationTime = now
-	bd.unstable.StatusChangeTime = now
-}
-
-// IsVirtual implements fs.InodeOperations.IsVirtual.
-//
-// Binder is virtual.
-func (bd *Device) IsVirtual() bool {
-	return true
-}
-
-// StatFS implements fs.InodeOperations.StatFS.
-//
-// Binder doesn't support querying for filesystem info.
-func (bd *Device) StatFS(context.Context) (fs.Info, error) {
-	return fs.Info{}, syserror.ENOSYS
-}
-
 // Proc implements fs.FileOperations and fs.IoctlGetter.
 //
 // +stateify savable
 type Proc struct {
-	fsutil.NoFsync                  `state:"nosave"`
-	fsutil.DeprecatedFileOperations `state:"nosave"`
-	fsutil.NotDirReaddir            `state:"nosave"`
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
 
 	bd       *Device
 	task     *kernel.Task

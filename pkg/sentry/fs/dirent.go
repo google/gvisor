@@ -837,8 +837,8 @@ func (d *Dirent) CreateFifo(ctx context.Context, root *Dirent, name string, perm
 	})
 }
 
-// getDotAttrs returns the DentAttrs corresponding to "." and ".." directories.
-func (d *Dirent) getDotAttrs(root *Dirent) (DentAttr, DentAttr) {
+// GetDotAttrs returns the DentAttrs corresponding to "." and ".." directories.
+func (d *Dirent) GetDotAttrs(root *Dirent) (DentAttr, DentAttr) {
 	// Get '.'.
 	sattr := d.Inode.StableAttr
 	dot := DentAttr{
@@ -870,7 +870,7 @@ func (d *Dirent) readdirFrozen(root *Dirent, offset int64, dirCtx *DirCtx) (int6
 	// Collect attrs for "." and  "..".
 	attrs := make(map[string]DentAttr)
 	names := []string{".", ".."}
-	attrs["."], attrs[".."] = d.getDotAttrs(root)
+	attrs["."], attrs[".."] = d.GetDotAttrs(root)
 
 	// Get info from all children.
 	d.mu.Lock()
@@ -965,7 +965,7 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	}
 
 	// Collect attrs for "." and "..".
-	dot, dotdot := d.getDotAttrs(root)
+	dot, dotdot := d.GetDotAttrs(root)
 
 	// Emit "." and ".." if the offset is low enough.
 	if offset == 0 {

@@ -30,7 +30,7 @@ import (
 //
 // +stateify savable
 type slaveInodeOperations struct {
-	inodeOperations
+	fsutil.SimpleFileInode
 
 	// d is the containing dir.
 	d *dirInodeOperations
@@ -46,16 +46,9 @@ var _ fs.InodeOperations = (*slaveInodeOperations)(nil)
 // newSlaveInode takes ownership of t.
 func newSlaveInode(ctx context.Context, d *dirInodeOperations, t *Terminal, owner fs.FileOwner, p fs.FilePermissions) *fs.Inode {
 	iops := &slaveInodeOperations{
-		inodeOperations: inodeOperations{
-			uattr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-				Owner: owner,
-				Perms: p,
-				Links: 1,
-				// Size and Blocks are always 0.
-			}),
-		},
-		d: d,
-		t: t,
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, owner, p, linux.DEVPTS_SUPER_MAGIC),
+		d:               d,
+		t:               t,
 	}
 
 	return fs.NewInode(iops, d.msrc, fs.StableAttr{
@@ -91,11 +84,11 @@ func (si *slaveInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags
 //
 // +stateify savable
 type slaveFileOperations struct {
-	fsutil.PipeSeek      `state:"nosave"`
-	fsutil.NotDirReaddir `state:"nosave"`
-	fsutil.NoFsync       `state:"nosave"`
-	fsutil.NoopFlush     `state:"nosave"`
-	fsutil.NoMMap        `state:"nosave"`
+	fsutil.FilePipeSeek      `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
 
 	// si is the inode operations.
 	si *slaveInodeOperations

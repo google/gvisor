@@ -334,6 +334,11 @@ int ReadlinkWhileExited(std::string const& basename, char* buf, size_t count) {
   return ret;
 }
 
+TEST(ProcTest, NotFoundInRoot) {
+  struct stat s;
+  EXPECT_THAT(stat("/proc/foobar", &s), SyscallFailsWithErrno(ENOENT));
+}
+
 TEST(ProcSelfTest, IsThreadGroupLeader) {
   ScopedThread([] {
     const pid_t tgid = getpid();

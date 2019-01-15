@@ -28,16 +28,12 @@ import (
 // with any real filesystem. Some types depend on completely pseudo
 // "anon" inodes (eventfds, epollfds, etc).
 func NewInode(ctx context.Context) *fs.Inode {
-	return fs.NewInode(fsutil.NewSimpleInodeOperations(fsutil.InodeSimpleAttributes{
-		FSType: linux.ANON_INODE_FS_MAGIC,
-		UAttr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: fs.FileOwnerFromContext(ctx),
-			Perms: fs.FilePermissions{
-				User: fs.PermMask{Read: true, Write: true},
-			},
-			Links: 1,
-		}),
-	}), fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+	iops := &fsutil.SimpleFileInode{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.RootOwner, fs.FilePermissions{
+			User: fs.PermMask{Read: true, Write: true},
+		}, linux.ANON_INODE_FS_MAGIC),
+	}
+	return fs.NewInode(iops, fs.NewPseudoMountSource(), fs.StableAttr{
 		Type:      fs.Anonymous,
 		DeviceID:  PseudoDevice.DeviceID(),
 		InodeID:   PseudoDevice.NextIno(),

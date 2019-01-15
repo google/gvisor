@@ -15,52 +15,21 @@
 package proc
 
 import (
-	"io"
-
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// cpuinfo is a file describing the CPU capabilities.
-//
-// Presently cpuinfo never changes, so it doesn't need to be a SeqFile.
-//
-// +stateify savable
-type cpuinfo struct {
-	ramfs.Entry
-
-	// k is the system kernel.
-	k *kernel.Kernel
-}
-
-// DeprecatedPreadv implements fs.InodeOperations.DeprecatedPreadv.
-func (c *cpuinfo) DeprecatedPreadv(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
-	features := c.k.FeatureSet()
+func newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	k := kernel.KernelFromContext(ctx)
+	features := k.FeatureSet()
 	if features == nil {
 		// Kernel is always initialized with a FeatureSet.
 		panic("cpuinfo read with nil FeatureSet")
 	}
-
 	contents := make([]byte, 0, 1024)
-	for i, max := uint(0), c.k.ApplicationCores(); i < max; i++ {
+	for i, max := uint(0), k.ApplicationCores(); i < max; i++ {
 		contents = append(contents, []byte(features.CPUInfo(i))...)
 	}
-	if offset >= int64(len(contents)) {
-		return 0, io.EOF
-	}
-
-	n, err := dst.CopyOut(ctx, contents[offset:])
-	return int64(n), err
-}
-
-func (p *proc) newCPUInfo(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	f := &cpuinfo{
-		k: p.k,
-	}
-	f.InitEntry(ctx, fs.RootOwner, fs.FilePermsFromMode(0444))
-
-	return newFile(f, msrc, fs.SpecialFile, nil)
+	return newStaticProcInode(ctx, msrc, contents)
 }

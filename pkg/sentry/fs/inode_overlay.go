@@ -596,19 +596,6 @@ func overlayStatFS(ctx context.Context, o *overlayEntry) (Info, error) {
 	return i, nil
 }
 
-func overlayHandleOps(o *overlayEntry) HandleOperations {
-	// Hot path. Avoid defers.
-	var hops HandleOperations
-	o.copyMu.RLock()
-	if o.upper != nil {
-		hops = o.upper.HandleOps()
-	} else {
-		hops = o.lower.HandleOps()
-	}
-	o.copyMu.RUnlock()
-	return hops
-}
-
 // NewTestOverlayDir returns an overlay Inode for tests.
 //
 // If `revalidate` is true, then the upper filesystem will require

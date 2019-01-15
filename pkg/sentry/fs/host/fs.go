@@ -58,6 +58,8 @@ type Filesystem struct {
 	paths []string
 }
 
+var _ fs.Filesystem = (*Filesystem)(nil)
+
 // Name is the identifier of this file system.
 func (*Filesystem) Name() string {
 	return FilesystemName

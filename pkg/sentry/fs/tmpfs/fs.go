@@ -50,6 +50,8 @@ const (
 // +stateify savable
 type Filesystem struct{}
 
+var _ fs.Filesystem = (*Filesystem)(nil)
+
 func init() {
 	fs.RegisterFilesystem(&Filesystem{})
 }

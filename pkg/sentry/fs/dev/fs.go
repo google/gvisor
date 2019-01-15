@@ -33,6 +33,8 @@ const ashmemEnabledKey = "ashmem_enabled"
 // +stateify savable
 type filesystem struct{}
 
+var _ fs.Filesystem = (*filesystem)(nil)
+
 func init() {
 	fs.RegisterFilesystem(&filesystem{})
 }

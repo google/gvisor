@@ -67,7 +67,6 @@ go_library(
         "frame_ref_set.go",
         "frame_ref_set_impl.go",
         "fsutil.go",
-        "handle.go",
         "host_file_mapper.go",
         "host_file_mapper_state.go",
         "host_file_mapper_unsafe.go",
@@ -93,20 +92,6 @@ go_library(
         "//pkg/state",
         "//pkg/syserror",
         "//pkg/waiter",
-    ],
-)
-
-go_test(
-    name = "fsutil_x_test",
-    size = "small",
-    srcs = ["handle_test.go"],
-    deps = [
-        ":fsutil",
-        "//pkg/sentry/context",
-        "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/ramfs/test",
-        "//pkg/sentry/usermem",
     ],
 )
 

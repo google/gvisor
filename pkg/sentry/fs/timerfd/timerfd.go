@@ -33,12 +33,12 @@ import (
 //
 // +stateify savable
 type TimerOperations struct {
-	fsutil.ZeroSeek      `state:"nosave"`
-	fsutil.NotDirReaddir `state:"nosave"`
-	fsutil.NoFsync       `state:"nosave"`
-	fsutil.NoopFlush     `state:"nosave"`
-	fsutil.NoMMap        `state:"nosave"`
-	fsutil.NoIoctl       `state:"nosave"`
+	fsutil.FileZeroSeek      `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+	fsutil.FileNoFsync       `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
 
 	events waiter.Queue `state:"zerovalue"`
 	timer  *ktime.Timer

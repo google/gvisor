@@ -32,5 +32,6 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
+        "//pkg/waiter",
     ],
 )

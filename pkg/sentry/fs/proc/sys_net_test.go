@@ -26,13 +26,14 @@ func TestQuerySendBufferSize(t *testing.T) {
 	ctx := context.Background()
 	s := inet.NewTestStack()
 	s.TCPSendBufSize = inet.TCPBufferSize{100, 200, 300}
-	tm := newTCPMem(s, s.TCPSendBufSize, tcpWMem)
+	tmi := &tcpMemInode{s: s, dir: tcpWMem}
+	tmf := &tcpMemFile{tcpMemInode: tmi}
 
 	buf := make([]byte, 100)
 	dst := usermem.BytesIOSequence(buf)
-	n, err := tm.DeprecatedPreadv(ctx, dst, 0)
+	n, err := tmf.Read(ctx, nil, dst, 0)
 	if err != nil {
-		t.Fatalf("DeprecatedPreadv failed: %v", err)
+		t.Fatalf("Read failed: %v", err)
 	}
 
 	if got, want := string(buf[:n]), "100\t200\t300\n"; got != want {
@@ -44,13 +45,14 @@ func TestQueryRecvBufferSize(t *testing.T) {
 	ctx := context.Background()
 	s := inet.NewTestStack()
 	s.TCPRecvBufSize = inet.TCPBufferSize{100, 200, 300}
-	tm := newTCPMem(s, s.TCPRecvBufSize, tcpRMem)
+	tmi := &tcpMemInode{s: s, dir: tcpRMem}
+	tmf := &tcpMemFile{tcpMemInode: tmi}
 
 	buf := make([]byte, 100)
 	dst := usermem.BytesIOSequence(buf)
-	n, err := tm.DeprecatedPreadv(ctx, dst, 0)
+	n, err := tmf.Read(ctx, nil, dst, 0)
 	if err != nil {
-		t.Fatalf("DeprecatedPreadv failed: %v", err)
+		t.Fatalf("Read failed: %v", err)
 	}
 
 	if got, want := string(buf[:n]), "100\t200\t300\n"; got != want {
@@ -85,12 +87,13 @@ func TestConfigureSendBufferSize(t *testing.T) {
 	s := inet.NewTestStack()
 	for _, c := range cases {
 		s.TCPSendBufSize = c.initial
-		tm := newTCPMem(s, c.initial, tcpWMem)
+		tmi := &tcpMemInode{s: s, dir: tcpWMem}
+		tmf := &tcpMemFile{tcpMemInode: tmi}
 
 		// Write the values.
 		src := usermem.BytesIOSequence([]byte(c.str))
-		if n, err := tm.DeprecatedPwritev(ctx, src, 0); n != int64(len(c.str)) || err != nil {
-			t.Errorf("DeprecatedPwritev, case = %q: got (%d, %v), wanted (%d, nil)", c.str, n, err, len(c.str))
+		if n, err := tmf.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
+			t.Errorf("Write, case = %q: got (%d, %v), wanted (%d, nil)", c.str, n, err, len(c.str))
 		}
 
 		// Read the values from the stack and check them.
@@ -105,12 +108,13 @@ func TestConfigureRecvBufferSize(t *testing.T) {
 	s := inet.NewTestStack()
 	for _, c := range cases {
 		s.TCPRecvBufSize = c.initial
-		tm := newTCPMem(s, c.initial, tcpRMem)
+		tmi := &tcpMemInode{s: s, dir: tcpRMem}
+		tmf := &tcpMemFile{tcpMemInode: tmi}
 
 		// Write the values.
 		src := usermem.BytesIOSequence([]byte(c.str))
-		if n, err := tm.DeprecatedPwritev(ctx, src, 0); n != int64(len(c.str)) || err != nil {
-			t.Errorf("DeprecatedPwritev, case = %q: got (%d, %v), wanted (%d, nil)", c.str, n, err, len(c.str))
+		if n, err := tmf.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
+			t.Errorf("Write, case = %q: got (%d, %v), wanted (%d, nil)", c.str, n, err, len(c.str))
 		}
 
 		// Read the values from the stack and check them.

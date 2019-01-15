@@ -36,8 +36,8 @@ import (
 //
 // +stateify savable
 type fileOperations struct {
-	fsutil.NoIoctl     `state:"nosave"`
-	fsutil.NoopRelease `state:"nosave"`
+	fsutil.FileNoIoctl     `state:"nosave"`
+	fsutil.FileNoopRelease `state:"nosave"`
 
 	// iops are the Inode operations for this file.
 	iops *inodeOperations `state:"wait"`

@@ -261,15 +261,11 @@ func (noopMappingSpace) Invalidate(ar usermem.AddrRange, opts memmap.InvalidateO
 }
 
 func anonInode(ctx context.Context) *fs.Inode {
-	return fs.NewInode(NewSimpleInodeOperations(InodeSimpleAttributes{
-		UAttr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: fs.FileOwnerFromContext(ctx),
-			Perms: fs.FilePermissions{
-				User: fs.PermMask{Read: true, Write: true},
-			},
-			Links: 1,
-		}),
-	}), fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+	return fs.NewInode(&SimpleFileInode{
+		InodeSimpleAttributes: NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), fs.FilePermissions{
+			User: fs.PermMask{Read: true, Write: true},
+		}, 0),
+	}, fs.NewPseudoMountSource(), fs.StableAttr{
 		Type:      fs.Anonymous,
 		BlockSize: usermem.PageSize,
 	})

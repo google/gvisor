@@ -178,18 +178,12 @@ func Pair(t *kernel.Task, family int, stype transport.SockType, protocol int) (*
 // NewDirent returns a sockfs fs.Dirent that resides on device d.
 func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 	ino := d.NextIno()
-	// There is no real filesystem backing this pipe, so we pass in a nil
-	// Filesystem.
-	inode := fs.NewInode(fsutil.NewSimpleInodeOperations(fsutil.InodeSimpleAttributes{
-		FSType: linux.SOCKFS_MAGIC,
-		UAttr: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: fs.FileOwnerFromContext(ctx),
-			Perms: fs.FilePermissions{
-				User: fs.PermMask{Read: true, Write: true},
-			},
-			Links: 1,
-		}),
-	}), fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+	iops := &fsutil.SimpleFileInode{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), fs.FilePermissions{
+			User: fs.PermMask{Read: true, Write: true},
+		}, linux.SOCKFS_MAGIC),
+	}
+	inode := fs.NewInode(iops, fs.NewPseudoMountSource(), fs.StableAttr{
 		Type:      fs.Socket,
 		DeviceID:  d.DeviceID(),
 		InodeID:   ino,

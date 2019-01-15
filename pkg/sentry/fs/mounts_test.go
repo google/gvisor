@@ -19,7 +19,8 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 )
 
@@ -29,15 +30,15 @@ import (
 //   |-bar (file)
 func createMountNamespace(ctx context.Context) (*fs.MountNamespace, error) {
 	perms := fs.FilePermsFromMode(0777)
-	m := fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{})
+	m := fs.NewPseudoMountSource()
 
-	barFile := ramfstest.NewFile(ctx, perms)
-	fooDir := ramfstest.NewDir(ctx, map[string]*fs.Inode{
+	barFile := fsutil.NewSimpleFileInode(ctx, fs.RootOwner, perms, 0)
+	fooDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
 		"bar": fs.NewInode(barFile, m, fs.StableAttr{Type: fs.RegularFile}),
-	}, perms)
-	rootDir := ramfstest.NewDir(ctx, map[string]*fs.Inode{
+	}, fs.RootOwner, perms)
+	rootDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
 		"foo": fs.NewInode(fooDir, m, fs.StableAttr{Type: fs.Directory}),
-	}, perms)
+	}, fs.RootOwner, perms)
 
 	return fs.NewMountNamespace(ctx, fs.NewInode(rootDir, m, fs.StableAttr{Type: fs.Directory}))
 }

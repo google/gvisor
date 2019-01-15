@@ -23,7 +23,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	ramfstest "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs/test"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
@@ -91,10 +91,15 @@ type testTable struct {
 	expectedError  error
 }
 
-func runTableTests(ctx context.Context, table []testTable, n fs.InodeOperations) error {
+func runTableTests(ctx context.Context, table []testTable, dirent *fs.Dirent) error {
 	for _, tt := range table {
+		file, err := dirent.Inode.InodeOperations.GetFile(ctx, dirent, fs.FileFlags{Read: true})
+		if err != nil {
+			return fmt.Errorf("GetFile returned error: %v", err)
+		}
+
 		data := make([]byte, tt.readBufferSize)
-		resultLen, err := n.DeprecatedPreadv(ctx, usermem.BytesIOSequence(data), tt.offset)
+		resultLen, err := file.Preadv(ctx, usermem.BytesIOSequence(data), tt.offset)
 		if err != tt.expectedError {
 			return fmt.Errorf("t.Preadv(len: %v, offset: %v) (error) => %v expected %v", tt.readBufferSize, tt.offset, err, tt.expectedError)
 		}
@@ -115,12 +120,12 @@ func TestSeqFile(t *testing.T) {
 	testSource.Init()
 
 	// Create a file that can be R/W.
-	m := fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{})
+	m := fs.NewPseudoMountSource()
 	ctx := contexttest.Context(t)
 	contents := map[string]*fs.Inode{
 		"foo": NewSeqFileInode(ctx, testSource, m),
 	}
-	root := ramfstest.NewDir(ctx, contents, fs.FilePermsFromMode(0777))
+	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
 	inode := fs.NewInode(root, m, fs.StableAttr{Type: fs.Directory})
@@ -129,9 +134,13 @@ func TestSeqFile(t *testing.T) {
 		t.Fatalf("failed to walk to foo for n2: %v", err)
 	}
 	n2 := dirent2.Inode.InodeOperations
+	file2, err := n2.GetFile(ctx, dirent2, fs.FileFlags{Read: true, Write: true})
+	if err != nil {
+		t.Fatalf("GetFile returned error: %v", err)
+	}
 
 	// Writing?
-	if _, err := n2.DeprecatedPwritev(nil, usermem.BytesIOSequence([]byte("test")), 0); err == nil {
+	if _, err := file2.Writev(ctx, usermem.BytesIOSequence([]byte("test"))); err == nil {
 		t.Fatalf("managed to write to n2: %v", err)
 	}
 
@@ -141,7 +150,6 @@ func TestSeqFile(t *testing.T) {
 		t.Fatalf("failed to walk to foo: %v", err)
 	}
 	n3 := dirent3.Inode.InodeOperations
-
 	if n2 != n3 {
 		t.Error("got n2 != n3, want same")
 	}
@@ -170,13 +178,13 @@ func TestSeqFile(t *testing.T) {
 		// Read the last 3 bytes.
 		{97, 10, testSource.actual[9].Buf[7:], nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed with testSource.update = %v : %v", testSource.update, err)
 	}
 
 	// Disable updates and do it again.
 	testSource.update = false
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed with testSource.update = %v: %v", testSource.update, err)
 	}
 }
@@ -188,25 +196,24 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	testSource.update = true
 
 	// Create a file that can be R/W.
-	m := fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{})
+	m := fs.NewPseudoMountSource()
 	ctx := contexttest.Context(t)
 	contents := map[string]*fs.Inode{
 		"foo": NewSeqFileInode(ctx, testSource, m),
 	}
-	root := ramfstest.NewDir(ctx, contents, fs.FilePermsFromMode(0777))
+	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
 	inode := fs.NewInode(root, m, fs.StableAttr{Type: fs.Directory})
 	dirent2, err := root.Lookup(ctx, inode, "foo")
 	if err != nil {
-		t.Fatalf("failed to walk to foo for n2: %v", err)
+		t.Fatalf("failed to walk to foo for dirent2: %v", err)
 	}
-	n2 := dirent2.Inode.InodeOperations
 
 	table := []testTable{
 		{0, 16, flatten(testSource.actual[0].Buf, testSource.actual[1].Buf[:6]), nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed: %v", err)
 	}
 	// Delete the first entry.
@@ -224,7 +231,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 		// Read the following two lines.
 		{30, 20, flatten(testSource.actual[3].Buf, testSource.actual[4].Buf), nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed after removing first entry: %v", err)
 	}
 
@@ -238,7 +245,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	table = []testTable{
 		{50, 20, flatten(testSource.actual[4].Buf, testSource.actual[5].Buf), nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed after adding middle entry: %v", err)
 	}
 	// This will be used in a later test.
@@ -249,7 +256,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	table = []testTable{
 		{20, 20, []byte{}, io.EOF},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed after removing all entries: %v", err)
 	}
 	// Restore some of the data.
@@ -257,7 +264,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	table = []testTable{
 		{6, 20, testSource.actual[0].Buf[6:], nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed after adding first entry back: %v", err)
 	}
 
@@ -266,7 +273,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	table = []testTable{
 		{30, 20, flatten(testSource.actual[3].Buf, testSource.actual[4].Buf), nil},
 	}
-	if err := runTableTests(ctx, table, n2); err != nil {
+	if err := runTableTests(ctx, table, dirent2); err != nil {
 		t.Errorf("runTableTest failed after extending testSource: %v", err)
 	}
 }
