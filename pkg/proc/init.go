@@ -106,11 +106,8 @@ func New(id string, runtime *runsc.Runsc, stdio proc.Stdio) *Init {
 }
 
 // Create the process with the provided config
-func (p *Init) Create(ctx context.Context, r *CreateConfig) error {
-	var (
-		err    error
-		socket *runc.Socket
-	)
+func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
+	var socket *runc.Socket
 	if r.Terminal {
 		if socket, err = runc.NewTempConsoleSocket(); err != nil {
 			return errors.Wrap(err, "failed to create OCI runtime console socket")
@@ -149,6 +146,12 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) error {
 		p.closers = append(p.closers, sc)
 	}
 	var copyWaitGroup sync.WaitGroup
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {

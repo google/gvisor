@@ -191,6 +191,12 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 		e.stdin = sc
 	}
 	var copyWaitGroup sync.WaitGroup
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {
