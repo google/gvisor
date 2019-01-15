@@ -201,8 +201,8 @@ TEST_P(WaitAnyChildTest, MultipleFork) {
 TEST_P(WaitAnyChildTest, CloneSIGCHLD) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   ASSERT_THAT(child = CloneAndExit(0, stack, SIGCHLD), SyscallSucceeds());
@@ -217,8 +217,8 @@ TEST_P(WaitAnyChildTest, ForkAndClone) {
 
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int thread;
   // Send SIGCHLD for normal wait semantics.
@@ -438,8 +438,8 @@ TEST_P(WaitSpecificChildTest, AfterExit) {
 TEST_P(WaitSpecificChildTest, CloneSIGCHLD) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   ASSERT_THAT(child = CloneAndExit(0, stack, SIGCHLD), SyscallSucceeds());
@@ -453,8 +453,8 @@ TEST_P(WaitSpecificChildTest, CloneSIGCHLD) {
 TEST_P(WaitSpecificChildTest, CloneNoSIGCHLD) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());
@@ -469,8 +469,8 @@ TEST_P(WaitSpecificChildTest, CloneNoSIGCHLD) {
 TEST_P(WaitSpecificChildTest, CloneAfterExit) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   // Send SIGCHLD for normal wait semantics.
@@ -485,8 +485,8 @@ TEST_P(WaitSpecificChildTest, CloneAfterExit) {
 TEST_P(WaitSpecificChildTest, CloneThread) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   ASSERT_THAT(child = CloneAndExit(15, stack, CLONE_THREAD), SyscallSucceeds());
@@ -521,8 +521,8 @@ TEST_P(WaitSpecificChildTest, AfterChildExecve) {
 
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   pid_t const child = fork();
   if (child == 0) {
@@ -622,8 +622,8 @@ TEST(WaitTest, SignalExit) {
 TEST(WaitTest, CloneWCLONE) {
   uintptr_t stack;
   ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free = Cleanup(
-      [this, stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
 
   int child;
   ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());

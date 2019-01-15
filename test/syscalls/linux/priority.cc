@@ -192,7 +192,7 @@ TEST(GetpriorityTest, CloneMaintainsPriority) {
   ASSERT_THAT(setpriority(PRIO_PROCESS, getpid(), kParentPriority),
               SyscallSucceeds());
 
-  ScopedThread([kParentPriority, kChildPriority]() {
+  ScopedThread th([]() {
     // Check that priority equals that of parent thread
     pid_t my_tid;
     EXPECT_THAT(my_tid = syscall(__NR_gettid), SyscallSucceeds());
@@ -203,6 +203,7 @@ TEST(GetpriorityTest, CloneMaintainsPriority) {
     EXPECT_THAT(setpriority(PRIO_PROCESS, my_tid, kChildPriority),
                 SyscallSucceeds());
   });
+  th.Join();
 
   // Check that parent's priority reemained the same even though
   // the child's priority was altered
