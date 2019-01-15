@@ -1,0 +1,26 @@
+dist: trusty
+sudo: required
+language: go
+go: "1.11.x"
+
+env:
+  - CONTAINERD_VERSION=1.1.5 RUNSC_VERSION=2018-12-07 TEST=untrusted-workload
+  - CONTAINERD_VERSION=1.2.1 RUNSC_VERSION=2018-12-07 TEST=untrusted-workload
+  - CONTAINERD_VERSION=1.2.1 RUNSC_VERSION=2018-12-07 TEST=runtime-handler
+
+
+go_import_path: github.com/google/gvisor-containerd-shim
+
+addons:
+  apt:
+    packages:
+      - socat
+      - conntrack
+      - ipset
+
+before_install:
+  - uname -r
+  - sudo apt-get -q update
+  - sudo apt-get install -y libseccomp-dev/trusty-backports
+
+script: ./test/e2e/${TEST}/test.sh
