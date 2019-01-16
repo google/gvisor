@@ -29,6 +29,7 @@ import (
 	"syscall"
 	"testing"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -107,7 +108,12 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	// Mark the root as writeable, as some tests attempt to
 	// write to the rootfs, and expect EACCES, not EROFS.
 	spec.Root.Readonly = false
-	spec.Mounts = nil
+
+	// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on features
+	// available in gVisor's tmpfs and not gofers, may fail.
+	spec.Mounts = []specs.Mount{
+		{Destination: "/tmp", Type: "tmpfs"},
+	}
 
 	// Set environment variable that indicates we are
 	// running in gVisor and with the given platform.

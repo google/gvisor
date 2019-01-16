@@ -279,6 +279,19 @@ func TestJobControl(t *testing.T) {
 	}
 }
 
+// TestTmpFile checks that files inside '/tmp' are not overridden. In addition,
+// it checks that working dir is created if it doesn't exit.
+func TestTmpFile(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := testutil.MakeDocker("tmp-file-test")
+	if err := d.Run("-w=/tmp/foo/bar", "--read-only", "alpine", "touch", "/tmp/foo/bar/file"); err != nil {
+		t.Fatal("docker run failed:", err)
+	}
+	defer d.CleanUp()
+}
+
 func TestMain(m *testing.M) {
 	testutil.EnsureSupportedDockerVersion()
 	os.Exit(m.Run())

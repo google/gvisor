@@ -398,16 +398,21 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 			defer cleanup()
 
-			mm, err := createMountNamespace(ctx, ctx, &tc.spec, conf, []int{sandEnd})
-			if err != nil {
+			// setupRootContainerFS needs to find root from the context after the
+			// namespace is created.
+			var mns *fs.MountNamespace
+			setMountNS := func(m *fs.MountNamespace) {
+				mns = m
+				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
+			}
+			if err := setupRootContainerFS(ctx, ctx, &tc.spec, conf, []int{sandEnd}, setMountNS); err != nil {
 				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 			}
-			defer mm.DecRef()
-			root := mm.Root()
+			root := mns.Root()
 			defer root.DecRef()
 			for _, p := range tc.expectedPaths {
 				maxTraversals := uint(0)
-				if d, err := mm.FindInode(ctx, root, root, p, &maxTraversals); err != nil {
+				if d, err := mns.FindInode(ctx, root, root, p, &maxTraversals); err != nil {
 					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
 				} else {
 					d.DecRef()
@@ -570,12 +575,12 @@ func TestRestoreEnvironment(t *testing.T) {
 					},
 					"tmpfs": {
 						{
-							Dev: "none",
-						},
-						{
 							Dev:   "none",
 							Flags: fs.MountSourceFlags{NoAtime: true},
 							Data:  "uid=1022",
+						},
+						{
+							Dev: "none",
 						},
 					},
 					"devtmpfs": {

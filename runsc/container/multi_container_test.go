@@ -739,6 +739,11 @@ func TestMultiContainerGoferStop(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "gofer-stop-test")
+	if err != nil {
+		t.Fatal("ioutil.TempDir failed:", err)
+	}
+
 	// Setup containers. Root container just reaps children, while the others
 	// perform some IOs. Children are executed in 3 batches of 10. Within the
 	// batch there is overlap between containers starting and being destroyed. In
@@ -746,7 +751,8 @@ func TestMultiContainerGoferStop(t *testing.T) {
 	cmds := [][]string{{app, "reaper"}}
 	const batchSize = 10
 	for i := 0; i < 3*batchSize; i++ {
-		cmds = append(cmds, []string{"sh", "-c", "find /bin -type f | head | xargs -I SRC cp SRC /tmp/output"})
+		cmd := "find /bin -type f | head | xargs -I SRC cp SRC " + dir
+		cmds = append(cmds, []string{"sh", "-c", cmd})
 	}
 	allSpecs, allIDs := createSpecs(cmds...)
 
