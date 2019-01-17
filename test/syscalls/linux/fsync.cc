@@ -19,6 +19,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -28,22 +29,24 @@ namespace testing {
 namespace {
 
 TEST(FsyncTest, TempFileSucceeds) {
-  std::string path = NewTempAbsPath();
-  int fd;
-  EXPECT_THAT(fd = open(path.c_str(), O_RDWR | O_CREAT, 0666),
-              SyscallSucceeds());
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
   const std::string data = "some data to sync";
-  EXPECT_THAT(write(fd, data.c_str(), data.size()),
+  EXPECT_THAT(write(fd.get(), data.c_str(), data.size()),
               SyscallSucceedsWithValue(data.size()));
-  EXPECT_THAT(fsync(fd), SyscallSucceeds());
-  ASSERT_THAT(close(fd), SyscallSucceeds());
-  ASSERT_THAT(unlink(path.c_str()), SyscallSucceeds());
+  EXPECT_THAT(fsync(fd.get()), SyscallSucceeds());
+}
+
+TEST(FsyncTest, TempDirSucceeds) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+  EXPECT_THAT(fsync(fd.get()), SyscallSucceeds());
 }
 
 TEST(FsyncTest, CannotFsyncOnUnopenedFd) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   int fd;
-  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  ASSERT_THAT(fd = open(f.path().c_str(), O_RDONLY), SyscallSucceeds());
+  ASSERT_THAT(fd = open(file.path().c_str(), O_RDONLY), SyscallSucceeds());
   ASSERT_THAT(close(fd), SyscallSucceeds());
 
   // fd is now invalid.

@@ -228,10 +228,10 @@ func (FileNoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallAr
 type DirFileOperations struct {
 	waiter.AlwaysReady
 	FileGenericSeek
-	FileNoFsync
 	FileNoIoctl
 	FileNoMMap
 	FileNoopFlush
+	FileNoopFsync
 	FileNoopRelease
 }
 
