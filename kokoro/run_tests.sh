@@ -106,10 +106,7 @@ install_crictl_test_deps() {
   # go get will exit with a status of 1 despite succeeding, so ignore errors.
   go get -d github.com/containerd/containerd || true
   cd ${GOPATH}/src/github.com/containerd/containerd
-  # TODO: Switch to using a tagged version once one has been cut
-  # that contains fix in:
-  # https://github.com/containerd/containerd/commit/52de3717005eb20141c305bd93ff0d6ee5dfecb6
-  git checkout master
+  git checkout v1.2.2
   make
   sudo -n -E make install
 
