@@ -42,7 +42,7 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot() error {
+func setUpChroot(pidns bool) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -59,8 +59,15 @@ func setUpChroot() error {
 		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
 	}
 
-	if err := mountInChroot(chroot, "/proc", "/proc", "bind", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_REC); err != nil {
-		return fmt.Errorf("error mounting proc in chroot: %v", err)
+	if pidns {
+		flags := uint32(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_RDONLY)
+		if err := mountInChroot(chroot, "proc", "/proc", "proc", flags); err != nil {
+			return fmt.Errorf("error mounting proc in chroot: %v", err)
+		}
+	} else {
+		if err := mountInChroot(chroot, "/proc", "/proc", "bind", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_REC); err != nil {
+			return fmt.Errorf("error mounting proc in chroot: %v", err)
+		}
 	}
 
 	if err := mountInChroot(chroot, specutils.ExePath, chrootBinPath, "bind", syscall.MS_BIND|syscall.MS_RDONLY); err != nil {

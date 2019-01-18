@@ -75,6 +75,9 @@ type Boot struct {
 
 	// startSyncFD is the file descriptor to synchronize runsc and sandbox.
 	startSyncFD int
+
+	// pidns is set if the sanadbox is in its own pid namespace.
+	pidns bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -103,6 +106,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.console, "console", false, "set to true if the sandbox should allow terminal ioctl(2) syscalls")
 	f.BoolVar(&b.applyCaps, "apply-caps", false, "if true, apply capabilities defined in the spec to the process")
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
+	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
@@ -121,7 +125,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	debug.SetTraceback("all")
 
 	if b.setUpRoot {
-		if err := setUpChroot(); err != nil {
+		if err := setUpChroot(b.pidns); err != nil {
 			Fatalf("error setting up chroot: %v", err)
 		}
 

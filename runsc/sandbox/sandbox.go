@@ -458,6 +458,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	} else {
 		log.Infof("Sandbox will be started in a new PID namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
+		cmd.Args = append(cmd.Args, "--pidns=true")
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks
