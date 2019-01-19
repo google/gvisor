@@ -500,15 +500,15 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
 		}
 	} else {
-		log.Infof("Sandbox will be started in new user namespace")
-		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
-
 		// If we have CAP_SETUID and CAP_SETGID, then we can also run
 		// as user nobody.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode as current user (uid=%d gid=%d). This is only safe in tests!", os.Getuid(), os.Getgid())
 			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
 		} else if specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
+			log.Infof("Sandbox will be started in new user namespace")
+			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
+
 			// Map nobody in the new namespace to nobody in the parent namespace.
 			//
 			// A sandbox process will construct an empty
