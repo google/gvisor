@@ -66,7 +66,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	// You can't specify both -pid and -rootpid.
 	if wt.rootPID != unsetPID && wt.pid != unsetPID {
-		Fatalf("only up to one of -pid and -rootPid can be set")
+		Fatalf("only one of -pid and -rootPid can be set")
 	}
 
 	id := f.Arg(0)
@@ -74,7 +74,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading container: %v", err)
+		Fatalf("loading container: %v", err)
 	}
 
 	var waitStatus syscall.WaitStatus
@@ -83,21 +83,21 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	case wt.rootPID == unsetPID && wt.pid == unsetPID:
 		ws, err := c.Wait()
 		if err != nil {
-			Fatalf("error waiting on container %q: %v", c.ID, err)
+			Fatalf("waiting on container %q: %v", c.ID, err)
 		}
 		waitStatus = ws
 	// Wait on a PID in the root PID namespace.
 	case wt.rootPID != unsetPID:
 		ws, err := c.WaitRootPID(int32(wt.rootPID), true /* clearStatus */)
 		if err != nil {
-			Fatalf("error waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
+			Fatalf("waiting on PID in root PID namespace %d in container %q: %v", wt.rootPID, c.ID, err)
 		}
 		waitStatus = ws
 	// Wait on a PID in the container's PID namespace.
 	case wt.pid != unsetPID:
 		ws, err := c.WaitPID(int32(wt.pid), true /* clearStatus */)
 		if err != nil {
-			Fatalf("error waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
+			Fatalf("waiting on PID %d in container %q: %v", wt.pid, c.ID, err)
 		}
 		waitStatus = ws
 	}
@@ -107,7 +107,7 @@ func (wt *Wait) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	// Write json-encoded wait result directly to stdout.
 	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-		Fatalf("error marshaling wait result: %v", err)
+		Fatalf("marshaling wait result: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

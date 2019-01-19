@@ -62,11 +62,11 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandbox: %v", err)
+		Fatalf("loading sandbox: %v", err)
 	}
 	pList, err := c.Processes()
 	if err != nil {
-		Fatalf("error getting processes for container: %v", err)
+		Fatalf("getting processes for container: %v", err)
 	}
 
 	switch ps.format {
@@ -75,11 +75,11 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 	case "json":
 		o, err := control.PrintPIDsJSON(pList)
 		if err != nil {
-			Fatalf("error generating JSON: %v", err)
+			Fatalf("generating JSON: %v", err)
 		}
 		fmt.Println(o)
 	default:
-		Fatalf("Unsupported format: %s", ps.format)
+		Fatalf("unsupported format: %s", ps.format)
 	}
 
 	return subcommands.ExitSuccess

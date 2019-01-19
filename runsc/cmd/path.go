@@ -22,7 +22,7 @@ import (
 func getwdOrDie() string {
 	wd, err := os.Getwd()
 	if err != nil {
-		Fatalf("error getting current working directory: %v", err)
+		Fatalf("getting current working directory: %v", err)
 	}
 	return wd
 }

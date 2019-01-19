@@ -94,14 +94,14 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]specs.Mou
 		flags |= syscall.MS_BIND
 		log.Infof("Mounting src: %q, dst: %q, flags: %#x", m.Source, dst, flags)
 		if err := specutils.Mount(m.Source, dst, m.Type, flags); err != nil {
-			return nil, fmt.Errorf("failed to mount %v: %v", m, err)
+			return nil, fmt.Errorf("mounting %v: %v", m, err)
 		}
 
 		// Make the mount a slave, so that for recursive bind mount, umount won't
 		// propagate to the source.
 		flags = syscall.MS_SLAVE | syscall.MS_REC
 		if err := syscall.Mount("", dst, "", uintptr(flags), ""); err != nil {
-			return nil, fmt.Errorf("failed to rslave mount dst: %q, flags: %#x, err: %v", dst, flags, err)
+			return nil, fmt.Errorf("mount rslave dst: %q, flags: %#x, err: %v", dst, flags, err)
 		}
 
 		cpy := m
@@ -146,7 +146,7 @@ func setupFS(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]specs.Mou
 		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
 		src := spec.Root.Path
 		if err := syscall.Mount(src, src, "bind", flags, ""); err != nil {
-			return nil, fmt.Errorf("failed to remount root as read-only with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
+			return nil, fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
 		}
 	}
 	return rv, nil

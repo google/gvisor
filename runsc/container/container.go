@@ -137,7 +137,7 @@ type Container struct {
 func Load(rootDir, id string) (*Container, error) {
 	log.Debugf("Load container %q %q", rootDir, id)
 	if err := validateID(id); err != nil {
-		return nil, fmt.Errorf("error validating id: %v", err)
+		return nil, fmt.Errorf("validating id: %v", err)
 	}
 
 	cRoot, err := findContainerRoot(rootDir, id)
@@ -162,11 +162,11 @@ func Load(rootDir, id string) (*Container, error) {
 			// Preserve error so that callers can distinguish 'not found' errors.
 			return nil, err
 		}
-		return nil, fmt.Errorf("error reading container metadata file %q: %v", metaFile, err)
+		return nil, fmt.Errorf("reading container metadata file %q: %v", metaFile, err)
 	}
 	var c Container
 	if err := json.Unmarshal(metaBytes, &c); err != nil {
-		return nil, fmt.Errorf("error unmarshaling container metadata from %q: %v", metaFile, err)
+		return nil, fmt.Errorf("unmarshaling container metadata from %q: %v", metaFile, err)
 	}
 
 	// If the status is "Running" or "Created", check that the sandbox
@@ -225,7 +225,7 @@ func List(rootDir string) ([]string, error) {
 	log.Debugf("List containers %q", rootDir)
 	fs, err := ioutil.ReadDir(rootDir)
 	if err != nil {
-		return nil, fmt.Errorf("ReadDir(%s) failed: %v", rootDir, err)
+		return nil, fmt.Errorf("reading dir %q: %v", rootDir, err)
 	}
 	var out []string
 	for _, f := range fs {
@@ -257,7 +257,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	if _, err := os.Stat(filepath.Join(containerRoot, metadataFilename)); err == nil {
 		return nil, fmt.Errorf("container with id %q already exists", id)
 	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("error looking for existing container in %q: %v", containerRoot, err)
+		return nil, fmt.Errorf("looking for existing container in %q: %v", containerRoot, err)
 	}
 
 	c := &Container{
@@ -446,14 +446,14 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	log.Debugf("Run container %q in root dir: %s", id, conf.RootDir)
 	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile, userLog)
 	if err != nil {
-		return 0, fmt.Errorf("error creating container: %v", err)
+		return 0, fmt.Errorf("creating container: %v", err)
 	}
 	// Clean up partially created container if an error ocurrs.
 	// Any errors returned by Destroy() itself are ignored.
 	defer c.Destroy()
 
 	if err := c.Start(conf); err != nil {
-		return 0, fmt.Errorf("error starting container: %v", err)
+		return 0, fmt.Errorf("starting container: %v", err)
 	}
 	return c.Wait()
 }
@@ -595,7 +595,7 @@ func (c *Container) Pause() error {
 	}
 
 	if err := c.Sandbox.Pause(c.ID); err != nil {
-		return fmt.Errorf("error pausing container: %v", err)
+		return fmt.Errorf("pausing container: %v", err)
 	}
 	c.changeStatus(Paused)
 	return c.save()
@@ -615,7 +615,7 @@ func (c *Container) Resume() error {
 		return fmt.Errorf("cannot resume container %q in state %v", c.ID, c.Status)
 	}
 	if err := c.Sandbox.Resume(c.ID); err != nil {
-		return fmt.Errorf("error resuming container: %v", err)
+		return fmt.Errorf("resuming container: %v", err)
 	}
 	c.changeStatus(Running)
 	return c.save()
@@ -657,19 +657,19 @@ func (c *Container) Destroy() error {
 	var errs []string
 
 	if err := c.stop(); err != nil {
-		err = fmt.Errorf("error stopping container: %v", err)
+		err = fmt.Errorf("stopping container: %v", err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
 	}
 
 	if err := destroyFS(c.Spec); err != nil {
-		err = fmt.Errorf("error destroying container fs: %v", err)
+		err = fmt.Errorf("destroying container fs: %v", err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
 	}
 
 	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
-		err = fmt.Errorf("error deleting container root directory %q: %v", c.Root, err)
+		err = fmt.Errorf("deleting container root directory %q: %v", c.Root, err)
 		log.Warningf("%v", err)
 		errs = append(errs, err.Error())
 	}
@@ -702,10 +702,10 @@ func (c *Container) save() error {
 	metaFile := filepath.Join(c.Root, metadataFilename)
 	meta, err := json.Marshal(c)
 	if err != nil {
-		return fmt.Errorf("error marshaling container metadata: %v", err)
+		return fmt.Errorf("invalid container metadata: %v", err)
 	}
 	if err := ioutil.WriteFile(metaFile, meta, 0640); err != nil {
-		return fmt.Errorf("error writing container metadata: %v", err)
+		return fmt.Errorf("writing container metadata: %v", err)
 	}
 	return nil
 }
@@ -719,7 +719,7 @@ func (c *Container) stop() error {
 	if c.Sandbox != nil {
 		log.Debugf("Destroying container %q", c.ID)
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
-			return fmt.Errorf("error destroying container %q: %v", c.ID, err)
+			return fmt.Errorf("destroying container %q: %v", c.ID, err)
 		}
 		cgroup = c.Sandbox.Cgroup
 		// Only set sandbox to nil after it has been told to destroy the container.
@@ -917,12 +917,12 @@ func (c *Container) lock() (func() error, error) {
 // given container root directory.
 func lockContainerMetadata(containerRootDir string) (func() error, error) {
 	if err := os.MkdirAll(containerRootDir, 0711); err != nil {
-		return nil, fmt.Errorf("error creating container root directory %q: %v", containerRootDir, err)
+		return nil, fmt.Errorf("creating container root directory %q: %v", containerRootDir, err)
 	}
 	f := filepath.Join(containerRootDir, metadataLockFilename)
 	l := flock.NewFlock(f)
 	if err := l.Lock(); err != nil {
-		return nil, fmt.Errorf("error acquiring lock on container lock file %q: %v", f, err)
+		return nil, fmt.Errorf("acquiring lock on container lock file %q: %v", f, err)
 	}
 	return l.Unlock, nil
 }

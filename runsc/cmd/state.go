@@ -59,7 +59,7 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading container: %v", err)
+		Fatalf("loading container: %v", err)
 	}
 	log.Debugf("Returning state for container %+v", c)
 
@@ -69,7 +69,7 @@ func (*State) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	// Write json-encoded state directly to stdout.
 	b, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		Fatalf("error marshaling container state: %v", err)
+		Fatalf("marshaling container state: %v", err)
 	}
 	os.Stdout.Write(b)
 	return subcommands.ExitSuccess

@@ -30,7 +30,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	// Create a new pty master and slave.
 	ptyMaster, ptySlave, err := pty.Open()
 	if err != nil {
-		return nil, fmt.Errorf("error opening pty: %v", err)
+		return nil, fmt.Errorf("opening pty: %v", err)
 	}
 	defer ptyMaster.Close()
 
@@ -38,7 +38,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		ptySlave.Close()
-		return nil, fmt.Errorf("error dial socket %q: %v", socketPath, err)
+		return nil, fmt.Errorf("dialing socket %q: %v", socketPath, err)
 	}
 	defer conn.Close()
 	uc, ok := conn.(*net.UnixConn)
@@ -49,7 +49,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	socket, err := uc.File()
 	if err != nil {
 		ptySlave.Close()
-		return nil, fmt.Errorf("error getting file for unix socket %v: %v", uc, err)
+		return nil, fmt.Errorf("getting file for unix socket %v: %v", uc, err)
 	}
 	defer socket.Close()
 
@@ -57,7 +57,7 @@ func NewWithSocket(socketPath string) (*os.File, error) {
 	msg := unix.UnixRights(int(ptyMaster.Fd()))
 	if err := unix.Sendmsg(int(socket.Fd()), []byte("pty-master"), msg, nil, 0); err != nil {
 		ptySlave.Close()
-		return nil, fmt.Errorf("error sending console over unix socket %q: %v", socketPath, err)
+		return nil, fmt.Errorf("sending console over unix socket %q: %v", socketPath, err)
 	}
 	return ptySlave, nil
 }

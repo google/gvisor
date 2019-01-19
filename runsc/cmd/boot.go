@@ -154,7 +154,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	defer specFile.Close()
 	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile)
 	if err != nil {
-		Fatalf("error reading spec: %v", err)
+		Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -208,7 +208,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
-		Fatalf("error creating loader: %v", err)
+		Fatalf("creating loader: %v", err)
 	}
 
 	// Fatalf exits the process and doesn't run defers.
@@ -220,7 +220,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	buf := make([]byte, 1)
 	if w, err := startSyncFile.Write(buf); err != nil || w != 1 {
 		l.Destroy()
-		Fatalf("Unable to write into the start-sync descriptor: %v", err)
+		Fatalf("unable to write into the start-sync descriptor: %v", err)
 	}
 	// Closes startSyncFile because 'l.Run()' only returns when the sandbox exits.
 	startSyncFile.Close()
@@ -231,7 +231,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Run the application and wait for it to finish.
 	if err := l.Run(); err != nil {
 		l.Destroy()
-		Fatalf("error running sandbox: %v", err)
+		Fatalf("running sandbox: %v", err)
 	}
 
 	ws := l.WaitExit()

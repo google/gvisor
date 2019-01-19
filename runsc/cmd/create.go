@@ -89,7 +89,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	}
 	spec, err := specutils.ReadSpec(bundleDir)
 	if err != nil {
-		Fatalf("error reading spec: %v", err)
+		Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -97,7 +97,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
 	if _, err := container.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile, c.userLog); err != nil {
-		Fatalf("error creating container: %v", err)
+		Fatalf("creating container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

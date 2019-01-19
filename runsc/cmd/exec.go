@@ -111,14 +111,14 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	e, id, err := ex.parseArgs(f)
 	if err != nil {
-		Fatalf("error parsing process spec: %v", err)
+		Fatalf("parsing process spec: %v", err)
 	}
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading sandbox: %v", err)
+		Fatalf("loading sandbox: %v", err)
 	}
 
 	// Replace empty settings with defaults from container.
@@ -128,13 +128,13 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if e.Envv == nil {
 		e.Envv, err = resolveEnvs(c.Spec.Process.Env, ex.env)
 		if err != nil {
-			Fatalf("error getting environment variables: %v", err)
+			Fatalf("getting environment variables: %v", err)
 		}
 	}
 	if e.Capabilities == nil {
 		e.Capabilities, err = specutils.Capabilities(c.Spec.Process.Capabilities)
 		if err != nil {
-			Fatalf("error creating capabilities: %v", err)
+			Fatalf("creating capabilities: %v", err)
 		}
 	}
 
@@ -149,7 +149,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// Start the new process and get it pid.
 	pid, err := c.Execute(e)
 	if err != nil {
-		Fatalf("error getting processes for container: %v", err)
+		Fatalf("getting processes for container: %v", err)
 	}
 
 	if e.StdioIsPty {
@@ -163,7 +163,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if ex.internalPidFile != "" {
 		pidStr := []byte(strconv.Itoa(int(pid)))
 		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
-			Fatalf("error writing internal pid file %q: %v", ex.internalPidFile, err)
+			Fatalf("writing internal pid file %q: %v", ex.internalPidFile, err)
 		}
 	}
 
@@ -172,14 +172,14 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// returns.
 	if ex.pidFile != "" {
 		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
-			Fatalf("error writing pid file: %v", err)
+			Fatalf("writing pid file: %v", err)
 		}
 	}
 
 	// Wait for the process to exit.
 	ws, err := c.WaitPID(pid, ex.clearStatus)
 	if err != nil {
-		Fatalf("error waiting on pid %d: %v", pid, err)
+		Fatalf("waiting on pid %d: %v", pid, err)
 	}
 	*waitStatus = ws
 	return subcommands.ExitSuccess
@@ -188,7 +188,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
 	binPath, err := specutils.BinPath()
 	if err != nil {
-		Fatalf("error getting bin path: %v", err)
+		Fatalf("getting bin path: %v", err)
 	}
 	var args []string
 
@@ -199,7 +199,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	if pidFile == "" {
 		tmpDir, err := ioutil.TempDir("", "exec-pid-")
 		if err != nil {
-			Fatalf("error creating TempDir: %v", err)
+			Fatalf("creating TempDir: %v", err)
 		}
 		defer os.RemoveAll(tmpDir)
 		pidFile = filepath.Join(tmpDir, "pid")
@@ -232,7 +232,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 		// socket.
 		tty, err := console.NewWithSocket(ex.consoleSocket)
 		if err != nil {
-			Fatalf("error setting up console with socket %q: %v", ex.consoleSocket, err)
+			Fatalf("setting up console with socket %q: %v", ex.consoleSocket, err)
 		}
 		defer tty.Close()
 
@@ -307,7 +307,7 @@ func (ex *Exec) argsFromCLI(argv []string) (*control.ExecArgs, error) {
 	for _, s := range ex.extraKGIDs {
 		kgid, err := strconv.Atoi(s)
 		if err != nil {
-			Fatalf("error parsing GID: %s, %v", s, err)
+			Fatalf("parsing GID: %s, %v", s, err)
 		}
 		extraKGIDs = append(extraKGIDs, auth.KGID(kgid))
 	}

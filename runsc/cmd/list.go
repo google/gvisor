@@ -81,7 +81,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	for _, id := range ids {
 		c, err := container.Load(conf.RootDir, id)
 		if err != nil {
-			Fatalf("error loading container %q: %v", id, err)
+			Fatalf("loading container %q: %v", id, err)
 		}
 		containers = append(containers, c)
 	}
@@ -108,7 +108,7 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			states = append(states, c.State())
 		}
 		if err := json.NewEncoder(os.Stdout).Encode(states); err != nil {
-			Fatalf("error marshaling container state: %v", err)
+			Fatalf("marshaling container state: %v", err)
 		}
 	default:
 		Fatalf("unknown list format %q", l.format)

@@ -163,7 +163,7 @@ func (cm *containerManager) StartRoot(cid *string, _ *struct{}) error {
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
-		return fmt.Errorf("failed to start sandbox: %v", err)
+		return fmt.Errorf("starting sandbox: %v", err)
 	}
 	return nil
 }
@@ -319,7 +319,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	p, err := createPlatform(cm.l.conf, int(deviceFile.Fd()))
 	if err != nil {
-		return fmt.Errorf("error creating platform: %v", err)
+		return fmt.Errorf("creating platform: %v", err)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
@@ -330,14 +330,14 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	fds := &fdDispenser{fds: cm.l.goferFDs}
 	renv, err := createRestoreEnvironment(cm.l.spec, cm.l.conf, fds)
 	if err != nil {
-		return fmt.Errorf("error creating RestoreEnvironment: %v", err)
+		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
 	fs.SetRestoreEnvironment(*renv)
 
 	// Prepare to load from the state file.
 	networkStack, err := newEmptyNetworkStack(cm.l.conf, k)
 	if err != nil {
-		return fmt.Errorf("failed to create network: %v", err)
+		return fmt.Errorf("creating network: %v", err)
 	}
 	if eps, ok := networkStack.(*epsocket.Stack); ok {
 		stack.StackFromEnv = eps.Stack // FIXME
@@ -347,7 +347,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return err
 	}
 	if info.Size() == 0 {
-		return fmt.Errorf("error file was empty")
+		return fmt.Errorf("file cannot be empty")
 	}
 
 	// Load the state.
@@ -385,7 +385,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
 	if err := <-cm.startResultChan; err != nil {
-		return fmt.Errorf("failed to start sandbox: %v", err)
+		return fmt.Errorf("starting sandbox: %v", err)
 	}
 
 	return nil

@@ -101,12 +101,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 
 	specFile, err := specutils.OpenCleanSpec(g.bundleDir)
 	if err != nil {
-		Fatalf("error opening spec: %v", err)
+		Fatalf("opening spec: %v", err)
 	}
 	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile)
 	specFile.Close()
 	if err != nil {
-		Fatalf("error reading spec: %v", err)
+		Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -120,7 +120,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("failed to chroot to %q: %v", root, err)
 	}
 	if err := syscall.Chdir("/"); err != nil {
-		Fatalf("failed to change working dir: %v", err)
+		Fatalf("changing working dir: %v", err)
 	}
 	log.Infof("Process chroot'd to %q", root)
 
@@ -131,7 +131,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		PanicOnWrite: g.panicOnWrite,
 	})
 	if err != nil {
-		Fatalf("Error creating attach point: %v", err)
+		Fatalf("creating attach point: %v", err)
 	}
 	ats = append(ats, ap)
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], spec.Root.Readonly)
@@ -145,12 +145,12 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
-				Fatalf("Error creating attach point: %v", err)
+				Fatalf("creating attach point: %v", err)
 			}
 			ats = append(ats, ap)
 
 			if mountIdx >= len(g.ioFDs) {
-				Fatalf("No FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)
+				Fatalf("no FD found for mount. Did you forget --io-fd? mount: %d, %v", len(g.ioFDs), m)
 			}
 			log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfg.ROMount)
 			mountIdx++
@@ -161,7 +161,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	if err := filter.Install(); err != nil {
-		Fatalf("Failed to install seccomp filters: %v", err)
+		Fatalf("installing seccomp filters: %v", err)
 	}
 
 	runServers(ats, g.ioFDs)
@@ -176,7 +176,7 @@ func runServers(ats []p9.Attacher, ioFDs []int) {
 		go func(ioFD int, at p9.Attacher) {
 			socket, err := unet.NewSocket(ioFD)
 			if err != nil {
-				Fatalf("err creating server on FD %d: %v", ioFD, err)
+				Fatalf("creating server on FD %d: %v", ioFD, err)
 			}
 			s := p9.NewServer(at)
 			if err := s.Handle(socket); err != nil {

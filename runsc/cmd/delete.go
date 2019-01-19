@@ -74,13 +74,13 @@ func (d *Delete) execute(ids []string, conf *boot.Config) error {
 				log.Warningf("couldn't find container %q: %v", id, err)
 				return nil
 			}
-			return fmt.Errorf("error loading container %q: %v", id, err)
+			return fmt.Errorf("loading container %q: %v", id, err)
 		}
 		if !d.force && c.Status != container.Created && c.Status != container.Stopped {
 			return fmt.Errorf("cannot delete container that is not stopped without --force flag")
 		}
 		if err := c.Destroy(); err != nil {
-			return fmt.Errorf("error destroying container: %v", err)
+			return fmt.Errorf("destroying container: %v", err)
 		}
 	}
 	return nil

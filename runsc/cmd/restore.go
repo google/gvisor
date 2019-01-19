@@ -84,7 +84,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	}
 	spec, err := specutils.ReadSpec(bundleDir)
 	if err != nil {
-		Fatalf("error reading spec: %v", err)
+		Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -96,15 +96,15 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading container: %v", err)
+		Fatalf("loading container: %v", err)
 	}
 	if err := c.Restore(spec, conf, restoreFile); err != nil {
-		Fatalf("error restoring container: %v", err)
+		Fatalf("restoring container: %v", err)
 	}
 
 	ws, err := c.Wait()
 	if err != nil {
-		Fatalf("error running container: %v", err)
+		Fatalf("running container: %v", err)
 	}
 	*waitStatus = ws
 

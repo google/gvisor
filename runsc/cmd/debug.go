@@ -68,7 +68,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		var err error
 		c, err = container.Load(conf.RootDir, f.Arg(0))
 		if err != nil {
-			Fatalf("error loading container %q: %v", f.Arg(0), err)
+			Fatalf("loading container %q: %v", f.Arg(0), err)
 		}
 	} else {
 		if f.NArg() != 0 {
@@ -78,12 +78,12 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Go over all sandboxes and find the one that matches PID.
 		ids, err := container.List(conf.RootDir)
 		if err != nil {
-			Fatalf("error listing containers: %v", err)
+			Fatalf("listing containers: %v", err)
 		}
 		for _, id := range ids {
 			candidate, err := container.Load(conf.RootDir, id)
 			if err != nil {
-				Fatalf("error loading container %q: %v", id, err)
+				Fatalf("loading container %q: %v", id, err)
 			}
 			if candidate.SandboxPid() == d.pid {
 				c = candidate
@@ -110,7 +110,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		log.Infof("Retrieving sandbox stacks")
 		stacks, err := c.Sandbox.Stacks()
 		if err != nil {
-			Fatalf("error retrieving stacks: %v", err)
+			Fatalf("retrieving stacks: %v", err)
 		}
 		log.Infof("     *** Stack dump ***\n%s", stacks)
 	}

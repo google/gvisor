@@ -175,7 +175,7 @@ func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	}
 
 	if err := ioutil.WriteFile(confPath, specTemplate, 0664); err != nil {
-		Fatalf("error writing to %q: %v", confPath, err)
+		Fatalf("writing to %q: %v", confPath, err)
 	}
 
 	return subcommands.ExitSuccess

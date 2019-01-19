@@ -71,7 +71,7 @@ func (k *Kill) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading container: %v", err)
+		Fatalf("loading container: %v", err)
 	}
 
 	// The OCI command-line spec says that the signal should be specified

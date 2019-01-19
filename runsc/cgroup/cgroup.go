@@ -236,7 +236,7 @@ func (c *Cgroup) Uninstall() error {
 			}
 			return err
 		}, b); err != nil {
-			return fmt.Errorf("error removing cgroup path %q: %v", path, err)
+			return fmt.Errorf("removing cgroup path %q: %v", path, err)
 		}
 	}
 	return nil

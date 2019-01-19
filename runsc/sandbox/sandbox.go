@@ -100,7 +100,7 @@ func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	// Wait until the sandbox has booted.
 	b := make([]byte, 1)
 	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		return nil, fmt.Errorf("error reading from the start-sync descriptor: %v", err)
+		return nil, fmt.Errorf("reading from the start-sync descriptor: %v", err)
 	}
 
 	c.Release()
@@ -133,13 +133,13 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *boot.Config) error {
 
 	// Configure the network.
 	if err := setupNetwork(conn, s.Pid, spec, conf); err != nil {
-		return fmt.Errorf("error setting up network: %v", err)
+		return fmt.Errorf("setting up network: %v", err)
 	}
 
 	// Send a message to the sandbox control server to start the root
 	// container.
 	if err := conn.Call(boot.RootContainerStart, &s.ID, nil); err != nil {
-		return fmt.Errorf("error starting root container %v: %v", spec.Process.Args, err)
+		return fmt.Errorf("starting root container: %v", err)
 	}
 
 	return nil
@@ -169,18 +169,18 @@ func (s *Sandbox) StartContainer(spec *specs.Spec, conf *boot.Config, cid string
 		FilePayload: urpc.FilePayload{Files: files},
 	}
 	if err := sandboxConn.Call(boot.ContainerStart, &args, nil); err != nil {
-		return fmt.Errorf("error starting non-root container %v: %v", spec.Process.Args, err)
+		return fmt.Errorf("starting non-root container %v: %v", spec.Process.Args, err)
 	}
 	return nil
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f string) error {
+func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, filename string) error {
 	log.Debugf("Restore sandbox %q", s.ID)
 
-	rf, err := os.Open(f)
+	rf, err := os.Open(filename)
 	if err != nil {
-		return fmt.Errorf("os.Open(%q) failed: %v", f, err)
+		return fmt.Errorf("opening restore file %q failed: %v", filename, err)
 	}
 	defer rf.Close()
 
@@ -207,12 +207,12 @@ func (s *Sandbox) Restore(cid string, spec *specs.Spec, conf *boot.Config, f str
 
 	// Configure the network.
 	if err := setupNetwork(conn, s.Pid, spec, conf); err != nil {
-		return fmt.Errorf("error setting up network: %v", err)
+		return fmt.Errorf("setting up network: %v", err)
 	}
 
 	// Restore the container and start the root container.
 	if err := conn.Call(boot.ContainerRestore, &opt, nil); err != nil {
-		return fmt.Errorf("error restoring container %q: %v", cid, err)
+		return fmt.Errorf("restoring container %q: %v", cid, err)
 	}
 
 	return nil
@@ -230,7 +230,7 @@ func (s *Sandbox) Processes(cid string) ([]*control.Process, error) {
 
 	var pl []*control.Process
 	if err := conn.Call(boot.ContainerProcesses, &cid, &pl); err != nil {
-		return nil, fmt.Errorf("error retrieving process data from sandbox: %v", err)
+		return nil, fmt.Errorf("retrieving process data from sandbox: %v", err)
 	}
 	return pl, nil
 }
@@ -248,7 +248,7 @@ func (s *Sandbox) Execute(args *control.ExecArgs) (int32, error) {
 	// Send a message to the sandbox control server to start the container.
 	var pid int32
 	if err := conn.Call(boot.ContainerExecuteAsync, args, &pid); err != nil {
-		return 0, fmt.Errorf("error executing command %q in sandbox: %v", args, err)
+		return 0, fmt.Errorf("executing command %q in sandbox: %v", args, err)
 	}
 	return pid, nil
 }
@@ -266,7 +266,7 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	// TODO: Pass in the container id (cid) here. The sandbox
 	// should return events only for that container.
 	if err := conn.Call(boot.ContainerEvent, nil, &e); err != nil {
-		return nil, fmt.Errorf("error retrieving event data from sandbox: %v", err)
+		return nil, fmt.Errorf("retrieving event data from sandbox: %v", err)
 	}
 	e.ID = cid
 	return &e, nil
@@ -282,7 +282,7 @@ func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 }
 
 func (s *Sandbox) connError(err error) error {
-	return fmt.Errorf("error connecting to control server at PID %d: %v", s.Pid, err)
+	return fmt.Errorf("connecting to control server at PID %d: %v", s.Pid, err)
 }
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
@@ -305,7 +305,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	if conf.LogFilename != "" {
 		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return fmt.Errorf("error opening log file %q: %v", conf.LogFilename, err)
+			return fmt.Errorf("opening log file %q: %v", conf.LogFilename, err)
 		}
 		defer logFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, logFile)
@@ -315,7 +315,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	if conf.DebugLog != "" {
 		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot")
 		if err != nil {
-			return fmt.Errorf("error opening debug log file in %q: %v", conf.DebugLog, err)
+			return fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
 		}
 		defer debugLogFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, debugLogFile)
@@ -333,7 +333,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	sockFD, err := server.CreateSocket(addr)
 	log.Infof("Creating sandbox process with addr: %s", addr[1:]) // skip "\00".
 	if err != nil {
-		return fmt.Errorf("error creating control server socket for sandbox %q: %v", s.ID, err)
+		return fmt.Errorf("creating control server socket for sandbox %q: %v", s.ID, err)
 	}
 	controllerFile := os.NewFile(uintptr(sockFD), "control_server_socket")
 	defer controllerFile.Close()
@@ -391,7 +391,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		// socket, and return the slave.
 		tty, err := console.NewWithSocket(consoleSocket)
 		if err != nil {
-			return fmt.Errorf("error setting up console with socket %q: %v", consoleSocket, err)
+			return fmt.Errorf("setting up console with socket %q: %v", consoleSocket, err)
 		}
 		defer tty.Close()
 
@@ -558,13 +558,13 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	if s.Cgroup != nil {
 		cpuNum, err := s.Cgroup.NumCPU()
 		if err != nil {
-			return fmt.Errorf("error getting cpu count from cgroups: %v", err)
+			return fmt.Errorf("getting cpu count from cgroups: %v", err)
 		}
 		cmd.Args = append(cmd.Args, "--cpu-num", strconv.Itoa(cpuNum))
 
 		mem, err := s.Cgroup.MemoryLimit()
 		if err != nil {
-			return fmt.Errorf("error getting memory limit from cgroups: %v", err)
+			return fmt.Errorf("getting memory limit from cgroups: %v", err)
 		}
 		// When memory limit is unset, a "large" number is returned. In that case,
 		// just stick with the default.
@@ -636,7 +636,7 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 		// "On Unix systems, FindProcess always succeeds and returns a
 		// Process for the given pid, regardless of whether the process
 		// exists."
-		return ws, fmt.Errorf("FindProcess(%d) failed: %v", s.Pid, err)
+		return ws, fmt.Errorf("Find process %d: %v", s.Pid, err)
 	}
 	ps, err := p.Wait()
 	if err != nil {
@@ -662,7 +662,7 @@ func (s *Sandbox) WaitPID(cid string, pid int32, clearStatus bool) (syscall.Wait
 		ClearStatus: clearStatus,
 	}
 	if err := conn.Call(boot.ContainerWaitPID, args, &ws); err != nil {
-		return ws, fmt.Errorf("error waiting on PID %d in sandbox %q: %v", pid, s.ID, err)
+		return ws, fmt.Errorf("waiting on PID %d in sandbox %q: %v", pid, s.ID, err)
 	}
 	return ws, nil
 }
@@ -680,10 +680,10 @@ func (s *Sandbox) destroy() error {
 	if s.Pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
 		if err := syscall.Kill(s.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-			return fmt.Errorf("error killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
+			return fmt.Errorf("killing sandbox %q PID %q: %v", s.ID, s.Pid, err)
 		}
 		if err := s.waitForStopped(); err != nil {
-			return fmt.Errorf("error waiting sandbox %q stop: %v", s.ID, err)
+			return fmt.Errorf("waiting sandbox %q stop: %v", s.ID, err)
 		}
 	}
 
@@ -712,7 +712,7 @@ func (s *Sandbox) SignalContainer(cid string, sig syscall.Signal, all bool) erro
 		Mode:  mode,
 	}
 	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
-		return fmt.Errorf("err signaling container %q: %v", cid, err)
+		return fmt.Errorf("signaling container %q: %v", cid, err)
 	}
 	return nil
 }
@@ -741,7 +741,7 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig syscall.Signal, fgPro
 		Mode:  mode,
 	}
 	if err := conn.Call(boot.ContainerSignal, &args, nil); err != nil {
-		return fmt.Errorf("err signaling container %q PID %d: %v", cid, pid, err)
+		return fmt.Errorf("signaling container %q PID %d: %v", cid, pid, err)
 	}
 	return nil
 }
@@ -763,7 +763,7 @@ func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
 	}
 
 	if err := conn.Call(boot.ContainerCheckpoint, &opt, nil); err != nil {
-		return fmt.Errorf("err checkpointing container %q: %v", cid, err)
+		return fmt.Errorf("checkpointing container %q: %v", cid, err)
 	}
 	return nil
 }
@@ -778,7 +778,7 @@ func (s *Sandbox) Pause(cid string) error {
 	defer conn.Close()
 
 	if err := conn.Call(boot.ContainerPause, nil, nil); err != nil {
-		return fmt.Errorf("err pausing container %q: %v", cid, err)
+		return fmt.Errorf("pausing container %q: %v", cid, err)
 	}
 	return nil
 }
@@ -793,7 +793,7 @@ func (s *Sandbox) Resume(cid string) error {
 	defer conn.Close()
 
 	if err := conn.Call(boot.ContainerResume, nil, nil); err != nil {
-		return fmt.Errorf("err resuming container %q: %v", cid, err)
+		return fmt.Errorf("resuming container %q: %v", cid, err)
 	}
 	return nil
 }
@@ -821,7 +821,7 @@ func (s *Sandbox) Stacks() (string, error) {
 
 	var stacks string
 	if err := conn.Call(boot.SandboxStacks, nil, &stacks); err != nil {
-		return "", fmt.Errorf("err getting sandbox %q stacks: %v", s.ID, err)
+		return "", fmt.Errorf("getting sandbox %q stacks: %v", s.ID, err)
 	}
 	return stacks, nil
 }
@@ -846,7 +846,7 @@ func (s *Sandbox) DestroyContainer(cid string) error {
 	}
 	defer conn.Close()
 	if err := conn.Call(boot.ContainerDestroy, &cid, nil); err != nil {
-		return fmt.Errorf("error destroying container %q: %v", cid, err)
+		return fmt.Errorf("destroying container %q: %v", cid, err)
 	}
 	return nil
 }
@@ -889,7 +889,7 @@ func deviceFileForPlatform(p boot.PlatformType) (*os.File, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("error opening device file for platform %q: %v", p, err)
+		return nil, fmt.Errorf("opening device file for platform %q: %v", p, err)
 	}
 	return f, err
 }

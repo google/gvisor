@@ -56,10 +56,10 @@ func (*Start) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 
 	c, err := container.Load(conf.RootDir, id)
 	if err != nil {
-		Fatalf("error loading container: %v", err)
+		Fatalf("loading container: %v", err)
 	}
 	if err := c.Start(conf); err != nil {
-		Fatalf("error starting container: %v", err)
+		Fatalf("starting container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

@@ -173,17 +173,17 @@ func New(args Args) (*Loader, error) {
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
-		return nil, fmt.Errorf("error setting up rand: %v", err)
+		return nil, fmt.Errorf("setting up rand: %v", err)
 	}
 
 	if err := usage.Init(); err != nil {
-		return nil, fmt.Errorf("error setting up memory usage: %v", err)
+		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
 
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.DeviceFD)
 	if err != nil {
-		return nil, fmt.Errorf("error creating platform: %v", err)
+		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
@@ -194,18 +194,18 @@ func New(args Args) (*Loader, error) {
 	// Pass k as the platform since it is savable, unlike the actual platform.
 	vdso, err := loader.PrepareVDSO(k)
 	if err != nil {
-		return nil, fmt.Errorf("error creating vdso: %v", err)
+		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
 
 	// Create timekeeper.
 	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
 	if err != nil {
-		return nil, fmt.Errorf("error creating timekeeper: %v", err)
+		return nil, fmt.Errorf("creating timekeeper: %v", err)
 	}
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	if err := enableStrace(args.Conf); err != nil {
-		return nil, fmt.Errorf("failed to enable strace: %v", err)
+		return nil, fmt.Errorf("enabling strace: %v", err)
 	}
 
 	// Create an empty network stack because the network namespace may be empty at
@@ -214,13 +214,13 @@ func New(args Args) (*Loader, error) {
 	// Run().
 	networkStack, err := newEmptyNetworkStack(args.Conf, k)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create network: %v", err)
+		return nil, fmt.Errorf("creating network: %v", err)
 	}
 
 	// Create capabilities.
 	caps, err := specutils.Capabilities(args.Spec.Process.Capabilities)
 	if err != nil {
-		return nil, fmt.Errorf("error creating capabilities: %v", err)
+		return nil, fmt.Errorf("converting capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -262,7 +262,7 @@ func New(args Args) (*Loader, error) {
 		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
 		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
 	}); err != nil {
-		return nil, fmt.Errorf("error initializing kernel: %v", err)
+		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
 	// Turn on packet logging if enabled.
@@ -279,11 +279,11 @@ func New(args Args) (*Loader, error) {
 
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create init process for root container: %v", err)
+		return nil, fmt.Errorf("creating init process for root container: %v", err)
 	}
 
 	if err := initCompatLogs(args.UserLogFD); err != nil {
-		return nil, fmt.Errorf("init compat logs: %v", err)
+		return nil, fmt.Errorf("initializing compat logs: %v", err)
 	}
 
 	eid := execID{cid: args.ID}
@@ -303,7 +303,7 @@ func New(args Args) (*Loader, error) {
 	// We don't care about child signals; some platforms can generate a
 	// tremendous number of useless ones (I'm looking at you, ptrace).
 	if err := sighandling.IgnoreChildStop(); err != nil {
-		return nil, fmt.Errorf("failed to ignore child stop signals: %v", err)
+		return nil, fmt.Errorf("ignore child stop signals failed: %v", err)
 	}
 
 	// Handle signals by forwarding them to the root container process
@@ -353,7 +353,7 @@ func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
-		return kernel.CreateProcessArgs{}, fmt.Errorf("error creating limits: %v", err)
+		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %v", err)
 	}
 
 	// Create the process arguments.
@@ -441,7 +441,7 @@ func (l *Loader) run() error {
 			ControllerFD: l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
-			return fmt.Errorf("Failed to install seccomp filters: %v", err)
+			return fmt.Errorf("installing seccomp filters: %v", err)
 		}
 	}
 
@@ -465,13 +465,13 @@ func (l *Loader) run() error {
 		rootCtx := l.rootProcArgs.NewContext(l.k)
 		rootMns := l.k.RootMountNamespace()
 		if err := setExecutablePath(rootCtx, rootMns, &l.rootProcArgs); err != nil {
-			return fmt.Errorf("error setting executable path for %+v: %v", l.rootProcArgs, err)
+			return err
 		}
 
 		// Create the root container init task.
 		_, _, err := l.k.CreateProcess(l.rootProcArgs)
 		if err != nil {
-			return fmt.Errorf("failed to create init process: %v", err)
+			return fmt.Errorf("creating init process: %v", err)
 		}
 
 		// CreateProcess takes a reference on FDMap if successful.
@@ -521,7 +521,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	// Create capabilities.
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
-		return fmt.Errorf("error creating capabilities: %v", err)
+		return fmt.Errorf("creating capabilities: %v", err)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -544,7 +544,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	procArgs, err := newProcess(cid, spec, creds, l.k)
 	if err != nil {
-		return fmt.Errorf("failed to create new process: %v", err)
+		return fmt.Errorf("creating new process: %v", err)
 	}
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
@@ -570,20 +570,20 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		procArgs.Limits,
 		k,
 		cid); err != nil {
-		return fmt.Errorf("failed to create new process: %v", err)
+		return fmt.Errorf("configuring container FS: %v", err)
 	}
 
 	// setFileSystemForProcess dup'd stdioFDs, so we can close them.
 	for i, fd := range stdioFDs {
 		if err := syscall.Close(fd); err != nil {
-			return fmt.Errorf("failed to close stdioFD #%d: %v", i, fd)
+			return fmt.Errorf("closing stdio FD #%d: %v", i, fd)
 		}
 	}
 
 	ctx := procArgs.NewContext(l.k)
 	mns := k.RootMountNamespace()
 	if err := setExecutablePath(ctx, mns, &procArgs); err != nil {
-		return fmt.Errorf("error setting executable path for %+v: %v", procArgs, err)
+		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
 	}
 
 	l.mu.Lock()
@@ -596,7 +596,7 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 
 	tg, _, err := l.k.CreateProcess(procArgs)
 	if err != nil {
-		return fmt.Errorf("failed to create process in sentry: %v", err)
+		return fmt.Errorf("creating process: %v", err)
 	}
 	// CreateProcess takes a reference on FDMap if successful.
 	procArgs.FDMap.DecRef()
@@ -615,7 +615,7 @@ func (l *Loader) destroyContainer(cid string) error {
 	if _, _, err := l.threadGroupFromIDLocked(execID{cid: cid}); err == nil {
 		// If the container has started, kill and wait for all processes.
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
-			return fmt.Errorf("failed to SIGKILL all container processes: %v", err)
+			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
 		}
 	}
 
@@ -628,7 +628,7 @@ func (l *Loader) destroyContainer(cid string) error {
 
 	ctx := l.rootProcArgs.NewContext(l.k)
 	if err := destroyContainerFS(ctx, cid, l.k); err != nil {
-		return fmt.Errorf("failed to destroy filesystem for container %q: %v", cid, err)
+		return fmt.Errorf("destroying filesystem for container %q: %v", cid, err)
 	}
 
 	// We made it!
@@ -715,11 +715,11 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 	// In this case, find the process in the container's PID namespace.
 	initTG, _, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
-		return fmt.Errorf("failed to wait for PID %d: %v", tgid, err)
+		return fmt.Errorf("waiting for PID %d: %v", tgid, err)
 	}
 	tg := initTG.PIDNamespace().ThreadGroupWithID(tgid)
 	if tg == nil {
-		return fmt.Errorf("failed to wait for PID %d: no such process", tgid)
+		return fmt.Errorf("waiting for PID %d: no such process", tgid)
 	}
 	if tg.Leader().ContainerID() != cid {
 		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
@@ -778,15 +778,21 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 // processes in the container, or to the foreground process group.
 func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) error {
 	if pid < 0 {
-		return fmt.Errorf("failed to signal container %q PID %d: PID must be positive", cid, pid)
+		return fmt.Errorf("PID (%d) must be positive", pid)
 	}
 
 	switch mode {
 	case DeliverToProcess:
-		return l.signalProcess(cid, kernel.ThreadID(pid), signo)
+		if err := l.signalProcess(cid, kernel.ThreadID(pid), signo); err != nil {
+			return fmt.Errorf("signaling process in container %q PID %d: %v", cid, pid, err)
+		}
+		return nil
 
 	case DeliverToForegroundProcessGroup:
-		return l.signalForegrondProcessGroup(cid, kernel.ThreadID(pid), signo)
+		if err := l.signalForegrondProcessGroup(cid, kernel.ThreadID(pid), signo); err != nil {
+			return fmt.Errorf("signaling foreground process group in container %q PID %d: %v", cid, pid, err)
+		}
+		return nil
 
 	case DeliverToAllProcesses:
 		if pid != 0 {
@@ -795,12 +801,15 @@ func (l *Loader) signal(cid string, pid, signo int32, mode SignalDeliveryMode) e
 		// Check that the container has actually started before signaling it.
 		_, _, err := l.threadGroupFromID(execID{cid: cid})
 		if err != nil {
-			return fmt.Errorf("failed to signal container %q: %v", cid, err)
+			return err
 		}
-		return l.signalAllProcesses(cid, signo)
+		if err := l.signalAllProcesses(cid, signo); err != nil {
+			return fmt.Errorf("signaling all processes in container %q: %v", cid, err)
+		}
+		return nil
 
 	default:
-		panic(fmt.Sprintf("unknown signal signal delivery mode %v", mode))
+		panic(fmt.Sprintf("unknown signal delivery mode %v", mode))
 	}
 }
 
@@ -816,11 +825,11 @@ func (l *Loader) signalProcess(cid string, tgid kernel.ThreadID, signo int32) er
 	// signal it.
 	initTG, _, err := l.threadGroupFromID(execID{cid: cid})
 	if err != nil {
-		return fmt.Errorf("failed to signal container %q: %v", cid, err)
+		return fmt.Errorf("no thread group found: %v", err)
 	}
 	tg := initTG.PIDNamespace().ThreadGroupWithID(tgid)
 	if tg == nil {
-		return fmt.Errorf("failed to signal container %q PID %d: no such process", cid, tgid)
+		return fmt.Errorf("no such process with PID %d", tgid)
 	}
 	if tg.Leader().ContainerID() != cid {
 		return fmt.Errorf("process %d is part of a different container: %q", tgid, tg.Leader().ContainerID())
@@ -833,10 +842,10 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 	// and send the signal to it.
 	tg, tty, err := l.threadGroupFromID(execID{cid: cid, pid: tgid})
 	if err != nil {
-		return fmt.Errorf("failed to signal foreground process group for container %q PID %d: %v", cid, tgid, err)
+		return fmt.Errorf("no thread group found: %v", err)
 	}
 	if tty == nil {
-		return fmt.Errorf("failed to signal foreground process group in container %q PID %d: no TTY attached", cid, tgid)
+		return fmt.Errorf("no TTY attached")
 	}
 	pg := tty.ForegroundProcessGroup()
 	if pg == nil {
