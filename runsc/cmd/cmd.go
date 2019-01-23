@@ -80,13 +80,10 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	if err := applyCaps(caps); err != nil {
 		return fmt.Errorf("applyCaps() failed: %v", err)
 	}
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		return err
-	}
+	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err = syscall.Exec(binPath, args, []string{})
+	err := syscall.Exec(binPath, args, []string{})
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
@@ -105,7 +102,7 @@ func callSelfAsNobody(args []string) error {
 		return fmt.Errorf("error setting gid: %v", err)
 	}
 
-	binPath := "/runsc"
+	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
 	err := syscall.Exec(binPath, args, []string{})

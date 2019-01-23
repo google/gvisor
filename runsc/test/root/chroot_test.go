@@ -26,8 +26,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -73,16 +71,13 @@ func TestChroot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error listing %q: %v", chroot, err)
 	}
-	if want, got := 2, len(fi); want != got {
+	if want, got := 1, len(fi); want != got {
 		t.Fatalf("chroot dir got %d entries, want %d", got, want)
 	}
 
-	// chroot dir is prepared by runsc and should contains only the executable
-	// and /proc.
-	files := []string{fi[0].Name(), fi[1].Name()}
-	sort.Strings(files)
-	if want := []string{"proc", "runsc"}; !reflect.DeepEqual(files, want) {
-		t.Errorf("chroot got children %v, want %v", files, want)
+	// chroot dir is prepared by runsc and should contains only /proc.
+	if fi[0].Name() != "proc" {
+		t.Errorf("chroot got children %v, want %v", fi[0].Name(), "proc")
 	}
 
 	d.CleanUp()

@@ -186,10 +186,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 }
 
 func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		Fatalf("getting bin path: %v", err)
-	}
+	binPath := specutils.ExePath
 	var args []string
 
 	// The command needs to write a pid file so that execAndWait can tell
@@ -219,6 +216,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	}
 
 	cmd := exec.Command(binPath, args...)
+	cmd.Args[0] = "runsc-exec"
 
 	// Exec stdio defaults to current process stdio.
 	cmd.Stdin = os.Stdin

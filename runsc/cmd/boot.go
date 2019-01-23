@@ -129,7 +129,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 			Fatalf("error setting up chroot: %v", err)
 		}
 
-		specutils.ExePath = "/runsc"
 		if !b.applyCaps {
 			// Remove --setup-root arg to call myself.
 			var args []string

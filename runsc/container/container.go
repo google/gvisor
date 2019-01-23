@@ -818,12 +818,10 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
 	}
 
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		return nil, err
-	}
+	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, args...)
 	cmd.ExtraFiles = goferEnds
+	cmd.Args[0] = "runsc-gofer"
 
 	// Enter new namespaces to isolate from the rest of the system. Don't unshare
 	// cgroup because gofer is added to a cgroup in the caller's namespace.

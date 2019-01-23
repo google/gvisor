@@ -315,16 +315,6 @@ func IsSupportedDevMount(m specs.Mount) bool {
 	return true
 }
 
-// BinPath returns the real path to self, resolving symbolink links. This is done
-// to make the process name appears as 'runsc', instead of 'exe'.
-func BinPath() (string, error) {
-	binPath, err := filepath.EvalSymlinks(ExePath)
-	if err != nil {
-		return "", fmt.Errorf(`error resolving %q symlink: %v`, ExePath, err)
-	}
-	return binPath, nil
-}
-
 const (
 	// ContainerdContainerTypeAnnotation is the OCI annotation set by
 	// containerd to indicate whether the container to create should have

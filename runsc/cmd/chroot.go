@@ -24,10 +24,6 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
-// chrootBinPath is the location inside the chroot where the runsc binary will
-// be mounted.
-const chrootBinPath = "/runsc"
-
 // mountInChroot creates the destination mount point in the given chroot and
 // mounts the source.
 func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
@@ -68,10 +64,6 @@ func setUpChroot(pidns bool) error {
 		if err := mountInChroot(chroot, "/proc", "/proc", "bind", syscall.MS_BIND|syscall.MS_RDONLY|syscall.MS_REC); err != nil {
 			return fmt.Errorf("error mounting proc in chroot: %v", err)
 		}
-	}
-
-	if err := mountInChroot(chroot, specutils.ExePath, chrootBinPath, "bind", syscall.MS_BIND|syscall.MS_RDONLY); err != nil {
-		return fmt.Errorf("error mounting runsc in chroot: %v", err)
 	}
 
 	if err := os.Chdir(chroot); err != nil {

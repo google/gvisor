@@ -292,10 +292,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
 
-	binPath, err := specutils.BinPath()
-	if err != nil {
-		return err
-	}
+	binPath := specutils.ExePath
 	cmd := exec.Command(binPath, conf.ToFlags()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{}
 
