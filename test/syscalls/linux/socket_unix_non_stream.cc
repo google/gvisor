@@ -106,7 +106,7 @@ PosixErrorOr<std::vector<Mapping>> CreateFragmentedRegion(const int size,
   // The mappings above have taken ownership of the region.
   region.release();
 
-  return pages;
+  return std::move(pages);
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be sent
