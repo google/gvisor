@@ -261,7 +261,9 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
     ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
-    if (i != 0) continue;
+    if (i != 0) {
+      continue;
+    }
 
     // Get the port bound by the listening socket.
     socklen_t addrlen = listener.addr_len;
@@ -363,7 +365,9 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
         SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
-    if (i != 0) continue;
+    if (i != 0) {
+      continue;
+    }
 
     // Get the port bound by the listening socket.
     socklen_t addrlen = listener.addr_len;
@@ -1087,10 +1091,11 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
 
       // Verify that two sockets can be bound to the same port only if
       // SO_REUSEPORT is set for both of them.
-      if (!portreuse1 || !portreuse2)
+      if (!portreuse1 || !portreuse2) {
         ASSERT_THAT(ret, SyscallFailsWithErrno(EADDRINUSE));
-      else
+      } else {
         ASSERT_THAT(ret, SyscallSucceeds());
+      }
     }
   }
 }

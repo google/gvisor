@@ -426,7 +426,9 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
 
 #define RETURN_IF_ERRNO(s) \
   do {                     \
-    if (!s.ok()) return s; \
+    if (!s.ok()) {         \
+      return s;            \
+    }                      \
   } while (false);
 
 #define ASSERT_NO_ERRNO_AND_VALUE(expr)   \
