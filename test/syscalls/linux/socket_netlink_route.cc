@@ -17,6 +17,7 @@
 #include <linux/rtnetlink.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -100,12 +101,13 @@ TEST(NetlinkRouteTest, ConnectBinds) {
                           &addrlen),
               SyscallSucceeds());
   EXPECT_EQ(addrlen, sizeof(addr));
-  // This is the only netlink socket in the process, so it should get the PID as
-  // the port id.
-  //
-  // N.B. Another process could theoretically have explicitly reserved our pid
-  // as a port ID, but that is very unlikely.
-  EXPECT_EQ(addr.nl_pid, getpid());
+
+  // Each test is running in a pid namespace, so another process can explicitly
+  // reserve our pid as a port ID. In this case, a negative portid value will be
+  // set.
+  if (static_cast<pid_t>(addr.nl_pid) > 0) {
+    EXPECT_EQ(addr.nl_pid, getpid());
+  }
 
   memset(&addr, 0, sizeof(addr));
   addr.nl_family = AF_NETLINK;
