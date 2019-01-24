@@ -42,6 +42,7 @@ syscall_test(test = "//test/syscalls/linux:chmod_test")
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:chown_test",
+    use_tmpfs = True,  # chwon tests require gofer to be running as root.
 )
 
 syscall_test(test = "//test/syscalls/linux:chroot_test")
@@ -137,7 +138,10 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:kill_test")
 
-syscall_test(test = "//test/syscalls/linux:link_test")
+syscall_test(
+    test = "//test/syscalls/linux:link_test",
+    use_tmpfs = True,  # gofer needs CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH with linkat(2)
+)
 
 syscall_test(test = "//test/syscalls/linux:lseek_test")
 
@@ -151,7 +155,10 @@ syscall_test(test = "//test/syscalls/linux:mincore_test")
 
 syscall_test(test = "//test/syscalls/linux:mkdir_test")
 
-syscall_test(test = "//test/syscalls/linux:mknod_test")
+syscall_test(
+    test = "//test/syscalls/linux:mknod_test",
+    use_tmpfs = True,  # mknod is not supported over gofer.
+)
 
 syscall_test(
     size = "medium",

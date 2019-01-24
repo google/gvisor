@@ -1222,7 +1222,8 @@ TEST(Inotify, LinkGeneratesAttribAndCreateEvents) {
 
   const int rc = link(file1.path().c_str(), link1.path().c_str());
   // link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 && errno == EPERM);
+  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
+          (errno == EPERM || errno == ENOENT));
   ASSERT_THAT(rc, SyscallSucceeds());
 
   const std::vector<Event> events =
@@ -1238,7 +1239,8 @@ TEST(Inotify, HardlinksReuseSameWatch) {
   TempPath link1(root.path() + "/link1");
   const int rc = link(file1.path().c_str(), link1.path().c_str());
   // link(2) is only supported on tmpfs in the sandbox.
-  SKIP_IF(IsRunningOnGvisor() && rc != 0 && errno == EPERM);
+  SKIP_IF(IsRunningOnGvisor() && rc != 0 &&
+          (errno == EPERM || errno == ENOENT));
   ASSERT_THAT(rc, SyscallSucceeds());
 
   const FileDescriptor fd =

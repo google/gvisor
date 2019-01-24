@@ -45,6 +45,7 @@ var (
 	debug     = flag.Bool("debug", false, "enable debug logs")
 	strace    = flag.Bool("strace", false, "enable strace logs")
 	platform  = flag.String("platform", "ptrace", "platform to run on")
+	useTmpfs  = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	parallel  = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath = flag.String("runsc", "", "path to runsc binary")
 )
@@ -109,10 +110,14 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	// write to the rootfs, and expect EACCES, not EROFS.
 	spec.Root.Readonly = false
 
-	// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on features
-	// available in gVisor's tmpfs and not gofers, may fail.
-	spec.Mounts = []specs.Mount{
-		{Destination: "/tmp", Type: "tmpfs"},
+	// Test spec comes with pre-defined mounts that we don't want. Reset it.
+	spec.Mounts = nil
+	if *useTmpfs {
+		// Forces '/tmp' to be mounted as tmpfs, otherwise test that rely on
+		// features available in gVisor's tmpfs and not gofers, may fail.
+		spec.Mounts = []specs.Mount{
+			{Destination: "/tmp", Type: "tmpfs"},
+		}
 	}
 
 	// Set environment variable that indicates we are
