@@ -168,6 +168,10 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	if *strace {
 		args = append(args, "-strace")
 	}
+	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		args = append(args, "-debug-log", outDir+"/")
+	}
+
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
 	// as root inside that namespace to get it.
 	args = append(args, "run", "--bundle", bundleDir, id)
