@@ -674,6 +674,8 @@ func (c *Container) Destroy() error {
 		errs = append(errs, err.Error())
 	}
 
+	c.changeStatus(Stopped)
+
 	// "If any poststop hook fails, the runtime MUST log a warning, but the
 	// remaining hooks and lifecycle continue as if the hook had succeeded" -OCI spec.
 	// Based on the OCI, "The post-stop hooks MUST be called after the container is
@@ -685,8 +687,6 @@ func (c *Container) Destroy() error {
 	if c.Spec.Hooks != nil {
 		executeHooksBestEffort(c.Spec.Hooks.Poststop, c.State())
 	}
-
-	c.changeStatus(Stopped)
 
 	if len(errs) == 0 {
 		return nil
