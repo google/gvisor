@@ -20,7 +20,6 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -28,7 +27,7 @@ import (
 
 func newFileInode(ctx context.Context) *fs.Inode {
 	m := fs.NewCachingMountSource(&Filesystem{}, fs.MountSourceFlags{})
-	iops := NewInMemoryFile(ctx, usage.Tmpfs, fs.WithCurrentTime(ctx, fs.UnstableAttr{}), kernel.KernelFromContext(ctx))
+	iops := NewInMemoryFile(ctx, usage.Tmpfs, fs.WithCurrentTime(ctx, fs.UnstableAttr{}))
 	return fs.NewInode(iops, m, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),

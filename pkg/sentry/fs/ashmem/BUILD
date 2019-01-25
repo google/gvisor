@@ -21,7 +21,6 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/tmpfs",
-        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/platform",

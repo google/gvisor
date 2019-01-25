@@ -81,10 +81,10 @@ type Dir struct {
 var _ fs.InodeOperations = (*Dir)(nil)
 
 // NewDir returns a new directory.
-func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource, kernel *kernel.Kernel) *fs.Inode {
+func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
 	d := &Dir{
 		ramfsDir: ramfs.NewDir(ctx, contents, owner, perms),
-		kernel:   kernel,
+		kernel:   kernel.KernelFromContext(ctx),
 	}
 
 	// Manually set the CreateOps.
@@ -208,7 +208,7 @@ func (d *Dir) SetTimestamps(ctx context.Context, i *fs.Inode, ts fs.TimeSpec) er
 func (d *Dir) newCreateOps() *ramfs.CreateOps {
 	return &ramfs.CreateOps{
 		NewDir: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
-			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource, d.kernel), nil
+			return NewDir(ctx, nil, fs.FileOwnerFromContext(ctx), perms, dir.MountSource), nil
 		},
 		NewFile: func(ctx context.Context, dir *fs.Inode, perms fs.FilePermissions) (*fs.Inode, error) {
 			uattr := fs.WithCurrentTime(ctx, fs.UnstableAttr{
@@ -217,7 +217,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 				// Always start unlinked.
 				Links: 0,
 			})
-			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr, d.kernel)
+			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr)
 			return fs.NewInode(iops, dir.MountSource, fs.StableAttr{
 				DeviceID:  tmpfsDevice.DeviceID(),
 				InodeID:   tmpfsDevice.NextIno(),

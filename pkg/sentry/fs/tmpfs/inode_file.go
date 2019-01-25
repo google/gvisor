@@ -89,10 +89,10 @@ type fileInodeOperations struct {
 var _ fs.InodeOperations = (*fileInodeOperations)(nil)
 
 // NewInMemoryFile returns a new file backed by p.Memory().
-func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr, k *kernel.Kernel) fs.InodeOperations {
+func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr) fs.InodeOperations {
 	return &fileInodeOperations{
 		attr:     uattr,
-		kernel:   k,
+		kernel:   kernel.KernelFromContext(ctx),
 		memUsage: usage,
 	}
 }

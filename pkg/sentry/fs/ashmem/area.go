@@ -23,7 +23,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -114,11 +113,7 @@ func (a *Area) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MM
 	opts.MaxPerms = opts.MaxPerms.Intersect(a.perms)
 
 	if a.tmpfsFile == nil {
-		k := kernel.KernelFromContext(ctx)
-		if k == nil {
-			return syserror.ENOMEM
-		}
-		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{}, k)
+		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{})
 		tmpfsInode := fs.NewInode(tmpfsInodeOps, fs.NewPseudoMountSource(), fs.StableAttr{})
 		dirent := fs.NewDirent(tmpfsInode, namePrefix+"/"+a.name)
 		tmpfsFile, err := tmpfsInode.GetFile(ctx, dirent, fs.FileFlags{Read: true, Write: true})
