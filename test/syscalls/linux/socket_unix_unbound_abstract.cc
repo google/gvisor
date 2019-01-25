@@ -106,9 +106,9 @@ INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, UnboundAbstractUnixSocketPairTest,
     ::testing::ValuesIn(ApplyVec<SocketPairKind>(
         AbstractUnboundUnixDomainSocketPair,
-        AllBitwiseCombinations(
-            List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
-            List<int>{0, SOCK_NONBLOCK}, List<int>{0, SOCK_CLOEXEC}))));
+        AllBitwiseCombinations(List<int>{SOCK_STREAM, SOCK_SEQPACKET,
+                                         SOCK_DGRAM},
+                               List<int>{0, SOCK_NONBLOCK}))));
 
 }  // namespace
 

@@ -27,16 +27,11 @@ std::vector<SocketPairKind> GetSocketPairs() {
   return ApplyVecToVec<SocketPairKind>(
       std::vector<Middleware>{
           NoOp, SetSockOpt(IPPROTO_TCP, TCP_NODELAY, &kSockOptOn)},
-      VecCat<SocketPairKind>(
-          ApplyVec<SocketPairKind>(
-              IPv6TCPAcceptBindSocketPair,
-              AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})),
-          ApplyVec<SocketPairKind>(
-              IPv4TCPAcceptBindSocketPair,
-              AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})),
-          ApplyVec<SocketPairKind>(
-              DualStackTCPAcceptBindSocketPair,
-              AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC}))));
+      std::vector<SocketPairKind>{
+          IPv6TCPAcceptBindSocketPair(0),
+          IPv4TCPAcceptBindSocketPair(0),
+          DualStackTCPAcceptBindSocketPair(0),
+      });
 }
 
 INSTANTIATE_TEST_CASE_P(

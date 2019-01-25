@@ -45,22 +45,11 @@ TEST_P(NonBlockingDgramUnixSocketPairTest, ReadOneSideClosed) {
 
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, NonBlockingDgramUnixSocketPairTest,
-    ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
-        ApplyVec<SocketPairKind>(
-            UnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                   List<int>{SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
-        ApplyVec<SocketPairKind>(
-            FilesystemBoundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                   List<int>{SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
-        ApplyVec<SocketPairKind>(
-            AbstractBoundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                   List<int>{SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC}))))));
+    ::testing::ValuesIn(IncludeReversals(std::vector<SocketPairKind>{
+        UnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),
+        FilesystemBoundUnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),
+        AbstractBoundUnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),
+    })));
 
 }  // namespace
 

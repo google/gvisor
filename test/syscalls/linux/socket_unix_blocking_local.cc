@@ -27,19 +27,13 @@ std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(
       ApplyVec<SocketPairKind>(
           UnixDomainSocketPair,
-          AllBitwiseCombinations(
-              List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
-              List<int>{0, SOCK_CLOEXEC})),
+          std::vector<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM}),
       ApplyVec<SocketPairKind>(
           FilesystemBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(
-              List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
-              List<int>{0, SOCK_CLOEXEC})),
+          std::vector<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM}),
       ApplyVec<SocketPairKind>(
           AbstractBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(
-              List<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM},
-              List<int>{0, SOCK_CLOEXEC})));
+          std::vector<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM}));
 }
 
 INSTANTIATE_TEST_CASE_P(

@@ -25,22 +25,17 @@ namespace testing {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(
-      ApplyVec<SocketPairKind>(
-          IPv6UDPBidirectionalBindSocketPair,
-          AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})),
-      ApplyVec<SocketPairKind>(
-          IPv4UDPBidirectionalBindSocketPair,
-          AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})),
+      std::vector<SocketPairKind>{
+          IPv6UDPBidirectionalBindSocketPair(0),
+          IPv4UDPBidirectionalBindSocketPair(0),
+      },
       ApplyVecToVec<SocketPairKind>(
           std::vector<Middleware>{
               NoOp, SetSockOpt(IPPROTO_TCP, TCP_NODELAY, &kSockOptOn)},
-          VecCat<SocketPairKind>(
-              ApplyVec<SocketPairKind>(
-                  IPv6TCPAcceptBindSocketPair,
-                  AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})),
-              ApplyVec<SocketPairKind>(
-                  IPv4TCPAcceptBindSocketPair,
-                  AllBitwiseCombinations(List<int>{0, SOCK_CLOEXEC})))));
+          std::vector<SocketPairKind>{
+              IPv6TCPAcceptBindSocketPair(0),
+              IPv4TCPAcceptBindSocketPair(0),
+          }));
 }
 
 INSTANTIATE_TEST_CASE_P(

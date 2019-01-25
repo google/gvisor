@@ -656,21 +656,18 @@ TEST_P(UnixStreamSocketPairTest, CoalescedDifferingCreds) {
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, UnixStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
-        ApplyVec<SocketPairKind>(
-            UnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
-        ApplyVec<SocketPairKind>(
-            FilesystemBoundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
+        ApplyVec<SocketPairKind>(UnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_STREAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
+        ApplyVec<SocketPairKind>(FilesystemBoundUnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_STREAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
         ApplyVec<SocketPairKind>(
             AbstractBoundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC}))))));
+                                   List<int>{0, SOCK_NONBLOCK}))))));
 
 // Test fixture for tests that apply to pairs of unbound unix stream sockets.
 using UnboundUnixStreamSocketPairTest = SocketPairTest;
@@ -721,16 +718,14 @@ TEST_P(UnboundUnixStreamSocketPairTest, SendtoWithoutConnectIgnoresAddr) {
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, UnboundUnixStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
-        ApplyVec<SocketPairKind>(
-            FilesystemUnboundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
+        ApplyVec<SocketPairKind>(FilesystemUnboundUnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_STREAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
         ApplyVec<SocketPairKind>(
             AbstractUnboundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC}))))));
+                                   List<int>{0, SOCK_NONBLOCK}))))));
 
 }  // namespace
 

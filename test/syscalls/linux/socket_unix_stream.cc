@@ -47,21 +47,18 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosed) {
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
-        ApplyVec<SocketPairKind>(
-            UnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
-        ApplyVec<SocketPairKind>(
-            FilesystemBoundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
+        ApplyVec<SocketPairKind>(UnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_STREAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
+        ApplyVec<SocketPairKind>(FilesystemBoundUnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_STREAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
         ApplyVec<SocketPairKind>(
             AbstractBoundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_STREAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC}))))));
+                                   List<int>{0, SOCK_NONBLOCK}))))));
 
 }  // namespace
 

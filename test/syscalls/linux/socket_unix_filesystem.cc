@@ -23,11 +23,10 @@ namespace gvisor {
 namespace testing {
 
 std::vector<SocketPairKind> GetSocketPairs() {
-  return VecCat<SocketPairKind>(ApplyVec<SocketPairKind>(
+  return ApplyVec<SocketPairKind>(
       FilesystemBoundUnixDomainSocketPair,
       AllBitwiseCombinations(List<int>{SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET},
-                             List<int>{0, SOCK_NONBLOCK},
-                             List<int>{0, SOCK_CLOEXEC})));
+                             List<int>{0, SOCK_NONBLOCK}));
 }
 
 INSTANTIATE_TEST_CASE_P(

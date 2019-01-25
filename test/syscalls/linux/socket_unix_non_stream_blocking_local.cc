@@ -25,18 +25,12 @@ namespace testing {
 
 std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(
-      ApplyVec<SocketPairKind>(
-          UnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_SEQPACKET},
-                                 List<int>{0, SOCK_CLOEXEC})),
-      ApplyVec<SocketPairKind>(
-          FilesystemBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_SEQPACKET},
-                                 List<int>{0, SOCK_CLOEXEC})),
-      ApplyVec<SocketPairKind>(
-          AbstractBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_SEQPACKET},
-                                 List<int>{0, SOCK_CLOEXEC})));
+      ApplyVec<SocketPairKind>(UnixDomainSocketPair,
+                               std::vector<int>{SOCK_DGRAM, SOCK_SEQPACKET}),
+      ApplyVec<SocketPairKind>(FilesystemBoundUnixDomainSocketPair,
+                               std::vector<int>{SOCK_DGRAM, SOCK_SEQPACKET}),
+      ApplyVec<SocketPairKind>(AbstractBoundUnixDomainSocketPair,
+                               std::vector<int>{SOCK_DGRAM, SOCK_SEQPACKET}));
 }
 
 INSTANTIATE_TEST_CASE_P(

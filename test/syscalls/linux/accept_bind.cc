@@ -586,13 +586,11 @@ INSTANTIATE_TEST_CASE_P(
         ApplyVec<SocketPairKind>(
             FilesystemUnboundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_STREAM, SOCK_SEQPACKET},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
+                                   List<int>{0, SOCK_NONBLOCK})),
         ApplyVec<SocketPairKind>(
             AbstractUnboundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_STREAM, SOCK_SEQPACKET},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})))));
+                                   List<int>{0, SOCK_NONBLOCK})))));
 
 }  // namespace
 

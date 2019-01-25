@@ -145,16 +145,14 @@ TEST_P(UnboundDgramUnixSocketPairTest, SendtoWithoutConnect) {
 INSTANTIATE_TEST_CASE_P(
     AllUnixDomainSockets, UnboundDgramUnixSocketPairTest,
     ::testing::ValuesIn(VecCat<SocketPairKind>(
-        ApplyVec<SocketPairKind>(
-            FilesystemUnboundUnixDomainSocketPair,
-            AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})),
+        ApplyVec<SocketPairKind>(FilesystemUnboundUnixDomainSocketPair,
+                                 AllBitwiseCombinations(List<int>{SOCK_DGRAM},
+                                                        List<int>{
+                                                            0, SOCK_NONBLOCK})),
         ApplyVec<SocketPairKind>(
             AbstractUnboundUnixDomainSocketPair,
             AllBitwiseCombinations(List<int>{SOCK_DGRAM},
-                                   List<int>{0, SOCK_NONBLOCK},
-                                   List<int>{0, SOCK_CLOEXEC})))));
+                                   List<int>{0, SOCK_NONBLOCK})))));
 
 }  // namespace
 
