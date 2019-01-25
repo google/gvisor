@@ -1526,19 +1526,30 @@ func TestGoferExits(t *testing.T) {
 }
 
 func TestRootNotMount(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("/bin/true")
-
-	root, err := ioutil.TempDir(testutil.TmpDir(), "root")
-	if err != nil {
-		t.Fatalf("failure to create tmp dir: %v", err)
+	if testutil.RaceEnabled {
+		// Requires statically linked binary, since it's mapping the root to a
+		// random dir, libs cannot be located.
+		t.Skip("race makes test_app not statically linked")
 	}
+
+	appSym, err := testutil.FindFile("runsc/container/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+	app, err := filepath.EvalSymlinks(appSym)
+	if err != nil {
+		t.Fatalf("error resolving %q symlink: %v", appSym, err)
+	}
+	log.Infof("App path %q is a symlink to %q", appSym, app)
+
+	root := filepath.Dir(app)
+	exe := "/" + filepath.Base(app)
+	log.Infof("Executing %q in %q", exe, root)
+
+	spec := testutil.NewSpecWithArgs(exe, "help")
 	spec.Root.Path = root
 	spec.Root.Readonly = true
-	spec.Mounts = []specs.Mount{
-		{Destination: "/bin", Source: "/bin", Type: "bind", Options: []string{"ro"}},
-		{Destination: "/lib", Source: "/lib", Type: "bind", Options: []string{"ro"}},
-		{Destination: "/lib64", Source: "/lib64", Type: "bind", Options: []string{"ro"}},
-	}
+	spec.Mounts = nil
 
 	conf := testutil.TestConfig()
 	if err := run(spec, conf); err != nil {
