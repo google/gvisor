@@ -36,6 +36,7 @@ go_test(
         "container_test.go",
         "fs_test.go",
         "multi_container_test.go",
+        "shared_volume_test.go",
     ],
     data = [
         ":test_app",

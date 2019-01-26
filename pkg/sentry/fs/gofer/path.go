@@ -128,7 +128,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		File: newFile,
 		Host: hostFile,
 	}
-	if iops.session().cachePolicy.usePageCache(d.Inode) {
+	if iops.session().cachePolicy.cacheHandles(d.Inode) {
 		iops.fileState.setHandlesForCachedIO(flags, h)
 	}
 	return NewFile(ctx, d, name, flags, iops, h), nil

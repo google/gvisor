@@ -125,6 +125,10 @@ type inodeFileState struct {
 	// failures. S/R is transparent to Sentry and the latter will continue
 	// using its cached values after restore.
 	savedUAttr *fs.UnstableAttr
+
+	// hostMappable is created when using 'cacheRemoteRevalidating' to map pages
+	// directly from host.
+	hostMappable *fsutil.HostMappable
 }
 
 // Release releases file handles.
@@ -165,6 +169,9 @@ func (i *inodeFileState) setHandlesForCachedIO(flags fs.FileFlags, h *handles) {
 		if flags.Read {
 			i.writebackRW = true
 		}
+	}
+	if i.hostMappable != nil {
+		i.hostMappable.UpdateFD(i.fdLocked())
 	}
 }
 
@@ -287,7 +294,10 @@ func (i *inodeFileState) Sync(ctx context.Context) error {
 func (i *inodeFileState) FD() int {
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
+	return i.fdLocked()
+}
 
+func (i *inodeFileState) fdLocked() int {
 	// Assert that the file was actually opened.
 	if i.writeback == nil && i.readthrough == nil {
 		panic("cannot get host FD for a file that was never opened")
@@ -344,8 +354,12 @@ func (i *inodeOperations) Release(ctx context.Context) {
 
 // Mappable implements fs.InodeOperations.Mappable.
 func (i *inodeOperations) Mappable(inode *fs.Inode) memmap.Mappable {
-	if i.session().cachePolicy.usePageCache(inode) {
+	if i.session().cachePolicy.useCachingInodeOps(inode) {
 		return i.cachingInodeOps
+	}
+	// This check is necessary because it's returning an interface type.
+	if i.fileState.hostMappable != nil {
+		return i.fileState.hostMappable
 	}
 	return nil
 }
@@ -434,7 +448,7 @@ func (i *inodeOperations) NonBlockingOpen(ctx context.Context, p fs.PermMask) (*
 }
 
 func (i *inodeOperations) getFileDefault(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	if !i.session().cachePolicy.usePageCache(d.Inode) {
+	if !i.session().cachePolicy.cacheHandles(d.Inode) {
 		h, err := newHandles(ctx, i.fileState.file, flags)
 		if err != nil {
 			return nil, err
@@ -503,7 +517,7 @@ func (i *inodeOperations) SetTimestamps(ctx context.Context, inode *fs.Inode, ts
 // Truncate implements fs.InodeOperations.Truncate.
 func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length int64) error {
 	// This can only be called for files anyway.
-	if i.session().cachePolicy.usePageCache(inode) {
+	if i.session().cachePolicy.useCachingInodeOps(inode) {
 		return i.cachingInodeOps.Truncate(ctx, inode, length)
 	}
 
@@ -559,6 +573,16 @@ func (i *inodeOperations) StatFS(ctx context.Context) (fs.Info, error) {
 	}
 
 	return info, nil
+}
+
+func (i *inodeOperations) configureMMap(file *fs.File, opts *memmap.MMapOpts) error {
+	if i.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
+		return fsutil.GenericConfigureMMap(file, i.cachingInodeOps, opts)
+	}
+	if i.fileState.hostMappable != nil {
+		return fsutil.GenericConfigureMMap(file, i.fileState.hostMappable, opts)
+	}
+	return syserror.ENODEV
 }
 
 func init() {

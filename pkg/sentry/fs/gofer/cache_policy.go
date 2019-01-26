@@ -90,17 +90,29 @@ func (cp cachePolicy) cacheReaddir() bool {
 	return cp == cacheAll || cp == cacheAllWritethrough
 }
 
-// usePageCache determines whether the page cache should be used for the given
-// inode. If the remote filesystem donates host FDs to the sentry, then the
-// host kernel's page cache will be used, otherwise we will use a
+// useCachingInodeOps determines whether the page cache should be used for the
+// given inode. If the remote filesystem donates host FDs to the sentry, then
+// the host kernel's page cache will be used, otherwise we will use a
 // sentry-internal page cache.
-func (cp cachePolicy) usePageCache(inode *fs.Inode) bool {
+func (cp cachePolicy) useCachingInodeOps(inode *fs.Inode) bool {
 	// Do cached IO for regular files only. Some "character devices" expect
 	// no caching.
 	if !fs.IsFile(inode.StableAttr) {
 		return false
 	}
-	return cp == cacheAll || cp == cacheAllWritethrough || cp == cacheRemoteRevalidating
+	return cp == cacheAll || cp == cacheAllWritethrough
+}
+
+// cacheHandles determine whether handles need to be cached with the given
+// inode. Handles must be cached when inode can be mapped into memory to
+// implement InodeOperations.Mappable with stable handles.
+func (cp cachePolicy) cacheHandles(inode *fs.Inode) bool {
+	// Do cached IO for regular files only. Some "character devices" expect
+	// no caching.
+	if !fs.IsFile(inode.StableAttr) {
+		return false
+	}
+	return cp.useCachingInodeOps(inode) || cp == cacheRemoteRevalidating
 }
 
 // writeThough indicates whether writes to the file should be synced to the
