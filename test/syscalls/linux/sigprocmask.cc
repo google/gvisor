@@ -232,7 +232,7 @@ TEST_F(SigProcMaskTest, SignalHandler) {
   EXPECT_THAT(raw_sigprocmask(SIG_UNBLOCK, &mask, nullptr), SyscallSucceeds());
 
   // Check that the unblocked kTestSignal1 has been delivered.
-  // TODO: gvisor currently drops masked signals on the floor.
+  // Note: gvisor currently drops masked signals on the floor.
   if (!IsRunningOnGvisor()) {
     EXPECT_EQ(2, signal_count[kTestSignal1]);
   }
