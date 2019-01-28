@@ -18,7 +18,6 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/anon",
         "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserror",

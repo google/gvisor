@@ -22,7 +22,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -415,9 +414,7 @@ func (dfo *dirFileOperations) Readdir(ctx context.Context, file *fs.File, serial
 		Serializer: serializer,
 		DirCursor:  &dfo.dirCursor,
 	}
-	dfo.dir.mu.Lock()
-	dfo.dir.InodeSimpleAttributes.Unstable.AccessTime = ktime.NowFromContext(ctx)
-	dfo.dir.mu.Unlock()
+	dfo.dir.InodeSimpleAttributes.NotifyAccess(ctx)
 	return fs.DirentReaddir(ctx, file.Dirent, dfo, root, dirCtx, file.Offset())
 }
 

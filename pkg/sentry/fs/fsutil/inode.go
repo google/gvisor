@@ -88,30 +88,37 @@ func (*NoReadWriteFileInode) GetFile(ctx context.Context, dirent *fs.Dirent, fla
 //
 // +stateify savable
 type InodeSimpleAttributes struct {
-	// FSType is the immutable filesystem type that will be returned by
+	// fsType is the immutable filesystem type that will be returned by
 	// StatFS.
-	FSType uint64
+	fsType uint64
 
 	// mu protects unstable.
 	mu       sync.RWMutex `state:"nosave"`
-	Unstable fs.UnstableAttr
+	unstable fs.UnstableAttr
 }
 
-// NewInodeSimpleAttributes returns a new InodeSimpleAttributes.
+// NewInodeSimpleAttributes returns a new InodeSimpleAttributes with the given
+// owner and permissions, and all timestamps set to the current time.
 func NewInodeSimpleAttributes(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, typ uint64) InodeSimpleAttributes {
+	return NewInodeSimpleAttributesWithUnstable(fs.WithCurrentTime(ctx, fs.UnstableAttr{
+		Owner: owner,
+		Perms: perms,
+	}), typ)
+}
+
+// NewInodeSimpleAttributesWithUnstable returns a new InodeSimpleAttributes
+// with the given unstable attributes.
+func NewInodeSimpleAttributesWithUnstable(uattr fs.UnstableAttr, typ uint64) InodeSimpleAttributes {
 	return InodeSimpleAttributes{
-		FSType: typ,
-		Unstable: fs.WithCurrentTime(ctx, fs.UnstableAttr{
-			Owner: owner,
-			Perms: perms,
-		}),
+		fsType:   typ,
+		unstable: uattr,
 	}
 }
 
 // UnstableAttr implements fs.InodeOperations.UnstableAttr.
 func (i *InodeSimpleAttributes) UnstableAttr(ctx context.Context, _ *fs.Inode) (fs.UnstableAttr, error) {
 	i.mu.RLock()
-	u := i.Unstable
+	u := i.unstable
 	i.mu.RUnlock()
 	return u, nil
 }
@@ -119,7 +126,7 @@ func (i *InodeSimpleAttributes) UnstableAttr(ctx context.Context, _ *fs.Inode) (
 // SetPermissions implements fs.InodeOperations.SetPermissions.
 func (i *InodeSimpleAttributes) SetPermissions(ctx context.Context, _ *fs.Inode, p fs.FilePermissions) bool {
 	i.mu.Lock()
-	i.Unstable.SetPermissions(ctx, p)
+	i.unstable.SetPermissions(ctx, p)
 	i.mu.Unlock()
 	return true
 }
@@ -127,7 +134,7 @@ func (i *InodeSimpleAttributes) SetPermissions(ctx context.Context, _ *fs.Inode,
 // SetOwner implements fs.InodeOperations.SetOwner.
 func (i *InodeSimpleAttributes) SetOwner(ctx context.Context, _ *fs.Inode, owner fs.FileOwner) error {
 	i.mu.Lock()
-	i.Unstable.SetOwner(ctx, owner)
+	i.unstable.SetOwner(ctx, owner)
 	i.mu.Unlock()
 	return nil
 }
@@ -135,7 +142,7 @@ func (i *InodeSimpleAttributes) SetOwner(ctx context.Context, _ *fs.Inode, owner
 // SetTimestamps implements fs.InodeOperations.SetTimestamps.
 func (i *InodeSimpleAttributes) SetTimestamps(ctx context.Context, _ *fs.Inode, ts fs.TimeSpec) error {
 	i.mu.Lock()
-	i.Unstable.SetTimestamps(ctx, ts)
+	i.unstable.SetTimestamps(ctx, ts)
 	i.mu.Unlock()
 	return nil
 }
@@ -143,43 +150,43 @@ func (i *InodeSimpleAttributes) SetTimestamps(ctx context.Context, _ *fs.Inode, 
 // AddLink implements fs.InodeOperations.AddLink.
 func (i *InodeSimpleAttributes) AddLink() {
 	i.mu.Lock()
-	i.Unstable.Links++
+	i.unstable.Links++
 	i.mu.Unlock()
 }
 
 // DropLink implements fs.InodeOperations.DropLink.
 func (i *InodeSimpleAttributes) DropLink() {
 	i.mu.Lock()
-	i.Unstable.Links--
+	i.unstable.Links--
 	i.mu.Unlock()
 }
 
 // StatFS implements fs.InodeOperations.StatFS.
 func (i *InodeSimpleAttributes) StatFS(context.Context) (fs.Info, error) {
-	if i.FSType == 0 {
+	if i.fsType == 0 {
 		return fs.Info{}, syserror.ENOSYS
 	}
-	return fs.Info{Type: i.FSType}, nil
+	return fs.Info{Type: i.fsType}, nil
 }
 
 // NotifyAccess updates the access time.
 func (i *InodeSimpleAttributes) NotifyAccess(ctx context.Context) {
 	i.mu.Lock()
-	i.Unstable.AccessTime = ktime.NowFromContext(ctx)
+	i.unstable.AccessTime = ktime.NowFromContext(ctx)
 	i.mu.Unlock()
 }
 
 // NotifyModification updates the modification time.
 func (i *InodeSimpleAttributes) NotifyModification(ctx context.Context) {
 	i.mu.Lock()
-	i.Unstable.ModificationTime = ktime.NowFromContext(ctx)
+	i.unstable.ModificationTime = ktime.NowFromContext(ctx)
 	i.mu.Unlock()
 }
 
 // NotifyStatusChange updates the status change time.
 func (i *InodeSimpleAttributes) NotifyStatusChange(ctx context.Context) {
 	i.mu.Lock()
-	i.Unstable.StatusChangeTime = ktime.NowFromContext(ctx)
+	i.unstable.StatusChangeTime = ktime.NowFromContext(ctx)
 	i.mu.Unlock()
 }
 
