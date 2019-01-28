@@ -76,9 +76,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"fd":      newFdDir(t, msrc),
 		"fdinfo":  newFdInfoDir(t, msrc),
 		"gid_map": newGIDMap(t, msrc),
-		// TODO: This is incorrect for /proc/[pid]/task/[tid]/io, i.e. if
-		// showSubtasks is false:
-		// https://elixir.bootlin.com/linux/v4.4/source/fs/proc/base.c#L3154
+		// FIXME: create the correct io file for threads.
 		"io":        newIO(t, msrc),
 		"maps":      newMaps(t, msrc),
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
