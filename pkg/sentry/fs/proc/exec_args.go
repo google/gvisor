@@ -101,12 +101,6 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 		return 0, syserror.EINVAL
 	}
 
-	// N.B. Linux 4.2 eliminates the arbitrary one page limit.
-	if offset > usermem.PageSize {
-		return 0, io.EOF
-	}
-	dst = dst.TakeFirst64(usermem.PageSize - offset)
-
 	m, err := getTaskMM(f.t)
 	if err != nil {
 		return 0, err
