@@ -721,7 +721,10 @@ func (c *Container) stop() error {
 		if err := c.Sandbox.DestroyContainer(c.ID); err != nil {
 			return fmt.Errorf("destroying container %q: %v", c.ID, err)
 		}
-		cgroup = c.Sandbox.Cgroup
+		// Only uninstall cgroup for sandbox stop.
+		if c.Sandbox.IsRootContainer(c.ID) {
+			cgroup = c.Sandbox.Cgroup
+		}
 		// Only set sandbox to nil after it has been told to destroy the container.
 		c.Sandbox = nil
 	}
