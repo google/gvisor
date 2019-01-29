@@ -23,6 +23,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/base_poll_test.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/test_util.h"
@@ -256,12 +257,14 @@ TEST_F(PollTest, Nfds) {
   TEST_PCHECK(getrlimit(RLIMIT_NOFILE, &rlim) == 0);
   rlim_t max_fds = rlim.rlim_cur;
 
+  // Create an eventfd. Since its value is initially zero, it is writable.
+  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
   // Create the biggest possible pollfd array such that each element is valid.
-  //
-  // Each entry in the 'fds' array refers to stdout (fd=1) and polls for
+  // Each entry in the 'fds' array refers to the eventfd and polls for
   // "writable" events (events=POLLOUT). This essentially guarantees that the
   // poll() is a no-op and allows negative testing of the 'nfds' parameter.
-  std::vector<struct pollfd> fds(max_fds, {.fd = 1, .events = POLLOUT});
+  std::vector<struct pollfd> fds(max_fds, {.fd = efd.get(), .events = POLLOUT});
 
   // Verify that 'nfds' up to RLIMIT_NOFILE are allowed.
   EXPECT_THAT(RetryEINTR(poll)(fds.data(), 1, 1), SyscallSucceedsWithValue(1));

@@ -1246,6 +1246,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":base_poll_test",
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:test_main",
