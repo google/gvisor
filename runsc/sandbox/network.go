@@ -121,16 +121,17 @@ func joinNetNS(nsPath string) (func(), error) {
 }
 
 // isRootNS determines whether we are running in the root net namespace.
-//
-// TODO: Find a better way to detect root network.
-func isRootNS(ifaces []net.Interface) bool {
-	for _, iface := range ifaces {
-		if iface.Name == "docker0" {
-			return true
-		}
+// /proc/sys/net/core/rmem_default only exists in root network namespace.
+func isRootNS() (bool, error) {
+	err := syscall.Access("/proc/sys/net/core/rmem_default", syscall.F_OK)
+	switch err {
+	case nil:
+		return true, nil
+	case syscall.ENOENT:
+		return false, nil
+	default:
+		return false, fmt.Errorf("failed to access /proc/sys/net/core/rmem_default: %v", err)
 	}
-	return false
-
 }
 
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
@@ -150,8 +151,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 		return fmt.Errorf("querying interfaces: %v", err)
 	}
 
-	if isRootNS(ifaces) {
-		return fmt.Errorf("cannot run in with network enabled in root network namespace")
+	isRoot, err := isRootNS()
+	if err != nil {
+		return err
+	}
+	if isRoot {
+
+		return fmt.Errorf("cannot run with network enabled in root network namespace")
 	}
 
 	// Collect addresses and routes from the interfaces.
