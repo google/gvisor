@@ -26,6 +26,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/epoll_util.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -37,16 +38,6 @@ namespace {
 
 constexpr int kFDsPerEpoll = 3;
 constexpr uint64_t kMagicConstant = 0x0102030405060708;
-
-// Returns a new eventfd.
-PosixErrorOr<FileDescriptor> NewEventFD() {
-  int fd = eventfd(/* initval = */ 0, /* flags = */ 0);
-  MaybeSave();
-  if (fd < 0) {
-    return PosixError(errno, "eventfd");
-  }
-  return FileDescriptor(fd);
-}
 
 uint64_t ms_elapsed(const struct timespec* begin, const struct timespec* end) {
   return (end->tv_sec - begin->tv_sec) * 1000 +

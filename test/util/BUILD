@@ -19,6 +19,17 @@ cc_library(
 )
 
 cc_library(
+    name = "eventfd_util",
+    testonly = 1,
+    hdrs = ["eventfd_util.h"],
+    deps = [
+        ":file_descriptor",
+        ":posix_error",
+        ":save_util",
+    ],
+)
+
+cc_library(
     name = "file_descriptor",
     testonly = 1,
     hdrs = ["file_descriptor.h"],

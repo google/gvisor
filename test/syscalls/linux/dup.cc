@@ -13,10 +13,10 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
@@ -63,20 +63,14 @@ TEST(DupTest, Dup) {
 }
 
 TEST(DupTest, DupClearsCloExec) {
-  FileDescriptor nfd;
-
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag set.
-  int event_fd = 0;
-  ASSERT_THAT(event_fd = eventfd(0, EFD_CLOEXEC), SyscallSucceeds());
-  FileDescriptor event_fd_closer(event_fd);
-
-  EXPECT_THAT(fcntl(event_fd_closer.get(), F_GETFD),
-              SyscallSucceedsWithValue(FD_CLOEXEC));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
+  EXPECT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(FD_CLOEXEC));
 
   // Duplicate the descriptor. Ensure that it doesn't have FD_CLOEXEC set.
-  nfd = ASSERT_NO_ERRNO_AND_VALUE(event_fd_closer.Dup());
-  ASSERT_NE(event_fd_closer.get(), nfd.get());
-  CheckSameFile(event_fd_closer, nfd);
+  FileDescriptor nfd = ASSERT_NO_ERRNO_AND_VALUE(fd.Dup());
+  ASSERT_NE(fd.get(), nfd.get());
+  CheckSameFile(fd, nfd);
   EXPECT_THAT(fcntl(nfd.get(), F_GETFD), SyscallSucceedsWithValue(0));
 }
 

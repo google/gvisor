@@ -14,7 +14,6 @@
 
 #include <fcntl.h>
 #include <signal.h>
-#include <sys/eventfd.h>
 #include <syscall.h>
 #include <unistd.h>
 
@@ -27,6 +26,7 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
@@ -112,17 +112,9 @@ PosixErrorOr<Cleanup> SubprocessLock(std::string const& path, bool for_write,
   return std::move(cleanup);
 }
 
-PosixErrorOr<FileDescriptor> Eventfd(int count, int flags) {
-  int efd = eventfd(count, flags);
-  if (efd < 0) {
-    return PosixError(errno, "Eventfd");
-  }
-  return FileDescriptor(efd);
-}
-
 TEST(FcntlTest, SetCloExec) {
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Eventfd(0, 0));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
   ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(0));
 
   // Set the FD_CLOEXEC flag.
@@ -132,7 +124,7 @@ TEST(FcntlTest, SetCloExec) {
 
 TEST(FcntlTest, ClearCloExec) {
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag set.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Eventfd(0, EFD_CLOEXEC));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_CLOEXEC));
   ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(FD_CLOEXEC));
 
   // Clear the FD_CLOEXEC flag.
@@ -142,7 +134,7 @@ TEST(FcntlTest, ClearCloExec) {
 
 TEST(FcntlTest, IndependentDescriptorFlags) {
   // Open an eventfd file descriptor with FD_CLOEXEC descriptor flag not set.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Eventfd(0, 0));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
   ASSERT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(0));
 
   // Duplicate the descriptor. Ensure that it also doesn't have FD_CLOEXEC.

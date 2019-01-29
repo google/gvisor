@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
 
 #include "gtest/gtest.h"

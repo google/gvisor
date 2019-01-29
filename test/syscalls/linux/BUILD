@@ -481,6 +481,7 @@ cc_binary(
     srcs = ["dup.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:temp_path",
@@ -497,6 +498,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:epoll_util",
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:test_main",
@@ -511,6 +513,8 @@ cc_binary(
     srcs = ["eventfd.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:epoll_util",
+        "//test/util:eventfd_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -686,6 +690,7 @@ cc_binary(
     deps = [
         ":socket_test_util",
         "//test/util:cleanup",
+        "//test/util:eventfd_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
         "//test/util:temp_path",
@@ -817,6 +822,7 @@ cc_binary(
     srcs = ["getdents.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:posix_error",

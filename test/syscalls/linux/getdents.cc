@@ -19,13 +19,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <syscall.h>
 #include <unistd.h>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -33,6 +33,7 @@
 #include "gtest/gtest.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
@@ -368,16 +369,11 @@ TYPED_TEST(GetdentsTest, PartialBuffer) {
 // getdents iterates correctly despite mutation of /proc/self/fd.
 TYPED_TEST(GetdentsTest, ProcSelfFd) {
   constexpr size_t kNfds = 10;
-  std::unordered_set<int> fds;
-  std::vector<FileDescriptor> fd_closers;
-  fd_closers.reserve(fds.size());
-  for (int fd : fds) {
-    fd_closers.emplace_back(fd);
-  }
+  std::unordered_map<int, FileDescriptor> fds;
+  fds.reserve(kNfds);
   for (size_t i = 0; i < kNfds; i++) {
-    int fd;
-    ASSERT_THAT(fd = eventfd(0, 0), SyscallSucceeds());
-    fds.insert(fd);
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+    fds.emplace(fd.get(), std::move(fd));
   }
 
   const FileDescriptor proc_self_fd =
@@ -401,11 +397,7 @@ TYPED_TEST(GetdentsTest, ProcSelfFd) {
       if (!absl::SimpleAtoi(d->d_name, &dfd)) continue;
       EXPECT_TRUE(prev_fds.insert(dfd).second)
           << "Repeated observation of /proc/self/fd/" << dfd;
-      auto it = fds.find(dfd);
-      if (it != fds.end()) {
-        fds.erase(it);
-        EXPECT_THAT(close(dfd), SyscallSucceeds());
-      }
+      fds.erase(dfd);
     }
   }
 
