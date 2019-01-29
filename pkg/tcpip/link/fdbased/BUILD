@@ -27,6 +27,7 @@ go_test(
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/stack",
     ],
 )

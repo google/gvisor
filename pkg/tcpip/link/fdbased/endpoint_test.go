@@ -28,6 +28,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
@@ -309,9 +310,22 @@ func TestBufConfigFirst(t *testing.T) {
 
 func build(bufConfig []int) *endpoint {
 	e := &endpoint{
-		views:  make([]buffer.View, len(bufConfig)),
-		iovecs: make([]syscall.Iovec, len(bufConfig)),
+		views:   make([][]buffer.View, MaxMsgsPerRecv),
+		iovecs:  make([][]syscall.Iovec, MaxMsgsPerRecv),
+		msgHdrs: make([]rawfile.MMsgHdr, MaxMsgsPerRecv),
 	}
+
+	for i, _ := range e.views {
+		e.views[i] = make([]buffer.View, len(bufConfig))
+	}
+	for i := range e.iovecs {
+		e.iovecs[i] = make([]syscall.Iovec, len(bufConfig))
+	}
+	for k, msgHdr := range e.msgHdrs {
+		msgHdr.Msg.Iov = &e.iovecs[k][0]
+		msgHdr.Msg.Iovlen = uint64(len(bufConfig))
+	}
+
 	e.allocateViews(bufConfig)
 	return e
 }
@@ -356,12 +370,12 @@ var capLengthTestCases = []struct {
 func TestCapLength(t *testing.T) {
 	for _, c := range capLengthTestCases {
 		e := build(c.config)
-		used := e.capViews(c.n, c.config)
+		used := e.capViews(0, c.n, c.config)
 		if used != c.wantUsed {
 			t.Errorf("Test \"%s\" failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
 		}
-		lengths := make([]int, len(e.views))
-		for i, v := range e.views {
+		lengths := make([]int, len(e.views[0]))
+		for i, v := range e.views[0] {
 			lengths[i] = len(v)
 		}
 		if !reflect.DeepEqual(lengths, c.wantLengths) {

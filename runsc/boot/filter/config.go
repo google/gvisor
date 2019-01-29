@@ -211,13 +211,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_PREAD64:   {},
 	syscall.SYS_PWRITE64:  {},
 	syscall.SYS_READ:      {},
-	syscall.SYS_READV: []seccomp.Rule{
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowAny{},
-			seccomp.AllowValue(len(fdbased.BufConfig)),
-		},
-	},
 	syscall.SYS_RECVMSG: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
@@ -228,6 +221,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{},
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC | syscall.MSG_PEEK),
+		},
+	},
+	syscall.SYS_RECVMMSG: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+			seccomp.AllowValue(fdbased.MaxMsgsPerRecv),
+			seccomp.AllowValue(syscall.MSG_DONTWAIT),
+			seccomp.AllowValue(0),
 		},
 	},
 	syscall.SYS_RESTART_SYSCALL: {},

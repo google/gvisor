@@ -140,6 +140,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			EthernetHeader: true,
 			HandleLocal:    true,
 			Address:        mac,
+			UseRecvMMsg:    true,
 		})
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)
