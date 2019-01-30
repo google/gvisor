@@ -27,9 +27,12 @@ import (
 )
 
 type initState interface {
-	proc.State
-
+	Resize(console.WinSize) error
+	Start(context.Context) error
+	Delete(context.Context) error
 	Exec(context.Context, string, *ExecConfig) (proc.Process, error)
+	Kill(context.Context, uint32, bool) error
+	SetExited(int)
 }
 
 type createdState struct {
@@ -51,15 +54,10 @@ func (s *createdState) transition(name string) error {
 }
 
 func (s *createdState) Resize(ws console.WinSize) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return s.p.resize(ws)
 }
 
 func (s *createdState) Start(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
 	if err := s.p.start(ctx); err != nil {
 		// Containerd doesn't allow deleting container in created state.
 		// However, for gvisor, a non-root container in created state can
@@ -80,8 +78,6 @@ func (s *createdState) Start(ctx context.Context) error {
 }
 
 func (s *createdState) Delete(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
 	if err := s.p.delete(ctx); err != nil {
 		return err
 	}
@@ -89,16 +85,10 @@ func (s *createdState) Delete(ctx context.Context) error {
 }
 
 func (s *createdState) Kill(ctx context.Context, sig uint32, all bool) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return s.p.kill(ctx, sig, all)
 }
 
 func (s *createdState) SetExited(status int) {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	s.p.setExited(status)
 
 	if err := s.transition("stopped"); err != nil {
@@ -107,8 +97,6 @@ func (s *createdState) SetExited(status int) {
 }
 
 func (s *createdState) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
 	return s.p.exec(ctx, path, r)
 }
 
@@ -127,37 +115,22 @@ func (s *runningState) transition(name string) error {
 }
 
 func (s *runningState) Resize(ws console.WinSize) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return s.p.resize(ws)
 }
 
 func (s *runningState) Start(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return errors.Errorf("cannot start a running process")
 }
 
 func (s *runningState) Delete(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return errors.Errorf("cannot delete a running process")
 }
 
 func (s *runningState) Kill(ctx context.Context, sig uint32, all bool) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return s.p.kill(ctx, sig, all)
 }
 
 func (s *runningState) SetExited(status int) {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	s.p.setExited(status)
 
 	if err := s.transition("stopped"); err != nil {
@@ -166,8 +139,6 @@ func (s *runningState) SetExited(status int) {
 }
 
 func (s *runningState) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
 	return s.p.exec(ctx, path, r)
 }
 
@@ -186,22 +157,14 @@ func (s *stoppedState) transition(name string) error {
 }
 
 func (s *stoppedState) Resize(ws console.WinSize) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return errors.Errorf("cannot resize a stopped container")
 }
 
 func (s *stoppedState) Start(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return errors.Errorf("cannot start a stopped process")
 }
 
 func (s *stoppedState) Delete(ctx context.Context) error {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
 	if err := s.p.delete(ctx); err != nil {
 		return err
 	}
@@ -217,8 +180,5 @@ func (s *stoppedState) SetExited(status int) {
 }
 
 func (s *stoppedState) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
-	s.p.mu.Lock()
-	defer s.p.mu.Unlock()
-
 	return nil, errors.Errorf("cannot exec in a stopped state")
 }

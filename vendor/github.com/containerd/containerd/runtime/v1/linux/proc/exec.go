@@ -41,7 +41,7 @@ import (
 type execProcess struct {
 	wg sync.WaitGroup
 
-	proc.State
+	execState execState
 
 	mu      sync.Mutex
 	id      string
@@ -69,8 +69,10 @@ func (e *execProcess) ID() string {
 }
 
 func (e *execProcess) Pid() int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	return e.execState.Pid()
+}
+
+func (e *execProcess) pidv() int {
 	return e.pid
 }
 
@@ -86,11 +88,25 @@ func (e *execProcess) ExitedAt() time.Time {
 	return e.exited
 }
 
+func (e *execProcess) SetExited(status int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.execState.SetExited(status)
+}
+
 func (e *execProcess) setExited(status int) {
 	e.status = status
 	e.exited = time.Now()
 	e.parent.Platform.ShutdownConsole(context.Background(), e.console)
 	close(e.waitBlock)
+}
+
+func (e *execProcess) Delete(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	return e.execState.Delete(ctx)
 }
 
 func (e *execProcess) delete(ctx context.Context) error {
@@ -107,11 +123,25 @@ func (e *execProcess) delete(ctx context.Context) error {
 	return nil
 }
 
+func (e *execProcess) Resize(ws console.WinSize) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	return e.execState.Resize(ws)
+}
+
 func (e *execProcess) resize(ws console.WinSize) error {
 	if e.console == nil {
 		return nil
 	}
 	return e.console.Resize(ws)
+}
+
+func (e *execProcess) Kill(ctx context.Context, sig uint32, _ bool) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	return e.execState.Kill(ctx, sig, false)
 }
 
 func (e *execProcess) kill(ctx context.Context, sig uint32, _ bool) error {
@@ -130,6 +160,13 @@ func (e *execProcess) Stdin() io.Closer {
 
 func (e *execProcess) Stdio() proc.Stdio {
 	return e.stdio
+}
+
+func (e *execProcess) Start(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	return e.execState.Start(ctx)
 }
 
 func (e *execProcess) start(ctx context.Context) (err error) {
@@ -172,22 +209,27 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 		e.stdin = sc
 	}
 	var copyWaitGroup sync.WaitGroup
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {
+			cancel()
 			return errors.Wrap(err, "failed to retrieve console master")
 		}
 		if e.console, err = e.parent.Platform.CopyConsole(ctx, console, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg, &copyWaitGroup); err != nil {
+			cancel()
 			return errors.Wrap(err, "failed to start console copy")
 		}
 	} else if !e.stdio.IsNull() {
 		if err := copyPipes(ctx, e.io, e.stdio.Stdin, e.stdio.Stdout, e.stdio.Stderr, &e.wg, &copyWaitGroup); err != nil {
+			cancel()
 			return errors.Wrap(err, "failed to start io pipe copy")
 		}
 	}
 	copyWaitGroup.Wait()
 	pid, err := runc.ReadPidFile(opts.PidFile)
 	if err != nil {
+		cancel()
 		return errors.Wrap(err, "failed to retrieve OCI runtime exec pid")
 	}
 	e.pid = pid
