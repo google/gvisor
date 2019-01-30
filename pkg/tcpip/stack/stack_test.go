@@ -1039,6 +1039,45 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 	}
 }
 
+func TestNICForwarding(t *testing.T) {
+	// Create a stack with the fake network protocol, two NICs, each with
+	// an address.
+	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
+	s.SetForwarding(true)
+
+	id1, linkEP1 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, id1); err != nil {
+		t.Fatalf("CreateNIC #1 failed: %v", err)
+	}
+	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
+		t.Fatalf("AddAddress #1 failed: %v", err)
+	}
+
+	id2, linkEP2 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(2, id2); err != nil {
+		t.Fatalf("CreateNIC #2 failed: %v", err)
+	}
+	if err := s.AddAddress(2, fakeNetNumber, "\x02"); err != nil {
+		t.Fatalf("AddAddress #2 failed: %v", err)
+	}
+
+	// Route all packets to address 3 to NIC 2.
+	s.SetRouteTable([]tcpip.Route{
+		{"\x03", "\xff", "\x00", 2},
+	})
+
+	// Send a packet to address 3.
+	buf := buffer.NewView(30)
+	buf[0] = 3
+	linkEP1.Inject(fakeNetNumber, buf.ToVectorisedView())
+
+	select {
+	case <-linkEP2.C:
+	default:
+		t.Fatal("Packet not forwarded")
+	}
+}
+
 func init() {
 	stack.RegisterNetworkProtocolFactory("fakeNet", func() stack.NetworkProtocol {
 		return &fakeNetworkProtocol{}

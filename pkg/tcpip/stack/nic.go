@@ -428,6 +428,8 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 		ref, ok := n.endpoints[NetworkEndpointID{dst}]
 		n.mu.RUnlock()
 		if ok && ref.tryIncRef() {
+			r.RemoteAddress = src
+			// TODO: Update the source NIC as well.
 			ref.ep.HandlePacket(&r, vv)
 			ref.decRef()
 		} else {

@@ -43,6 +43,7 @@ go_test(
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/loopback",
         "//pkg/waiter",
     ],
 )
