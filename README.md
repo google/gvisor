@@ -14,6 +14,7 @@ gvisor-containerd-shim is a containerd shim for [gVisor](https://github.com/goog
 
 - [Untrusted Workload Quick Start (containerd >=1.1)](docs/untrusted-workload-quickstart.md)
 - [Runtime Handler Quick Start (containerd >=1.2)](docs/runtime-handler-quickstart.md)
+- [Runtime Handler Quick Start (shim v2) (containerd >=1.2)](docs/runtime-handler-shim-v2-quickstart.md)
 
 # Contributing
 

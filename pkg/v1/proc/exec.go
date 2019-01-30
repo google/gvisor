@@ -30,7 +30,6 @@ import (
 	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/runtime/proc"
-	"github.com/containerd/containerd/runtime/v1/shim"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -171,11 +170,11 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	if socket != nil {
 		opts.ConsoleSocket = socket
 	}
-	eventCh := shim.Default.Subscribe()
+	eventCh := e.parent.Monitor.Subscribe()
 	defer func() {
 		// Unsubscribe if an error is returned.
 		if err != nil {
-			shim.Default.Unsubscribe(eventCh)
+			e.parent.Monitor.Unsubscribe(eventCh)
 		}
 	}()
 	if err := e.parent.runtime.Exec(ctx, e.parent.id, e.spec, opts); err != nil {
@@ -183,7 +182,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 		return e.parent.runtimeError(err, "OCI runtime exec failed")
 	}
 	if e.stdio.Stdin != "" {
-		sc, err := fifo.OpenFifo(ctx, e.stdio.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+		sc, err := fifo.OpenFifo(context.Background(), e.stdio.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return errors.Wrapf(err, "failed to open stdin fifo %s", e.stdio.Stdin)
 		}
@@ -192,11 +191,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	}
 	var copyWaitGroup sync.WaitGroup
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer func() {
-		if err != nil {
-			cancel()
-		}
-	}()
+	defer cancel()
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {
@@ -222,7 +217,7 @@ func (e *execProcess) start(ctx context.Context) (err error) {
 	}
 	e.internalPid = internalPid
 	go func() {
-		defer shim.Default.Unsubscribe(eventCh)
+		defer e.parent.Monitor.Unsubscribe(eventCh)
 		for event := range eventCh {
 			if event.Pid == e.pid {
 				ExitCh <- Exit{

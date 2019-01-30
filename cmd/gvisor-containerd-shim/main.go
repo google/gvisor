@@ -48,7 +48,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	runsc "github.com/google/gvisor-containerd-shim/pkg/go-runsc"
-	"github.com/google/gvisor-containerd-shim/pkg/shim"
+	"github.com/google/gvisor-containerd-shim/pkg/v1/shim"
 )
 
 var (

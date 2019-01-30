@@ -21,6 +21,8 @@ import (
 	"time"
 
 	google_protobuf "github.com/gogo/protobuf/types"
+
+	runc "github.com/containerd/go-runc"
 )
 
 // Mount holds filesystem mount configuration
@@ -59,4 +61,12 @@ type Exit struct {
 	Timestamp time.Time
 	ID        string
 	Status    int
+}
+
+// ProcessMonitor monitors process exit changes
+type ProcessMonitor interface {
+	// Subscribe to process exit changes
+	Subscribe() chan runc.Exit
+	// Unsubscribe to process exit changes
+	Unsubscribe(c chan runc.Exit)
 }

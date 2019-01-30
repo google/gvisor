@@ -75,6 +75,7 @@ type Init struct {
 	IoGID    int
 	Sandbox  bool
 	UserLog  string
+	Monitor  ProcessMonitor
 }
 
 // NewRunsc returns a new runsc instance for a process
@@ -138,7 +139,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 		return p.runtimeError(err, "OCI runtime create failed")
 	}
 	if r.Stdin != "" {
-		sc, err := fifo.OpenFifo(ctx, r.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+		sc, err := fifo.OpenFifo(context.Background(), r.Stdin, syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return errors.Wrapf(err, "failed to open stdin fifo %s", r.Stdin)
 		}
@@ -147,11 +148,7 @@ func (p *Init) Create(ctx context.Context, r *CreateConfig) (err error) {
 	}
 	var copyWaitGroup sync.WaitGroup
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer func() {
-		if err != nil {
-			cancel()
-		}
-	}()
+	defer cancel()
 	if socket != nil {
 		console, err := socket.ReceiveMaster()
 		if err != nil {

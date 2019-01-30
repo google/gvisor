@@ -19,9 +19,7 @@ package shim
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -37,18 +35,18 @@ import (
 	"github.com/containerd/containerd/runtime"
 	"github.com/containerd/containerd/runtime/linux/runctypes"
 	rproc "github.com/containerd/containerd/runtime/proc"
+	"github.com/containerd/containerd/runtime/v1/shim"
 	shimapi "github.com/containerd/containerd/runtime/v1/shim/v1"
-	"github.com/containerd/cri/pkg/annotations"
 	"github.com/containerd/typeurl"
 	ptypes "github.com/gogo/protobuf/types"
-	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	runsc "github.com/google/gvisor-containerd-shim/pkg/go-runsc"
-	"github.com/google/gvisor-containerd-shim/pkg/proc"
+	"github.com/google/gvisor-containerd-shim/pkg/v1/proc"
+	"github.com/google/gvisor-containerd-shim/pkg/v1/utils"
 )
 
 var (
@@ -549,7 +547,7 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 		options = *v.(*runctypes.CreateOptions)
 	}
 
-	spec, err := readSpec(r.Bundle)
+	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
@@ -568,28 +566,8 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 	p.WorkDir = workDir
 	p.IoUID = int(options.IoUid)
 	p.IoGID = int(options.IoGid)
-	p.Sandbox = isSandbox(spec)
+	p.Sandbox = utils.IsSandbox(spec)
 	p.UserLog = userLog
+	p.Monitor = shim.Default
 	return p, nil
-}
-
-func readSpec(bundle string) (*specs.Spec, error) {
-	f, err := os.Open(filepath.Join(bundle, "config.json"))
-	if err != nil {
-		return nil, err
-	}
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		return nil, err
-	}
-	var spec specs.Spec
-	if err := json.Unmarshal(b, &spec); err != nil {
-		return nil, err
-	}
-	return &spec, nil
-}
-
-func isSandbox(spec *specs.Spec) bool {
-	t, ok := spec.Annotations[annotations.ContainerType]
-	return !ok || t == annotations.ContainerTypeSandbox
 }

@@ -16,30 +16,22 @@ later.
 1. Download the latest release of the `gvisor-containerd-shim`. See the
    [releases page](https://github.com/google/gvisor-containerd-shim/releases)
 
-[embedmd]:# (../test/e2e/shim-install.sh shell /{ # Step 1/ /^}/)
+[embedmd]:# (../test/e2e/shim-install.sh shell /{ # Step 1\(release\)/ /^}/)
 ```shell
-{ # Step 1: Download gvisor-containerd-shim
+{ # Step 1(release): Install gvisor-containerd-shim
 LATEST_RELEASE=$(wget -qO - https://api.github.com/repos/google/gvisor-containerd-shim/releases | grep -oP '(?<="browser_download_url": ")https://[^"]*' | head -1)
 wget -O gvisor-containerd-shim
 chmod +x gvisor-containerd-shim
+sudo mv gvisor-containerd-shim /usr/local/bin/gvisor-containerd-shim
 }
 ```
 
-2. Copy the binary to the desired directory:
+2. Create the configuration for the gvisor shim in
+   `/etc/containerd/gvisor-containerd-shim.yaml`:
 
 [embedmd]:# (../test/e2e/shim-install.sh shell /{ # Step 2/ /^}/)
 ```shell
-{ # Step 2: Copy the binary to the desired directory
-sudo mv gvisor-containerd-shim-* /usr/local/bin/gvisor-containerd-shim
-}
-```
-
-3. Create the configuration for the gvisor shim in
-   `/etc/containerd/gvisor-containerd-shim.yaml`:
-
-[embedmd]:# (../test/e2e/shim-install.sh shell /{ # Step 3/ /^}/)
-```shell
-{ # Step 3: Create the gvisor-containerd-shim.yaml
+{ # Step 2: Create the gvisor-containerd-shim.yaml
 cat <<EOF | sudo tee /etc/containerd/gvisor-containerd-shim.yaml
 # This is the path to the default runc containerd-shim.
 runc_shim = "/usr/local/bin/containerd-shim"

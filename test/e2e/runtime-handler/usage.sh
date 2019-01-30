@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# A sample script for testing the gvisor-containerd-shim # using untrusted
-# workload extension.
+# A sample script for testing the gvisor-containerd-shim
+# using runtime handler.
 
 set -ex
 
