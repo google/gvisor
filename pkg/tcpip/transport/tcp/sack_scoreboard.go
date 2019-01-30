@@ -201,7 +201,7 @@ func (s *SACKScoreboard) IsLost(r header.SACKBlock) bool {
 		}
 		nDupSACKBytes += sacked.Start.Size(sacked.End)
 		nDupSACK++
-		if nDupSACK >= nDupAckThreshold || nDupSACKBytes >= seqnum.Size(nDupAckThreshold*s.smss) {
+		if nDupSACK >= nDupAckThreshold || nDupSACKBytes >= seqnum.Size((nDupAckThreshold-1)*s.smss) {
 			isLost = true
 			return false
 		}
