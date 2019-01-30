@@ -45,8 +45,8 @@ const InitPidFile = "init.pid"
 
 // Init represents an initial process for a container
 type Init struct {
-	wg sync.WaitGroup
-	initState
+	wg        sync.WaitGroup
+	initState initState
 
 	// mu is used to ensure that `Start()` and `Exited()` calls return in
 	// the right order when invoked in separate go routines.
@@ -217,6 +217,14 @@ func (p *Init) Status(ctx context.Context) (string, error) {
 	return p.convertStatus(c.Status), nil
 }
 
+// Start the init process
+func (p *Init) Start(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.Start(ctx)
+}
+
 func (p *Init) start(context context.Context) error {
 	var cio runc.IO
 	if !p.Sandbox {
@@ -244,6 +252,14 @@ func (p *Init) start(context context.Context) error {
 	return nil
 }
 
+// SetExited of the init process with the next status
+func (p *Init) SetExited(status int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.initState.SetExited(status)
+}
+
 func (p *Init) setExited(status int) {
 	p.exited = time.Now()
 	p.status = status
@@ -251,10 +267,18 @@ func (p *Init) setExited(status int) {
 	close(p.waitBlock)
 }
 
-func (p *Init) delete(context context.Context) error {
-	p.killAll(context)
+// Delete the init process
+func (p *Init) Delete(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.Delete(ctx)
+}
+
+func (p *Init) delete(ctx context.Context) error {
+	p.killAll(ctx)
 	p.wg.Wait()
-	err := p.runtime.Delete(context, p.id, nil)
+	err := p.runtime.Delete(ctx, p.id, nil)
 	// ignore errors if a runtime has already deleted the process
 	// but we still hold metadata and pipes
 	//
@@ -274,7 +298,7 @@ func (p *Init) delete(context context.Context) error {
 		p.io.Close()
 	}
 	if err2 := mount.UnmountAll(p.Rootfs, 0); err2 != nil {
-		log.G(context).WithError(err2).Warn("failed to cleanup rootfs mount")
+		log.G(ctx).WithError(err2).Warn("failed to cleanup rootfs mount")
 		if err == nil {
 			err = errors.Wrap(err2, "failed rootfs umount")
 		}
@@ -282,11 +306,30 @@ func (p *Init) delete(context context.Context) error {
 	return err
 }
 
+// Resize the init processes console
+func (p *Init) Resize(ws console.WinSize) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.console == nil {
+		return nil
+	}
+	return p.console.Resize(ws)
+}
+
 func (p *Init) resize(ws console.WinSize) error {
 	if p.console == nil {
 		return nil
 	}
 	return p.console.Resize(ws)
+}
+
+// Kill the init process
+func (p *Init) Kill(ctx context.Context, signal uint32, all bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.Kill(ctx, signal, all)
 }
 
 func (p *Init) kill(context context.Context, signal uint32, all bool) error {
@@ -349,8 +392,16 @@ func (p *Init) Runtime() *runsc.Runsc {
 	return p.runtime
 }
 
+// Exec returns a new child process
+func (p *Init) Exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.initState.Exec(ctx, path, r)
+}
+
 // exec returns a new exec'd process
-func (p *Init) exec(context context.Context, path string, r *ExecConfig) (proc.Process, error) {
+func (p *Init) exec(ctx context.Context, path string, r *ExecConfig) (proc.Process, error) {
 	// process exec request
 	var spec specs.Process
 	if err := json.Unmarshal(r.Spec.Value, &spec); err != nil {
@@ -371,7 +422,7 @@ func (p *Init) exec(context context.Context, path string, r *ExecConfig) (proc.P
 		},
 		waitBlock: make(chan struct{}),
 	}
-	e.State = &execCreatedState{p: e}
+	e.execState = &execCreatedState{p: e}
 	return e, nil
 }
 
