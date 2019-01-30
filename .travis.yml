@@ -7,6 +7,7 @@ env:
   - CONTAINERD_VERSION=1.1.5 RUNSC_VERSION=2018-12-07 TEST=untrusted-workload
   - CONTAINERD_VERSION=1.2.1 RUNSC_VERSION=2018-12-07 TEST=untrusted-workload
   - CONTAINERD_VERSION=1.2.1 RUNSC_VERSION=2018-12-07 TEST=runtime-handler
+  - CONTAINERD_VERSION=1.2.1 RUNSC_VERSION=2018-12-07 TEST=runtime-handler-shim-v2
 
 
 go_import_path: github.com/google/gvisor-containerd-shim
