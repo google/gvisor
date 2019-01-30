@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -64,6 +65,12 @@ type Sandbox struct {
 	// This field isn't saved to json, because only a creator of sandbox
 	// will have it as a child process.
 	child bool
+
+	// status is an exit status of a sandbox process.
+	status syscall.WaitStatus
+
+	// statusMu protects status.
+	statusMu sync.Mutex
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -628,18 +635,13 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 	// Wait RPC. The best we can do is ask Linux what the sandbox exit
 	// status was, since in most cases that will be the same as the
 	// container exit status.
-	p, err := os.FindProcess(s.Pid)
-	if err != nil {
-		// "On Unix systems, FindProcess always succeeds and returns a
-		// Process for the given pid, regardless of whether the process
-		// exists."
-		return ws, fmt.Errorf("Find process %d: %v", s.Pid, err)
+	if err := s.waitForStopped(); err != nil {
+		return ws, err
 	}
-	ps, err := p.Wait()
-	if err != nil {
-		return ws, fmt.Errorf("sandbox no longer running, tried to get exit status, but Wait failed: %v", err)
+	if !s.child {
+		return ws, fmt.Errorf("sandbox no longer running and its exit status is unavailable")
 	}
-	return ps.Sys().(syscall.WaitStatus), nil
+	return s.status, nil
 }
 
 // WaitPID waits for process 'pid' in the container's sandbox and returns its
@@ -853,10 +855,15 @@ func (s *Sandbox) waitForStopped() error {
 	defer cancel()
 	b := backoff.WithContext(backoff.NewConstantBackOff(100*time.Millisecond), ctx)
 	op := func() error {
-		if s.child && s.Pid != 0 {
+		if s.child {
+			s.statusMu.Lock()
+			defer s.statusMu.Unlock()
+			if s.Pid == 0 {
+				return nil
+			}
 			// The sandbox process is a child of the current process,
 			// so we can wait it and collect its zombie.
-			wpid, err := syscall.Wait4(int(s.Pid), nil, syscall.WNOHANG, nil)
+			wpid, err := syscall.Wait4(int(s.Pid), &s.status, syscall.WNOHANG, nil)
 			if err != nil {
 				return fmt.Errorf("error waiting the sandbox process: %v", err)
 			}

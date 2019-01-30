@@ -235,7 +235,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 
 	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
-		log.Debugf("containerManager.Start failed %q: %+v", args.CID, args)
+		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
 		return err
 	}
 	log.Debugf("Container %q started", args.CID)
