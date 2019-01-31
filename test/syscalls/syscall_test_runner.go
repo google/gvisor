@@ -41,13 +41,14 @@ import (
 const testDir = "test/syscalls/linux"
 
 var (
-	testName  = flag.String("test-name", "", "name of test binary to run")
-	debug     = flag.Bool("debug", false, "enable debug logs")
-	strace    = flag.Bool("strace", false, "enable strace logs")
-	platform  = flag.String("platform", "ptrace", "platform to run on")
-	useTmpfs  = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
-	parallel  = flag.Bool("parallel", false, "run tests in parallel")
-	runscPath = flag.String("runsc", "", "path to runsc binary")
+	testName   = flag.String("test-name", "", "name of test binary to run")
+	debug      = flag.Bool("debug", false, "enable debug logs")
+	strace     = flag.Bool("strace", false, "enable strace logs")
+	platform   = flag.String("platform", "ptrace", "platform to run on")
+	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
+	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
+	parallel   = flag.Bool("parallel", false, "run tests in parallel")
+	runscPath  = flag.String("runsc", "", "path to runsc binary")
 )
 
 // runTestCaseNative runs the test case directly on the host machine.
@@ -158,6 +159,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	args := []string{
 		"-platform", *platform,
 		"-root", rootDir,
+		"-file-access", *fileAccess,
 		"--network=none",
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
