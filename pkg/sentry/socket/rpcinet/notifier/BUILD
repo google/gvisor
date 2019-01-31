@@ -1,6 +1,6 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 
-package(licenses = ["notice"])  # BSD
+package(licenses = ["notice"])
 
 go_library(
     name = "notifier",

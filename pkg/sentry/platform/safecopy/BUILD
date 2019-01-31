@@ -1,6 +1,6 @@
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])  # Apache 2.0, portions BSD, MIT
+package(licenses = ["notice"])
 
 go_library(
     name = "safecopy",

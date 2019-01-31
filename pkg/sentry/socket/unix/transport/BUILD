@@ -1,4 +1,4 @@
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")

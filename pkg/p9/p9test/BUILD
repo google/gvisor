@@ -1,7 +1,7 @@
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 alias(
     name = "mockgen",

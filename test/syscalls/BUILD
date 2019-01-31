@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//test/syscalls:build_defs.bzl", "syscall_test")
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 syscall_test(test = "//test/syscalls/linux:32bit_test")
 

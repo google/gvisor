@@ -3,7 +3,7 @@
 #   normal system VDSO (time, gettimeofday, clock_gettimeofday) but which uses
 #   timekeeping parameters managed by the sandbox kernel.
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 genrule(
     name = "vdso",

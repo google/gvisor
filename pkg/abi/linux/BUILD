@@ -2,7 +2,7 @@
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 load("//tools/go_stateify:defs.bzl", "go_library")
 

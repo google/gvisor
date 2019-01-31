@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_embed_data")
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 load("//tools/go_stateify:defs.bzl", "go_library")
 

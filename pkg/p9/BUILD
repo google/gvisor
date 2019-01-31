@@ -2,7 +2,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 package(
     default_visibility = ["//visibility:public"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 go_library(

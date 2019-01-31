@@ -1,6 +1,6 @@
 package(
     default_visibility = ["//:sandbox"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 cc_binary(

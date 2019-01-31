@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 
-package(licenses = ["notice"])  # Apache 2.0
+package(licenses = ["notice"])
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 

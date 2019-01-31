@@ -1,6 +1,6 @@
 package(
     default_visibility = ["//:sandbox"],
-    licenses = ["notice"],  # Apache 2.0
+    licenses = ["notice"],
 )
 
 load("//tools/go_stateify:defs.bzl", "go_library")
