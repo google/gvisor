@@ -153,7 +153,7 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountInfoFile)(nil)}}, 0
 }
 
-// mountsFile is used to implement /proc/[pid]/mountinfo.
+// mountsFile is used to implement /proc/[pid]/mounts.
 //
 // +stateify savable
 type mountsFile struct {
