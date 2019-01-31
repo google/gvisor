@@ -15,55 +15,48 @@
 package fsutil
 
 import (
+	"math"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// HostMappable implements memmap.Mappable and platform.File over an arbitrary
-// host file descriptor.
+// HostMappable implements memmap.Mappable and platform.File over a
+// CachedFileObject.
+//
+// Lock order (compare the lock order model in mm/mm.go):
+//   truncateMu ("fs locks")
+//     mu ("memmap.Mappable locks not taken by Translate")
+//       ("platform.File locks")
+//   	     backingFile ("CachedFileObject locks")
 //
 // +stateify savable
 type HostMappable struct {
 	hostFileMapper *HostFileMapper
 
-	mu sync.Mutex `state:"nosave"`
+	backingFile CachedFileObject
 
-	// fd is the file descriptor to the host. Protected by mu.
-	fd int `state:"nosave"`
+	mu sync.Mutex `state:"nosave"`
 
 	// mappings tracks mappings of the cached file object into
 	// memmap.MappingSpaces so it can invalidated upon save. Protected by mu.
 	mappings memmap.MappingSet
+
+	// truncateMu protects writes and truncations. See Truncate() for details.
+	truncateMu sync.RWMutex `state:"nosave"`
 }
 
 // NewHostMappable creates a new mappable that maps directly to host FD.
-func NewHostMappable() *HostMappable {
+func NewHostMappable(backingFile CachedFileObject) *HostMappable {
 	return &HostMappable{
 		hostFileMapper: NewHostFileMapper(),
-		fd:             -1,
+		backingFile:    backingFile,
 	}
-}
-
-func (h *HostMappable) getFD() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.fd < 0 {
-		panic("HostMappable FD isn't set")
-	}
-	return h.fd
-}
-
-// UpdateFD sets the host FD iff FD hasn't been set before or if there are
-// no mappings.
-func (h *HostMappable) UpdateFD(fd int) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.fd = fd
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -115,12 +108,12 @@ func (h *HostMappable) InvalidateUnsavable(ctx context.Context) error {
 
 // MapInto implements platform.File.MapInto.
 func (h *HostMappable) MapInto(as platform.AddressSpace, addr usermem.Addr, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	return as.MapFile(addr, h.getFD(), fr, at, precommit)
+	return as.MapFile(addr, h.backingFile.FD(), fr, at, precommit)
 }
 
 // MapInternal implements platform.File.MapInternal.
 func (h *HostMappable) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
-	return h.hostFileMapper.MapInternal(fr, h.getFD(), at.Write)
+	return h.hostFileMapper.MapInternal(fr, h.backingFile.FD(), at.Write)
 }
 
 // IncRef implements platform.File.IncRef.
@@ -133,4 +126,63 @@ func (h *HostMappable) IncRef(fr platform.FileRange) {
 func (h *HostMappable) DecRef(fr platform.FileRange) {
 	mr := memmap.MappableRange{Start: fr.Start, End: fr.End}
 	h.hostFileMapper.DecRefOn(mr)
+}
+
+// Truncate truncates the file, invalidating any mapping that may have been
+// removed after the size change.
+//
+// Truncation and writes are synchronized to prevent races where writes make the
+// file grow between truncation and invalidation below:
+//   T1: Calls SetMaskedAttributes and stalls
+//   T2: Appends to file causing it to grow
+//   T2: Writes to mapped pages and COW happens
+//   T1: Continues and wronly invalidates the page mapped in step above.
+func (h *HostMappable) Truncate(ctx context.Context, newSize int64) error {
+	h.truncateMu.Lock()
+	defer h.truncateMu.Unlock()
+
+	mask := fs.AttrMask{Size: true}
+	attr := fs.UnstableAttr{Size: newSize}
+	if err := h.backingFile.SetMaskedAttributes(ctx, mask, attr); err != nil {
+		return err
+	}
+
+	// Invalidate COW mappings that may exist beyond the new size in case the file
+	// is being shrunk. Other mappinsg don't need to be invalidated because
+	// translate will just return identical mappings after invalidation anyway,
+	// and SIGBUS will be raised and handled when the mappings are touched.
+	//
+	// Compare Linux's mm/truncate.c:truncate_setsize() =>
+	// truncate_pagecache() =>
+	// mm/memory.c:unmap_mapping_range(evencows=1).
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	mr := memmap.MappableRange{
+		Start: fs.OffsetPageEnd(newSize),
+		End:   fs.OffsetPageEnd(math.MaxInt64),
+	}
+	h.mappings.Invalidate(mr, memmap.InvalidateOpts{InvalidatePrivate: true})
+
+	return nil
+}
+
+// Write writes to the file backing this mappable.
+func (h *HostMappable) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+	h.truncateMu.RLock()
+	n, err := src.CopyInTo(ctx, &writer{ctx: ctx, hostMappable: h, off: offset})
+	h.truncateMu.RUnlock()
+	return n, err
+}
+
+type writer struct {
+	ctx          context.Context
+	hostMappable *HostMappable
+	off          int64
+}
+
+// WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
+func (w *writer) WriteFromBlocks(src safemem.BlockSeq) (uint64, error) {
+	n, err := w.hostMappable.backingFile.WriteFromBlocksAt(w.ctx, src, uint64(w.off))
+	w.off += int64(n)
+	return n, err
 }

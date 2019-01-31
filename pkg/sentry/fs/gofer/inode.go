@@ -170,9 +170,6 @@ func (i *inodeFileState) setHandlesForCachedIO(flags fs.FileFlags, h *handles) {
 			i.writebackRW = true
 		}
 	}
-	if i.hostMappable != nil {
-		i.hostMappable.UpdateFD(i.fdLocked())
-	}
 }
 
 // getCachedHandles returns any cached handles which would accelerate
@@ -519,6 +516,9 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, length 
 	// This can only be called for files anyway.
 	if i.session().cachePolicy.useCachingInodeOps(inode) {
 		return i.cachingInodeOps.Truncate(ctx, inode, length)
+	}
+	if i.session().cachePolicy == cacheRemoteRevalidating {
+		return i.fileState.hostMappable.Truncate(ctx, length)
 	}
 
 	return i.fileState.file.setAttr(ctx, p9.SetAttrMask{Size: true}, p9.SetAttr{Size: uint64(length)})

@@ -197,17 +197,14 @@ func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p
 		}
 	}
 
-	var hm *fsutil.HostMappable
-	if s.cachePolicy == cacheRemoteRevalidating && fs.IsFile(sattr) {
-		hm = fsutil.NewHostMappable()
-	}
-
 	fileState := &inodeFileState{
-		s:            s,
-		file:         file,
-		sattr:        sattr,
-		key:          deviceKey,
-		hostMappable: hm,
+		s:     s,
+		file:  file,
+		sattr: sattr,
+		key:   deviceKey,
+	}
+	if s.cachePolicy == cacheRemoteRevalidating && fs.IsFile(sattr) {
+		fileState.hostMappable = fsutil.NewHostMappable(fileState)
 	}
 
 	uattr := unstable(ctx, valid, attr, s.mounter, s.client)

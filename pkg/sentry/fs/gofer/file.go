@@ -215,6 +215,9 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		}
 		return n, err
 	}
+	if f.inodeOperations.fileState.hostMappable != nil {
+		return f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
+	}
 	return src.CopyInTo(ctx, f.handles.readWriterAt(ctx, offset))
 }
 

@@ -71,7 +71,6 @@ go_library(
         "host_file_mapper_state.go",
         "host_file_mapper_unsafe.go",
         "host_mappable.go",
-        "host_mappable_state.go",
         "inode.go",
         "inode_cached.go",
     ],
