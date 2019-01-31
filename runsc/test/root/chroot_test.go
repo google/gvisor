@@ -118,10 +118,7 @@ func TestChrootGofer(t *testing.T) {
 
 	// This where the root directory is mapped on the host and that's where the
 	// gofer must have chroot'd to.
-	root, err := d.RootDirInHost()
-	if err != nil {
-		t.Fatalf("Docker.RootDirInHost(): %v", err)
-	}
+	root := "/root"
 
 	for _, child := range children {
 		childPID, err := strconv.Atoi(child)

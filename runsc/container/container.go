@@ -787,10 +787,49 @@ func (c *Container) waitForStopped() error {
 func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, error) {
 	// Start with the general config flags.
 	args := conf.ToFlags()
+
+	var goferEnds []*os.File
+
+	// nextFD is the next available file descriptor for the gofer process.
+	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
+	nextFD := 3
+
+	if conf.LogFilename != "" {
+		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("opening log file %q: %v", conf.LogFilename, err)
+		}
+		defer logFile.Close()
+		goferEnds = append(goferEnds, logFile)
+		args = append(args, "--log-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
+	if conf.DebugLog != "" {
+		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer")
+		if err != nil {
+			return nil, fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
+		}
+		defer debugLogFile.Close()
+		goferEnds = append(goferEnds, debugLogFile)
+		args = append(args, "--debug-log-fd="+strconv.Itoa(nextFD))
+		nextFD++
+	}
+
 	args = append(args, "gofer", "--bundle", bundleDir)
 	if conf.Overlay {
 		args = append(args, "--panic-on-write=true")
 	}
+
+	// Open the spec file to donate to the sandbox.
+	specFile, err := specutils.OpenCleanSpec(bundleDir)
+	if err != nil {
+		return nil, fmt.Errorf("opening spec file: %v", err)
+	}
+	defer specFile.Close()
+	goferEnds = append(goferEnds, specFile)
+	args = append(args, "--spec-fd="+strconv.Itoa(nextFD))
+	nextFD++
 
 	// Add root mount and then add any other additional mounts.
 	mountCount := 1
@@ -802,12 +841,8 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		}
 	}
 	sandEnds := make([]*os.File, 0, mountCount)
-	goferEnds := make([]*os.File, 0, mountCount)
 
-	// nextFD is the next available file descriptor for the gofer process.
-	// It starts at 3 because 0-2 are used by stdin/stdout/stderr.
-	nextFD := 3
-	for ; nextFD-3 < mountCount; nextFD++ {
+	for i := 0; i < mountCount; i++ {
 		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
 		if err != nil {
 			return nil, err
@@ -819,6 +854,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		goferEnds = append(goferEnds, goferEnd)
 
 		args = append(args, fmt.Sprintf("--io-fds=%d", nextFD))
+		nextFD++
 	}
 
 	binPath := specutils.ExePath

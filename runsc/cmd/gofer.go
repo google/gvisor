@@ -26,6 +26,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.googlesource.com/gvisor/runsc/boot"
 	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
 	"gvisor.googlesource.com/gvisor/runsc/fsgofer/filter"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -54,8 +55,10 @@ type Gofer struct {
 	bundleDir string
 	ioFDs     intFlags
 	applyCaps bool
+	setUpRoot bool
 
 	panicOnWrite bool
+	specFD       int
 }
 
 // Name implements subcommands.Command.
@@ -79,43 +82,83 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
 	f.BoolVar(&g.panicOnWrite, "panic-on-write", false, "if true, panics on attempts to write to RO mounts. RW mounts are unnaffected")
+	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
+	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 }
 
 // Execute implements subcommands.Command.
 func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
-	if g.bundleDir == "" || len(g.ioFDs) < 1 {
+	if g.bundleDir == "" || len(g.ioFDs) < 1 || g.specFD < 0 {
 		f.Usage()
 		return subcommands.ExitUsageError
+	}
+
+	specFile := os.NewFile(uintptr(g.specFD), "spec file")
+	defer specFile.Close()
+	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile)
+	if err != nil {
+		Fatalf("reading spec: %v", err)
+	}
+
+	// Find what path is going to be served by this gofer.
+	root := spec.Root.Path
+
+	conf := args[0].(*boot.Config)
+
+	if g.setUpRoot && !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// Convert all shared mounts into slave to be sure that nothing will be
+		// propagated outside of our namespace.
+		if err := syscall.Mount("", "/", "", syscall.MS_SLAVE|syscall.MS_REC, ""); err != nil {
+			Fatalf("error converting mounts: %v", err)
+		}
+
+		// FIXME: runsc can't be re-executed without
+		// /proc, so we create a tmpfs mount, mount ./proc and ./root
+		// there, then move this mount to the root and after
+		// setCapsAndCallSelf, runsc will chroot into /root.
+		//
+		// We need a directory to construct a new root and we know that
+		// runsc can't start without /proc, so we can use it for this.
+		flags := uintptr(syscall.MS_NOSUID | syscall.MS_NODEV | syscall.MS_NOEXEC)
+		if err := syscall.Mount("runsc-root", "/proc", "tmpfs", flags, ""); err != nil {
+			Fatalf("error mounting tmpfs: %v", err)
+		}
+		os.Mkdir("/proc/proc", 0755)
+		os.Mkdir("/proc/root", 0755)
+		if err := syscall.Mount("runsc-proc", "/proc/proc", "proc", flags|syscall.MS_RDONLY, ""); err != nil {
+			Fatalf("error mounting proc: %v", err)
+		}
+		if err := syscall.Mount(root, "/proc/root", "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
+			Fatalf("error mounting root: %v", err)
+		}
+		if err := pivotRoot("/proc"); err != nil {
+			Fatalf("faild to change the root file system: %v", err)
+		}
+		if err := os.Chdir("/"); err != nil {
+			Fatalf("failed to change working directory")
+		}
 	}
 
 	if g.applyCaps {
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
-		args = append(args, "--apply-caps=false")
+		args = append(args, "--apply-caps=false", "--setup-root=false")
 		if err := setCapsAndCallSelf(args, goferCaps); err != nil {
 			Fatalf("Unable to apply caps: %v", err)
 		}
 		panic("unreachable")
 	}
 
-	specFile, err := specutils.OpenCleanSpec(g.bundleDir)
-	if err != nil {
-		Fatalf("opening spec: %v", err)
-	}
-	spec, err := specutils.ReadSpecFromFile(g.bundleDir, specFile)
-	specFile.Close()
-	if err != nil {
-		Fatalf("reading spec: %v", err)
-	}
 	specutils.LogSpec(spec)
 
 	// fsgofer should run with a umask of 0, because we want to preserve file
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	syscall.Umask(0)
 
-	// Find what path is going to be served by this gofer.
-	root := spec.Root.Path
+	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		root = "/root"
+	}
 	if err := syscall.Chroot(root); err != nil {
 		Fatalf("failed to chroot to %q: %v", root, err)
 	}

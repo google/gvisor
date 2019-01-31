@@ -179,8 +179,8 @@ func main() {
 
 		// Quick sanity check to make sure no other commands get passed
 		// a log fd (they should use log dir instead).
-		if subcommand != "boot" {
-			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' command, but was passed to %q", subcommand)
+		if subcommand != "boot" && subcommand != "gofer" {
+			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
 		}
 
 		// If we are the boot process, then we own our stdio FDs and
