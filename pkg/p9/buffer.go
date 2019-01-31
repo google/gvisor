@@ -144,7 +144,7 @@ func (b *buffer) ReadGID() GID {
 
 // ReadPermissions reads a file mode value and applies the mask for permissions.
 func (b *buffer) ReadPermissions() FileMode {
-	return b.ReadFileMode() & PermissionsMask
+	return b.ReadFileMode() & permissionsMask
 }
 
 // ReadFileMode reads a file mode value.
@@ -230,7 +230,7 @@ func (b *buffer) WriteGID(gid GID) {
 
 // WritePermissions applies a permissions mask and writes the FileMode.
 func (b *buffer) WritePermissions(perm FileMode) {
-	b.WriteFileMode(perm & PermissionsMask)
+	b.WriteFileMode(perm & permissionsMask)
 }
 
 // WriteFileMode writes a FileMode.
