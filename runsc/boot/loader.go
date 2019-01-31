@@ -430,6 +430,15 @@ func (l *Loader) run() error {
 		}
 	}
 
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	eid := execID{cid: l.sandboxID}
+	ep, ok := l.processes[eid]
+	if !ok {
+		return fmt.Errorf("trying to start deleted container %q", l.sandboxID)
+	}
+
 	// Finally done with all configuration. Setup filters before user code
 	// is loaded.
 	if l.conf.DisableSeccomp {
@@ -478,14 +487,6 @@ func (l *Loader) run() error {
 		l.rootProcArgs.FDMap.DecRef()
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	eid := execID{cid: l.sandboxID}
-	ep := l.processes[eid]
-	if ep == nil {
-		return fmt.Errorf("trying to start deleted container %q", l.sandboxID)
-	}
 	ep.tg = l.k.GlobalInit()
 	if l.console {
 		ttyFile := l.rootProcArgs.FDMap.GetFile(0)
@@ -522,6 +523,14 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	caps, err := specutils.Capabilities(spec.Process.Capabilities)
 	if err != nil {
 		return fmt.Errorf("creating capabilities: %v", err)
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	eid := execID{cid: cid}
+	if _, ok := l.processes[eid]; !ok {
+		return fmt.Errorf("trying to start a deleted container %q", cid)
 	}
 
 	// Convert the spec's additional GIDs to KGIDs.
@@ -584,14 +593,6 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 	mns := k.RootMountNamespace()
 	if err := setExecutablePath(ctx, mns, &procArgs); err != nil {
 		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
-	}
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	eid := execID{cid: cid}
-	if _, ok := l.processes[eid]; !ok {
-		return fmt.Errorf("trying to start a deleted container %q", cid)
 	}
 
 	tg, _, err := l.k.CreateProcess(procArgs)
