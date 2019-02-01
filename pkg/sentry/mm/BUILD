@@ -116,9 +116,9 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
-        "//pkg/sync",
         "//pkg/syserror",
         "//pkg/tcpip/buffer",
+        "//third_party/gvsync",
     ],
 )
 

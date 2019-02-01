@@ -8,7 +8,7 @@ go_template_instance(
     out = "atomicptr_bucket.go",
     package = "futex",
     suffix = "Bucket",
-    template = "//pkg/sync:generic_atomicptr",
+    template = "//third_party/gvsync:generic_atomicptr",
     types = {
         "Value": "bucket",
     },

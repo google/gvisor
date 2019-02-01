@@ -1,16 +1,7 @@
-// Copyright 2018 Google LLC
+// Copyright 2019 Google LLC
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 // Package template doesn't exist. This file must be instantiated using the
 // go_template_instance rule in tools/go_generics/defs.bzl.
@@ -22,7 +13,7 @@ import (
 	"strings"
 	"unsafe"
 
-	ssync "gvisor.googlesource.com/gvisor/pkg/sync"
+	"gvisor.googlesource.com/gvisor/third_party/gvsync"
 )
 
 // Value is a required type parameter.
@@ -35,17 +26,17 @@ type Value struct{}
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
 // with any writer critical sections in sc.
-func SeqAtomicLoad(sc *ssync.SeqCount, ptr *Value) Value {
+func SeqAtomicLoad(sc *gvsync.SeqCount, ptr *Value) Value {
 	// This function doesn't use SeqAtomicTryLoad because doing so is
 	// measurably, significantly (~20%) slower; Go is awful at inlining.
 	var val Value
 	for {
 		epoch := sc.BeginRead()
-		if ssync.RaceEnabled {
+		if gvsync.RaceEnabled {
 			// runtime.RaceDisable() doesn't actually stop the race detector,
 			// so it can't help us here. Instead, call runtime.memmove
 			// directly, which is not instrumented by the race detector.
-			ssync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
+			gvsync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 		} else {
 			// This is ~40% faster for short reads than going through memmove.
 			val = *ptr
@@ -61,10 +52,10 @@ func SeqAtomicLoad(sc *ssync.SeqCount, ptr *Value) Value {
 // in sc initiated by a call to sc.BeginRead() that returned epoch. If the read
 // would race with a writer critical section, SeqAtomicTryLoad returns
 // (unspecified, false).
-func SeqAtomicTryLoad(sc *ssync.SeqCount, epoch ssync.SeqCountEpoch, ptr *Value) (Value, bool) {
+func SeqAtomicTryLoad(sc *gvsync.SeqCount, epoch gvsync.SeqCountEpoch, ptr *Value) (Value, bool) {
 	var val Value
-	if ssync.RaceEnabled {
-		ssync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
+	if gvsync.RaceEnabled {
+		gvsync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
 		val = *ptr
 	}
@@ -75,7 +66,7 @@ func init() {
 	var val Value
 	typ := reflect.TypeOf(val)
 	name := typ.Name()
-	if ptrs := ssync.PointersInType(typ, name); len(ptrs) != 0 {
+	if ptrs := gvsync.PointersInType(typ, name); len(ptrs) != 0 {
 		panic(fmt.Sprintf("SeqAtomicLoad<%s> is invalid since values %s of type %s contain pointers:\n%s", typ, name, typ, strings.Join(ptrs, "\n")))
 	}
 }

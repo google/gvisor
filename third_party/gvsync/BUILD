@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -27,24 +27,24 @@ go_template(
 )
 
 go_library(
-    name = "sync",
+    name = "gvsync",
     srcs = [
         "downgradable_rwmutex_unsafe.go",
+        "gvsync.go",
         "memmove_unsafe.go",
         "norace_unsafe.go",
         "race_unsafe.go",
         "seqcount.go",
-        "sync.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sync",
+    importpath = "gvisor.googlesource.com/gvisor/third_party/gvsync",
 )
 
 go_test(
-    name = "sync_test",
+    name = "gvsync_test",
     size = "small",
     srcs = [
         "downgradable_rwmutex_test.go",
         "seqcount_test.go",
     ],
-    embed = [":sync"],
+    embed = [":gvsync"],
 )

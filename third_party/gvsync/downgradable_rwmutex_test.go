@@ -1,4 +1,5 @@
 // Copyright 2009 The Go Authors. All rights reserved.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -8,7 +9,7 @@
 // addition of downgradingWriter and the renaming of num_iterations to
 // numIterations to shut up Golint.
 
-package sync
+package gvsync
 
 import (
 	"fmt"

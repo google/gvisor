@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(licenses = ["notice"])
 
@@ -9,7 +9,7 @@ go_template_instance(
     out = "atomicptr_int.go",
     package = "atomicptr",
     suffix = "Int",
-    template = "//pkg/sync:generic_atomicptr",
+    template = "//third_party/gvsync:generic_atomicptr",
     types = {
         "Value": "int",
     },
@@ -18,7 +18,7 @@ go_template_instance(
 go_library(
     name = "atomicptr",
     srcs = ["atomicptr_int.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sync/atomicptr",
+    importpath = "gvisor.googlesource.com/gvisor/third_party/gvsync/atomicptr",
 )
 
 go_test(
