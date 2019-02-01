@@ -209,3 +209,81 @@ func TestSplitFirst(t *testing.T) {
 		}
 	}
 }
+
+// TestIsSubpath tests the IsSubpath method.
+func TestIsSubpath(t *testing.T) {
+	tcs := []struct {
+		// Two absolute paths.
+		pathA string
+		pathB string
+
+		// Whether pathA is a subpath of pathB.
+		wantIsSubpath bool
+
+		// Relative path from pathA to pathB. Only checked if
+		// wantIsSubpath is true.
+		wantRelpath string
+	}{
+		{
+			pathA:         "/foo/bar/baz",
+			pathB:         "/foo",
+			wantIsSubpath: true,
+			wantRelpath:   "bar/baz",
+		},
+		{
+			pathA:         "/foo",
+			pathB:         "/foo/bar/baz",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/foo",
+			pathB:         "/foo",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/foobar",
+			pathB:         "/foo",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/foo",
+			pathB:         "/foobar",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/foo",
+			pathB:         "/foobar",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/",
+			pathB:         "/foo",
+			wantIsSubpath: false,
+		},
+		{
+			pathA:         "/foo",
+			pathB:         "/",
+			wantIsSubpath: true,
+			wantRelpath:   "foo",
+		},
+		{
+			pathA:         "/foo/bar/../bar",
+			pathB:         "/foo",
+			wantIsSubpath: true,
+			wantRelpath:   "bar",
+		},
+		{
+			pathA:         "/foo/bar",
+			pathB:         "/foo/../foo",
+			wantIsSubpath: true,
+			wantRelpath:   "bar",
+		},
+	}
+
+	for _, tc := range tcs {
+		gotRelpath, gotIsSubpath := IsSubpath(tc.pathA, tc.pathB)
+		if gotRelpath != tc.wantRelpath || gotIsSubpath != tc.wantIsSubpath {
+			t.Errorf("IsSubpath(%q, %q) got %q %t, want %q %t", tc.pathA, tc.pathB, gotRelpath, gotIsSubpath, tc.wantRelpath, tc.wantIsSubpath)
+		}
+	}
+}

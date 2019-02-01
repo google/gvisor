@@ -14,6 +14,11 @@
 
 package fs
 
+import (
+	"path/filepath"
+	"strings"
+)
+
 // TrimTrailingSlashes trims any trailing slashes.
 //
 // The returned boolean indicates whether any changes were made.
@@ -89,4 +94,26 @@ func SplitFirst(path string) (current, remainder string) {
 		}
 		return current, remainder
 	}
+}
+
+// IsSubpath checks whether the first path is a (strict) descendent of the
+// second. If it is a subpath, then true is returned along with a clean
+// relative path from the second path to the first. Otherwise false is
+// returned.
+func IsSubpath(subpath, path string) (string, bool) {
+	cleanPath := filepath.Clean(path)
+	cleanSubpath := filepath.Clean(subpath)
+
+	// Add a trailing slash to the path if it does not already have one.
+	if len(cleanPath) == 0 || cleanPath[len(cleanPath)-1] != '/' {
+		cleanPath += "/"
+	}
+	if cleanPath == cleanSubpath {
+		// Paths are equal, thus not a strict subpath.
+		return "", false
+	}
+	if strings.HasPrefix(cleanSubpath, cleanPath) {
+		return strings.TrimPrefix(cleanSubpath, cleanPath), true
+	}
+	return "", false
 }

@@ -515,20 +515,10 @@ func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string
 // subtargets takes a set of Mounts and returns only the targets that are
 // children of the given root. The returned paths are relative to the root.
 func subtargets(root string, mnts []specs.Mount) []string {
-	r := filepath.Clean(root)
-	if len(r) > 0 && r[len(r)-1] != '/' {
-		r += "/"
-	}
 	var targets []string
 	for _, mnt := range mnts {
-		t := filepath.Clean(mnt.Destination)
-		if strings.HasPrefix(t, r) {
-			// Make the mnt path relative to the root path.  If the
-			// result is empty, then mnt IS the root mount, not a
-			// submount.  We don't want to include those.
-			if t := strings.TrimPrefix(t, r); t != "" {
-				targets = append(targets, t)
-			}
+		if relPath, isSubpath := fs.IsSubpath(mnt.Destination, root); isSubpath {
+			targets = append(targets, relPath)
 		}
 	}
 	return targets
