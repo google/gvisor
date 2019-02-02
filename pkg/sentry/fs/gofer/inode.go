@@ -247,6 +247,7 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 // skipSetAttr checks if attribute change can be skipped. It can be skipped
 // when:
 //   - Mask is empty
+//   - Mask contains only attributes that cannot be set in the gofer
 //   - Mask contains only atime and/or mtime, and host FD exists
 //
 // Updates to atime and mtime can be skipped because cached value will be
@@ -254,15 +255,22 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 // Skipping atime updates is particularly important to reduce the number of
 // operations sent to the Gofer for readonly files.
 func (i *inodeFileState) skipSetAttr(mask fs.AttrMask) bool {
-	if mask.Empty() {
+	// First remove attributes that cannot be updated.
+	cpy := mask
+	cpy.Type = false
+	cpy.DeviceID = false
+	cpy.InodeID = false
+	cpy.BlockSize = false
+	cpy.Usage = false
+	cpy.Links = false
+	if cpy.Empty() {
 		return true
 	}
 
-	cpy := mask
+	// Then check if more than just atime and mtime is being set.
 	cpy.AccessTime = false
 	cpy.ModificationTime = false
 	if !cpy.Empty() {
-		// More than just atime and mtime is being set.
 		return false
 	}
 
