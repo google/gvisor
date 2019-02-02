@@ -83,7 +83,7 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Remove shard env variables so that the gunit binary does not try to
 	// intepret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS"})
+	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
 	cmd := exec.Command(testBin, gtest.FilterTestFlag+"="+tc.FullName())
 	cmd.Env = env
@@ -133,7 +133,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Remove shard env variables so that the gunit binary does not try to
 	// intepret them.
-	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS"})
+	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
 	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
 	// be backed by tmpfs.
