@@ -24,7 +24,7 @@ Definitions for the rules below:
 `core`:
 
 *   `//pkg/sentry/...`
-*   Transitive dependencies in `//pkg/...`
+*   Transitive dependencies in `//pkg/...`, `//third_party/...`.
 
 `runsc`:
 
