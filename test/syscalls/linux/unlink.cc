@@ -47,19 +47,20 @@ TEST(UnlinkTest, DirNotEmpty) {
 }
 
 TEST(UnlinkTest, Rmdir) {
-  std::string path = JoinPath(GetAbsoluteTestTmpdir(), "NewDir");
-  ASSERT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
-  EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(rmdir(dir.path().c_str()), SyscallSucceeds());
 }
 
 TEST(UnlinkTest, AtDir) {
   int dirfd;
-  EXPECT_THAT(dirfd = open(GetAbsoluteTestTmpdir().c_str(), O_DIRECTORY, 0),
-              SyscallSucceeds());
+  auto tmpdir = GetAbsoluteTestTmpdir();
+  EXPECT_THAT(dirfd = open(tmpdir.c_str(), O_DIRECTORY, 0), SyscallSucceeds());
 
-  std::string path = JoinPath(GetAbsoluteTestTmpdir(), "NewDir");
-  EXPECT_THAT(mkdir(path.c_str(), 0755), SyscallSucceeds());
-  EXPECT_THAT(unlinkat(dirfd, "NewDir", AT_REMOVEDIR), SyscallSucceeds());
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(tmpdir));
+  auto dir_relpath =
+      ASSERT_NO_ERRNO_AND_VALUE(GetRelativePath(tmpdir, dir.path()));
+  EXPECT_THAT(unlinkat(dirfd, dir_relpath.c_str(), AT_REMOVEDIR),
+              SyscallSucceeds());
   ASSERT_THAT(close(dirfd), SyscallSucceeds());
 }
 
