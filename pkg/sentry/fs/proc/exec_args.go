@@ -15,6 +15,7 @@
 package proc
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -139,20 +140,62 @@ func (f *execArgFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequen
 	// N.B. Technically this should be usermem.IOOpts.IgnorePermissions = true
 	// until Linux 4.9 (272ddc8b3735 "proc: don't use FOLL_FORCE for reading
 	// cmdline and environment").
-	copyN, copyErr := m.CopyIn(ctx, start, buf, usermem.IOOpts{})
+	copyN, err := m.CopyIn(ctx, start, buf, usermem.IOOpts{})
 	if copyN == 0 {
 		// Nothing to copy.
-		return 0, copyErr
+		return 0, err
 	}
 	buf = buf[:copyN]
 
-	// TODO: On Linux, if the NUL byte at the end of the
-	// argument vector has been overwritten, it continues reading the
-	// environment vector as part of the argument vector.
+	// On Linux, if the NUL byte at the end of the argument vector has been
+	// overwritten, it continues reading the environment vector as part of
+	// the argument vector.
+
+	if f.arg == cmdlineExecArg && buf[copyN-1] != 0 {
+		// Linux will limit the return up to and including the first null character in argv
+
+		copyN = bytes.IndexByte(buf, 0)
+		if copyN == -1 {
+			copyN = len(buf)
+		}
+		// If we found a NUL character in argv, return upto and including that character.
+		if copyN < len(buf) {
+			buf = buf[:copyN]
+		} else { // Otherwise return into envp.
+			lengthEnvv := int(m.EnvvEnd() - m.EnvvStart())
+
+			// Upstream limits the returned amount to one page of slop.
+			// https://elixir.bootlin.com/linux/v4.20/source/fs/proc/base.c#L208
+			// we'll return one page total between argv and envp because of the
+			// above page restrictions.
+			if lengthEnvv > usermem.PageSize-len(buf) {
+				lengthEnvv = usermem.PageSize - len(buf)
+			}
+			// Make a new buffer to fit the whole thing
+			tmp := make([]byte, length+lengthEnvv)
+			copyNE, err := m.CopyIn(ctx, m.EnvvStart(), tmp[copyN:], usermem.IOOpts{})
+			if err != nil {
+				return 0, err
+			}
+
+			// Linux will return envp up to and including the first NUL character, so find it.
+			for i, c := range tmp[copyN:] {
+				if c == 0 {
+					copyNE = i
+					break
+				}
+			}
+
+			copy(tmp, buf)
+			buf = tmp[:copyN+copyNE]
+
+		}
+
+	}
 
 	n, dstErr := dst.CopyOut(ctx, buf)
 	if dstErr != nil {
 		return int64(n), dstErr
 	}
-	return int64(n), copyErr
+	return int64(n), err
 }

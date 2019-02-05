@@ -74,6 +74,7 @@ class ExecveArray {
   ExecveArray& operator=(ExecveArray&&) = delete;
 
   char* const* get() const { return ptrs_.data(); }
+  size_t get_size() { return str_.size(); }
 
  private:
   std::vector<char> str_;

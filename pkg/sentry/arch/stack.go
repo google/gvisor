@@ -170,6 +170,24 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 	// Make sure we start with a 16-byte alignment.
 	s.Align(16)
 
+	// Push the environment vector so the end of the argument vector is adjacent to
+	// the beginning of the environment vector.
+	// While the System V abi for x86_64 does not specify an ordering to the
+	// Information Block (the block holding the arg, env, and aux vectors),
+	// support features like setproctitle(3) naturally expect these segments
+	// to be in this order. See: https://www.uclibc.org/docs/psABI-x86_64.pdf
+	// page 29.
+	l.EnvvEnd = s.Bottom
+	envAddrs := make([]usermem.Addr, len(env))
+	for i := len(env) - 1; i >= 0; i-- {
+		addr, err := s.Push(env[i])
+		if err != nil {
+			return StackLayout{}, err
+		}
+		envAddrs[i] = addr
+	}
+	l.EnvvStart = s.Bottom
+
 	// Push our strings.
 	l.ArgvEnd = s.Bottom
 	argAddrs := make([]usermem.Addr, len(args))
@@ -181,18 +199,6 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 		argAddrs[i] = addr
 	}
 	l.ArgvStart = s.Bottom
-
-	// Push our environment.
-	l.EnvvEnd = s.Bottom
-	envAddrs := make([]usermem.Addr, len(env))
-	for i := len(env) - 1; i >= 0; i-- {
-		addr, err := s.Push(env[i])
-		if err != nil {
-			return StackLayout{}, err
-		}
-		envAddrs[i] = addr
-	}
-	l.EnvvStart = s.Bottom
 
 	// We need to align the arguments appropriately.
 	//
