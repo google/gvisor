@@ -108,6 +108,9 @@ func (NoopSleeper) UninterruptibleSleepStart(bool) {}
 // UninterruptibleSleepFinish does nothing.
 func (NoopSleeper) UninterruptibleSleepFinish(bool) {}
 
+// bgContext is the context returned by context.Background.
+var bgContext = &logContext{Logger: log.Log()}
+
 // Background returns an empty context using the default logger.
 //
 // Users should be wary of using a Background context. Please tag any use with
@@ -119,5 +122,5 @@ func (NoopSleeper) UninterruptibleSleepFinish(bool) {}
 // Using a Background context for tests is fine, as long as no values are
 // needed from the context in the tested code paths.
 func Background() Context {
-	return logContext{Logger: log.Log()}
+	return bgContext
 }
