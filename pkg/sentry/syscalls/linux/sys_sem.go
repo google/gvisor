@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -97,9 +98,17 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 		return 0, nil, setVal(t, id, num, int16(val))
 
+	case linux.SETALL:
+		array := args[3].Pointer()
+		return 0, nil, setValAll(t, id, array)
+
 	case linux.GETVAL:
 		v, err := getVal(t, id, num)
 		return uintptr(v), nil, err
+
+	case linux.GETALL:
+		array := args[3].Pointer()
+		return 0, nil, getValAll(t, id, array)
 
 	case linux.IPC_RMID:
 		return 0, nil, remove(t, id)
@@ -155,6 +164,20 @@ func setVal(t *kernel.Task, id int32, num int32, val int16) error {
 	return set.SetVal(t, num, val, creds)
 }
 
+func setValAll(t *kernel.Task, id int32, array usermem.Addr) error {
+	r := t.IPCNamespace().SemaphoreRegistry()
+	set := r.FindByID(id)
+	if set == nil {
+		return syserror.EINVAL
+	}
+	vals := make([]uint16, set.Size())
+	if _, err := t.CopyIn(array, vals); err != nil {
+		return err
+	}
+	creds := auth.CredentialsFromContext(t)
+	return set.SetValAll(t, vals, creds)
+}
+
 func getVal(t *kernel.Task, id int32, num int32) (int16, error) {
 	r := t.IPCNamespace().SemaphoreRegistry()
 	set := r.FindByID(id)
@@ -163,4 +186,19 @@ func getVal(t *kernel.Task, id int32, num int32) (int16, error) {
 	}
 	creds := auth.CredentialsFromContext(t)
 	return set.GetVal(num, creds)
+}
+
+func getValAll(t *kernel.Task, id int32, array usermem.Addr) error {
+	r := t.IPCNamespace().SemaphoreRegistry()
+	set := r.FindByID(id)
+	if set == nil {
+		return syserror.EINVAL
+	}
+	creds := auth.CredentialsFromContext(t)
+	vals, err := set.GetValAll(creds)
+	if err != nil {
+		return err
+	}
+	_, err = t.CopyOut(array, vals)
+	return err
 }

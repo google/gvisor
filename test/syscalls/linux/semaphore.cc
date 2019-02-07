@@ -223,7 +223,7 @@ TEST(SemaphoreTest, SemOpRemoveWithWaiter_NoRandomSave) {
   });
 
   // This must happen before IPC_RMID runs above. Otherwise it fails with EINVAL
-  // instead because the semaphire has already been removed.
+  // instead because the semaphore has already been removed.
   struct sembuf buf = {};
   buf.sem_op = -1;
   ASSERT_THAT(RetryEINTR(semop)(sem.get(), &buf, 1),
@@ -406,6 +406,29 @@ TEST(SemaphoreTest, SemCtlVal) {
   ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 0), SyscallSucceeds());
   EXPECT_THAT(semctl(sem.get(), 0, GETVAL), SyscallSucceedsWithValue(0));
   thZero.Join();
+}
+
+TEST(SemaphoreTest, SemCtlValAll) {
+  AutoSem sem(semget(IPC_PRIVATE, 3, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  // Semaphores must start with 0.
+  uint16_t get[3] = {10, 10, 10};
+  EXPECT_THAT(semctl(sem.get(), 1, GETALL, get), SyscallSucceedsWithValue(0));
+  for (auto v : get) {
+    EXPECT_EQ(v, 0);
+  }
+
+  // SetAll and check that they were set.
+  uint16_t vals[3] = {0, 10, 20};
+  EXPECT_THAT(semctl(sem.get(), 1, SETALL, vals), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(semctl(sem.get(), 1, GETALL, get), SyscallSucceedsWithValue(0));
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(vals); ++i) {
+    EXPECT_EQ(get[i], vals[i]);
+  }
+
+  EXPECT_THAT(semctl(sem.get(), 1, SETALL, nullptr),
+              SyscallFailsWithErrno(EFAULT));
 }
 
 TEST(SemaphoreTest, SemIpcSet) {
