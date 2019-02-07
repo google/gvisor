@@ -253,6 +253,15 @@ type LinkEndpoint interface {
 	IsAttached() bool
 }
 
+// InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
+// delivered via the Inject method.
+type InjectableLinkEndpoint interface {
+	LinkEndpoint
+
+	// Inject injects an inbound packet.
+	Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+}
+
 // A LinkAddressResolver is an extension to a NetworkProtocol that
 // can resolve link addresses.
 type LinkAddressResolver interface {
