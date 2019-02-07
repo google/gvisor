@@ -25,24 +25,28 @@ namespace testing {
 void inline Halt() { asm("hlt\r\n"); }
 
 void inline SetAlignmentCheck() {
-  asm("pushf\r\n"
+  asm("subq $128, %%rsp\r\n"  // Avoid potential red zone clobber
+      "pushf\r\n"
       "pop %%rax\r\n"
       "or $0x40000, %%rax\r\n"
       "push %%rax\r\n"
       "popf\r\n"
+      "addq $128, %%rsp\r\n"
       :
       :
       : "ax");
 }
 
 void inline ClearAlignmentCheck() {
-  asm("pushf\r\n"
+  asm("subq $128, %%rsp\r\n"  // Avoid potential red zone clobber
+      "pushf\r\n"
       "pop %%rax\r\n"
       "mov $0x40000, %%rbx\r\n"
       "not %%rbx\r\n"
       "and %%rbx, %%rax\r\n"
       "push %%rax\r\n"
       "popf\r\n"
+      "addq $128, %%rsp\r\n"
       :
       :
       : "ax", "bx");
