@@ -147,6 +147,7 @@ func New(t *kernel.Task, family int, stype transport.SockType, protocol int) (*f
 			return nil, err
 		}
 		if s != nil {
+			t.Kernel().RecordSocket(s, family)
 			return s, nil
 		}
 	}
@@ -163,12 +164,15 @@ func Pair(t *kernel.Task, family int, stype transport.SockType, protocol int) (*
 	}
 
 	for _, p := range providers {
-		s, t, err := p.Pair(t, stype, protocol)
+		s1, s2, err := p.Pair(t, stype, protocol)
 		if err != nil {
 			return nil, nil, err
 		}
-		if s != nil && t != nil {
-			return s, t, nil
+		if s1 != nil && s2 != nil {
+			k := t.Kernel()
+			k.RecordSocket(s1, family)
+			k.RecordSocket(s2, family)
+			return s1, s2, nil
 		}
 	}
 

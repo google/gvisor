@@ -219,6 +219,8 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		return 0, nil, 0, syserr.FromError(e)
 	}
 
+	t.Kernel().RecordSocket(ns, linux.AF_UNIX)
+
 	return fd, addr, addrLen, nil
 }
 

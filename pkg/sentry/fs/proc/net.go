@@ -15,19 +15,24 @@
 package proc
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // newNet creates a new proc net entry.
-func (p *proc) newNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSource) *fs.Inode {
 	var contents map[string]*fs.Inode
 	if s := p.k.NetworkStack(); s != nil {
 		contents = map[string]*fs.Inode{
@@ -52,6 +57,8 @@ func (p *proc) newNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 			"tcp":    newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")),
 
 			"udp": newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops")),
+
+			"unix": seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
 		}
 
 		if s.SupportsIPv6() {
@@ -180,5 +187,122 @@ func (n *netDev) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*ifinet6)(nil)})
 	}
 
+	return data, 0
+}
+
+// netUnix implements seqfile.SeqSource for /proc/net/unix.
+//
+// +stateify savable
+type netUnix struct {
+	k *kernel.Kernel
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (*netUnix) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return []seqfile.SeqData{}, 0
+	}
+
+	var buf bytes.Buffer
+	// Header
+	fmt.Fprintf(&buf, "Num       RefCount Protocol Flags    Type St Inode Path\n")
+
+	// Entries
+	for _, sref := range n.k.ListSockets(linux.AF_UNIX) {
+		s := sref.Get()
+		if s == nil {
+			log.Debugf("Couldn't resolve weakref %v in socket table, racing with destruction?", sref)
+			continue
+		}
+		sfile := s.(*fs.File)
+		sops, ok := sfile.FileOperations.(*unix.SocketOperations)
+		if !ok {
+			panic(fmt.Sprintf("Found non-unix socket file in unix socket table: %+v", sfile))
+		}
+
+		addr, err := sops.Endpoint().GetLocalAddress()
+		if err != nil {
+			log.Warningf("Failed to retrieve socket name from %+v: %v", sfile, err)
+			addr.Addr = "<unknown>"
+		}
+
+		sockFlags := 0
+		if ce, ok := sops.Endpoint().(transport.ConnectingEndpoint); ok {
+			if ce.Listening() {
+				// For unix domain sockets, linux reports a single flag
+				// value if the socket is listening, of __SO_ACCEPTCON.
+				sockFlags = linux.SO_ACCEPTCON
+			}
+		}
+
+		var sockState int
+		switch sops.Endpoint().Type() {
+		case linux.SOCK_DGRAM:
+			sockState = linux.SS_CONNECTING
+			// Unlike Linux, we don't have unbound connection-less sockets,
+			// so no SS_DISCONNECTING.
+
+		case linux.SOCK_SEQPACKET:
+			fallthrough
+		case linux.SOCK_STREAM:
+			// Connectioned.
+			if sops.Endpoint().(transport.ConnectingEndpoint).Connected() {
+				sockState = linux.SS_CONNECTED
+			} else {
+				sockState = linux.SS_UNCONNECTED
+			}
+		}
+
+		// In the socket entry below, the value for the 'Num' field requires
+		// some consideration. Linux prints the address to the struct
+		// unix_sock representing a socket in the kernel, but may redact the
+		// value for unprivileged users depending on the kptr_restrict
+		// sysctl.
+		//
+		// One use for this field is to allow a privileged user to
+		// introspect into the kernel memory to determine information about
+		// a socket not available through procfs, such as the socket's peer.
+		//
+		// On gvisor, returning a pointer to our internal structures would
+		// be pointless, as it wouldn't match the memory layout for struct
+		// unix_sock, making introspection difficult. We could populate a
+		// struct unix_sock with the appropriate data, but even that
+		// requires consideration for which kernel version to emulate, as
+		// the definition of this struct changes over time.
+		//
+		// For now, we always redact this pointer.
+		fmt.Fprintf(&buf, "%#016p: %08X %08X %08X %04X %02X %5d",
+			(*unix.SocketOperations)(nil), // Num, pointer to kernel socket struct.
+			sfile.ReadRefs()-1,            // RefCount, don't count our own ref.
+			0,                             // Protocol, always 0 for UDS.
+			sockFlags,                     // Flags.
+			sops.Endpoint().Type(),        // Type.
+			sockState,                     // State.
+			sfile.InodeID(),               // Inode.
+		)
+
+		// Path
+		if len(addr.Addr) != 0 {
+			if addr.Addr[0] == 0 {
+				// Abstract path.
+				fmt.Fprintf(&buf, " @%s", string(addr.Addr[1:]))
+			} else {
+				fmt.Fprintf(&buf, " %s", string(addr.Addr))
+			}
+		}
+		fmt.Fprintf(&buf, "\n")
+
+		sfile.DecRef()
+	}
+
+	data := []seqfile.SeqData{{
+		Buf:    buf.Bytes(),
+		Handle: (*netUnix)(nil),
+	}}
 	return data, 0
 }

@@ -85,7 +85,7 @@ func New(ctx context.Context, msrc *fs.MountSource) (*fs.Inode, error) {
 	if _, ok := p.k.NetworkStack().(*rpcinet.Stack); ok {
 		p.AddChild(ctx, "net", newRPCInetProcNet(ctx, msrc))
 	} else {
-		p.AddChild(ctx, "net", p.newNetDir(ctx, msrc))
+		p.AddChild(ctx, "net", p.newNetDir(ctx, k, msrc))
 	}
 
 	return newProcInode(p, msrc, fs.SpecialDirectory, nil), nil

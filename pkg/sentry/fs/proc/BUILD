@@ -30,6 +30,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/log",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
@@ -43,6 +44,8 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/mm",
         "//pkg/sentry/socket/rpcinet",
+        "//pkg/sentry/socket/unix",
+        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
