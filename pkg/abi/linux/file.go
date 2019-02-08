@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi"
+	"gvisor.googlesource.com/gvisor/pkg/binary"
 )
 
 // Constants for open(2).
@@ -176,6 +177,9 @@ type Stat struct {
 	CTime    Timespec
 	X_unused [3]int64
 }
+
+// SizeOfStat is the size of a Stat struct.
+var SizeOfStat = binary.Size(Stat{})
 
 // FileMode represents a mode_t.
 type FileMode uint

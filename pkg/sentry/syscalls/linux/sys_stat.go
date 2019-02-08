@@ -16,6 +16,7 @@ package linux
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/binary"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -124,21 +125,51 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 		mode |= linux.ModeSocket
 	}
 
-	_, err = t.CopyOut(statAddr, linux.Stat{
-		Dev:     uint64(d.Inode.StableAttr.DeviceID),
-		Rdev:    uint64(linux.MakeDeviceID(d.Inode.StableAttr.DeviceFileMajor, d.Inode.StableAttr.DeviceFileMinor)),
-		Ino:     uint64(d.Inode.StableAttr.InodeID),
-		Nlink:   uattr.Links,
-		Mode:    mode | uint32(uattr.Perms.LinuxMode()),
-		UID:     uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()),
-		GID:     uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()),
-		Size:    uattr.Size,
-		Blksize: d.Inode.StableAttr.BlockSize,
-		Blocks:  uattr.Usage / 512,
-		ATime:   uattr.AccessTime.Timespec(),
-		MTime:   uattr.ModificationTime.Timespec(),
-		CTime:   uattr.StatusChangeTime.Timespec(),
-	})
+	// We encode the stat struct to bytes manually, as stat() is a very
+	// common syscall for many applications, and t.CopyObjectOut has
+	// noticeable performance impact due to its many slice allocations and
+	// use of reflection.
+	b := make([]byte, 0, linux.SizeOfStat)
+
+	// Dev (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.DeviceID))
+	// Ino (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.InodeID))
+	// Nlink (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uattr.Links)
+	// Mode (uint32)
+	b = binary.AppendUint32(b, usermem.ByteOrder, mode|uint32(uattr.Perms.LinuxMode()))
+	// UID (uint32)
+	b = binary.AppendUint32(b, usermem.ByteOrder, uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
+	// GID (uint32)
+	b = binary.AppendUint32(b, usermem.ByteOrder, uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()))
+	// Padding (uint32)
+	b = binary.AppendUint32(b, usermem.ByteOrder, 0)
+	// Rdev (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(linux.MakeDeviceID(d.Inode.StableAttr.DeviceFileMajor, d.Inode.StableAttr.DeviceFileMinor)))
+	// Size (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Size))
+	// Blksize (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.BlockSize))
+	// Blocks (uint64)
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Usage/512))
+
+	// ATime
+	atime := uattr.AccessTime.Timespec()
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(atime.Sec))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(atime.Nsec))
+
+	// MTime
+	mtime := uattr.ModificationTime.Timespec()
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(mtime.Sec))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(mtime.Nsec))
+
+	// CTime
+	ctime := uattr.StatusChangeTime.Timespec()
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Sec))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Nsec))
+
+	_, err = t.CopyOutBytes(statAddr, b)
 	return err
 }
 
