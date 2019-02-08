@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
@@ -69,6 +70,11 @@ func (r RemoteError) Error() string {
 // because the urpc package defines pointer methods on FilePayload.
 type FilePayload struct {
 	Files []*os.File `json:"-"`
+}
+
+// ReleaseFD releases the indexth FD.
+func (f *FilePayload) ReleaseFD(index int) (*fd.FD, error) {
+	return fd.NewFromFile(f.Files[index])
 }
 
 // filePayload returns the file. It may be nil.
@@ -267,6 +273,12 @@ func (s *Server) handleOne(client *unet.Socket) error {
 		// Client is dead.
 		return err
 	}
+
+	// Explicitly close all these files after the call.
+	//
+	// This is also explicitly a reference to the files after the call,
+	// which means they are kept open for the duration of the call.
+	defer closeAll(newFs)
 
 	// Start the request.
 	if !s.clientBeginRequest(client) {

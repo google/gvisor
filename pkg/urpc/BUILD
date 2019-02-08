@@ -8,6 +8,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/urpc",
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/unet",
     ],

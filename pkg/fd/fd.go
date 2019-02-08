@@ -158,6 +158,9 @@ func New(fd int) *FD {
 // The returned FD is always blocking (Go 1.9+).
 func NewFromFile(file *os.File) (*FD, error) {
 	fd, err := syscall.Dup(int(file.Fd()))
+	// Technically, the runtime may call the finalizer on file as soon as
+	// Fd() returns.
+	runtime.KeepAlive(file)
 	if err != nil {
 		return &FD{ReadWriter{-1}}, err
 	}
