@@ -742,6 +742,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		return Route{}, tcpip.ErrNoRoute
 	}
 
+	// TODO: Route multicast packets with no specified local
+	// address or NIC.
+
 	for i := range s.routeTable {
 		if (id != 0 && id != s.routeTable[i].NIC) || (len(remoteAddr) != 0 && !s.routeTable[i].Match(remoteAddr)) {
 			continue
@@ -766,6 +769,10 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref)
 		r.NextHop = s.routeTable[i].Gateway
 		return r, nil
+	}
+
+	if isMulticast {
+		return Route{}, tcpip.ErrNetworkUnreachable
 	}
 
 	return Route{}, tcpip.ErrNoRoute

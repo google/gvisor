@@ -12,10 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <cstring>
+
 #include "test/syscalls/linux/ip_socket_test_util.h"
 
 namespace gvisor {
 namespace testing {
+
+PosixErrorOr<int> InterfaceIndex(std::string name) {
+  // TODO: Consider using netlink.
+  ifreq req = {};
+  memcpy(req.ifr_name, name.c_str(), name.size());
+  ASSIGN_OR_RETURN_ERRNO(auto sock, Socket(AF_INET, SOCK_DGRAM, 0));
+  RETURN_ERROR_IF_SYSCALL_FAIL(ioctl(sock.get(), SIOCGIFINDEX, &req));
+  return req.ifr_ifindex;
+}
 
 namespace {
 
@@ -28,7 +41,7 @@ std::string DescribeSocketType(int type) {
 
 SocketPairKind IPv6TCPAcceptBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "IPv6 TCP socket");
+      absl::StrCat(DescribeSocketType(type), "connected IPv6 TCP socket");
   return SocketPairKind{
       description, TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM,
                                                   0, /* dual_stack = */ false)};
@@ -36,7 +49,7 @@ SocketPairKind IPv6TCPAcceptBindSocketPair(int type) {
 
 SocketPairKind IPv4TCPAcceptBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "IPv4 TCP socket");
+      absl::StrCat(DescribeSocketType(type), "connected IPv4 TCP socket");
   return SocketPairKind{
       description, TCPAcceptBindSocketPairCreator(AF_INET, type | SOCK_STREAM,
                                                   0, /* dual_stack = */ false)};
@@ -44,7 +57,7 @@ SocketPairKind IPv4TCPAcceptBindSocketPair(int type) {
 
 SocketPairKind DualStackTCPAcceptBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "dual stack TCP socket");
+      absl::StrCat(DescribeSocketType(type), "connected dual stack TCP socket");
   return SocketPairKind{
       description, TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM,
                                                   0, /* dual_stack = */ true)};
@@ -52,7 +65,7 @@ SocketPairKind DualStackTCPAcceptBindSocketPair(int type) {
 
 SocketPairKind IPv6UDPBidirectionalBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "IPv6 UDP socket");
+      absl::StrCat(DescribeSocketType(type), "connected IPv6 UDP socket");
   return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
                                          AF_INET6, type | SOCK_DGRAM, 0,
                                          /* dual_stack = */ false)};
@@ -60,7 +73,7 @@ SocketPairKind IPv6UDPBidirectionalBindSocketPair(int type) {
 
 SocketPairKind IPv4UDPBidirectionalBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
+      absl::StrCat(DescribeSocketType(type), "connected IPv4 UDP socket");
   return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
                                          AF_INET, type | SOCK_DGRAM, 0,
                                          /* dual_stack = */ false)};
@@ -68,10 +81,18 @@ SocketPairKind IPv4UDPBidirectionalBindSocketPair(int type) {
 
 SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type) {
   std::string description =
-      absl::StrCat(DescribeSocketType(type), "dual stack UDP socket");
+      absl::StrCat(DescribeSocketType(type), "connected dual stack UDP socket");
   return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
                                          AF_INET6, type | SOCK_DGRAM, 0,
                                          /* dual_stack = */ true)};
+}
+
+SocketPairKind IPv4UDPUnboundSocketPair(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
+  return SocketPairKind{
+      description, UDPUnboundSocketPairCreator(AF_INET, type | SOCK_DGRAM, 0,
+                                               /* dual_stack = */ false)};
 }
 
 }  // namespace testing

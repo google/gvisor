@@ -21,6 +21,9 @@
 namespace gvisor {
 namespace testing {
 
+// InterfaceIndex returns the index of the named interface.
+PosixErrorOr<int> InterfaceIndex(std::string name);
+
 // IPv6TCPAcceptBindSocketPair returns a SocketPairKind that represents
 // SocketPairs created with bind() and accept() syscalls with AF_INET6 and the
 // given type bound to the IPv6 loopback.
@@ -50,6 +53,10 @@ SocketPairKind IPv4UDPBidirectionalBindSocketPair(int type);
 // represents SocketPairs created with bind() and connect() syscalls with
 // AF_INET6 and the given type bound to the IPv4 loopback.
 SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type);
+
+// IPv4UDPUnboundSocketPair returns a SocketPairKind that represents
+// SocketPairs created with AF_INET and the given type.
+SocketPairKind IPv4UDPUnboundSocketPair(int type);
 
 }  // namespace testing
 }  // namespace gvisor

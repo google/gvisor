@@ -389,23 +389,32 @@ Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
 }
 
 template <typename T>
-PosixErrorOr<std::unique_ptr<AddrFDSocketPair>>
-CreateUDPBidirectionalBindSocketPair(int sock1, int sock2, int type,
-                                     bool dual_stack) {
+PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> CreateUDPBoundSocketPair(
+    int sock1, int sock2, int type, bool dual_stack) {
   ASSIGN_OR_RETURN_ERRNO(T addr1, BindIP<T>(sock1, dual_stack));
   ASSIGN_OR_RETURN_ERRNO(T addr2, BindIP<T>(sock2, dual_stack));
 
+  return absl::make_unique<AddrFDSocketPair>(sock1, sock2, addr1, addr2);
+}
+
+template <typename T>
+PosixErrorOr<std::unique_ptr<AddrFDSocketPair>>
+CreateUDPBidirectionalBindSocketPair(int sock1, int sock2, int type,
+                                     bool dual_stack) {
+  ASSIGN_OR_RETURN_ERRNO(
+      auto socks, CreateUDPBoundSocketPair<T>(sock1, sock2, type, dual_stack));
+
   // Connect sock1 to sock2.
-  RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-      sock1, reinterpret_cast<struct sockaddr*>(&addr2), sizeof(addr2)));
+  RETURN_ERROR_IF_SYSCALL_FAIL(connect(socks->first_fd(), socks->second_addr(),
+                                       socks->second_addr_size()));
   MaybeSave();  // Successful connection.
 
   // Connect sock2 to sock1.
-  RETURN_ERROR_IF_SYSCALL_FAIL(connect(
-      sock2, reinterpret_cast<struct sockaddr*>(&addr1), sizeof(addr1)));
+  RETURN_ERROR_IF_SYSCALL_FAIL(connect(socks->second_fd(), socks->first_addr(),
+                                       socks->first_addr_size()));
   MaybeSave();  // Successful connection.
 
-  return absl::make_unique<AddrFDSocketPair>(sock1, sock2, addr1, addr2);
+  return socks;
 }
 
 Creator<SocketPair> UDPBidirectionalBindSocketPairCreator(int domain, int type,
@@ -426,6 +435,21 @@ Creator<SocketPair> UDPBidirectionalBindSocketPairCreator(int domain, int type,
     }
     return CreateUDPBidirectionalBindSocketPair<sockaddr_in6>(sock1, sock2,
                                                               type, dual_stack);
+  };
+}
+
+Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
+                                                int protocol, bool dual_stack) {
+  return [=]() -> PosixErrorOr<std::unique_ptr<FDSocketPair>> {
+    int sock1;
+    RETURN_ERROR_IF_SYSCALL_FAIL(sock1 = socket(domain, type, protocol));
+    MaybeSave();  // Successful socket creation.
+
+    int sock2;
+    RETURN_ERROR_IF_SYSCALL_FAIL(sock2 = socket(domain, type, protocol));
+    MaybeSave();  // Successful socket creation.
+
+    return absl::make_unique<FDSocketPair>(sock1, sock2);
   };
 }
 

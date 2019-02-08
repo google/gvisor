@@ -204,15 +204,30 @@ const (
 // uapi/linux/socket.h.
 const SockAddrMax = 128
 
-// SockAddrInt is struct sockaddr_in, from uapi/linux/in.h.
+// InetAddr is struct in_addr, from uapi/linux/in.h.
+type InetAddr [4]byte
+
+// SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
 type SockAddrInet struct {
 	Family uint16
 	Port   uint16
-	Addr   [4]byte
+	Addr   InetAddr
 	Zero   [8]uint8 // pad to sizeof(struct sockaddr).
 }
 
-// SockAddrInt6 is struct sockaddr_in6, from uapi/linux/in6.h.
+// InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
+type InetMulticastRequest struct {
+	MulticastAddr InetAddr
+	InterfaceAddr InetAddr
+}
+
+// InetMulticastRequestWithNIC is struct ip_mreqn, from uapi/linux/in.h.
+type InetMulticastRequestWithNIC struct {
+	InetMulticastRequest
+	InterfaceIndex int32
+}
+
+// SockAddrInet6 is struct sockaddr_in6, from uapi/linux/in6.h.
 type SockAddrInet6 struct {
 	Family   uint16
 	Port     uint16

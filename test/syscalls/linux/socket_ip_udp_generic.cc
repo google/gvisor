@@ -117,5 +117,19 @@ TEST_P(UDPSocketPairTest, SetUDPMulticastTTLAboveMax) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST_P(UDPSocketPairTest, SetEmptyIPAddMembership) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  struct ip_mreqn req = {};
+  int ret = setsockopt(sockets->first_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &req,
+                       sizeof(req));
+  // FIXME: gVisor returns the incorrect errno.
+  if (IsRunningOnGvisor()) {
+    EXPECT_THAT(ret, SyscallFails());
+  } else {
+    EXPECT_THAT(ret, SyscallFailsWithErrno(EINVAL));
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor

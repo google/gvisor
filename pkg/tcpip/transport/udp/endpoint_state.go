@@ -103,4 +103,10 @@ func (e *endpoint) afterLoad() {
 	if err != nil {
 		panic(*err)
 	}
+
+	for _, m := range e.multicastMemberships {
+		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
+			panic(err)
+		}
+	}
 }

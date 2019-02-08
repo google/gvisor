@@ -1078,6 +1078,25 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 	return syserr.TranslateNetstackError(ep.SetSockOpt(struct{}{}))
 }
 
+var (
+	inetMulticastRequestSize        = int(binary.Size(linux.InetMulticastRequest{}))
+	inetMulticastRequestWithNICSize = int(binary.Size(linux.InetMulticastRequestWithNIC{}))
+)
+
+func copyInMulticastRequest(optVal []byte) (linux.InetMulticastRequestWithNIC, *syserr.Error) {
+	if len(optVal) < inetMulticastRequestSize {
+		return linux.InetMulticastRequestWithNIC{}, syserr.ErrInvalidArgument
+	}
+
+	var req linux.InetMulticastRequestWithNIC
+	if len(optVal) >= inetMulticastRequestWithNICSize {
+		binary.Unmarshal(optVal[:inetMulticastRequestWithNICSize], usermem.ByteOrder, &req)
+	} else {
+		binary.Unmarshal(optVal[:inetMulticastRequestSize], usermem.ByteOrder, &req.InetMulticastRequest)
+	}
+	return req, nil
+}
+
 // setSockOptIP implements SetSockOpt when level is SOL_IP.
 func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
@@ -1096,7 +1115,31 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.MulticastTTLOption(v)))
 
-	case linux.IP_ADD_MEMBERSHIP, linux.MCAST_JOIN_GROUP, linux.IP_MULTICAST_IF:
+	case linux.IP_ADD_MEMBERSHIP:
+		req, err := copyInMulticastRequest(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.AddMembershipOption{
+			NIC:           tcpip.NICID(req.InterfaceIndex),
+			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
+			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
+		}))
+
+	case linux.IP_DROP_MEMBERSHIP:
+		req, err := copyInMulticastRequest(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.RemoveMembershipOption{
+			NIC:           tcpip.NICID(req.InterfaceIndex),
+			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
+			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
+		}))
+
+	case linux.MCAST_JOIN_GROUP, linux.IP_MULTICAST_IF:
 		// FIXME: Disallow IP-level multicast group options by
 		// default. These will need to be supported by appropriately plumbing
 		// the level through to the network stack (if at all). However, we
@@ -1108,7 +1151,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
 		linux.IP_CHECKSUM,
-		linux.IP_DROP_MEMBERSHIP,
 		linux.IP_DROP_SOURCE_MEMBERSHIP,
 		linux.IP_FREEBIND,
 		linux.IP_HDRINCL,
