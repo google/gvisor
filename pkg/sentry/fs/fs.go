@@ -57,6 +57,7 @@ import (
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 )
 
 var (
@@ -84,6 +85,17 @@ func Async(f func()) {
 	go func() { // S/R-SAFE: AsyncBarrier must be called.
 		defer workMu.RUnlock() // Ensure RUnlock in case of panic.
 		f()
+	}()
+}
+
+// AsyncWithContext is just like Async, except that it calls the asynchronous
+// function with the given context as argument. This function exists to avoid
+// needing to allocate an extra function on the heap in a hot path.
+func AsyncWithContext(ctx context.Context, f func(context.Context)) {
+	workMu.RLock()
+	go func() { // S/R-SAFE: AsyncBarrier must be called.
+		defer workMu.RUnlock() // Ensure RUnlock in case of panic.
+		f(ctx)
 	}()
 }
 

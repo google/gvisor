@@ -352,9 +352,10 @@ func (i *inodeOperations) Release(ctx context.Context) {
 	// Releasing the fileState may make RPCs to the gofer. There is
 	// no need to wait for those to return, so we can do this
 	// asynchronously.
-	fs.Async(func() {
-		i.fileState.Release(ctx)
-	})
+	//
+	// We use AsyncWithContext to avoid needing to allocate an extra
+	// anonymous function on the heap.
+	fs.AsyncWithContext(ctx, i.fileState.Release)
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
