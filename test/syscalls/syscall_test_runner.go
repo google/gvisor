@@ -171,7 +171,13 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		args = append(args, "-strace")
 	}
 	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		args = append(args, "-debug-log", outDir+"/")
+		debugLogDir, err := ioutil.TempDir(outDir, "runsc")
+		if err != nil {
+			t.Fatalf("could not create temp dir: %v", err)
+		}
+		debugLogDir += "/"
+		log.Infof("runsc logs: %s", debugLogDir)
+		args = append(args, "-debug-log", debugLogDir)
 	}
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
