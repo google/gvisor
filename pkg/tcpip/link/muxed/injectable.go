@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package injectable provides a muxed injectable endpoint.
-package injectable
+// Package muxed provides a muxed link endpoints.
+package muxed
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
@@ -21,17 +21,17 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-// MuxedInjectableEndpoint is an injectable multi endpoint. The endpoint has
+// InjectableEndpoint is an injectable multi endpoint. The endpoint has
 // trivial routing rules that determine which InjectableEndpoint a given packet
 // will be written to. Note that HandleLocal works differently for this
 // endpoint (see WritePacket).
-type MuxedInjectableEndpoint struct {
+type InjectableEndpoint struct {
 	routes     map[tcpip.Address]stack.InjectableLinkEndpoint
 	dispatcher stack.NetworkDispatcher
 }
 
 // MTU implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) MTU() uint32 {
+func (m *InjectableEndpoint) MTU() uint32 {
 	minMTU := ^uint32(0)
 	for _, endpoint := range m.routes {
 		if endpointMTU := endpoint.MTU(); endpointMTU < minMTU {
@@ -42,7 +42,7 @@ func (m *MuxedInjectableEndpoint) MTU() uint32 {
 }
 
 // Capabilities implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) Capabilities() stack.LinkEndpointCapabilities {
+func (m *InjectableEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	minCapabilities := stack.LinkEndpointCapabilities(^uint(0))
 	for _, endpoint := range m.routes {
 		minCapabilities &= endpoint.Capabilities()
@@ -51,7 +51,7 @@ func (m *MuxedInjectableEndpoint) Capabilities() stack.LinkEndpointCapabilities 
 }
 
 // MaxHeaderLength implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) MaxHeaderLength() uint16 {
+func (m *InjectableEndpoint) MaxHeaderLength() uint16 {
 	minHeaderLen := ^uint16(0)
 	for _, endpoint := range m.routes {
 		if headerLen := endpoint.MaxHeaderLength(); headerLen < minHeaderLen {
@@ -62,12 +62,12 @@ func (m *MuxedInjectableEndpoint) MaxHeaderLength() uint16 {
 }
 
 // LinkAddress implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) LinkAddress() tcpip.LinkAddress {
+func (m *InjectableEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
 // Attach implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (m *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	for _, endpoint := range m.routes {
 		endpoint.Attach(dispatcher)
 	}
@@ -75,28 +75,28 @@ func (m *MuxedInjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 }
 
 // IsAttached implements stack.LinkEndpoint.
-func (m *MuxedInjectableEndpoint) IsAttached() bool {
+func (m *InjectableEndpoint) IsAttached() bool {
 	return m.dispatcher != nil
 }
 
 // Inject implements stack.InjectableLinkEndpoint.
-func (m *MuxedInjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+func (m *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
 	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv)
 }
 
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
 // based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
 // route registered in this endpoint.
-func (m *MuxedInjectableEndpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (m *InjectableEndpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
 		return endpoint.WritePacket(r, hdr, payload, protocol)
 	}
 	return tcpip.ErrNoRoute
 }
 
-// NewMuxedInjectableEndpoint creates a new multi-fd-based injectable endpoint.
-func NewMuxedInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint, mtu uint32) (tcpip.LinkEndpointID, *MuxedInjectableEndpoint) {
-	e := &MuxedInjectableEndpoint{
+// NewInjectableEndpoint creates a new multi-fd-based injectable endpoint.
+func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint, mtu uint32) (tcpip.LinkEndpointID, *InjectableEndpoint) {
+	e := &InjectableEndpoint{
 		routes: routes,
 	}
 	return stack.RegisterLinkEndpoint(e), e

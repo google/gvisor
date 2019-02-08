@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package injectable
+package muxed
 
 import (
 	"bytes"
@@ -28,8 +28,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-func TestMuxedEndpointDispatch(t *testing.T) {
-	endpoint, sock, dstIP := makeMuxedTestEndpoint(t)
+func TestInjectableEndpointDispatch(t *testing.T) {
+	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 	hdr := buffer.NewPrependable(1)
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
@@ -47,8 +47,8 @@ func TestMuxedEndpointDispatch(t *testing.T) {
 	}
 }
 
-func TestMuxedEndpointDispatchHdrOnly(t *testing.T) {
-	endpoint, sock, dstIP := makeMuxedTestEndpoint(t)
+func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
+	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 	hdr := buffer.NewPrependable(1)
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
@@ -64,7 +64,7 @@ func TestMuxedEndpointDispatchHdrOnly(t *testing.T) {
 	}
 }
 
-func makeMuxedTestEndpoint(t *testing.T) (*MuxedInjectableEndpoint, *os.File, tcpip.Address) {
+func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tcpip.Address) {
 	dstIP := tcpip.Address(net.ParseIP("1.2.3.4").To4())
 	pair, err := syscall.Socketpair(syscall.AF_UNIX,
 		syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC|syscall.SOCK_NONBLOCK, 0)
@@ -73,6 +73,6 @@ func makeMuxedTestEndpoint(t *testing.T) (*MuxedInjectableEndpoint, *os.File, tc
 	}
 	_, underlyingEndpoint := fdbased.NewInjectable(pair[1], 6500)
 	routes := map[tcpip.Address]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
-	_, endpoint := NewMuxedInjectableEndpoint(routes, 6500)
+	_, endpoint := NewInjectableEndpoint(routes, 6500)
 	return endpoint, os.NewFile(uintptr(pair[0]), "test route end"), dstIP
 }

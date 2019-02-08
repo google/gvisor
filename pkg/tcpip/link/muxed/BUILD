@@ -3,9 +3,9 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 package(licenses = ["notice"])  # Apache 2.0
 
 go_library(
-    name = "injectable",
+    name = "muxed",
     srcs = ["injectable.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/injectable",
+    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/muxed",
     visibility = [
         "//visibility:public",
     ],
@@ -17,10 +17,10 @@ go_library(
 )
 
 go_test(
-    name = "injectable_test",
+    name = "muxed_test",
     size = "small",
     srcs = ["injectable_test.go"],
-    embed = [":injectable"],
+    embed = [":muxed"],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
