@@ -157,7 +157,7 @@ There are several factors influencing performance. The platform choice has the
 largest direct impact that varies depending on the specific workload. There is
 no best platform: Ptrace works universally, including on VM instances, but
 applications may perform at a fraction of their original levels. Beyond the
-platform choice, passthrough modes may be useful for improving perfomance at the
+platform choice, passthrough modes may be useful for improving performance at the
 cost of some isolation.
 
 ## Installation
