@@ -449,6 +449,23 @@ void RecvNoData(int sock);
 // sockets.
 using AllSocketPairTest = SocketPairTest;
 
+struct TestAddress {
+  std::string description;
+  sockaddr_storage addr;
+  socklen_t addr_len;
+
+  int family() const { return addr.ss_family; }
+  explicit TestAddress(std::string description = "")
+      : description(std::move(description)), addr(), addr_len() {}
+};
+
+TestAddress V4Any();
+TestAddress V4Loopback();
+TestAddress V4MappedAny();
+TestAddress V4MappedLoopback();
+TestAddress V6Any();
+TestAddress V6Loopback();
+
 }  // namespace testing
 }  // namespace gvisor
 

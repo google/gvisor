@@ -69,67 +69,6 @@ PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
   }
 }
 
-struct TestAddress {
-  std::string description;
-  sockaddr_storage addr;
-  socklen_t addr_len;
-
-  int family() const { return addr.ss_family; }
-  explicit TestAddress(std::string description = "")
-      : description(std::move(description)), addr(), addr_len() {}
-};
-
-TestAddress V4Any() {
-  TestAddress t("V4Any");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr = htonl(INADDR_ANY);
-  return t;
-}
-
-TestAddress V4Loopback() {
-  TestAddress t("V4Loopback");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      htonl(INADDR_LOOPBACK);
-  return t;
-}
-
-TestAddress V4MappedAny() {
-  TestAddress t("V4MappedAny");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  inet_pton(AF_INET6, "::ffff:0.0.0.0",
-            reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr);
-  return t;
-}
-
-TestAddress V4MappedLoopback() {
-  TestAddress t("V4MappedLoopback");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  inet_pton(AF_INET6, "::ffff:127.0.0.1",
-            reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr.s6_addr);
-  return t;
-}
-
-TestAddress V6Any() {
-  TestAddress t("V6Any");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr = in6addr_any;
-  return t;
-}
-
-TestAddress V6Loopback() {
-  TestAddress t("V6Loopback");
-  t.addr.ss_family = AF_INET6;
-  t.addr_len = sizeof(sockaddr_in6);
-  reinterpret_cast<sockaddr_in6*>(&t.addr)->sin6_addr = in6addr_loopback;
-  return t;
-}
-
 struct TestParam {
   TestAddress listener;
   TestAddress connector;
