@@ -33,8 +33,6 @@ readonly RUNTIME="runsc_test_$((RANDOM))"
 
 # Packages that will be built and tested.
 readonly BUILD_PACKAGES=("//...")
-# TODO: Include syscall tests in "test" directory once all tests
-# pass on RBE.
 readonly TEST_PACKAGES=("//pkg/..." "//runsc/..." "//tools/...")
 
 #######################
@@ -174,17 +172,30 @@ run_root_tests() {
   sudo -n -E RUNSC_RUNTIME="${RUNTIME}" RUNSC_EXEC=/tmp/"${RUNTIME}"/runsc ${root_test}
 }
 
+# Run syscall unit tests.
+run_syscall_tests() {
+  cd ${WORKSPACE_DIR}
+  # TODO: Exclude tests which fail.
+  bazel \
+    "${BAZEL_RBE_FLAGS[@]}" \
+    test "${BAZEL_BUILD_RBE_FLAGS[@]}" \
+    `bazel query //test/syscalls/... |
+      grep runsc_ptrace |
+      grep -v affinity_test_runsc_ptrace |
+      grep -v exec_test_runsc_ptrace |
+      grep -v open_create_test_runsc_ptrace |
+      grep -v clock_gettime_test_runsc_ptrace`
+}
+
 # Find and rename all test xml and log files so that Sponge can pick them up.
 # XML files must be named sponge_log.xml, and log files must be named
 # sponge_log.log. We move all such files into KOKORO_ARTIFACTS_DIR, in a
 # subdirectory named with the test name.
 upload_test_artifacts() {
   cd ${WORKSPACE_DIR}
-  for file in $(find -L "bazel-testlogs" -name "test.xml" -o -name "test.log"); do
-      newpath=${KOKORO_ARTIFACTS_DIR}/$(dirname ${file})
-      extension="${file##*.}"
-      mkdir -p "${newpath}" && cp "${file}" "${newpath}/sponge_log.${extension}"
-  done
+  find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
+    tar --create --files-from - --transform 's/test\./sponge_log./' |
+    tar --extract --directory ${KOKORO_ARTIFACTS_DIR}
 }
 
 # Finish runs at exit, even in the event of an error, and uploads all test
@@ -213,6 +224,8 @@ main() {
   install_crictl_test_deps
   run_docker_tests
   run_root_tests
+
+  run_syscall_tests
 
   # No need to call "finish" here, it will happen at exit.
 }

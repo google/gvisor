@@ -9,7 +9,7 @@ syscall_test(test = "//test/syscalls/linux:accept_bind_stream_test")
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:accept_bind_test",
 )
 
@@ -107,7 +107,7 @@ syscall_test(test = "//test/syscalls/linux:fsync_test")
 
 syscall_test(
     size = "medium",
-    shard_count = 20,
+    shard_count = 5,
     test = "//test/syscalls/linux:futex_test",
 )
 
@@ -162,7 +162,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 10,
+    shard_count = 5,
     test = "//test/syscalls/linux:mmap_test",
 )
 
@@ -296,7 +296,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
 
@@ -307,7 +307,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_domain_test",
 )
 
@@ -318,7 +318,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
 
@@ -329,7 +329,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
 
@@ -340,13 +340,13 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_test",
 )
 
 syscall_test(
     size = "medium",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
 
@@ -357,7 +357,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
@@ -397,7 +397,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_abstract_test",
 )
 
@@ -414,13 +414,13 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_filesystem_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
 
@@ -452,13 +452,13 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_unbound_seqpacket_test",
 )
 
 syscall_test(
     size = "large",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
 
@@ -484,7 +484,7 @@ syscall_test(test = "//test/syscalls/linux:sysret_test")
 
 syscall_test(
     size = "medium",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
 
@@ -504,7 +504,7 @@ syscall_test(test = "//test/syscalls/linux:udp_bind_test")
 
 syscall_test(
     size = "medium",
-    shard_count = 50,
+    shard_count = 10,
     test = "//test/syscalls/linux:udp_socket_test",
 )
 
