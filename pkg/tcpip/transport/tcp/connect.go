@@ -289,8 +289,9 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		}
 
 		// Update timestamp if required. See RFC7323, section-4.3.
-		h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
-
+		if h.ep.sendTSOk && s.parsedOptions.TS {
+			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
+		}
 		h.state = handshakeCompleted
 		return nil
 	}
@@ -739,16 +740,6 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			// Patch the window size in the segment according to the
 			// send window scale.
 			s.window <<= e.snd.sndWndScale
-
-			// If the timestamp option is negotiated and the segment
-			// does not carry a timestamp option then the segment
-			// must be dropped as per
-			// https://tools.ietf.org/html/rfc7323#section-3.2.
-			if e.sendTSOk && !s.parsedOptions.TS {
-				e.stack.Stats().DroppedPackets.Increment()
-				s.decRef()
-				continue
-			}
 
 			// RFC 793, page 41 states that "once in the ESTABLISHED
 			// state all segments must carry current acknowledgment

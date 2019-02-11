@@ -635,14 +635,15 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 // updating the send-related state.
 func (s *sender) handleRcvdSegment(seg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
-	if !s.ep.sendTSOk && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
+	if !seg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
 		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
-	s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
-
+	if s.ep.sendTSOk && seg.parsedOptions.TS {
+		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
+	}
 	// Count the duplicates and do the fast retransmit if needed.
 	rtx := s.checkDuplicateAck(seg)
 

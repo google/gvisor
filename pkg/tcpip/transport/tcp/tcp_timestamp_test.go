@@ -255,7 +255,7 @@ func TestSendGreaterThanMTUWithOptions(t *testing.T) {
 	testBrokenUpWrite(t, c, maxPayload)
 }
 
-func TestSegmentDropWhenTimestampMissing(t *testing.T) {
+func TestSegmentNotDroppedWhenTimestampMissing(t *testing.T) {
 	const maxPayload = 100
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
@@ -270,29 +270,8 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 	droppedPacketsStat := c.Stack().Stats().DroppedPackets
 	droppedPackets := droppedPacketsStat.Value()
 	data := []byte{1, 2, 3}
-	// Save the sequence number as we will reset it later down
-	// in the test.
-	savedSeqNum := rep.NextSeqNum
+	// Send a packet with no TCP options/timestamp.
 	rep.SendPacket(data, nil)
-
-	select {
-	case <-ch:
-		t.Fatalf("Got data to read when we expect packet to be dropped")
-	case <-time.After(1 * time.Second):
-		// We expect that no data will be available to read.
-	}
-
-	// Assert that DroppedPackets was incremented by 1.
-	if got, want := droppedPacketsStat.Value(), droppedPackets+1; got != want {
-		t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
-	}
-
-	droppedPackets = droppedPacketsStat.Value()
-	// Reset the sequence number so that the other endpoint accepts
-	// this segment and does not treat it like an out of order delivery.
-	rep.NextSeqNum = savedSeqNum
-	// Now send a packet with timestamp and we should get the data.
-	rep.SendPacketWithTS(data, rep.TSVal+1)
 
 	select {
 	case <-ch:
@@ -300,7 +279,7 @@ func TestSegmentDropWhenTimestampMissing(t *testing.T) {
 		t.Fatalf("Timed out waiting for data to arrive")
 	}
 
-	// Assert that DroppedPackets was not incremented by 1.
+	// Assert that DroppedPackets was not incremented.
 	if got, want := droppedPacketsStat.Value(), droppedPackets; got != want {
 		t.Fatalf("incorrect number of dropped packets, got: %v, want: %v", got, want)
 	}
