@@ -809,6 +809,44 @@ TEST(PtraceTest,
 
 // These tests requires knowledge of architecture-specific syscall convention.
 #ifdef __x86_64__
+TEST(PtraceTest, Int3) {
+  switch (GvisorPlatform()) {
+    case Platform::kKVM:
+      // TODO: int3 isn't handled properly.
+      return;
+    default:
+      break;
+  }
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+
+    // Enable tracing.
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+
+    // Interrupt 3 - trap to debugger
+    asm("int3");
+
+    _exit(56);
+  }
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGTRAP)
+      << " status " << status;
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+
+  // The child should validate the injected return value and then exit normally.
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 56)
+      << " status " << status;
+}
+
 TEST(PtraceTest, Sysemu_PokeUser) {
   constexpr int kSysemuHelperFirstExitCode = 126;
   constexpr uint64_t kSysemuInjectedExitGroupReturn = 42;
