@@ -114,6 +114,11 @@ func TestHostFeatureFlags(t *testing.T) {
 			// PKU only exposed in dfb4a70f20c5b3880da56ee4c9484bdb4e8f1e65
 			// (4.9).
 			continue
+		// Block 4.
+		case f == X86FeatureXSAVES && (major < 4 || major == 4 && minor < 8):
+			// XSAVES only exposed in
+			// b8be15d588060a03569ac85dc4a0247460988f5b (4.8).
+			continue
 		}
 
 		hidden := f.flagString(true) == ""

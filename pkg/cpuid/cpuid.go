@@ -361,6 +361,7 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureXSAVEOPT: "xsaveopt",
 	X86FeatureXSAVEC:   "xsavec",
 	X86FeatureXGETBV1:  "xgetbv1",
+	X86FeatureXSAVES:   "xsaves",
 
 	// Block 5.
 	X86FeatureLAHF64:       "lahf_lm", // LAHF/SAHF in long mode
@@ -415,9 +416,6 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 
 	// Block 3.
 	X86FeaturePREFETCHWT1: "prefetchwt1",
-
-	// Block 4.
-	X86FeatureXSAVES: "xsaves",
 }
 
 // Just a way to wrap cpuid function numbers.
