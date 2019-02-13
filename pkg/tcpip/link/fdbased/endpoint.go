@@ -47,6 +47,30 @@ var BufConfig = []int{128, 256, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
 // NetworkDispatcher.
 type linkDispatcher func() (bool, *tcpip.Error)
 
+// PacketDispatchMode are the various supported methods of receiving and
+// dispatching packets from the underlying FD.
+type PacketDispatchMode int
+
+const (
+	// Readv is the default dispatch mode and is the least performant of the
+	// dispatch options but the one that is supported by all underlying FD
+	// types.
+	Readv PacketDispatchMode = iota
+	// RecvMMsg enables use of recvmmsg() syscall instead of readv() to
+	// read inbound packets. This reduces # of syscalls needed to process
+	// packets.
+	//
+	// NOTE: recvmmsg() is only supported for sockets, so if the underlying
+	// FD is not a socket then the code will still fall back to the readv()
+	// path.
+	RecvMMsg
+	// PacketMMap enables use of PACKET_RX_RING to receive packets from the
+	// NIC. PacketMMap requires that the underlying FD be an AF_PACKET. The
+	// primary use-case for this is runsc which uses an AF_PACKET FD to
+	// receive packets from the veth device.
+	PacketMMap
+)
+
 type endpoint struct {
 	// fd is the file descriptor used to send and receive packets.
 	fd int
@@ -68,9 +92,11 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(*tcpip.Error)
 
-	views             [][]buffer.View
-	iovecs            [][]syscall.Iovec
-	msgHdrs           []rawfile.MMsgHdr
+	views  [][]buffer.View
+	iovecs [][]syscall.Iovec
+	// msgHdrs is only used by the RecvMMsg dispatcher.
+	msgHdrs []rawfile.MMsgHdr
+
 	inboundDispatcher linkDispatcher
 	dispatcher        stack.NetworkDispatcher
 
@@ -79,28 +105,31 @@ type endpoint struct {
 	// endpoint (false).
 	handleLocal bool
 
-	// useRecvMMsg enables use of recvmmsg() syscall instead of readv() to
-	// read inbound packets. This reduces # of syscalls needed to process
-	// packets.
-	//
-	// NOTE: recvmmsg() is only supported for sockets, so if the underlying
-	// FD is not a socket then the code will still fall back to the readv()
-	// path.
-	useRecvMMsg bool
+	// packetDispatchMode controls the packet dispatcher used by this
+	// endpoint.
+	packetDispatchMode PacketDispatchMode
+
+	// ringBuffer is only used when PacketMMap dispatcher is used and points
+	// to the start of the mmapped PACKET_RX_RING buffer.
+	ringBuffer []byte
+
+	// ringOffset is the current offset into the ring buffer where the next
+	// inbound packet will be placed by the kernel.
+	ringOffset int
 }
 
 // Options specify the details about the fd-based endpoint to be created.
 type Options struct {
-	FD              int
-	MTU             uint32
-	EthernetHeader  bool
-	ChecksumOffload bool
-	ClosedFunc      func(*tcpip.Error)
-	Address         tcpip.LinkAddress
-	SaveRestore     bool
-	DisconnectOk    bool
-	HandleLocal     bool
-	UseRecvMMsg     bool
+	FD                 int
+	MTU                uint32
+	EthernetHeader     bool
+	ChecksumOffload    bool
+	ClosedFunc         func(*tcpip.Error)
+	Address            tcpip.LinkAddress
+	SaveRestore        bool
+	DisconnectOk       bool
+	HandleLocal        bool
+	PacketDispatchMode PacketDispatchMode
 }
 
 // New creates a new fd-based endpoint.
@@ -133,21 +162,31 @@ func New(opts *Options) tcpip.LinkEndpointID {
 	}
 
 	e := &endpoint{
-		fd:          opts.FD,
-		mtu:         opts.MTU,
-		caps:        caps,
-		closed:      opts.ClosedFunc,
-		addr:        opts.Address,
-		hdrSize:     hdrSize,
-		handleLocal: opts.HandleLocal,
-		useRecvMMsg: opts.UseRecvMMsg,
+		fd:                 opts.FD,
+		mtu:                opts.MTU,
+		caps:               caps,
+		closed:             opts.ClosedFunc,
+		addr:               opts.Address,
+		hdrSize:            hdrSize,
+		handleLocal:        opts.HandleLocal,
+		packetDispatchMode: opts.PacketDispatchMode,
 	}
+
+	if isSocketFD(opts.FD) && e.packetDispatchMode == PacketMMap {
+		if err := e.setupPacketRXRing(); err != nil {
+			// TODO: replace panic with an error return.
+			panic(fmt.Sprintf("e.setupPacketRXRing failed: %v", err))
+		}
+		e.inboundDispatcher = e.packetMMapDispatch
+		return stack.RegisterLinkEndpoint(e)
+	}
+
 	// For non-socket FDs we read one packet a time (e.g. TAP devices)
 	msgsPerRecv := 1
 	e.inboundDispatcher = e.dispatch
 	// If the provided FD is a socket then we optimize packet reads by
 	// using recvmmsg() instead of read() to read packets in a batch.
-	if isSocketFD(opts.FD) && e.useRecvMMsg {
+	if isSocketFD(opts.FD) && e.packetDispatchMode == RecvMMsg {
 		e.inboundDispatcher = e.recvMMsgDispatch
 		msgsPerRecv = MaxMsgsPerRecv
 	}
@@ -165,6 +204,7 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		e.msgHdrs[i].Msg.Iov = &e.iovecs[i][0]
 		e.msgHdrs[i].Msg.Iovlen = uint64(len(BufConfig))
 	}
+
 	return stack.RegisterLinkEndpoint(e)
 }
 

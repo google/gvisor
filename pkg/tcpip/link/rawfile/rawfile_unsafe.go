@@ -94,10 +94,11 @@ func NonBlockingWrite2(fd int, b1, b2 []byte) *tcpip.Error {
 	return nil
 }
 
-type pollEvent struct {
-	fd      int32
-	events  int16
-	revents int16
+// PollEvent represents the pollfd structure passed to a poll() system call.
+type PollEvent struct {
+	FD      int32
+	Events  int16
+	Revents int16
 }
 
 // BlockingRead reads from a file descriptor that is set up as non-blocking. If
@@ -110,12 +111,12 @@ func BlockingRead(fd int, b []byte) (int, *tcpip.Error) {
 			return int(n), nil
 		}
 
-		event := pollEvent{
-			fd:     int32(fd),
-			events: 1, // POLLIN
+		event := PollEvent{
+			FD:     int32(fd),
+			Events: 1, // POLLIN
 		}
 
-		_, e = blockingPoll(&event, 1, -1)
+		_, e = BlockingPoll(&event, 1, -1)
 		if e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
@@ -132,12 +133,12 @@ func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, *tcpip.Error) {
 			return int(n), nil
 		}
 
-		event := pollEvent{
-			fd:     int32(fd),
-			events: 1, // POLLIN
+		event := PollEvent{
+			FD:     int32(fd),
+			Events: 1, // POLLIN
 		}
 
-		_, e = blockingPoll(&event, 1, -1)
+		_, e = BlockingPoll(&event, 1, -1)
 		if e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
@@ -162,12 +163,12 @@ func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
 			return int(n), nil
 		}
 
-		event := pollEvent{
-			fd:     int32(fd),
-			events: 1, // POLLIN
+		event := PollEvent{
+			FD:     int32(fd),
+			Events: 1, // POLLIN
 		}
 
-		if _, e := blockingPoll(&event, 1, -1); e != 0 && e != syscall.EINTR {
+		if _, e := BlockingPoll(&event, 1, -1); e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}

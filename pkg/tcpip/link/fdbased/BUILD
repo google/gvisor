@@ -4,7 +4,11 @@ package(licenses = ["notice"])
 
 go_library(
     name = "fdbased",
-    srcs = ["endpoint.go"],
+    srcs = [
+        "endpoint.go",
+        "mmap.go",
+        "mmap_amd64_unsafe.go",
+    ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/fdbased",
     visibility = [
         "//visibility:public",
@@ -15,6 +19,7 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/stack",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

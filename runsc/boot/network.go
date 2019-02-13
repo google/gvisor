@@ -135,12 +135,12 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		mac := tcpip.LinkAddress(generateRndMac())
 		linkEP := fdbased.New(&fdbased.Options{
-			FD:             newFD,
-			MTU:            uint32(link.MTU),
-			EthernetHeader: true,
-			HandleLocal:    true,
-			Address:        mac,
-			UseRecvMMsg:    true,
+			FD:                 newFD,
+			MTU:                uint32(link.MTU),
+			EthernetHeader:     true,
+			HandleLocal:        true,
+			Address:            mac,
+			PacketDispatchMode: fdbased.PacketMMap,
 		})
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)

@@ -25,7 +25,7 @@ import (
 )
 
 //go:noescape
-func blockingPoll(fds *pollEvent, nfds int, timeout int64) (int, syscall.Errno)
+func BlockingPoll(fds *PollEvent, nfds int, timeout int64) (int, syscall.Errno)
 
 // Use go:linkname to call into the runtime. As of Go 1.12 this has to
 // be done from Go code so that we make an ABIInternal call to an
