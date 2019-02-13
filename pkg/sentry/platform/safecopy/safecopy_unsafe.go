@@ -92,14 +92,14 @@ func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
 		return len(dst), nil
 	}
 
-	if faultN, srcN := uintptr(fault), uintptr(src); faultN < srcN && faultN >= srcN+toCopy {
-		panic(fmt.Sprintf("CopyIn faulted at %#x, which is outside source [%#x, %#x)", faultN, srcN, srcN+toCopy))
+	faultN, srcN := uintptr(fault), uintptr(src)
+	if faultN < srcN || faultN >= srcN+toCopy {
+		panic(fmt.Sprintf("CopyIn raised signal %d at %#x, which is outside source [%#x, %#x)", sig, faultN, srcN, srcN+toCopy))
 	}
 
 	// memcpy might have ended the copy up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to copy up to the fault.
-	faultN, srcN := uintptr(fault), uintptr(src)
 	var done int
 	if faultN-srcN > maxRegisterSize {
 		done = int(faultN - srcN - maxRegisterSize)
@@ -126,14 +126,14 @@ func CopyOut(dst unsafe.Pointer, src []byte) (int, error) {
 		return len(src), nil
 	}
 
-	if faultN, dstN := uintptr(fault), uintptr(dst); faultN < dstN && faultN >= dstN+toCopy {
-		panic(fmt.Sprintf("CopyOut faulted at %#x, which is outside destination [%#x, %#x)", faultN, dstN, dstN+toCopy))
+	faultN, dstN := uintptr(fault), uintptr(dst)
+	if faultN < dstN || faultN >= dstN+toCopy {
+		panic(fmt.Sprintf("CopyOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, faultN, dstN, dstN+toCopy))
 	}
 
 	// memcpy might have ended the copy up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to copy up to the fault.
-	faultN, dstN := uintptr(fault), uintptr(dst)
 	var done int
 	if faultN-dstN > maxRegisterSize {
 		done = int(faultN - dstN - maxRegisterSize)
@@ -173,7 +173,7 @@ func Copy(dst, src unsafe.Pointer, toCopy uintptr) (uintptr, error) {
 		faultAfterDst = faultN - dstN
 	}
 	if faultAfterSrc >= toCopy && faultAfterDst >= toCopy {
-		panic(fmt.Sprintf("Copy faulted at %#x, which is outside source [%#x, %#x) and destination [%#x, %#x)", faultN, srcN, srcN+toCopy, dstN, dstN+toCopy))
+		panic(fmt.Sprintf("Copy raised signal %d at %#x, which is outside source [%#x, %#x) and destination [%#x, %#x)", sig, faultN, srcN, srcN+toCopy, dstN, dstN+toCopy))
 	}
 	faultedAfter := faultAfterSrc
 	if faultedAfter > faultAfterDst {
@@ -207,14 +207,14 @@ func ZeroOut(dst unsafe.Pointer, toZero uintptr) (uintptr, error) {
 		return toZero, nil
 	}
 
-	if faultN, dstN := uintptr(fault), uintptr(dst); faultN < dstN && faultN >= dstN+toZero {
-		panic(fmt.Sprintf("ZeroOut faulted at %#x, which is outside destination [%#x, %#x)", faultN, dstN, dstN+toZero))
+	faultN, dstN := uintptr(fault), uintptr(dst)
+	if faultN < dstN || faultN >= dstN+toZero {
+		panic(fmt.Sprintf("ZeroOut raised signal %d at %#x, which is outside destination [%#x, %#x)", sig, faultN, dstN, dstN+toZero))
 	}
 
 	// memclr might have ended the write up to maxRegisterSize bytes before
 	// fault, if an instruction caused a memory access that straddled two
 	// pages, and the second one faulted. Try to write up to the fault.
-	faultN, dstN := uintptr(fault), uintptr(dst)
 	var done uintptr
 	if faultN-dstN > maxRegisterSize {
 		done = faultN - dstN - maxRegisterSize
