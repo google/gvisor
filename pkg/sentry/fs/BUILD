@@ -48,6 +48,7 @@ go_library(
         "//pkg/amutex",
         "//pkg/ilist",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
         "//pkg/sentry/arch",

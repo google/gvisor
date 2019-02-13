@@ -18,6 +18,7 @@ import (
 	"io"
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
@@ -27,6 +28,12 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+)
+
+var (
+	opensRO = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro", false /* sync */, "Number of times an in-memory file was opened in read-only mode.")
+	opensW  = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w", false /* sync */, "Number of times an in-memory file was opened in write mode.")
+	reads   = metric.MustCreateNewUint64Metric("/in_memory_file/reads", false /* sync */, "Number of in-memory file reads.")
 )
 
 // fileInodeOperations implements fs.InodeOperations for a regular tmpfs file.
@@ -116,6 +123,11 @@ func (*fileInodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, old
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (f *fileInodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	if flags.Write {
+		opensW.Increment()
+	} else if flags.Read {
+		opensRO.Increment()
+	}
 	flags.Pread = true
 	flags.Pwrite = true
 	return fs.NewFile(ctx, d, flags, &regularFileOperations{iops: f}), nil
@@ -237,6 +249,7 @@ func (*fileInodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+	reads.Increment()
 	// Zero length reads for tmpfs are no-ops.
 	if dst.NumBytes() == 0 {
 		return 0, nil

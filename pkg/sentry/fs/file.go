@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/amutex"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock"
@@ -31,6 +32,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
+
+var reads = metric.MustCreateNewUint64Metric("/fs/reads", false /* sync */, "Number of file reads.")
 
 // FileMaxOffset is the maximum possible file offset.
 const FileMaxOffset = math.MaxInt64
@@ -237,6 +240,7 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 		return 0, syserror.ErrInterrupted
 	}
 
+	reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
 	if n > 0 {
 		atomic.AddInt64(&f.offset, n)
@@ -255,6 +259,7 @@ func (f *File) Preadv(ctx context.Context, dst usermem.IOSequence, offset int64)
 		return 0, syserror.ErrInterrupted
 	}
 
+	reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, offset)
 	f.mu.Unlock()
 	return n, err

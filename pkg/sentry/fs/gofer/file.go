@@ -31,7 +31,13 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-var openedWX = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_file", true /* sync */, "Number of times a writable+executable file was opened from a gofer.")
+var (
+	opensWX   = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_file", true /* sync */, "Number of times a writable+executable file was opened from a gofer.")
+	opens9P   = metric.MustCreateNewUint64Metric("/gofer/opens_9p", false /* sync */, "Number of times a 9P file was opened from a gofer.")
+	opensHost = metric.MustCreateNewUint64Metric("/gofer/opens_host", false /* sync */, "Number of times a host file was opened from a gofer.")
+	reads9P   = metric.MustCreateNewUint64Metric("/gofer/reads_9p", false /* sync */, "Number of 9P file reads from a gofer.")
+	readsHost = metric.MustCreateNewUint64Metric("/gofer/reads_host", false /* sync */, "Number of host file reads from a gofer.")
+)
 
 // fileOperations implements fs.FileOperations for a remote file system.
 //
@@ -91,9 +97,14 @@ func NewFile(ctx context.Context, dirent *fs.Dirent, name string, flags fs.FileF
 	}
 	if flags.Write {
 		if err := dirent.Inode.CheckPermission(ctx, fs.PermMask{Execute: true}); err == nil {
-			openedWX.Increment()
+			opensWX.Increment()
 			log.Warningf("Opened a writable executable: %q", name)
 		}
+	}
+	if handles.Host != nil {
+		opensHost.Increment()
+	} else {
+		opens9P.Increment()
 	}
 	return fs.NewFile(ctx, dirent, flags, f)
 }
@@ -226,6 +237,11 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 	if fs.IsDir(file.Dirent.Inode.StableAttr) {
 		// Not all remote file systems enforce this so this client does.
 		return 0, syserror.EISDIR
+	}
+	if f.handles.Host != nil {
+		readsHost.Increment()
+	} else {
+		reads9P.Increment()
 	}
 
 	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
