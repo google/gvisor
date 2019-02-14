@@ -99,7 +99,8 @@ install_runtime() {
 install_crictl_test_deps() {
   # Install containerd.
   # libseccomp2 needs to be downgraded in order to install libseccomp-dev.
-  sudo -n -E apt-get install -y --force-yes libseccomp2=2.1.1-1ubuntu1~trusty4
+  sudo -n -E apt-get update
+  sudo -n -E apt-get install -y --force-yes libseccomp2=2.1.1-1ubuntu1~trusty5
   sudo -n -E apt-get install -y btrfs-tools libseccomp-dev
   # go get will exit with a status of 1 despite succeeding, so ignore errors.
   go get -d github.com/containerd/containerd || true
