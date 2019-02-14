@@ -67,7 +67,7 @@ type TCB struct {
 }
 
 // Init initializes the state of the TCB according to the initial SYN.
-func (t *TCB) Init(initialSyn header.TCP) {
+func (t *TCB) Init(initialSyn header.TCP) Result {
 	t.handlerInbound = synSentStateInbound
 	t.handlerOutbound = synSentStateOutbound
 
@@ -83,6 +83,7 @@ func (t *TCB) Init(initialSyn header.TCP) {
 	t.inbound.nxt = 0
 	t.inbound.end = seqnum.Value(initialSyn.WindowSize())
 	t.state = ResultConnecting
+	return t.state
 }
 
 // UpdateStateInbound updates the state of the TCB based on the supplied inbound
