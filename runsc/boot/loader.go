@@ -477,9 +477,9 @@ func (l *Loader) run() error {
 			return err
 		}
 
-		// Create the root container init task.
-		_, _, err := l.k.CreateProcess(l.rootProcArgs)
-		if err != nil {
+		// Create the root container init task. It will begin running
+		// when the kernel is started.
+		if _, _, err := l.k.CreateProcess(l.rootProcArgs); err != nil {
 			return fmt.Errorf("creating init process: %v", err)
 		}
 
@@ -492,6 +492,11 @@ func (l *Loader) run() error {
 		ttyFile := l.rootProcArgs.FDMap.GetFile(0)
 		defer ttyFile.DecRef()
 		ep.tty = ttyFile.FileOperations.(*host.TTYFileOperations)
+
+		// Set the foreground process group on the TTY to the global
+		// init process group, since that is what we are about to
+		// start running.
+		ep.tty.InitForegroundProcessGroup(ep.tg.ProcessGroup())
 	}
 
 	// Start signal forwarding only after an init process is created.
@@ -595,10 +600,13 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
 	}
 
+	// Create and start the new process.
 	tg, _, err := l.k.CreateProcess(procArgs)
 	if err != nil {
 		return fmt.Errorf("creating process: %v", err)
 	}
+	l.k.StartProcess(tg)
+
 	// CreateProcess takes a reference on FDMap if successful.
 	procArgs.FDMap.DecRef()
 

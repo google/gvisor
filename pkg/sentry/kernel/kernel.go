@@ -615,8 +615,11 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 // CreateProcess creates a new task in a new thread group with the given
 // options. The new task has no parent and is in the root PID namespace.
 //
-// If k.Start() has already been called, the created task will begin running
-// immediately. Otherwise, it will be started when k.Start() is called.
+// If k.Start() has already been called, then the created process must be
+// started by calling kernel.StartProcess(tg).
+//
+// If k.Start() has not yet been called, then the created task will begin
+// running when k.Start() is called.
 //
 // CreateProcess has no analogue in Linux; it is used to create the initial
 // application task, as well as processes started by the control server.
@@ -688,20 +691,23 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
 		ContainerID:             args.ContainerID,
 	}
-	t, err := k.tasks.NewTask(config)
-	if err != nil {
+	if _, err := k.tasks.NewTask(config); err != nil {
 		return nil, 0, err
 	}
 
 	// Success.
 	tgid := k.tasks.Root.IDOfThreadGroup(tg)
-	if k.started {
-		tid := k.tasks.Root.IDOfTask(t)
-		t.Start(tid)
-	} else if k.globalInit == nil {
+	if k.globalInit == nil {
 		k.globalInit = tg
 	}
 	return tg, tgid, nil
+}
+
+// StartProcess starts running a process that was created with CreateProcess.
+func (k *Kernel) StartProcess(tg *ThreadGroup) {
+	t := tg.Leader()
+	tid := k.tasks.Root.IDOfTask(t)
+	t.Start(tid)
 }
 
 // Start starts execution of all tasks in k.
@@ -855,28 +861,6 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 	var lastErr error
 	for t := range k.tasks.Root.tids {
 		if t == t.tg.leader && t.ContainerID() == cid {
-			t.tg.signalHandlers.mu.Lock()
-			defer t.tg.signalHandlers.mu.Unlock()
-			infoCopy := *info
-			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
-				lastErr = err
-			}
-		}
-	}
-	return lastErr
-}
-
-// SendProcessGroupSignal sends a signal to all processes inside the process
-// group. It is analagous to kernel/signal.c:kill_pgrp.
-func (k *Kernel) SendProcessGroupSignal(pg *ProcessGroup, info *arch.SignalInfo) error {
-	k.extMu.Lock()
-	defer k.extMu.Unlock()
-	k.tasks.mu.RLock()
-	defer k.tasks.mu.RUnlock()
-
-	var lastErr error
-	for t := range k.tasks.Root.tids {
-		if t == t.tg.leader && t.tg.ProcessGroup() == pg {
 			t.tg.signalHandlers.mu.Lock()
 			defer t.tg.signalHandlers.mu.Unlock()
 			infoCopy := *info

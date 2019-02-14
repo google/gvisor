@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -117,6 +118,13 @@ type ProcessGroup struct {
 // Originator retuns the originator of the process group.
 func (pg *ProcessGroup) Originator() *ThreadGroup {
 	return pg.originator
+}
+
+// IsOrphan returns true if this process group is an orphan.
+func (pg *ProcessGroup) IsOrphan() bool {
+	pg.originator.TaskSet().mu.RLock()
+	defer pg.originator.TaskSet().mu.RUnlock()
+	return pg.ancestors == 0
 }
 
 // incRefWithParent grabs a reference.
@@ -222,6 +230,27 @@ func (pg *ProcessGroup) handleOrphan() {
 // Session returns the process group's session without taking a reference.
 func (pg *ProcessGroup) Session() *Session {
 	return pg.session
+}
+
+// SendSignal sends a signal to all processes inside the process group. It is
+// analagous to kernel/signal.c:kill_pgrp.
+func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
+	tasks := pg.originator.TaskSet()
+	tasks.mu.RLock()
+	defer tasks.mu.RUnlock()
+
+	var lastErr error
+	for t := range tasks.Root.tids {
+		if t == t.tg.leader && t.tg.ProcessGroup() == pg {
+			t.tg.signalHandlers.mu.Lock()
+			defer t.tg.signalHandlers.mu.Unlock()
+			infoCopy := *info
+			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+				lastErr = err
+			}
+		}
+	}
+	return lastErr
 }
 
 // CreateSession creates a new Session, with the ThreadGroup as the leader.

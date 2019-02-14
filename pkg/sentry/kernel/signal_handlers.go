@@ -69,6 +69,14 @@ func (sh *SignalHandlers) CopyForExec() *SignalHandlers {
 	return sh2
 }
 
+// IsIgnored returns true if the signal is ignored.
+func (sh *SignalHandlers) IsIgnored(sig linux.Signal) bool {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sa, ok := sh.actions[sig]
+	return ok && sa.Handler == arch.SignalActIgnore
+}
+
 // dequeueActionLocked returns the SignalAct that should be used to handle sig.
 //
 // Preconditions: sh.mu must be locked.

@@ -222,10 +222,18 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		return nil, 0, nil, err
 	}
 
-	if ttyFile == nil {
-		return tg, tid, nil, nil
+	var ttyFileOps *host.TTYFileOperations
+	if ttyFile != nil {
+		// Set the foreground process group on the TTY before starting
+		// the process.
+		ttyFileOps = ttyFile.FileOperations.(*host.TTYFileOperations)
+		ttyFileOps.InitForegroundProcessGroup(tg.ProcessGroup())
 	}
-	return tg, tid, ttyFile.FileOperations.(*host.TTYFileOperations), nil
+
+	// Start the newly created process.
+	proc.Kernel.StartProcess(tg)
+
+	return tg, tid, ttyFileOps, nil
 }
 
 // PsArgs is the set of arguments to ps.
