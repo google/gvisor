@@ -207,7 +207,7 @@ func (t *Tattach) handle(cs *connState) message {
 	if err != nil {
 		return newErr(err)
 	}
-	_, valid, attr, err := sf.GetAttr(AttrMaskAll())
+	qid, valid, attr, err := sf.GetAttr(AttrMaskAll())
 	if err != nil {
 		sf.Close() // Drop file.
 		return newErr(err)
@@ -231,7 +231,7 @@ func (t *Tattach) handle(cs *connState) message {
 	// Attach the root?
 	if len(t.Auth.AttachName) == 0 {
 		cs.InsertFID(t.FID, root)
-		return &Rattach{}
+		return &Rattach{QID: qid}
 	}
 
 	// We want the same traversal checks to apply on attach, so always
@@ -245,7 +245,7 @@ func (t *Tattach) handle(cs *connState) message {
 
 	// Insert the FID.
 	cs.InsertFID(t.FID, newRef)
-	return &Rattach{}
+	return &Rattach{QID: qid}
 }
 
 // CanOpen returns whether this file open can be opened, read and written to.
@@ -273,12 +273,13 @@ func (t *Tlopen) handle(cs *connState) message {
 	}
 
 	// Are flags valid?
-	if t.Flags&^OpenFlagsModeMask != 0 {
+	flags := t.Flags &^ OpenFlagsIgnoreMask
+	if flags&^OpenFlagsModeMask != 0 {
 		return newErr(syscall.EINVAL)
 	}
 
 	// Is this an attempt to open a directory as writable? Don't accept.
-	if ref.mode.IsDir() && t.Flags != ReadOnly {
+	if ref.mode.IsDir() && flags != ReadOnly {
 		return newErr(syscall.EINVAL)
 	}
 
@@ -1083,7 +1084,8 @@ func doWalk(cs *connState, ref *fidRef, names []string) (qids []QID, newRef *fid
 		}); err != nil {
 			return nil, nil, AttrMask{}, Attr{}, err
 		}
-		return qids, newRef, valid, attr, nil
+		// Do not return the new QID.
+		return nil, newRef, valid, attr, nil
 	}
 
 	// Do the walk, one element at a time.
