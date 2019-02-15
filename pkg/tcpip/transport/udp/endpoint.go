@@ -32,7 +32,6 @@ type udpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
-	hasTimestamp  bool
 	// views is used as buffer for data when its length is large
 	// enough to store a VectorisedView.
 	views [8]buffer.View `state:"nosave"`
@@ -68,7 +67,6 @@ type endpoint struct {
 	rcvBufSizeMax int `state:".(int)"`
 	rcvBufSize    int
 	rcvClosed     bool
-	rcvTimestamp  bool
 
 	// The following fields are protected by the mu mutex.
 	mu           sync.RWMutex `state:"nosave"`
@@ -203,7 +201,6 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	p := e.rcvList.Front()
 	e.rcvList.Remove(p)
 	e.rcvBufSize -= p.data.Size()
-	ts := e.rcvTimestamp
 
 	e.rcvMu.Unlock()
 
@@ -211,12 +208,7 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		*addr = p.senderAddress
 	}
 
-	if ts && !p.hasTimestamp {
-		// Linux uses the current time.
-		p.timestamp = e.stack.NowNanoseconds()
-	}
-
-	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: ts, Timestamp: p.timestamp}, nil
+	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -397,11 +389,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 		e.v6only = v != 0
 
-	case tcpip.TimestampOption:
-		e.rcvMu.Lock()
-		e.rcvTimestamp = v != 0
-		e.rcvMu.Unlock()
-
 	case tcpip.MulticastTTLOption:
 		e.mu.Lock()
 		e.multicastTTL = uint8(v)
@@ -504,15 +491,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		} else {
 			p := e.rcvList.Front()
 			*o = tcpip.ReceiveQueueSizeOption(p.data.Size())
-		}
-		e.rcvMu.Unlock()
-		return nil
-
-	case *tcpip.TimestampOption:
-		e.rcvMu.Lock()
-		*o = 0
-		if e.rcvTimestamp {
-			*o = 1
 		}
 		e.rcvMu.Unlock()
 		return nil
@@ -909,10 +887,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	e.rcvList.PushBack(pkt)
 	e.rcvBufSize += vv.Size()
 
-	if e.rcvTimestamp {
-		pkt.timestamp = e.stack.NowNanoseconds()
-		pkt.hasTimestamp = true
-	}
+	pkt.timestamp = e.stack.NowNanoseconds()
 
 	e.rcvMu.Unlock()
 

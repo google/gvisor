@@ -150,11 +150,24 @@ type SocketOperations struct {
 	Endpoint tcpip.Endpoint
 	skType   transport.SockType
 
-	// readMu protects access to readView, control, and sender.
-	readMu   sync.Mutex `state:"nosave"`
+	// readMu protects access to the below fields.
+	readMu sync.Mutex `state:"nosave"`
+	// readView contains the remaining payload from the last packet.
 	readView buffer.View
-	readCM   tcpip.ControlMessages
-	sender   tcpip.FullAddress
+	// readCM holds control message information for the last packet read
+	// from Endpoint.
+	readCM tcpip.ControlMessages
+	sender tcpip.FullAddress
+	// sockOptTimestamp corresponds to SO_TIMESTAMP. When true, timestamps
+	// of returned messages can be returned via control messages. When
+	// false, the same timestamp is instead stored and can be read via the
+	// SIOCGSTAMP ioctl. See socket(7).
+	sockOptTimestamp bool
+	// timestampValid indicates whether timestamp has been set.
+	timestampValid bool
+	// timestampNS holds the timestamp to use with SIOCGSTAMP. It is only
+	// valid when timestampValid is true.
+	timestampNS int64
 }
 
 // New creates a new endpoint socket.
@@ -515,6 +528,24 @@ func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (interface{}, *syserr.Error) {
+	// TODO: Unlike other socket options, SO_TIMESTAMP is
+	// implemented specifically for epsocket.SocketOperations rather than
+	// commonEndpoint. commonEndpoint should be extended to support socket
+	// options where the implementation is not shared, as unix sockets need
+	// their own support for SO_TIMESTAMP.
+	if level == linux.SOL_SOCKET && name == linux.SO_TIMESTAMP {
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+		val := int32(0)
+		s.readMu.Lock()
+		defer s.readMu.Unlock()
+		if s.sockOptTimestamp {
+			val = 1
+		}
+		return val, nil
+	}
+
 	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outLen)
 }
 
@@ -680,18 +711,6 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		return linux.NsecToTimeval(s.RecvTimeout()), nil
 
-	case linux.SO_TIMESTAMP:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-
-		var v tcpip.TimestampOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return nil, syserr.TranslateNetstackError(err)
-		}
-
-		return int32(v), nil
-
 	case linux.SO_OOBINLINE:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -854,6 +873,21 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
+	// TODO: Unlike other socket options, SO_TIMESTAMP is
+	// implemented specifically for epsocket.SocketOperations rather than
+	// commonEndpoint. commonEndpoint should be extended to support socket
+	// options where the implementation is not shared, as unix sockets need
+	// their own support for SO_TIMESTAMP.
+	if level == linux.SOL_SOCKET && name == linux.SO_TIMESTAMP {
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		s.readMu.Lock()
+		defer s.readMu.Unlock()
+		s.sockOptTimestamp = usermem.ByteOrder.Uint32(optVal) != 0
+		return nil
+	}
+
 	return SetSockOpt(t, s, s.Endpoint, level, name, optVal)
 }
 
@@ -961,14 +995,6 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 		s.SetRecvTimeout(v.ToNsecCapped())
 		return nil
-
-	case linux.SO_TIMESTAMP:
-		if len(optVal) < sizeOfInt32 {
-			return syserr.ErrInvalidArgument
-		}
-
-		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TimestampOption(v)))
 
 	default:
 		socket.SetSockOptEmitUnimplementedEvent(t, name)
@@ -1436,6 +1462,11 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 			}
 		} else {
 			n, e = dst.CopyOut(ctx, s.readView)
+			// Set the control message, even if 0 bytes were read.
+			if e == nil && s.readCM.HasTimestamp && s.sockOptTimestamp {
+				s.timestampNS = s.readCM.Timestamp
+				s.timestampValid = true
+			}
 		}
 		copied += n
 		s.readView.TrimFront(n)
@@ -1499,6 +1530,11 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	}
 
 	n, err := dst.CopyOut(ctx, s.readView)
+	// Set the control message, even if 0 bytes were read.
+	if err == nil && s.readCM.HasTimestamp && s.sockOptTimestamp {
+		s.timestampNS = s.readCM.Timestamp
+		s.timestampValid = true
+	}
 	var addr interface{}
 	var addrLen uint32
 	if isPacket && senderRequested {
@@ -1508,11 +1544,11 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	if peek {
 		if l := len(s.readView); trunc && l > n {
 			// isPacket must be true.
-			return l, addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
+			return l, addr, addrLen, socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.timestampValid, Timestamp: s.timestampNS}}, syserr.FromError(err)
 		}
 
 		if isPacket || err != nil {
-			return int(n), addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
+			return int(n), addr, addrLen, socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.timestampValid, Timestamp: s.timestampNS}}, syserr.FromError(err)
 		}
 
 		// We need to peek beyond the first message.
@@ -1530,7 +1566,7 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 			// We got some data, so no need to return an error.
 			err = nil
 		}
-		return int(n), nil, 0, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
+		return int(n), nil, 0, socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.timestampValid, Timestamp: s.timestampNS}}, syserr.FromError(err)
 	}
 
 	var msgLen int
@@ -1543,10 +1579,10 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 	}
 
 	if trunc {
-		return msgLen, addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
+		return msgLen, addr, addrLen, socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.timestampValid, Timestamp: s.timestampNS}}, syserr.FromError(err)
 	}
 
-	return int(n), addr, addrLen, socket.ControlMessages{IP: s.readCM}, syserr.FromError(err)
+	return int(n), addr, addrLen, socket.ControlMessages{IP: tcpip.ControlMessages{HasTimestamp: s.timestampValid, Timestamp: s.timestampNS}}, syserr.FromError(err)
 }
 
 // RecvMsg implements the linux syscall recvmsg(2) for sockets backed by
