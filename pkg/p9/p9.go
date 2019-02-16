@@ -44,7 +44,7 @@ const (
 
 	// OpenFlagsIgnoreMask is a list of OpenFlags mode bits that are ignored for Tlopen.
 	// Note that syscall.O_LARGEFILE is set to zero, use value from Linux fcntl.h.
-	OpenFlagsIgnoreMask OpenFlags = syscall.O_DIRECTORY | 0100000
+	OpenFlagsIgnoreMask OpenFlags = syscall.O_DIRECTORY | syscall.O_NOATIME | 0100000
 )
 
 // ConnectFlags is the mode passed to Connect operations.
