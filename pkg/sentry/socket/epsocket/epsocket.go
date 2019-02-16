@@ -27,7 +27,6 @@ package epsocket
 import (
 	"bytes"
 	"math"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -191,6 +190,15 @@ func New(t *kernel.Task, family int, skType transport.SockType, queue *waiter.Qu
 var sockAddrInetSize = int(binary.Size(linux.SockAddrInet{}))
 var sockAddrInet6Size = int(binary.Size(linux.SockAddrInet6{}))
 
+// bytesToIPAddress converts an IPv4 or IPv6 address from the user to the
+// netstack representation taking any addresses into account.
+func bytesToIPAddress(addr []byte) tcpip.Address {
+	if bytes.Equal(addr, make([]byte, 4)) || bytes.Equal(addr, make([]byte, 16)) {
+		return ""
+	}
+	return tcpip.Address(addr)
+}
+
 // GetAddress reads an sockaddr struct from the given address and converts it
 // to the FullAddress format. It supports AF_UNIX, AF_INET and AF_INET6
 // addresses.
@@ -231,11 +239,8 @@ func GetAddress(sfamily int, addr []byte) (tcpip.FullAddress, *syserr.Error) {
 		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
 
 		out := tcpip.FullAddress{
-			Addr: tcpip.Address(a.Addr[:]),
+			Addr: bytesToIPAddress(a.Addr[:]),
 			Port: ntohs(a.Port),
-		}
-		if out.Addr == "\x00\x00\x00\x00" {
-			out.Addr = ""
 		}
 		return out, nil
 
@@ -247,14 +252,11 @@ func GetAddress(sfamily int, addr []byte) (tcpip.FullAddress, *syserr.Error) {
 		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
 
 		out := tcpip.FullAddress{
-			Addr: tcpip.Address(a.Addr[:]),
+			Addr: bytesToIPAddress(a.Addr[:]),
 			Port: ntohs(a.Port),
 		}
 		if isLinkLocal(out.Addr) {
 			out.NIC = tcpip.NICID(a.Scope_id)
-		}
-		if out.Addr == tcpip.Address(strings.Repeat("\x00", 16)) {
-			out.Addr = ""
 		}
 		return out, nil
 
@@ -864,6 +866,30 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 
 		return int32(v), nil
 
+	case linux.IP_MULTICAST_IF:
+		if outLen < inetMulticastRequestSize {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.MulticastInterfaceOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress{Addr: v.InterfaceAddr})
+
+		rv := linux.InetMulticastRequestWithNIC{
+			linux.InetMulticastRequest{
+				InterfaceAddr: a.(linux.SockAddrInet).Addr,
+			},
+			int32(v.NIC),
+		}
+
+		if outLen >= inetMulticastRequestWithNICSize {
+			return rv, nil
+		}
+		return rv.InetMulticastRequest, nil
+
 	default:
 		emitUnimplementedEventIP(t, name)
 	}
@@ -1148,7 +1174,9 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.AddMembershipOption{
-			NIC:           tcpip.NICID(req.InterfaceIndex),
+			NIC: tcpip.NICID(req.InterfaceIndex),
+			// TODO: Change AddMembership to use the standard
+			// any address representation.
 			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
 			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
 		}))
@@ -1160,19 +1188,29 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.RemoveMembershipOption{
-			NIC:           tcpip.NICID(req.InterfaceIndex),
+			NIC: tcpip.NICID(req.InterfaceIndex),
+			// TODO: Change DropMembership to use the standard
+			// any address representation.
 			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
 			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
 		}))
 
 	case linux.IP_MULTICAST_IF:
+		req, err := copyInMulticastRequest(optVal)
+		if err != nil {
+			return err
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.MulticastInterfaceOption{
+			NIC:           tcpip.NICID(req.InterfaceIndex),
+			InterfaceAddr: bytesToIPAddress(req.InterfaceAddr[:]),
+		}))
+
+	case linux.MCAST_JOIN_GROUP:
 		// FIXME: Disallow IP-level multicast group options by
 		// default. These will need to be supported by appropriately plumbing
 		// the level through to the network stack (if at all). However, we
 		// still allow setting TTL, and multicast-enable/disable type options.
-		fallthrough
-	case linux.MCAST_JOIN_GROUP:
-		// FIXME: Implement MCAST_JOIN_GROUP.
 		t.Kernel().EmitUnimplementedEvent(t)
 		return syserr.ErrInvalidArgument
 

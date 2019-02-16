@@ -473,6 +473,13 @@ type KeepaliveCountOption int
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8
 
+// MulticastInterfaceOption is used by SetSockOpt/GetSockOpt to specify a
+// default interface for multicast.
+type MulticastInterfaceOption struct {
+	NIC           NICID
+	InterfaceAddr Address
+}
+
 // MembershipOption is used by SetSockOpt/GetSockOpt as an argument to
 // AddMembershipOption and RemoveMembershipOption.
 type MembershipOption struct {

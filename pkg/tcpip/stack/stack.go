@@ -565,6 +565,17 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 	return nil
 }
 
+// CheckNIC checks if a NIC is usable.
+func (s *Stack) CheckNIC(id tcpip.NICID) bool {
+	s.mu.RLock()
+	nic, ok := s.nics[id]
+	s.mu.RUnlock()
+	if ok {
+		return nic.linkEP.IsAttached()
+	}
+	return false
+}
+
 // NICSubnets returns a map of NICIDs to their associated subnets.
 func (s *Stack) NICSubnets() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
