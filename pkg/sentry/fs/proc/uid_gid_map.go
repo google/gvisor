@@ -17,67 +17,42 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"io"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
-// An idMapSeqSource is a seqfile.SeqSource that returns UID or GID mappings
-// from a task's user namespace.
+// idMapInodeOperations implements fs.InodeOperations for
+// /proc/[pid]/{uid,gid}_map.
 //
 // +stateify savable
-type idMapSeqSource struct {
+type idMapInodeOperations struct {
+	fsutil.InodeGenericChecker `state:"nosave"`
+	fsutil.InodeNoopRelease    `state:"nosave"`
+	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotDirectory   `state:"nosave"`
+	fsutil.InodeNotMappable    `state:"nosave"`
+	fsutil.InodeNotSocket      `state:"nosave"`
+	fsutil.InodeNotSymlink     `state:"nosave"`
+	fsutil.InodeNotTruncatable `state:"nosave"`
+	fsutil.InodeVirtual        `state:"nosave"`
+
+	fsutil.InodeSimpleAttributes
+	fsutil.InodeSimpleExtendedAttributes
+
 	t    *kernel.Task
 	gids bool
 }
 
-// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
-func (imss *idMapSeqSource) NeedsUpdate(generation int64) bool {
-	return true
-}
-
-// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (imss *idMapSeqSource) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
-	var start int
-	if handle != nil {
-		start = handle.(*idMapSeqHandle).value
-	}
-	var entries []auth.IDMapEntry
-	if imss.gids {
-		entries = imss.t.UserNamespace().GIDMap()
-	} else {
-		entries = imss.t.UserNamespace().UIDMap()
-	}
-	var data []seqfile.SeqData
-	i := 1
-	for _, e := range entries {
-		if i > start {
-			data = append(data, seqfile.SeqData{
-				Buf:    idMapLineFromEntry(e),
-				Handle: &idMapSeqHandle{i},
-			})
-		}
-		i++
-	}
-	return data, 0
-}
-
-// TODO: Fix issue requiring idMapSeqHandle wrapping an int.
-//
-// +stateify savable
-type idMapSeqHandle struct {
-	value int
-}
-
-// +stateify savable
-type idMapSeqFile struct {
-	seqfile.SeqFile
-}
+var _ fs.InodeOperations = (*idMapInodeOperations)(nil)
 
 // newUIDMap returns a new uid_map file.
 func newUIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
@@ -90,25 +65,64 @@ func newGIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newIDMap(t *kernel.Task, msrc *fs.MountSource, gids bool) *fs.Inode {
-	imsf := &idMapSeqFile{
-		*seqfile.NewSeqFile(t, &idMapSeqSource{
-			t:    t,
-			gids: gids,
-		}),
-	}
-	return newProcInode(imsf, msrc, fs.SpecialFile, t)
+	return newProcInode(&idMapInodeOperations{
+		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(t, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
+		t:                     t,
+		gids:                  gids,
+	}, msrc, fs.SpecialFile, t)
 }
 
-func (imsf *idMapSeqFile) source() *idMapSeqSource {
-	return imsf.SeqFile.SeqSource.(*idMapSeqSource)
+// GetFile implements fs.InodeOperations.GetFile.
+func (imio *idMapInodeOperations) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	return fs.NewFile(ctx, dirent, flags, &idMapFileOperations{
+		iops: imio,
+	}), nil
 }
+
+// +stateify savable
+type idMapFileOperations struct {
+	waiter.AlwaysReady       `state:"nosave"`
+	fsutil.FileGenericSeek   `state:"nosave"`
+	fsutil.FileNoIoctl       `state:"nosave"`
+	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FileNoopFlush     `state:"nosave"`
+	fsutil.FileNoopFsync     `state:"nosave"`
+	fsutil.FileNoopRelease   `state:"nosave"`
+	fsutil.FileNotDirReaddir `state:"nosave"`
+
+	iops *idMapInodeOperations
+}
+
+var _ fs.FileOperations = (*idMapFileOperations)(nil)
 
 // "There is an (arbitrary) limit on the number of lines in the file. As at
 // Linux 3.18, the limit is five lines." - user_namespaces(7)
 const maxIDMapLines = 5
 
+// Read implements fs.FileOperations.Read.
+func (imfo *idMapFileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset < 0 {
+		return 0, syserror.EINVAL
+	}
+	var entries []auth.IDMapEntry
+	if imfo.iops.gids {
+		entries = imfo.iops.t.UserNamespace().GIDMap()
+	} else {
+		entries = imfo.iops.t.UserNamespace().UIDMap()
+	}
+	var buf bytes.Buffer
+	for _, e := range entries {
+		fmt.Fprintf(&buf, "%10d %10d %10d\n", e.FirstID, e.FirstParentID, e.Length)
+	}
+	if offset >= int64(buf.Len()) {
+		return 0, io.EOF
+	}
+	n, err := dst.CopyOut(ctx, buf.Bytes()[offset:])
+	return int64(n), err
+}
+
 // Write implements fs.FileOperations.Write.
-func (imsf *idMapSeqFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
 	// "In addition, the number of bytes written to the file must be less than
 	// the system page size, and the write must be performed at the start of
 	// the file ..." - user_namespaces(7)
@@ -126,33 +140,21 @@ func (imsf *idMapSeqFile) Write(ctx context.Context, _ *fs.File, src usermem.IOS
 	}
 	entries := make([]auth.IDMapEntry, len(lines))
 	for i, l := range lines {
-		e, err := idMapEntryFromLine(string(l))
+		var e auth.IDMapEntry
+		_, err := fmt.Sscan(string(l), &e.FirstID, &e.FirstParentID, &e.Length)
 		if err != nil {
 			return 0, syserror.EINVAL
 		}
 		entries[i] = e
 	}
-	t := imsf.source().t
 	var err error
-	if imsf.source().gids {
-		err = t.UserNamespace().SetGIDMap(ctx, entries)
+	if imfo.iops.gids {
+		err = imfo.iops.t.UserNamespace().SetGIDMap(ctx, entries)
 	} else {
-		err = t.UserNamespace().SetUIDMap(ctx, entries)
+		err = imfo.iops.t.UserNamespace().SetUIDMap(ctx, entries)
 	}
 	if err != nil {
 		return 0, err
 	}
 	return int64(len(b)), nil
-}
-
-func idMapLineFromEntry(e auth.IDMapEntry) []byte {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "%10d %10d %10d\n", e.FirstID, e.FirstParentID, e.Length)
-	return b.Bytes()
-}
-
-func idMapEntryFromLine(line string) (auth.IDMapEntry, error) {
-	var e auth.IDMapEntry
-	_, err := fmt.Sscan(line, &e.FirstID, &e.FirstParentID, &e.Length)
-	return e, err
 }

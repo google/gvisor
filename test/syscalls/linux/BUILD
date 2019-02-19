@@ -1445,6 +1445,25 @@ cc_binary(
 )
 
 cc_binary(
+    name = "proc_pid_uid_gid_map_test",
+    testonly = 1,
+    srcs = ["proc_pid_uid_gid_map.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:multiprocess_util",
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "pselect_test",
     testonly = 1,
     srcs = ["pselect.cc"],
