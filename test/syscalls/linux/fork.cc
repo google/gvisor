@@ -21,11 +21,14 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <atomic>
+#include <cstdlib>
 
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/capability_util.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -391,6 +394,34 @@ TEST_F(ForkTest, Affinity) {
   }
 
   EXPECT_THAT(Wait(child), SyscallSucceedsWithValue(0));
+}
+
+TEST(CloneTest, NewUserNamespacePermitsAllOtherNamespaces) {
+  // "If CLONE_NEWUSER is specified along with other CLONE_NEW* flags in a
+  // single clone(2) or unshare(2) call, the user namespace is guaranteed to be
+  // created first, giving the child (clone(2)) or caller (unshare(2))
+  // privileges over the remaining namespaces created by the call. Thus, it is
+  // possible for an unprivileged caller to specify this combination of flags."
+  // - user_namespaces(7)
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  Mapping child_stack = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+  int child_pid;
+  // We only test with CLONE_NEWIPC, CLONE_NEWNET, and CLONE_NEWUTS since these
+  // namespaces were implemented in Linux before user namespaces.
+  ASSERT_THAT(
+      child_pid = clone(
+          +[](void*) { return 0; },
+          reinterpret_cast<void*>(child_stack.addr() + kPageSize),
+          CLONE_NEWUSER | CLONE_NEWIPC | CLONE_NEWNET | CLONE_NEWUTS | SIGCHLD,
+          /* arg = */ nullptr),
+      SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
 }
 
 #ifdef __x86_64__

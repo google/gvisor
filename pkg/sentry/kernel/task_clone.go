@@ -17,7 +17,6 @@ package kernel
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/bpf"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -166,7 +165,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	// privileges over the remaining namespaces created by the call." -
 	// user_namespaces(7)
 	creds := t.Credentials()
-	var userns *auth.UserNamespace
+	userns := creds.UserNamespace
 	if opts.NewUserNamespace {
 		var err error
 		// "EPERM (since Linux 3.9): CLONE_NEWUSER was specified in flags and
@@ -182,7 +181,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 			return 0, nil, err
 		}
 	}
-	if (opts.NewPIDNamespace || opts.NewNetworkNamespace || opts.NewUTSNamespace) && !creds.HasCapability(linux.CAP_SYS_ADMIN) {
+	if (opts.NewPIDNamespace || opts.NewNetworkNamespace || opts.NewUTSNamespace) && !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, userns) {
 		return 0, nil, syserror.EPERM
 	}
 
@@ -287,7 +286,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		nt.SetSignalStack(t.SignalStack())
 	}
 
-	if userns != nil {
+	if userns != creds.UserNamespace {
 		if err := nt.SetUserNamespace(userns); err != nil {
 			// This shouldn't be possible: userns was created from nt.creds, so
 			// nt should have CAP_SYS_ADMIN in userns.

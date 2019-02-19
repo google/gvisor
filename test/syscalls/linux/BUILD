@@ -732,7 +732,9 @@ cc_binary(
     srcs = ["fork.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:capability_util",
         "//test/util:logging",
+        "//test/util:memory_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
