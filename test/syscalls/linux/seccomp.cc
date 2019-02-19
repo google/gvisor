@@ -23,6 +23,7 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <time.h>
+#include <ucontext.h>
 #include <unistd.h>
 #include <atomic>
 
@@ -161,16 +162,21 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
   pid_t const pid = fork();
   if (pid == 0) {
     constexpr uint16_t kTrapValue = 0xdead;
-    RegisterSignalHandler(SIGSYS, +[](int signo, siginfo_t* info, void*) {
-      // This is a signal handler, so we must stay async-signal-safe.
-      TEST_CHECK(info->si_signo == SIGSYS);
-      TEST_CHECK(info->si_code == SYS_SECCOMP);
-      TEST_CHECK(info->si_errno == kTrapValue);
-      TEST_CHECK(info->si_call_addr != nullptr);
-      TEST_CHECK(info->si_syscall == kFilteredSyscall);
-      TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
-      _exit(0);
-    });
+    RegisterSignalHandler(
+        SIGSYS, +[](int signo, siginfo_t* info, void* ucv) {
+          ucontext_t* uc = static_cast<ucontext_t*>(ucv);
+          // This is a signal handler, so we must stay async-signal-safe.
+          TEST_CHECK(info->si_signo == SIGSYS);
+          TEST_CHECK(info->si_code == SYS_SECCOMP);
+          TEST_CHECK(info->si_errno == kTrapValue);
+          TEST_CHECK(info->si_call_addr != nullptr);
+          TEST_CHECK(info->si_syscall == kFilteredSyscall);
+#ifdef __x86_64__
+          TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_RAX] == kFilteredSyscall);
+#endif  // defined(__x86_64__)
+          _exit(0);
+        });
     ApplySeccompFilter(kFilteredSyscall, SECCOMP_RET_TRAP | kTrapValue);
     syscall(kFilteredSyscall);
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
@@ -181,6 +187,8 @@ TEST(SeccompTest, RetTrapCausesSIGSYS) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << "status " << status;
 }
+
+#ifdef __x86_64__
 
 constexpr uint64_t kVsyscallTimeEntry = 0xffffffffff600400;
 
@@ -194,16 +202,19 @@ TEST(SeccompTest, SeccompAppliesToVsyscall) {
   pid_t const pid = fork();
   if (pid == 0) {
     constexpr uint16_t kTrapValue = 0xdead;
-    RegisterSignalHandler(SIGSYS, +[](int signo, siginfo_t* info, void*) {
-      // This is a signal handler, so we must stay async-signal-safe.
-      TEST_CHECK(info->si_signo == SIGSYS);
-      TEST_CHECK(info->si_code == SYS_SECCOMP);
-      TEST_CHECK(info->si_errno == kTrapValue);
-      TEST_CHECK(info->si_call_addr != nullptr);
-      TEST_CHECK(info->si_syscall == SYS_time);
-      TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
-      _exit(0);
-    });
+    RegisterSignalHandler(
+        SIGSYS, +[](int signo, siginfo_t* info, void* ucv) {
+          ucontext_t* uc = static_cast<ucontext_t*>(ucv);
+          // This is a signal handler, so we must stay async-signal-safe.
+          TEST_CHECK(info->si_signo == SIGSYS);
+          TEST_CHECK(info->si_code == SYS_SECCOMP);
+          TEST_CHECK(info->si_errno == kTrapValue);
+          TEST_CHECK(info->si_call_addr != nullptr);
+          TEST_CHECK(info->si_syscall == SYS_time);
+          TEST_CHECK(info->si_arch == AUDIT_ARCH_X86_64);
+          TEST_CHECK(uc->uc_mcontext.gregs[REG_RAX] == SYS_time);
+          _exit(0);
+        });
     ApplySeccompFilter(SYS_time, SECCOMP_RET_TRAP | kTrapValue);
     vsyscall_time(nullptr);  // Should result in death.
     TEST_CHECK_MSG(false, "Survived invocation of test syscall");
@@ -233,6 +244,8 @@ TEST(SeccompTest, RetKillVsyscallCausesDeathBySIGSYS) {
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSYS)
       << "status " << status;
 }
+
+#endif  // defined(__x86_64__)
 
 TEST(SeccompTest, RetTraceWithoutPtracerReturnsENOSYS) {
   pid_t const pid = fork();

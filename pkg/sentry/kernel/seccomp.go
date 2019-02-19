@@ -75,6 +75,9 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip u
 		// portion of the return value will be passed as si_errno." -
 		// Documentation/prctl/seccomp_filter.txt
 		t.SendSignal(seccompSiginfo(t, int32(result.Data()), sysno, ip))
+		// "The return value register will contain an arch-dependent value." In
+		// practice, it's ~always the syscall number.
+		t.Arch().SetReturn(uintptr(sysno))
 
 	case linux.SECCOMP_RET_ERRNO:
 		// "Results in the lower 16-bits of the return value being passed to
