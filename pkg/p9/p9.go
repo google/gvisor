@@ -139,8 +139,11 @@ const (
 	// AllPermissions is a mask with rwx bits set for user, group and others.
 	AllPermissions FileMode = 0777
 
+	// Sticky is a mode bit indicating sticky directories.
+	Sticky FileMode = 01000
+
 	// permissionsMask is the mask to apply to FileModes for permissions. It
-	// includes rwx bits for user, group and others, and sticky bit (01000).
+	// includes rwx bits for user, group and others, and sticky bit.
 	permissionsMask FileMode = 01777
 )
 
