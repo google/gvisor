@@ -278,6 +278,11 @@ Creator<SocketPair> UDPBidirectionalBindSocketPairCreator(int domain, int type,
 Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
                                                 int protocol, bool dual_stack);
 
+// UnboundSocketCreator returns a Creator<FileDescriptor> that obtains a file
+// descriptor by creating a socket.
+Creator<FileDescriptor> UnboundSocketCreator(int domain, int type,
+                                             int protocol);
+
 // A SocketPairKind couples a human-readable description of a socket pair with
 // a function that creates such a socket pair.
 struct SocketPairKind {

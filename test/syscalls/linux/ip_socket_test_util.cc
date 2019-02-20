@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <net/if.h>
+#include <netinet/in.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 #include <cstring>
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
@@ -93,6 +95,20 @@ SocketPairKind IPv4UDPUnboundSocketPair(int type) {
   return SocketPairKind{
       description, UDPUnboundSocketPairCreator(AF_INET, type | SOCK_DGRAM, 0,
                                                /* dual_stack = */ false)};
+}
+
+SocketKind IPv4UDPUnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
+  return SocketKind{description, UnboundSocketCreator(
+                                     AF_INET, type | SOCK_DGRAM, IPPROTO_UDP)};
+}
+
+SocketKind IPv4TCPUnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "IPv4 TCP socket");
+  return SocketKind{description, UnboundSocketCreator(
+                                     AF_INET, type | SOCK_STREAM, IPPROTO_TCP)};
 }
 
 }  // namespace testing

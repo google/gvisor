@@ -22,6 +22,7 @@
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/thread_util.h"
@@ -461,6 +462,17 @@ SocketPairKind Reversed(SocketPairKind const& base) {
         ASSIGN_OR_RETURN_ERRNO(auto creator_value, creator());
         return absl::make_unique<ReversedSocketPair>(std::move(creator_value));
       }};
+}
+
+Creator<FileDescriptor> UnboundSocketCreator(int domain, int type,
+                                             int protocol) {
+  return [=]() -> PosixErrorOr<std::unique_ptr<FileDescriptor>> {
+    int sock;
+    RETURN_ERROR_IF_SYSCALL_FAIL(sock = socket(domain, type, protocol));
+    MaybeSave();  // Successful socket creation.
+
+    return absl::make_unique<FileDescriptor>(sock);
+  };
 }
 
 std::vector<SocketPairKind> IncludeReversals(std::vector<SocketPairKind> vec) {

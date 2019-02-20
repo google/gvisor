@@ -123,6 +123,9 @@ func newEPConnServer(ctx context.Context, stack *stack.Stack, addrs []tcpip.Addr
 	if err := ep.Bind(tcpip.FullAddress{Port: ServerPort}, nil); err != nil {
 		return nil, fmt.Errorf("dhcp: server bind: %v", err)
 	}
+	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
+		return nil, fmt.Errorf("dhcp: server setsockopt: %v", err)
+	}
 	c := newEPConn(ctx, wq, ep)
 	return NewServer(ctx, c, addrs, cfg)
 }

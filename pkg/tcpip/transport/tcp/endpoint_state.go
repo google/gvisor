@@ -336,6 +336,7 @@ func loadError(s string) *tcpip.Error {
 			tcpip.ErrNetworkUnreachable,
 			tcpip.ErrMessageTooLong,
 			tcpip.ErrNoBufferSpace,
+			tcpip.ErrBroadcastDisabled,
 		}
 
 		messageToError = make(map[string]*tcpip.Error)

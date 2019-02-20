@@ -132,7 +132,22 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID) TransportEnd
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
-	ep.selectEndpoint(id).HandlePacket(r, id, vv)
+	// If this is a broadcast datagram, deliver the datagram to all endpoints
+	// managed by ep.
+	if id.LocalAddress == header.IPv4Broadcast {
+		for i, endpoint := range ep.endpointsArr {
+			// HandlePacket modifies vv, so each endpoint needs its own copy.
+			if i == len(ep.endpointsArr)-1 {
+				endpoint.HandlePacket(r, id, vv)
+				break
+			}
+			vvCopy := buffer.NewView(vv.Size())
+			copy(vvCopy, vv.ToView())
+			endpoint.HandlePacket(r, id, vvCopy.ToVectorisedView())
+		}
+	} else {
+		ep.selectEndpoint(id).HandlePacket(r, id, vv)
+	}
 }
 
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
@@ -224,20 +239,47 @@ func (d *transportDemuxer) unregisterEndpoint(netProtos []tcpip.NetworkProtocolN
 	}
 }
 
-// deliverPacket attempts to deliver the given packet. Returns true if it found
-// an endpoint, false otherwise.
+var loopbackSubnet = func() tcpip.Subnet {
+	sn, err := tcpip.NewSubnet("\x7f\x00\x00\x00", "\xff\x00\x00\x00")
+	if err != nil {
+		panic(err)
+	}
+	return sn
+}()
+
+// deliverPacket attempts to find one or more matching transport endpoints, and
+// then, if matches are found, delivers the packet to them. Returns true if it
+// found one or more endpoints, false otherwise.
 func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView, id TransportEndpointID) bool {
 	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
 	if !ok {
 		return false
 	}
 
+	// If a sender bound to the Loopback interface sends a broadcast,
+	// that broadcast must not be delivered to the sender.
+	if loopbackSubnet.Contains(r.RemoteAddress) && r.LocalAddress == header.IPv4Broadcast && id.LocalPort == id.RemotePort {
+		return false
+	}
+
+	// If the packet is a broadcast, then find all matching transport endpoints.
+	// Otherwise, try to find a single matching transport endpoint.
+	destEps := make([]TransportEndpoint, 0, 1)
 	eps.mu.RLock()
-	ep := d.findEndpointLocked(eps, vv, id)
+
+	if protocol == header.UDPProtocolNumber && id.LocalAddress == header.IPv4Broadcast {
+		for epID, endpoint := range eps.endpoints {
+			if epID.LocalPort == id.LocalPort {
+				destEps = append(destEps, endpoint)
+			}
+		}
+	} else if ep := d.findEndpointLocked(eps, vv, id); ep != nil {
+		destEps = append(destEps, ep)
+	}
 	eps.mu.RUnlock()
 
-	// Fail if we didn't find one.
-	if ep == nil {
+	// Fail if we didn't find at least one matching transport endpoint.
+	if len(destEps) == 0 {
 		// UDP packet could not be delivered to an unknown destination port.
 		if protocol == header.UDPProtocolNumber {
 			r.Stats().UDP.UnknownPortErrors.Increment()
@@ -246,7 +288,9 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	}
 
 	// Deliver the packet.
-	ep.HandlePacket(r, id, vv)
+	for _, ep := range destEps {
+		ep.HandlePacket(r, id, vv)
+	}
 
 	return true
 }
@@ -277,7 +321,7 @@ func (d *transportDemuxer) deliverControlPacket(net tcpip.NetworkProtocolNumber,
 
 func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer.VectorisedView, id TransportEndpointID) TransportEndpoint {
 	// Try to find a match with the id as provided.
-	if ep := eps.endpoints[id]; ep != nil {
+	if ep, ok := eps.endpoints[id]; ok {
 		return ep
 	}
 
@@ -285,7 +329,7 @@ func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer
 	nid := id
 
 	nid.LocalAddress = ""
-	if ep := eps.endpoints[nid]; ep != nil {
+	if ep, ok := eps.endpoints[nid]; ok {
 		return ep
 	}
 
@@ -293,11 +337,15 @@ func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer
 	nid.LocalAddress = id.LocalAddress
 	nid.RemoteAddress = ""
 	nid.RemotePort = 0
-	if ep := eps.endpoints[nid]; ep != nil {
+	if ep, ok := eps.endpoints[nid]; ok {
 		return ep
 	}
 
 	// Try to find a match with only the local port.
 	nid.LocalAddress = ""
-	return eps.endpoints[nid]
+	if ep, ok := eps.endpoints[nid]; ok {
+		return ep
+	}
+
+	return nil
 }

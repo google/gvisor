@@ -58,6 +58,14 @@ SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type);
 // SocketPairs created with AF_INET and the given type.
 SocketPairKind IPv4UDPUnboundSocketPair(int type);
 
+// IPv4UDPUnboundSocketPair returns a SocketKind that represents
+// a SimpleSocket created with AF_INET, SOCK_DGRAM, and the given type.
+SocketKind IPv4UDPUnboundSocket(int type);
+
+// IPv4TCPUnboundSocketPair returns a SocketKind that represents
+// a SimpleSocket created with AF_INET, SOCK_STREAM and the given type.
+SocketKind IPv4TCPUnboundSocket(int type);
+
 }  // namespace testing
 }  // namespace gvisor
 

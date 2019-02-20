@@ -82,6 +82,7 @@ type endpoint struct {
 	multicastAddr  tcpip.Address
 	multicastNICID tcpip.NICID
 	reusePort      bool
+	broadcast      bool
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
@@ -347,6 +348,10 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 			nicid = e.bindNICID
 		}
 
+		if to.Addr == header.IPv4Broadcast && !e.broadcast {
+			return 0, nil, tcpip.ErrBroadcastDisabled
+		}
+
 		r, _, _, err := e.connectRoute(nicid, *to)
 		if err != nil {
 			return 0, nil, err
@@ -502,6 +507,13 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Lock()
 		e.reusePort = v != 0
 		e.mu.Unlock()
+
+	case tcpip.BroadcastOption:
+		e.mu.Lock()
+		e.broadcast = v != 0
+		e.mu.Unlock()
+
+		return nil
 	}
 	return nil
 }
@@ -579,6 +591,17 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 	case *tcpip.KeepaliveEnabledOption:
 		*o = 0
+		return nil
+
+	case *tcpip.BroadcastOption:
+		e.mu.RLock()
+		v := e.broadcast
+		e.mu.RUnlock()
+
+		*o = 0
+		if v {
+			*o = 1
+		}
 		return nil
 
 	default:

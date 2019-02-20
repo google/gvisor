@@ -100,6 +100,7 @@ var (
 	ErrNetworkUnreachable    = &Error{msg: "network is unreachable"}
 	ErrMessageTooLong        = &Error{msg: "message too long"}
 	ErrNoBufferSpace         = &Error{msg: "no buffer space available"}
+	ErrBroadcastDisabled     = &Error{msg: "broadcast socket option disabled"}
 )
 
 // Errors related to Subnet
@@ -502,6 +503,10 @@ type RemoveMembershipOption MembershipOption
 // TCP out-of-band data is delivered along with the normal in-band data.
 type OutOfBandInlineOption int
 
+// BroadcastOption is used by SetSockOpt/GetSockOpt to specify whether
+// datagram sockets are allowed to send packets to a broadcast address.
+type BroadcastOption int
+
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination adddress in the row.
@@ -525,6 +530,12 @@ type Route struct {
 func (r *Route) Match(addr Address) bool {
 	if len(addr) != len(r.Destination) {
 		return false
+	}
+
+	// Using header.Ipv4Broadcast would introduce an import cycle, so
+	// we'll use a literal instead.
+	if addr == "\xff\xff\xff\xff" {
+		return true
 	}
 
 	for i := 0; i < len(r.Destination); i++ {

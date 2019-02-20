@@ -116,6 +116,9 @@ type endpoint struct {
 	route             stack.Route `state:"manual"`
 	v6only            bool
 	isConnectNotified bool
+	// TCP should never broadcast but Linux nevertheless supports enabling/
+	// disabling SO_BROADCAST, albeit as a NOOP.
+	broadcast bool
 
 	// effectiveNetProtos contains the network protocols actually in use. In
 	// most cases it will only contain "netProto", but in cases like IPv6
@@ -813,6 +816,12 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 		return nil
 
+	case tcpip.BroadcastOption:
+		e.mu.Lock()
+		e.broadcast = v != 0
+		e.mu.Unlock()
+		return nil
+
 	default:
 		return nil
 	}
@@ -969,6 +978,17 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	case *tcpip.OutOfBandInlineOption:
 		// We don't currently support disabling this option.
 		*o = 1
+		return nil
+
+	case *tcpip.BroadcastOption:
+		e.mu.Lock()
+		v := e.broadcast
+		e.mu.Unlock()
+
+		*o = 0
+		if v {
+			*o = 1
+		}
 		return nil
 
 	default:

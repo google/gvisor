@@ -141,6 +141,9 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 	}, nil); err != nil {
 		return Config{}, fmt.Errorf("dhcp: connect failed: %v", err)
 	}
+	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
+		return Config{}, fmt.Errorf("dhcp: setsockopt SO_BROADCAST: %v", err)
+	}
 
 	epin, err := c.stack.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 	if err != nil {

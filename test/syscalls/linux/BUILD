@@ -148,6 +148,7 @@ cc_library(
     hdrs = ["ip_socket_test_util.h"],
     deps = [
         ":socket_test_util",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1970,6 +1971,42 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "socket_ipv4_udp_unbound_external_networking_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_udp_unbound_external_networking.cc",
+    ],
+    hdrs = [
+        "socket_ipv4_udp_unbound_external_networking.h",
+    ],
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "socket_ipv4_tcp_unbound_external_networking_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_tcp_unbound_external_networking.cc",
+    ],
+    hdrs = [
+        "socket_ipv4_tcp_unbound_external_networking.h",
+    ],
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
 cc_binary(
     name = "socket_abstract_test",
     testonly = 1,
@@ -2141,6 +2178,38 @@ cc_binary(
         ":socket_generic_test_cases",
         ":socket_ip_udp_test_cases",
         ":socket_non_stream_test_cases",
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_ipv4_udp_unbound_external_networking_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_udp_unbound_external_networking_test.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_ipv4_udp_unbound_external_networking_test_cases",
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
+    name = "socket_ipv4_tcp_unbound_external_networking_test",
+    testonly = 1,
+    srcs = [
+        "socket_ipv4_tcp_unbound_external_networking_test.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_ipv4_tcp_unbound_external_networking_test_cases",
         ":socket_test_util",
         "//test/util:test_main",
         "//test/util:test_util",
