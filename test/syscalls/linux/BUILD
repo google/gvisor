@@ -2907,6 +2907,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_test_util",
+        ":unix_domain_socket_test_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",

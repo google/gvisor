@@ -24,6 +24,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -892,12 +893,21 @@ TEST_P(UdpSocketTest, ErrorQueue) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
+TEST_P(UdpSocketTest, SoTimestampOffByDefault) {
+  int v = -1;
+  socklen_t optlen = sizeof(v);
+  ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, &optlen),
+              SyscallSucceeds());
+  ASSERT_EQ(v, kSockOptOff);
+  ASSERT_EQ(optlen, sizeof(v));
+}
+
 TEST_P(UdpSocketTest, SoTimestamp) {
   ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
   ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
 
   int v = 1;
-  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, sizeof(v)),
+  ASSERT_THAT(setsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, sizeof(v)),
               SyscallSucceeds());
 
   char buf[3];
@@ -926,10 +936,87 @@ TEST_P(UdpSocketTest, SoTimestamp) {
   memcpy(&tv, CMSG_DATA(cmsg), sizeof(struct timeval));
 
   ASSERT_TRUE(tv.tv_sec != 0 || tv.tv_usec != 0);
+
+  // There should be nothing to get via ioctl.
+  ASSERT_THAT(ioctl(s_, SIOCGSTAMP, &tv), SyscallFailsWithErrno(ENOENT));
 }
 
 TEST_P(UdpSocketTest, WriteShutdownNotConnected) {
   EXPECT_THAT(shutdown(s_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
+}
+
+TEST_P(UdpSocketTest, TimestampIoctl) {
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+  ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
+
+  char buf[3];
+  // Send packet from t_ to s_.
+  ASSERT_THAT(RetryEINTR(write)(t_, buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // There should be no control messages.
+  char recv_buf[sizeof(buf)];
+  ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(s_, recv_buf, sizeof(recv_buf)));
+
+  // A nonzero timeval should be available via ioctl.
+  struct timeval tv = {};
+  ASSERT_THAT(ioctl(s_, SIOCGSTAMP, &tv), SyscallSucceeds());
+  ASSERT_TRUE(tv.tv_sec != 0 || tv.tv_usec != 0);
+}
+
+TEST_P(UdpSocketTest, TimetstampIoctlNothingRead) {
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+  ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
+
+  struct timeval tv = {};
+  ASSERT_THAT(ioctl(s_, SIOCGSTAMP, &tv), SyscallFailsWithErrno(ENOENT));
+}
+
+// Test that the timestamp accessed via SIOCGSTAMP is still accessible after
+// SO_TIMESTAMP is enabled and used to retrieve a timestamp.
+TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
+  ASSERT_THAT(bind(s_, addr_[0], addrlen_), SyscallSucceeds());
+  ASSERT_THAT(connect(t_, addr_[0], addrlen_), SyscallSucceeds());
+
+  char buf[3];
+  // Send packet from t_ to s_.
+  ASSERT_THAT(RetryEINTR(write)(t_, buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  ASSERT_THAT(RetryEINTR(write)(t_, buf, 0), SyscallSucceedsWithValue(0));
+
+  // There should be no control messages.
+  char recv_buf[sizeof(buf)];
+  ASSERT_NO_FATAL_FAILURE(RecvNoCmsg(s_, recv_buf, sizeof(recv_buf)));
+
+  // A nonzero timeval should be available via ioctl.
+  struct timeval tv = {};
+  ASSERT_THAT(ioctl(s_, SIOCGSTAMP, &tv), SyscallSucceeds());
+  ASSERT_TRUE(tv.tv_sec != 0 || tv.tv_usec != 0);
+
+  // Enable SO_TIMESTAMP and send a message.
+  int v = 1;
+  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_TIMESTAMP, &v, sizeof(v)),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(write)(t_, buf, 0), SyscallSucceedsWithValue(0));
+
+  // There should be a message for SO_TIMESTAMP.
+  char cmsgbuf[CMSG_SPACE(sizeof(struct timeval))];
+  msghdr msg = {};
+  iovec iov = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = cmsgbuf;
+  msg.msg_controllen = sizeof(cmsgbuf);
+  ASSERT_THAT(RetryEINTR(recvmsg)(s_, &msg, 0), SyscallSucceedsWithValue(0));
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+
+  // The ioctl should return the exact same values as before.
+  struct timeval tv2 = {};
+  ASSERT_THAT(ioctl(s_, SIOCGSTAMP, &tv2), SyscallSucceeds());
+  ASSERT_EQ(tv.tv_sec, tv2.tv_sec);
+  ASSERT_EQ(tv.tv_usec, tv2.tv_usec);
 }
 
 INSTANTIATE_TEST_CASE_P(AllInetTests, UdpSocketTest,
