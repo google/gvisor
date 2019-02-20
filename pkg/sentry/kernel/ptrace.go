@@ -863,42 +863,6 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		})
 		return err
 
-	case linux.PTRACE_PEEKUSR: // aka PTRACE_PEEKUSER
-		n, err := target.Arch().PtracePeekUser(uintptr(addr))
-		if err != nil {
-			return err
-		}
-		_, err = t.CopyOut(data, n)
-		return err
-
-	case linux.PTRACE_POKEUSR: // aka PTRACE_POKEUSER
-		return target.Arch().PtracePokeUser(uintptr(addr), uintptr(data))
-
-	case linux.PTRACE_GETREGS:
-		// "Copy the tracee's general-purpose ... registers ... to the address
-		// data in the tracer. ... (addr is ignored.) Note that SPARC systems
-		// have the meaning of data and addr reversed ..."
-		_, err := target.Arch().PtraceGetRegs(&usermem.IOReadWriter{
-			Ctx:  t,
-			IO:   t.MemoryManager(),
-			Addr: data,
-			Opts: usermem.IOOpts{
-				AddressSpaceActive: true,
-			},
-		})
-		return err
-
-	case linux.PTRACE_GETFPREGS:
-		_, err := target.Arch().PtraceGetFPRegs(&usermem.IOReadWriter{
-			Ctx:  t,
-			IO:   t.MemoryManager(),
-			Addr: data,
-			Opts: usermem.IOOpts{
-				AddressSpaceActive: true,
-			},
-		})
-		return err
-
 	case linux.PTRACE_GETREGSET:
 		// "Read the tracee's registers. addr specifies, in an
 		// architecture-dependent way, the type of registers to be read. ...
@@ -929,28 +893,6 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		}
 		ar.End = end
 		return t.CopyOutIovecs(data, usermem.AddrRangeSeqOf(ar))
-
-	case linux.PTRACE_SETREGS:
-		_, err := target.Arch().PtraceSetRegs(&usermem.IOReadWriter{
-			Ctx:  t,
-			IO:   t.MemoryManager(),
-			Addr: data,
-			Opts: usermem.IOOpts{
-				AddressSpaceActive: true,
-			},
-		})
-		return err
-
-	case linux.PTRACE_SETFPREGS:
-		_, err := target.Arch().PtraceSetFPRegs(&usermem.IOReadWriter{
-			Ctx:  t,
-			IO:   t.MemoryManager(),
-			Addr: data,
-			Opts: usermem.IOOpts{
-				AddressSpaceActive: true,
-			},
-		})
-		return err
 
 	case linux.PTRACE_SETREGSET:
 		ars, err := t.CopyInIovecs(data, 1)
@@ -1047,8 +989,9 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		_, err := t.CopyOut(usermem.Addr(data), target.ptraceEventMsg)
 		return err
 
+	// PEEKSIGINFO is unimplemented but seems to have no users anywhere.
+
 	default:
-		// PEEKSIGINFO is unimplemented but seems to have no users anywhere.
-		return syserror.EIO
+		return t.ptraceArch(target, req, addr, data)
 	}
 }

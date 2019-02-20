@@ -95,6 +95,8 @@ go_library(
         "posixtimer.go",
         "process_group_list.go",
         "ptrace.go",
+        "ptrace_amd64.go",
+        "ptrace_arm64.go",
         "rseq.go",
         "seccomp.go",
         "seqatomic_taskgoroutineschedinfo.go",
