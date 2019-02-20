@@ -226,7 +226,7 @@ const (
 	_ // ecx bit 25 is reserved.
 	X86FeatureBPEXT
 	X86FeaturePERFCTR_TSC
-	X86FeaturePERFCTR_L2
+	X86FeaturePERFCTR_LLC
 	X86FeatureMWAITX
 	// ECX[31:30] are reserved.
 )
@@ -387,7 +387,7 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeaturePERFCTR_NB:   "perfctr_nb",
 	X86FeatureBPEXT:        "bpext",
 	X86FeaturePERFCTR_TSC:  "ptsc",
-	X86FeaturePERFCTR_L2:   "perfctr_l2",
+	X86FeaturePERFCTR_LLC:  "perfctr_llc",
 	X86FeatureMWAITX:       "mwaitx",
 
 	// Block 6.

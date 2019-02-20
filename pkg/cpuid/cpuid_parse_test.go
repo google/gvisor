@@ -124,6 +124,11 @@ func TestHostFeatureFlags(t *testing.T) {
 			// XSAVES only exposed in
 			// b8be15d588060a03569ac85dc4a0247460988f5b (4.8).
 			continue
+		// Block 5.
+		case f == X86FeaturePERFCTR_LLC && (major < 4 || major == 4 && minor < 14):
+			// PERFCTR_LLC renamed in
+			// 910448bbed066ab1082b510eef1ae61bb792d854 (4.14).
+			continue
 		}
 
 		hidden := f.flagString(true) == ""
