@@ -101,11 +101,6 @@ func TestHostFeatureFlags(t *testing.T) {
 			// SDBG only exposed in
 			// b1c599b8ff80ea79b9f8277a3f9f36a7b0cfedce (4.3).
 			continue
-		// Block 2.
-		case f == X86FeatureRDT && (major < 4 || major == 4 && minor < 10):
-			// RDT only exposed in
-			// 4ab1586488cb56ed8728e54c4157cc38646874d9 (4.10).
-			continue
 		// Block 3.
 		case f == X86FeatureAVX512VBMI && (major < 4 || major == 4 && minor < 10):
 			// AVX512VBMI only exposed in
@@ -116,8 +111,8 @@ func TestHostFeatureFlags(t *testing.T) {
 			// 3522c2a6a4f341058b8291326a945e2a2d2aaf55 (4.15).
 			continue
 		case f == X86FeaturePKU && (major < 4 || major == 4 && minor < 9):
-			// PKU only exposed in
-			// dfb4a70f20c5b3880da56ee4c9484bdb4e8f1e65 (4.9).
+			// PKU only exposed in dfb4a70f20c5b3880da56ee4c9484bdb4e8f1e65
+			// (4.9).
 			continue
 		// Block 4.
 		case f == X86FeatureXSAVES && (major < 4 || major == 4 && minor < 8):
