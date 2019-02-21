@@ -17,6 +17,7 @@ package tmpfs
 import (
 	"io"
 	"sync"
+	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -31,9 +32,10 @@ import (
 )
 
 var (
-	opensRO = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro", false /* sync */, "Number of times an in-memory file was opened in read-only mode.")
-	opensW  = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w", false /* sync */, "Number of times an in-memory file was opened in write mode.")
-	reads   = metric.MustCreateNewUint64Metric("/in_memory_file/reads", false /* sync */, "Number of in-memory file reads.")
+	opensRO  = metric.MustCreateNewUint64Metric("/in_memory_file/opens_ro", false /* sync */, "Number of times an in-memory file was opened in read-only mode.")
+	opensW   = metric.MustCreateNewUint64Metric("/in_memory_file/opens_w", false /* sync */, "Number of times an in-memory file was opened in write mode.")
+	reads    = metric.MustCreateNewUint64Metric("/in_memory_file/reads", false /* sync */, "Number of in-memory file reads.")
+	readWait = metric.MustCreateNewUint64Metric("/in_memory_file/read_wait", false /* sync */, "Time waiting on in-memory file reads, in nanoseconds.")
 )
 
 // fileInodeOperations implements fs.InodeOperations for a regular tmpfs file.
@@ -249,9 +251,14 @@ func (*fileInodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+	var start time.Time
+	if fs.RecordWaitTime {
+		start = time.Now()
+	}
 	reads.Increment()
 	// Zero length reads for tmpfs are no-ops.
 	if dst.NumBytes() == 0 {
+		fs.IncrementWait(readWait, start)
 		return 0, nil
 	}
 
@@ -268,6 +275,7 @@ func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, 
 	size := f.attr.Size
 	f.dataMu.RUnlock()
 	if offset >= size {
+		fs.IncrementWait(readWait, start)
 		return 0, io.EOF
 	}
 
@@ -276,6 +284,7 @@ func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, 
 	f.attrMu.Lock()
 	f.attr.AccessTime = ktime.NowFromContext(ctx)
 	f.attrMu.Unlock()
+	fs.IncrementWait(readWait, start)
 	return n, err
 }
 
