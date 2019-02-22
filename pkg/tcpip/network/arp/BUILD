@@ -30,6 +30,6 @@ go_test(
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/ping",
+        "//pkg/tcpip/transport/icmp",
     ],
 )

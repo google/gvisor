@@ -32,7 +32,7 @@ go_test(
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/ping",
+        "//pkg/tcpip/transport/icmp",
         "//pkg/waiter",
     ],
 )

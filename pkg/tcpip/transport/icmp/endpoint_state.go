@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ping
+package icmp
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
@@ -20,15 +20,15 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-// saveData saves pingPacket.data field.
-func (p *pingPacket) saveData() buffer.VectorisedView {
+// saveData saves icmpPacket.data field.
+func (p *icmpPacket) saveData() buffer.VectorisedView {
 	// We cannot save p.data directly as p.data.views may alias to p.views,
 	// which is not allowed by state framework (in-struct pointer).
 	return p.data.Clone(nil)
 }
 
-// loadData loads pingPacket.data field.
-func (p *pingPacket) loadData(data buffer.VectorisedView) {
+// loadData loads icmpPacket.data field.
+func (p *icmpPacket) loadData(data buffer.VectorisedView) {
 	// NOTE: We cannot do the p.data = data.Clone(p.views[:]) optimization
 	// here because data.views is not guaranteed to be loaded by now. Plus,
 	// data.views will be allocated anyway so there really is little point

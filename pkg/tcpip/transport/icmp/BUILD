@@ -4,26 +4,26 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
-    name = "ping_packet_list",
-    out = "ping_packet_list.go",
-    package = "ping",
-    prefix = "pingPacket",
+    name = "icmp_packet_list",
+    out = "icmp_packet_list.go",
+    package = "icmp",
+    prefix = "icmpPacket",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*pingPacket",
-        "Linker": "*pingPacket",
+        "Element": "*icmpPacket",
+        "Linker": "*icmpPacket",
     },
 )
 
 go_library(
-    name = "ping",
+    name = "icmp",
     srcs = [
         "endpoint.go",
         "endpoint_state.go",
-        "ping_packet_list.go",
+        "icmp_packet_list.go",
         "protocol.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/ping",
+    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/icmp",
     imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
@@ -39,7 +39,7 @@ go_library(
 filegroup(
     name = "autogen",
     srcs = [
-        "ping_packet_list.go",
+        "icmp_packet_list.go",
     ],
     visibility = ["//:sandbox"],
 )

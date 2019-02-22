@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ping
+package icmp
 
 import (
 	"encoding/binary"
@@ -27,8 +27,8 @@ import (
 )
 
 // +stateify savable
-type pingPacket struct {
-	pingPacketEntry
+type icmpPacket struct {
+	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
@@ -46,10 +46,10 @@ const (
 	stateClosed
 )
 
-// endpoint represents a ping endpoint. This struct serves as the interface
-// between users of the endpoint and the protocol implementation; it is legal to
-// have concurrent goroutines make calls into the endpoint, they are properly
-// synchronized.
+// endpoint represents an ICMP (ping) endpoint. This struct serves as the
+// interface between users of the endpoint and the protocol implementation; it
+// is legal to have concurrent goroutines make calls into the endpoint, they
+// are properly synchronized.
 type endpoint struct {
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
@@ -62,7 +62,7 @@ type endpoint struct {
 	// protected by rcvMu.
 	rcvMu         sync.Mutex `state:"nosave"`
 	rcvReady      bool
-	rcvList       pingPacketList
+	rcvList       icmpPacketList
 	rcvBufSizeMax int `state:".(int)"`
 	rcvBufSize    int
 	rcvClosed     bool
@@ -669,7 +669,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
-	pkt := &pingPacket{
+	pkt := &icmpPacket{
 		senderAddress: tcpip.FullAddress{
 			NIC:  r.NICID(),
 			Addr: id.RemoteAddress,

@@ -27,7 +27,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/channel"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/ping"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -68,8 +68,8 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 func newTestContext(t *testing.T) *testContext {
 	c := &testContext{
 		t:      t,
-		s0:     stack.New([]string{ProtocolName}, []string{ping.ProtocolName6}, stack.Options{}),
-		s1:     stack.New([]string{ProtocolName}, []string{ping.ProtocolName6}, stack.Options{}),
+		s0:     stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
+		s1:     stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
 		icmpCh: make(chan icmpInfo, 10),
 	}
 
