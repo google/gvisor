@@ -87,7 +87,9 @@ func buildIovec(bufs [][]byte, iovecs []syscall.Iovec) ([]syscall.Iovec, int) {
 	return iovecs, length
 }
 
-// ReadVec implements vecio.Reader.ReadVec.
+// ReadVec reads into the pre-allocated bufs. Returns bytes read.
+//
+// The pre-allocatted space used by ReadVec is based upon slice lengths.
 //
 // This function is not guaranteed to read all available data, it
 // returns as soon as a single recvmsg call succeeds.
@@ -160,7 +162,7 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 	}
 
 	// All unet sockets are SOCK_STREAM or SOCK_SEQPACKET, both of which
-	// indicate that the other end is closed by returning a 0-length read
+	// indicate that the other end is closed by returning a 0 length read
 	// with no error.
 	if n == 0 {
 		return 0, io.EOF
@@ -178,7 +180,7 @@ func (r *SocketReader) ReadVec(bufs [][]byte) (int, error) {
 	return int(n), nil
 }
 
-// WriteVec implements vecio.Writer.WriteVec.
+// WriteVec writes the bufs to the socket. Returns bytes written.
 //
 // This function is not guaranteed to send all data, it returns
 // as soon as a single sendmsg call succeeds.
