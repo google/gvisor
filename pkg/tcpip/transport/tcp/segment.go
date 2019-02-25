@@ -16,6 +16,7 @@ package tcp
 
 import (
 	"sync/atomic"
+	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
@@ -56,8 +57,10 @@ type segment struct {
 	window         seqnum.Size
 
 	// parsedOptions stores the parsed values from the options in the segment.
-	parsedOptions header.TCPOptions
-	options       []byte `state:".([]byte)"`
+	parsedOptions  header.TCPOptions
+	options        []byte `state:".([]byte)"`
+	hasNewSACKInfo bool
+	rcvdTime       time.Time `state:".(unixTime)"`
 }
 
 func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
@@ -67,6 +70,7 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.Vectoris
 		route:  r.Clone(),
 	}
 	s.data = vv.Clone(s.views[:])
+	s.rcvdTime = time.Now()
 	return s
 }
 
@@ -78,6 +82,7 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 	}
 	s.views[0] = v
 	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
+	s.rcvdTime = time.Now()
 	return s
 }
 
@@ -91,6 +96,7 @@ func (s *segment) clone() *segment {
 		window:         s.window,
 		route:          s.route.Clone(),
 		viewToDeliver:  s.viewToDeliver,
+		rcvdTime:       s.rcvdTime,
 	}
 	t.data = s.data.Clone(t.views[:])
 	return t

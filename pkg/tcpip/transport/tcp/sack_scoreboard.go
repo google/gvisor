@@ -23,25 +23,40 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
 )
 
-// maxSACKBlocks is the maximum number of distinct SACKBlocks the scoreboard
-// will track. Once there are 100 distinct blocks, new insertions will fail.
-const maxSACKBlocks = 100
+const (
+	// maxSACKBlocks is the maximum number of distinct SACKBlocks the
+	// scoreboard will track. Once there are 100 distinct blocks, new
+	// insertions will fail.
+	maxSACKBlocks = 100
+
+	// defaultBtreeDegree is set to 2 as btree.New(2) results in a 2-3-4
+	// tree.
+	defaultBtreeDegree = 2
+)
 
 // SACKScoreboard stores a set of disjoint SACK ranges.
+//
+// +stateify savable
 type SACKScoreboard struct {
 	smss      uint16
 	maxSACKED seqnum.Value
-	sacked    seqnum.Size
-	ranges    *btree.BTree
+	sacked    seqnum.Size  `state:"nosave"`
+	ranges    *btree.BTree `state:"nosave"`
 }
 
 // NewSACKScoreboard returns a new SACK Scoreboard.
 func NewSACKScoreboard(smss uint16, iss seqnum.Value) *SACKScoreboard {
 	return &SACKScoreboard{
 		smss:      smss,
-		ranges:    btree.New(2),
+		ranges:    btree.New(defaultBtreeDegree),
 		maxSACKED: iss,
 	}
+}
+
+// Reset erases all known range information from the SACK scoreboard.
+func (s *SACKScoreboard) Reset() {
+	s.ranges = btree.New(defaultBtreeDegree)
+	s.sacked = 0
 }
 
 // Insert inserts/merges the provided SACKBlock into the scoreboard.

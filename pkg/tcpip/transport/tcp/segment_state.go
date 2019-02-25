@@ -15,6 +15,8 @@
 package tcp
 
 import (
+	"time"
+
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 )
 
@@ -57,4 +59,14 @@ func (s *segment) loadOptions(options []byte) {
 	// it is OK as they do not need to aliased. Plus, options is already
 	// allocated so there is no cost here.
 	s.options = options
+}
+
+// saveRcvdTime is invoked by stateify.
+func (s *segment) saveRcvdTime() unixTime {
+	return unixTime{s.rcvdTime.Unix(), s.rcvdTime.UnixNano()}
+}
+
+// loadRcvdTime is invoked by stateify.
+func (s *segment) loadRcvdTime(unix unixTime) {
+	s.rcvdTime = time.Unix(unix.second, unix.nano)
 }

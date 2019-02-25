@@ -199,9 +199,11 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		s.sndWndScale = uint8(sndWndScale)
 	}
 
-	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
-
+	// Initialize SACK Scoreboard.
+	s.ep.scoreboard = NewSACKScoreboard(mss, iss)
 	s.resendTimer.init(&s.resendWaker)
+
+	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
 
 	return s
 }
@@ -380,6 +382,21 @@ func (s *sender) retransmitTimerExpired() bool {
 	// We'll keep on transmitting (or retransmitting) as we get acks for
 	// the data we transmit.
 	s.outstanding = 0
+
+	// Expunge all SACK information as per https://tools.ietf.org/html/rfc6675#section-5.1
+	//
+	//  In order to avoid memory deadlocks, the TCP receiver is allowed to
+	//  discard data that has already been selectively acknowledged. As a
+	//  result, [RFC2018] suggests that a TCP sender SHOULD expunge the SACK
+	//  information gathered from a receiver upon a retransmission timeout
+	//  (RTO) "since the timeout might indicate that the data receiver has
+	//  reneged." Additionally, a TCP sender MUST "ignore prior SACK
+	//  information in determining which data to retransmit."
+	//
+	// NOTE: We take the stricter interpretation and just expunge all
+	// information as we lack more rigorous checks to validate if the SACK
+	// information is usable after an RTO.
+	s.ep.scoreboard.Reset()
 	s.writeNext = s.writeList.Front()
 	s.sendData()
 
@@ -550,6 +567,10 @@ func (s *sender) leaveFastRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.sndCwnd = s.sndSsthresh
+
+	// As recovery is now complete, delete all SACK information for acked
+	// data.
+	s.ep.scoreboard.Delete(s.sndUna)
 	s.cc.PostRecovery()
 }
 
@@ -644,6 +665,29 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	if s.ep.sendTSOk && seg.parsedOptions.TS {
 		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
 	}
+
+	// Insert SACKBlock information into our scoreboard.
+	if s.ep.sackPermitted {
+		for _, sb := range seg.parsedOptions.SACKBlocks {
+			// Only insert the SACK block if the following holds
+			// true:
+			//  * SACK block acks data after the ack number in the
+			//    current segment.
+			//  * SACK block represents a sequence
+			//    between sndUna and sndNxt (i.e. data that is
+			//    currently unacked and in-flight).
+			//  * SACK block that has not been SACKed already.
+			//
+			// NOTE: This check specifically excludes DSACK blocks
+			// which have start/end before sndUna and are used to
+			// indicate spurious retransmissions.
+			if seg.ackNumber.LessThan(sb.Start) && s.sndUna.LessThan(sb.Start) && sb.End.LessThanEq(s.sndNxt) && !s.ep.scoreboard.IsSACKED(sb) {
+				s.ep.scoreboard.Insert(sb)
+				seg.hasNewSACKInfo = true
+			}
+		}
+	}
+
 	// Count the duplicates and do the fast retransmit if needed.
 	rtx := s.checkDuplicateAck(seg)
 
@@ -701,6 +745,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 		// Update the send buffer usage and notify potential waiters.
 		s.ep.updateSndBufferUsage(int(acked))
+
+		// Clear SACK information for all acked data.
+		s.ep.scoreboard.Delete(s.sndUna)
 
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
