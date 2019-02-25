@@ -46,6 +46,25 @@ TEST(SendFileTest, SendZeroBytes) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST(SendFileTest, InvalidOffset) {
+  // Create temp files.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // Open the input file as read only.
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Open the output file as write only.
+  const FileDescriptor outf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
+
+  // Send data and verify that sendfile returns the correct value.
+  off_t offset = -1;
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), &offset, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 TEST(SendFileTest, SendTrivially) {
   // Create temp files.
   constexpr char kData[] = "To be, or not to be, that is the question:";

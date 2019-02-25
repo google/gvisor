@@ -2022,7 +2022,6 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	// Setup for sending data.
-	var offset uint64
 	var n int64
 	var err error
 	w := &fs.FileWriter{t, outFile}
@@ -2034,14 +2033,18 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			return 0, nil, syserror.ESPIPE
 		}
 		// Copy in the offset.
+		var offset int64
 		if _, err := t.CopyIn(offsetAddr, &offset); err != nil {
 			return 0, nil, err
 		}
+		if offset < 0 {
+			return 0, nil, syserror.EINVAL
+		}
 		// Send data using Preadv.
-		r := io.NewSectionReader(&fs.FileReader{t, inFile}, int64(offset), count)
+		r := io.NewSectionReader(&fs.FileReader{t, inFile}, offset, count)
 		n, err = io.Copy(w, r)
 		// Copy out the new offset.
-		if _, err := t.CopyOut(offsetAddr, n+int64(offset)); err != nil {
+		if _, err := t.CopyOut(offsetAddr, n+offset); err != nil {
 			return 0, nil, err
 		}
 		// If we don't have a provided offset.
