@@ -403,14 +403,19 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	// route to each IPv4 network endpoint and let each endpoint handle the
 	// packet.
 	if dst == header.IPv4Broadcast {
+		// n.endpoints is mutex protected so acquire lock.
+		n.mu.RLock()
 		for _, ref := range n.endpoints {
+			n.mu.RUnlock()
 			if ref.protocol == header.IPv4ProtocolNumber && ref.tryIncRef() {
 				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
 				r.RemoteLinkAddress = remote
 				ref.ep.HandlePacket(&r, vv)
 				ref.decRef()
 			}
+			n.mu.RLock()
 		}
+		n.mu.RUnlock()
 		return
 	}
 
