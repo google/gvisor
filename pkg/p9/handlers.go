@@ -237,7 +237,7 @@ func (t *Tattach) handle(cs *connState) message {
 	// We want the same traversal checks to apply on attach, so always
 	// attach at the root and use the regular walk paths.
 	names := strings.Split(t.Auth.AttachName, "/")
-	_, newRef, _, attr, err := doWalk(cs, root, names)
+	_, newRef, _, _, err := doWalk(cs, root, names, false)
 	if err != nil {
 		return newErr(err)
 	}
@@ -996,24 +996,38 @@ func (t *Tflushf) handle(cs *connState) message {
 // walkOne walks zero or one path elements.
 //
 // The slice passed as qids is append and returned.
-func walkOne(qids []QID, from File, names []string) ([]QID, File, AttrMask, Attr, error) {
+func walkOne(qids []QID, from File, names []string, getattr bool) ([]QID, File, AttrMask, Attr, error) {
 	if len(names) > 1 {
 		// We require exactly zero or one elements.
 		return nil, nil, AttrMask{}, Attr{}, syscall.EINVAL
 	}
-	var localQIDs []QID
-	localQIDs, sf, valid, attr, err := from.WalkGetAttr(names)
-	if err == syscall.ENOSYS {
+	var (
+		localQIDs []QID
+		sf        File
+		valid     AttrMask
+		attr      Attr
+		err       error
+	)
+	switch {
+	case getattr:
+		localQIDs, sf, valid, attr, err = from.WalkGetAttr(names)
+		// Can't put fallthrough in the if because Go.
+		if err != syscall.ENOSYS {
+			break
+		}
+		fallthrough
+	default:
 		localQIDs, sf, err = from.Walk(names)
 		if err != nil {
 			// No way to walk this element.
-			return nil, nil, AttrMask{}, Attr{}, err
+			break
 		}
-		// Need a manual getattr.
-		_, valid, attr, err = sf.GetAttr(AttrMaskAll())
-		if err != nil {
-			// Don't leak the file.
-			sf.Close()
+		if getattr {
+			_, valid, attr, err = sf.GetAttr(AttrMaskAll())
+			if err != nil {
+				// Don't leak the file.
+				sf.Close()
+			}
 		}
 	}
 	if err != nil {
@@ -1033,7 +1047,7 @@ func walkOne(qids []QID, from File, names []string) ([]QID, File, AttrMask, Attr
 // This enforces that all intermediate nodes are walkable (directories). The
 // fidRef returned (newRef) has a reference associated with it that is now
 // owned by the caller and must be handled appropriately.
-func doWalk(cs *connState, ref *fidRef, names []string) (qids []QID, newRef *fidRef, valid AttrMask, attr Attr, err error) {
+func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QID, newRef *fidRef, valid AttrMask, attr Attr, err error) {
 	// Check the names.
 	for _, name := range names {
 		err = checkSafeName(name)
@@ -1054,7 +1068,7 @@ func doWalk(cs *connState, ref *fidRef, names []string) (qids []QID, newRef *fid
 		var sf File // Temporary.
 		if err := ref.maybeParent().safelyRead(func() (err error) {
 			// Clone the single element.
-			qids, sf, valid, attr, err = walkOne(nil, ref.file, nil)
+			qids, sf, valid, attr, err = walkOne(nil, ref.file, nil, getattr)
 			if err != nil {
 				return err
 			}
@@ -1101,7 +1115,9 @@ func doWalk(cs *connState, ref *fidRef, names []string) (qids []QID, newRef *fid
 
 		var sf File // Temporary.
 		if err := walkRef.safelyRead(func() (err error) {
-			qids, sf, valid, attr, err = walkOne(qids, walkRef.file, names[i:i+1])
+			// Pass getattr = true to walkOne since we need the file type for
+			// newRef.
+			qids, sf, valid, attr, err = walkOne(qids, walkRef.file, names[i:i+1], true)
 			if err != nil {
 				return err
 			}
@@ -1146,7 +1162,7 @@ func (t *Twalk) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	// Do the walk.
-	qids, newRef, _, _, err := doWalk(cs, ref, t.Names)
+	qids, newRef, _, _, err := doWalk(cs, ref, t.Names, false)
 	if err != nil {
 		return newErr(err)
 	}
@@ -1167,7 +1183,7 @@ func (t *Twalkgetattr) handle(cs *connState) message {
 	defer ref.DecRef()
 
 	// Do the walk.
-	qids, newRef, valid, attr, err := doWalk(cs, ref, t.Names)
+	qids, newRef, valid, attr, err := doWalk(cs, ref, t.Names, true)
 	if err != nil {
 		return newErr(err)
 	}
