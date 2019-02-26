@@ -288,6 +288,11 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 	return rawfile.NonBlockingWrite2(e.fd, hdr.View(), payload.ToView())
 }
 
+// WriteRawPacket writes a raw packet directly to the file descriptor.
+func (e *endpoint) WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Error {
+	return rawfile.NonBlockingWrite(e.fd, packet)
+}
+
 func (e *endpoint) capViews(k, n int, buffers []int) int {
 	c := 0
 	for i, s := range buffers {

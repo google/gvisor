@@ -28,8 +28,24 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
+func TestInjectableEndpointRawDispatch(t *testing.T) {
+	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
+
+	endpoint.WriteRawPacket(dstIP, []byte{0xFA})
+
+	buf := make([]byte, ipv4.MaxTotalSize)
+	bytesRead, err := sock.Read(buf)
+	if err != nil {
+		t.Fatalf("Unable to read from socketpair: %v", err)
+	}
+	if got, want := buf[:bytesRead], []byte{0xFA}; !bytes.Equal(got, want) {
+		t.Fatalf("Read %v from the socketpair, wanted %v", got, want)
+	}
+}
+
 func TestInjectableEndpointDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
+
 	hdr := buffer.NewPrependable(1)
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}

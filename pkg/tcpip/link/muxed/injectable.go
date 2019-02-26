@@ -94,7 +94,17 @@ func (m *InjectableEndpoint) WritePacket(r *stack.Route, hdr buffer.Prependable,
 	return tcpip.ErrNoRoute
 }
 
-// NewInjectableEndpoint creates a new multi-fd-based injectable endpoint.
+// WriteRawPacket writes outbound packets to the appropriate
+// LinkInjectableEndpoint based on the dest address.
+func (m *InjectableEndpoint) WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Error {
+	endpoint, ok := m.routes[dest]
+	if !ok {
+		return tcpip.ErrNoRoute
+	}
+	return endpoint.WriteRawPacket(dest, packet)
+}
+
+// NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
 func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint, mtu uint32) (tcpip.LinkEndpointID, *InjectableEndpoint) {
 	e := &InjectableEndpoint{
 		routes: routes,

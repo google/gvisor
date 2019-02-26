@@ -260,6 +260,11 @@ type InjectableLinkEndpoint interface {
 
 	// Inject injects an inbound packet.
 	Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView)
+
+	// WriteRawPacket writes a fully formed outbound packet directly to the link.
+	//
+	// dest is used by endpoints with multiple raw destinations.
+	WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Error
 }
 
 // A LinkAddressResolver is an extension to a NetworkProtocol that
