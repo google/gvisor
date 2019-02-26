@@ -290,7 +290,7 @@ func (c *vCPU) SwitchToUser(switchOpts ring0.SwitchOpts, info *arch.SignalInfo) 
 	case ring0.Overflow:
 		*info = arch.SignalInfo{
 			Signo: int32(syscall.SIGFPE),
-			Code:  1, // FPE_INTOVF (integer overflow).
+			Code:  2, // FPE_INTOVF (integer overflow).
 		}
 		info.SetAddr(switchOpts.Registers.Rip) // Include address.
 		return usermem.AccessType{}, platform.ErrContextSignal
