@@ -461,3 +461,8 @@ func WriteTmpFile(pattern, text string) (string, error) {
 	}
 	return file.Name(), nil
 }
+
+// RandomName create a name with a 6 digit random number appended to it.
+func RandomName(prefix string) string {
+	return fmt.Sprintf("%s-%06d", prefix, rand.Int31n(1000000))
+}

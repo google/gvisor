@@ -161,20 +161,59 @@ func countCpuset(cpuset string) (int, error) {
 	return count, nil
 }
 
+// LoadPaths loads cgroup paths for given 'pid', may be set to 'self'.
+func LoadPaths(pid string) (map[string]string, error) {
+	f, err := os.Open(filepath.Join("/proc", pid, "cgroup"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	paths := make(map[string]string)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// Format: ID:controller1,controller2:path
+		// Example: 2:cpu,cpuacct:/user.slice
+		tokens := strings.Split(scanner.Text(), ":")
+		if len(tokens) != 3 {
+			return nil, fmt.Errorf("invalid cgroups file, line: %q", scanner.Text())
+		}
+		for _, ctrlr := range strings.Split(tokens[1], ",") {
+			paths[ctrlr] = tokens[2]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return paths, nil
+}
+
 // Cgroup represents a group inside all controllers. For example: Name='/foo/bar'
 // maps to /sys/fs/cgroup/<controller>/foo/bar on all controllers.
 type Cgroup struct {
-	Name string `json:"name"`
-	Own  bool   `json:"own"`
+	Name    string            `json:"name"`
+	Parents map[string]string `json:"parents"`
+	Own     bool              `json:"own"`
 }
 
 // New creates a new Cgroup instance if the spec includes a cgroup path.
 // Returns nil otherwise.
-func New(spec *specs.Spec) *Cgroup {
+func New(spec *specs.Spec) (*Cgroup, error) {
 	if spec.Linux == nil || spec.Linux.CgroupsPath == "" {
-		return nil
+		return nil, nil
 	}
-	return &Cgroup{Name: spec.Linux.CgroupsPath}
+	var parents map[string]string
+	if !filepath.IsAbs(spec.Linux.CgroupsPath) {
+		var err error
+		parents, err = LoadPaths("self")
+		if err != nil {
+			return nil, fmt.Errorf("finding current cgroups: %v", err)
+		}
+	}
+	return &Cgroup{
+		Name:    spec.Linux.CgroupsPath,
+		Parents: parents,
+	}, nil
 }
 
 // Install creates and configures cgroups according to 'res'. If cgroup path
@@ -188,9 +227,11 @@ func (c *Cgroup) Install(res *specs.LinuxResources) error {
 		return nil
 	}
 
-	// Mark that cgroup resources are owned by me.
 	log.Debugf("Creating cgroup %q", c.Name)
+
+	// Mark that cgroup resources are owned by me.
 	c.Own = true
+
 	// The Cleanup object cleans up partially created cgroups when an error occurs.
 	// Errors occuring during cleanup itself are ignored.
 	clean := specutils.MakeCleanup(func() { _ = c.Uninstall() })
@@ -247,31 +288,18 @@ func (c *Cgroup) Uninstall() error {
 func (c *Cgroup) Join() (func(), error) {
 	// First save the current state so it can be restored.
 	undo := func() {}
-	f, err := os.Open("/proc/self/cgroup")
+	paths, err := LoadPaths("self")
 	if err != nil {
 		return undo, err
 	}
-	defer f.Close()
-
 	var undoPaths []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		// Format: ID:controller1,controller2:path
-		// Example: 2:cpu,cpuacct:/user.slice
-		tokens := strings.Split(scanner.Text(), ":")
-		if len(tokens) != 3 {
-			return undo, fmt.Errorf("formatting cgroups file, line: %q", scanner.Text())
+	for ctrlr, path := range paths {
+		// Skip controllers we don't handle.
+		if _, ok := controllers[ctrlr]; ok {
+			fullPath := filepath.Join(cgroupRoot, ctrlr, path)
+			undoPaths = append(undoPaths, fullPath)
+			break
 		}
-		for _, ctrlr := range strings.Split(tokens[1], ",") {
-			// Skip controllers we don't handle.
-			if _, ok := controllers[ctrlr]; ok {
-				undoPaths = append(undoPaths, filepath.Join(cgroupRoot, ctrlr, tokens[2]))
-				break
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return undo, err
 	}
 
 	// Replace empty undo with the real thing before changes are made to cgroups.
@@ -316,7 +344,11 @@ func (c *Cgroup) MemoryLimit() (uint64, error) {
 }
 
 func (c *Cgroup) makePath(controllerName string) string {
-	return filepath.Join(cgroupRoot, controllerName, c.Name)
+	path := c.Name
+	if parent, ok := c.Parents[controllerName]; ok {
+		path = filepath.Join(parent, c.Name)
+	}
+	return filepath.Join(cgroupRoot, controllerName, path)
 }
 
 type controller interface {

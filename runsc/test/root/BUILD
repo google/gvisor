@@ -24,6 +24,7 @@ go_test(
         "local",
     ],
     deps = [
+        "//runsc/cgroup",
         "//runsc/specutils",
         "//runsc/test/root/testdata",
         "//runsc/test/testutil",

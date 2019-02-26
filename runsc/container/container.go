@@ -295,7 +295,10 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all tneir children processes).
-		cg := cgroup.New(spec)
+		cg, err := cgroup.New(spec)
+		if err != nil {
+			return nil, err
+		}
 		if cg != nil {
 			// If there is cgroup config, install it before creating sandbox process.
 			if err := cg.Install(spec.Linux.Resources); err != nil {

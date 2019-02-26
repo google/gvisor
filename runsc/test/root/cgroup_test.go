@@ -15,15 +15,44 @@
 package root
 
 import (
+	"bufio"
+	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"gvisor.googlesource.com/gvisor/runsc/cgroup"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
+
+func verifyPid(pid int, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var gots []int
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		got, err := strconv.Atoi(scanner.Text())
+		if err != nil {
+			return err
+		}
+		if got == pid {
+			return nil
+		}
+		gots = append(gots, got)
+	}
+	if scanner.Err() != nil {
+		return scanner.Err()
+	}
+	return fmt.Errorf("got: %s, want: %d", gots, pid)
+}
 
 // TestCgroup sets cgroup options and checks that cgroup was properly configured.
 func TestCgroup(t *testing.T) {
@@ -161,12 +190,48 @@ func TestCgroup(t *testing.T) {
 	}
 	for _, ctrl := range controllers {
 		path := filepath.Join("/sys/fs/cgroup", ctrl, "docker", gid, "cgroup.procs")
-		out, err := ioutil.ReadFile(path)
-		if err != nil {
-			t.Fatalf("failed to read %q: %v", path, err)
+		if err := verifyPid(pid, path); err != nil {
+			t.Errorf("cgroup control %q processes: %v", ctrl, err)
 		}
-		if got := string(out); !strings.Contains(got, strconv.Itoa(pid)) {
-			t.Errorf("cgroup control %s processes, got: %q, want: %q", ctrl, got, pid)
-		}
+	}
+}
+
+func TestCgroupParent(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatal("docker pull failed:", err)
+	}
+	d := testutil.MakeDocker("cgroup-test")
+
+	parent := testutil.RandomName("runsc")
+	if err := d.Run("--cgroup-parent", parent, "alpine", "sleep", "10000"); err != nil {
+		t.Fatal("docker create failed:", err)
+	}
+	defer d.CleanUp()
+	gid, err := d.ID()
+	if err != nil {
+		t.Fatalf("Docker.ID() failed: %v", err)
+	}
+	t.Logf("cgroup ID: %s", gid)
+
+	// Check that sandbox is inside cgroup.
+	pid, err := d.SandboxPid()
+	if err != nil {
+		t.Fatalf("SandboxPid: %v", err)
+	}
+
+	// Finds cgroup for the sandbox's parent process to check that cgroup is
+	// created in the right location relative to the parent.
+	cmd := fmt.Sprintf("grep PPid: /proc/%d/status | sed 's/PPid:\\s//'", pid)
+	ppid, err := exec.Command("bash", "-c", cmd).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Executing %q: %v", cmd, err)
+	}
+	cgroups, err := cgroup.LoadPaths(strings.TrimSpace(string(ppid)))
+	if err != nil {
+		t.Fatalf("cgroup.LoadPath(%s): %v", ppid, err)
+	}
+	path := filepath.Join("/sys/fs/cgroup/memory", cgroups["memory"], parent, gid, "cgroup.procs")
+	if err := verifyPid(pid, path); err != nil {
+		t.Errorf("cgroup control %q processes: %v", "memory", err)
 	}
 }
