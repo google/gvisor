@@ -39,9 +39,7 @@ type Watches struct {
 }
 
 func newWatches() *Watches {
-	return &Watches{
-		ws: make(map[uint64]*Watch),
-	}
+	return &Watches{}
 }
 
 // MarkUnlinked indicates the target for this set of watches to be unlinked.
@@ -77,6 +75,9 @@ func (w *Watches) Add(watch *Watch) {
 	// inotify level.
 	if _, exists := w.ws[watch.ID()]; exists {
 		panic(fmt.Sprintf("Watch collision with ID %+v", watch.ID()))
+	}
+	if w.ws == nil {
+		w.ws = make(map[uint64]*Watch)
 	}
 	w.ws[watch.ID()] = watch
 }
