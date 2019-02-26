@@ -35,7 +35,7 @@ TEST(PosixErrorTest, PosixErrorOrPosixError) {
 
 TEST(PosixErrorTest, PosixErrorOrNullptr) {
   auto err = PosixErrorOr<std::nullptr_t>(nullptr);
-  EXPECT_THAT(err, PosixErrorIs(0, ""));
+  EXPECT_TRUE(err.ok());
   EXPECT_NO_ERRNO(err);
 }
 

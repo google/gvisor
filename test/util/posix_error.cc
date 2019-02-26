@@ -74,15 +74,10 @@ bool PosixErrorIsMatcherCommonImpl::MatchAndExplain(
 
   inner_listener.Clear();
   if (!code_matcher_.MatchAndExplain(error.errno_value(), &inner_listener)) {
-    *result_listener << (inner_listener.str().empty()
-                             ? "whose errno value is wrong"
-                             : "which has a errno value " +
-                                   inner_listener.str());
     return false;
   }
 
   if (!message_matcher_.Matches(error.error_message())) {
-    *result_listener << "whose error message is wrong";
     return false;
   }
 

@@ -74,6 +74,7 @@ class ABSL_MUST_USE_RESULT PosixError {
 template <typename T>
 class ABSL_MUST_USE_RESULT PosixErrorOr {
  public:
+  // A PosixErrorOr will check fail if it is constructed with NoError().
   PosixErrorOr(const PosixError& error);
   PosixErrorOr(const T& value);
   PosixErrorOr(T&& value);
@@ -99,7 +100,7 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   // Returns this->error().error_message();
   const std::string error_message() const;
 
-  // Returns this->error().ok()
+  // Returns true if this PosixErrorOr contains some T.
   bool ok() const;
 
   // Returns a reference to our current value, or CHECK-fails if !this->ok().
@@ -121,7 +122,11 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
 };
 
 template <typename T>
-PosixErrorOr<T>::PosixErrorOr(const PosixError& error) : value_(error) {}
+PosixErrorOr<T>::PosixErrorOr(const PosixError& error) : value_(error) {
+  TEST_CHECK_MSG(
+      !error.ok(),
+      "Constructing PosixErrorOr with NoError, eg. errno 0 is not allowed.");
+}
 
 template <typename T>
 PosixErrorOr<T>::PosixErrorOr(const T& value) : value_(value) {}
@@ -177,7 +182,7 @@ const std::string PosixErrorOr<T>::error_message() const {
 
 template <typename T>
 bool PosixErrorOr<T>::ok() const {
-  return error().ok();
+  return absl::holds_alternative<T>(value_);
 }
 
 template <typename T>
@@ -265,8 +270,8 @@ class IsPosixErrorOkAndHoldsMatcherImpl
   bool MatchAndExplain(
       PosixErrorOrType actual_value,
       ::testing::MatchResultListener* listener) const override {
+    // We can't extract the value if it doesn't contain one.
     if (!actual_value.ok()) {
-      *listener << "which has error value " << actual_value.error();
       return false;
     }
 
@@ -274,10 +279,11 @@ class IsPosixErrorOkAndHoldsMatcherImpl
     const bool matches = inner_matcher_.MatchAndExplain(
         actual_value.ValueOrDie(), &inner_listener);
     const std::string inner_explanation = inner_listener.str();
+    *listener << "has a value "
+              << ::testing::PrintToString(actual_value.ValueOrDie());
+
     if (!inner_explanation.empty()) {
-      *listener << "which contains value "
-                << ::testing::PrintToString(actual_value.ValueOrDie()) << ", "
-                << inner_explanation;
+      *listener << " " << inner_explanation;
     }
     return matches;
   }
@@ -325,6 +331,18 @@ class PosixErrorIsMatcherCommonImpl {
   bool MatchAndExplain(const PosixError& error,
                        ::testing::MatchResultListener* result_listener) const;
 
+  template <typename T>
+  bool MatchAndExplain(const PosixErrorOr<T>& error_or,
+                       ::testing::MatchResultListener* result_listener) const {
+    if (error_or.ok()) {
+      *result_listener << "has a value "
+                       << ::testing::PrintToString(error_or.ValueOrDie());
+      return false;
+    }
+
+    return MatchAndExplain(error_or.error(), result_listener);
+  }
+
  private:
   const ::testing::Matcher<int> code_matcher_;
   const ::testing::Matcher<const std::string&> message_matcher_;
@@ -350,7 +368,7 @@ class MonoPosixErrorIsMatcherImpl : public ::testing::MatcherInterface<T> {
   bool MatchAndExplain(
       T actual_value,
       ::testing::MatchResultListener* result_listener) const override {
-    return common_impl_.MatchAndExplain(actual_value.error(), result_listener);
+    return common_impl_.MatchAndExplain(actual_value, result_listener);
   }
 
  private:
