@@ -406,14 +406,12 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 		// n.endpoints is mutex protected so acquire lock.
 		n.mu.RLock()
 		for _, ref := range n.endpoints {
-			n.mu.RUnlock()
 			if ref.protocol == header.IPv4ProtocolNumber && ref.tryIncRef() {
 				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
 				r.RemoteLinkAddress = remote
 				ref.ep.HandlePacket(&r, vv)
 				ref.decRef()
 			}
-			n.mu.RLock()
 		}
 		n.mu.RUnlock()
 		return
