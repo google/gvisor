@@ -131,11 +131,20 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		}
 		if child != nil {
 			if !child.IsNegative() {
-				// Did we find something in the upper filesystem? We can
-				// only use it if the types match.
-				if upperInode == nil || upperInode.StableAttr.Type == child.Inode.StableAttr.Type {
+				if upperInode == nil {
+					// If nothing was in the upper, use what we found in the lower.
 					lowerInode = child.Inode
 					lowerInode.IncRef()
+				} else {
+					// If we have something from the upper, we can only use it if the types
+					// match.
+					// NOTE: Allow SpecialDirectories and Directories to merge.
+					// This is needed to allow submounts in /proc and /sys.
+					if upperInode.StableAttr.Type == child.Inode.StableAttr.Type ||
+						(IsDir(upperInode.StableAttr) && IsDir(child.Inode.StableAttr)) {
+						lowerInode = child.Inode
+						lowerInode.IncRef()
+					}
 				}
 			}
 			child.DecRef()
