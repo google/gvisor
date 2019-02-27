@@ -934,7 +934,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(vv.First())
 	if int(hdr.Length()) > vv.Size() {

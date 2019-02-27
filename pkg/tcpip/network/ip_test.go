@@ -94,7 +94,7 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buff
 // DeliverTransportPacket is called by network endpoints after parsing incoming
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
-func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView) {
+func (t *testObject) DeliverTransportPacket(r *stack.Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView) {
 	t.checkValues(protocol, vv, r.RemoteAddress, r.LocalAddress)
 	t.dataCalls++
 }

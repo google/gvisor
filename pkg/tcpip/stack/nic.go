@@ -505,7 +505,7 @@ func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *r
 
 // DeliverTransportPacket delivers the packets to the appropriate transport
 // protocol endpoint.
-func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView) {
+func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView) {
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
@@ -525,16 +525,16 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	}
 
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
-	if n.demux.deliverPacket(r, protocol, vv, id) {
+	if n.demux.deliverPacket(r, protocol, netHeader, vv, id) {
 		return
 	}
-	if n.stack.demux.deliverPacket(r, protocol, vv, id) {
+	if n.stack.demux.deliverPacket(r, protocol, netHeader, vv, id) {
 		return
 	}
 
 	// Try to deliver to per-stack default handler.
 	if state.defaultHandler != nil {
-		if state.defaultHandler(r, id, vv) {
+		if state.defaultHandler(r, id, netHeader, vv) {
 			return
 		}
 	}

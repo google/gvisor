@@ -102,7 +102,8 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
-	h := header.IPv6(vv.First())
+	headerView := vv.First()
+	h := header.IPv6(headerView)
 	if !h.IsValid(vv.Size()) {
 		return
 	}
@@ -112,12 +113,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 
 	p := h.TransportProtocol()
 	if p == header.ICMPv6ProtocolNumber {
-		e.handleICMP(r, vv)
+		e.handleICMP(r, headerView, vv)
 		return
 	}
 
 	r.Stats().IP.PacketsDelivered.Increment()
-	e.dispatcher.DeliverTransportPacket(r, p, vv)
+	e.dispatcher.DeliverTransportPacket(r, p, headerView, vv)
 }
 
 // Close cleans up resources associated with the endpoint.

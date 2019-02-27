@@ -55,7 +55,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv buffer.
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, vv)
 }
 
-func (e *endpoint) handleICMP(r *stack.Route, vv buffer.VectorisedView) {
+func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
 	v := vv.First()
 	if len(v) < header.ICMPv4MinimumSize {
 		return
@@ -67,19 +67,22 @@ func (e *endpoint) handleICMP(r *stack.Route, vv buffer.VectorisedView) {
 		if len(v) < header.ICMPv4EchoMinimumSize {
 			return
 		}
-		vv.TrimFront(header.ICMPv4MinimumSize)
-		req := echoRequest{r: r.Clone(), v: vv.ToView()}
+		echoPayload := vv.ToView()
+		echoPayload.TrimFront(header.ICMPv4MinimumSize)
+		req := echoRequest{r: r.Clone(), v: echoPayload}
 		select {
 		case e.echoRequests <- req:
 		default:
 			req.r.Release()
 		}
+		// It's possible that a raw socket expects to receive this.
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 	case header.ICMPv4EchoReply:
 		if len(v) < header.ICMPv4EchoMinimumSize {
 			return
 		}
-		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, vv)
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 	case header.ICMPv4DstUnreachable:
 		if len(v) < header.ICMPv4DstUnreachableMinimumSize {

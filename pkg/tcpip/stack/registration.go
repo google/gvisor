@@ -64,7 +64,7 @@ const (
 type TransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint.
-	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
+	HandlePacket(r *Route, id TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView)
 
 	// HandleControlPacket is called by the stack when new control (e.g.,
 	// ICMP) packets arrive to this transport endpoint.
@@ -79,6 +79,9 @@ type TransportProtocol interface {
 
 	// NewEndpoint creates a new endpoint of the transport protocol.
 	NewEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+
+	// NewRawEndpoint creates a new raw endpoint of the transport protocol.
+	NewRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, waitQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
 
 	// MinimumPacketSize returns the minimum valid packet size of this
 	// transport protocol. The stack automatically drops any packets smaller
@@ -113,8 +116,9 @@ type TransportProtocol interface {
 // the network layer.
 type TransportDispatcher interface {
 	// DeliverTransportPacket delivers packets to the appropriate
-	// transport protocol endpoint.
-	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView)
+	// transport protocol endpoint. It also returns the network layer
+	// header for the enpoint to inspect or pass up the stack.
+	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView)
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.

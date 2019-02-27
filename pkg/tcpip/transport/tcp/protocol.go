@@ -101,6 +101,12 @@ func (*protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolN
 	return newEndpoint(stack, netProto, waiterQueue), nil
 }
 
+// NewRawEndpoint creates a new raw TCP endpoint. Raw TCP sockets are currently
+// unsupported. It implements stack.TransportProtocol.NewRawEndpoint.
+func (p *protocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return nil, tcpip.ErrUnknownProtocol
+}
+
 // MinimumPacketSize returns the minimum valid tcp packet size.
 func (*protocol) MinimumPacketSize() int {
 	return header.TCPMinimumSize

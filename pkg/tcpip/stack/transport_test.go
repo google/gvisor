@@ -168,7 +168,7 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Erro
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, _ buffer.VectorisedView) {
+func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, _ buffer.View, _ buffer.VectorisedView) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
 	if f.acceptQueue != nil {
@@ -212,6 +212,10 @@ func (*fakeTransportProtocol) Number() tcpip.TransportProtocolNumber {
 
 func (f *fakeTransportProtocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return newFakeTransportEndpoint(stack, f, netProto), nil
+}
+
+func (f *fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return nil, tcpip.ErrUnknownProtocol
 }
 
 func (*fakeTransportProtocol) MinimumPacketSize() int {

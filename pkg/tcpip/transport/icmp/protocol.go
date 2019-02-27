@@ -47,6 +47,7 @@ const (
 	ProtocolNumber6 = header.ICMPv6ProtocolNumber
 )
 
+// protocol implements stack.TransportProtocol.
 type protocol struct {
 	number tcpip.TransportProtocolNumber
 }
@@ -66,12 +67,22 @@ func (p *protocol) netProto() tcpip.NetworkProtocolNumber {
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
 
-// NewEndpoint creates a new icmp endpoint.
+// NewEndpoint creates a new icmp endpoint. It implements
+// stack.TransportProtocol.NewEndpoint.
 func (p *protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	if netProto != p.netProto() {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-	return newEndpoint(stack, netProto, p.number, waiterQueue), nil
+	return newEndpoint(stack, netProto, p.number, waiterQueue, false)
+}
+
+// NewRawEndpoint creates a new raw icmp endpoint. It implements
+// stack.TransportProtocol.NewRawEndpoint.
+func (p *protocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	if netProto != p.netProto() {
+		return nil, tcpip.ErrUnknownProtocol
+	}
+	return newEndpoint(stack, netProto, p.number, waiterQueue, true)
 }
 
 // MinimumPacketSize returns the minimum valid icmp packet size.
