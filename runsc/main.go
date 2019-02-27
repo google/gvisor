@@ -192,7 +192,13 @@ func main() {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
-		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
+		if logFile == os.Stderr {
+			// Suppress logging to stderr when debug log is enabled. Otherwise all
+			// messages will be duplicated in the debug log (see Dup2() call above).
+			e = newEmitter(*debugLogFormat, f)
+		} else {
+			e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
+		}
 	} else if *debugLog != "" {
 		f, err := specutils.DebugLogFile(*debugLog, subcommand)
 		if err != nil {

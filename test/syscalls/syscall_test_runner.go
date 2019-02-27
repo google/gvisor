@@ -202,6 +202,11 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		debugLogDir += "/"
 		log.Infof("runsc logs: %s", debugLogDir)
 		args = append(args, "-debug-log", debugLogDir)
+
+		// Default -log sends messages to stderr which makes reading the test log
+		// difficult. Instead, drop them when debug log is enabled given it's a
+		// better place for these messages.
+		args = append(args, "-log=/dev/null")
 	}
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
