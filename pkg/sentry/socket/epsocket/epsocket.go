@@ -1230,10 +1230,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}))
 
 	case linux.MCAST_JOIN_GROUP:
-		// FIXME: Disallow IP-level multicast group options by
-		// default. These will need to be supported by appropriately plumbing
-		// the level through to the network stack (if at all). However, we
-		// still allow setting TTL, and multicast-enable/disable type options.
+		// FIXME: Implement MCAST_JOIN_GROUP.
 		t.Kernel().EmitUnimplementedEvent(t)
 		return syserr.ErrInvalidArgument
 
