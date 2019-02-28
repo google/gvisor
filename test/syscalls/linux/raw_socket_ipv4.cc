@@ -45,15 +45,15 @@ class RawSocketTest : public ::testing::Test {
   // The loopback address.
   struct sockaddr_in addr_;
 
-  void sendEmptyICMP(struct icmphdr *icmp);
+  void SendEmptyICMP(struct icmphdr *icmp);
 
-  void sendEmptyICMPTo(int sock, struct sockaddr_in *addr,
+  void SendEmptyICMPTo(int sock, struct sockaddr_in *addr,
                        struct icmphdr *icmp);
 
-  void receiveICMP(char *recv_buf, size_t recv_buf_len, size_t expected_size,
+  void ReceiveICMP(char *recv_buf, size_t recv_buf_len, size_t expected_size,
                    struct sockaddr_in *src);
 
-  void receiveICMPFrom(char *recv_buf, size_t recv_buf_len,
+  void ReceiveICMPFrom(char *recv_buf, size_t recv_buf_len,
                        size_t expected_size, struct sockaddr_in *src, int sock);
 };
 
@@ -97,34 +97,52 @@ TEST_F(RawSocketTest, SendAndReceive) {
   struct icmphdr icmp;
   icmp.type = ICMP_ECHO;
   icmp.code = 0;
-  icmp.checksum = *(unsigned short *)&icmp.checksum;
-  icmp.un.echo.sequence = *(unsigned short *)&icmp.un.echo.sequence;
-  icmp.un.echo.id = *(unsigned short *)&icmp.un.echo.id;
-  ASSERT_NO_FATAL_FAILURE(sendEmptyICMP(&icmp));
+  icmp.checksum = 2011;
+  icmp.un.echo.sequence = 2012;
+  icmp.un.echo.id = 2014;
+  ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(&icmp));
 
-  // Receive the packet and make sure it's identical.
+  // We're going to receive both the echo request and reply, but the order is
+  // indeterminate.
   char recv_buf[512];
   struct sockaddr_in src;
-  ASSERT_NO_FATAL_FAILURE(receiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
-                                      sizeof(struct icmphdr), &src));
-  EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
-  EXPECT_EQ(memcmp(recv_buf + sizeof(struct iphdr), &icmp, sizeof(icmp)), 0);
+  bool received_request = false;
+  bool received_reply = false;
 
-  // We should also receive the automatically generated echo reply.
-  ASSERT_NO_FATAL_FAILURE(receiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
-                                      sizeof(struct icmphdr), &src));
-  EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
-  struct icmphdr *reply_icmp =
-      (struct icmphdr *)(recv_buf + sizeof(struct iphdr));
-  // Most fields should be the same.
-  EXPECT_EQ(reply_icmp->code, icmp.code);
-  EXPECT_EQ(reply_icmp->un.echo.sequence, icmp.un.echo.sequence);
-  EXPECT_EQ(reply_icmp->un.echo.id, icmp.un.echo.id);
-  // A couple are different.
-  EXPECT_EQ(reply_icmp->type, ICMP_ECHOREPLY);
-  // The checksum is computed in such a way that it is guaranteed to have
-  // changed.
-  EXPECT_NE(reply_icmp->checksum, icmp.checksum);
+  for (int i = 0; i < 2; i++) {
+    // Receive the packet.
+    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
+                                        sizeof(struct icmphdr), &src));
+    EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+    struct icmphdr *recvd_icmp =
+        reinterpret_cast<struct icmphdr *>(recv_buf + sizeof(struct iphdr));
+    switch (recvd_icmp->type) {
+      case ICMP_ECHO:
+        EXPECT_FALSE(received_request);
+        received_request = true;
+        // The packet should be identical to what we sent.
+        EXPECT_EQ(memcmp(recv_buf + sizeof(struct iphdr), &icmp, sizeof(icmp)),
+                  0);
+        break;
+
+      case ICMP_ECHOREPLY:
+        EXPECT_FALSE(received_reply);
+        received_reply = true;
+        // Most fields should be the same.
+        EXPECT_EQ(recvd_icmp->code, icmp.code);
+        EXPECT_EQ(recvd_icmp->un.echo.sequence, icmp.un.echo.sequence);
+        EXPECT_EQ(recvd_icmp->un.echo.id, icmp.un.echo.id);
+        // A couple are different.
+        EXPECT_EQ(recvd_icmp->type, ICMP_ECHOREPLY);
+        // The checksum is computed in such a way that it is guaranteed to have
+        // changed.
+        EXPECT_NE(recvd_icmp->checksum, icmp.checksum);
+        break;
+    }
+  }
+
+  ASSERT_TRUE(received_request);
+  ASSERT_TRUE(received_reply);
 }
 
 // We should be able to create multiple raw sockets for the same protocol and
@@ -141,21 +159,21 @@ TEST_F(RawSocketTest, MultipleSocketReceive) {
   struct icmphdr icmp;
   icmp.type = ICMP_ECHO;
   icmp.code = 0;
-  icmp.checksum = *(unsigned short *)&icmp.checksum;
-  icmp.un.echo.sequence = *(unsigned short *)&icmp.un.echo.sequence;
-  icmp.un.echo.id = *(unsigned short *)&icmp.un.echo.id;
-  ASSERT_NO_FATAL_FAILURE(sendEmptyICMP(&icmp));
+  icmp.checksum = 2014;
+  icmp.un.echo.sequence = 2016;
+  icmp.un.echo.id = 2018;
+  ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(&icmp));
 
   // Receive it on socket 1.
   char recv_buf1[512];
   struct sockaddr_in src;
-  ASSERT_NO_FATAL_FAILURE(receiveICMP(recv_buf1, ABSL_ARRAYSIZE(recv_buf1),
+  ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1, ABSL_ARRAYSIZE(recv_buf1),
                                       sizeof(struct icmphdr), &src));
   EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
 
   // Receive it on socket 2.
   char recv_buf2[512];
-  ASSERT_NO_FATAL_FAILURE(receiveICMPFrom(recv_buf2, ABSL_ARRAYSIZE(recv_buf2),
+  ASSERT_NO_FATAL_FAILURE(ReceiveICMPFrom(recv_buf2, ABSL_ARRAYSIZE(recv_buf2),
                                           sizeof(struct icmphdr), &src,
                                           s2.get()));
   EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
@@ -177,7 +195,8 @@ TEST_F(RawSocketTest, RawAndPingSockets) {
   struct icmphdr icmp;
   icmp.type = ICMP_ECHO;
   icmp.code = 0;
-  icmp.un.echo.sequence = *(unsigned short *)&icmp.un.echo.sequence;
+  icmp.un.echo.sequence =
+      *static_cast<unsigned short *>(&icmp.un.echo.sequence);
   ASSERT_THAT(RetryEINTR(sendto)(ping_sock.get(), &icmp, sizeof(icmp), 0,
                                  (struct sockaddr *)&addr_, sizeof(addr_)),
               SyscallSucceedsWithValue(sizeof(icmp)));
@@ -185,7 +204,7 @@ TEST_F(RawSocketTest, RawAndPingSockets) {
   // Receive the packet via raw socket.
   char recv_buf[512];
   struct sockaddr_in src;
-  ASSERT_NO_FATAL_FAILURE(receiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
+  ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
                                       sizeof(struct icmphdr), &src));
   EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
 
@@ -201,11 +220,11 @@ TEST_F(RawSocketTest, RawAndPingSockets) {
             0);
 }
 
-void RawSocketTest::sendEmptyICMP(struct icmphdr *icmp) {
-  ASSERT_NO_FATAL_FAILURE(sendEmptyICMPTo(s_, &addr_, icmp));
+void RawSocketTest::SendEmptyICMP(struct icmphdr *icmp) {
+  ASSERT_NO_FATAL_FAILURE(SendEmptyICMPTo(s_, &addr_, icmp));
 }
 
-void RawSocketTest::sendEmptyICMPTo(int sock, struct sockaddr_in *addr,
+void RawSocketTest::SendEmptyICMPTo(int sock, struct sockaddr_in *addr,
                                     struct icmphdr *icmp) {
   struct iovec iov = {.iov_base = icmp, .iov_len = sizeof(*icmp)};
   struct msghdr msg {
@@ -215,13 +234,13 @@ void RawSocketTest::sendEmptyICMPTo(int sock, struct sockaddr_in *addr,
   ASSERT_THAT(sendmsg(sock, &msg, 0), SyscallSucceedsWithValue(sizeof(*icmp)));
 }
 
-void RawSocketTest::receiveICMP(char *recv_buf, size_t recv_buf_len,
+void RawSocketTest::ReceiveICMP(char *recv_buf, size_t recv_buf_len,
                                 size_t expected_size, struct sockaddr_in *src) {
   ASSERT_NO_FATAL_FAILURE(
-      receiveICMPFrom(recv_buf, recv_buf_len, expected_size, src, s_));
+      ReceiveICMPFrom(recv_buf, recv_buf_len, expected_size, src, s_));
 }
 
-void RawSocketTest::receiveICMPFrom(char *recv_buf, size_t recv_buf_len,
+void RawSocketTest::ReceiveICMPFrom(char *recv_buf, size_t recv_buf_len,
                                     size_t expected_size,
                                     struct sockaddr_in *src, int sock) {
   struct iovec iov = {.iov_base = recv_buf, .iov_len = recv_buf_len};
