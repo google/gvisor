@@ -160,8 +160,26 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.
 func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-	if addr == "\xff\xff\xff\xff" {
+	if addr == header.IPv4Broadcast {
 		return broadcastMAC, true
+	}
+	if header.IsV4MulticastAddress(addr) {
+		// RFC 1112 Host Extensions for IP Multicasting
+		//
+		// 6.4. Extensions to an Ethernet Local Network Module:
+		//
+		// An IP host group address is mapped to an Ethernet multicast
+		// address by placing the low-order 23-bits of the IP address
+		// into the low-order 23 bits of the Ethernet multicast address
+		// 01-00-5E-00-00-00 (hex).
+		return tcpip.LinkAddress([]byte{
+			0x01,
+			0x00,
+			0x5e,
+			addr[header.IPv4AddressSize-3] & 0x7f,
+			addr[header.IPv4AddressSize-2],
+			addr[header.IPv4AddressSize-1],
+		}), true
 	}
 	return "", false
 }

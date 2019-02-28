@@ -752,49 +752,39 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// We don't require a route in the table to send a broadcast, multicast or
-	// IPv6 link-local packet out on a NIC.
 	isBroadcast := remoteAddr == header.IPv4Broadcast
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
-	if id != 0 && (isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr)) {
+	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
+	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref), nil
 			}
 		}
-		return Route{}, tcpip.ErrNoRoute
+	} else {
+		for _, route := range s.routeTable {
+			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Match(remoteAddr)) {
+				continue
+			}
+			if nic, ok := s.nics[route.NIC]; ok {
+				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+					if len(remoteAddr) == 0 {
+						// If no remote address was provided, then the route
+						// provided will refer to the link local address.
+						remoteAddr = ref.ep.ID().LocalAddress
+					}
+
+					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref)
+					if needRoute {
+						r.NextHop = route.Gateway
+					}
+					return r, nil
+				}
+			}
+		}
 	}
 
-	// TODO: Route multicast packets with no specified local
-	// address or NIC.
-
-	for i := range s.routeTable {
-		if (id != 0 && id != s.routeTable[i].NIC) || (len(remoteAddr) != 0 && !s.routeTable[i].Match(remoteAddr)) {
-			continue
-		}
-
-		nic := s.nics[s.routeTable[i].NIC]
-		if nic == nil {
-			continue
-		}
-
-		ref := s.getRefEP(nic, localAddr, netProto)
-		if ref == nil {
-			continue
-		}
-
-		if len(remoteAddr) == 0 {
-			// If no remote address was provided, then the route
-			// provided will refer to the link local address.
-			remoteAddr = ref.ep.ID().LocalAddress
-		}
-
-		r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref)
-		r.NextHop = s.routeTable[i].Gateway
-		return r, nil
-	}
-
-	if isMulticast {
+	if !needRoute {
 		return Route{}, tcpip.ErrNetworkUnreachable
 	}
 
