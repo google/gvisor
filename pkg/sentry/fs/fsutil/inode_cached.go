@@ -322,9 +322,9 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 	c.attrMu.Lock()
 
 	// Write dirty pages back.
-	c.dataMu.RLock()
+	c.dataMu.Lock()
 	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.platform.Memory(), c.backingFile.WriteFromBlocksAt)
-	c.dataMu.RUnlock()
+	c.dataMu.Unlock()
 	if err != nil {
 		c.attrMu.Unlock()
 		return err
