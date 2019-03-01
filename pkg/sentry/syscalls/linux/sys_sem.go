@@ -71,8 +71,9 @@ func Semop(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	creds := auth.CredentialsFromContext(t)
+	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
 	for {
-		ch, num, err := set.ExecuteOps(t, ops, creds)
+		ch, num, err := set.ExecuteOps(t, ops, creds, int32(pid))
 		if ch == nil || err != nil {
 			// We're done (either on success or a failure).
 			return 0, nil, err
@@ -123,6 +124,21 @@ func Semctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		perms := fs.FilePermsFromMode(linux.FileMode(s.SemPerm.Mode & 0777))
 		return 0, nil, ipcSet(t, id, auth.UID(s.SemPerm.UID), auth.GID(s.SemPerm.GID), perms)
 
+	case linux.GETPID:
+		v, err := getPID(t, id, num)
+		return uintptr(v), nil, err
+
+	case linux.IPC_INFO,
+		linux.SEM_INFO,
+		linux.IPC_STAT,
+		linux.SEM_STAT,
+		linux.SEM_STAT_ANY,
+		linux.GETNCNT,
+		linux.GETZCNT:
+
+		t.Kernel().EmitUnimplementedEvent(t)
+		fallthrough
+
 	default:
 		return 0, nil, syserror.EINVAL
 	}
@@ -161,7 +177,8 @@ func setVal(t *kernel.Task, id int32, num int32, val int16) error {
 		return syserror.EINVAL
 	}
 	creds := auth.CredentialsFromContext(t)
-	return set.SetVal(t, num, val, creds)
+	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	return set.SetVal(t, num, val, creds, int32(pid))
 }
 
 func setValAll(t *kernel.Task, id int32, array usermem.Addr) error {
@@ -175,7 +192,8 @@ func setValAll(t *kernel.Task, id int32, array usermem.Addr) error {
 		return err
 	}
 	creds := auth.CredentialsFromContext(t)
-	return set.SetValAll(t, vals, creds)
+	pid := t.Kernel().GlobalInit().PIDNamespace().IDOfThreadGroup(t.ThreadGroup())
+	return set.SetValAll(t, vals, creds, int32(pid))
 }
 
 func getVal(t *kernel.Task, id int32, num int32) (int16, error) {
@@ -201,4 +219,23 @@ func getValAll(t *kernel.Task, id int32, array usermem.Addr) error {
 	}
 	_, err = t.CopyOut(array, vals)
 	return err
+}
+
+func getPID(t *kernel.Task, id int32, num int32) (int32, error) {
+	r := t.IPCNamespace().SemaphoreRegistry()
+	set := r.FindByID(id)
+	if set == nil {
+		return 0, syserror.EINVAL
+	}
+	creds := auth.CredentialsFromContext(t)
+	gpid, err := set.GetPID(num, creds)
+	if err != nil {
+		return 0, err
+	}
+	// Convert pid from init namespace to the caller's namespace.
+	tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(gpid))
+	if tg == nil {
+		return 0, nil
+	}
+	return int32(tg.ID()), nil
 }

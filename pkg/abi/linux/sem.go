@@ -27,8 +27,9 @@ const (
 
 // ipcs ctl cmds. Source: include/uapi/linux/sem.h
 const (
-	SEM_STAT = 18
-	SEM_INFO = 19
+	SEM_STAT     = 18
+	SEM_INFO     = 19
+	SEM_STAT_ANY = 20
 )
 
 const SEM_UNDO = 0x1000

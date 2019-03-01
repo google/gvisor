@@ -431,6 +431,35 @@ TEST(SemaphoreTest, SemCtlValAll) {
               SyscallFailsWithErrno(EFAULT));
 }
 
+TEST(SemaphoreTest, SemCtlGetPid) {
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
+  EXPECT_THAT(semctl(sem.get(), 0, GETPID), SyscallSucceedsWithValue(getpid()));
+}
+
+TEST(SemaphoreTest, SemCtlGetPidFork) {
+  AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
+  ASSERT_THAT(sem.get(), SyscallSucceeds());
+
+  const pid_t child_pid = fork();
+  if (child_pid == 0) {
+    ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
+    ASSERT_THAT(semctl(sem.get(), 0, GETPID),
+                SyscallSucceedsWithValue(getpid()));
+
+    _exit(0);
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+
 TEST(SemaphoreTest, SemIpcSet) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
   ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));

@@ -100,6 +100,10 @@ func (c *compatEmitter) Emit(msg proto.Message) (hangup bool, err error) {
 			// args: fd, level, name, ...
 			tr = newArgsTracker(1, 2)
 
+		case syscall.SYS_SEMCTL:
+			// args: semid, semnum, cmd, ...
+			tr = newArgsTracker(2)
+
 		default:
 			tr = &onceTracker{}
 		}

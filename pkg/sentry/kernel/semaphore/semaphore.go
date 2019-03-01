@@ -92,6 +92,7 @@ type Set struct {
 type sem struct {
 	value   int16
 	waiters waiterList `state:"zerovalue"`
+	pid     int32
 }
 
 // waiter represents a caller that is waiting for the semaphore value to
@@ -283,7 +284,7 @@ func (s *Set) Change(ctx context.Context, creds *auth.Credentials, owner fs.File
 }
 
 // SetVal overrides a semaphore value, waking up waiters as needed.
-func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials) error {
+func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Credentials, pid int32) error {
 	if val < 0 || val > valueMax {
 		return syserror.ERANGE
 	}
@@ -303,15 +304,17 @@ func (s *Set) SetVal(ctx context.Context, num int32, val int16, creds *auth.Cred
 
 	// TODO: Clear undo entries in all processes
 	sem.value = val
+	sem.pid = pid
 	s.changeTime = ktime.NowFromContext(ctx)
 	sem.wakeWaiters()
 	return nil
 }
 
-// SetValAll overrides all semaphores values, waking up waiters as needed.
+// SetValAll overrides all semaphores values, waking up waiters as needed. It also
+// sets semaphore's PID which was fixed in Linux 4.6.
 //
 // 'len(vals)' must be equal to 's.Size()'.
-func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credentials) error {
+func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credentials, pid int32) error {
 	if len(vals) != s.Size() {
 		panic(fmt.Sprintf("vals length (%d) different that Set.Size() (%d)", len(vals), s.Size()))
 	}
@@ -335,6 +338,7 @@ func (s *Set) SetValAll(ctx context.Context, vals []uint16, creds *auth.Credenti
 
 		// TODO: Clear undo entries in all processes
 		sem.value = int16(val)
+		sem.pid = pid
 		sem.wakeWaiters()
 	}
 	s.changeTime = ktime.NowFromContext(ctx)
@@ -375,12 +379,29 @@ func (s *Set) GetValAll(creds *auth.Credentials) ([]uint16, error) {
 	return vals, nil
 }
 
+// GetPID returns the PID set when performing operations in the semaphore.
+func (s *Set) GetPID(num int32, creds *auth.Credentials) (int32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// "The calling process must have read permission on the semaphore set."
+	if !s.checkPerms(creds, fs.PermMask{Read: true}) {
+		return 0, syserror.EACCES
+	}
+
+	sem := s.findSem(num)
+	if sem == nil {
+		return 0, syserror.ERANGE
+	}
+	return sem.pid, nil
+}
+
 // ExecuteOps attempts to execute a list of operations to the set. It only
 // succeeds when all operations can be applied. No changes are made if it fails.
 //
 // On failure, it may return an error (retries are hopeless) or it may return
 // a channel that can be waited on before attempting again.
-func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Credentials) (chan struct{}, int32, error) {
+func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Credentials, pid int32) (chan struct{}, int32, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -404,14 +425,14 @@ func (s *Set) ExecuteOps(ctx context.Context, ops []linux.Sembuf, creds *auth.Cr
 		return nil, 0, syserror.EACCES
 	}
 
-	ch, num, err := s.executeOps(ctx, ops)
+	ch, num, err := s.executeOps(ctx, ops, pid)
 	if err != nil {
 		return nil, 0, err
 	}
 	return ch, num, nil
 }
 
-func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf) (chan struct{}, int32, error) {
+func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf, pid int32) (chan struct{}, int32, error) {
 	// Changes to semaphores go to this slice temporarily until they all succeed.
 	tmpVals := make([]int16, len(s.sems))
 	for i := range s.sems {
@@ -464,6 +485,7 @@ func (s *Set) executeOps(ctx context.Context, ops []linux.Sembuf) (chan struct{}
 	for i, v := range tmpVals {
 		s.sems[i].value = v
 		s.sems[i].wakeWaiters()
+		s.sems[i].pid = pid
 	}
 	s.opTime = ktime.NowFromContext(ctx)
 	return nil, 0, nil
