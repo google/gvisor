@@ -336,18 +336,26 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 	if err != nil && err != syserror.ENOENT {
 		return err
 	}
-	if err == nil && !replaced.IsNegative() && IsDir(replaced.Inode.StableAttr) {
-		children, err := readdirOne(ctx, replaced)
-		if err != nil {
-			return err
+	if err == nil {
+		// NOTE: We must drop the reference on replaced before we make
+		// the rename call. For that reason we can't use defer.
+		if !replaced.IsNegative() && IsDir(replaced.Inode.StableAttr) {
+			children, err := readdirOne(ctx, replaced)
+			if err != nil {
+				replaced.DecRef()
+				return err
+			}
+
+			// readdirOne ensures that "." and ".." are not
+			// included among the returned children, so we don't
+			// need to bother checking for them.
+			if len(children) > 0 {
+				replaced.DecRef()
+				return syserror.ENOTEMPTY
+			}
 		}
 
-		// readdirOne ensures that "." and ".." are not
-		// included among the returned children, so we don't
-		// need to bother checking for them.
-		if len(children) > 0 {
-			return syserror.ENOTEMPTY
-		}
+		replaced.DecRef()
 	}
 	if err := copyUpLockedForRename(ctx, renamed); err != nil {
 		return err
