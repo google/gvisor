@@ -38,8 +38,6 @@
 //	The requested operation is performed in the traced subprocess thread
 //	(e.g. set registers, execute, return).
 //
-// FIXME: This package is currently sloppy with cleanup.
-//
 // Lock order:
 //
 // subprocess.mu
