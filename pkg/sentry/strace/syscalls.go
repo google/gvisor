@@ -188,6 +188,17 @@ const (
 
 	// PostSigAction is a struct sigaction, formatted after syscall execution.
 	PostSigAction
+
+	// CapHeader is a cap_user_header_t.
+	CapHeader
+
+	// CapData is the data argument to capget(2)/capset(2). The previous
+	// argument must be CapHeader.
+	CapData
+
+	// PostCapData is the data argument to capget(2)/capset(2), formatted
+	// after syscall execution. The previous argument must be CapHeader.
+	PostCapData
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

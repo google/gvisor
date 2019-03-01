@@ -271,6 +271,67 @@ func rusage(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x %+v", addr, ru)
 }
 
+func capHeader(t *kernel.Task, addr usermem.Addr) string {
+	if addr == 0 {
+		return "null"
+	}
+
+	var hdr linux.CapUserHeader
+	if _, err := t.CopyIn(addr, &hdr); err != nil {
+		return fmt.Sprintf("%#x (error decoding header: %s)", addr, err)
+	}
+
+	var version string
+	switch hdr.Version {
+	case linux.LINUX_CAPABILITY_VERSION_1:
+		version = "1"
+	case linux.LINUX_CAPABILITY_VERSION_2:
+		version = "2"
+	case linux.LINUX_CAPABILITY_VERSION_3:
+		version = "3"
+	default:
+		version = strconv.FormatUint(uint64(hdr.Version), 16)
+	}
+
+	return fmt.Sprintf("%#x {Version: %s, Pid: %d}", addr, version, hdr.Pid)
+}
+
+func capData(t *kernel.Task, hdrAddr, dataAddr usermem.Addr) string {
+	if dataAddr == 0 {
+		return "null"
+	}
+
+	var hdr linux.CapUserHeader
+	if _, err := t.CopyIn(hdrAddr, &hdr); err != nil {
+		return fmt.Sprintf("%#x (error decoding header: %v)", dataAddr, err)
+	}
+
+	var p, i, e uint64
+
+	switch hdr.Version {
+	case linux.LINUX_CAPABILITY_VERSION_1:
+		var data linux.CapUserData
+		if _, err := t.CopyIn(dataAddr, &data); err != nil {
+			return fmt.Sprintf("%#x (error decoding data: %v)", dataAddr, err)
+		}
+		p = uint64(data.Permitted)
+		i = uint64(data.Inheritable)
+		e = uint64(data.Effective)
+	case linux.LINUX_CAPABILITY_VERSION_2, linux.LINUX_CAPABILITY_VERSION_3:
+		var data [2]linux.CapUserData
+		if _, err := t.CopyIn(dataAddr, &data); err != nil {
+			return fmt.Sprintf("%#x (error decoding data: %v)", dataAddr, err)
+		}
+		p = uint64(data[0].Permitted) | (uint64(data[1].Permitted) << 32)
+		i = uint64(data[0].Inheritable) | (uint64(data[1].Inheritable) << 32)
+		e = uint64(data[0].Effective) | (uint64(data[1].Effective) << 32)
+	default:
+		return fmt.Sprintf("%#x (unknown version %d)", dataAddr, hdr.Version)
+	}
+
+	return fmt.Sprintf("%#x {Permitted: %s, Inheritable: %s, Effective: %s}", dataAddr, CapabilityBitset.Parse(p), CapabilityBitset.Parse(i), CapabilityBitset.Parse(e))
+}
+
 // pre fills in the pre-execution arguments for a system call. If an argument
 // cannot be interpreted before the system call is executed, then a hex value
 // will be used. Note that a full output slice will always be provided, that is
@@ -341,6 +402,10 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, sigSet(t, args[arg].Pointer()))
 		case SigAction:
 			output = append(output, sigAction(t, args[arg].Pointer()))
+		case CapHeader:
+			output = append(output, capHeader(t, args[arg].Pointer()))
+		case CapData:
+			output = append(output, capData(t, args[arg-1].Pointer(), args[arg].Pointer()))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
@@ -403,6 +468,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = sigSet(t, args[arg].Pointer())
 		case PostSigAction:
 			output[arg] = sigAction(t, args[arg].Pointer())
+		case PostCapData:
+			output[arg] = capData(t, args[arg-1].Pointer(), args[arg].Pointer())
 		}
 	}
 }

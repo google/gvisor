@@ -6,6 +6,7 @@ package(licenses = ["notice"])
 go_library(
     name = "strace",
     srcs = [
+        "capability.go",
         "clone.go",
         "futex.go",
         "linux64.go",
