@@ -49,7 +49,7 @@ var (
 //
 //go:nosplit
 func dieHandler(c *vCPU) {
-	throw(c.dieMessage)
+	throw(c.dieState.message)
 }
 
 // die is called to set the vCPU up to panic.
@@ -59,17 +59,16 @@ func dieHandler(c *vCPU) {
 //go:nosplit
 func (c *vCPU) die(context *arch.SignalContext64, msg string) {
 	// Save the death message, which will be thrown.
-	c.dieMessage = msg
+	c.dieState.message = msg
 
 	// Reload all registers to have an accurate stack trace when we return
 	// to host mode. This means that the stack should be unwound correctly.
-	var guestRegs userRegs
-	if errno := c.getUserRegisters(&guestRegs); errno != 0 {
+	if errno := c.getUserRegisters(&c.dieState.guestRegs); errno != 0 {
 		throw(msg)
 	}
 
 	// Setup the trampoline.
-	dieArchSetup(c, context, &guestRegs)
+	dieArchSetup(c, context, &c.dieState.guestRegs)
 }
 
 func init() {

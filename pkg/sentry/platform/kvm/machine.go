@@ -121,8 +121,16 @@ type vCPU struct {
 	// vCPUArchState is the architecture-specific state.
 	vCPUArchState
 
-	// dieMessage is thrown from die.
-	dieMessage string
+	dieState dieState
+}
+
+type dieState struct {
+	// message is thrown from die.
+	message string
+
+	// guestRegs is used to store register state during vCPU.die() to prevent
+	// allocation inside nosplit function.
+	guestRegs userRegs
 }
 
 // newVCPU creates a returns a new vCPU.

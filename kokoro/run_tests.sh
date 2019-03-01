@@ -71,11 +71,13 @@ BAZEL_BUILD_RBE_FLAGS=(
 ####################
 
 build_everything() {
+  FLAVOR="${1}"
+
   cd ${WORKSPACE_DIR}
   bazel \
     "${BAZEL_RBE_FLAGS[@]}" \
     build \
-    "${BAZEL_BUILD_RBE_FLAGS[@]}" \
+    -c "${FLAVOR}" "${BAZEL_BUILD_RBE_FLAGS[@]}" \
     "${BUILD_PACKAGES[@]}"
 }
 
@@ -217,7 +219,7 @@ main() {
   trap finish EXIT
 
   # Build and run the simple tests.
-  build_everything
+  build_everything opt
   run_simple_tests
 
   # So far so good. Install more deps and run the integration tests.
@@ -227,6 +229,9 @@ main() {
   run_root_tests
 
   run_syscall_tests
+
+  # Build other flavors too.
+  build_everything dbg
 
   # No need to call "finish" here, it will happen at exit.
 }
