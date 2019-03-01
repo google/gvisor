@@ -363,7 +363,11 @@ syscall_test(
     test = "//test/syscalls/linux:socket_ip_udp_loopback_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test")
+syscall_test(
+    # FIXME
+    tags = ["flaky"],
+    test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:socket_netdevice_test")
 

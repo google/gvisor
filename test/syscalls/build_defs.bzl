@@ -2,14 +2,59 @@
 
 # syscall_test is a macro that will create targets to run the given test target
 # on the host (native) and runsc.
-def syscall_test(test, shard_count = 1, size = "small", use_tmpfs = False):
-    _syscall_test(test, shard_count, size, "native", False)
-    _syscall_test(test, shard_count, size, "kvm", use_tmpfs)
-    _syscall_test(test, shard_count, size, "ptrace", use_tmpfs)
-    if not use_tmpfs:
-        _syscall_test(test, shard_count, size, "ptrace", use_tmpfs, "shared")
+def syscall_test(
+        test,
+        shard_count = 1,
+        size = "small",
+        use_tmpfs = False,
+        tags = None):
+    _syscall_test(
+        test = test,
+        shard_count = shard_count,
+        size = size,
+        platform = "native",
+        use_tmpfs = False,
+        tags = tags,
+    )
 
-def _syscall_test(test, shard_count, size, platform, use_tmpfs, file_access = "exclusive"):
+    _syscall_test(
+        test = test,
+        shard_count = shard_count,
+        size = size,
+        platform = "kvm",
+        use_tmpfs = use_tmpfs,
+        tags = tags,
+    )
+
+    _syscall_test(
+        test = test,
+        shard_count = shard_count,
+        size = size,
+        platform = "ptrace",
+        use_tmpfs = use_tmpfs,
+        tags = tags,
+    )
+
+    if not use_tmpfs:
+        # Also test shared gofer access.
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = "ptrace",
+            use_tmpfs = use_tmpfs,
+            tags = tags,
+            file_access = "shared",
+        )
+
+def _syscall_test(
+        test,
+        shard_count,
+        size,
+        platform,
+        use_tmpfs,
+        tags,
+        file_access = "exclusive"):
     test_name = test.split(":")[1]
 
     # Prepend "runsc" to non-native platform names.
@@ -19,9 +64,12 @@ def _syscall_test(test, shard_count, size, platform, use_tmpfs, file_access = "e
     if file_access == "shared":
         name += "_shared"
 
+    if tags == None:
+        tags = []
+
     # Add the full_platform and file access in a tag to make it easier to run
     # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
-    tags = [full_platform, "file_" + file_access]
+    tags += [full_platform, "file_" + file_access]
 
     # Add tag to prevent the tests from running in a Bazel sandbox.
     # TODO: Make the tests run without this tag.
