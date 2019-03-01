@@ -185,7 +185,8 @@ func NewSortedDentryMap(entries map[string]DentAttr) *SortedDentryMap {
 	return s
 }
 
-// GetAll returns all names and entries in s.
+// GetAll returns all names and entries in s. Callers should not modify the
+// returned values.
 func (s *SortedDentryMap) GetAll() ([]string, map[string]DentAttr) {
 	return s.names, s.entries
 }

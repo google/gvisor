@@ -148,7 +148,18 @@ func (d *Dir) FindChild(name string) (*fs.Inode, bool) {
 func (d *Dir) Children() ([]string, map[string]fs.DentAttr) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.dentryMap.GetAll()
+
+	// Return a copy to prevent callers from modifying our children.
+	names, entries := d.dentryMap.GetAll()
+	namesCopy := make([]string, len(names))
+	copy(namesCopy, names)
+
+	entriesCopy := make(map[string]fs.DentAttr)
+	for k, v := range entries {
+		entriesCopy[k] = v
+	}
+
+	return namesCopy, entriesCopy
 }
 
 // removeChildLocked attempts to remove an entry from this directory.
