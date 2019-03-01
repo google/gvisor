@@ -719,7 +719,7 @@ func (t *Twrite) handle(cs *connState) message {
 			return syscall.EINVAL
 		}
 
-		// Can it be write? Check permissions.
+		// Can it be written? Check permissions.
 		if openFlags&OpenFlagsModeMask == ReadOnly {
 			return syscall.EPERM
 		}
