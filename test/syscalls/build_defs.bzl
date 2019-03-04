@@ -7,7 +7,8 @@ def syscall_test(
         shard_count = 1,
         size = "small",
         use_tmpfs = False,
-        tags = None):
+        tags = None,
+        parallel = True):
     _syscall_test(
         test = test,
         shard_count = shard_count,
@@ -15,6 +16,7 @@ def syscall_test(
         platform = "native",
         use_tmpfs = False,
         tags = tags,
+        parallel = parallel,
     )
 
     _syscall_test(
@@ -24,6 +26,7 @@ def syscall_test(
         platform = "kvm",
         use_tmpfs = use_tmpfs,
         tags = tags,
+        parallel = parallel,
     )
 
     _syscall_test(
@@ -33,6 +36,7 @@ def syscall_test(
         platform = "ptrace",
         use_tmpfs = use_tmpfs,
         tags = tags,
+        parallel = parallel,
     )
 
     if not use_tmpfs:
@@ -44,6 +48,7 @@ def syscall_test(
             platform = "ptrace",
             use_tmpfs = use_tmpfs,
             tags = tags,
+            parallel = parallel,
             file_access = "shared",
         )
 
@@ -54,6 +59,7 @@ def _syscall_test(
         platform,
         use_tmpfs,
         tags,
+        parallel,
         file_access = "exclusive"):
     test_name = test.split(":")[1]
 
@@ -80,6 +86,17 @@ def _syscall_test(
     if platform == "kvm":
         tags += ["manual"]
 
+    args = [
+        # Arguments are passed directly to syscall_test_runner binary.
+        "--test-name=" + test_name,
+        "--platform=" + platform,
+        "--use-tmpfs=" + str(use_tmpfs),
+        "--file-access=" + file_access,
+    ]
+
+    if parallel:
+        args += ["--parallel=true"]
+
     sh_test(
         srcs = ["syscall_test_runner.sh"],
         name = name,
@@ -87,14 +104,7 @@ def _syscall_test(
             ":syscall_test_runner",
             test,
         ],
-        args = [
-            # Arguments are passed directly to syscall_test_runner binary.
-            "--test-name=" + test_name,
-            "--platform=" + platform,
-            "--use-tmpfs=" + str(use_tmpfs),
-            "--file-access=" + file_access,
-            "--parallel=true",
-        ],
+        args = args,
         size = size,
         tags = tags,
         shard_count = shard_count,
