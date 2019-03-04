@@ -23,6 +23,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	tcpipHeader "gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp"
@@ -119,14 +120,10 @@ func (c *Client) Config() Config {
 // If the server sets a lease limit a timer is set to automatically
 // renew it.
 func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg Config, reterr error) {
-	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, "\xff\xff\xff\xff", stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
+	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, tcpipHeader.IPv4Any, stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
 		return Config{}, fmt.Errorf("dhcp: %v", err)
 	}
-	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, "\x00\x00\x00\x00", stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
-		return Config{}, fmt.Errorf("dhcp: %v", err)
-	}
-	defer c.stack.RemoveAddress(c.nicid, "\xff\xff\xff\xff")
-	defer c.stack.RemoveAddress(c.nicid, "\x00\x00\x00\x00")
+	defer c.stack.RemoveAddress(c.nicid, tcpipHeader.IPv4Any)
 
 	var wq waiter.Queue
 	ep, err := c.stack.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
@@ -134,28 +131,18 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 		return Config{}, fmt.Errorf("dhcp: outbound endpoint: %v", err)
 	}
 	defer ep.Close()
+	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
+		return Config{}, fmt.Errorf("dhcp: setsockopt: %v", err)
+	}
 	if err := ep.Bind(tcpip.FullAddress{
-		Addr: "\x00\x00\x00\x00",
+		Addr: tcpipHeader.IPv4Any,
 		Port: ClientPort,
 		NIC:  c.nicid,
 	}, nil); err != nil {
-		return Config{}, fmt.Errorf("dhcp: connect failed: %v", err)
+		return Config{}, fmt.Errorf("dhcp: bind failed: %v", err)
 	}
 	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
 		return Config{}, fmt.Errorf("dhcp: setsockopt SO_BROADCAST: %v", err)
-	}
-
-	epin, err := c.stack.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
-	if err != nil {
-		return Config{}, fmt.Errorf("dhcp: inbound endpoint: %v", err)
-	}
-	defer epin.Close()
-	if err := epin.Bind(tcpip.FullAddress{
-		Addr: "\xff\xff\xff\xff",
-		Port: ClientPort,
-		NIC:  c.nicid,
-	}, nil); err != nil {
-		return Config{}, fmt.Errorf("dhcp: connect failed: %v", err)
 	}
 
 	var xid [4]byte
@@ -191,7 +178,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 	h.setOptions(discOpts)
 
 	serverAddr := &tcpip.FullAddress{
-		Addr: "\xff\xff\xff\xff",
+		Addr: tcpipHeader.IPv4Broadcast,
 		Port: ServerPort,
 		NIC:  c.nicid,
 	}
@@ -222,8 +209,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 	// DHCPOFFER
 	var opts options
 	for {
-		var addr tcpip.FullAddress
-		v, _, err := epin.Read(&addr)
+		v, _, err := ep.Read(nil)
 		if err == tcpip.ErrWouldBlock {
 			select {
 			case <-ch:
@@ -271,12 +257,11 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 		c.cfg = cfg
 		c.mu.Unlock()
 
-		// Clean up broadcast addresses before calling acquiredFunc
+		// Clean up addresses before calling acquiredFunc
 		// so nothing else uses them by mistake.
 		//
-		// (The deferred RemoveAddress calls above silently error.)
-		c.stack.RemoveAddress(c.nicid, "\xff\xff\xff\xff")
-		c.stack.RemoveAddress(c.nicid, "\x00\x00\x00\x00")
+		// (The deferred RemoveAddress call above silently errors.)
+		c.stack.RemoveAddress(c.nicid, tcpipHeader.IPv4Any)
 
 		if c.acquiredFunc != nil {
 			c.acquiredFunc(oldAddr, addr, cfg)
@@ -311,8 +296,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 
 	// DHCPACK
 	for {
-		var addr tcpip.FullAddress
-		v, _, err := epin.Read(&addr)
+		v, _, err := ep.Read(nil)
 		if err == tcpip.ErrWouldBlock {
 			select {
 			case <-ch:

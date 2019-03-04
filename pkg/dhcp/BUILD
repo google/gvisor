@@ -15,6 +15,7 @@ go_library(
         "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/udp",
