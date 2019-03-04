@@ -83,7 +83,6 @@ build_everything() {
 
 # Run simple tests runs the tests that require no special setup or
 # configuration.
-# TODO: Use RBE here once tests pass with RBE.
 run_simple_tests() {
   cd ${WORKSPACE_DIR}
   bazel \
