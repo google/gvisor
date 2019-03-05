@@ -120,33 +120,34 @@ func (c *Client) Config() Config {
 // If the server sets a lease limit a timer is set to automatically
 // renew it.
 func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg Config, reterr error) {
+	// TODO: remove calls to {Add,Remove}Address when they're no
+	// longer required to send and receive broadcast.
 	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, tcpipHeader.IPv4Any, stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
-		return Config{}, fmt.Errorf("dhcp: %v", err)
+		return Config{}, fmt.Errorf("dhcp: AddAddressWithOptions(): %s", err)
 	}
 	defer c.stack.RemoveAddress(c.nicid, tcpipHeader.IPv4Any)
 
 	var wq waiter.Queue
 	ep, err := c.stack.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 	if err != nil {
-		return Config{}, fmt.Errorf("dhcp: outbound endpoint: %v", err)
+		return Config{}, fmt.Errorf("dhcp: NewEndpoint(): %s", err)
 	}
 	defer ep.Close()
 	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
-		return Config{}, fmt.Errorf("dhcp: setsockopt: %v", err)
+		return Config{}, fmt.Errorf("dhcp: SetSockOpt(BroadcastOption): %s", err)
 	}
 	if err := ep.Bind(tcpip.FullAddress{
 		Addr: tcpipHeader.IPv4Any,
 		Port: ClientPort,
 		NIC:  c.nicid,
 	}, nil); err != nil {
-		return Config{}, fmt.Errorf("dhcp: bind failed: %v", err)
-	}
-	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {
-		return Config{}, fmt.Errorf("dhcp: setsockopt SO_BROADCAST: %v", err)
+		return Config{}, fmt.Errorf("dhcp: Bind(): %s", err)
 	}
 
 	var xid [4]byte
-	rand.Read(xid[:])
+	if _, err := rand.Read(xid[:]); err != nil {
+		return Config{}, fmt.Errorf("dhcp: rand.Read(): %s", err)
+	}
 
 	// DHCPDISCOVERY
 	discOpts := options{
