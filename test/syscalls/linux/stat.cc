@@ -278,7 +278,7 @@ TEST_F(StatTest, LinkCountsWithRegularFileChild) {
 
 // This test verifies that inodes remain around when there is an open fd
 // after link count hits 0.
-TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild) {
+TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
   // Setting the enviornment variable GVISOR_GOFER_UNCACHED to any value
   // will prevent this test from running, see the tmpfs lifecycle.
   //

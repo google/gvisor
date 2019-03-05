@@ -1072,7 +1072,7 @@ TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
   };
 
   // Don't do cooperative S/R tests for any of the {f}chmod* syscalls below, the
-  // test will always fail because nodes cannot be saved when they have stricted
+  // test will always fail because nodes cannot be saved when they have stricter
   // permissions than the original host node.
   const DisableSave ds;
 

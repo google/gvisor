@@ -431,7 +431,7 @@ TEST_F(FlockTest, TestDupFdFollowedByLock) {
 // NOTE: These blocking tests are not perfect. Unfortunantely it's very hard to
 // determine if a thread was actually blocked in the kernel so we're forced
 // to use timing.
-TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks) {
+TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks_NoRandomSave) {
   // This test will verify that although LOCK_NB isn't specified
   // two different fds can obtain shared locks without blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_SH), SyscallSucceeds());
@@ -471,7 +471,7 @@ TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive) {
+TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive_NoRandomSave) {
   // This test will verify that if someone holds a shared lock any attempt to
   // obtain an exclusive lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_SH), SyscallSucceeds());
@@ -508,7 +508,7 @@ TEST_F(FlockTest, BlockingLockFirstSharedSecondExclusive) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared) {
+TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared_NoRandomSave) {
   // This test will verify that if someone holds an exclusive lock any attempt
   // to obtain a shared lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX), SyscallSucceeds());
@@ -545,7 +545,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondShared) {
   EXPECT_THAT(flock(test_file_fd_.get(), LOCK_UN), SyscallSucceeds());
 }
 
-TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive) {
+TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive_NoRandomSave) {
   // This test will verify that if someone holds an exclusive lock any attempt
   // to obtain another exclusive lock will result in blocking.
   ASSERT_THAT(flock(test_file_fd_.get(), LOCK_EX), SyscallSucceeds());

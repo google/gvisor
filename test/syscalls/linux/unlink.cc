@@ -160,7 +160,7 @@ TEST(UnlinkTest, AtFile) {
   EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", 0), SyscallSucceeds());
 }
 
-TEST(UnlinkTest, OpenFile) {
+TEST(UnlinkTest, OpenFile_NoRandomSave) {
   // We can't save unlinked file unless they are on tmpfs.
   const DisableSave ds;
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
