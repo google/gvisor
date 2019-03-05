@@ -250,7 +250,7 @@ func (*fileInodeOperations) StatFS(context.Context) (fs.Info, error) {
 	return fsInfo, nil
 }
 
-func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
+func (f *fileInodeOperations) read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	var start time.Time
 	if fs.RecordWaitTime {
 		start = time.Now()
@@ -280,10 +280,12 @@ func (f *fileInodeOperations) read(ctx context.Context, dst usermem.IOSequence, 
 	}
 
 	n, err := dst.CopyOutFrom(ctx, &fileReadWriter{f, offset})
-	// Compare Linux's mm/filemap.c:do_generic_file_read() => file_accessed().
-	f.attrMu.Lock()
-	f.attr.AccessTime = ktime.NowFromContext(ctx)
-	f.attrMu.Unlock()
+	if !file.Dirent.Inode.MountSource.Flags.NoAtime {
+		// Compare Linux's mm/filemap.c:do_generic_file_read() => file_accessed().
+		f.attrMu.Lock()
+		f.attr.AccessTime = ktime.NowFromContext(ctx)
+		f.attrMu.Unlock()
+	}
 	fs.IncrementWait(readWait, start)
 	return n, err
 }

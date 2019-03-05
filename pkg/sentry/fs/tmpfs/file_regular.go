@@ -44,7 +44,7 @@ type regularFileOperations struct {
 
 // Read implements fs.FileOperations.Read.
 func (r *regularFileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	return r.iops.read(ctx, dst, offset)
+	return r.iops.read(ctx, file, dst, offset)
 }
 
 // Write implements fs.FileOperations.Write.

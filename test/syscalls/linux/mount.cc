@@ -250,9 +250,7 @@ PosixErrorOr<absl::Time> ATime(absl::string_view file) {
   return absl::TimeFromTimespec(s.st_atim);
 }
 
-// FIXME: Disabled until tmpfs stops using Handle, as only the gofer
-// and host file system respect the MS_NOATIME flag.
-TEST(MountTest, DISABLED_MountNoAtime) {
+TEST(MountTest, MountNoAtime) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
