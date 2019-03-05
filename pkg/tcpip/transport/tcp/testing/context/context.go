@@ -796,7 +796,7 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	}
 	defer ep.Close()
 
-	if err := ep.Bind(tcpip.FullAddress{Port: StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: StackPort}); err != nil {
 		c.t.Fatalf("Bind failed: %v", err)
 	}
 

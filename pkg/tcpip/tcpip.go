@@ -356,11 +356,7 @@ type Endpoint interface {
 
 	// Bind binds the endpoint to a specific local address and port.
 	// Specifying a NIC is optional.
-	//
-	// An optional commit function will be executed atomically with respect
-	// to binding the endpoint. If this returns an error, the bind will not
-	// occur and the error will be propagated back to the caller.
-	Bind(address FullAddress, commit func() *Error) *Error
+	Bind(address FullAddress) *Error
 
 	// GetLocalAddress returns the address to which the endpoint is bound.
 	GetLocalAddress() (FullAddress, *Error)

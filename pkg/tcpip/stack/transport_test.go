@@ -145,7 +145,7 @@ func (f *fakeTransportEndpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.
 	return &a, nil, nil
 }
 
-func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress, commit func() *tcpip.Error) *tcpip.Error {
+func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
 	if err := f.stack.RegisterTransportEndpoint(
 		a.NIC,
 		[]tcpip.NetworkProtocolNumber{fakeNetNumber},
@@ -157,7 +157,7 @@ func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress, commit func() *tcpip.E
 		return err
 	}
 	f.acceptQueue = []fakeTransportEndpoint{}
-	return commit()
+	return nil
 }
 
 func (*fakeTransportEndpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
@@ -483,7 +483,7 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{Addr: "\x01", NIC: 1}, func() *tcpip.Error { return nil }); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Addr: "\x01", NIC: 1}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 

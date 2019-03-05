@@ -69,7 +69,7 @@ func TestExcludeBroadcast(t *testing.T) {
 		}
 
 		// However, we can bind to a broadcast address to listen.
-		if err := ep.Bind(tcpip.FullAddress{Addr: header.IPv4Broadcast, Port: 53, NIC: 1}, nil); err != nil {
+		if err := ep.Bind(tcpip.FullAddress{Addr: header.IPv4Broadcast, Port: 53, NIC: 1}); err != nil {
 			t.Errorf("Bind failed: %v", err)
 		}
 	})

@@ -423,7 +423,7 @@ func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	}
 
 	// Issue the bind request to the endpoint.
-	return syserr.TranslateNetstackError(s.Endpoint.Bind(addr, nil))
+	return syserr.TranslateNetstackError(s.Endpoint.Bind(addr))
 }
 
 // Listen implements the linux syscall listen(2) for sockets backed by

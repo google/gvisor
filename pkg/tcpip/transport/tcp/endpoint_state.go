@@ -185,7 +185,7 @@ func (e *endpoint) afterLoad() {
 		if len(e.bindAddress) == 0 {
 			e.bindAddress = e.id.LocalAddress
 		}
-		if err := e.Bind(tcpip.FullAddress{Addr: e.bindAddress, Port: e.id.LocalPort}, nil); err != nil {
+		if err := e.Bind(tcpip.FullAddress{Addr: e.bindAddress, Port: e.id.LocalPort}); err != nil {
 			panic("endpoint binding failed: " + err.String())
 		}
 	}

@@ -1336,7 +1336,7 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 // Bind binds the endpoint to a specific local port and optionally address.
-func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (err *tcpip.Error) {
+func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1395,14 +1395,6 @@ func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) (err
 
 		e.boundNICID = nic
 		e.id.LocalAddress = addr.Addr
-	}
-
-	// Check the commit function.
-	if commit != nil {
-		if err := commit(); err != nil {
-			// The defer takes care of unwind.
-			return err
-		}
 	}
 
 	// Mark endpoint as bound.

@@ -140,7 +140,7 @@ func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg 
 		Addr: tcpipHeader.IPv4Any,
 		Port: ClientPort,
 		NIC:  c.nicid,
-	}, nil); err != nil {
+	}); err != nil {
 		return Config{}, fmt.Errorf("dhcp: Bind(): %s", err)
 	}
 

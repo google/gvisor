@@ -60,7 +60,7 @@ func NewListener(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkPr
 		return nil, errors.New(err.String())
 	}
 
-	if err := ep.Bind(addr, nil); err != nil {
+	if err := ep.Bind(addr); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "bind",
@@ -524,7 +524,7 @@ func NewPacketConn(s *stack.Stack, addr tcpip.FullAddress, network tcpip.Network
 		return nil, errors.New(err.String())
 	}
 
-	if err := ep.Bind(addr, nil); err != nil {
+	if err := ep.Bind(addr); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "bind",

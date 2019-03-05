@@ -120,7 +120,7 @@ func newEPConnServer(ctx context.Context, stack *stack.Stack, addrs []tcpip.Addr
 	if err != nil {
 		return nil, fmt.Errorf("dhcp: server endpoint: %v", err)
 	}
-	if err := ep.Bind(tcpip.FullAddress{Port: ServerPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: ServerPort}); err != nil {
 		return nil, fmt.Errorf("dhcp: server bind: %v", err)
 	}
 	if err := ep.SetSockOpt(tcpip.BroadcastOption(1)); err != nil {

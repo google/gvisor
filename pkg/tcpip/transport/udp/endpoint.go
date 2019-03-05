@@ -247,7 +247,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 	}
 
 	// The state is still 'initial', so try to bind the endpoint.
-	if err := e.bindLocked(tcpip.FullAddress{}, nil); err != nil {
+	if err := e.bindLocked(tcpip.FullAddress{}); err != nil {
 		return false, err
 	}
 
@@ -806,7 +806,7 @@ func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.Networ
 	return id, err
 }
 
-func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error) *tcpip.Error {
+func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 	// Don't allow binding once endpoint is not in the initial state
 	// anymore.
 	if e.state != stateInitial {
@@ -846,14 +846,6 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error
 	if err != nil {
 		return err
 	}
-	if commit != nil {
-		if err := commit(); err != nil {
-			// Unregister, the commit failed.
-			e.stack.UnregisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e)
-			e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort)
-			return err
-		}
-	}
 
 	e.id = id
 	e.regNICID = nicid
@@ -871,11 +863,11 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress, commit func() *tcpip.Error
 
 // Bind binds the endpoint to a specific local address and port.
 // Specifying a NIC is optional.
-func (e *endpoint) Bind(addr tcpip.FullAddress, commit func() *tcpip.Error) *tcpip.Error {
+func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	err := e.bindLocked(addr, commit)
+	err := e.bindLocked(addr)
 	if err != nil {
 		return err
 	}

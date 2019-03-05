@@ -113,7 +113,7 @@ func TestV4ConnectWhenBoundToWildcard(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func TestV4ConnectWhenBoundToV4MappedWildcard(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to v4 mapped wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -143,7 +143,7 @@ func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to v4 mapped address.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestV6ConnectWhenBoundToWildcard(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -248,7 +248,7 @@ func TestV6ConnectWhenBoundToLocalAddress(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to local address.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV6Addr}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV6Addr}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -263,7 +263,7 @@ func TestV4RefuseOnV6Only(t *testing.T) {
 	c.CreateV6Endpoint(true)
 
 	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -300,7 +300,7 @@ func TestV6RefuseOnBoundToV4Mapped(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -415,7 +415,7 @@ func TestV4AcceptOnV6(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -430,7 +430,7 @@ func TestV4AcceptOnBoundToV4MappedWildcard(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind to v4 mapped wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.V4MappedWildcardAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -445,7 +445,7 @@ func TestV4AcceptOnBoundToV4Mapped(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr, Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackV4MappedAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -460,7 +460,7 @@ func TestV6AcceptOnV6(t *testing.T) {
 	c.CreateV6Endpoint(false)
 
 	// Bind and listen.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -551,7 +551,7 @@ func TestV4AcceptOnV4(t *testing.T) {
 	}
 
 	// Bind to wildcard.
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 

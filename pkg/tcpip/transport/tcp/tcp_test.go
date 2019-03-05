@@ -135,7 +135,7 @@ func TestPassiveConnectionAttemptIncrement(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	if err := ep.Listen(1); err != nil {
@@ -193,7 +193,7 @@ func TestTCPResetsSentIncrement(t *testing.T) {
 	}
 	want := stats.TCP.SegmentsSent.Value() + 1
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -1042,7 +1042,7 @@ func TestScaledWindowAccept(t *testing.T) {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -1115,7 +1115,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -1618,7 +1618,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -1675,7 +1675,7 @@ func TestSynCookiePassiveSendMSSLessThanMTU(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -1840,7 +1840,7 @@ func TestCloseListener(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -2824,7 +2824,7 @@ func TestUpdateListenBacklog(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Bind(tcpip.FullAddress{}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -3096,7 +3096,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -3105,7 +3105,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	c.EP.Close()
@@ -3115,7 +3115,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
@@ -3127,7 +3127,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	c.EP.Close()
@@ -3137,7 +3137,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	if err := c.EP.Listen(10); err != nil {
@@ -3149,7 +3149,7 @@ func TestReusePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
-	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 	if err := c.EP.Listen(10); err != nil {
@@ -3337,7 +3337,7 @@ func TestSelfConnect(t *testing.T) {
 	}
 	defer ep.Close()
 
-	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}, nil); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
 		t.Fatalf("Bind failed: %v", err)
 	}
 
@@ -3508,7 +3508,7 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 											}
 
 											for i := ports.FirstEphemeral; i <= math.MaxUint16; i++ {
-												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}, nil); err != nil {
+												if makeEP(exhaustedNetwork).Bind(tcpip.FullAddress{Addr: address(t, exhaustedAddressType, isAny), Port: uint16(i)}); err != nil {
 													t.Fatalf("Bind(%d) failed: %v", i, err)
 												}
 											}
