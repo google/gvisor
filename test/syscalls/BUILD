@@ -364,6 +364,7 @@ syscall_test(
 )
 
 syscall_test(
+    size = "medium",
     # Multicast packets can be received by the wrong test if run in parallel.
     parallel = False,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
