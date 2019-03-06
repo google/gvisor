@@ -70,7 +70,8 @@ TEST(KillTest, CanKillAllPIDs) {
     sa.sa_sigaction = SigHandler;
     sigfillset(&sa.sa_mask);
     sa.sa_flags = SA_SIGINFO;
-    auto cleanup = ScopedSigaction(SIGWINCH, sa).ValueOrDie();
+    TEST_PCHECK(sigaction(SIGWINCH, &sa, nullptr) == 0);
+    MaybeSave();
 
     // Indicate to the parent that we're ready.
     write_fd.reset();
