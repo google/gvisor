@@ -57,9 +57,6 @@ func readLink(fd int) (string, error) {
 			uintptr(unsafe.Pointer(&b[0])),
 			uintptr(l),
 			0, 0)
-		if n < 0 {
-			n = 0
-		}
 		if errno != 0 {
 			return "", errno
 		}
