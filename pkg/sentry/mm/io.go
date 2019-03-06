@@ -346,6 +346,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr usermem.Addr, new 
 		if err != nil {
 			return 0, translateIOError(ctx, err)
 		}
+		// Return the number of bytes read.
 		return 4, nil
 	})
 	return old, err
@@ -388,9 +389,53 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr usermem.
 		if err != nil {
 			return 0, translateIOError(ctx, err)
 		}
+		// Return the number of bytes read.
 		return 4, nil
 	})
 	return prev, err
+}
+
+// LoadUint32 implements usermem.IO.LoadUint32.
+func (mm *MemoryManager) LoadUint32(ctx context.Context, addr usermem.Addr, opts usermem.IOOpts) (uint32, error) {
+	ar, ok := mm.CheckIORange(addr, 4)
+	if !ok {
+		return 0, syserror.EFAULT
+	}
+
+	// Do AddressSpace IO if applicable.
+	if mm.haveASIO && opts.AddressSpaceActive && !opts.IgnorePermissions {
+		for {
+			val, err := mm.as.LoadUint32(addr)
+			if err == nil {
+				return val, nil
+			}
+			if f, ok := err.(platform.SegmentationFault); ok {
+				if err := mm.handleASIOFault(ctx, f.Addr, ar, usermem.Read); err != nil {
+					return 0, err
+				}
+				continue
+			}
+			return 0, translateIOError(ctx, err)
+		}
+	}
+
+	// Go through internal mappings.
+	var val uint32
+	_, err := mm.withInternalMappings(ctx, ar, usermem.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
+			// Atomicity is unachievable across mappings.
+			return 0, syserror.EFAULT
+		}
+		im := ims.Head()
+		var err error
+		val, err = safemem.LoadUint32(im)
+		if err != nil {
+			return 0, translateIOError(ctx, err)
+		}
+		// Return the number of bytes read.
+		return 4, nil
+	})
+	return val, err
 }
 
 // handleASIOFault handles a page fault at address addr for an AddressSpaceIO

@@ -103,6 +103,13 @@ type IO interface {
 	// any following locks in the lock order. addr must be aligned to a 4-byte
 	// boundary.
 	CompareAndSwapUint32(ctx context.Context, addr Addr, old, new uint32, opts IOOpts) (uint32, error)
+
+	// LoadUint32 atomically loads the uint32 value at addr and returns it.
+	//
+	// Preconditions: The caller must not hold mm.MemoryManager.mappingMu or
+	// any following locks in the lock order. addr must be aligned to a 4-byte
+	// boundary.
+	LoadUint32(ctx context.Context, addr Addr, opts IOOpts) (uint32, error)
 }
 
 // IOOpts contains options applicable to all IO methods.

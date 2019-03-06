@@ -124,6 +124,46 @@ func futexWaitDuration(t *kernel.Task, duration time.Duration, forever bool, add
 	return 0, kernel.ERESTART_RESTARTBLOCK
 }
 
+func futexLockPI(t *kernel.Task, ts linux.Timespec, forever bool, addr usermem.Addr, private bool) error {
+	w := t.FutexWaiter()
+	locked, err := t.Futex().LockPI(w, t, addr, uint32(t.ThreadID()), private, false)
+	if err != nil {
+		return err
+	}
+	if locked {
+		// Futex acquired, we're done!
+		return nil
+	}
+
+	if forever {
+		err = t.Block(w.C)
+	} else {
+		notifier, tchan := ktime.NewChannelNotifier()
+		timer := ktime.NewTimer(t.Kernel().RealtimeClock(), notifier)
+		timer.Swap(ktime.Setting{
+			Enabled: true,
+			Next:    ktime.FromTimespec(ts),
+		})
+		err = t.BlockWithTimer(w.C, tchan)
+		timer.Destroy()
+	}
+
+	t.Futex().WaitComplete(w)
+	return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
+}
+
+func tryLockPI(t *kernel.Task, addr usermem.Addr, private bool) error {
+	w := t.FutexWaiter()
+	locked, err := t.Futex().LockPI(w, t, addr, uint32(t.ThreadID()), private, true)
+	if err != nil {
+		return err
+	}
+	if !locked {
+		return syserror.EWOULDBLOCK
+	}
+	return nil
+}
+
 // Futex implements linux syscall futex(2).
 // It provides a method for a program to wait for a value at a given address to
 // change, and a method to wake up anyone waiting on a particular address.
@@ -144,7 +184,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	switch cmd {
 	case linux.FUTEX_WAIT, linux.FUTEX_WAIT_BITSET:
 		// WAIT{_BITSET} wait forever if the timeout isn't passed.
-		forever := timeout == 0
+		forever := (timeout == 0)
 
 		var timespec linux.Timespec
 		if !forever {
@@ -205,8 +245,30 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		n, err := t.Futex().WakeOp(t, addr, naddr, private, val, nreq, op)
 		return uintptr(n), nil, err
 
-	case linux.FUTEX_LOCK_PI, linux.FUTEX_UNLOCK_PI, linux.FUTEX_TRYLOCK_PI, linux.FUTEX_WAIT_REQUEUE_PI, linux.FUTEX_CMP_REQUEUE_PI:
-		// We don't support any priority inversion futexes.
+	case linux.FUTEX_LOCK_PI:
+		forever := (timeout == 0)
+
+		var timespec linux.Timespec
+		if !forever {
+			var err error
+			timespec, err = copyTimespecIn(t, timeout)
+			if err != nil {
+				return 0, nil, err
+			}
+		}
+		err := futexLockPI(t, timespec, forever, addr, private)
+		return 0, nil, err
+
+	case linux.FUTEX_TRYLOCK_PI:
+		err := tryLockPI(t, addr, private)
+		return 0, nil, err
+
+	case linux.FUTEX_UNLOCK_PI:
+		err := t.Futex().UnlockPI(t, addr, uint32(t.ThreadID()), private)
+		return 0, nil, err
+
+	case linux.FUTEX_WAIT_REQUEUE_PI, linux.FUTEX_CMP_REQUEUE_PI:
+		t.Kernel().EmitUnimplementedEvent(t)
 		return 0, nil, syserror.ENOSYS
 
 	default:

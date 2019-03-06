@@ -95,11 +95,14 @@ func (k *Key) matches(k2 *Key) bool {
 
 // Target abstracts memory accesses and keys.
 type Target interface {
-	// SwapUint32 gives access to usermem.SwapUint32.
+	// SwapUint32 gives access to usermem.IO.SwapUint32.
 	SwapUint32(addr usermem.Addr, new uint32) (uint32, error)
 
-	// CompareAndSwap gives access to usermem.CompareAndSwapUint32.
+	// CompareAndSwap gives access to usermem.IO.CompareAndSwapUint32.
 	CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error)
+
+	// LoadUint32 gives access to usermem.IO.LoadUint32.
+	LoadUint32(addr usermem.Addr) (uint32, error)
 
 	// GetSharedKey returns a Key with kind KindSharedPrivate or
 	// KindSharedMappable corresponding to the memory mapped at address addr.
@@ -112,11 +115,11 @@ type Target interface {
 
 // check performs a basic equality check on the given address.
 func check(t Target, addr usermem.Addr, val uint32) error {
-	prev, err := t.CompareAndSwapUint32(addr, val, val)
+	cur, err := t.LoadUint32(addr)
 	if err != nil {
 		return err
 	}
-	if prev != val {
+	if cur != val {
 		return syserror.EAGAIN
 	}
 	return nil
@@ -140,11 +143,14 @@ func atomicOp(t Target, addr usermem.Addr, opIn uint32) (bool, error) {
 	)
 	if opType == linux.FUTEX_OP_SET {
 		oldVal, err = t.SwapUint32(addr, opArg)
+		if err != nil {
+			return false, err
+		}
 	} else {
 		for {
-			oldVal, err = t.CompareAndSwapUint32(addr, 0, 0)
+			oldVal, err = t.LoadUint32(addr)
 			if err != nil {
-				break
+				return false, err
 			}
 			var newVal uint32
 			switch opType {
@@ -161,7 +167,7 @@ func atomicOp(t Target, addr usermem.Addr, opIn uint32) (bool, error) {
 			}
 			prev, err := t.CompareAndSwapUint32(addr, oldVal, newVal)
 			if err != nil {
-				break
+				return false, err
 			}
 			if prev == oldVal {
 				break // Success.
@@ -222,6 +228,9 @@ type Waiter struct {
 	// The bitmask we're waiting on.
 	// This is used the case of a FUTEX_WAKE_BITSET.
 	bitmask uint32
+
+	// tid is the thread ID for the waiter in case this is a PI mutex.
+	tid uint32
 }
 
 // NewWaiter returns a new unqueued Waiter.
@@ -262,21 +271,26 @@ func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
 		// Remove from the bucket and wake the waiter.
 		woke := w
 		w = w.Next() // Next iteration.
-		b.waiters.Remove(woke)
-		woke.C <- struct{}{}
-
-		// NOTE: The above channel write establishes a write barrier according
-		// to the memory model, so nothing may be ordered around it. Since
-		// we've dequeued woke and will never touch it again, we can safely
-		// store nil to woke.bucket here and allow the WaitComplete() to
-		// short-circuit grabbing the bucket lock. If they somehow miss the
-		// store, we are still holding the lock, so we can know that they won't
-		// dequeue woke, assume it's free and have the below operation
-		// afterwards.
-		woke.bucket.Store(nil)
+		b.wakeWaiterLocked(woke)
 		done++
 	}
 	return done
+}
+
+func (b *bucket) wakeWaiterLocked(w *Waiter) {
+	// Remove from the bucket and wake the waiter.
+	b.waiters.Remove(w)
+	w.C <- struct{}{}
+
+	// NOTE: The above channel write establishes a write barrier according
+	// to the memory model, so nothing may be ordered around it. Since
+	// we've dequeued w and will never touch it again, we can safely
+	// store nil to w.bucket here and allow the WaitComplete() to
+	// short-circuit grabbing the bucket lock. If they somehow miss the
+	// store, we are still holding the lock, so we can know that they won't
+	// dequeue w, assume it's free and have the below operation
+	// afterwards.
+	w.bucket.Store(nil)
 }
 
 // requeueLocked takes n waiters from the bucket and moves them to naddr on the
@@ -596,7 +610,7 @@ func (m *Manager) WaitComplete(w *Waiter) {
 			continue
 		}
 
-		// Remove w from b.
+		// Remove waiter from bucket.
 		b.waiters.Remove(w)
 		w.bucket.Store(nil)
 		b.mu.Unlock()
@@ -605,4 +619,165 @@ func (m *Manager) WaitComplete(w *Waiter) {
 
 	// Release references held by the waiter.
 	w.key.release()
+}
+
+// LockPI attempts to lock the futex following the Priority-inheritance futex
+// rules. The lock is acquired only when 'addr' points to 0. The TID of the
+// calling task is set to 'addr' to indicate the futex is owned. It returns true
+// if the futex was successfully acquired.
+//
+// FUTEX_OWNER_DIED is only set by the Linux when robust lists are in use (see
+// exit_robust_list()). Given we don't support robust lists, although handled
+// below, it's never set.
+func (m *Manager) LockPI(w *Waiter, t Target, addr usermem.Addr, tid uint32, private, try bool) (bool, error) {
+	k, err := getKey(t, addr, private)
+	if err != nil {
+		return false, err
+	}
+	// Ownership of k is transferred to w below.
+
+	// Prepare the Waiter before taking the bucket lock.
+	select {
+	case <-w.C:
+	default:
+	}
+	w.key = k
+	w.tid = tid
+
+	b := m.lockBucket(&k)
+	// Hot function: avoid defers.
+
+	success, err := m.lockPILocked(w, t, addr, tid, b, try)
+	if err != nil {
+		w.key.release()
+		b.mu.Unlock()
+		return false, err
+	}
+	if success || try {
+		// Release waiter if it's not going to be a wait.
+		w.key.release()
+	}
+	b.mu.Unlock()
+	return success, nil
+}
+
+func (m *Manager) lockPILocked(w *Waiter, t Target, addr usermem.Addr, tid uint32, b *bucket, try bool) (bool, error) {
+	for {
+		cur, err := t.LoadUint32(addr)
+		if err != nil {
+			return false, err
+		}
+		if (cur & linux.FUTEX_TID_MASK) == tid {
+			return false, syserror.EDEADLK
+		}
+
+		if (cur & linux.FUTEX_TID_MASK) == 0 {
+			// No owner and no waiters, try to acquire the futex.
+
+			// Set TID and preserve owner died status.
+			val := tid
+			val |= cur & linux.FUTEX_OWNER_DIED
+			prev, err := t.CompareAndSwapUint32(addr, cur, val)
+			if err != nil {
+				return false, err
+			}
+			if prev != cur {
+				// CAS failed, retry...
+				// Linux reacquires the bucket lock on retries, which will re-lookup the
+				// mapping at the futex address. However, retrying while holding the
+				// lock is more efficient and reduces the chance of another conflict.
+				continue
+			}
+			// Futex acquired.
+			return true, nil
+		}
+
+		// Futex is already owned, prepare to wait.
+
+		if try {
+			// Caller doesn't want to wait.
+			return false, nil
+		}
+
+		// Set waiters bit if not set yet.
+		if cur&linux.FUTEX_WAITERS == 0 {
+			prev, err := t.CompareAndSwapUint32(addr, cur, cur|linux.FUTEX_WAITERS)
+			if err != nil {
+				return false, err
+			}
+			if prev != cur {
+				// CAS failed, retry...
+				continue
+			}
+		}
+
+		// Add the waiter to the bucket.
+		b.waiters.PushBack(w)
+		w.bucket.Store(b)
+		return false, nil
+	}
+}
+
+// UnlockPI unlock the futex following the Priority-inheritance futex
+// rules. The address provided must contain the caller's TID. If there are
+// waiters, TID of the next waiter (FIFO) is set to the given address, and the
+// waiter woken up. If there are no waiters, 0 is set to the address.
+func (m *Manager) UnlockPI(t Target, addr usermem.Addr, tid uint32, private bool) error {
+	k, err := getKey(t, addr, private)
+	if err != nil {
+		return err
+	}
+	b := m.lockBucket(&k)
+
+	err = m.unlockPILocked(t, addr, tid, b)
+
+	k.release()
+	b.mu.Unlock()
+	return err
+}
+
+func (m *Manager) unlockPILocked(t Target, addr usermem.Addr, tid uint32, b *bucket) error {
+	cur, err := t.LoadUint32(addr)
+	if err != nil {
+		return err
+	}
+
+	if (cur & linux.FUTEX_TID_MASK) != tid {
+		return syserror.EPERM
+	}
+
+	if b.waiters.Empty() {
+		// It's safe to set 0 because there are no waiters, no new owner, and the
+		// executing task is the current owner (no owner died bit).
+		prev, err := t.CompareAndSwapUint32(addr, cur, 0)
+		if err != nil {
+			return err
+		}
+		if prev != cur {
+			// Let user mode handle CAS races. This is different than lock, which
+			// retries when CAS fails.
+			return syserror.EAGAIN
+		}
+		return nil
+	}
+
+	next := b.waiters.Front()
+
+	// Set next owner's TID, waiters if there are any. Resets owner died bit, if
+	// set, because the executing task takes over as the owner.
+	val := next.tid
+	if next.Next() != nil {
+		val |= linux.FUTEX_WAITERS
+	}
+
+	prev, err := t.CompareAndSwapUint32(addr, cur, val)
+	if err != nil {
+		return err
+	}
+	if prev != cur {
+		return syserror.EINVAL
+	}
+
+	b.wakeWaiterLocked(next)
+	return nil
 }

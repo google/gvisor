@@ -49,6 +49,10 @@ func (t testData) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint
 	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t[addr]))), nil
 }
 
+func (t testData) LoadUint32(addr usermem.Addr) (uint32, error) {
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&t[addr]))), nil
+}
+
 func (t testData) GetSharedKey(addr usermem.Addr) (Key, error) {
 	return Key{
 		Kind:   KindSharedMappable,

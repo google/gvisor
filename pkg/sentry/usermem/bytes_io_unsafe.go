@@ -37,3 +37,11 @@ func (b *BytesIO) CompareAndSwapUint32(ctx context.Context, addr Addr, old, new 
 	}
 	return atomicbitops.CompareAndSwapUint32((*uint32)(unsafe.Pointer(&b.Bytes[int(addr)])), old, new), nil
 }
+
+// LoadUint32 implements IO.LoadUint32.
+func (b *BytesIO) LoadUint32(ctx context.Context, addr Addr, opts IOOpts) (uint32, error) {
+	if _, err := b.rangeCheck(addr, 4); err != nil {
+		return 0, err
+	}
+	return atomic.LoadUint32((*uint32)(unsafe.Pointer(&b.Bytes[int(addr)]))), nil
+}

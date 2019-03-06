@@ -106,3 +106,31 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
   CMPXCHGL DX, 0(DI)
   MOVL AX, prev+16(FP)
   RET
+
+// handleLoadUint32Fault returns the value stored in DI. Control is transferred
+// to it when LoadUint32 below receives SIGSEGV or SIGBUS, with the signal
+// number stored in DI.
+//
+// It must have the same frame configuration as loadUint32 so that it can undo
+// any potential call frame set up by the assembler.
+TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
+  MOVL DI, sig+12(FP)
+  RET
+
+// loadUint32 atomically loads *addr and returns it. If a SIGSEGV or SIGBUS
+// signal is received, the value returned is unspecified, and sig is the number
+// of the signal that was received.
+//
+// Preconditions: addr must be aligned to a 4-byte boundary.
+//
+//func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
+TEXT ·loadUint32(SB), NOSPLIT, $0-16
+  // Store 0 as the returned signal number. If we run to completion,
+  // this is the value the caller will see; if a signal is received,
+  // handleLoadUint32Fault will store a different value in this address.
+  MOVL $0, sig+12(FP)
+
+  MOVQ addr+0(FP), AX
+  MOVL (AX), BX
+  MOVL BX, val+8(FP)
+  RET

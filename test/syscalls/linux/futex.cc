@@ -32,6 +32,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -116,6 +117,30 @@ int futex_wake_op(bool priv, std::atomic<int>* uaddr1, std::atomic<int>* uaddr2,
     op |= FUTEX_PRIVATE_FLAG;
   }
   return syscall(SYS_futex, uaddr1, op, nwake1, nwake2, uaddr2, sub_op);
+}
+
+int futex_lock_pi(bool priv, std::atomic<int>* uaddr) {
+  int op = FUTEX_LOCK_PI;
+  if (priv) {
+    op |= FUTEX_PRIVATE_FLAG;
+  }
+  return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
+}
+
+int futex_trylock_pi(bool priv, std::atomic<int>* uaddr) {
+  int op = FUTEX_TRYLOCK_PI;
+  if (priv) {
+    op |= FUTEX_PRIVATE_FLAG;
+  }
+  return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
+}
+
+int futex_unlock_pi(bool priv, std::atomic<int>* uaddr) {
+  int op = FUTEX_UNLOCK_PI;
+  if (priv) {
+    op |= FUTEX_PRIVATE_FLAG;
+  }
+  return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
 }
 
 // Fixture for futex tests parameterized by whether to use private or shared
@@ -589,7 +614,95 @@ TEST(SharedFutexTest, WakeInterprocessFile_NoRandomSave) {
       << " status " << status;
 }
 
-}  // namespace
+TEST_P(PrivateAndSharedFutexTest, PIBasic) {
+  std::atomic<int> a = ATOMIC_VAR_INIT(0);
 
+  ASSERT_THAT(futex_lock_pi(IsPrivate(), &a), SyscallSucceeds());
+  EXPECT_EQ(a.load(), gettid());
+  EXPECT_THAT(futex_lock_pi(IsPrivate(), &a), SyscallFailsWithErrno(EDEADLK));
+
+  ASSERT_THAT(futex_unlock_pi(IsPrivate(), &a), SyscallSucceeds());
+  EXPECT_EQ(a.load(), 0);
+  EXPECT_THAT(futex_unlock_pi(IsPrivate(), &a), SyscallFailsWithErrno(EPERM));
+}
+
+TEST_P(PrivateAndSharedFutexTest, PIConcurrency_NoRandomSave) {
+  DisableSave ds;  // Too many syscalls.
+
+  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  const bool is_priv = IsPrivate();
+
+  std::unique_ptr<ScopedThread> threads[100];
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
+    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+      for (size_t j = 0; j < 10; ++j) {
+        ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
+        EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
+        SleepSafe(absl::Milliseconds(5));
+        ASSERT_THAT(futex_unlock_pi(is_priv, &a), SyscallSucceeds());
+      }
+    });
+  }
+}
+
+TEST_P(PrivateAndSharedFutexTest, PIWaiters) {
+  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  const bool is_priv = IsPrivate();
+
+  ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
+  EXPECT_EQ(a.load(), gettid());
+
+  ScopedThread th([is_priv, &a] {
+    ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
+    ASSERT_THAT(futex_unlock_pi(is_priv, &a), SyscallSucceeds());
+  });
+
+  // Wait until the thread blocks on the futex, setting the waiters bit.
+  auto start = absl::Now();
+  while (a.load() != (FUTEX_WAITERS | gettid())) {
+    ASSERT_LT(absl::Now() - start, absl::Seconds(5));
+    absl::SleepFor(absl::Milliseconds(100));
+  }
+  ASSERT_THAT(futex_unlock_pi(is_priv, &a), SyscallSucceeds());
+}
+
+TEST_P(PrivateAndSharedFutexTest, PITryLock) {
+  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  const bool is_priv = IsPrivate();
+
+  ASSERT_THAT(futex_trylock_pi(IsPrivate(), &a), SyscallSucceeds());
+  EXPECT_EQ(a.load(), gettid());
+
+  EXPECT_THAT(futex_trylock_pi(is_priv, &a), SyscallFailsWithErrno(EDEADLK));
+  ScopedThread th([is_priv, &a] {
+    EXPECT_THAT(futex_trylock_pi(is_priv, &a), SyscallFailsWithErrno(EAGAIN));
+  });
+  th.Join();
+
+  ASSERT_THAT(futex_unlock_pi(IsPrivate(), &a), SyscallSucceeds());
+}
+
+TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
+  DisableSave ds;  // Too many syscalls.
+
+  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  const bool is_priv = IsPrivate();
+
+  std::unique_ptr<ScopedThread> threads[100];
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
+    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+      for (size_t j = 0; j < 10;) {
+        if (futex_trylock_pi(is_priv, &a) >= 0) {
+          ++j;
+          EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
+          SleepSafe(absl::Milliseconds(5));
+          ASSERT_THAT(futex_unlock_pi(is_priv, &a), SyscallSucceeds());
+        }
+      }
+    });
+  }
+}
+
+}  // namespace
 }  // namespace testing
 }  // namespace gvisor

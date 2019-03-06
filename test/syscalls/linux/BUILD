@@ -808,6 +808,7 @@ cc_binary(
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:memory_util",
+        "//test/util:save_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

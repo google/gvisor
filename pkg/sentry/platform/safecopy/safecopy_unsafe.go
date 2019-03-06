@@ -79,6 +79,14 @@ func swapUint64(ptr unsafe.Pointer, new uint64) (old uint64, sig int32)
 //go:noescape
 func compareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (prev uint32, sig int32)
 
+// LoadUint32 is like sync/atomic.LoadUint32, but operates with user memory. It
+// may fail with SIGSEGV or SIGBUS if it is received while reading from ptr.
+//
+// Preconditions: ptr must be aligned to a 4-byte boundary.
+//
+//go:noescape
+func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
+
 // CopyIn copies len(dst) bytes from src to dst. It returns the number of bytes
 // copied and an error if SIGSEGV or SIGBUS is received while reading from src.
 func CopyIn(dst []byte, src unsafe.Pointer) (int, error) {
@@ -258,6 +266,18 @@ func CompareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (uint32, error) {
 	}
 	prev, sig := compareAndSwapUint32(ptr, old, new)
 	return prev, errorFromFaultSignal(ptr, sig)
+}
+
+// LoadUint32 is like sync/atomic.LoadUint32, but operates with user memory. It
+// may fail with SIGSEGV or SIGBUS if it is received while reading from ptr.
+//
+// Preconditions: ptr must be aligned to a 4-byte boundary.
+func LoadUint32(ptr unsafe.Pointer) (uint32, error) {
+	if addr := uintptr(ptr); addr&3 != 0 {
+		return 0, AlignmentError{addr, 4}
+	}
+	val, sig := loadUint32(ptr)
+	return val, errorFromFaultSignal(ptr, sig)
 }
 
 func errorFromFaultSignal(addr unsafe.Pointer, sig int32) error {

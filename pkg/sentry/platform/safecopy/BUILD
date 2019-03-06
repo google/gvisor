@@ -18,9 +18,7 @@ go_library(
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/safecopy",
     visibility = ["//pkg/sentry:internal"],
-    deps = [
-        "//pkg/syserror",
-    ],
+    deps = ["//pkg/syserror"],
 )
 
 go_test(

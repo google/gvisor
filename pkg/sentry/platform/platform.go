@@ -254,6 +254,11 @@ type AddressSpaceIO interface {
 	//
 	// Preconditions: addr must be aligned to a 4-byte boundary.
 	CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error)
+
+	// LoadUint32 atomically loads the uint32 value at addr and returns it.
+	//
+	// Preconditions: addr must be aligned to a 4-byte boundary.
+	LoadUint32(addr usermem.Addr) (uint32, error)
 }
 
 // NoAddressSpaceIO implements AddressSpaceIO methods by panicing.
@@ -281,6 +286,11 @@ func (NoAddressSpaceIO) SwapUint32(addr usermem.Addr, new uint32) (uint32, error
 
 // CompareAndSwapUint32 implements AddressSpaceIO.CompareAndSwapUint32.
 func (NoAddressSpaceIO) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32, error) {
+	panic("This platform does not support AddressSpaceIO")
+}
+
+// LoadUint32 implements AddressSpaceIO.LoadUint32.
+func (NoAddressSpaceIO) LoadUint32(addr usermem.Addr) (uint32, error) {
 	panic("This platform does not support AddressSpaceIO")
 }
 

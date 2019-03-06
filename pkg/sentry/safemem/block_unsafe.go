@@ -267,3 +267,13 @@ func CompareAndSwapUint32(b Block, old, new uint32) (uint32, error) {
 	}
 	return safecopy.CompareAndSwapUint32(b.start, old, new)
 }
+
+// LoadUint32 invokes safecopy.LoadUint32 on the first 4 bytes of b.
+//
+// Preconditions: b.Len() >= 4.
+func LoadUint32(b Block) (uint32, error) {
+	if b.length < 4 {
+		panic(fmt.Sprintf("insufficient length: %d", b.length))
+	}
+	return safecopy.LoadUint32(b.start)
+}

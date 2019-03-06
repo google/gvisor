@@ -41,6 +41,13 @@ func (t *Task) CompareAndSwapUint32(addr usermem.Addr, old, new uint32) (uint32,
 	})
 }
 
+// LoadUint32 implemets futex.Target.LoadUint32.
+func (t *Task) LoadUint32(addr usermem.Addr) (uint32, error) {
+	return t.MemoryManager().LoadUint32(t, addr, usermem.IOOpts{
+		AddressSpaceActive: true,
+	})
+}
+
 // GetSharedKey implements futex.Target.GetSharedKey.
 func (t *Task) GetSharedKey(addr usermem.Addr) (futex.Key, error) {
 	return t.MemoryManager().GetSharedFutexKey(t, addr)

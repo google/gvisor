@@ -75,6 +75,8 @@ var (
 	swapUint64End             uintptr
 	compareAndSwapUint32Begin uintptr
 	compareAndSwapUint32End   uintptr
+	loadUint32Begin           uintptr
+	loadUint32End             uintptr
 
 	// savedSigSegVHandler is a pointer to the SIGSEGV handler that was
 	// configured before we replaced it with our own. We still call into it
@@ -119,6 +121,8 @@ func initializeAddresses() {
 	swapUint64End = FindEndAddress(swapUint64Begin)
 	compareAndSwapUint32Begin = reflect.ValueOf(compareAndSwapUint32).Pointer()
 	compareAndSwapUint32End = FindEndAddress(compareAndSwapUint32Begin)
+	loadUint32Begin = reflect.ValueOf(loadUint32).Pointer()
+	loadUint32End = FindEndAddress(loadUint32Begin)
 }
 
 func init() {

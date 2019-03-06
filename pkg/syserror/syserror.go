@@ -33,6 +33,7 @@ var (
 	ECHILD       = error(syscall.ECHILD)
 	ECONNREFUSED = error(syscall.ECONNREFUSED)
 	ECONNRESET   = error(syscall.ECONNRESET)
+	EDEADLK      = error(syscall.EDEADLK)
 	EEXIST       = error(syscall.EEXIST)
 	EFAULT       = error(syscall.EFAULT)
 	EFBIG        = error(syscall.EFBIG)

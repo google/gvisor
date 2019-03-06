@@ -101,6 +101,15 @@ not_swapuint64:
 	JMP handle_fault
 
 not_casuint32:
+	CMPQ CX, ·loadUint32Begin(SB)
+	JB not_loaduint32
+	CMPQ CX, ·loadUint32End(SB)
+	JAE not_loaduint32
+
+	LEAQ handleLoadUint32Fault(SB), CX
+	JMP handle_fault
+
+not_loaduint32:
 original_handler:
 	// Jump to the previous signal handler, which is likely the golang one.
 	XORQ CX, CX

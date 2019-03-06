@@ -54,3 +54,9 @@ const (
 
 // FUTEX_TID_MASK is the TID portion of a PI futex word.
 const FUTEX_TID_MASK = 0x3fffffff
+
+// Constants used for priority-inheritance futexes.
+const (
+	FUTEX_WAITERS    = 0x80000000
+	FUTEX_OWNER_DIED = 0x40000000
+)

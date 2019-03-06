@@ -37,6 +37,8 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/log",
+        "//pkg/sentry/context",
         "//pkg/sentry/memmap",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
