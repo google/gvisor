@@ -70,3 +70,13 @@ func (s *segment) saveRcvdTime() unixTime {
 func (s *segment) loadRcvdTime(unix unixTime) {
 	s.rcvdTime = time.Unix(unix.second, unix.nano)
 }
+
+// saveXmitTime is invoked by stateify.
+func (s *segment) saveXmitTime() unixTime {
+	return unixTime{s.rcvdTime.Unix(), s.rcvdTime.UnixNano()}
+}
+
+// loadXmitTime is invoked by stateify.
+func (s *segment) loadXmitTime(unix unixTime) {
+	s.rcvdTime = time.Unix(unix.second, unix.nano)
+}

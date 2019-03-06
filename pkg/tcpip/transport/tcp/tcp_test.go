@@ -2669,6 +2669,18 @@ func TestFastRecovery(t *testing.T) {
 	// Receive the retransmitted packet.
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
 
+	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.Stack().Stats().TCP.FastRecovery.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.FastRecovery.Value = %v, want = %v", got, want)
+	}
+
 	// Now send 7 mode duplicate acks. Each of these should cause a window
 	// inflation by 1 and cause the sender to send an extra packet.
 	for i := 0; i < 7; i++ {
@@ -2687,6 +2699,14 @@ func TestFastRecovery(t *testing.T) {
 
 	// Receive the retransmit due to partial ack.
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
+
+	if got, want := c.Stack().Stats().TCP.FastRetransmit.Value(), uint64(2); got != want {
+		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(2); got != want {
+		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
+	}
 
 	// Receive the 10 extra packets that should have been released due to
 	// the congestion window inflation in recovery.
@@ -2798,6 +2818,18 @@ func TestRetransmit(t *testing.T) {
 	// Wait for a timeout and retransmit.
 	rtxOffset := bytesRead - maxPayload*expected
 	c.ReceiveAndCheckPacket(data, rtxOffset, maxPayload)
+
+	if got, want := c.Stack().Stats().TCP.Timeouts.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.Timeouts.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.Stack().Stats().TCP.SlowStartRetransmits.Value(), uint64(1); got != want {
+		t.Errorf("got stats.TCP.SlowStartRetransmits.Value = %v, want = %v", got, want)
+	}
 
 	// Acknowledge half of the pending data.
 	rtxOffset = bytesRead - expected*maxPayload/2

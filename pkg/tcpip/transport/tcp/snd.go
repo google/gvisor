@@ -338,6 +338,8 @@ func (s *sender) resendSegment() {
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
 		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
+		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
+		s.ep.stack.Stats().TCP.Retransmits.Increment()
 	}
 }
 
@@ -351,6 +353,8 @@ func (s *sender) retransmitTimerExpired() bool {
 	if !s.resendTimer.checkExpiration() {
 		return true
 	}
+
+	s.ep.stack.Stats().TCP.Timeouts.Increment()
 
 	// Give up if we've waited more than a minute since the last resend.
 	if s.rto >= 60*time.Second {
@@ -422,7 +426,6 @@ func (s *sender) sendData() {
 	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
 	for ; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
-
 		// We abuse the flags field to determine if we have already
 		// assigned a sequence number to this segment.
 		if seg.flags == 0 {
@@ -524,6 +527,15 @@ func (s *sender) sendData() {
 			// ensure that no keepalives are sent while there is pending data.
 			s.ep.disableKeepaliveTimer()
 		}
+
+		if !seg.xmitTime.IsZero() {
+			s.ep.stack.Stats().TCP.Retransmits.Increment()
+			if s.sndCwnd < s.sndSsthresh {
+				s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
+			}
+		}
+
+		seg.xmitTime = time.Now()
 		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
 
 		// Update sndNxt if we actually sent new data (as opposed to
@@ -556,6 +568,7 @@ func (s *sender) enterFastRecovery() {
 	s.fr.first = s.sndUna
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
+	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
 
 func (s *sender) leaveFastRecovery() {

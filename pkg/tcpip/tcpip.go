@@ -628,6 +628,28 @@ type TCPStats struct {
 
 	// ResetsReceived is the number of TCP resets received.
 	ResetsReceived *StatCounter
+
+	// Retransmits is the number of TCP segments retransmitted.
+	Retransmits *StatCounter
+
+	// FastRecovery is the number of times Fast Recovery was used to
+	// recover from packet loss.
+	FastRecovery *StatCounter
+
+	// SACKRecovery is the number of times SACK Recovery was used to
+	// recover from packet loss.
+	SACKRecovery *StatCounter
+
+	// SlowStartRetransmits is the number of segments retransmitted in slow
+	// start.
+	SlowStartRetransmits *StatCounter
+
+	// FastRetransmit is the number of segments retransmitted in fast
+	// recovery.
+	FastRetransmit *StatCounter
+
+	// Timeouts is the number of times the RTO expired.
+	Timeouts *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.

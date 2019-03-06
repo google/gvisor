@@ -61,6 +61,9 @@ type segment struct {
 	options        []byte `state:".([]byte)"`
 	hasNewSACKInfo bool
 	rcvdTime       time.Time `state:".(unixTime)"`
+	// xmitTime is the last transmit time of this segment. A zero value
+	// indicates that the segment has yet to be transmitted.
+	xmitTime time.Time `state:".(unixTime)"`
 }
 
 func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
