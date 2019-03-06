@@ -26,6 +26,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	rpb "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
+	ucspb "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/strace"
 	spb "gvisor.googlesource.com/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
@@ -73,12 +74,18 @@ func newCompatEmitter(logFD int) (*compatEmitter, error) {
 }
 
 // Emit implements eventchannel.Emitter.
-func (c *compatEmitter) Emit(msg proto.Message) (hangup bool, err error) {
-	// Only interested in UnimplementedSyscall, skip the rest.
-	us, ok := msg.(*spb.UnimplementedSyscall)
-	if !ok {
-		return false, nil
+func (c *compatEmitter) Emit(msg proto.Message) (bool, error) {
+	switch m := msg.(type) {
+	case *spb.UnimplementedSyscall:
+		c.emitUnimplementedSyscall(m)
+	case *ucspb.UncaughtSignal:
+		c.emitUncaughtSignal(m)
 	}
+
+	return false, nil
+}
+
+func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 	regs := us.Registers.GetArch().(*rpb.Registers_Amd64).Amd64
 
 	c.mu.Lock()
@@ -113,7 +120,13 @@ func (c *compatEmitter) Emit(msg proto.Message) (hangup bool, err error) {
 		c.sink.Infof("Unsupported syscall: %s, regs: %+v", c.nameMap.Name(uintptr(sysnr)), regs)
 		tr.onReported(regs)
 	}
-	return false, nil
+}
+
+func (c *compatEmitter) emitUncaughtSignal(msg *ucspb.UncaughtSignal) {
+	sig := syscall.Signal(msg.SignalNumber)
+	c.sink.Infof(
+		"Uncaught signal: %q (%d), PID: %d, TID: %d, fault addr: %#x",
+		sig, msg.SignalNumber, msg.Pid, msg.Tid, msg.FaultAddr)
 }
 
 // Close implements eventchannel.Emitter.

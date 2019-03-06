@@ -46,6 +46,7 @@ go_library(
         "//pkg/sentry/fs/tty",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel:uncaught_signal_go_proto",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/limits",
