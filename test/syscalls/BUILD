@@ -49,7 +49,10 @@ syscall_test(test = "//test/syscalls/linux:chroot_test")
 
 syscall_test(test = "//test/syscalls/linux:clock_getres_test")
 
-syscall_test(test = "//test/syscalls/linux:clock_gettime_test")
+syscall_test(
+    size = "medium",
+    test = "//test/syscalls/linux:clock_gettime_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:clock_nanosleep_test")
 

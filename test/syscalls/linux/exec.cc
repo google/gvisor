@@ -476,8 +476,10 @@ TEST(ProcSelfExe, ChangesAcrossExecve) {
 }
 
 TEST(ExecTest, CloexecNormalFile) {
-  const FileDescriptor fd_closed_on_exec = ASSERT_NO_ERRNO_AND_VALUE(
-      Open("/usr/share/zoneinfo", O_RDONLY | O_CLOEXEC));
+  TempPath tempFile = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "bar", 0755));
+  const FileDescriptor fd_closed_on_exec =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY | O_CLOEXEC));
 
   CheckOutput(WorkloadPath(kAssertClosedWorkload),
               {WorkloadPath(kAssertClosedWorkload),
@@ -487,7 +489,7 @@ TEST(ExecTest, CloexecNormalFile) {
   // The assert closed workload exits with code 2 if the file still exists.  We
   // can use this to do a negative test.
   const FileDescriptor fd_open_on_exec =
-      ASSERT_NO_ERRNO_AND_VALUE(Open("/usr/share/zoneinfo", O_RDONLY));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY));
 
   CheckOutput(WorkloadPath(kAssertClosedWorkload),
               {WorkloadPath(kAssertClosedWorkload),

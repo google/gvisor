@@ -177,16 +177,10 @@ run_root_tests() {
 # Run syscall unit tests.
 run_syscall_tests() {
   cd ${WORKSPACE_DIR}
-  # TODO: Exclude tests which fail.
   bazel \
     "${BAZEL_RBE_FLAGS[@]}" \
     test "${BAZEL_BUILD_RBE_FLAGS[@]}" \
-    `bazel query //test/syscalls/... |
-      grep runsc_ptrace |
-      grep -v affinity_test_runsc_ptrace |
-      grep -v exec_test_runsc_ptrace |
-      grep -v open_create_test_runsc_ptrace |
-      grep -v clock_gettime_test_runsc_ptrace`
+    --test_tag_filters=runsc_ptrace //test/syscalls/...
 }
 
 # Find and rename all test xml and log files so that Sponge can pick them up.

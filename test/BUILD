@@ -34,10 +34,6 @@ platform(
           name: "dockerPrivileged"
           value: "true"
         }
-        properties: {
-          name: "dockerRunAsRoot"
-          value: "true"
-        }
     """,
 )
 

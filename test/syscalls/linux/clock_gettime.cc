@@ -87,7 +87,12 @@ TEST(ClockGettime, JavaThreadTime) {
   ASSERT_EQ(0, pthread_getcpuclockid(pthread_self(), &clockid));
   struct timespec tp;
   ASSERT_THAT(clock_getres(clockid, &tp), SyscallSucceeds());
-  ASSERT_THAT(clock_gettime(clockid, &tp), SyscallSucceeds());
+  EXPECT_TRUE(tp.tv_sec > 0 || tp.tv_nsec > 0);
+  // A thread cputime is updated each 10msec and there is no approximation
+  // if a task is running.
+  do {
+    ASSERT_THAT(clock_gettime(clockid, &tp), SyscallSucceeds());
+  } while (tp.tv_sec == 0 && tp.tv_nsec == 0);
   EXPECT_TRUE(tp.tv_sec > 0 || tp.tv_nsec > 0);
 }
 

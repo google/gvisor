@@ -155,6 +155,7 @@ TEST_F(AffinityTest, Sanity) {
 }
 
 TEST_F(AffinityTest, NewThread) {
+  SKIP_IF(CPU_COUNT(&mask_) < 3);
   ASSERT_NO_ERRNO(ClearLowestBit());
   ASSERT_NO_ERRNO(ClearLowestBit());
   EXPECT_THAT(sched_setaffinity(/*pid=*/0, sizeof(cpu_set_t), &mask_),
