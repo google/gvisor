@@ -103,7 +103,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	f.peerAddr = addr.Addr
 
 	// Find the route.
-	r, err := f.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber)
+	r, err := f.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return tcpip.ErrNoRoute
 	}

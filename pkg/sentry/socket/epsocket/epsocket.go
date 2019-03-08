@@ -911,6 +911,21 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 		}
 		return rv.InetMulticastRequest, nil
 
+	case linux.IP_MULTICAST_LOOP:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.MulticastLoopOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		if v {
+			return int32(1), nil
+		}
+		return int32(0), nil
+
 	default:
 		emitUnimplementedEventIP(t, name)
 	}
@@ -1178,6 +1193,15 @@ func copyInMulticastRequest(optVal []byte) (linux.InetMulticastRequestWithNIC, *
 	return req, nil
 }
 
+// reduceToByte ORs all of the bytes in the input.
+func reduceToByte(buf []byte) byte {
+	var out byte
+	for _, b := range buf {
+		out |= b
+	}
+	return out
+}
+
 // setSockOptIP implements SetSockOpt when level is SOL_IP.
 func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
@@ -1235,6 +1259,18 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 			InterfaceAddr: bytesToIPAddress(req.InterfaceAddr[:]),
 		}))
 
+	case linux.IP_MULTICAST_LOOP:
+		if len(optVal) < 1 {
+			return syserr.ErrInvalidArgument
+		}
+		if len(optVal) > sizeOfInt32 {
+			optVal = optVal[:sizeOfInt32]
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(
+			tcpip.MulticastLoopOption(reduceToByte(optVal) != 0),
+		))
+
 	case linux.MCAST_JOIN_GROUP:
 		// FIXME: Implement MCAST_JOIN_GROUP.
 		t.Kernel().EmitUnimplementedEvent(t)
@@ -1252,7 +1288,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_MSFILTER,
 		linux.IP_MTU_DISCOVER,
 		linux.IP_MULTICAST_ALL,
-		linux.IP_MULTICAST_LOOP,
 		linux.IP_NODEFRAG,
 		linux.IP_OPTIONS,
 		linux.IP_PASSSEC,

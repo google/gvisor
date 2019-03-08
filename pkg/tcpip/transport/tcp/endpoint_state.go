@@ -307,6 +307,7 @@ func loadError(s string) *tcpip.Error {
 		var errors = []*tcpip.Error{
 			tcpip.ErrUnknownProtocol,
 			tcpip.ErrUnknownNICID,
+			tcpip.ErrUnknownDevice,
 			tcpip.ErrUnknownProtocolOption,
 			tcpip.ErrDuplicateNICID,
 			tcpip.ErrDuplicateAddress,

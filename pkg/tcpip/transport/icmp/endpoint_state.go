@@ -71,7 +71,7 @@ func (e *endpoint) afterLoad() {
 
 	var err *tcpip.Error
 	if e.state == stateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, e.netProto)
+		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, e.netProto, false /* multicastLoop */)
 		if err != nil {
 			panic(*err)
 		}

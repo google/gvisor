@@ -104,7 +104,7 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop stack.PacketLooping) *tcpip.Error {
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	length := uint16(hdr.UsedLength() + payload.Size())
 	id := uint32(0)
@@ -123,8 +123,19 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 		DstAddr:     r.RemoteAddress,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
-	r.Stats().IP.PacketsSent.Increment()
 
+	if loop&stack.PacketLoop != 0 {
+		views := make([]buffer.View, 1, 1+len(payload.Views()))
+		views[0] = hdr.View()
+		views = append(views, payload.Views()...)
+		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
+		e.HandlePacket(r, vv)
+	}
+	if loop&stack.PacketOut == 0 {
+		return nil
+	}
+
+	r.Stats().IP.PacketsSent.Increment()
 	return e.linkEP.WritePacket(r, hdr, payload, ProtocolNumber)
 }
 

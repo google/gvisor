@@ -28,10 +28,11 @@ import (
 // NIC represents a "network interface card" to which the networking stack is
 // attached.
 type NIC struct {
-	stack  *Stack
-	id     tcpip.NICID
-	name   string
-	linkEP LinkEndpoint
+	stack    *Stack
+	id       tcpip.NICID
+	name     string
+	linkEP   LinkEndpoint
+	loopback bool
 
 	demux *transportDemuxer
 
@@ -62,12 +63,13 @@ const (
 	NeverPrimaryEndpoint
 )
 
-func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint) *NIC {
+func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback bool) *NIC {
 	return &NIC{
 		stack:     stack,
 		id:        id,
 		name:      name,
 		linkEP:    ep,
+		loopback:  loopback,
 		demux:     newTransportDemuxer(stack),
 		primary:   make(map[tcpip.NetworkProtocolNumber]*ilist.List),
 		endpoints: make(map[NetworkEndpointID]*referencedNetworkEndpoint),
@@ -407,7 +409,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 		n.mu.RLock()
 		for _, ref := range n.endpoints {
 			if ref.protocol == header.IPv4ProtocolNumber && ref.tryIncRef() {
-				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
+				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* multicastLoop */)
 				r.RemoteLinkAddress = remote
 				ref.ep.HandlePacket(&r, vv)
 				ref.decRef()
@@ -418,7 +420,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	}
 
 	if ref := n.getRef(protocol, dst); ref != nil {
-		r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref)
+		r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* multicastLoop */)
 		r.RemoteLinkAddress = remote
 		ref.ep.HandlePacket(&r, vv)
 		ref.decRef()
@@ -430,7 +432,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	//
 	// TODO: Should we be forwarding the packet even if promiscuous?
 	if n.stack.Forwarding() {
-		r, err := n.stack.FindRoute(0, "", dst, protocol)
+		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
 		if err != nil {
 			n.stack.stats.IP.InvalidAddressesReceived.Increment()
 			return

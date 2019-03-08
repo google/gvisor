@@ -79,7 +79,7 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 
 func (e *endpoint) Close() {}
 
-func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
+func (e *endpoint) WritePacket(*stack.Route, buffer.Prependable, buffer.VectorisedView, tcpip.TransportProtocolNumber, uint8, stack.PacketLooping) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 

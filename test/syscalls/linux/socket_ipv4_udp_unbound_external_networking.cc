@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_ipv4_udp_unbound_external_networking.h"
 
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -24,6 +25,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/test_util.h"
 
@@ -225,6 +227,336 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendUnicastOnUnbound) {
   char buf[sizeof(kTestMsg)] = {};
   ASSERT_THAT(read(rcvr->get(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
+}
+
+constexpr char kMulticastAddress[] = "224.0.2.1";
+
+TestAddress V4Multicast() {
+  TestAddress t("V4Multicast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      inet_addr(kMulticastAddress);
+  return t;
+}
+
+// Check that multicast packets won't be delivered to the sending socket with no
+// set interface or group membership.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastSelfNoGroup) {
+  // FIXME: A group membership is not required for external
+  // multicast on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  auto bind_addr = V4Any();
+  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                   bind_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t bind_addr_len = bind_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                  &bind_addr_len),
+      SyscallSucceeds());
+  EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we did not receive the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(
+      RetryEINTR(recv)(socket->get(), recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
+      SyscallFailsWithErrno(EAGAIN));
+}
+
+// Check that multicast packets will be delivered to the sending socket without
+// setting an interface.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastSelf) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  auto bind_addr = V4Any();
+  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                   bind_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t bind_addr_len = bind_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                  &bind_addr_len),
+      SyscallSucceeds());
+  EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
+
+  // Register to receive multicast packets.
+  ip_mreq group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  ASSERT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(socket->get(), recv_buf, sizeof(recv_buf), 0),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that multicast packets won't be delivered to the sending socket with no
+// set interface and IP_MULTICAST_LOOP disabled.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastSelfLoopOff) {
+  auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  auto bind_addr = V4Any();
+  ASSERT_THAT(bind(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                   bind_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t bind_addr_len = bind_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(socket->get(), reinterpret_cast<sockaddr*>(&bind_addr.addr),
+                  &bind_addr_len),
+      SyscallSucceeds());
+  EXPECT_EQ(bind_addr_len, bind_addr.addr_len);
+
+  // Disable multicast looping.
+  EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_MULTICAST_LOOP,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  // Register to receive multicast packets.
+  ip_mreq group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  EXPECT_THAT(setsockopt(socket->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&bind_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(socket->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we did not receive the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  EXPECT_THAT(
+      RetryEINTR(recv)(socket->get(), recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
+      SyscallFailsWithErrno(EAGAIN));
+}
+
+// Check that multicast packets won't be delivered to another socket with no
+// set interface or group membership.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
+  // FIXME: A group membership is not required for external
+  // multicast on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we did not receive the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Check that multicast packets will be delivered to another socket without
+// setting an interface.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticast) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf), 0),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that multicast packets won't be delivered to another socket with no
+// set interface and IP_MULTICAST_LOOP disabled on the sending socket.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastSenderNoLoop) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Disable multicast looping on the sender.
+  EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_LOOP,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  EXPECT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we did not receive the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Check that multicast packets will be delivered to the sending socket without
+// setting an interface and IP_MULTICAST_LOOP disabled on the receiving socket.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastReceiverNoLoop) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Bind the second FD to the v4 any address to ensure that we can receive the
+  // multicast packet.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Disable multicast looping on the receiver.
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_MULTICAST_LOOP,
+                         &kSockOptOff, sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf), 0),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
 }  // namespace testing

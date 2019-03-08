@@ -125,6 +125,18 @@ type TransportDispatcher interface {
 	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView)
 }
 
+// PacketLooping specifies where an outbound packet should be sent.
+type PacketLooping byte
+
+const (
+	// PacketOut indicates that the packet should be passed to the link
+	// endpoint.
+	PacketOut PacketLooping = 1 << iota
+
+	// PacketLoop indicates that the packet should be handled locally.
+	PacketLoop
+)
+
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
@@ -149,7 +161,7 @@ type NetworkEndpoint interface {
 
 	// WritePacket writes a packet to the given destination address and
 	// protocol.
-	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error
+	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop PacketLooping) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID

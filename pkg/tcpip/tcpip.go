@@ -68,6 +68,7 @@ func (e *Error) IgnoreStats() bool {
 var (
 	ErrUnknownProtocol       = &Error{msg: "unknown protocol"}
 	ErrUnknownNICID          = &Error{msg: "unknown nic id"}
+	ErrUnknownDevice         = &Error{msg: "unknown device"}
 	ErrUnknownProtocolOption = &Error{msg: "unknown option for protocol"}
 	ErrDuplicateNICID        = &Error{msg: "duplicate nic id"}
 	ErrDuplicateAddress      = &Error{msg: "duplicate address"}
@@ -476,6 +477,10 @@ type MulticastInterfaceOption struct {
 	NIC           NICID
 	InterfaceAddr Address
 }
+
+// MulticastLoopOption is used by SetSockOpt/GetSockOpt to specify whether
+// multicast packets sent over a non-loopback interface will be looped back.
+type MulticastLoopOption bool
 
 // MembershipOption is used by SetSockOpt/GetSockOpt as an argument to
 // AddMembershipOption and RemoveMembershipOption.

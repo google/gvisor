@@ -277,7 +277,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		}
 
 		// Find the enpoint.
-		r, err := e.stack.FindRoute(nicid, e.bindAddr, to.Addr, netProto)
+		r, err := e.stack.FindRoute(nicid, e.bindAddr, to.Addr, netProto, false /* multicastLoop */)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -471,7 +471,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, e.bindAddr, addr.Addr, netProto)
+	r, err := e.stack.FindRoute(nicid, e.bindAddr, addr.Addr, netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}

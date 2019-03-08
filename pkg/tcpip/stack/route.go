@@ -46,17 +46,20 @@ type Route struct {
 	// ref a reference to the network endpoint through which the route
 	// starts.
 	ref *referencedNetworkEndpoint
+
+	multicastLoop bool
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // reference to a network endpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint) Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, multicastLoop bool) Route {
 	return Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
 		LocalLinkAddress: localLinkAddr,
 		RemoteAddress:    remoteAddr,
 		ref:              ref,
+		multicastLoop:    multicastLoop,
 	}
 }
 
@@ -134,7 +137,12 @@ func (r *Route) IsResolutionRequired() bool {
 
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
-	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl)
+	loop := PacketOut
+	if r.multicastLoop && (header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress)) {
+		loop |= PacketLoop
+	}
+
+	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl, loop)
 	if err == tcpip.ErrNoRoute {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	}

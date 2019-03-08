@@ -513,7 +513,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 
 // createNIC creates a NIC with the provided id and link-layer endpoint, and
 // optionally enable it.
-func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID, enabled bool) *tcpip.Error {
+func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID, enabled, loopback bool) *tcpip.Error {
 	ep := FindLinkEndpoint(linkEP)
 	if ep == nil {
 		return tcpip.ErrBadLinkEndpoint
@@ -527,7 +527,7 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpoint
 		return tcpip.ErrDuplicateNICID
 	}
 
-	n := newNIC(s, id, name, ep)
+	n := newNIC(s, id, name, ep, loopback)
 
 	s.nics[id] = n
 	if enabled {
@@ -539,26 +539,32 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpoint
 
 // CreateNIC creates a NIC with the provided id and link-layer endpoint.
 func (s *Stack) CreateNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, true)
+	return s.createNIC(id, "", linkEP, true, false)
 }
 
 // CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
 // and a human-readable name.
 func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, true)
+	return s.createNIC(id, name, linkEP, true, false)
+}
+
+// CreateNamedLoopbackNIC creates a NIC with the provided id and link-layer
+// endpoint, and a human-readable name.
+func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
+	return s.createNIC(id, name, linkEP, true, true)
 }
 
 // CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
 // but leave it disable. Stack.EnableNIC must be called before the link-layer
 // endpoint starts delivering packets to it.
 func (s *Stack) CreateDisabledNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, false)
+	return s.createNIC(id, "", linkEP, false, false)
 }
 
 // CreateDisabledNamedNIC is a combination of CreateNamedNIC and
 // CreateDisabledNIC.
 func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, false)
+	return s.createNIC(id, name, linkEP, false, false)
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
@@ -748,7 +754,7 @@ func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.Netwo
 
 // FindRoute creates a route to the given destination address, leaving through
 // the given nic and local address (if provided).
-func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (Route, *tcpip.Error) {
+func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (Route, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -758,7 +764,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref), nil
+				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, multicastLoop && !nic.loopback), nil
 			}
 		}
 	} else {
@@ -774,7 +780,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
-					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref)
+					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, multicastLoop && !nic.loopback)
 					if needRoute {
 						r.NextHop = route.Gateway
 					}

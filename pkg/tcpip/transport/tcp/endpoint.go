@@ -1091,7 +1091,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, e.id.LocalAddress, addr.Addr, netProto)
+	r, err := e.stack.FindRoute(nicid, e.id.LocalAddress, addr.Addr, netProto, false /* multicastLoop */)
 	if err != nil {
 		return err
 	}

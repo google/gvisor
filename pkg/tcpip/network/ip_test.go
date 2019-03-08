@@ -177,7 +177,7 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 		NIC:         1,
 	}})
 
-	return s.FindRoute(1, local, remote, ipv4.ProtocolNumber)
+	return s.FindRoute(1, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
 }
 
 func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
@@ -191,7 +191,7 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 		NIC:         1,
 	}})
 
-	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber)
+	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
 func TestIPv4Send(t *testing.T) {
@@ -221,7 +221,7 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, hdr, payload.ToVectorisedView(), 123, 123); err != nil {
+	if err := ep.WritePacket(&r, hdr, payload.ToVectorisedView(), 123, 123, stack.PacketOut); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -450,7 +450,7 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, hdr, payload.ToVectorisedView(), 123, 123); err != nil {
+	if err := ep.WritePacket(&r, hdr, payload.ToVectorisedView(), 123, 123, stack.PacketOut); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }

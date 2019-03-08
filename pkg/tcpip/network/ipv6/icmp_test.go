@@ -161,7 +161,7 @@ func (c *testContext) cleanup() {
 func TestLinkResolution(t *testing.T) {
 	c := newTestContext(t)
 	defer c.cleanup()
-	r, err := c.s0.FindRoute(1, lladdr0, lladdr1, ProtocolNumber)
+	r, err := c.s0.FindRoute(1, lladdr0, lladdr1, ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		t.Fatal(err)
 	}

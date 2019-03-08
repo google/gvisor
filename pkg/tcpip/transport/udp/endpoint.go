@@ -81,6 +81,7 @@ type endpoint struct {
 	multicastTTL   uint8
 	multicastAddr  tcpip.Address
 	multicastNICID tcpip.NICID
+	multicastLoop  bool
 	reusePort      bool
 	broadcast      bool
 
@@ -124,6 +125,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		//
 		// Linux defaults to TTL=1.
 		multicastTTL:  1,
+		multicastLoop: true,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
 	}
@@ -274,7 +276,7 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress) (stac
 	}
 
 	// Find a route to the desired destination.
-	r, err := e.stack.FindRoute(nicid, localAddr, addr.Addr, netProto)
+	r, err := e.stack.FindRoute(nicid, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, 0, err
 	}
@@ -458,13 +460,19 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 	case tcpip.AddMembershipOption:
 		nicID := v.NIC
-		if v.InterfaceAddr != header.IPv4Any {
+		if v.InterfaceAddr == header.IPv4Any {
+			if nicID == 0 {
+				r, err := e.stack.FindRoute(0, "", v.MulticastAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+				if err == nil {
+					nicID = r.NICID()
+					r.Release()
+				}
+			}
+		} else {
 			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
-			// TODO: Allow adding memberships without
-			// specifing an interface.
-			return tcpip.ErrNoRoute
+			return tcpip.ErrUnknownDevice
 		}
 
 		// TODO: check that v.MulticastAddr is a multicast address.
@@ -479,11 +487,19 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 	case tcpip.RemoveMembershipOption:
 		nicID := v.NIC
-		if v.InterfaceAddr != header.IPv4Any {
+		if v.InterfaceAddr == header.IPv4Any {
+			if nicID == 0 {
+				r, err := e.stack.FindRoute(0, "", v.MulticastAddr, header.IPv4ProtocolNumber, false /* multicastLoop */)
+				if err == nil {
+					nicID = r.NICID()
+					r.Release()
+				}
+			}
+		} else {
 			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
-			return tcpip.ErrNoRoute
+			return tcpip.ErrUnknownDevice
 		}
 
 		// TODO: check that v.MulticastAddr is a multicast address.
@@ -502,6 +518,11 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 				break
 			}
 		}
+
+	case tcpip.MulticastLoopOption:
+		e.mu.Lock()
+		e.multicastLoop = bool(v)
+		e.mu.Unlock()
 
 	case tcpip.ReusePortOption:
 		e.mu.Lock()
@@ -576,6 +597,14 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			e.multicastAddr,
 		}
 		e.mu.Unlock()
+		return nil
+
+	case *tcpip.MulticastLoopOption:
+		e.mu.RLock()
+		v := e.multicastLoop
+		e.mu.RUnlock()
+
+		*o = tcpip.MulticastLoopOption(v)
 		return nil
 
 	case *tcpip.ReusePortOption:

@@ -23,6 +23,7 @@ import (
 var (
 	ErrUnknownProtocol       = New(tcpip.ErrUnknownProtocol.String(), linux.EINVAL)
 	ErrUnknownNICID          = New(tcpip.ErrUnknownNICID.String(), linux.EINVAL)
+	ErrUnknownDevice         = New(tcpip.ErrUnknownDevice.String(), linux.ENODEV)
 	ErrUnknownProtocolOption = New(tcpip.ErrUnknownProtocolOption.String(), linux.ENOPROTOOPT)
 	ErrDuplicateNICID        = New(tcpip.ErrDuplicateNICID.String(), linux.EEXIST)
 	ErrDuplicateAddress      = New(tcpip.ErrDuplicateAddress.String(), linux.EEXIST)
@@ -49,6 +50,7 @@ var (
 var netstackErrorTranslations = map[*tcpip.Error]*Error{
 	tcpip.ErrUnknownProtocol:       ErrUnknownProtocol,
 	tcpip.ErrUnknownNICID:          ErrUnknownNICID,
+	tcpip.ErrUnknownDevice:         ErrUnknownDevice,
 	tcpip.ErrUnknownProtocolOption: ErrUnknownProtocolOption,
 	tcpip.ErrDuplicateNICID:        ErrDuplicateNICID,
 	tcpip.ErrDuplicateAddress:      ErrDuplicateAddress,
