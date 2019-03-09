@@ -1193,24 +1193,30 @@ func copyInMulticastRequest(optVal []byte) (linux.InetMulticastRequestWithNIC, *
 	return req, nil
 }
 
-// reduceToByte ORs all of the bytes in the input.
-func reduceToByte(buf []byte) byte {
-	var out byte
-	for _, b := range buf {
-		out |= b
+// parseIntOrChar copies either a 32-bit int or an 8-bit uint out of buf.
+//
+// net/ipv4/ip_sockglue.c:do_ip_setsockopt does this for its socket options.
+func parseIntOrChar(buf []byte) (int32, *syserr.Error) {
+	if len(buf) == 0 {
+		return 0, syserr.ErrInvalidArgument
 	}
-	return out
+
+	if len(buf) >= sizeOfInt32 {
+		return int32(usermem.ByteOrder.Uint32(buf)), nil
+	}
+
+	return int32(buf[0]), nil
 }
 
 // setSockOptIP implements SetSockOpt when level is SOL_IP.
 func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
 	switch name {
 	case linux.IP_MULTICAST_TTL:
-		if len(optVal) < sizeOfInt32 {
-			return syserr.ErrInvalidArgument
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
 		}
 
-		v := int32(usermem.ByteOrder.Uint32(optVal))
 		if v == -1 {
 			// Linux translates -1 to 1.
 			v = 1
@@ -1260,15 +1266,13 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}))
 
 	case linux.IP_MULTICAST_LOOP:
-		if len(optVal) < 1 {
-			return syserr.ErrInvalidArgument
-		}
-		if len(optVal) > sizeOfInt32 {
-			optVal = optVal[:sizeOfInt32]
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
 		}
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(
-			tcpip.MulticastLoopOption(reduceToByte(optVal) != 0),
+			tcpip.MulticastLoopOption(v != 0),
 		))
 
 	case linux.MCAST_JOIN_GROUP:
