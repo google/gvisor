@@ -696,7 +696,7 @@ func newInit(ctx context.Context, path, workDir, namespace string, platform rpro
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
-	userLog := runsc.FormatLogPath(r.ID, options.RunscConfig)
+	runsc.FormatLogPath(r.ID, options.RunscConfig)
 	rootfs := filepath.Join(path, "rootfs")
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
 	p := proc.New(r.ID, runtime, rproc.Stdio{
@@ -712,7 +712,7 @@ func newInit(ctx context.Context, path, workDir, namespace string, platform rpro
 	p.IoUID = int(options.IoUid)
 	p.IoGID = int(options.IoGid)
 	p.Sandbox = utils.IsSandbox(spec)
-	p.UserLog = userLog
+	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = shim.Default
 	return p, nil
 }

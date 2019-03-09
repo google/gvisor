@@ -39,18 +39,8 @@ func putBuf(b *bytes.Buffer) {
 }
 
 // FormatLogPath parses runsc config, and fill in %ID% in the log path.
-// * For debug-log, it fills in the id in place;
-// * For user-log, it fills in the id, returns the user log path, and deletes
-// the `user-log` entry from the config, because it will only be added to runsc
-// calls that create a new sandbox.
-func FormatLogPath(id string, config map[string]string) string {
+func FormatLogPath(id string, config map[string]string) {
 	if path, ok := config["debug-log"]; ok {
 		config["debug-log"] = strings.Replace(path, "%ID%", id, -1)
 	}
-	var userLog string
-	if path, ok := config["user-log"]; ok {
-		userLog = strings.Replace(path, "%ID%", id, -1)
-		delete(config, "user-log")
-	}
-	return userLog
 }
