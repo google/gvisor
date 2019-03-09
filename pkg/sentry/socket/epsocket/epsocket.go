@@ -888,7 +888,7 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 		return int32(v), nil
 
 	case linux.IP_MULTICAST_IF:
-		if outLen < inetMulticastRequestSize {
+		if outLen < len(linux.InetAddr{}) {
 			return nil, syserr.ErrInvalidArgument
 		}
 
@@ -899,17 +899,7 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 
 		a, _ := ConvertAddress(linux.AF_INET, tcpip.FullAddress{Addr: v.InterfaceAddr})
 
-		rv := linux.InetMulticastRequestWithNIC{
-			linux.InetMulticastRequest{
-				InterfaceAddr: a.(linux.SockAddrInet).Addr,
-			},
-			int32(v.NIC),
-		}
-
-		if outLen >= inetMulticastRequestWithNICSize {
-			return rv, nil
-		}
-		return rv.InetMulticastRequest, nil
+		return a.(linux.SockAddrInet).Addr, nil
 
 	case linux.IP_MULTICAST_LOOP:
 		if outLen < sizeOfInt32 {
@@ -1179,17 +1169,34 @@ var (
 	inetMulticastRequestWithNICSize = int(binary.Size(linux.InetMulticastRequestWithNIC{}))
 )
 
-func copyInMulticastRequest(optVal []byte) (linux.InetMulticastRequestWithNIC, *syserr.Error) {
-	if len(optVal) < inetMulticastRequestSize {
+// copyInMulticastRequest copies in a variable-size multicast request. The
+// kernel determines which structure was passed by its length. IP_MULTICAST_IF
+// supports ip_mreqn, ip_mreq and in_addr, while IP_ADD_MEMBERSHIP and
+// IP_DROP_MEMBERSHIP only support ip_mreqn and ip_mreq. To handle this,
+// allowAddr controls whether in_addr is accepted or rejected.
+func copyInMulticastRequest(optVal []byte, allowAddr bool) (linux.InetMulticastRequestWithNIC, *syserr.Error) {
+	if len(optVal) < len(linux.InetAddr{}) {
 		return linux.InetMulticastRequestWithNIC{}, syserr.ErrInvalidArgument
 	}
 
-	var req linux.InetMulticastRequestWithNIC
-	if len(optVal) >= inetMulticastRequestWithNICSize {
-		binary.Unmarshal(optVal[:inetMulticastRequestWithNICSize], usermem.ByteOrder, &req)
-	} else {
-		binary.Unmarshal(optVal[:inetMulticastRequestSize], usermem.ByteOrder, &req.InetMulticastRequest)
+	if len(optVal) < inetMulticastRequestSize {
+		if !allowAddr {
+			return linux.InetMulticastRequestWithNIC{}, syserr.ErrInvalidArgument
+		}
+
+		var req linux.InetMulticastRequestWithNIC
+		copy(req.InterfaceAddr[:], optVal)
+		return req, nil
 	}
+
+	if len(optVal) >= inetMulticastRequestWithNICSize {
+		var req linux.InetMulticastRequestWithNIC
+		binary.Unmarshal(optVal[:inetMulticastRequestWithNICSize], usermem.ByteOrder, &req)
+		return req, nil
+	}
+
+	var req linux.InetMulticastRequestWithNIC
+	binary.Unmarshal(optVal[:inetMulticastRequestSize], usermem.ByteOrder, &req.InetMulticastRequest)
 	return req, nil
 }
 
@@ -1227,7 +1234,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.MulticastTTLOption(v)))
 
 	case linux.IP_ADD_MEMBERSHIP:
-		req, err := copyInMulticastRequest(optVal)
+		req, err := copyInMulticastRequest(optVal, false /* allowAddr */)
 		if err != nil {
 			return err
 		}
@@ -1241,7 +1248,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}))
 
 	case linux.IP_DROP_MEMBERSHIP:
-		req, err := copyInMulticastRequest(optVal)
+		req, err := copyInMulticastRequest(optVal, false /* allowAddr */)
 		if err != nil {
 			return err
 		}
@@ -1255,7 +1262,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}))
 
 	case linux.IP_MULTICAST_IF:
-		req, err := copyInMulticastRequest(optVal)
+		req, err := copyInMulticastRequest(optVal, true /* allowAddr */)
 		if err != nil {
 			return err
 		}

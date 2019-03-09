@@ -893,7 +893,7 @@ TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastDropAddr) {
                    receiver_addr.addr_len),
               SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  EXPECT_THAT(getsockname(sockets->second_fd(),
+  ASSERT_THAT(getsockname(sockets->second_fd(),
                           reinterpret_cast<sockaddr*>(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
@@ -951,7 +951,7 @@ TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastDropNic) {
                    receiver_addr.addr_len),
               SyscallSucceeds());
   socklen_t receiver_addr_len = receiver_addr.addr_len;
-  EXPECT_THAT(getsockname(sockets->second_fd(),
+  ASSERT_THAT(getsockname(sockets->second_fd(),
                           reinterpret_cast<sockaddr*>(&receiver_addr.addr),
                           &receiver_addr_len),
               SyscallSucceeds());
@@ -1014,6 +1014,176 @@ TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfInvalidAddr) {
   EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF,
                          &iface, sizeof(iface)),
               SyscallFailsWithErrno(EADDRNOTAVAIL));
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetShort) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Create a valid full-sized request.
+  ip_mreqn iface = {};
+  iface.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+
+  // Send an optlen of 1 to check that optlen is enforced.
+  EXPECT_THAT(
+      setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &iface, 1),
+      SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfDefault) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  in_addr get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+  EXPECT_EQ(size, sizeof(get));
+  EXPECT_EQ(get.s_addr, 0);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfDefaultReqn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreqn get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+
+  // getsockopt(IP_MULTICAST_IF) can only return an in_addr, so it treats the
+  // first sizeof(struct in_addr) bytes of struct ip_mreqn as a struct in_addr.
+  // Conveniently, this corresponds to the field ip_mreqn::imr_multiaddr.
+  EXPECT_EQ(size, sizeof(in_addr));
+
+  // getsockopt(IP_MULTICAST_IF) will only return the interface address which
+  // hasn't been set.
+  EXPECT_EQ(get.imr_multiaddr.s_addr, 0);
+  EXPECT_EQ(get.imr_address.s_addr, 0);
+  EXPECT_EQ(get.imr_ifindex, 0);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetAddrGetReqn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  in_addr set = {};
+  set.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  ip_mreqn get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+
+  // getsockopt(IP_MULTICAST_IF) can only return an in_addr, so it treats the
+  // first sizeof(struct in_addr) bytes of struct ip_mreqn as a struct in_addr.
+  // Conveniently, this corresponds to the field ip_mreqn::imr_multiaddr.
+  EXPECT_EQ(size, sizeof(in_addr));
+  EXPECT_EQ(get.imr_multiaddr.s_addr, set.s_addr);
+  EXPECT_EQ(get.imr_address.s_addr, 0);
+  EXPECT_EQ(get.imr_ifindex, 0);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetReqAddrGetReqn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreq set = {};
+  set.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  ip_mreqn get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+
+  // getsockopt(IP_MULTICAST_IF) can only return an in_addr, so it treats the
+  // first sizeof(struct in_addr) bytes of struct ip_mreqn as a struct in_addr.
+  // Conveniently, this corresponds to the field ip_mreqn::imr_multiaddr.
+  EXPECT_EQ(size, sizeof(in_addr));
+  EXPECT_EQ(get.imr_multiaddr.s_addr, set.imr_interface.s_addr);
+  EXPECT_EQ(get.imr_address.s_addr, 0);
+  EXPECT_EQ(get.imr_ifindex, 0);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetNicGetReqn) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreqn set = {};
+  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  ip_mreqn get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+  EXPECT_EQ(size, sizeof(in_addr));
+  EXPECT_EQ(get.imr_multiaddr.s_addr, 0);
+  EXPECT_EQ(get.imr_address.s_addr, 0);
+  EXPECT_EQ(get.imr_ifindex, 0);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetAddr) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  in_addr set = {};
+  set.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  in_addr get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+
+  EXPECT_EQ(size, sizeof(get));
+  EXPECT_EQ(get.s_addr, set.s_addr);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetReqAddr) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreq set = {};
+  set.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  in_addr get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+
+  EXPECT_EQ(size, sizeof(get));
+  EXPECT_EQ(get.s_addr, set.imr_interface.s_addr);
+}
+
+TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastIfSetNic) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreqn set = {};
+  set.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &set,
+                         sizeof(set)),
+              SyscallSucceeds());
+
+  in_addr get = {};
+  socklen_t size = sizeof(get);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF, &get, &size),
+      SyscallSucceeds());
+  EXPECT_EQ(size, sizeof(get));
+  EXPECT_EQ(get.s_addr, 0);
 }
 
 TEST_P(IPv4UDPUnboundSocketPairTest, TestJoinGroupNoIf) {
