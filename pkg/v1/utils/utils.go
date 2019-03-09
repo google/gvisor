@@ -48,3 +48,12 @@ func IsSandbox(spec *specs.Spec) bool {
 	t, ok := spec.Annotations[annotations.ContainerType]
 	return !ok || t == annotations.ContainerTypeSandbox
 }
+
+// UserLogPath gets user log path from OCI annotation.
+func UserLogPath(spec *specs.Spec) string {
+	sandboxLogDir := spec.Annotations[annotations.SandboxLogDir]
+	if sandboxLogDir == "" {
+		return ""
+	}
+	return filepath.Join(sandboxLogDir, "gvisor.log")
+}

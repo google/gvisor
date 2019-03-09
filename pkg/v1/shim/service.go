@@ -551,7 +551,7 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
-	userLog := runsc.FormatLogPath(r.ID, config)
+	runsc.FormatLogPath(r.ID, config)
 	rootfs := filepath.Join(path, "rootfs")
 	runtime := proc.NewRunsc(runtimeRoot, path, namespace, r.Runtime, config)
 	p := proc.New(r.ID, runtime, rproc.Stdio{
@@ -567,7 +567,7 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 	p.IoUID = int(options.IoUid)
 	p.IoGID = int(options.IoGid)
 	p.Sandbox = utils.IsSandbox(spec)
-	p.UserLog = userLog
+	p.UserLog = utils.UserLogPath(spec)
 	p.Monitor = shim.Default
 	return p, nil
 }
