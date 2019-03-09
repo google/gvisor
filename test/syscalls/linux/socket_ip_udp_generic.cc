@@ -121,14 +121,9 @@ TEST_P(UDPSocketPairTest, SetEmptyIPAddMembership) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct ip_mreqn req = {};
-  int ret = setsockopt(sockets->first_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &req,
-                       sizeof(req));
-  // FIXME: gVisor returns the incorrect errno.
-  if (IsRunningOnGvisor()) {
-    EXPECT_THAT(ret, SyscallFails());
-  } else {
-    EXPECT_THAT(ret, SyscallFailsWithErrno(EINVAL));
-  }
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                         &req, sizeof(req)),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace testing

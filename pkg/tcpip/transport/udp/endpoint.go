@@ -459,6 +459,10 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.multicastAddr = addr
 
 	case tcpip.AddMembershipOption:
+		if !header.IsV4MulticastAddress(v.MulticastAddr) && !header.IsV6MulticastAddress(v.MulticastAddr) {
+			return tcpip.ErrInvalidOptionValue
+		}
+
 		nicID := v.NIC
 		if v.InterfaceAddr == header.IPv4Any {
 			if nicID == 0 {
@@ -475,7 +479,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			return tcpip.ErrUnknownDevice
 		}
 
-		// TODO: check that v.MulticastAddr is a multicast address.
 		if err := e.stack.JoinGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
@@ -486,6 +489,10 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.multicastMemberships = append(e.multicastMemberships, multicastMembership{nicID, v.MulticastAddr})
 
 	case tcpip.RemoveMembershipOption:
+		if !header.IsV4MulticastAddress(v.MulticastAddr) && !header.IsV6MulticastAddress(v.MulticastAddr) {
+			return tcpip.ErrInvalidOptionValue
+		}
+
 		nicID := v.NIC
 		if v.InterfaceAddr == header.IPv4Any {
 			if nicID == 0 {
@@ -502,7 +509,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			return tcpip.ErrUnknownDevice
 		}
 
-		// TODO: check that v.MulticastAddr is a multicast address.
 		if err := e.stack.LeaveGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
