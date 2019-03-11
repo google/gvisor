@@ -445,9 +445,10 @@ func (l *Loader) run() error {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
 		opts := filter.Options{
-			Platform:     l.k.Platform,
-			HostNetwork:  l.conf.Network == NetworkHost,
-			ControllerFD: l.ctrl.srv.FD(),
+			Platform:      l.k.Platform,
+			HostNetwork:   l.conf.Network == NetworkHost,
+			ProfileEnable: l.conf.ProfileEnable,
+			ControllerFD:  l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("installing seccomp filters: %v", err)

@@ -29,9 +29,10 @@ import (
 
 // Options are seccomp filter related options.
 type Options struct {
-	Platform     platform.Platform
-	HostNetwork  bool
-	ControllerFD int
+	Platform      platform.Platform
+	HostNetwork   bool
+	ProfileEnable bool
+	ControllerFD  int
 }
 
 // Install installs seccomp filters for based on the given platform.
@@ -46,6 +47,10 @@ func Install(opt Options) error {
 	if opt.HostNetwork {
 		Report("host networking enabled: syscall filters less restrictive!")
 		s.Merge(hostInetFilters())
+	}
+	if opt.ProfileEnable {
+		Report("profile enabled: syscall filters less restrictive!")
+		s.Merge(profileFilters())
 	}
 
 	switch p := opt.Platform.(type) {

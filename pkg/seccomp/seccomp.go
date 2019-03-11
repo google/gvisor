@@ -55,7 +55,7 @@ func Install(rules SyscallRules) error {
 	}
 
 	// Uncomment to get stack trace when there is a violation.
-	// defaultAction = uint32(linux.SECCOMP_RET_TRAP)
+	// defaultAction = linux.BPFAction(linux.SECCOMP_RET_TRAP)
 
 	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
 

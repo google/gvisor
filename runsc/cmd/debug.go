@@ -16,7 +16,9 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"syscall"
+	"time"
 
 	"flag"
 	"github.com/google/subcommands"
@@ -27,9 +29,12 @@ import (
 
 // Debug implements subcommands.Command for the "debug" command.
 type Debug struct {
-	pid    int
-	stacks bool
-	signal int
+	pid          int
+	stacks       bool
+	signal       int
+	profileHeap  string
+	profileCPU   string
+	profileDelay int
 }
 
 // Name implements subcommands.Command.
@@ -51,6 +56,9 @@ func (*Debug) Usage() string {
 func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&d.pid, "pid", 0, "sandbox process ID. Container ID is not necessary if this is set")
 	f.BoolVar(&d.stacks, "stacks", false, "if true, dumps all sandbox stacks to the log")
+	f.StringVar(&d.profileHeap, "profile-heap", "", "writes heap profile to the given file.")
+	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
+	f.IntVar(&d.profileDelay, "profile-delay", 5, "amount of time to wait before stoping CPU profile")
 	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
 }
 
@@ -113,6 +121,36 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			Fatalf("retrieving stacks: %v", err)
 		}
 		log.Infof("     *** Stack dump ***\n%s", stacks)
+	}
+	if d.profileCPU != "" {
+		f, err := os.Create(d.profileCPU)
+		if err != nil {
+			Fatalf(err.Error())
+		}
+		defer f.Close()
+
+		if err := c.Sandbox.StartCPUProfile(f); err != nil {
+			Fatalf(err.Error())
+		}
+		log.Infof("CPU profile started for %d sec, writing to %q", d.profileDelay, d.profileCPU)
+		time.Sleep(time.Duration(d.profileDelay) * time.Second)
+
+		if err := c.Sandbox.StopCPUProfile(); err != nil {
+			Fatalf(err.Error())
+		}
+		log.Infof("CPU profile written to %q", d.profileCPU)
+	}
+	if d.profileHeap != "" {
+		f, err := os.Create(d.profileHeap)
+		if err != nil {
+			Fatalf(err.Error())
+		}
+		defer f.Close()
+
+		if err := c.Sandbox.HeapProfile(f); err != nil {
+			Fatalf(err.Error())
+		}
+		log.Infof("Heap profile written to %q", d.profileHeap)
 	}
 	return subcommands.ExitSuccess
 }

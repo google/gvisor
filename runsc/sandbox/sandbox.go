@@ -825,6 +825,61 @@ func (s *Sandbox) Stacks() (string, error) {
 	return stacks, nil
 }
 
+// HeapProfile writes a heap profile to the given file.
+func (s *Sandbox) HeapProfile(f *os.File) error {
+	log.Debugf("Heap profile %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	opts := control.ProfileOpts{
+		FilePayload: urpc.FilePayload{
+			Files: []*os.File{f},
+		},
+	}
+	if err := conn.Call(boot.HeapProfile, &opts, nil); err != nil {
+		return fmt.Errorf("getting sandbox %q heap profile: %v", s.ID, err)
+	}
+	return nil
+}
+
+// StartCPUProfile start CPU profile writing to the given file.
+func (s *Sandbox) StartCPUProfile(f *os.File) error {
+	log.Debugf("CPU profile start %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	opts := control.ProfileOpts{
+		FilePayload: urpc.FilePayload{
+			Files: []*os.File{f},
+		},
+	}
+	if err := conn.Call(boot.StartCPUProfile, &opts, nil); err != nil {
+		return fmt.Errorf("starting sandbox %q CPU profile: %v", s.ID, err)
+	}
+	return nil
+}
+
+// StopCPUProfile stops a previously started CPU profile.
+func (s *Sandbox) StopCPUProfile() error {
+	log.Debugf("CPU profile stop %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.StopCPUProfile, nil, nil); err != nil {
+		return fmt.Errorf("stopping sandbox %q CPU profile: %v", s.ID, err)
+	}
+	return nil
+}
+
 // DestroyContainer destroys the given container. If it is the root container,
 // then the entire sandbox is destroyed.
 func (s *Sandbox) DestroyContainer(cid string) error {

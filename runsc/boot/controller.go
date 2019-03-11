@@ -95,6 +95,11 @@ const (
 
 	// SandboxStacks collects sandbox stacks for debugging.
 	SandboxStacks = "debug.Stacks"
+
+	// Profiling related commands (see pprof.go for more details).
+	StartCPUProfile = "Profile.StartCPUProfile"
+	StopCPUProfile  = "Profile.StopCPUProfile"
+	HeapProfile     = "Profile.HeapProfile"
 )
 
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
@@ -135,6 +140,9 @@ func newController(fd int, l *Loader) (*controller, error) {
 	}
 
 	srv.Register(&debug{})
+	if l.conf.ProfileEnable {
+		srv.Register(&control.Profile{})
+	}
 
 	return &controller{
 		srv:     srv,

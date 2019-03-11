@@ -6,6 +6,7 @@ go_library(
     name = "control",
     srcs = [
         "control.go",
+        "pprof.go",
         "proc.go",
         "state.go",
     ],
@@ -15,6 +16,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/fd",
         "//pkg/log",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/host",
