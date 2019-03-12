@@ -87,23 +87,50 @@ func (c *vCPU) setCPUID() error {
 
 // setSystemTime sets the TSC for the vCPU.
 //
-// FIXME: This introduces a slight TSC offset between host and
-// guest, which may vary per vCPU.
+// This has to make the call many times in order to minimize the intrinstic
+// error in the offset. Unfortunately KVM does not expose a relative offset via
+// the API, so this is an approximation. We do this via an iterative algorithm.
+// This has the advantage that it can generally deal with highly variable
+// system call times and should converge on the correct offset.
 func (c *vCPU) setSystemTime() error {
-	const _MSR_IA32_TSC = 0x00000010
+	const (
+		_MSR_IA32_TSC  = 0x00000010
+		calibrateTries = 10
+	)
 	registers := modelControlRegisters{
 		nmsrs: 1,
 	}
 	registers.entries[0] = modelControlRegister{
 		index: _MSR_IA32_TSC,
-		data:  uint64(time.Rdtsc()),
 	}
-	if _, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(c.fd),
-		_KVM_SET_MSRS,
-		uintptr(unsafe.Pointer(&registers))); errno != 0 {
-		return fmt.Errorf("error setting system time: %v", errno)
+	target := uint64(^uint32(0))
+	for done := 0; done < calibrateTries; {
+		start := uint64(time.Rdtsc())
+		registers.entries[0].data = start + target
+		if _, _, errno := syscall.RawSyscall(
+			syscall.SYS_IOCTL,
+			uintptr(c.fd),
+			_KVM_SET_MSRS,
+			uintptr(unsafe.Pointer(&registers))); errno != 0 {
+			return fmt.Errorf("error setting system time: %v", errno)
+		}
+		// See if this is our new minimum call time. Note that this
+		// serves two functions: one, we make sure that we are
+		// accurately predicting the offset we need to set. Second, we
+		// don't want to do the final set on a slow call, which could
+		// produce a really bad result. So we only count attempts
+		// within +/- 6.25% of our minimum as an attempt.
+		end := uint64(time.Rdtsc())
+		if end < start {
+			continue // Totally bogus.
+		}
+		half := (end - start) / 2
+		if half < target {
+			target = half
+		}
+		if (half - target) < target/8 {
+			done++
+		}
 	}
 	return nil
 }
