@@ -52,11 +52,11 @@ type Platform interface {
 	DetectsCPUPreemption() bool
 
 	// MapUnit returns the alignment used for optional mappings into this
-	// platform's AddressSpaces. Higher values indicate lower per-page
-	// costs for AddressSpace.MapInto. As a special case, a MapUnit of 0
-	// indicates that the cost of AddressSpace.MapInto is effectively
-	// independent of the number of pages mapped. If MapUnit is non-zero,
-	// it must be a power-of-2 multiple of usermem.PageSize.
+	// platform's AddressSpaces. Higher values indicate lower per-page costs
+	// for AddressSpace.MapFile. As a special case, a MapUnit of 0 indicates
+	// that the cost of AddressSpace.MapFile is effectively independent of the
+	// number of pages mapped. If MapUnit is non-zero, it must be a power-of-2
+	// multiple of usermem.PageSize.
 	MapUnit() uint64
 
 	// MinUserAddress returns the minimum mappable address on this
@@ -194,17 +194,17 @@ const SignalInterrupt = linux.SIGCHLD
 // AddressSpace represents a virtual address space in which a Context can
 // execute.
 type AddressSpace interface {
-	// MapFile creates a shared mapping of offsets in fr, from the file
-	// with file descriptor fd, at address addr. Any existing overlapping
-	// mappings are silently replaced.
+	// MapFile creates a shared mapping of offsets fr from f at address addr.
+	// Any existing overlapping mappings are silently replaced.
 	//
-	// If precommit is true, host memory should be committed to the mapping
-	// when MapFile returns when possible. The precommit flag is advisory
-	// and implementations may choose to ignore it.
+	// If precommit is true, the platform should eagerly commit resources (e.g.
+	// physical memory) to the mapping. The precommit flag is advisory and
+	// implementations may choose to ignore it.
 	//
-	// Preconditions: addr and fr must be page-aligned. length > 0.
-	// at.Any() == true.
-	MapFile(addr usermem.Addr, fd int, fr FileRange, at usermem.AccessType, precommit bool) error
+	// Preconditions: addr and fr must be page-aligned. fr.Length() > 0.
+	// at.Any() == true. At least one reference must be held on all pages in
+	// fr, and must continue to be held as long as pages are mapped.
+	MapFile(addr usermem.Addr, f File, fr FileRange, at usermem.AccessType, precommit bool) error
 
 	// Unmap unmaps the given range.
 	//
@@ -309,44 +309,39 @@ func (f SegmentationFault) Error() string {
 
 // File represents a host file that may be mapped into an AddressSpace.
 type File interface {
-	// MapInto maps fr into as, starting at addr, for accesses of type at.
+	// All pages in a File are reference-counted.
+
+	// IncRef increments the reference count on all pages in fr.
 	//
-	// If precommit is true, the platform should eagerly commit resources (e.g.
-	// physical memory) to the mapping. The precommit flag is advisory and
-	// implementations may choose to ignore it.
+	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
+	// 0. At least one reference must be held on all pages in fr. (The File
+	// interface does not provide a way to acquire an initial reference;
+	// implementors may define mechanisms for doing so.)
+	IncRef(fr FileRange)
+
+	// DecRef decrements the reference count on all pages in fr.
 	//
-	// Note that there is no File.Unmap; clients should use as.Unmap directly.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned.
-	// fr.Length() > 0. at.Any() == true. Implementors may define
-	// additional requirements.
-	MapInto(as AddressSpace, addr usermem.Addr, fr FileRange, at usermem.AccessType, precommit bool) error
+	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
+	// 0. At least one reference must be held on all pages in fr.
+	DecRef(fr FileRange)
 
 	// MapInternal returns a mapping of the given file offsets in the invoking
-	// process' address space for reading and writing. The returned mapping is
-	// valid as long as a reference is held on the mapped range.
+	// process' address space for reading and writing.
 	//
 	// Note that fr.Start and fr.End need not be page-aligned.
 	//
-	// Preconditions: fr.Length() > 0. Implementors may define additional
-	// requirements.
+	// Preconditions: fr.Length() > 0. At least one reference must be held on
+	// all pages in fr.
+	//
+	// Postconditions: The returned mapping is valid as long as at least one
+	// reference is held on the mapped pages.
 	MapInternal(fr FileRange, at usermem.AccessType) (safemem.BlockSeq, error)
 
-	// IncRef signals that a region in the file is actively referenced through a
-	// memory map. Implementors must ensure that the contents of a referenced
-	// region remain consistent. Specifically, mappings returned by MapInternal
-	// must refer to the same underlying contents. If the implementor also
-	// implements the Memory interface, the file range must not be reused in a
-	// different allocation while it has active references.
+	// FD returns the file descriptor represented by the File.
 	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() > 0.
-	IncRef(fr FileRange)
-
-	// DecRef reduces the frame ref count on the range specified by fr.
-	//
-	// Preconditions: fr.Start and fr.End must be page-aligned. fr.Length() >
-	// 0. DecRef()s on a region must match earlier IncRef()s.
-	DecRef(fr FileRange)
+	// The only permitted operation on the returned file descriptor is to map
+	// pages from it consistent with the requirements of AddressSpace.MapFile.
+	FD() int
 }
 
 // FileRange represents a range of uint64 offsets into a File.
@@ -361,19 +356,13 @@ func (fr FileRange) String() string {
 // Memory represents an allocatable File that may be mapped into any
 // AddressSpace associated with the same Platform.
 type Memory interface {
-	// Memory implements File methods with the following properties:
-	//
-	// - Pages mapped by MapInto must be allocated, and must be unmapped from
-	// all AddressSpaces before they are freed.
-	//
-	// - Pages mapped by MapInternal must be allocated. Returned mappings are
-	// guaranteed to be valid until the mapped pages are freed.
 	File
 
-	// Allocate returns a range of pages of the given length, owned by the
-	// caller and with the given accounting kind. Allocated memory initially has
-	// a single reference and will automatically be freed when no references to
-	// them remain. See File.IncRef and File.DecRef.
+	// Allocate returns a range of initially-zeroed pages of the given length
+	// with the given accounting kind and a single reference held by the
+	// caller. When the last reference on an allocated page is released,
+	// ownership of the page is returned to the Memory, allowing it to be
+	// returned by a future call to Allocate.
 	//
 	// Preconditions: length must be page-aligned and non-zero.
 	Allocate(length uint64, kind usage.MemoryKind) (FileRange, error)

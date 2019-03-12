@@ -108,9 +108,9 @@ The host then sends a `SIGSEGV` to the sentry because the address range [`A`,
 `A`+8) is not mapped on the host. The `SIGSEGV` indicates that the memory was
 accessed writable. The sentry looks up the vma associated with [`A`, `A`+8),
 finds the file that was mapped and its `CachingInodeOperations`. It then calls
-`CachingInodeOperations.MapInto` which allocates memory to back [`A`, `A`+8). It
-may choose to allocate more memory (i.e. do "readahead") to minimize subsequent
-faults.
+`CachingInodeOperations.Translate` which allocates memory to back [`A`, `A`+8).
+It may choose to allocate more memory (i.e. do "readahead") to minimize
+subsequent faults.
 
 Memory that is allocated comes from a host tmpfs file (see `filemem.FileMem`).
 The host tmpfs file memory is brought up to date with the contents of the mapped
@@ -138,12 +138,11 @@ memcpy(A, buffer, 4);
 ```
 
 Since the first process has already mapped and accessed the same region of the
-file writable, `CachingInodeOperations.MapInto` is called but re-maps the memory
-that has already been allocated (because the host mapping can be invalidated at
-any time) rather than allocating new memory. The address range [`A`, `A`+0x1000)
-reflects the same cached view of the file as the first process sees. For
-example, reading 8 bytes from the file from either process via read(2) starting
-at offset 0 returns a consistent "bbbbaaaa".
+file writable, `CachingInodeOperations.Translate` is called but returns the
+memory that has already been allocated rather than allocating new memory. The
+address range [`A`, `A`+0x1000) reflects the same cached view of the file as the
+first process sees. For example, reading 8 bytes from the file from either
+process via read(2) starting at offset 0 returns a consistent "bbbbaaaa".
 
 When this process no longer needs the shared memory, it may do:
 

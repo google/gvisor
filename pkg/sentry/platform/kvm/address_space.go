@@ -15,7 +15,6 @@
 package kvm
 
 import (
-	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -88,11 +87,6 @@ type addressSpace struct {
 
 	// dirtySet is the set of dirty vCPUs.
 	dirtySet *dirtySet
-
-	// files contains files mapped in the host address space.
-	//
-	// See host_map.go for more information.
-	files hostMap
 }
 
 // invalidate is the implementation for Invalidate.
@@ -116,6 +110,11 @@ func (as *addressSpace) Invalidate() {
 // The return value indicates whether a flush is required.
 func (as *addressSpace) Touch(c *vCPU) bool {
 	return as.dirtySet.mark(c)
+}
+
+type hostMapEntry struct {
+	addr   uintptr
+	length uintptr
 }
 
 func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.AccessType) (inv bool) {
@@ -158,98 +157,55 @@ func (as *addressSpace) mapHost(addr usermem.Addr, m hostMapEntry, at usermem.Ac
 	return inv
 }
 
-func (as *addressSpace) mapHostFile(addr usermem.Addr, fd int, fr platform.FileRange, at usermem.AccessType) error {
-	// Create custom host mappings.
-	ms, err := as.files.CreateMappings(usermem.AddrRange{
-		Start: addr,
-		End:   addr + usermem.Addr(fr.End-fr.Start),
-	}, at, fd, fr.Start)
-	if err != nil {
-		return err
-	}
+// MapFile implements platform.AddressSpace.MapFile.
+func (as *addressSpace) MapFile(addr usermem.Addr, f platform.File, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
+	as.mu.Lock()
+	defer as.mu.Unlock()
 
-	inv := false
-	for _, m := range ms {
-		// The host mapped slices are guaranteed to be aligned.
-		prev := as.mapHost(addr, m, at)
-		inv = inv || prev
-		addr += usermem.Addr(m.length)
-	}
-	if inv {
-		as.invalidate()
-	}
-
-	return nil
-}
-
-func (as *addressSpace) mapFilemem(addr usermem.Addr, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	// TODO: Lock order at the platform level is not sufficiently
-	// well-defined to guarantee that the caller (FileMem.MapInto) is not
-	// holding any locks that FileMem.MapInternal may take.
-
-	// Retrieve mappings for the underlying filemem. Note that the
-	// permissions here are largely irrelevant, since it corresponds to
-	// physical memory for the guest. We enforce the given access type
-	// below, in the guest page tables.
-	bs, err := as.filemem.MapInternal(fr, usermem.AccessType{
-		Read:  true,
-		Write: true,
+	// Get mappings in the sentry's address space, which are guaranteed to be
+	// valid as long as a reference is held on the mapped pages (which is in
+	// turn required by AddressSpace.MapFile precondition).
+	//
+	// If precommit is true, we will touch mappings to commit them, so ensure
+	// that mappings are readable from sentry context.
+	//
+	// We don't execute from application file-mapped memory, and guest page
+	// tables don't care if we have execute permission (but they do need pages
+	// to be readable).
+	bs, err := f.MapInternal(fr, usermem.AccessType{
+		Read:  at.Read || at.Execute || precommit,
+		Write: at.Write,
 	})
 	if err != nil {
 		return err
 	}
 
-	// Save the original range for invalidation.
-	orig := usermem.AddrRange{
-		Start: addr,
-		End:   addr + usermem.Addr(fr.End-fr.Start),
-	}
-
+	// Map the mappings in the sentry's address space (guest physical memory)
+	// into the application's address space (guest virtual memory).
 	inv := false
 	for !bs.IsEmpty() {
 		b := bs.Head()
 		bs = bs.Tail()
 		// Since fr was page-aligned, b should also be page-aligned. We do the
 		// lookup in our host page tables for this translation.
-		s := b.ToSlice()
 		if precommit {
+			s := b.ToSlice()
 			for i := 0; i < len(s); i += usermem.PageSize {
 				_ = s[i] // Touch to commit.
 			}
 		}
 		prev := as.mapHost(addr, hostMapEntry{
-			addr:   reflect.ValueOf(&s[0]).Pointer(),
-			length: uintptr(len(s)),
+			addr:   b.Addr(),
+			length: uintptr(b.Len()),
 		}, at)
 		inv = inv || prev
-		addr += usermem.Addr(len(s))
+		addr += usermem.Addr(b.Len())
 	}
 	if inv {
 		as.invalidate()
-		as.files.DeleteMapping(orig)
 	}
 
 	return nil
-}
-
-// MapFile implements platform.AddressSpace.MapFile.
-func (as *addressSpace) MapFile(addr usermem.Addr, fd int, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	as.mu.Lock()
-	defer as.mu.Unlock()
-
-	// Create an appropriate mapping. If this is filemem, we don't create
-	// custom mappings for each in-application mapping. For files however,
-	// we create distinct mappings for each address space. Unfortunately,
-	// there's not a better way to manage this here. The file underlying
-	// this fd can change at any time, so we can't actually index the file
-	// and share between address space. Oh well. It's all referring to the
-	// same physical pages, hopefully we don't run out of address space.
-	if fd != int(as.filemem.File().Fd()) {
-		// N.B. precommit is ignored for host files.
-		return as.mapHostFile(addr, fd, fr, at)
-	}
-
-	return as.mapFilemem(addr, fr, at, precommit)
 }
 
 // Unmap unmaps the given range by calling pagetables.PageTables.Unmap.
@@ -264,10 +220,6 @@ func (as *addressSpace) Unmap(addr usermem.Addr, length uint64) {
 	})
 	if prev {
 		as.invalidate()
-		as.files.DeleteMapping(usermem.AddrRange{
-			Start: addr,
-			End:   addr + usermem.Addr(length),
-		})
 
 		// Recycle any freed intermediate pages.
 		as.pageTables.Allocator.Recycle()

@@ -24,7 +24,8 @@
 //         mm.MemoryManager.activeMu
 //           Locks taken by memmap.Mappable.Translate
 //             mm.privateRefs.mu
-//               platform.File locks
+//               platform.AddressSpace locks
+//                 platform.File locks
 //         mm.aioManager.mu
 //           mm.AIOContext.mu
 //

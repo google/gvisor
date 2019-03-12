@@ -106,14 +106,14 @@ func (h *HostMappable) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
-// MapInto implements platform.File.MapInto.
-func (h *HostMappable) MapInto(as platform.AddressSpace, addr usermem.Addr, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	return as.MapFile(addr, h.backingFile.FD(), fr, at, precommit)
-}
-
 // MapInternal implements platform.File.MapInternal.
 func (h *HostMappable) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
 	return h.hostFileMapper.MapInternal(fr, h.backingFile.FD(), at.Write)
+}
+
+// FD implements platform.File.FD.
+func (h *HostMappable) FD() int {
+	return h.backingFile.FD()
 }
 
 // IncRef implements platform.File.IncRef.

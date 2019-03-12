@@ -32,7 +32,6 @@ import (
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
@@ -504,39 +503,6 @@ func (f *FileMem) markReclaimed(fr platform.FileRange) {
 	}
 }
 
-// MapInto implements platform.File.MapInto.
-func (f *FileMem) MapInto(as platform.AddressSpace, addr usermem.Addr, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
-		panic(fmt.Sprintf("invalid range: %v", fr))
-	}
-	return as.MapFile(addr, int(f.file.Fd()), fr, at, precommit)
-}
-
-// MapInternal implements platform.File.MapInternal.
-func (f *FileMem) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
-	if !fr.WellFormed() || fr.Length() == 0 {
-		panic(fmt.Sprintf("invalid range: %v", fr))
-	}
-	if at.Execute {
-		return safemem.BlockSeq{}, syserror.EACCES
-	}
-
-	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
-	if chunks == 1 {
-		// Avoid an unnecessary slice allocation.
-		var seq safemem.BlockSeq
-		err := f.forEachMappingSlice(fr, func(bs []byte) {
-			seq = safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bs))
-		})
-		return seq, err
-	}
-	blocks := make([]safemem.Block, 0, chunks)
-	err := f.forEachMappingSlice(fr, func(bs []byte) {
-		blocks = append(blocks, safemem.BlockFromSafeSlice(bs))
-	})
-	return safemem.BlockSeqFromSlice(blocks), err
-}
-
 // IncRef implements platform.File.IncRef.
 func (f *FileMem) IncRef(fr platform.FileRange) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
@@ -596,9 +562,29 @@ func (f *FileMem) DecRef(fr platform.FileRange) {
 	}
 }
 
-// Flush implements platform.Mappable.Flush.
-func (f *FileMem) Flush(ctx context.Context) error {
-	return nil
+// MapInternal implements platform.File.MapInternal.
+func (f *FileMem) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+	if !fr.WellFormed() || fr.Length() == 0 {
+		panic(fmt.Sprintf("invalid range: %v", fr))
+	}
+	if at.Execute {
+		return safemem.BlockSeq{}, syserror.EACCES
+	}
+
+	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
+	if chunks == 1 {
+		// Avoid an unnecessary slice allocation.
+		var seq safemem.BlockSeq
+		err := f.forEachMappingSlice(fr, func(bs []byte) {
+			seq = safemem.BlockSeqOf(safemem.BlockFromSafeSlice(bs))
+		})
+		return seq, err
+	}
+	blocks := make([]safemem.Block, 0, chunks)
+	err := f.forEachMappingSlice(fr, func(bs []byte) {
+		blocks = append(blocks, safemem.BlockFromSafeSlice(bs))
+	})
+	return safemem.BlockSeqFromSlice(blocks), err
 }
 
 // forEachMappingSlice invokes fn on a sequence of byte slices that
@@ -651,6 +637,11 @@ func (f *FileMem) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 	}
 	atomic.StoreUintptr(&mappings[chunk], m)
 	return mappings, m, nil
+}
+
+// FD implements platform.File.FD.
+func (f *FileMem) FD() int {
+	return int(f.file.Fd())
 }
 
 // UpdateUsage implements platform.Memory.UpdateUsage.

@@ -39,20 +39,8 @@ var (
 )
 
 // fileInodeOperations implements fs.InodeOperations for a regular tmpfs file.
-// These files are backed by FrameRegions allocated from a platform.Memory,
-// and may be directly mapped.
-//
-// The tmpfs file memory is backed by FrameRegions, each of which is reference
-// counted. frames maintains a single reference on each of the FrameRegions.
-// Since these contain the contents of the file, the reference may only be
-// decremented once this file is both deleted and all handles to the file have
-// been closed.
-//
-// Mappable users may also call IncRefOn/DecRefOn, generally to indicate that
-// they plan to use MapInto to map the file into an AddressSpace. These calls
-// include an InvalidatorRegion associated with that reference. When the
-// referenced portion of the file is removed (with Truncate), the associated
-// InvalidatorRegion is invalidated.
+// These files are backed by pages allocated from a platform.Memory, and may be
+// directly mapped.
 //
 // +stateify savable
 type fileInodeOperations struct {

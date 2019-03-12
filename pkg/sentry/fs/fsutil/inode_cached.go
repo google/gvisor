@@ -835,20 +835,6 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 	return nil
 }
 
-// MapInto implements platform.File.MapInto. This is used when we directly map
-// an underlying host fd and CachingInodeOperations is used as the platform.File
-// during translation.
-func (c *CachingInodeOperations) MapInto(as platform.AddressSpace, addr usermem.Addr, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
-	return as.MapFile(addr, c.backingFile.FD(), fr, at, precommit)
-}
-
-// MapInternal implements platform.File.MapInternal. This is used when we
-// directly map an underlying host fd and CachingInodeOperations is used as the
-// platform.File during translation.
-func (c *CachingInodeOperations) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
-	return c.hostFileMapper.MapInternal(fr, c.backingFile.FD(), at.Write)
-}
-
 // IncRef implements platform.File.IncRef. This is used when we directly map an
 // underlying host fd and CachingInodeOperations is used as the platform.File
 // during translation.
@@ -899,4 +885,18 @@ func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
 	c.refs.MergeAdjacent(fr)
 	c.dataMu.Unlock()
 
+}
+
+// MapInternal implements platform.File.MapInternal. This is used when we
+// directly map an underlying host fd and CachingInodeOperations is used as the
+// platform.File during translation.
+func (c *CachingInodeOperations) MapInternal(fr platform.FileRange, at usermem.AccessType) (safemem.BlockSeq, error) {
+	return c.hostFileMapper.MapInternal(fr, c.backingFile.FD(), at.Write)
+}
+
+// FD implements platform.File.FD. This is used when we directly map an
+// underlying host fd and CachingInodeOperations is used as the platform.File
+// during translation.
+func (c *CachingInodeOperations) FD() int {
+	return c.backingFile.FD()
 }

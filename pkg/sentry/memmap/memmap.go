@@ -70,11 +70,13 @@ type Mappable interface {
 	// of offsets specified by required, and at most the range of offsets
 	// specified by optional. at is the set of access types that may be
 	// performed using the returned Translations. If not all required offsets
-	// are translated, it returns a non-nil error explaining why. Returned
-	// translations, and any mappings returned by platform.File.MapInternal for
-	// translated platform.Files, are valid until invalidated by a call back to
+	// are translated, it returns a non-nil error explaining why.
+	//
+	// Translations are valid until invalidated by a callback to
 	// MappingSpace.Invalidate or until the caller removes its mapping of the
-	// translated range.
+	// translated range. Mappable implementations must ensure that at least one
+	// reference is held on all pages in a platform.File that may be the result
+	// of a valid Translation.
 	//
 	// Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
 	// required and optional must be page-aligned. The caller must have
@@ -98,9 +100,7 @@ type Translation struct {
 	// Source is the translated range in the Mappable.
 	Source MappableRange
 
-	// File is the mapped file. When the Translation is invalidated, pages
-	// mapped by File.MapInto must be unmapped, and pages mapped by
-	// File.MapInternal become invalid.
+	// File is the mapped file.
 	File platform.File
 
 	// Offset is the offset into File at which this Translation begins.

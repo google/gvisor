@@ -563,7 +563,7 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 }
 
 // MapFile implements platform.AddressSpace.MapFile.
-func (s *subprocess) MapFile(addr usermem.Addr, fd int, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
+func (s *subprocess) MapFile(addr usermem.Addr, f platform.File, fr platform.FileRange, at usermem.AccessType, precommit bool) error {
 	var flags int
 	if precommit {
 		flags |= syscall.MAP_POPULATE
@@ -574,7 +574,7 @@ func (s *subprocess) MapFile(addr usermem.Addr, fd int, fr platform.FileRange, a
 		arch.SyscallArgument{Value: uintptr(fr.Length())},
 		arch.SyscallArgument{Value: uintptr(at.Prot())},
 		arch.SyscallArgument{Value: uintptr(flags | syscall.MAP_SHARED | syscall.MAP_FIXED)},
-		arch.SyscallArgument{Value: uintptr(fd)},
+		arch.SyscallArgument{Value: uintptr(f.FD())},
 		arch.SyscallArgument{Value: uintptr(fr.Start)})
 	return err
 }
