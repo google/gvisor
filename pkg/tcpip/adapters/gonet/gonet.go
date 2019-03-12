@@ -557,6 +557,21 @@ func (c *PacketConn) newRemoteOpError(op string, remote net.Addr, err error) *ne
 	}
 }
 
+// RemoteAddr implements net.Conn.RemoteAddr.
+func (c *PacketConn) RemoteAddr() net.Addr {
+	a, err := c.ep.GetRemoteAddress()
+	if err != nil {
+		return nil
+	}
+	return fullToTCPAddr(a)
+}
+
+// Read implements net.Conn.Read
+func (c *PacketConn) Read(b []byte) (int, error) {
+	bytesRead, _, err := c.ReadFrom(b)
+	return bytesRead, err
+}
+
 // ReadFrom implements net.PacketConn.ReadFrom.
 func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	deadline := c.readCancel()
@@ -570,6 +585,10 @@ func (c *PacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	return copy(b, read), fullToUDPAddr(addr), nil
 }
 
+func (c *PacketConn) Write(b []byte) (int, error) {
+	return c.WriteTo(b, nil)
+}
+
 // WriteTo implements net.PacketConn.WriteTo.
 func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	deadline := c.writeCancel()
@@ -581,13 +600,16 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	default:
 	}
 
-	ua := addr.(*net.UDPAddr)
-	fullAddr := tcpip.FullAddress{Addr: tcpip.Address(ua.IP), Port: uint16(ua.Port)}
+	// If we're being called by Write, there is no addr
+	wopts := tcpip.WriteOptions{}
+	if addr != nil {
+		ua := addr.(*net.UDPAddr)
+		wopts.To = &tcpip.FullAddress{Addr: tcpip.Address(ua.IP), Port: uint16(ua.Port)}
+	}
 
 	v := buffer.NewView(len(b))
 	copy(v, b)
 
-	wopts := tcpip.WriteOptions{To: &fullAddr}
 	n, resCh, err := c.ep.Write(tcpip.SlicePayload(v), wopts)
 	if resCh != nil {
 		select {
