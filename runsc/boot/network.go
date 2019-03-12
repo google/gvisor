@@ -138,7 +138,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			FD:                 newFD,
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     true,
-			HandleLocal:        true,
 			Address:            mac,
 			PacketDispatchMode: fdbased.PacketMMap,
 		})

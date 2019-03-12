@@ -308,6 +308,9 @@ type Stack struct {
 
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
+
+	// handleLocal allows non-loopback interfaces to loop packets.
+	handleLocal bool
 }
 
 // Options contains optional Stack configuration.
@@ -319,6 +322,11 @@ type Options struct {
 
 	// Stats are optional statistic counters.
 	Stats tcpip.Stats
+
+	// HandleLocal indicates whether packets destined to their source
+	// should be handled by the stack internally (true) or outside the
+	// stack (false).
+	HandleLocal bool
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -343,6 +351,7 @@ func New(network []string, transport []string, opts Options) *Stack {
 		PortManager:        ports.NewPortManager(),
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
+		handleLocal:        opts.HandleLocal,
 	}
 
 	// Add specified network protocols.
@@ -764,7 +773,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, multicastLoop && !nic.loopback), nil
+				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback), nil
 			}
 		}
 	} else {
@@ -780,7 +789,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
-					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, multicastLoop && !nic.loopback)
+					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback)
 					if needRoute {
 						r.NextHop = route.Gateway
 					}

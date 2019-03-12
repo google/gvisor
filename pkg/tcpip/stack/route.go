@@ -47,19 +47,27 @@ type Route struct {
 	// starts.
 	ref *referencedNetworkEndpoint
 
-	multicastLoop bool
+	// loop controls where WritePacket should send packets.
+	loop PacketLooping
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // reference to a network endpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, multicastLoop bool) Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, handleLocal, multicastLoop bool) Route {
+	loop := PacketOut
+	if handleLocal && localAddr != "" && remoteAddr == localAddr {
+		loop = PacketLoop
+	} else if multicastLoop && (header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)) {
+		loop |= PacketLoop
+	}
+
 	return Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
 		LocalLinkAddress: localLinkAddr,
 		RemoteAddress:    remoteAddr,
 		ref:              ref,
-		multicastLoop:    multicastLoop,
+		loop:             loop,
 	}
 }
 
@@ -137,12 +145,7 @@ func (r *Route) IsResolutionRequired() bool {
 
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
-	loop := PacketOut
-	if r.multicastLoop && (header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress)) {
-		loop |= PacketLoop
-	}
-
-	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl, loop)
+	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl, r.loop)
 	if err == tcpip.ErrNoRoute {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	}

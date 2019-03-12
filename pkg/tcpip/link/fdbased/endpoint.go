@@ -100,11 +100,6 @@ type endpoint struct {
 	inboundDispatcher linkDispatcher
 	dispatcher        stack.NetworkDispatcher
 
-	// handleLocal indicates whether packets destined to itself should be
-	// handled by the netstack internally (true) or be forwarded to the FD
-	// endpoint (false).
-	handleLocal bool
-
 	// packetDispatchMode controls the packet dispatcher used by this
 	// endpoint.
 	packetDispatchMode PacketDispatchMode
@@ -128,7 +123,6 @@ type Options struct {
 	Address            tcpip.LinkAddress
 	SaveRestore        bool
 	DisconnectOk       bool
-	HandleLocal        bool
 	PacketDispatchMode PacketDispatchMode
 }
 
@@ -168,7 +162,6 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		closed:             opts.ClosedFunc,
 		addr:               opts.Address,
 		hdrSize:            hdrSize,
-		handleLocal:        opts.HandleLocal,
 		packetDispatchMode: opts.PacketDispatchMode,
 	}
 
@@ -256,14 +249,6 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
-	if e.handleLocal && r.LocalAddress != "" && r.LocalAddress == r.RemoteAddress {
-		views := make([]buffer.View, 1, 1+len(payload.Views()))
-		views[0] = hdr.View()
-		views = append(views, payload.Views()...)
-		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-		e.dispatcher.DeliverNetworkPacket(e, r.RemoteLinkAddress, r.LocalLinkAddress, protocol, vv)
-		return nil
-	}
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
