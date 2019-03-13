@@ -40,11 +40,13 @@ const (
 // We overallocate the frame size to accommodate space for the
 // TPacketHdr+RawSockAddrLinkLayer+MAC header and any padding.
 //
+// Memory allocated for the ring buffer: tpBlockSize * tpBlockNR = 2 MiB
+//
 // NOTE: Frames need to be aligned at 16 byte boundaries.
 const (
 	tpFrameSize = 65536 + 128
-	tpBlockSize = tpFrameSize * 128
-	tpBlockNR   = 10
+	tpBlockSize = tpFrameSize * 32
+	tpBlockNR   = 1
 	tpFrameNR   = (tpBlockSize * tpBlockNR) / tpFrameSize
 )
 
