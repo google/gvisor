@@ -131,27 +131,6 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 	}
 }
 
-// NewConnectedEndpoint creates a new endpoint in the connected state using the
-// provided route.
-func NewConnectedEndpoint(stack *stack.Stack, r *stack.Route, id stack.TransportEndpointID, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	ep := newEndpoint(stack, r.NetProto, waiterQueue)
-
-	// Register new endpoint so that packets are routed to it.
-	if err := stack.RegisterTransportEndpoint(r.NICID(), []tcpip.NetworkProtocolNumber{r.NetProto}, ProtocolNumber, id, ep, ep.reusePort); err != nil {
-		ep.Close()
-		return nil, err
-	}
-
-	ep.id = id
-	ep.route = r.Clone()
-	ep.dstPort = id.RemotePort
-	ep.regNICID = r.NICID()
-
-	ep.state = stateConnected
-
-	return ep, nil
-}
-
 // Close puts the endpoint in a closed state and frees all resources
 // associated with it.
 func (e *endpoint) Close() {
