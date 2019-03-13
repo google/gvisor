@@ -5,6 +5,11 @@
 
 package(licenses = ["notice"])
 
+config_setting(
+    name = "x86_64",
+    constraint_values = ["@bazel_tools//platforms:x86_64"],
+)
+
 genrule(
     name = "vdso",
     srcs = [
@@ -30,7 +35,10 @@ genrule(
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
           "-fuse-ld=gold " +
-          "-m64 " +
+          select({
+              ":x86_64": "-m64 ",
+              "//conditions:default": "",
+          }) +
           "-shared " +
           "-nostdlib " +
           "-Wl,-soname=linux-vdso.so.1 " +
