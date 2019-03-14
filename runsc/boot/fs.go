@@ -181,7 +181,7 @@ func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *f
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	p9FS := mustFindFilesystem("9p")
 	opts := p9MountOptions(fd, conf.FileAccess)
-	rootInode, err = p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","))
+	rootInode, err = p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating root mount point: %v", err)
 	}
@@ -220,7 +220,7 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	}
 
 	// Create overlay on top of mount dir.
-	upper, err := tmpFS.Mount(ctx, name+"-upper", lowerFlags, "")
+	upper, err := tmpFS.Mount(ctx, name+"-upper", lowerFlags, "", nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating tmpfs overlay: %v", err)
 	}
@@ -309,7 +309,7 @@ func mountSubmount(ctx context.Context, conf *Config, mns *fs.MountNamespace, ro
 		mf.ReadOnly = true
 	}
 
-	inode, err := filesystem.Mount(ctx, mountDevice(m), mf, strings.Join(opts, ","))
+	inode, err := filesystem.Mount(ctx, mountDevice(m), mf, strings.Join(opts, ","), nil)
 	if err != nil {
 		return fmt.Errorf("creating mount with source %q: %v", m.Source, err)
 	}
@@ -415,9 +415,9 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 	}
 
 	newMount := fs.MountArgs{
-		Dev:   mountDevice(m),
-		Flags: mountFlags(m.Options),
-		Data:  strings.Join(opts, ","),
+		Dev:        mountDevice(m),
+		Flags:      mountFlags(m.Options),
+		DataString: strings.Join(opts, ","),
 	}
 	renv.MountSources[fsName] = append(renv.MountSources[fsName], newMount)
 	log.Infof("Added mount at %q: %+v", fsName, newMount)
@@ -441,9 +441,9 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 	}
 
 	rootMount := fs.MountArgs{
-		Dev:   rootDevice,
-		Flags: mf,
-		Data:  strings.Join(opts, ","),
+		Dev:        rootDevice,
+		Flags:      mf,
+		DataString: strings.Join(opts, ","),
 	}
 	renv.MountSources[rootFsName] = append(renv.MountSources[rootFsName], rootMount)
 

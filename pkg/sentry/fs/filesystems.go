@@ -50,7 +50,7 @@ type Filesystem interface {
 	// data options.
 	//
 	// Mount may return arbitrary errors. They do not need syserr translations.
-	Mount(ctx context.Context, device string, flags MountSourceFlags, data string) (*Inode, error)
+	Mount(ctx context.Context, device string, flags MountSourceFlags, data string, dataObj interface{}) (*Inode, error)
 
 	// AllowUserMount determines whether mount(2) is allowed to mount a
 	// file system of this type.

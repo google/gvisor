@@ -120,7 +120,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 }
 
 // Mount returns an attached 9p client that can be positioned in the vfs.
-func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string) (*fs.Inode, error) {
+func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
 	// Parse and validate the mount options.
 	o, err := options(data)
 	if err != nil {

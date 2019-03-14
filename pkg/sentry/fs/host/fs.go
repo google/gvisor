@@ -82,7 +82,7 @@ func (*Filesystem) Flags() fs.FilesystemFlags {
 
 // Mount returns an fs.Inode exposing the host file system.  It is intended to be locked
 // down in PreExec below.
-func (f *Filesystem) Mount(ctx context.Context, _ string, flags fs.MountSourceFlags, data string) (*fs.Inode, error) {
+func (f *Filesystem) Mount(ctx context.Context, _ string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
 	// Parse generic comma-separated key=value options.
 	options := fs.GenericMountSourceOptions(data)
 

@@ -41,8 +41,11 @@ type MountArgs struct {
 	// Flags corresponds to the flags argument of Mount.
 	Flags MountSourceFlags
 
-	// Data corresponds to the data argument of Mount.
-	Data string
+	// DataString corresponds to the data argument of Mount.
+	DataString string
+
+	// DataObj corresponds to the data interface argument of Mount.
+	DataObj interface{}
 }
 
 // restoreEnv holds the fs package global RestoreEnvironment.

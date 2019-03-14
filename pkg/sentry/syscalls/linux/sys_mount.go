@@ -101,7 +101,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		superFlags.ReadOnly = true
 	}
 
-	rootInode, err := rsys.Mount(t, sourcePath, superFlags, data)
+	rootInode, err := rsys.Mount(t, sourcePath, superFlags, data, nil)
 	if err != nil {
 		return 0, nil, syserror.EINVAL
 	}

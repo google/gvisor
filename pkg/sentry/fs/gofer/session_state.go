@@ -57,7 +57,7 @@ func (s *session) afterLoad() {
 	}
 
 	// Validate the mount flags and options.
-	opts, err := options(args.Data)
+	opts, err := options(args.DataString)
 	if err != nil {
 		panic("failed to parse mount options: " + err.Error())
 	}

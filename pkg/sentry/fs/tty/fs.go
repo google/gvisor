@@ -59,7 +59,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 }
 
 // MountSource returns a devpts root that can be positioned in the vfs.
-func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string) (*fs.Inode, error) {
+func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
 	// device is always ignored.
 
 	// No options are supported.

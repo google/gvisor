@@ -321,7 +321,7 @@ func TestRootPath(t *testing.T) {
 	hostFS := &Filesystem{}
 	ctx := contexttest.Context(t)
 	data := fmt.Sprintf("%s=%s,%s=%s", rootPathKey, rootPath, whitelistKey, whitelisted.Name())
-	inode, err := hostFS.Mount(ctx, "", fs.MountSourceFlags{}, data)
+	inode, err := hostFS.Mount(ctx, "", fs.MountSourceFlags{}, data, nil)
 	if err != nil {
 		t.Fatalf("Mount failed: %v", err)
 	}

@@ -456,9 +456,9 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "9pfs-/",
-							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							Dev:        "9pfs-/",
+							Flags:      fs.MountSourceFlags{ReadOnly: true},
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -510,13 +510,13 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "9pfs-/",
-							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							Dev:        "9pfs-/",
+							Flags:      fs.MountSourceFlags{ReadOnly: true},
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 						{
-							Dev:  "9pfs-/dev/fd-foo",
-							Data: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true,cache=remote_revalidating",
+							Dev:        "9pfs-/dev/fd-foo",
+							DataString: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
@@ -568,16 +568,16 @@ func TestRestoreEnvironment(t *testing.T) {
 				MountSources: map[string][]fs.MountArgs{
 					"9p": {
 						{
-							Dev:   "9pfs-/",
-							Flags: fs.MountSourceFlags{ReadOnly: true},
-							Data:  "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
+							Dev:        "9pfs-/",
+							Flags:      fs.MountSourceFlags{ReadOnly: true},
+							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true,cache=remote_revalidating",
 						},
 					},
 					"tmpfs": {
 						{
-							Dev:   "none",
-							Flags: fs.MountSourceFlags{NoAtime: true},
-							Data:  "uid=1022",
+							Dev:        "none",
+							Flags:      fs.MountSourceFlags{NoAtime: true},
+							DataString: "uid=1022",
 						},
 						{
 							Dev: "none",

@@ -98,7 +98,7 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 
 	// Create a lower tmpfs mount.
 	fsys, _ := fs.FindFilesystem("tmpfs")
-	lower, err := fsys.Mount(contexttest.Context(t), "", fs.MountSourceFlags{}, "")
+	lower, err := fsys.Mount(contexttest.Context(t), "", fs.MountSourceFlags{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to mount tmpfs: %v", err)
 	}
@@ -147,7 +147,7 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 	}
 
 	// Create an empty upper tmpfs mount which we will copy up into.
-	upper, err := fsys.Mount(ctx, "", fs.MountSourceFlags{}, "")
+	upper, err := fsys.Mount(ctx, "", fs.MountSourceFlags{}, "", nil)
 	if err != nil {
 		t.Fatalf("failed to mount tmpfs: %v", err)
 	}
