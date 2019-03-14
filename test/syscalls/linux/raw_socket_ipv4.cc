@@ -164,23 +164,45 @@ TEST_F(RawSocketTest, MultipleSocketReceive) {
   icmp.un.echo.id = 2018;
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(&icmp));
 
-  // Receive it on socket 1.
-  char recv_buf1[512];
+  // Both sockets will receive the echo request and reply in indeterminate
+  // order, so we'll need to read 2 packets from each.
+
+  // Receive on socket 1.
+  constexpr int kBufSize = 256;
+  std::vector<char[kBufSize]> recv_buf1(2);
   struct sockaddr_in src;
-  ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1, ABSL_ARRAYSIZE(recv_buf1),
-                                      sizeof(struct icmphdr), &src));
-  EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  for (int i = 0; i < 2; i++) {
+    ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1[i],
+                                        ABSL_ARRAYSIZE(recv_buf1[i]),
+                                        sizeof(struct icmphdr), &src));
+    EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  }
 
-  // Receive it on socket 2.
-  char recv_buf2[512];
-  ASSERT_NO_FATAL_FAILURE(ReceiveICMPFrom(recv_buf2, ABSL_ARRAYSIZE(recv_buf2),
-                                          sizeof(struct icmphdr), &src,
-                                          s2.get()));
-  EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  // Receive on socket 2.
+  std::vector<char[kBufSize]> recv_buf2(2);
+  for (int i = 0; i < 2; i++) {
+    ASSERT_NO_FATAL_FAILURE(
+        ReceiveICMPFrom(recv_buf2[i], ABSL_ARRAYSIZE(recv_buf2[i]),
+                        sizeof(struct icmphdr), &src, s2.get()));
+    EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  }
 
-  EXPECT_EQ(memcmp(recv_buf1 + sizeof(struct iphdr),
-                   recv_buf2 + sizeof(struct iphdr), sizeof(icmp)),
-            0);
+  // Ensure both sockets receive identical packets.
+  int types[] = {ICMP_ECHO, ICMP_ECHOREPLY};
+  for (int type : types) {
+    auto match_type = [=](char buf[kBufSize]) {
+      struct icmphdr *icmp =
+          reinterpret_cast<struct icmphdr *>(buf + sizeof(struct iphdr));
+      return icmp->type == type;
+    };
+    char *icmp1 = *std::find_if(recv_buf1.begin(), recv_buf1.end(), match_type);
+    char *icmp2 = *std::find_if(recv_buf2.begin(), recv_buf2.end(), match_type);
+    ASSERT_NE(icmp1, *recv_buf1.end());
+    ASSERT_NE(icmp2, *recv_buf2.end());
+    EXPECT_EQ(memcmp(icmp1 + sizeof(struct iphdr), icmp2 + sizeof(struct iphdr),
+                     sizeof(icmp)),
+              0);
+  }
 }
 
 // A raw ICMP socket and ping socket should both receive the ICMP packets
@@ -201,23 +223,47 @@ TEST_F(RawSocketTest, RawAndPingSockets) {
                                  (struct sockaddr *)&addr_, sizeof(addr_)),
               SyscallSucceedsWithValue(sizeof(icmp)));
 
-  // Receive the packet via raw socket.
-  char recv_buf[512];
+  // Both sockets will receive the echo request and reply in indeterminate
+  // order, so we'll need to read 2 packets from each.
+
+  // Receive on socket 1.
+  constexpr int kBufSize = 256;
+  std::vector<char[kBufSize]> recv_buf1(2);
   struct sockaddr_in src;
-  ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf, ABSL_ARRAYSIZE(recv_buf),
-                                      sizeof(struct icmphdr), &src));
-  EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  for (int i = 0; i < 2; i++) {
+    ASSERT_NO_FATAL_FAILURE(
+        ReceiveICMP(recv_buf1[i], kBufSize, sizeof(struct icmphdr), &src));
+    EXPECT_EQ(memcmp(&src, &addr_, sizeof(sockaddr_in)), 0);
+  }
 
-  // Receive the packet via ping socket.
-  struct icmphdr ping_header;
-  ASSERT_THAT(
-      RetryEINTR(recv)(ping_sock.get(), &ping_header, sizeof(ping_header), 0),
-      SyscallSucceedsWithValue(sizeof(ping_header)));
+  // Receive on socket 2.
+  std::vector<char[kBufSize]> recv_buf2(2);
+  for (int i = 0; i < 2; i++) {
+    ASSERT_THAT(RetryEINTR(recv)(ping_sock.get(), recv_buf2[i], kBufSize, 0),
+                SyscallSucceedsWithValue(sizeof(struct icmphdr)));
+  }
 
-  // Packets should be the same.
-  EXPECT_EQ(memcmp(recv_buf + sizeof(struct iphdr), &ping_header,
-                   sizeof(struct icmphdr)),
-            0);
+  // Ensure both sockets receive identical packets.
+  int types[] = {ICMP_ECHO, ICMP_ECHOREPLY};
+  for (int type : types) {
+    auto match_type_ping = [=](char buf[kBufSize]) {
+      struct icmphdr *icmp = reinterpret_cast<struct icmphdr *>(buf);
+      return icmp->type == type;
+    };
+    auto match_type_raw = [=](char buf[kBufSize]) {
+      struct icmphdr *icmp =
+          reinterpret_cast<struct icmphdr *>(buf + sizeof(struct iphdr));
+      return icmp->type == type;
+    };
+
+    char *icmp1 =
+        *std::find_if(recv_buf1.begin(), recv_buf1.end(), match_type_raw);
+    char *icmp2 =
+        *std::find_if(recv_buf2.begin(), recv_buf2.end(), match_type_ping);
+    ASSERT_NE(icmp1, *recv_buf1.end());
+    ASSERT_NE(icmp2, *recv_buf2.end());
+    EXPECT_EQ(memcmp(icmp1 + sizeof(struct iphdr), icmp2, sizeof(icmp)), 0);
+  }
 }
 
 void RawSocketTest::SendEmptyICMP(struct icmphdr *icmp) {
