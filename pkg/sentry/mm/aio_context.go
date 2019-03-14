@@ -21,6 +21,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -201,24 +202,24 @@ func (ctx *AIOContext) WaitChannel() (chan struct{}, bool) {
 type aioMappable struct {
 	refs.AtomicRefCount
 
-	p  platform.Platform
-	fr platform.FileRange
+	mfp pgalloc.MemoryFileProvider
+	fr  platform.FileRange
 }
 
 var aioRingBufferSize = uint64(usermem.Addr(linux.AIORingSize).MustRoundUp())
 
-func newAIOMappable(p platform.Platform) (*aioMappable, error) {
-	fr, err := p.Memory().Allocate(aioRingBufferSize, usage.Anonymous)
+func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
+	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, usage.Anonymous)
 	if err != nil {
 		return nil, err
 	}
-	return &aioMappable{p: p, fr: fr}, nil
+	return &aioMappable{mfp: mfp, fr: fr}, nil
 }
 
 // DecRef implements refs.RefCounter.DecRef.
 func (m *aioMappable) DecRef() {
 	m.AtomicRefCount.DecRefWithDestructor(func() {
-		m.p.Memory().DecRef(m.fr)
+		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }
 
@@ -299,7 +300,7 @@ func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.M
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   m.p.Memory(),
+				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
 			},
 		}, err
@@ -320,7 +321,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	// libaio peeks inside looking for a magic number. This function allocates
 	// a page per context and keeps it set to zeroes to ensure it will not
 	// match AIO_RING_MAGIC and make libaio happy.
-	m, err := newAIOMappable(mm.p)
+	m, err := newAIOMappable(mm.mfp)
 	if err != nil {
 		return 0, err
 	}

@@ -153,7 +153,7 @@ manner, and the sentry handles the fault:
     represented by a host file descriptor and offset, since (as noted in
     "Background") this is the memory mapping primitive provided by the host
     kernel. In general, memory is allocated from a temporary host file using the
-    `filemem` package. Supposing that the sentry allocates offset 0x3000 from
+    `pgalloc` package. Supposing that the sentry allocates offset 0x3000 from
     host file "memory-file", the resulting state is:
 
         Sentry VMA:     VA:0x400000 -> /tmp/foo:0x0
@@ -274,7 +274,7 @@ In the sentry:
     methods
     [`platform.AddressSpace.MapFile` and `platform.AddressSpace.Unmap`][platform].
 
-[filemem]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/platform/filemem/filemem.go
 [memmap]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/memmap/memmap.go
 [mm]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/mm/mm.go
+[pgalloc]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/pgalloc/pgalloc.go
 [platform]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/platform/platform.go

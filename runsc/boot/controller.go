@@ -332,6 +332,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	k := &kernel.Kernel{
 		Platform: p,
 	}
+	mf, err := createMemoryFile()
+	if err != nil {
+		return fmt.Errorf("creating memory file: %v", err)
+	}
+	k.SetMemoryFile(mf)
 	cm.l.k = k
 
 	// Set up the restore environment.
@@ -362,7 +367,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	loadOpts := state.LoadOpts{
 		Source: o.FilePayload.Files[0],
 	}
-	if err := loadOpts.Load(k, p, networkStack); err != nil {
+	if err := loadOpts.Load(k, networkStack); err != nil {
 		return err
 	}
 
@@ -384,7 +389,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.mu.Lock()
 	eid := execID{cid: o.SandboxID}
 	cm.l.processes = map[execID]*execProcess{
-		eid: &execProcess{
+		eid: {
 			tg: cm.l.k.GlobalInit(),
 		},
 	}

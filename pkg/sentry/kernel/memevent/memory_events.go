@@ -95,7 +95,7 @@ func (m *MemoryEvents) run() {
 }
 
 func (m *MemoryEvents) emit() {
-	totalPlatform, err := m.k.Platform.Memory().TotalUsage()
+	totalPlatform, err := m.k.MemoryFile().TotalUsage()
 	if err != nil {
 		log.Warningf("Failed to fetch memory usage for memory events: %v", err)
 		return

@@ -13,6 +13,8 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
+        "//pkg/sentry/memutil",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/ptrace",
         "//pkg/sentry/uniqueid",

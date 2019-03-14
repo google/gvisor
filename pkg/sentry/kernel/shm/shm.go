@@ -45,6 +45,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -199,19 +200,19 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key Key, size ui
 //
 // Precondition: Caller must hold r.mu.
 func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.FileOwner, perms fs.FilePermissions, size uint64) (*Shm, error) {
-	p := platform.FromContext(ctx)
-	if p == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, platform.CtxPlatform))
+	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
+	if mfp == nil {
+		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
 	}
 
 	effectiveSize := uint64(usermem.Addr(size).MustRoundUp())
-	fr, err := p.Memory().Allocate(effectiveSize, usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(effectiveSize, usage.Anonymous)
 	if err != nil {
 		return nil, err
 	}
 
 	shm := &Shm{
-		p:             p,
+		mfp:           mfp,
 		registry:      r,
 		creator:       creator,
 		size:          size,
@@ -312,7 +313,7 @@ type Shm struct {
 	// destruction.
 	refs.AtomicRefCount
 
-	p platform.Platform
+	mfp pgalloc.MemoryFileProvider
 
 	// registry points to the shm registry containing this segment. Immutable.
 	registry *Registry
@@ -333,7 +334,7 @@ type Shm struct {
 	// Invariant: effectiveSize must be a multiple of usermem.PageSize.
 	effectiveSize uint64
 
-	// fr is the offset into platform.Memory() that backs this contents of this
+	// fr is the offset into mfp.MemoryFile() that backs this contents of this
 	// segment. Immutable.
 	fr platform.FileRange
 
@@ -452,7 +453,7 @@ func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableR
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   s.p.Memory(),
+				File:   s.mfp.MemoryFile(),
 				Offset: s.fr.Start + source.Start,
 			},
 		}, err
@@ -599,7 +600,7 @@ func (s *Shm) Set(ctx context.Context, ds *linux.ShmidDS) error {
 }
 
 func (s *Shm) destroy() {
-	s.p.Memory().DecRef(s.fr)
+	s.mfp.MemoryFile().DecRef(s.fr)
 	s.registry.remove(s)
 }
 

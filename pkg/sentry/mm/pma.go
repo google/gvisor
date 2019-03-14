@@ -328,8 +328,8 @@ func (mm *MemoryManager) insertPMAsLocked(ctx context.Context, vseg vmaIterator,
 		// Limit the range we allocate to ar, aligned to privateAllocUnit.
 		maskAR := privateAligned(ar)
 		allocAR := optAR.Intersect(maskAR)
-		mem := mm.p.Memory()
-		fr, err := mem.Allocate(uint64(allocAR.Length()), usage.Anonymous)
+		mf := mm.mfp.MemoryFile()
+		fr, err := mf.Allocate(uint64(allocAR.Length()), usage.Anonymous)
 		if err != nil {
 			return pgap, err
 		}
@@ -342,10 +342,10 @@ func (mm *MemoryManager) insertPMAsLocked(ctx context.Context, vseg vmaIterator,
 		}
 
 		mm.addRSSLocked(allocAR)
-		mem.IncRef(fr)
+		mf.IncRef(fr)
 
 		return mm.pmas.Insert(pgap, allocAR, pma{
-			file:              mem,
+			file:              mf,
 			off:               fr.Start,
 			vmaEffectivePerms: vma.effectivePerms,
 			vmaMaxPerms:       vma.maxPerms,
@@ -426,7 +426,7 @@ func (mm *MemoryManager) breakCopyOnWriteLocked(pseg pmaIterator, ar usermem.Add
 	// Limit the range we copy to ar, aligned to privateAllocUnit.
 	maskAR := privateAligned(ar)
 	var invalidatedIterators, didUnmapAS bool
-	mem := mm.p.Memory()
+	mf := mm.mfp.MemoryFile()
 	for {
 		if mm.isPMACopyOnWriteLocked(pseg) {
 			// Determine the range to copy.
@@ -438,7 +438,7 @@ func (mm *MemoryManager) breakCopyOnWriteLocked(pseg pmaIterator, ar usermem.Add
 			}
 
 			// Copy contents.
-			fr, err := platform.AllocateAndFill(mem, uint64(copyAR.Length()), usage.Anonymous, &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)})
+			fr, err := mf.AllocateAndFill(uint64(copyAR.Length()), usage.Anonymous, &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)})
 			if _, ok := err.(safecopy.BusError); ok {
 				// If we got SIGBUS during the copy, deliver SIGBUS to
 				// userspace (instead of SIGSEGV) if we're breaking
@@ -449,7 +449,7 @@ func (mm *MemoryManager) breakCopyOnWriteLocked(pseg pmaIterator, ar usermem.Add
 				return pseg.PrevGap(), invalidatedIterators, err
 			}
 			mm.incPrivateRef(fr)
-			mem.IncRef(fr)
+			mf.IncRef(fr)
 
 			// Unmap all of maskAR, not just copyAR, to minimize host syscalls.
 			// AddressSpace mappings must be removed before mm.decPrivateRef().
@@ -471,7 +471,7 @@ func (mm *MemoryManager) breakCopyOnWriteLocked(pseg pmaIterator, ar usermem.Add
 			}
 			pma.file.DecRef(pseg.fileRange())
 
-			pma.file = mem
+			pma.file = mf
 			pma.off = fr.Start
 			pma.private = true
 			pma.needCOW = false
@@ -881,9 +881,9 @@ func (mm *MemoryManager) decPrivateRef(fr platform.FileRange) {
 	refSet.MergeAdjacent(fr)
 	mm.privateRefs.mu.Unlock()
 
-	mem := mm.p.Memory()
+	mf := mm.mfp.MemoryFile()
 	for _, fr := range freed {
-		mem.DecRef(fr)
+		mf.DecRef(fr)
 	}
 }
 

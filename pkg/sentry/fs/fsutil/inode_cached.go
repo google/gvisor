@@ -25,6 +25,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
@@ -62,8 +63,8 @@ type CachingInodeOperations struct {
 	// backingFile is a handle to a cached file object.
 	backingFile CachedFileObject
 
-	// platform is used to allocate memory that caches backingFile's contents.
-	platform platform.Platform
+	// mfp is used to allocate memory that caches backingFile's contents.
+	mfp pgalloc.MemoryFileProvider
 
 	// forcePageCache indicates the sentry page cache should be used regardless
 	// of whether the platform supports host mapped I/O or not. This must not be
@@ -96,7 +97,7 @@ type CachingInodeOperations struct {
 	dataMu sync.RWMutex `state:"nosave"`
 
 	// cache maps offsets into the cached file to offsets into
-	// platform.Memory() that store the file's data.
+	// mfp.MemoryFile() that store the file's data.
 	//
 	// cache is protected by dataMu.
 	cache FileRangeSet
@@ -148,13 +149,13 @@ type CachedFileObject interface {
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by
 // a CachedFileObject and its initial unstable attributes.
 func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, forcePageCache bool) *CachingInodeOperations {
-	p := platform.FromContext(ctx)
-	if p == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, platform.CtxPlatform))
+	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
+	if mfp == nil {
+		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
 	}
 	return &CachingInodeOperations{
 		backingFile:    backingFile,
-		platform:       p,
+		mfp:            mfp,
 		forcePageCache: forcePageCache,
 		attr:           uattr,
 		hostFileMapper: NewHostFileMapper(),
@@ -311,7 +312,7 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	// written back.
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
-	c.cache.Truncate(uint64(size), c.platform.Memory())
+	c.cache.Truncate(uint64(size), c.mfp.MemoryFile())
 	c.dirty.KeepClean(memmap.MappableRange{uint64(size), oldpgend})
 
 	return nil
@@ -323,7 +324,7 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 
 	// Write dirty pages back.
 	c.dataMu.Lock()
-	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.platform.Memory(), c.backingFile.WriteFromBlocksAt)
+	err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.mfp.MemoryFile(), c.backingFile.WriteFromBlocksAt)
 	c.dataMu.Unlock()
 	if err != nil {
 		c.attrMu.Unlock()
@@ -527,7 +528,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		return 0, nil
 	}
 
-	mem := rw.c.platform.Memory()
+	mem := rw.c.mfp.MemoryFile()
 	var done uint64
 	seg, gap := rw.c.cache.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -613,7 +614,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 		return 0, nil
 	}
 
-	mem := rw.c.platform.Memory()
+	mf := rw.c.mfp.MemoryFile()
 	var done uint64
 	seg, gap := rw.c.cache.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -622,7 +623,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 		case seg.Ok() && seg.Start() < mr.End:
 			// Get internal mappings from the cache.
 			segMR := seg.Range().Intersect(mr)
-			ims, err := mem.MapInternal(seg.FileRangeOf(segMR), usermem.Write)
+			ims, err := mf.MapInternal(seg.FileRangeOf(segMR), usermem.Write)
 			if err != nil {
 				rw.maybeGrowFile()
 				rw.c.dataMu.Unlock()
@@ -711,13 +712,13 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 	// Writeback dirty mapped memory now that there are no longer any
 	// mappings that reference it. This is our naive memory eviction
 	// strategy.
-	mem := c.platform.Memory()
+	mf := c.mfp.MemoryFile()
 	c.dataMu.Lock()
 	for _, r := range unmapped {
-		if err := SyncDirty(ctx, r, &c.cache, &c.dirty, uint64(c.attr.Size), c.platform.Memory(), c.backingFile.WriteFromBlocksAt); err != nil {
+		if err := SyncDirty(ctx, r, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
 			log.Warningf("Failed to writeback cached data %v: %v", r, err)
 		}
-		c.cache.Drop(r, mem)
+		c.cache.Drop(r, mf)
 		c.dirty.KeepClean(r)
 	}
 	c.dataMu.Unlock()
@@ -760,8 +761,8 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 		optional.End = pgend
 	}
 
-	mem := c.platform.Memory()
-	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), mem, usage.PageCache, c.backingFile.ReadToBlocksAt)
+	mf := c.mfp.MemoryFile()
+	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -769,7 +770,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 		segMR := seg.Range().Intersect(optional)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   mem,
+			File:   mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 		})
 		if at.Write {
@@ -820,16 +821,17 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 
 	// Sync the cache's contents so that if we have a host fd after restore,
 	// the remote file's contents are coherent.
+	mf := c.mfp.MemoryFile()
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
-	if err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), c.platform.Memory(), c.backingFile.WriteFromBlocksAt); err != nil {
+	if err := SyncDirtyAll(ctx, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
 		return err
 	}
 
 	// Discard the cache so that it's not stored in saved state. This is safe
 	// because per InvalidateUnsavable invariants, no new translations can have
 	// been returned after we invalidated all existing translations above.
-	c.cache.DropAll(c.platform.Memory())
+	c.cache.DropAll(mf)
 	c.dirty.RemoveAll()
 
 	return nil

@@ -23,7 +23,6 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -32,9 +31,6 @@ import (
 // KVM represents a lightweight VM context.
 type KVM struct {
 	platform.NoCPUPreemptionDetection
-
-	// filemem is our memory source.
-	*filemem.FileMem
 
 	// machine is the backing VM.
 	machine *machine
@@ -56,12 +52,6 @@ func OpenDevice() (*os.File, error) {
 
 // New returns a new KVM-based implementation of the platform interface.
 func New(deviceFile *os.File) (*KVM, error) {
-	// Allocate physical memory for the vCPUs.
-	fm, err := filemem.New("kvm-memory")
-	if err != nil {
-		return nil, err
-	}
-
 	fd := deviceFile.Fd()
 
 	// Ensure global initialization is done.
@@ -90,7 +80,6 @@ func New(deviceFile *os.File) (*KVM, error) {
 
 	// All set.
 	return &KVM{
-		FileMem: fm,
 		machine: machine,
 	}, nil
 }
@@ -140,7 +129,6 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 
 	// Return the new address space.
 	return &addressSpace{
-		filemem:    k.FileMem,
 		machine:    k.machine,
 		pageTables: pageTables,
 		dirtySet:   k.machine.newDirtySet(),
@@ -152,9 +140,4 @@ func (k *KVM) NewContext() platform.Context {
 	return &context{
 		machine: k.machine,
 	}
-}
-
-// Memory returns the platform memory used to do allocations.
-func (k *KVM) Memory() platform.Memory {
-	return k.FileMem
 }

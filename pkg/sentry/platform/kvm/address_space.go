@@ -20,7 +20,6 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
@@ -75,9 +74,6 @@ type addressSpace struct {
 	//
 	// Note that the page tables themselves are not locked.
 	mu sync.Mutex
-
-	// filemem is the memory instance.
-	filemem *filemem.FileMem
 
 	// machine is the underlying machine.
 	machine *machine

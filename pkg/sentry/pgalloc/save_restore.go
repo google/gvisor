@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package filemem
+package pgalloc
 
 import (
 	"bytes"
@@ -28,8 +28,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/state"
 )
 
-// SaveTo implements platform.Memory.SaveTo.
-func (f *FileMem) SaveTo(w io.Writer) error {
+// SaveTo writes f's state to the given stream.
+func (f *MemoryFile) SaveTo(w io.Writer) error {
 	// Wait for reclaim.
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -103,18 +103,13 @@ func (f *FileMem) SaveTo(w io.Writer) error {
 		if err != nil {
 			return err
 		}
-
-		// Update accounting for restored pages. We need to do this here since
-		// these segments are marked as "known committed", and will be skipped
-		// over on accounting scans.
-		usage.MemoryAccounting.Inc(seg.Range().Length(), seg.Value().kind)
 	}
 
 	return nil
 }
 
-// LoadFrom implements platform.Memory.LoadFrom.
-func (f *FileMem) LoadFrom(r io.Reader) error {
+// LoadFrom loads MemoryFile state from the given stream.
+func (f *MemoryFile) LoadFrom(r io.Reader) error {
 	// Load metadata.
 	if err := state.Load(r, &f.fileSize, nil); err != nil {
 		return err
@@ -191,4 +186,20 @@ func (f *FileMem) LoadFrom(r io.Reader) error {
 	}
 
 	return nil
+}
+
+// MemoryFileProvider provides the MemoryFile method.
+//
+// This type exists to work around a save/restore defect. The only object in a
+// saved object graph that S/R allows to be replaced at time of restore is the
+// starting point of the restore, kernel.Kernel. However, the MemoryFile
+// changes between save and restore as well, so objects that need persistent
+// access to the MemoryFile must instead store a pointer to the Kernel and call
+// Kernel.MemoryFile() as required. In most cases, depending on the kernel
+// package directly would create a package dependency loop, so the stored
+// pointer must instead be a MemoryProvider interface object. Correspondingly,
+// kernel.Kernel is the only implementation of this interface.
+type MemoryFileProvider interface {
+	// MemoryFile returns the Kernel MemoryFile.
+	MemoryFile() *MemoryFile
 }

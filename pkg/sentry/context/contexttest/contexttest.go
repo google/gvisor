@@ -16,6 +16,7 @@
 package contexttest
 
 import (
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
@@ -35,6 +38,17 @@ import (
 // Note that some filesystems may require a minimal kernel for testing, which
 // this test context does not provide. For such tests, see kernel/contexttest.
 func Context(tb testing.TB) context.Context {
+	const memfileName = "contexttest-memory"
+	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	if err != nil {
+		tb.Fatalf("error creating application memory file: %v", err)
+	}
+	memfile := os.NewFile(uintptr(memfd), memfileName)
+	mf, err := pgalloc.NewMemoryFile(memfile)
+	if err != nil {
+		memfile.Close()
+		tb.Fatalf("error creating pgalloc.MemoryFile: %v", err)
+	}
 	p, err := ptrace.New()
 	if err != nil {
 		tb.Fatal(err)
@@ -43,6 +57,7 @@ func Context(tb testing.TB) context.Context {
 	return &TestContext{
 		Context:     context.Background(),
 		l:           limits.NewLimitSet(),
+		mf:          mf,
 		platform:    p,
 		otherValues: make(map[interface{}]interface{}),
 	}
@@ -53,6 +68,7 @@ func Context(tb testing.TB) context.Context {
 type TestContext struct {
 	context.Context
 	l           *limits.LimitSet
+	mf          *pgalloc.MemoryFile
 	platform    platform.Platform
 	otherValues map[interface{}]interface{}
 }
@@ -94,6 +110,10 @@ func (t *TestContext) Value(key interface{}) interface{} {
 	switch key {
 	case limits.CtxLimits:
 		return t.l
+	case pgalloc.CtxMemoryFile:
+		return t.mf
+	case pgalloc.CtxMemoryFileProvider:
+		return t
 	case platform.CtxPlatform:
 		return t.platform
 	case uniqueid.CtxGlobalUniqueID:
@@ -110,6 +130,11 @@ func (t *TestContext) Value(key interface{}) interface{} {
 		}
 		return t.Context.Value(key)
 	}
+}
+
+// MemoryFile implements pgalloc.MemoryFileProvider.MemoryFile.
+func (t *TestContext) MemoryFile() *pgalloc.MemoryFile {
+	return t.mf
 }
 
 // RootContext returns a Context that may be used in tests that need root

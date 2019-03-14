@@ -48,7 +48,6 @@ func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 		t.Fatalf("error creating KVM instance: %v", err)
 	}
 	defer k.machine.Destroy()
-	defer k.FileMem.Destroy()
 
 	// Call additional setup.
 	if setup != nil {

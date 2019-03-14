@@ -15,6 +15,7 @@
 package memutil
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -22,14 +23,17 @@ import (
 )
 
 // CreateMemFD creates a memfd file and returns the fd.
-func CreateMemFD(name string, flags int) (fd int, err error) {
+func CreateMemFD(name string, flags int) (int, error) {
 	p, err := syscall.BytePtrFromString(name)
 	if err != nil {
 		return -1, err
 	}
-	r0, _, e0 := syscall.Syscall(unix.SYS_MEMFD_CREATE, uintptr(unsafe.Pointer(p)), uintptr(flags), 0)
-	if e0 != 0 {
-		return -1, e0
+	fd, _, e := syscall.Syscall(unix.SYS_MEMFD_CREATE, uintptr(unsafe.Pointer(p)), uintptr(flags), 0)
+	if e != 0 {
+		if e == syscall.ENOSYS {
+			return -1, fmt.Errorf("memfd_create(2) is not implemented. Check that you have Linux 3.17 or higher")
+		}
+		return -1, e
 	}
-	return int(r0), nil
+	return int(fd), nil
 }

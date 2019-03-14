@@ -12,6 +12,7 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
     ],
 )

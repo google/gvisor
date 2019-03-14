@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	sentrytime "gvisor.googlesource.com/gvisor/pkg/sentry/time"
 )
@@ -85,9 +86,9 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(platform platform.Platform, paramPage platform.FileRange) (*Timekeeper, error) {
+func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage platform.FileRange) (*Timekeeper, error) {
 	return &Timekeeper{
-		params: NewVDSOParamPage(platform, paramPage),
+		params: NewVDSOParamPage(mfp, paramPage),
 	}, nil
 }
 

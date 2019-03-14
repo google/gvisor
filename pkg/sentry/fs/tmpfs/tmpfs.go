@@ -74,7 +74,7 @@ type Dir struct {
 	// InodeOperation methods to it.
 	ramfsDir *ramfs.Dir
 
-	// kernel is used to allocate platform memory as storage for tmpfs Files.
+	// kernel is used to allocate memory as storage for tmpfs Files.
 	kernel *kernel.Kernel
 }
 

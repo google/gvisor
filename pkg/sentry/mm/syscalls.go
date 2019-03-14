@@ -24,7 +24,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -99,7 +99,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 			if opts.MappingIdentity != nil {
 				return 0, syserror.EINVAL
 			}
-			m, err := NewSharedAnonMappable(opts.Length, platform.FromContext(ctx))
+			m, err := NewSharedAnonMappable(opts.Length, pgalloc.MemoryFileProviderFromContext(ctx))
 			if err != nil {
 				return 0, err
 			}
@@ -965,7 +965,7 @@ func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 	// ensures that Decommit immediately reduces host memory usage.
 	var didUnmapAS bool
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
-	mem := mm.p.Memory()
+	mf := mm.mfp.MemoryFile()
 	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
 		vma := vseg.ValuePtr()
 		if vma.mlockMode != memmap.MLockNone {
@@ -984,7 +984,7 @@ func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 			if pma.private && !mm.isPMACopyOnWriteLocked(pseg) {
 				psegAR := pseg.Range().Intersect(ar)
 				if vsegAR.IsSupersetOf(psegAR) && vma.mappable == nil {
-					if err := mem.Decommit(pseg.fileRangeOf(psegAR)); err == nil {
+					if err := mf.Decommit(pseg.fileRangeOf(psegAR)); err == nil {
 						pseg = pseg.NextSegment()
 						continue
 					}

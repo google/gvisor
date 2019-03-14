@@ -37,12 +37,12 @@ func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 
 // beforeSave is invoked by stateify.
 func (mm *MemoryManager) beforeSave() {
-	mem := mm.p.Memory()
+	mf := mm.mfp.MemoryFile()
 	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
-		if pma := pseg.ValuePtr(); pma.file != mem {
+		if pma := pseg.ValuePtr(); pma.file != mf {
 			// InvalidateUnsavable should have caused all such pmas to be
 			// invalidated.
-			panic(fmt.Sprintf("Can't save pma %#v with non-Memory file of type %T:\n%s", pseg.Range(), pma.file, mm))
+			panic(fmt.Sprintf("Can't save pma %#v with non-MemoryFile of type %T:\n%s", pseg.Range(), pma.file, mm))
 		}
 	}
 }
@@ -50,8 +50,8 @@ func (mm *MemoryManager) beforeSave() {
 // afterLoad is invoked by stateify.
 func (mm *MemoryManager) afterLoad() {
 	mm.haveASIO = mm.p.SupportsAddressSpaceIO()
-	mem := mm.p.Memory()
+	mf := mm.mfp.MemoryFile()
 	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
-		pseg.ValuePtr().file = mem
+		pseg.ValuePtr().file = mf
 	}
 }

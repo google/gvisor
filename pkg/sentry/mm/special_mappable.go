@@ -18,6 +18,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -33,24 +34,24 @@ import (
 type SpecialMappable struct {
 	refs.AtomicRefCount
 
-	p    platform.Platform
+	mfp  pgalloc.MemoryFileProvider
 	fr   platform.FileRange
 	name string
 }
 
 // NewSpecialMappable returns a SpecialMappable that owns fr, which represents
-// offsets in p.Memory() that contain the SpecialMappable's data. The
+// offsets in mfp.MemoryFile() that contain the SpecialMappable's data. The
 // SpecialMappable will use the given name in /proc/[pid]/maps.
 //
 // Preconditions: fr.Length() != 0.
-func NewSpecialMappable(name string, p platform.Platform, fr platform.FileRange) *SpecialMappable {
-	return &SpecialMappable{p: p, fr: fr, name: name}
+func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr platform.FileRange) *SpecialMappable {
+	return &SpecialMappable{mfp: mfp, fr: fr, name: name}
 }
 
 // DecRef implements refs.RefCounter.DecRef.
 func (m *SpecialMappable) DecRef() {
 	m.AtomicRefCount.DecRefWithDestructor(func() {
-		m.p.Memory().DecRef(m.fr)
+		m.mfp.MemoryFile().DecRef(m.fr)
 	})
 }
 
@@ -99,7 +100,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   m.p.Memory(),
+				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
 			},
 		}, err
@@ -109,19 +110,19 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (m *SpecialMappable) InvalidateUnsavable(ctx context.Context) error {
-	// Since data is stored in platform.Platform.Memory(), the contents of
-	// which are preserved across save/restore, we don't need to do anything.
+	// Since data is stored in pgalloc.MemoryFile, the contents of which are
+	// preserved across save/restore, we don't need to do anything.
 	return nil
 }
 
-// Platform returns the Platform whose Memory stores the SpecialMappable's
-// contents.
-func (m *SpecialMappable) Platform() platform.Platform {
-	return m.p
+// MemoryFileProvider returns the MemoryFileProvider whose MemoryFile stores
+// the SpecialMappable's contents.
+func (m *SpecialMappable) MemoryFileProvider() pgalloc.MemoryFileProvider {
+	return m.mfp
 }
 
-// FileRange returns the offsets into Platform().Memory() that store the
-// SpecialMappable's contents.
+// FileRange returns the offsets into MemoryFileProvider().MemoryFile() that
+// store the SpecialMappable's contents.
 func (m *SpecialMappable) FileRange() platform.FileRange {
 	return m.fr
 }
@@ -137,7 +138,7 @@ func (m *SpecialMappable) Length() uint64 {
 // TODO: The use of SpecialMappable is a lazy code reuse hack. Linux
 // uses an ephemeral file created by mm/shmem.c:shmem_zero_setup(); we should
 // do the same to get non-zero device and inode IDs.
-func NewSharedAnonMappable(length uint64, p platform.Platform) (*SpecialMappable, error) {
+func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
 	if length == 0 {
 		return nil, syserror.EINVAL
 	}
@@ -145,10 +146,9 @@ func NewSharedAnonMappable(length uint64, p platform.Platform) (*SpecialMappable
 	if !ok {
 		return nil, syserror.EINVAL
 	}
-
-	fr, err := p.Memory().Allocate(uint64(alignedLen), usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), usage.Anonymous)
 	if err != nil {
 		return nil, err
 	}
-	return NewSpecialMappable("/dev/zero (deleted)", p, fr), nil
+	return NewSpecialMappable("/dev/zero (deleted)", mfp, fr), nil
 }

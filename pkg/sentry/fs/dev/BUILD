@@ -27,7 +27,7 @@ go_library(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
-        "//pkg/sentry/platform",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
         "//pkg/syserror",

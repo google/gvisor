@@ -25,10 +25,10 @@ import (
 func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
-	mem := t.Kernel().Platform.Memory()
-	mem.UpdateUsage()
+	mf := t.Kernel().MemoryFile()
+	mf.UpdateUsage()
 	_, totalUsage := usage.MemoryAccounting.Copy()
-	totalSize := usage.TotalMemory(mem.TotalSize(), totalUsage)
+	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)
 
 	// Only a subset of the fields in sysinfo_t make sense to return.
 	si := linux.Sysinfo{

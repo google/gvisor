@@ -40,6 +40,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -50,10 +51,9 @@ import (
 //
 // +stateify savable
 type MemoryManager struct {
-	// p is the platform.
-	//
-	// p is immutable.
-	p platform.Platform
+	// p and mfp are immutable.
+	p   platform.Platform
+	mfp pgalloc.MemoryFileProvider
 
 	// haveASIO is the cached result of p.SupportsAddressSpaceIO(). Aside from
 	// eliminating an indirect call in the hot I/O path, this makes
@@ -369,8 +369,8 @@ func (v *vma) loadRealPerms(b int) {
 // +stateify savable
 type pma struct {
 	// file is the file mapped by this pma. Only pmas for which file ==
-	// platform.Platform.Memory() may be saved. pmas hold a reference to the
-	// corresponding file range while they exist.
+	// MemoryManager.mfp.MemoryFile() may be saved. pmas hold a reference to
+	// the corresponding file range while they exist.
 	file platform.File `state:"nosave"`
 
 	// off is the offset into file at which this pma begins.
@@ -387,7 +387,7 @@ type pma struct {
 
 	// private is true if this pma represents private memory.
 	//
-	// If private is true, file must be platform.Platform.Memory(), the pma
+	// If private is true, file must be MemoryManager.mfp.MemoryFile(), the pma
 	// holds a reference on the mapped memory that is tracked in privateRefs,
 	// and calls to Invalidate for which
 	// memmap.InvalidateOpts.InvalidatePrivate is false should ignore the pma.
@@ -405,9 +405,9 @@ type pma struct {
 type privateRefs struct {
 	mu sync.Mutex `state:"nosave"`
 
-	// refs maps offsets into Platform.Memory() to the number of pmas (or,
-	// equivalently, MemoryManagers) that share ownership of the memory at that
-	// offset.
+	// refs maps offsets into MemoryManager.mfp.MemoryFile() to the number of
+	// pmas (or, equivalently, MemoryManagers) that share ownership of the
+	// memory at that offset.
 	refs fileRefcountSet
 }
 

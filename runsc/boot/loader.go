@@ -37,6 +37,8 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
@@ -189,6 +191,13 @@ func New(args Args) (*Loader, error) {
 		Platform: p,
 	}
 
+	// Create memory file.
+	mf, err := createMemoryFile()
+	if err != nil {
+		return nil, fmt.Errorf("creating memory file: %v", err)
+	}
+	k.SetMemoryFile(mf)
+
 	// Create VDSO.
 	//
 	// Pass k as the platform since it is savable, unlike the actual platform.
@@ -297,7 +306,7 @@ func New(args Args) (*Loader, error) {
 		stdioFDs:     args.StdioFDs,
 		rootProcArgs: procArgs,
 		sandboxID:    args.ID,
-		processes:    map[execID]*execProcess{eid: &execProcess{}},
+		processes:    map[execID]*execProcess{eid: {}},
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -402,6 +411,21 @@ func createPlatform(conf *Config, deviceFD int) (platform.Platform, error) {
 	default:
 		return nil, fmt.Errorf("invalid platform %v", conf.Platform)
 	}
+}
+
+func createMemoryFile() (*pgalloc.MemoryFile, error) {
+	const memfileName = "runsc-memory"
+	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	if err != nil {
+		return nil, fmt.Errorf("error creating memfd: %v", err)
+	}
+	memfile := os.NewFile(uintptr(memfd), memfileName)
+	mf, err := pgalloc.NewMemoryFile(memfile)
+	if err != nil {
+		memfile.Close()
+		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
+	}
+	return mf, nil
 }
 
 // Run runs the root container..

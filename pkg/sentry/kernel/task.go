@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/sched"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
@@ -587,6 +588,10 @@ func (t *Task) Value(key interface{}) interface{} {
 		return t.k.RealtimeClock()
 	case limits.CtxLimits:
 		return t.tg.limits
+	case pgalloc.CtxMemoryFile:
+		return t.k.mf
+	case pgalloc.CtxMemoryFileProvider:
+		return t.k
 	case platform.CtxPlatform:
 		return t.k
 	case uniqueid.CtxGlobalUniqueID:

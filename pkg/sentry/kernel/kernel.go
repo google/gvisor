@@ -58,6 +58,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink/port"
 	sentrytime "gvisor.googlesource.com/gvisor/pkg/sentry/time"
@@ -89,11 +90,13 @@ type Kernel struct {
 
 	// All of the following fields are immutable unless otherwise specified.
 
-	// Platform is the platform that is used to execute tasks in the
-	// created Kernel. It is embedded so that Kernel can directly serve as
-	// Platform in mm logic and also serve as platform.MemoryProvider in
-	// filemem S/R logic.
+	// Platform is the platform that is used to execute tasks in the created
+	// Kernel. See comment on pgalloc.MemoryFileProvider for why Platform is
+	// embedded anonymously (the same issue applies).
 	platform.Platform `state:"nosave"`
+
+	// mf provides application memory.
+	mf *pgalloc.MemoryFile `state:"nosave"`
 
 	// See InitKernelArgs for the meaning of these fields.
 	featureSet                  *cpuid.FeatureSet
@@ -229,7 +232,8 @@ type InitKernelArgs struct {
 
 // Init initialize the Kernel with no tasks.
 //
-// Callers must manually set Kernel.Platform before caling Init.
+// Callers must manually set Kernel.Platform and call Kernel.SetMemoryFile
+// before calling Init.
 func (k *Kernel) Init(args InitKernelArgs) error {
 	if args.FeatureSet == nil {
 		return fmt.Errorf("FeatureSet is nil")
@@ -332,15 +336,9 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 	log.Infof("Kernel save stats: %s", &stats)
 	log.Infof("Kernel save took [%s].", time.Since(kernelStart))
 
-	// Save the memory state.
-	//
-	// FIXME: In the future, this should not be dispatched via
-	// an abstract memory type. This should be dispatched to a single
-	// memory implementation that belongs to the kernel. (There is
-	// currently a single implementation anyways, it just needs to be
-	// "unabstracted" and reparented appropriately.)
+	// Save the memory file's state.
 	memoryStart := time.Now()
-	if err := k.Platform.Memory().SaveTo(w); err != nil {
+	if err := k.mf.SaveTo(w); err != nil {
 		return err
 	}
 	log.Infof("Memory save took [%s].", time.Since(memoryStart))
@@ -418,13 +416,9 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 }
 
 // LoadFrom returns a new Kernel loaded from args.
-func (k *Kernel) LoadFrom(r io.Reader, p platform.Platform, net inet.Stack) error {
+func (k *Kernel) LoadFrom(r io.Reader, net inet.Stack) error {
 	loadStart := time.Now()
-	if p == nil {
-		return fmt.Errorf("Platform is nil")
-	}
 
-	k.Platform = p
 	k.networkStack = net
 
 	initAppCores := k.applicationCores
@@ -438,11 +432,9 @@ func (k *Kernel) LoadFrom(r io.Reader, p platform.Platform, net inet.Stack) erro
 	log.Infof("Kernel load stats: %s", &stats)
 	log.Infof("Kernel load took [%s].", time.Since(kernelStart))
 
-	// Load the memory state.
-	//
-	// See the note in SaveTo.
+	// Load the memory file's state.
 	memoryStart := time.Now()
-	if err := k.Platform.Memory().LoadFrom(r); err != nil {
+	if err := k.mf.LoadFrom(r); err != nil {
 		return err
 	}
 	log.Infof("Memory load took [%s].", time.Since(memoryStart))
@@ -597,6 +589,10 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:
 		return ctx.args.Limits
+	case pgalloc.CtxMemoryFile:
+		return ctx.k.mf
+	case pgalloc.CtxMemoryFileProvider:
+		return ctx.k
 	case platform.CtxPlatform:
 		return ctx.k
 	case uniqueid.CtxGlobalUniqueID:
@@ -1018,6 +1014,17 @@ func (k *Kernel) NowMonotonic() int64 {
 	return now
 }
 
+// SetMemoryFile sets Kernel.mf. SetMemoryFile must be called before Init or
+// LoadFrom.
+func (k *Kernel) SetMemoryFile(mf *pgalloc.MemoryFile) {
+	k.mf = mf
+}
+
+// MemoryFile implements pgalloc.MemoryFileProvider.MemoryFile.
+func (k *Kernel) MemoryFile() *pgalloc.MemoryFile {
+	return k.mf
+}
+
 // SupervisorContext returns a Context with maximum privileges in k. It should
 // only be used by goroutines outside the control of the emulated kernel
 // defined by e.
@@ -1083,7 +1090,7 @@ func (k *Kernel) ListSockets(family int) []*refs.WeakRef {
 	socks := []*refs.WeakRef{}
 	if table, ok := k.socketTable[family]; ok {
 		socks = make([]*refs.WeakRef, 0, len(table))
-		for s, _ := range table {
+		for s := range table {
 			socks = append(socks, s)
 		}
 	}
@@ -1123,6 +1130,10 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 	case limits.CtxLimits:
 		// No limits apply.
 		return limits.NewLimitSet()
+	case pgalloc.CtxMemoryFile:
+		return ctx.k.mf
+	case pgalloc.CtxMemoryFileProvider:
+		return ctx.k
 	case platform.CtxPlatform:
 		return ctx.k
 	case uniqueid.CtxGlobalUniqueID:

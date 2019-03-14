@@ -22,6 +22,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 )
 
@@ -33,6 +34,7 @@ func Context(tb testing.TB) context.Context {
 	k := &kernel.Kernel{
 		Platform: platform.FromContext(ctx),
 	}
+	k.SetMemoryFile(pgalloc.MemoryFileFromContext(ctx))
 	ctx.(*contexttest.TestContext).RegisterValue(kernel.CtxKernel, k)
 	return ctx
 }

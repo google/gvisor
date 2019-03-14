@@ -122,9 +122,6 @@ func Init() error {
 	const name = "memory-usage"
 	fd, err := memutil.CreateMemFD(name, 0)
 	if err != nil {
-		if e, ok := err.(syscall.Errno); ok && e == syscall.ENOSYS {
-			return fmt.Errorf("memfd_create(2) is not implemented. Check that you have Linux 3.17 or higher")
-		}
 		return fmt.Errorf("error creating usage file: %v", err)
 	}
 	file := os.NewFile(uintptr(fd), name)

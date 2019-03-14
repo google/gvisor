@@ -144,7 +144,7 @@ func (t *Task) Stack() *arch.Stack {
 //  * fs: Binary FeatureSet
 func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
 	// Prepare a new user address space to load into.
-	m := mm.NewMemoryManager(k)
+	m := mm.NewMemoryManager(k, k)
 	defer m.DecUsers(ctx)
 
 	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv, envv, k.extraAuxv, k.vdso)

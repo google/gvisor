@@ -50,7 +50,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
@@ -181,7 +180,6 @@ func (c *context) Interrupt() {
 type PTrace struct {
 	platform.MMapMinAddr
 	platform.NoCPUPreemptionDetection
-	*filemem.FileMem
 }
 
 // New returns a new ptrace-based implementation of the platform interface.
@@ -202,12 +200,7 @@ func New() (*PTrace, error) {
 		globalPool.master = master
 	})
 
-	fm, err := filemem.New("ptrace-memory")
-	if err != nil {
-		return nil, err
-	}
-
-	return &PTrace{FileMem: fm}, nil
+	return &PTrace{}, nil
 }
 
 // SupportsAddressSpaceIO implements platform.Platform.SupportsAddressSpaceIO.
@@ -242,9 +235,4 @@ func (p *PTrace) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan s
 // NewContext returns an interruptible context.
 func (*PTrace) NewContext() platform.Context {
 	return &context{}
-}
-
-// Memory returns the platform memory used to do allocations.
-func (p *PTrace) Memory() platform.Memory {
-	return p.FileMem
 }

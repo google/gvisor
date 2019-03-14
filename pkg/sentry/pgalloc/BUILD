@@ -12,7 +12,7 @@ go_template_instance(
     imports = {
         "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
     },
-    package = "filemem",
+    package = "pgalloc",
     prefix = "usage",
     template = "//pkg/segment:generic_set",
     types = {
@@ -24,14 +24,15 @@ go_template_instance(
 )
 
 go_library(
-    name = "filemem",
+    name = "pgalloc",
     srcs = [
-        "filemem.go",
-        "filemem_state.go",
-        "filemem_unsafe.go",
+        "context.go",
+        "pgalloc.go",
+        "pgalloc_unsafe.go",
+        "save_restore.go",
         "usage_set.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/filemem",
+    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
@@ -48,9 +49,9 @@ go_library(
 )
 
 go_test(
-    name = "filemem_test",
+    name = "pgalloc_test",
     size = "small",
-    srcs = ["filemem_test.go"],
-    embed = [":filemem"],
+    srcs = ["pgalloc_test.go"],
+    embed = [":pgalloc"],
     deps = ["//pkg/sentry/usermem"],
 )

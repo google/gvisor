@@ -68,7 +68,7 @@ func (cm *containerManager) Event(_ *struct{}, out *Event) error {
 }
 
 func (s *Stats) populateMemory(k *kernel.Kernel) {
-	mem := k.Platform.Memory()
+	mem := k.MemoryFile()
 	mem.UpdateUsage()
 	_, totalUsage := usage.MemoryAccounting.Copy()
 	s.Memory.Usage = MemoryEntry{

@@ -52,7 +52,7 @@ type fileInodeOperations struct {
 
 	fsutil.InodeSimpleExtendedAttributes
 
-	// kernel is used to allocate platform memory that stores the file's contents.
+	// kernel is used to allocate memory that stores the file's contents.
 	kernel *kernel.Kernel
 
 	// memUsage is the default memory usage that will be reported by this file.
@@ -85,7 +85,7 @@ type fileInodeOperations struct {
 
 var _ fs.InodeOperations = (*fileInodeOperations)(nil)
 
-// NewInMemoryFile returns a new file backed by p.Memory().
+// NewInMemoryFile returns a new file backed by Kernel.MemoryFile().
 func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.UnstableAttr) fs.InodeOperations {
 	return &fileInodeOperations{
 		attr:     uattr,
@@ -98,7 +98,7 @@ func NewInMemoryFile(ctx context.Context, usage usage.MemoryKind, uattr fs.Unsta
 func (f *fileInodeOperations) Release(context.Context) {
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.DropAll(f.kernel.Platform.Memory())
+	f.data.DropAll(f.kernel.MemoryFile())
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -202,7 +202,7 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, _ *fs.Inode, size in
 	// and can remove them.
 	f.dataMu.Lock()
 	defer f.dataMu.Unlock()
-	f.data.Truncate(uint64(size), f.kernel.Platform.Memory())
+	f.data.Truncate(uint64(size), f.kernel.MemoryFile())
 
 	return nil
 }
@@ -312,7 +312,7 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		return 0, nil
 	}
 
-	mem := rw.f.kernel.Platform.Memory()
+	mf := rw.f.kernel.MemoryFile()
 	var done uint64
 	seg, gap := rw.f.data.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -320,7 +320,7 @@ func (rw *fileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
+			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
 			if err != nil {
 				return done, err
 			}
@@ -378,7 +378,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		}
 	}()
 
-	mem := rw.f.kernel.Platform.Memory()
+	mf := rw.f.kernel.MemoryFile()
 	// Page-aligned mr for when we need to allocate memory. RoundUp can't
 	// overflow since end is an int64.
 	pgstartaddr := usermem.Addr(rw.offset).RoundDown()
@@ -392,7 +392,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Write)
+			ims, err := mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Write)
 			if err != nil {
 				return done, err
 			}
@@ -412,7 +412,7 @@ func (rw *fileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error)
 		case gap.Ok():
 			// Allocate memory for the write.
 			gapMR := gap.Range().Intersect(pgMR)
-			fr, err := mem.Allocate(gapMR.Length(), rw.f.memUsage)
+			fr, err := mf.Allocate(gapMR.Length(), rw.f.memUsage)
 			if err != nil {
 				return done, err
 			}
@@ -467,8 +467,8 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 		optional.End = pgend
 	}
 
-	mem := f.kernel.Platform.Memory()
-	cerr := f.data.Fill(ctx, required, optional, mem, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	mf := f.kernel.MemoryFile()
+	cerr := f.data.Fill(ctx, required, optional, mf, f.memUsage, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -479,7 +479,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 		segMR := seg.Range().Intersect(optional)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   mem,
+			File:   mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 		})
 		translatedEnd = segMR.End

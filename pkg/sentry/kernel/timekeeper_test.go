@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	sentrytime "gvisor.googlesource.com/gvisor/pkg/sentry/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -53,13 +53,13 @@ func (c *mockClocks) GetTime(id sentrytime.ClockID) (int64, error) {
 // SetClocks called.
 func stateTestClocklessTimekeeper(tb testing.TB) *Timekeeper {
 	ctx := contexttest.Context(tb)
-	p := platform.FromContext(ctx)
-	fr, err := p.Memory().Allocate(usermem.PageSize, usage.Anonymous)
+	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
+	fr, err := mfp.MemoryFile().Allocate(usermem.PageSize, usage.Anonymous)
 	if err != nil {
 		tb.Fatalf("failed to allocate memory: %v", err)
 	}
 	return &Timekeeper{
-		params: NewVDSOParamPage(p, fr),
+		params: NewVDSOParamPage(mfp, fr),
 	}
 }
 

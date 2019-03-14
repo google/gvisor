@@ -85,6 +85,7 @@ go_library(
         "//pkg/sentry/fs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",

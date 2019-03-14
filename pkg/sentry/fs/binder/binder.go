@@ -25,6 +25,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -74,9 +75,9 @@ func NewDevice(ctx context.Context, owner fs.FileOwner, fp fs.FilePermissions) *
 // ioctl.
 func (bd *Device) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	return fs.NewFile(ctx, d, flags, &Proc{
-		bd:       bd,
-		task:     kernel.TaskFromContext(ctx),
-		platform: platform.FromContext(ctx),
+		bd:   bd,
+		task: kernel.TaskFromContext(ctx),
+		mfp:  pgalloc.MemoryFileProviderFromContext(ctx),
 	}), nil
 }
 
@@ -88,14 +89,14 @@ type Proc struct {
 	fsutil.FileNoFsync       `state:"nosave"`
 	fsutil.FileNotDirReaddir `state:"nosave"`
 
-	bd       *Device
-	task     *kernel.Task
-	platform platform.Platform
+	bd   *Device
+	task *kernel.Task
+	mfp  pgalloc.MemoryFileProvider
 
 	// mu protects fr.
 	mu sync.Mutex `state:"nosave"`
 
-	// mapped is memory allocated from platform.Memory() by AddMapping.
+	// mapped is memory allocated from mfp.MemoryFile() by AddMapping.
 	mapped platform.FileRange
 }
 
@@ -104,7 +105,7 @@ func (bp *Proc) Release() {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 	if bp.mapped.Length() != 0 {
-		bp.platform.Memory().DecRef(bp.mapped)
+		bp.mfp.MemoryFile().DecRef(bp.mapped)
 	}
 }
 
@@ -204,7 +205,7 @@ func (bp *Proc) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar userm
 	}
 	// Binder only allocates and maps a single page up-front
 	// (drivers/android/binder.c:binder_mmap() => binder_update_page_range()).
-	fr, err := bp.platform.Memory().Allocate(usermem.PageSize, usage.Anonymous)
+	fr, err := bp.mfp.MemoryFile().Allocate(usermem.PageSize, usage.Anonymous)
 	if err != nil {
 		return err
 	}
@@ -241,7 +242,7 @@ func (bp *Proc) Translate(ctx context.Context, required, optional memmap.Mappabl
 		return []memmap.Translation{
 			{
 				Source: memmap.MappableRange{0, usermem.PageSize},
-				File:   bp.platform.Memory(),
+				File:   bp.mfp.MemoryFile(),
 				Offset: bp.mapped.Start,
 			},
 		}, err

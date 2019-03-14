@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
@@ -77,7 +78,7 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) platform.FileR
 }
 
 // Fill attempts to ensure that all memmap.Mappable offsets in required are
-// mapped to a platform.File offset, by allocating from mem with the given
+// mapped to a platform.File offset, by allocating from mf with the given
 // memory usage kind and invoking readAt to store data into memory. (If readAt
 // returns a successful partial read, Fill will call it repeatedly until all
 // bytes have been read.) EOF is handled consistently with the requirements of
@@ -90,7 +91,7 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) platform.FileR
 //
 // Preconditions: required.Length() > 0. optional.IsSupersetOf(required).
 // required and optional must be page-aligned.
-func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, mem platform.Memory, kind usage.MemoryKind, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) error {
+func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, mf *pgalloc.MemoryFile, kind usage.MemoryKind, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) error {
 	gap := frs.LowerBoundGap(required.Start)
 	for gap.Ok() && gap.Start() < required.End {
 		if gap.Range().Length() == 0 {
@@ -100,7 +101,7 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 		gr := gap.Range().Intersect(optional)
 
 		// Read data into the gap.
-		fr, err := platform.AllocateAndFill(mem, gr.Length(), kind, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+		fr, err := mf.AllocateAndFill(gr.Length(), kind, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
 			var done uint64
 			for !dsts.IsEmpty() {
 				n, err := readAt(ctx, dsts, gr.Start+done)
@@ -108,7 +109,7 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 				dsts = dsts.DropFirst64(n)
 				if err != nil {
 					if err == io.EOF {
-						// platform.AllocateAndFill truncates down to a page
+						// MemoryFile.AllocateAndFill truncates down to a page
 						// boundary, but FileRangeSet.Fill is supposed to
 						// zero-fill to the end of the page in this case.
 						donepgaddr, ok := usermem.Addr(done).RoundUp()
@@ -143,20 +144,20 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 // corresponding platform.FileRanges.
 //
 // Preconditions: mr must be page-aligned.
-func (frs *FileRangeSet) Drop(mr memmap.MappableRange, mem platform.Memory) {
+func (frs *FileRangeSet) Drop(mr memmap.MappableRange, mf *pgalloc.MemoryFile) {
 	seg := frs.LowerBoundSegment(mr.Start)
 	for seg.Ok() && seg.Start() < mr.End {
 		seg = frs.Isolate(seg, mr)
-		mem.DecRef(seg.FileRange())
+		mf.DecRef(seg.FileRange())
 		seg = frs.Remove(seg).NextSegment()
 	}
 }
 
 // DropAll removes all segments in mr, freeing the corresponding
 // platform.FileRanges.
-func (frs *FileRangeSet) DropAll(mem platform.Memory) {
+func (frs *FileRangeSet) DropAll(mf *pgalloc.MemoryFile) {
 	for seg := frs.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		mem.DecRef(seg.FileRange())
+		mf.DecRef(seg.FileRange())
 	}
 	frs.RemoveAll()
 }
@@ -164,7 +165,7 @@ func (frs *FileRangeSet) DropAll(mem platform.Memory) {
 // Truncate updates frs to reflect Mappable truncation to the given length:
 // bytes after the new EOF on the same page are zeroed, and pages after the new
 // EOF are freed.
-func (frs *FileRangeSet) Truncate(end uint64, mem platform.Memory) {
+func (frs *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) {
 	pgendaddr, ok := usermem.Addr(end).RoundUp()
 	if ok {
 		pgend := uint64(pgendaddr)
@@ -173,7 +174,7 @@ func (frs *FileRangeSet) Truncate(end uint64, mem platform.Memory) {
 		frs.SplitAt(pgend)
 		seg := frs.LowerBoundSegment(pgend)
 		for seg.Ok() {
-			mem.DecRef(seg.FileRange())
+			mf.DecRef(seg.FileRange())
 			seg = frs.Remove(seg).NextSegment()
 		}
 
@@ -189,7 +190,7 @@ func (frs *FileRangeSet) Truncate(end uint64, mem platform.Memory) {
 	if seg.Ok() {
 		fr := seg.FileRange()
 		fr.Start += end - seg.Start()
-		ims, err := mem.MapInternal(fr, usermem.Write)
+		ims, err := mf.MapInternal(fr, usermem.Write)
 		if err != nil {
 			// There's no good recourse from here. This means
 			// that we can't keep cached memory consistent with

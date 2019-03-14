@@ -23,7 +23,6 @@ go_library(
         "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
-        "//pkg/sentry/platform",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
         "//pkg/syserror",

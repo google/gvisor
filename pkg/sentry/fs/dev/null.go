@@ -21,7 +21,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -115,7 +115,7 @@ var _ fs.FileOperations = (*zeroFileOperations)(nil)
 
 // ConfigureMMap implements fs.FileOperations.ConfigureMMap.
 func (*zeroFileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MMapOpts) error {
-	m, err := mm.NewSharedAnonMappable(opts.Length, platform.FromContext(ctx))
+	m, err := mm.NewSharedAnonMappable(opts.Length, pgalloc.MemoryFileProviderFromContext(ctx))
 	if err != nil {
 		return err
 	}

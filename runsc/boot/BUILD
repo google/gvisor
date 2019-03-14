@@ -51,6 +51,8 @@ go_library(
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",
+        "//pkg/sentry/memutil",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/ptrace",

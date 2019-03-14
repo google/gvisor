@@ -34,7 +34,6 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/platform",
-        "//pkg/sentry/platform/filemem",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/platform/procid",
         "//pkg/sentry/platform/ring0",

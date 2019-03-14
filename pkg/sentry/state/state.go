@@ -22,7 +22,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
 	"gvisor.googlesource.com/gvisor/pkg/state/statefile"
 )
@@ -95,7 +94,7 @@ type LoadOpts struct {
 }
 
 // Load loads the given kernel, setting the provided platform and stack.
-func (opts LoadOpts) Load(k *kernel.Kernel, p platform.Platform, n inet.Stack) error {
+func (opts LoadOpts) Load(k *kernel.Kernel, n inet.Stack) error {
 	// Open the file.
 	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
@@ -105,5 +104,5 @@ func (opts LoadOpts) Load(k *kernel.Kernel, p platform.Platform, n inet.Stack) e
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(r, p, n)
+	return k.LoadFrom(r, n)
 }

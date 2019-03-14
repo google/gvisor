@@ -44,10 +44,10 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 		return nil, 0
 	}
 
-	mem := d.k.Platform.Memory()
-	mem.UpdateUsage()
+	mf := d.k.MemoryFile()
+	mf.UpdateUsage()
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
-	totalSize := usage.TotalMemory(mem.TotalSize(), totalUsage)
+	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)
 	anon := snapshot.Anonymous + snapshot.Tmpfs
 	file := snapshot.PageCache + snapshot.Mapped
 	// We don't actually have active/inactive LRUs, so just make up numbers.

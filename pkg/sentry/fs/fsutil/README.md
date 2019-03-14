@@ -112,11 +112,12 @@ finds the file that was mapped and its `CachingInodeOperations`. It then calls
 It may choose to allocate more memory (i.e. do "readahead") to minimize
 subsequent faults.
 
-Memory that is allocated comes from a host tmpfs file (see `filemem.FileMem`).
-The host tmpfs file memory is brought up to date with the contents of the mapped
-file on its filesystem. The region of the host tmpfs file that reflects the
-mapped file is then mapped into the host address space of the application so
-that subsequent memory accesses do not repeatedly generate a `SIGSEGV`.
+Memory that is allocated comes from a host tmpfs file (see
+`pgalloc.MemoryFile`). The host tmpfs file memory is brought up to date with the
+contents of the mapped file on its filesystem. The region of the host tmpfs file
+that reflects the mapped file is then mapped into the host address space of the
+application so that subsequent memory accesses do not repeatedly generate a
+`SIGSEGV`.
 
 The range that was allocated, including any extra memory allocation to minimize
 faults, is marked dirty due to the write fault. This overcounts dirty memory if

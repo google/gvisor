@@ -23,14 +23,16 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
-func NewMemoryManager(p platform.Platform) *MemoryManager {
+func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider) *MemoryManager {
 	return &MemoryManager{
 		p:           p,
+		mfp:         mfp,
 		haveASIO:    p.SupportsAddressSpaceIO(),
 		privateRefs: &privateRefs{},
 		users:       1,
@@ -60,6 +62,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	defer mm.mappingMu.RUnlock()
 	mm2 := &MemoryManager{
 		p:           mm.p,
+		mfp:         mm.mfp,
 		haveASIO:    mm.haveASIO,
 		layout:      mm.layout,
 		privateRefs: mm.privateRefs,

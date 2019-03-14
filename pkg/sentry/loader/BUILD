@@ -39,7 +39,7 @@ go_library(
         "//pkg/sentry/limits",
         "//pkg/sentry/memmap",
         "//pkg/sentry/mm",
-        "//pkg/sentry/platform",
+        "//pkg/sentry/pgalloc",
         "//pkg/sentry/safemem",
         "//pkg/sentry/uniqueid",
         "//pkg/sentry/usage",
