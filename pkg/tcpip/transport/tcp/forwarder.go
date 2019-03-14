@@ -68,7 +68,7 @@ func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, n
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.
-	if !s.parse() || s.flags != flagSyn {
+	if !s.parse() || s.flags != header.TCPFlagSyn {
 		return false
 	}
 

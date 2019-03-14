@@ -17,6 +17,7 @@ package tcp
 import (
 	"container/heap"
 
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
 )
 
@@ -133,7 +134,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	// sequence numbers that have been consumed.
 	TrimSACKBlockList(&r.ep.sack, r.rcvNxt)
 
-	if s.flagIsSet(flagFin) {
+	if s.flagIsSet(header.TCPFlagFin) {
 		r.rcvNxt++
 
 		// Send ACK immediately.
@@ -181,7 +182,7 @@ func (r *receiver) handleRcvdSegment(s *segment) {
 
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {
-		if segLen > 0 || s.flagIsSet(flagFin) {
+		if segLen > 0 || s.flagIsSet(header.TCPFlagFin) {
 			// We only store the segment if it's within our buffer
 			// size limit.
 			if r.pendingBufUsed < r.pendingBufSize {

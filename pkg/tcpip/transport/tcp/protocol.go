@@ -135,7 +135,7 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 	}
 
 	// There's nothing to do if this is already a reset packet.
-	if s.flagIsSet(flagRst) {
+	if s.flagIsSet(header.TCPFlagRst) {
 		return true
 	}
 
@@ -147,13 +147,13 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 func replyWithReset(s *segment) {
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
-	if s.flagIsSet(flagAck) {
+	if s.flagIsSet(header.TCPFlagAck) {
 		seq = s.ackNumber
 	}
 
 	ack := s.sequenceNumber.Add(s.logicalLen())
 
-	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), flagRst|flagAck, seq, ack, 0, nil)
+	sendTCP(&s.route, s.id, buffer.VectorisedView{}, s.route.DefaultTTL(), header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0, nil)
 }
 
 // SetOption implements TransportProtocol.SetOption.

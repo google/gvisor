@@ -24,16 +24,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-// Flags that may be set in a TCP segment.
-const (
-	flagFin = 1 << iota
-	flagSyn
-	flagRst
-	flagPsh
-	flagAck
-	flagUrg
-)
-
 // segment represents a TCP segment. It holds the payload and parsed TCP segment
 // information, and can be added to intrusive lists.
 // segment is mostly immutable, the only field allowed to change is viewToDeliver.
@@ -123,10 +113,10 @@ func (s *segment) incRef() {
 // as the data length plus one for each of the SYN and FIN bits set.
 func (s *segment) logicalLen() seqnum.Size {
 	l := seqnum.Size(s.data.Size())
-	if s.flagIsSet(flagSyn) {
+	if s.flagIsSet(header.TCPFlagSyn) {
 		l++
 	}
-	if s.flagIsSet(flagFin) {
+	if s.flagIsSet(header.TCPFlagFin) {
 		l++
 	}
 	return l

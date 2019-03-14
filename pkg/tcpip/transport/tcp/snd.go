@@ -273,7 +273,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 
 // sendAck sends an ACK segment.
 func (s *sender) sendAck() {
-	s.sendSegment(buffer.VectorisedView{}, flagAck, s.sndNxt)
+	s.sendSegment(buffer.VectorisedView{}, header.TCPFlagAck, s.sndNxt)
 }
 
 // updateRTO updates the retransmit timeout when a new roud-trip time is
@@ -483,7 +483,7 @@ func (s *sender) sendData() {
 			// Assign flags. We don't do it above so that we can merge
 			// additional data if Nagle holds the segment.
 			seg.sequenceNumber = s.sndNxt
-			seg.flags = flagAck | flagPsh
+			seg.flags = header.TCPFlagAck | header.TCPFlagPsh
 		}
 
 		var segEnd seqnum.Value
@@ -491,11 +491,11 @@ func (s *sender) sendData() {
 			if s.writeList.Back() != seg {
 				panic("FIN segments must be the final segment in the write list.")
 			}
-			seg.flags = flagAck | flagFin
+			seg.flags = header.TCPFlagAck | header.TCPFlagFin
 			segEnd = seg.sequenceNumber.Add(1)
 		} else {
 			// We're sending a non-FIN segment.
-			if seg.flags&flagFin != 0 {
+			if seg.flags&header.TCPFlagFin != 0 {
 				panic("Netstack queues FIN segments without data.")
 			}
 

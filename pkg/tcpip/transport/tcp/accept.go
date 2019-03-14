@@ -297,7 +297,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 	switch s.flags {
-	case flagSyn:
+	case header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
 		if incSynRcvdCount() {
 			s.incRef()
@@ -315,10 +315,10 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TSVal: tcpTimeStamp(timeStampOffset()),
 				TSEcr: opts.TSVal,
 			}
-			sendSynTCP(&s.route, s.id, flagSyn|flagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
+			sendSynTCP(&s.route, s.id, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 		}
 
-	case flagAck:
+	case header.TCPFlagAck:
 		if data, ok := ctx.isCookieValid(s.id, s.ackNumber-1, s.sequenceNumber-1); ok && int(data) < len(mssTable) {
 			// Create newly accepted endpoint and deliver it.
 			rcvdSynOptions := &header.TCPSynOptions{

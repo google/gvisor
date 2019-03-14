@@ -1443,7 +1443,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, ne
 	}
 
 	e.stack.Stats().TCP.ValidSegmentsReceived.Increment()
-	if (s.flags & flagRst) != 0 {
+	if (s.flags & header.TCPFlagRst) != 0 {
 		e.stack.Stats().TCP.ResetsReceived.Increment()
 	}
 
