@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
@@ -101,20 +102,20 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 
 	i.touchModificationTime(ctx, dir)
 
-	// Get the attributes of the file.
-	qid, mask, p9attr, err := getattr(ctx, newFile)
+	// Get an unopened p9.File for the file we created so that it can be cloned
+	// and re-opened multiple times after creation, while also getting its
+	// attributes. Both are required for inodeOperations.
+	qids, unopened, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		newFile.close(ctx)
 		return nil, err
 	}
-
-	// Get an unopened p9.File for the file we created so that it can be
-	// cloned and re-opened multiple times after creation.
-	_, unopened, err := i.fileState.file.walk(ctx, []string{name})
-	if err != nil {
+	if len(qids) != 1 {
+		log.Warningf("WalkGetAttr(%s) succeeded, but returned %d QIDs (%v), wanted 1", name, len(qids), qids)
 		newFile.close(ctx)
-		return nil, err
+		return nil, syserror.EIO
 	}
+	qid := qids[0]
 
 	// Construct the InodeOperations.
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr, false)
