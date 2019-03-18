@@ -286,7 +286,7 @@ func (r *Registry) remove(s *Shm) {
 	defer s.mu.Unlock()
 
 	if s.key != linux.IPC_PRIVATE {
-		panic(fmt.Sprintf("Attempted to remove shm segment %+v from the registry whose key is still associated", s))
+		panic(fmt.Sprintf("Attempted to remove shm segment %d (key=%d) from the registry whose key is still associated", s.ID, s.key))
 	}
 
 	delete(r.shms, s.ID)
