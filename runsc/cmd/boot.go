@@ -76,6 +76,11 @@ type Boot struct {
 	// startSyncFD is the file descriptor to synchronize runsc and sandbox.
 	startSyncFD int
 
+	// mountsFD is the file descriptor to read list of mounts after they have
+	// been resolved (direct paths, no symlinks). They are resolved outside the
+	// sandbox (e.g. gofer) and sent through this FD.
+	mountsFD int
+
 	// pidns is set if the sanadbox is in its own pid namespace.
 	pidns bool
 }
@@ -111,6 +116,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
+	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -190,6 +196,16 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		}
 		panic("setCapsAndCallSelf must never return success")
 	}
+
+	// Read resolved mount list and replace the original one from the spec.
+	mountsFile := os.NewFile(uintptr(b.mountsFD), "mounts file")
+	cleanMounts, err := specutils.ReadMounts(mountsFile)
+	if err != nil {
+		mountsFile.Close()
+		Fatalf("Error reading mounts file: %v", err)
+	}
+	mountsFile.Close()
+	spec.Mounts = cleanMounts
 
 	// Create the loader.
 	bootArgs := boot.Args{

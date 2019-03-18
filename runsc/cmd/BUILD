@@ -60,6 +60,7 @@ go_test(
         "capability_test.go",
         "delete_test.go",
         "exec_test.go",
+        "gofer_test.go",
     ],
     data = [
         "//runsc",

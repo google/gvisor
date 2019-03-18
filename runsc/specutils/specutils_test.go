@@ -219,6 +219,37 @@ func TestSpecInvalid(t *testing.T) {
 			},
 			error: "must be an absolute path",
 		},
+		{
+			name: "invalid mount option",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Mounts: []specs.Mount{
+					{
+						Source:      "/src",
+						Destination: "/dst",
+						Type:        "bind",
+						Options:     []string{"shared"},
+					},
+				},
+			},
+			error: "is not supported",
+		},
+		{
+			name: "invalid rootfs propagation",
+			spec: specs.Spec{
+				Root: &specs.Root{Path: "/"},
+				Process: &specs.Process{
+					Args: []string{"/bin/true"},
+				},
+				Linux: &specs.Linux{
+					RootfsPropagation: "foo",
+				},
+			},
+			error: "root mount propagation option must specify private or slave",
+		},
 	} {
 		err := ValidateSpec(&test.spec)
 		if len(test.error) == 0 {

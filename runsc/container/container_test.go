@@ -1594,6 +1594,171 @@ func TestCreateWorkingDir(t *testing.T) {
 	}
 }
 
+// TestMountPropagation verifies that mount propagates to slave but not to
+// private mounts.
+func TestMountPropagation(t *testing.T) {
+	// Setup dir structure:
+	//   - src: is mounted as shared and is used as source for both private and
+	//     slave mounts
+	//   - dir: will be bind mounted inside src and should propagate to slave
+	tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "mount")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+	src := filepath.Join(tmpDir, "src")
+	srcMnt := filepath.Join(src, "mnt")
+	dir := filepath.Join(tmpDir, "dir")
+	for _, path := range []string{src, srcMnt, dir} {
+		if err := os.MkdirAll(path, 0777); err != nil {
+			t.Fatalf("MkdirAll(%q): %v", path, err)
+		}
+	}
+	dirFile := filepath.Join(dir, "file")
+	f, err := os.Create(dirFile)
+	if err != nil {
+		t.Fatalf("os.Create(%q): %v", dirFile, err)
+	}
+	f.Close()
+
+	// Setup src as a shared mount.
+	if err := syscall.Mount(src, src, "bind", syscall.MS_BIND, ""); err != nil {
+		t.Fatalf("mount(%q, %q, MS_BIND): %v", dir, srcMnt, err)
+	}
+	if err := syscall.Mount("", src, "", syscall.MS_SHARED, ""); err != nil {
+		t.Fatalf("mount(%q, MS_SHARED): %v", srcMnt, err)
+	}
+
+	spec := testutil.NewSpecWithArgs("sleep", "1000")
+
+	priv := filepath.Join(tmpDir, "priv")
+	slave := filepath.Join(tmpDir, "slave")
+	spec.Mounts = []specs.Mount{
+		{
+			Source:      src,
+			Destination: priv,
+			Type:        "bind",
+			Options:     []string{"private"},
+		},
+		{
+			Source:      src,
+			Destination: slave,
+			Type:        "bind",
+			Options:     []string{"slave"},
+		},
+	}
+
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+	defer os.RemoveAll(bundleDir)
+
+	cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	if err != nil {
+		t.Fatalf("creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// After the container is started, mount dir inside source and check what
+	// happens to both destinations.
+	if err := syscall.Mount(dir, srcMnt, "bind", syscall.MS_BIND, ""); err != nil {
+		t.Fatalf("mount(%q, %q, MS_BIND): %v", dir, srcMnt, err)
+	}
+
+	// Check that mount didn't propagate to private mount.
+	privFile := filepath.Join(priv, "mnt", "file")
+	args := &control.ExecArgs{
+		Filename: "/usr/bin/test",
+		Argv:     []string{"test", "!", "-f", privFile},
+	}
+	if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+		t.Fatalf("exec: test ! -f %q, ws: %v, err: %v", privFile, ws, err)
+	}
+
+	// Check that mount propagated to slave mount.
+	slaveFile := filepath.Join(slave, "mnt", "file")
+	args = &control.ExecArgs{
+		Filename: "/usr/bin/test",
+		Argv:     []string{"test", "-f", slaveFile},
+	}
+	if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+		t.Fatalf("exec: test -f %q, ws: %v, err: %v", privFile, ws, err)
+	}
+}
+
+func TestMountSymlink(t *testing.T) {
+	for _, conf := range configs(overlay) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir() failed: %v", err)
+		}
+
+		source := path.Join(dir, "source")
+		target := path.Join(dir, "target")
+		for _, path := range []string{source, target} {
+			if err := os.MkdirAll(path, 0777); err != nil {
+				t.Fatalf("os.MkdirAll(): %v", err)
+			}
+		}
+		f, err := os.Create(path.Join(source, "file"))
+		if err != nil {
+			t.Fatalf("os.Create(): %v", err)
+		}
+		f.Close()
+
+		link := path.Join(dir, "link")
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+		}
+
+		spec := testutil.NewSpecWithArgs("/bin/sleep", "1000")
+
+		// Mount to a symlink to ensure the mount code will follow it and mount
+		// at the symlink target.
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Type:        "bind",
+			Destination: link,
+			Source:      source,
+		})
+
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("creating container: %v", err)
+		}
+		defer cont.Destroy()
+
+		if err := cont.Start(conf); err != nil {
+			t.Fatalf("starting container: %v", err)
+		}
+
+		// Check that symlink was resolved and mount was created where the symlink
+		// is pointing to.
+		file := path.Join(target, "file")
+		args := &control.ExecArgs{
+			Filename: "/usr/bin/test",
+			Argv:     []string{"test", "-f", file},
+		}
+		if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+			t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
+		}
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

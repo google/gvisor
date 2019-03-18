@@ -6,7 +6,6 @@ go_library(
     name = "container",
     srcs = [
         "container.go",
-        "fs.go",
         "hook.go",
         "status.go",
     ],
@@ -34,7 +33,6 @@ go_test(
     srcs = [
         "console_test.go",
         "container_test.go",
-        "fs_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
     ],

@@ -75,7 +75,7 @@ type Sandbox struct {
 
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
-func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, cg *cgroup.Cgroup) (*Sandbox, error) {
+func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, specFile *os.File, cg *cgroup.Cgroup) (*Sandbox, error) {
 	s := &Sandbox{ID: id, Cgroup: cg}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
@@ -86,17 +86,14 @@ func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	defer c.Clean()
 
 	// Create pipe to synchronize when sandbox process has been booted.
-	fds := make([]int, 2)
-	if err := syscall.Pipe(fds); err != nil {
+	clientSyncFile, sandboxSyncFile, err := os.Pipe()
+	if err != nil {
 		return nil, fmt.Errorf("creating pipe for sandbox %q: %v", s.ID, err)
 	}
-	clientSyncFile := os.NewFile(uintptr(fds[0]), "client sandbox sync")
 	defer clientSyncFile.Close()
 
-	sandboxSyncFile := os.NewFile(uintptr(fds[1]), "sandbox sync")
-
 	// Create the sandbox process.
-	err := s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, sandboxSyncFile)
+	err = s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, specFile, sandboxSyncFile)
 	// sandboxSyncFile has to be closed to be able to detect when the sandbox
 	// process exits unexpectedly.
 	sandboxSyncFile.Close()
@@ -294,7 +291,7 @@ func (s *Sandbox) connError(err error) error {
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, mountsFile, startSyncFile *os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -345,10 +342,14 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd.Args = append(cmd.Args, "--controller-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
-	// Open the spec file to donate to the sandbox.
-	specFile, err := specutils.OpenCleanSpec(bundleDir)
+	defer mountsFile.Close()
+	cmd.ExtraFiles = append(cmd.ExtraFiles, mountsFile)
+	cmd.Args = append(cmd.Args, "--mounts-fd="+strconv.Itoa(nextFD))
+	nextFD++
+
+	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {
-		return fmt.Errorf("opening spec file: %v", err)
+		return err
 	}
 	defer specFile.Close()
 	cmd.ExtraFiles = append(cmd.ExtraFiles, specFile)

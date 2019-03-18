@@ -105,9 +105,9 @@ func FilterNS(filter []specs.LinuxNamespaceType, s *specs.Spec) []specs.LinuxNam
 	return out
 }
 
-// SetNS sets the namespace of the given type.  It must be called with
+// setNS sets the namespace of the given type.  It must be called with
 // OSThreadLocked.
-func SetNS(fd, nsType uintptr) error {
+func setNS(fd, nsType uintptr) error {
 	if _, _, err := syscall.RawSyscall(unix.SYS_SETNS, fd, nsType, 0); err != 0 {
 		return err
 	}
@@ -119,30 +119,30 @@ func SetNS(fd, nsType uintptr) error {
 //
 // Preconditions: Must be called with os thread locked.
 func ApplyNS(ns specs.LinuxNamespace) (func(), error) {
-	log.Infof("applying namespace %v at path %q", ns.Type, ns.Path)
+	log.Infof("Applying namespace %v at path %q", ns.Type, ns.Path)
 	newNS, err := os.Open(ns.Path)
 	if err != nil {
 		return nil, fmt.Errorf("error opening %q: %v", ns.Path, err)
 	}
 	defer newNS.Close()
 
-	// Store current netns to restore back after child is started.
+	// Store current namespace to restore back.
 	curPath := nsPath(ns.Type)
 	oldNS, err := os.Open(curPath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening %q: %v", curPath, err)
 	}
 
-	// Set netns to the one requested and setup function to restore it back.
+	// Set namespace to the one requested and setup function to restore it back.
 	flag := nsCloneFlag(ns.Type)
-	if err := SetNS(newNS.Fd(), flag); err != nil {
+	if err := setNS(newNS.Fd(), flag); err != nil {
 		oldNS.Close()
 		return nil, fmt.Errorf("error setting namespace of type %v and path %q: %v", ns.Type, ns.Path, err)
 	}
 	return func() {
-		log.Infof("restoring namespace %v", ns.Type)
+		log.Infof("Restoring namespace %v", ns.Type)
 		defer oldNS.Close()
-		if err := SetNS(oldNS.Fd(), flag); err != nil {
+		if err := setNS(oldNS.Fd(), flag); err != nil {
 			panic(fmt.Sprintf("error restoring namespace: of type %v: %v", ns.Type, err))
 		}
 	}, nil

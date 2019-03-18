@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package container
+package cmd
 
 import (
 	"fmt"
@@ -21,9 +21,15 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
-
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
+
+func tmpDir() string {
+	dir := os.Getenv("TEST_TMPDIR")
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return dir
+}
 
 type dir struct {
 	rel  string
@@ -50,7 +56,7 @@ func construct(root string, dirs []dir) error {
 }
 
 func TestResolveSymlinks(t *testing.T) {
-	root, err := ioutil.TempDir(testutil.TmpDir(), "root")
+	root, err := ioutil.TempDir(tmpDir(), "root")
 	if err != nil {
 		t.Fatal("ioutil.TempDir() failed:", err)
 	}
@@ -141,7 +147,7 @@ func TestResolveSymlinks(t *testing.T) {
 }
 
 func TestResolveSymlinksLoop(t *testing.T) {
-	root, err := ioutil.TempDir(testutil.TmpDir(), "root")
+	root, err := ioutil.TempDir(tmpDir(), "root")
 	if err != nil {
 		t.Fatal("ioutil.TempDir() failed:", err)
 	}

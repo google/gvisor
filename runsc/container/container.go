@@ -281,18 +281,6 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	if specutils.ShouldCreateSandbox(spec) {
 		log.Debugf("Creating new sandbox for container %q", id)
 
-		// Setup rootfs and mounts. It returns a new mount list with destination
-		// paths resolved. Since the spec for the root container is read from disk,
-		// Write the new spec to a new file that will be used by the sandbox.
-		cleanMounts, err := setupFS(spec, conf, bundleDir)
-		if err != nil {
-			return nil, fmt.Errorf("setup mounts: %v", err)
-		}
-		spec.Mounts = cleanMounts
-		if err := specutils.WriteCleanSpec(bundleDir, spec); err != nil {
-			return nil, fmt.Errorf("writing clean spec: %v", err)
-		}
-
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all tneir children processes).
 		cg, err := cgroup.New(spec)
@@ -306,14 +294,14 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 			}
 		}
 		if err := runInCgroup(cg, func() error {
-			ioFiles, err := c.createGoferProcess(spec, conf, bundleDir)
+			ioFiles, specFile, err := c.createGoferProcess(spec, conf, bundleDir)
 			if err != nil {
 				return err
 			}
 
 			// Start a new sandbox for this container. Any errors after this point
 			// must destroy the container.
-			c.Sandbox, err = sandbox.New(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles, cg)
+			c.Sandbox, err = sandbox.New(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles, specFile, cg)
 			return err
 		}); err != nil {
 			return nil, err
@@ -387,26 +375,22 @@ func (c *Container) Start(conf *boot.Config) error {
 			return err
 		}
 	} else {
-		// Setup rootfs and mounts. It returns a new mount list with destination
-		// paths resolved. Replace the original spec with new mount list and start
-		// container.
-		cleanMounts, err := setupFS(c.Spec, conf, c.BundleDir)
-		if err != nil {
-			return fmt.Errorf("setup mounts: %v", err)
-		}
-		c.Spec.Mounts = cleanMounts
-		if err := specutils.WriteCleanSpec(c.BundleDir, c.Spec); err != nil {
-			return fmt.Errorf("writing clean spec: %v", err)
-		}
-
 		// Join cgroup to strt gofer process to ensure it's part of the cgroup from
 		// the start (and all tneir children processes).
 		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
 			// Create the gofer process.
-			ioFiles, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
+			ioFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
 			if err != nil {
 				return err
 			}
+			defer mountsFile.Close()
+
+			cleanMounts, err := specutils.ReadMounts(mountsFile)
+			if err != nil {
+				return fmt.Errorf("reading mounts file: %v", err)
+			}
+			c.Spec.Mounts = cleanMounts
+
 			return c.Sandbox.StartContainer(c.Spec, conf, c.ID, ioFiles)
 		}); err != nil {
 			return err
@@ -665,12 +649,6 @@ func (c *Container) Destroy() error {
 		errs = append(errs, err.Error())
 	}
 
-	if err := destroyFS(c.Spec); err != nil {
-		err = fmt.Errorf("destroying container fs: %v", err)
-		log.Warningf("%v", err)
-		errs = append(errs, err.Error())
-	}
-
 	if err := os.RemoveAll(c.Root); err != nil && !os.IsNotExist(err) {
 		err = fmt.Errorf("deleting container root directory %q: %v", c.Root, err)
 		log.Warningf("%v", err)
@@ -787,7 +765,7 @@ func (c *Container) waitForStopped() error {
 	return backoff.Retry(op, b)
 }
 
-func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, error) {
+func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bundleDir string) ([]*os.File, *os.File, error) {
 	// Start with the general config flags.
 	args := conf.ToFlags()
 
@@ -800,7 +778,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	if conf.LogFilename != "" {
 		logFile, err := os.OpenFile(conf.LogFilename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return nil, fmt.Errorf("opening log file %q: %v", conf.LogFilename, err)
+			return nil, nil, fmt.Errorf("opening log file %q: %v", conf.LogFilename, err)
 		}
 		defer logFile.Close()
 		goferEnds = append(goferEnds, logFile)
@@ -811,7 +789,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	if conf.DebugLog != "" {
 		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer")
 		if err != nil {
-			return nil, fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
+			return nil, nil, fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
 		}
 		defer debugLogFile.Close()
 		goferEnds = append(goferEnds, debugLogFile)
@@ -825,30 +803,39 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	// Open the spec file to donate to the sandbox.
-	specFile, err := specutils.OpenCleanSpec(bundleDir)
+	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {
-		return nil, fmt.Errorf("opening spec file: %v", err)
+		return nil, nil, fmt.Errorf("opening spec file: %v", err)
 	}
 	defer specFile.Close()
 	goferEnds = append(goferEnds, specFile)
 	args = append(args, "--spec-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
+	// Create pipe that allows gofer to send mount list to sandbox after all paths
+	// have been resolved.
+	mountsSand, mountsGofer, err := os.Pipe()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer mountsGofer.Close()
+	goferEnds = append(goferEnds, mountsGofer)
+	args = append(args, fmt.Sprintf("--mounts-fd=%d", nextFD))
+	nextFD++
+
 	// Add root mount and then add any other additional mounts.
 	mountCount := 1
-
-	// Add additional mounts.
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			mountCount++
 		}
 	}
-	sandEnds := make([]*os.File, 0, mountCount)
 
+	sandEnds := make([]*os.File, 0, mountCount)
 	for i := 0; i < mountCount; i++ {
 		fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
@@ -884,12 +871,12 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Start the gofer in the given namespace.
 	log.Debugf("Starting gofer: %s %v", binPath, args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
 	c.goferIsChild = true
-	return sandEnds, nil
+	return sandEnds, mountsSand, nil
 }
 
 // changeStatus transitions from one status to another ensuring that the
