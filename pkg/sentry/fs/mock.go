@@ -132,7 +132,7 @@ func (n *MockInodeOperations) CreateDirectory(context.Context, *Inode, string, F
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (n *MockInodeOperations) Rename(ctx context.Context, oldParent *Inode, oldName string, newParent *Inode, newName string) error {
+func (n *MockInodeOperations) Rename(ctx context.Context, oldParent *Inode, oldName string, newParent *Inode, newName string, replacement bool) error {
 	n.renameCalled = true
 	return nil
 }

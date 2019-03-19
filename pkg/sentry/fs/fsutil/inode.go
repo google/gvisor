@@ -338,7 +338,7 @@ func (InodeNotDirectory) RemoveDirectory(context.Context, *fs.Inode, string) err
 }
 
 // Rename implements fs.FileOperations.Rename.
-func (InodeNotDirectory) Rename(context.Context, *fs.Inode, string, *fs.Inode, string) error {
+func (InodeNotDirectory) Rename(context.Context, *fs.Inode, string, *fs.Inode, string, bool) error {
 	return syserror.EINVAL
 }
 
@@ -378,7 +378,7 @@ func (InodeNoopTruncate) Truncate(context.Context, *fs.Inode, int64) error {
 type InodeNotRenameable struct{}
 
 // Rename implements fs.InodeOperations.Rename.
-func (InodeNotRenameable) Rename(context.Context, *fs.Inode, string, *fs.Inode, string) error {
+func (InodeNotRenameable) Rename(context.Context, *fs.Inode, string, *fs.Inode, string, bool) error {
 	return syserror.EINVAL
 }
 

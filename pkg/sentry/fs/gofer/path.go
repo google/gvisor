@@ -298,7 +298,7 @@ func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, na
 }
 
 // Rename renames this node.
-func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
+func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	// Unwrap the new parent to a *inodeOperations.
 	newParentInodeOperations, ok := newParent.InodeOperations.(*inodeOperations)
 	if !ok {
@@ -323,7 +323,12 @@ func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldNa
 			oldParentInodeOperations.cachingInodeOps.DecLinks(ctx)
 		}
 		if i.session().cachePolicy.cacheUAttrs(newParent) {
-			newParentInodeOperations.cachingInodeOps.IncLinks(ctx)
+			// Only IncLinks if there is a new addition to
+			// newParent. If this is replacement, then the total
+			// count remains the same.
+			if !replacement {
+				newParentInodeOperations.cachingInodeOps.IncLinks(ctx)
+			}
 		}
 	}
 	if i.session().cachePolicy.cacheReaddir() {

@@ -107,8 +107,8 @@ func (f *fileInodeOperations) Mappable(*fs.Inode) memmap.Mappable {
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (*fileInodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return rename(ctx, oldParent, oldName, newParent, newName)
+func (*fileInodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

@@ -38,7 +38,7 @@ var fsInfo = fs.Info{
 }
 
 // rename implements fs.InodeOperations.Rename for tmpfs nodes.
-func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
+func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	op, ok := oldParent.InodeOperations.(*Dir)
 	if !ok {
 		return syserror.EXDEV
@@ -47,7 +47,7 @@ func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent 
 	if !ok {
 		return syserror.EXDEV
 	}
-	return ramfs.Rename(ctx, op.ramfsDir, oldName, np.ramfsDir, newName)
+	return ramfs.Rename(ctx, op.ramfsDir, oldName, np.ramfsDir, newName, replacement)
 }
 
 // Dir is a directory.
@@ -238,8 +238,8 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (d *Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return rename(ctx, oldParent, oldName, newParent, newName)
+func (d *Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
 // StatFS implments fs.InodeOperations.StatFS.
@@ -266,8 +266,8 @@ func NewSymlink(ctx context.Context, target string, owner fs.FileOwner, msrc *fs
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (s *Symlink) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return rename(ctx, oldParent, oldName, newParent, newName)
+func (s *Symlink) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
 // StatFS returns the tmpfs info.
@@ -295,8 +295,8 @@ func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.Fil
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (s *Socket) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return rename(ctx, oldParent, oldName, newParent, newName)
+func (s *Socket) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
 // StatFS returns the tmpfs info.
@@ -332,8 +332,8 @@ func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, 
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (f *Fifo) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return rename(ctx, oldParent, oldName, newParent, newName)
+func (f *Fifo) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
 // StatFS returns the tmpfs info.

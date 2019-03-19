@@ -152,7 +152,8 @@ func (i *Inode) WriteOut(ctx context.Context) error {
 // Lookup calls i.InodeOperations.Lookup with i as the directory.
 func (i *Inode) Lookup(ctx context.Context, name string) (*Dirent, error) {
 	if i.overlay != nil {
-		return overlayLookup(ctx, i.overlay, i, name)
+		d, _, err := overlayLookup(ctx, i.overlay, i, name)
+		return d, err
 	}
 	return i.InodeOperations.Lookup(ctx, i, name)
 }
@@ -211,11 +212,11 @@ func (i *Inode) Remove(ctx context.Context, d *Dirent, remove *Dirent) error {
 }
 
 // Rename calls i.InodeOperations.Rename with the given arguments.
-func (i *Inode) Rename(ctx context.Context, oldParent *Dirent, renamed *Dirent, newParent *Dirent, newName string) error {
+func (i *Inode) Rename(ctx context.Context, oldParent *Dirent, renamed *Dirent, newParent *Dirent, newName string, replacement bool) error {
 	if i.overlay != nil {
-		return overlayRename(ctx, i.overlay, oldParent, renamed, newParent, newName)
+		return overlayRename(ctx, i.overlay, oldParent, renamed, newParent, newName, replacement)
 	}
-	return i.InodeOperations.Rename(ctx, oldParent.Inode, renamed.name, newParent.Inode, newName)
+	return i.InodeOperations.Rename(ctx, oldParent.Inode, renamed.name, newParent.Inode, newName, replacement)
 }
 
 // Bind calls i.InodeOperations.Bind with i as the directory.

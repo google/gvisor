@@ -44,7 +44,11 @@ func overlayWriteOut(ctx context.Context, o *overlayEntry) error {
 	return err
 }
 
-func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name string) (*Dirent, error) {
+// overlayLookup performs a lookup in parent.
+//
+// If name exists, it returns true if the Dirent is in the upper, false if the
+// Dirent is in the lower.
+func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name string) (*Dirent, bool, error) {
 	// Hot path. Avoid defers.
 	parent.copyMu.RLock()
 
@@ -71,7 +75,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 			// We encountered an error that an overlay cannot handle,
 			// we must propagate it to the caller.
 			parent.copyMu.RUnlock()
-			return nil, err
+			return nil, false, err
 		}
 		if child != nil {
 			if child.IsNegative() {
@@ -93,23 +97,23 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 					// that negative Dirent being cached in
 					// the Dirent tree, so we can return
 					// one from the overlay.
-					return NewNegativeDirent(name), nil
+					return NewNegativeDirent(name), false, nil
 				}
 				// Upper fs is not OK with a negative Dirent
 				// being cached in the Dirent tree, so don't
 				// return one.
-				return nil, syserror.ENOENT
+				return nil, false, syserror.ENOENT
 			}
 			entry, err := newOverlayEntry(ctx, upperInode, nil, false)
 			if err != nil {
 				// Don't leak resources.
 				upperInode.DecRef()
 				parent.copyMu.RUnlock()
-				return nil, err
+				return nil, false, err
 			}
 			d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
 			parent.copyMu.RUnlock()
-			return d, err
+			return d, true, err
 		}
 	}
 
@@ -127,7 +131,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 				upperInode.DecRef()
 			}
 			parent.copyMu.RUnlock()
-			return nil, err
+			return nil, false, err
 		}
 		if child != nil {
 			if !child.IsNegative() {
@@ -158,9 +162,9 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		// one as well. See comments above regarding negativeUpperChild
 		// for more info.
 		if negativeUpperChild {
-			return NewNegativeDirent(name), nil
+			return NewNegativeDirent(name), false, nil
 		}
-		return nil, syserror.ENOENT
+		return nil, false, syserror.ENOENT
 	}
 
 	// Did we find a lower Inode? Remember this because we may decide we don't
@@ -195,11 +199,11 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 			lowerInode.DecRef()
 		}
 		parent.copyMu.RUnlock()
-		return nil, err
+		return nil, false, err
 	}
 	d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
 	parent.copyMu.RUnlock()
-	return d, err
+	return d, upperInode != nil, err
 }
 
 func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name string, flags FileFlags, perm FilePermissions) (*File, error) {
@@ -317,7 +321,7 @@ func overlayRemove(ctx context.Context, o *overlayEntry, parent *Dirent, child *
 	return nil
 }
 
-func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, renamed *Dirent, newParent *Dirent, newName string) error {
+func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, renamed *Dirent, newParent *Dirent, newName string, replacement bool) error {
 	// To be able to copy these up below, they have to be part of an
 	// overlay file system.
 	//
@@ -327,36 +331,57 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		return syserror.EXDEV
 	}
 
-	// Check here if the file to be replaced exists and is a non-empty
-	// directory. If we copy up first, we may end up copying the directory
-	// but none of its children, so the directory will appear empty in the
-	// upper fs, which will then allow the rename to proceed when it should
-	// return ENOTEMPTY.
-	replaced, err := newParent.Inode.Lookup(ctx, newName)
-	if err != nil && err != syserror.ENOENT {
-		return err
-	}
-	if err == nil {
-		// NOTE: We must drop the reference on replaced before we make
-		// the rename call. For that reason we can't use defer.
-		if !replaced.IsNegative() && IsDir(replaced.Inode.StableAttr) {
-			children, err := readdirOne(ctx, replaced)
-			if err != nil {
-				replaced.DecRef()
-				return err
-			}
-
-			// readdirOne ensures that "." and ".." are not
-			// included among the returned children, so we don't
-			// need to bother checking for them.
-			if len(children) > 0 {
-				replaced.DecRef()
-				return syserror.ENOTEMPTY
-			}
+	if replacement {
+		// Check here if the file to be replaced exists and is a
+		// non-empty directory. If we copy up first, we may end up
+		// copying the directory but none of its children, so the
+		// directory will appear empty in the upper fs, which will then
+		// allow the rename to proceed when it should return ENOTEMPTY.
+		//
+		// NOTE: Ideally, we'd just pass in the replaced
+		// Dirent from Rename, but we must drop the reference on
+		// replaced before we make the rename call, so Rename can't
+		// pass the Dirent to the Inode without significantly
+		// complicating the API. Thus we look it up again here.
+		//
+		// For the same reason we can't use defer here.
+		replaced, inUpper, err := overlayLookup(ctx, newParent.Inode.overlay, newParent.Inode, newName)
+		// If err == ENOENT or a negative Dirent is returned, then
+		// newName has been removed out from under us. That's fine;
+		// filesystems where that can happen must handle stale
+		// 'replaced'.
+		if err != nil && err != syserror.ENOENT {
+			return err
 		}
+		if err == nil {
+			if !inUpper {
+				// newName doesn't exist in
+				// newParent.Inode.overlay.upper, thus from
+				// that Inode's perspective this won't be a
+				// replacing rename.
+				replacement = false
+			}
 
-		replaced.DecRef()
+			if !replaced.IsNegative() && IsDir(replaced.Inode.StableAttr) {
+				children, err := readdirOne(ctx, replaced)
+				if err != nil {
+					replaced.DecRef()
+					return err
+				}
+
+				// readdirOne ensures that "." and ".." are not
+				// included among the returned children, so we don't
+				// need to bother checking for them.
+				if len(children) > 0 {
+					replaced.DecRef()
+					return syserror.ENOTEMPTY
+				}
+			}
+
+			replaced.DecRef()
+		}
 	}
+
 	if err := copyUpLockedForRename(ctx, renamed); err != nil {
 		return err
 	}
@@ -364,7 +389,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		return err
 	}
 	oldName := renamed.name
-	if err := o.upper.InodeOperations.Rename(ctx, oldParent.Inode.overlay.upper, oldName, newParent.Inode.overlay.upper, newName); err != nil {
+	if err := o.upper.InodeOperations.Rename(ctx, oldParent.Inode.overlay.upper, oldName, newParent.Inode.overlay.upper, newName, replacement); err != nil {
 		return err
 	}
 	if renamed.Inode.overlay.lowerExists {

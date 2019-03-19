@@ -1563,6 +1563,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		}
 
 		// newName doesn't exist; simply create it below.
+		replaced = nil
 	} else {
 		// Check constraints on the dirent being replaced.
 
@@ -1620,7 +1621,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		replaced.DecRef()
 	}
 
-	if err := renamed.Inode.Rename(ctx, oldParent, renamed, newParent, newName); err != nil {
+	if err := renamed.Inode.Rename(ctx, oldParent, renamed, newParent, newName, replaced != nil); err != nil {
 		return err
 	}
 

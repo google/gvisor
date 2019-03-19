@@ -15,6 +15,7 @@
 package ramfs
 
 import (
+	"fmt"
 	"sync"
 	"syscall"
 
@@ -383,8 +384,8 @@ func (d *Dir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (*Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string) error {
-	return Rename(ctx, oldParent.InodeOperations, oldName, newParent.InodeOperations, newName)
+func (*Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	return Rename(ctx, oldParent.InodeOperations, oldName, newParent.InodeOperations, newName, replacement)
 }
 
 // dirFileOperations implements fs.FileOperations for a ramfs directory.
@@ -456,7 +457,7 @@ func hasChildren(ctx context.Context, inode *fs.Inode) (bool, error) {
 }
 
 // Rename renames from a *ramfs.Dir to another *ramfs.Dir.
-func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, newParent fs.InodeOperations, newName string) error {
+func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, newParent fs.InodeOperations, newName string, replacement bool) error {
 	op, ok := oldParent.(*Dir)
 	if !ok {
 		return syserror.EXDEV
@@ -469,8 +470,14 @@ func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, n
 	np.mu.Lock()
 	defer np.mu.Unlock()
 
-	// Check whether the ramfs entry to be replaced is a non-empty directory.
-	if replaced, ok := np.children[newName]; ok {
+	// Is this is an overwriting rename?
+	if replacement {
+		replaced, ok := np.children[newName]
+		if !ok {
+			panic(fmt.Sprintf("Dirent claims rename is replacement, but %q is missing from %+v", newName, np))
+		}
+
+		// Non-empty directories cannot be replaced.
 		if fs.IsDir(replaced.StableAttr) {
 			if ok, err := hasChildren(ctx, replaced); err != nil {
 				return err
@@ -478,6 +485,13 @@ func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, n
 				return syserror.ENOTEMPTY
 			}
 		}
+
+		// Remove the replaced child and drop our reference on it.
+		inode, err := np.removeChildLocked(ctx, newName)
+		if err != nil {
+			return err
+		}
+		inode.DecRef()
 	}
 
 	// Be careful, we may have already grabbed this mutex above.

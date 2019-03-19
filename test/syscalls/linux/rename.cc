@@ -155,10 +155,11 @@ TEST(RenameTest, DirectoryToOwnChildDirectory) {
 }
 
 TEST(RenameTest, FileOverwritesFile) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), "first", TempPath::kDefaultFileMode));
+      dir.path(), "first", TempPath::kDefaultFileMode));
   auto f2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), "second", TempPath::kDefaultFileMode));
+      dir.path(), "second", TempPath::kDefaultFileMode));
   ASSERT_THAT(rename(f1.path().c_str(), f2.path().c_str()), SyscallSucceeds());
   EXPECT_THAT(Exists(f1.path()), IsPosixErrorOkAndHolds(false));
 
@@ -166,6 +167,26 @@ TEST(RenameTest, FileOverwritesFile) {
   std::string f2_contents;
   ASSERT_NO_ERRNO(GetContents(f2.path(), &f2_contents));
   EXPECT_EQ("first", f2_contents);
+}
+
+TEST(RenameTest, DirectoryOverwritesDirectoryLinkCount) {
+  auto parent1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(Links(parent1.path()), IsPosixErrorOkAndHolds(2));
+
+  auto parent2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  EXPECT_THAT(Links(parent2.path()), IsPosixErrorOkAndHolds(2));
+
+  auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent1.path()));
+  auto dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent2.path()));
+
+  EXPECT_THAT(Links(parent1.path()), IsPosixErrorOkAndHolds(3));
+  EXPECT_THAT(Links(parent2.path()), IsPosixErrorOkAndHolds(3));
+
+  ASSERT_THAT(rename(dir1.path().c_str(), dir2.path().c_str()),
+              SyscallSucceeds());
+
+  EXPECT_THAT(Links(parent1.path()), IsPosixErrorOkAndHolds(2));
+  EXPECT_THAT(Links(parent2.path()), IsPosixErrorOkAndHolds(3));
 }
 
 TEST(RenameTest, FileDoesNotExist) {

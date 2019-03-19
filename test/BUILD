@@ -1,6 +1,6 @@
 # gVisor is a general-purpose sandbox.
 
-licenses(["notice"])
+package(licenses = ["notice"])
 
 exports_files(["LICENSE"])
 
