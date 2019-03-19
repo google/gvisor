@@ -273,7 +273,7 @@ func TestNetworkReceive(t *testing.T) {
 	}
 }
 
-func sendTo(t *testing.T, s *stack.Stack, addr tcpip.Address) {
+func sendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, payload buffer.View) {
 	r, err := s.FindRoute(0, "", addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		t.Fatalf("FindRoute failed: %v", err)
@@ -281,9 +281,8 @@ func sendTo(t *testing.T, s *stack.Stack, addr tcpip.Address) {
 	defer r.Release()
 
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	if err := r.WritePacket(hdr, buffer.VectorisedView{}, fakeTransNumber, 123); err != nil {
+	if err := r.WritePacket(hdr, payload.ToVectorisedView(), fakeTransNumber, 123); err != nil {
 		t.Errorf("WritePacket failed: %v", err)
-		return
 	}
 }
 
@@ -304,7 +303,7 @@ func TestNetworkSend(t *testing.T) {
 	}
 
 	// Make sure that the link-layer endpoint received the outbound packet.
-	sendTo(t, s, "\x03")
+	sendTo(t, s, "\x03", nil)
 	if c := linkEP.Drain(); c != 1 {
 		t.Errorf("packetCount = %d, want %d", c, 1)
 	}
@@ -351,14 +350,14 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 	})
 
 	// Send a packet to an odd destination.
-	sendTo(t, s, "\x05")
+	sendTo(t, s, "\x05", nil)
 
 	if c := linkEP1.Drain(); c != 1 {
 		t.Errorf("packetCount = %d, want %d", c, 1)
 	}
 
 	// Send a packet to an even destination.
-	sendTo(t, s, "\x06")
+	sendTo(t, s, "\x06", nil)
 
 	if c := linkEP2.Drain(); c != 1 {
 		t.Errorf("packetCount = %d, want %d", c, 1)
@@ -1055,6 +1054,44 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 	}
 }
 
+func TestNICStats(t *testing.T) {
+	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
+	id1, linkEP1 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, id1); err != nil {
+		t.Fatalf("CreateNIC failed: %v", err)
+	}
+	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
+		t.Fatalf("AddAddress failed: %v", err)
+	}
+	// Route all packets for address \x01 to NIC 1.
+	s.SetRouteTable([]tcpip.Route{
+		{"\x01", "\xff", "\x00", 1},
+	})
+
+	// Send a packet to address 1.
+	buf := buffer.NewView(30)
+	linkEP1.Inject(fakeNetNumber, buf.ToVectorisedView())
+	if got, want := s.NICInfo()[1].Stats.Rx.Packets.Value(), uint64(1); got != want {
+		t.Errorf("got Rx.Packets.Value() = %d, want = %d", got, want)
+	}
+
+	if got, want := s.NICInfo()[1].Stats.Rx.Bytes.Value(), uint64(len(buf)); got != want {
+		t.Errorf("got Rx.Bytes.Value() = %d, want = %d", got, want)
+	}
+
+	payload := buffer.NewView(10)
+	// Write a packet out via the address for NIC 1
+	sendTo(t, s, "\x01", payload)
+	want := uint64(linkEP1.Drain())
+	if got := s.NICInfo()[1].Stats.Tx.Packets.Value(); got != want {
+		t.Errorf("got Tx.Packets.Value() = %d, linkEP1.Drain() = %d", got, want)
+	}
+
+	if got, want := s.NICInfo()[1].Stats.Tx.Bytes.Value(), uint64(len(payload)); got != want {
+		t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
+	}
+}
+
 func TestNICForwarding(t *testing.T) {
 	// Create a stack with the fake network protocol, two NICs, each with
 	// an address.
@@ -1091,6 +1128,15 @@ func TestNICForwarding(t *testing.T) {
 	case <-linkEP2.C:
 	default:
 		t.Fatal("Packet not forwarded")
+	}
+
+	// Test that forwarding increments Tx stats correctly.
+	if got, want := s.NICInfo()[2].Stats.Tx.Packets.Value(), uint64(1); got != want {
+		t.Errorf("got Tx.Packets.Value() = %d, want = %d", got, want)
+	}
+
+	if got, want := s.NICInfo()[2].Stats.Tx.Bytes.Value(), uint64(len(buf)); got != want {
+		t.Errorf("got Tx.Bytes.Value() = %d, want = %d", got, want)
 	}
 }
 

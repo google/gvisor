@@ -627,6 +627,8 @@ type NICInfo struct {
 
 	// MTU is the maximum transmission unit.
 	MTU uint32
+
+	Stats NICStats
 }
 
 // NICInfo returns a map of NICIDs to their associated information.
@@ -648,6 +650,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 			ProtocolAddresses: nic.Addresses(),
 			Flags:             flags,
 			MTU:               nic.linkEP.MTU(),
+			Stats:             nic.stats,
 		}
 	}
 	return nics

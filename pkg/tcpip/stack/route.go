@@ -146,8 +146,11 @@ func (r *Route) IsResolutionRequired() bool {
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
 	err := r.ref.ep.WritePacket(r, hdr, payload, protocol, ttl, r.loop)
-	if err == tcpip.ErrNoRoute {
+	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
+	} else {
+		r.ref.nic.stats.Tx.Packets.Increment()
+		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
 	}
 	return err
 }

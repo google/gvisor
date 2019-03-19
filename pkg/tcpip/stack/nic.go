@@ -42,6 +42,20 @@ type NIC struct {
 	primary     map[tcpip.NetworkProtocolNumber]*ilist.List
 	endpoints   map[NetworkEndpointID]*referencedNetworkEndpoint
 	subnets     []tcpip.Subnet
+
+	stats NICStats
+}
+
+// NICStats includes transmitted and received stats.
+type NICStats struct {
+	Tx DirectionStats
+	Rx DirectionStats
+}
+
+// DirectionStats includes packet and byte counts.
+type DirectionStats struct {
+	Packets *tcpip.StatCounter
+	Bytes   *tcpip.StatCounter
 }
 
 // PrimaryEndpointBehavior is an enumeration of an endpoint's primacy behavior.
@@ -73,6 +87,16 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 		demux:     newTransportDemuxer(stack),
 		primary:   make(map[tcpip.NetworkProtocolNumber]*ilist.List),
 		endpoints: make(map[NetworkEndpointID]*referencedNetworkEndpoint),
+		stats: NICStats{
+			Tx: DirectionStats{
+				Packets: &tcpip.StatCounter{},
+				Bytes:   &tcpip.StatCounter{},
+			},
+			Rx: DirectionStats{
+				Packets: &tcpip.StatCounter{},
+				Bytes:   &tcpip.StatCounter{},
+			},
+		},
 	}
 }
 
@@ -384,6 +408,9 @@ func (n *NIC) RemoveAddress(addr tcpip.Address) *tcpip.Error {
 // This rule applies only to the slice itself, not to the items of the slice;
 // the ownership of the items is not retained by the caller.
 func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+	n.stats.Rx.Packets.Increment()
+	n.stats.Rx.Bytes.IncrementBy(uint64(vv.Size()))
+
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
@@ -457,7 +484,14 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 			// Send the packet out of n.
 			hdr := buffer.NewPrependableFromView(vv.First())
 			vv.RemoveFirst()
-			n.linkEP.WritePacket(&r, hdr, vv, protocol)
+
+			// TODO: use route.WritePacket.
+			if err := n.linkEP.WritePacket(&r, hdr, vv, protocol); err != nil {
+				r.Stats().IP.OutgoingPacketErrors.Increment()
+			} else {
+				n.stats.Tx.Packets.Increment()
+				n.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + vv.Size()))
+			}
 		}
 		return
 	}
