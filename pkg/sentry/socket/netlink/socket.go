@@ -291,6 +291,8 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (in
 			if outLen < sizeOfInt32 {
 				return nil, syserr.ErrInvalidArgument
 			}
+			s.mu.Lock()
+			defer s.mu.Unlock()
 			return int32(s.sendBufferSize), nil
 
 		case linux.SO_RCVBUF:
@@ -335,7 +337,9 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			} else if size > maxSendBufferSize {
 				size = maxSendBufferSize
 			}
+			s.mu.Lock()
 			s.sendBufferSize = size
+			s.mu.Unlock()
 			return nil
 		case linux.SO_RCVBUF:
 			if len(opt) < sizeOfInt32 {
