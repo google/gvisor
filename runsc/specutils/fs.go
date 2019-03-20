@@ -20,7 +20,6 @@ import (
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/log"
 )
 
 type mapping struct {
@@ -121,7 +120,7 @@ func validateMount(mnt *specs.Mount) error {
 			_, ok1 := optionsMap[o]
 			_, ok2 := propOptionsMap[o]
 			if !ok1 && !ok2 {
-				log.Warningf("Ignoring unknown mount option %q", o)
+				return fmt.Errorf("unknown mount option %q", o)
 			}
 		}
 	}
