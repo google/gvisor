@@ -745,6 +745,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 			if datalen > ackLeft {
 				seg.data.TrimFront(int(ackLeft))
+				seg.sequenceNumber.UpdateForward(ackLeft)
 				break
 			}
 
