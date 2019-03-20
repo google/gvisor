@@ -26,6 +26,7 @@
 
 #include <ctime>
 #include <vector>
+
 #include "absl/base/attributes.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -234,6 +235,7 @@ bool Equivalent(uint64_t current, uint64_t target, double tolerance) {
   auto abs_diff = target > current ? target - current : current - target;
   return abs_diff <= static_cast<uint64_t>(tolerance * target);
 }
+
 void TestInit(int* argc, char*** argv) {
   ::testing::InitGoogleTest(argc, *argv);
   ::gflags::ParseCommandLineFlags(argc, argv, true);

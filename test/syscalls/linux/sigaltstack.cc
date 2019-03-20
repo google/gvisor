@@ -101,6 +101,7 @@ TEST(SigaltstackTest, ResetByExecve) {
   if (test_src) {
     full_path = JoinPath(test_src, "../../linux/sigaltstack_check");
   }
+
   ASSERT_FALSE(full_path.empty());
 
   pid_t child_pid = -1;

@@ -11,7 +11,6 @@ inconsistency, please file a bug.
 
 The following files are implemented:
 
-
 | File /proc/                 | Content                                               |
 | :------------------------   | :---------------------------------------------------- |
 | [cpuinfo](#cpuinfo)         | Info about the CPU                                    |
@@ -22,7 +21,6 @@ The following files are implemented:
 | [sys](#sys)                 | Change parameters within the kernel                   |
 | [uptime](#uptime)           | Wall clock since boot, combined idle time of all cpus |
 | [version](#version)         | Kernel version                                        |
-
 
 ### cpuinfo
 

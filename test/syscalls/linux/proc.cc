@@ -1258,6 +1258,7 @@ TEST(ProcPidSymlink, SubprocessRunning) {
   EXPECT_THAT(ReadlinkWhileRunning("ns/user", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 }
+
 // FIXME: Inconsistent behavior between gVisor and linux
 // on proc files.
 TEST(ProcPidSymlink, SubprocessZombied) {
@@ -1362,6 +1363,7 @@ TEST(ProcPidFile, SubprocessRunning) {
 // Test whether /proc/PID/ files can be read for a zombie process.
 TEST(ProcPidFile, SubprocessZombie) {
   char buf[1];
+
   // 4.17: Succeeds and returns 1
   // gVisor: Succeds and returns 0
   EXPECT_THAT(ReadWhileZombied("auxv", buf, sizeof(buf)), SyscallSucceeds());

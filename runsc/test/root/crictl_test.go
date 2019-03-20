@@ -36,6 +36,7 @@ import (
 
 // Tests for crictl have to be run as root (rather than in a user namespace)
 // because crictl creates named network namespaces in /var/run/netns/.
+
 func TestCrictlSanity(t *testing.T) {
 	// Setup containerd and crictl.
 	crictl, cleanup, err := setup(t)
@@ -58,6 +59,7 @@ func TestCrictlSanity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func TestMountPaths(t *testing.T) {
 	// Setup containerd and crictl.
 	crictl, cleanup, err := setup(t)
@@ -80,6 +82,7 @@ func TestMountPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
 func TestMountOverSymlinks(t *testing.T) {
 	// Setup containerd and crictl.
 	crictl, cleanup, err := setup(t)

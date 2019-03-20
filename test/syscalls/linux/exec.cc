@@ -58,6 +58,7 @@ std::string WorkloadPath(absl::string_view binary) {
   if (test_src) {
     full_path = JoinPath(test_src, "__main__/test/syscalls/linux", binary);
   }
+
   TEST_CHECK(full_path.empty() == false);
   return full_path;
 }

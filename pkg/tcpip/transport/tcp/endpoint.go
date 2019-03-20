@@ -1596,6 +1596,16 @@ func (e *endpoint) maybeEnableSACKPermitted(synOpts *header.TCPSynOptions) {
 	}
 }
 
+// maxOptionSize return the maximum size of TCP options.
+func (e *endpoint) maxOptionSize() (size int) {
+	var maxSackBlocks [header.TCPMaxSACKBlocks]header.SACKBlock
+	options := e.makeOptions(maxSackBlocks[:])
+	size = len(options)
+	putOptions(options)
+
+	return size
+}
+
 // completeState makes a full copy of the endpoint and returns it. This is used
 // before invoking the probe. The state returned may not be fully consistent if
 // there are intervening syscalls when the state is being copied.

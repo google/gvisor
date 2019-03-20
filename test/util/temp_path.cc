@@ -75,6 +75,7 @@ std::string NewTempRelPath() { return NextTempBasename(); }
 std::string GetAbsoluteTestTmpdir() {
   char* env_tmpdir = getenv("TEST_TMPDIR");
   std::string tmp_dir = env_tmpdir != nullptr ? std::string(env_tmpdir) : "/tmp";
+
   return MakeAbsolute(tmp_dir, "").ValueOrDie();
 }
 

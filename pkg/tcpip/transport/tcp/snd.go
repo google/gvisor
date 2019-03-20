@@ -172,6 +172,11 @@ type fastRecovery struct {
 }
 
 func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
+	// The sender MUST reduce the TCP data length to account for any IP or
+	// TCP options that it is including in the packets that it sends.
+	// See: https://tools.ietf.org/html/rfc6691#section-2
+	maxPayloadSize := int(mss) - ep.maxOptionSize()
+
 	s := &sender{
 		ep:               ep,
 		sndCwnd:          InitialCwnd,
@@ -183,7 +188,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		rto:              1 * time.Second,
 		rttMeasureSeqNum: iss + 1,
 		lastSendTime:     time.Now(),
-		maxPayloadSize:   int(mss),
+		maxPayloadSize:   maxPayloadSize,
 		maxSentAck:       irs + 1,
 		fr: fastRecovery{
 			// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
@@ -226,11 +231,7 @@ func (s *sender) initCongestionControl(congestionControlName CongestionControlOp
 func (s *sender) updateMaxPayloadSize(mtu, count int) {
 	m := mtu - header.TCPMinimumSize
 
-	// Calculate the maximum option size.
-	var maxSackBlocks [header.TCPMaxSACKBlocks]header.SACKBlock
-	options := s.ep.makeOptions(maxSackBlocks[:])
-	m -= len(options)
-	putOptions(options)
+	m -= s.ep.maxOptionSize()
 
 	// We don't adjust up for now.
 	if m >= s.maxPayloadSize {

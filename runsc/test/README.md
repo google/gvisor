@@ -12,12 +12,10 @@ they may need extra setup in the test machine and extra configuration to run.
 
 The following setup steps are required in order to run these tests:
 
-
      `./runsc/test/install.sh [--runtime <name>]`
 
 The tests expect the runtime name to be provided in the `RUNSC_RUNTIME`
 environment variable (default: `runsc-test`). To run the tests execute:
-
 
 ```
 bazel test --test_env=RUNSC_RUNTIME=runsc-test \

@@ -61,6 +61,7 @@ TEST(TimeTest, VsyscallTime_InvalidAddressSIGSEGV) {
   EXPECT_EXIT(vsyscall_time(reinterpret_cast<time_t*>(0x1)),
               ::testing::KilledBySignal(SIGSEGV), "");
 }
+
 int vsyscall_gettimeofday(struct timeval* tv, struct timezone* tz) {
   constexpr uint64_t kVsyscallGettimeofdayEntry = 0xffffffffff600000;
   return reinterpret_cast<int (*)(struct timeval*, struct timezone*)>(
