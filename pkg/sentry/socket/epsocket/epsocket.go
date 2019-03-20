@@ -504,6 +504,8 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	}
 	fd, e := t.FDMap().NewFDFrom(0, ns, fdFlags, t.ThreadGroup().Limits())
 
+	t.Kernel().RecordSocket(ns, s.family)
+
 	return fd, addr, addrLen, syserr.FromError(e)
 }
 
