@@ -183,6 +183,80 @@ TEST_P(AllSocketPairTest, SendmsgRecvmsg16KB) {
             memcmp(sent_data.data(), received_data.data(), sent_data.size()));
 }
 
+TEST_P(AllSocketPairTest, RecvmsgMsghdrFlagsNotClearedOnFailure) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char received_data[10] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+
+  // Check that msghdr flags were not changed.
+  EXPECT_EQ(msg.msg_flags, -1);
+}
+
+TEST_P(AllSocketPairTest, RecvmsgMsghdrFlagsCleared) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[10];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data)] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(sent_data)));
+
+  // Check that msghdr flags were cleared.
+  EXPECT_EQ(msg.msg_flags, 0);
+}
+
+TEST_P(AllSocketPairTest, RecvmsgPeekMsghdrFlagsCleared) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[10];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data)] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, MSG_PEEK),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(sent_data)));
+
+  // Check that msghdr flags were cleared.
+  EXPECT_EQ(msg.msg_flags, 0);
+}
+
 TEST_P(AllSocketPairTest, RecvmmsgInvalidTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char buf[10];

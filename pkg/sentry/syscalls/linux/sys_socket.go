@@ -57,6 +57,10 @@ const nameLenOffset = 8
 // to the ControlLen field.
 const controlLenOffset = 40
 
+// flagsOffset is the offset form the start of the MessageHeader64 struct
+// to the Flags field.
+const flagsOffset = 48
+
 // messageHeader64Len is the length of a MessageHeader64 struct.
 var messageHeader64Len = uint64(binary.Size(MessageHeader64{}))
 
@@ -743,6 +747,16 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 			return 0, syserror.ConvertIntr(err.ToError(), kernel.ERESTARTSYS)
 		}
 		cms.Unix.Release()
+
+		if msg.Flags != 0 {
+			// Copy out the flags to the caller.
+			//
+			// TODO: Plumb through actual flags.
+			if _, err := t.CopyOut(msgPtr+flagsOffset, int32(0)); err != nil {
+				return 0, err
+			}
+		}
+
 		return uintptr(n), nil
 	}
 
@@ -785,6 +799,13 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		if _, err := t.CopyOut(usermem.Addr(msg.Control), controlData); err != nil {
 			return 0, err
 		}
+	}
+
+	// Copy out the flags to the caller.
+	//
+	// TODO: Plumb through actual flags.
+	if _, err := t.CopyOut(msgPtr+flagsOffset, int32(0)); err != nil {
+		return 0, err
 	}
 
 	return uintptr(n), nil
