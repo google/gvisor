@@ -252,7 +252,7 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		TaskContext:             tc,
 		FSContext:               fsc,
 		FDMap:                   fds,
-		Credentials:             creds.Fork(),
+		Credentials:             creds,
 		Niceness:                t.Niceness(),
 		NetworkNamespaced:       t.netns,
 		AllowedCPUMask:          t.CPUMask(),

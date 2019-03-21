@@ -372,6 +372,7 @@ func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 	if !t.creds.HasCapability(linux.CAP_SETPCAP) {
 		return syserror.EPERM
 	}
+	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.BoundingCaps &^= auth.CapabilitySetOf(cp)
 	return nil
 }
