@@ -257,6 +257,32 @@ TEST_P(AllSocketPairTest, RecvmsgPeekMsghdrFlagsCleared) {
   EXPECT_EQ(msg.msg_flags, 0);
 }
 
+TEST_P(AllSocketPairTest, RecvmsgIovNotUpdated) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[10];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data) * 2] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(sent_data)));
+
+  // Check that the iovec length was not updated.
+  EXPECT_EQ(msg.msg_iov->iov_len, sizeof(received_data));
+}
+
 TEST_P(AllSocketPairTest, RecvmmsgInvalidTimeout) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char buf[10];
