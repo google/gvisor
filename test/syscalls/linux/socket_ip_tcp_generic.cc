@@ -538,5 +538,34 @@ TEST_P(TCPSocketPairTest, SetOOBInline) {
   EXPECT_EQ(get, kSockOptOn);
 }
 
+TEST_P(TCPSocketPairTest, MsgTruncMsgPeek) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[512];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  // Read half of the data with MSG_TRUNC | MSG_PEEK. This way there will still
+  // be some data left to read in the next step even if the data gets consumed.
+  char received_data1[sizeof(sent_data) / 2] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data1,
+                               sizeof(received_data1), MSG_TRUNC | MSG_PEEK),
+              SyscallSucceedsWithValue(sizeof(received_data1)));
+
+  // Check that we didn't get anything.
+  char zeros[sizeof(received_data1)] = {};
+  EXPECT_EQ(0, memcmp(zeros, received_data1, sizeof(received_data1)));
+
+  // Check that all of the data is still there.
+  char received_data2[sizeof(sent_data)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), received_data2,
+                               sizeof(received_data2), 0),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  EXPECT_EQ(0, memcmp(received_data2, sent_data, sizeof(sent_data)));
+}
+
 }  // namespace testing
 }  // namespace gvisor
