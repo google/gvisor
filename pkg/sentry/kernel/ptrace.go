@@ -193,6 +193,10 @@ type ptraceStop struct {
 	// If frozen is true, the stopped task's tracer is currently operating on
 	// it, so Task.Kill should not remove the stop.
 	frozen bool
+
+	// If listen is true, the stopped task's tracer invoked PTRACE_LISTEN, so
+	// ptraceFreeze should fail.
+	listen bool
 }
 
 // Killable implements TaskStop.Killable.
@@ -216,11 +220,11 @@ func (t *Task) beginPtraceStopLocked() bool {
 	// is what prevents tasks from entering ptrace-stops after being killed.
 	// Note that if t was SIGKILLed and beingPtraceStopLocked is being called
 	// for PTRACE_EVENT_EXIT, the task will have dequeued the signal before
-	// entering the exit path, so t.killable() will no longer return true. This
-	// is consistent with Linux: "Bugs: ... A SIGKILL signal may still cause a
-	// PTRACE_EVENT_EXIT stop before actual signal death. This may be changed
-	// in the future; SIGKILL is meant to always immediately kill tasks even
-	// under ptrace. Last confirmed on Linux 3.13." - ptrace(2)
+	// entering the exit path, so t.killedLocked() will no longer return true.
+	// This is consistent with Linux: "Bugs: ... A SIGKILL signal may still
+	// cause a PTRACE_EVENT_EXIT stop before actual signal death. This may be
+	// changed in the future; SIGKILL is meant to always immediately kill tasks
+	// even under ptrace. Last confirmed on Linux 3.13." - ptrace(2)
 	if t.killedLocked() {
 		return false
 	}
@@ -230,6 +234,10 @@ func (t *Task) beginPtraceStopLocked() bool {
 
 // Preconditions: The TaskSet mutex must be locked.
 func (t *Task) ptraceTrapLocked(code int32) {
+	// This is unconditional in ptrace_stop().
+	t.tg.signalHandlers.mu.Lock()
+	t.trapStopPending = false
+	t.tg.signalHandlers.mu.Unlock()
 	t.ptraceCode = code
 	t.ptraceSiginfo = &arch.SignalInfo{
 		Signo: int32(linux.SIGTRAP),
@@ -260,6 +268,9 @@ func (t *Task) ptraceFreeze() bool {
 	if !ok {
 		return false
 	}
+	if s.listen {
+		return false
+	}
 	s.frozen = true
 	return true
 }
@@ -273,6 +284,12 @@ func (t *Task) ptraceUnfreeze() {
 	// preventing its thread group from completing execve.
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
+	t.ptraceUnfreezeLocked()
+}
+
+// Preconditions: t must be in a frozen ptraceStop. t's signal mutex must be
+// locked.
+func (t *Task) ptraceUnfreezeLocked() {
 	// Do this even if the task has been killed to ensure a panic if t.stop is
 	// nil or not a ptraceStop.
 	t.stop.(*ptraceStop).frozen = false
@@ -336,8 +353,9 @@ func (t *Task) ptraceTraceme() error {
 	return nil
 }
 
-// ptraceAttach implements ptrace(PTRACE_ATTACH, target). t is the caller.
-func (t *Task) ptraceAttach(target *Task) error {
+// ptraceAttach implements ptrace(PTRACE_ATTACH, target) if seize is false, and
+// ptrace(PTRACE_SEIZE, target, 0, opts) if seize is true. t is the caller.
+func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	if t.tg == target.tg {
 		return syserror.EPERM
 	}
@@ -355,19 +373,31 @@ func (t *Task) ptraceAttach(target *Task) error {
 	if target.exitState >= TaskExitZombie {
 		return syserror.EPERM
 	}
+	if seize {
+		if err := t.ptraceSetOptionsLocked(opts); err != nil {
+			return syserror.EIO
+		}
+	}
 	target.ptraceTracer.Store(t)
 	t.ptraceTracees[target] = struct{}{}
+	target.ptraceSeized = seize
 	target.tg.signalHandlers.mu.Lock()
-	target.sendSignalLocked(&arch.SignalInfo{
-		Signo: int32(linux.SIGSTOP),
-		Code:  arch.SignalInfoUser,
-	}, false /* group */)
+	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
+	// ptrace(2)
+	if !seize {
+		target.sendSignalLocked(&arch.SignalInfo{
+			Signo: int32(linux.SIGSTOP),
+			Code:  arch.SignalInfoUser,
+		}, false /* group */)
+	}
 	// Undocumented Linux feature: If the tracee is already group-stopped (and
 	// consequently will not report the SIGSTOP just sent), force it to leave
 	// and re-enter the stop so that it will switch to a ptrace-stop.
 	if target.stop == (*groupStop)(nil) {
-		target.groupStopRequired = true
+		target.trapStopPending = true
 		target.endInternalStopLocked()
+		// TODO: Linux blocks ptrace_attach() until the task has
+		// entered the ptrace-stop (or exited) via JOBCTL_TRAPPING.
 	}
 	target.tg.signalHandlers.mu.Unlock()
 	return nil
@@ -418,6 +448,7 @@ func (t *Task) exitPtrace() {
 //
 // Preconditions: The TaskSet mutex must be locked for writing.
 func (t *Task) forgetTracerLocked() {
+	t.ptraceSeized = false
 	t.ptraceOpts = ptraceOptions{}
 	t.ptraceSyscallMode = ptraceSyscallNone
 	t.ptraceSinglestep = false
@@ -426,21 +457,25 @@ func (t *Task) forgetTracerLocked() {
 		t.exitTracerAcked = true
 		t.exitNotifyLocked(true)
 	}
-	// If t is ptrace-stopped, but its thread group is in a group stop and t is
-	// eligible to participate, make it do so. This is essentially the reverse
-	// of the special case in ptraceAttach, which converts a group stop to a
-	// ptrace stop. ("Handling of restart from group-stop is currently buggy,
-	// but the "as planned" behavior is to leave tracee stopped and waiting for
-	// SIGCONT." - ptrace(2))
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	if t.stop == nil {
-		return
+	// Unset t.trapStopPending, which might have been set by PTRACE_INTERRUPT. If
+	// it wasn't, it will be reset via t.groupStopPending after the following.
+	t.trapStopPending = false
+	// If t's thread group is in a group stop and t is eligible to participate,
+	// make it do so. This is essentially the reverse of the special case in
+	// ptraceAttach, which converts a group stop to a ptrace stop. ("Handling
+	// of restart from group-stop is currently buggy, but the "as planned"
+	// behavior is to leave tracee stopped and waiting for SIGCONT." -
+	// ptrace(2))
+	if (t.tg.groupStopComplete || t.tg.groupStopPendingCount != 0) && !t.groupStopPending && t.exitState < TaskExitInitiated {
+		t.groupStopPending = true
+		// t already participated in the group stop when it unset
+		// groupStopPending.
+		t.groupStopAcknowledged = true
+		t.interrupt()
 	}
 	if _, ok := t.stop.(*ptraceStop); ok {
-		if t.exitState < TaskExitInitiated && t.tg.groupStopPhase >= groupStopInitiated {
-			t.groupStopRequired = true
-		}
 		t.endInternalStopLocked()
 	}
 }
@@ -460,9 +495,9 @@ func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
 	// The tracer might change this signal into a stop signal, in which case
 	// any SIGCONT received after the signal was originally dequeued should
 	// cancel it. This is consistent with Linux.
-	if t.tg.groupStopPhase == groupStopNone {
-		t.tg.groupStopPhase = groupStopDequeued
-	}
+	t.tg.groupStopDequeued = true
+	// This is unconditional in ptrace_stop().
+	t.trapStopPending = false
 	// Can't lock the TaskSet mutex while holding a signal mutex.
 	t.tg.signalHandlers.mu.Unlock()
 	defer t.tg.signalHandlers.mu.Lock()
@@ -612,22 +647,27 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
 			tracer.ptraceTracees[child] = struct{}{}
+			// "The "seized" behavior ... is inherited by children that are
+			// automatically attached using PTRACE_O_TRACEFORK,
+			// PTRACE_O_TRACEVFORK, and PTRACE_O_TRACECLONE." - ptrace(2)
+			child.ptraceSeized = t.ptraceSeized
 			// "Flags are inherited by new tracees created and "auto-attached"
 			// via active PTRACE_O_TRACEFORK, PTRACE_O_TRACEVFORK, or
-			// PTRACE_O_TRACECLONE options."
+			// PTRACE_O_TRACECLONE options." - ptrace(2)
 			child.ptraceOpts = t.ptraceOpts
 			child.tg.signalHandlers.mu.Lock()
-			// If the child is PT_SEIZED (currently not possible in the sentry
-			// because PTRACE_SEIZE is unimplemented, but for future
-			// reference), Linux just sets JOBCTL_TRAP_STOP instead, so the
-			// child skips signal-delivery-stop and goes directly to
-			// group-stop.
-			//
-			// The child will self-t.interrupt() when its task goroutine starts
+			// "PTRACE_SEIZE: ... Automatically attached children stop with
+			// PTRACE_EVENT_STOP and WSTOPSIG(status) returns SIGTRAP instead
+			// of having SIGSTOP signal delivered to them." - ptrace(2)
+			if child.ptraceSeized {
+				child.trapStopPending = true
+			} else {
+				child.pendingSignals.enqueue(&arch.SignalInfo{
+					Signo: int32(linux.SIGSTOP),
+				}, nil)
+			}
+			// The child will self-interrupt() when its task goroutine starts
 			// running, so we don't have to.
-			child.pendingSignals.enqueue(&arch.SignalInfo{
-				Signo: int32(linux.SIGSTOP),
-			}, nil)
 			child.tg.signalHandlers.mu.Unlock()
 		}
 	}
@@ -681,6 +721,9 @@ func (t *Task) ptraceExec(oldTID ThreadID) {
 	// Employing PTRACE_GETSIGINFO for this signal returns si_code set to 0
 	// (SI_USER). This signal may be blocked by signal mask, and thus may be
 	// delivered (much) later." - ptrace(2)
+	if t.ptraceSeized {
+		return
+	}
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
 	t.sendSignalLocked(&arch.SignalInfo{
@@ -749,6 +792,57 @@ func (t *Task) ptraceKill(target *Task) error {
 	return nil
 }
 
+func (t *Task) ptraceInterrupt(target *Task) error {
+	t.tg.pidns.owner.mu.Lock()
+	defer t.tg.pidns.owner.mu.Unlock()
+	if target.Tracer() != t {
+		return syserror.ESRCH
+	}
+	if !target.ptraceSeized {
+		return syserror.EIO
+	}
+	target.tg.signalHandlers.mu.Lock()
+	defer target.tg.signalHandlers.mu.Unlock()
+	if target.killedLocked() || target.exitState >= TaskExitInitiated {
+		return nil
+	}
+	target.trapStopPending = true
+	if s, ok := target.stop.(*ptraceStop); ok && s.listen {
+		target.endInternalStopLocked()
+	}
+	target.interrupt()
+	return nil
+}
+
+// Preconditions: The TaskSet mutex must be locked for writing. t must have a
+// tracer.
+func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
+	const valid = uintptr(linux.PTRACE_O_EXITKILL |
+		linux.PTRACE_O_TRACESYSGOOD |
+		linux.PTRACE_O_TRACECLONE |
+		linux.PTRACE_O_TRACEEXEC |
+		linux.PTRACE_O_TRACEEXIT |
+		linux.PTRACE_O_TRACEFORK |
+		linux.PTRACE_O_TRACESECCOMP |
+		linux.PTRACE_O_TRACEVFORK |
+		linux.PTRACE_O_TRACEVFORKDONE)
+	if opts&^valid != 0 {
+		return syserror.EINVAL
+	}
+	t.ptraceOpts = ptraceOptions{
+		ExitKill:       opts&linux.PTRACE_O_EXITKILL != 0,
+		SysGood:        opts&linux.PTRACE_O_TRACESYSGOOD != 0,
+		TraceClone:     opts&linux.PTRACE_O_TRACECLONE != 0,
+		TraceExec:      opts&linux.PTRACE_O_TRACEEXEC != 0,
+		TraceExit:      opts&linux.PTRACE_O_TRACEEXIT != 0,
+		TraceFork:      opts&linux.PTRACE_O_TRACEFORK != 0,
+		TraceSeccomp:   opts&linux.PTRACE_O_TRACESECCOMP != 0,
+		TraceVfork:     opts&linux.PTRACE_O_TRACEVFORK != 0,
+		TraceVforkDone: opts&linux.PTRACE_O_TRACEVFORKDONE != 0,
+	}
+	return nil
+}
+
 // Ptrace implements the ptrace system call.
 func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 	// PTRACE_TRACEME ignores all other arguments.
@@ -762,15 +856,22 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 		return syserror.ESRCH
 	}
 
-	// PTRACE_ATTACH (and PTRACE_SEIZE, which is unimplemented) do not require
-	// that target is not already a tracee.
-	if req == linux.PTRACE_ATTACH {
-		return t.ptraceAttach(target)
+	// PTRACE_ATTACH and PTRACE_SEIZE do not require that target is not already
+	// a tracee.
+	if req == linux.PTRACE_ATTACH || req == linux.PTRACE_SEIZE {
+		seize := req == linux.PTRACE_SEIZE
+		if seize && addr != 0 {
+			return syserror.EIO
+		}
+		return t.ptraceAttach(target, seize, uintptr(data))
 	}
-	// PTRACE_KILL (and PTRACE_INTERRUPT, which is unimplemented) require that
-	// the target is a tracee, but does not require that it is ptrace-stopped.
+	// PTRACE_KILL and PTRACE_INTERRUPT require that the target is a tracee,
+	// but does not require that it is ptrace-stopped.
 	if req == linux.PTRACE_KILL {
 		return t.ptraceKill(target)
+	}
+	if req == linux.PTRACE_INTERRUPT {
+		return t.ptraceInterrupt(target)
 	}
 	// All other ptrace requests require that the target is a ptrace-stopped
 	// tracee, and freeze the ptrace-stop so the tracee can be operated on.
@@ -801,6 +902,8 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 	t.UninterruptibleSleepFinish(true)
 
 	// Resuming commands end the ptrace stop, but only if successful.
+	// PTRACE_LISTEN ends the ptrace stop if trapNotifyPending is already set on the
+	// target.
 	switch req {
 	case linux.PTRACE_DETACH:
 		if err := t.ptraceDetach(target, linux.Signal(data)); err != nil {
@@ -808,37 +911,65 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 			return err
 		}
 		return nil
+
 	case linux.PTRACE_CONT:
 		if err := target.ptraceUnstop(ptraceSyscallNone, false, linux.Signal(data)); err != nil {
 			target.ptraceUnfreeze()
 			return err
 		}
 		return nil
+
 	case linux.PTRACE_SYSCALL:
 		if err := target.ptraceUnstop(ptraceSyscallIntercept, false, linux.Signal(data)); err != nil {
 			target.ptraceUnfreeze()
 			return err
 		}
 		return nil
+
 	case linux.PTRACE_SINGLESTEP:
 		if err := target.ptraceUnstop(ptraceSyscallNone, true, linux.Signal(data)); err != nil {
 			target.ptraceUnfreeze()
 			return err
 		}
 		return nil
+
 	case linux.PTRACE_SYSEMU:
 		if err := target.ptraceUnstop(ptraceSyscallEmu, false, linux.Signal(data)); err != nil {
 			target.ptraceUnfreeze()
 			return err
 		}
 		return nil
+
 	case linux.PTRACE_SYSEMU_SINGLESTEP:
 		if err := target.ptraceUnstop(ptraceSyscallEmu, true, linux.Signal(data)); err != nil {
 			target.ptraceUnfreeze()
 			return err
 		}
 		return nil
+
+	case linux.PTRACE_LISTEN:
+		t.tg.pidns.owner.mu.RLock()
+		defer t.tg.pidns.owner.mu.RUnlock()
+		if !target.ptraceSeized {
+			return syserror.EIO
+		}
+		if target.ptraceSiginfo == nil {
+			return syserror.EIO
+		}
+		if target.ptraceSiginfo.Code>>8 != linux.PTRACE_EVENT_STOP {
+			return syserror.EIO
+		}
+		target.tg.signalHandlers.mu.Lock()
+		defer target.tg.signalHandlers.mu.Unlock()
+		if target.trapNotifyPending {
+			target.endInternalStopLocked()
+		} else {
+			target.stop.(*ptraceStop).listen = true
+			target.ptraceUnfreezeLocked()
+		}
+		return nil
 	}
+
 	// All other ptrace requests expect us to unfreeze the stop.
 	defer target.ptraceUnfreeze()
 
@@ -958,30 +1089,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data usermem.Addr) error {
 	case linux.PTRACE_SETOPTIONS:
 		t.tg.pidns.owner.mu.Lock()
 		defer t.tg.pidns.owner.mu.Unlock()
-		validOpts := uintptr(linux.PTRACE_O_EXITKILL |
-			linux.PTRACE_O_TRACESYSGOOD |
-			linux.PTRACE_O_TRACECLONE |
-			linux.PTRACE_O_TRACEEXEC |
-			linux.PTRACE_O_TRACEEXIT |
-			linux.PTRACE_O_TRACEFORK |
-			linux.PTRACE_O_TRACESECCOMP |
-			linux.PTRACE_O_TRACEVFORK |
-			linux.PTRACE_O_TRACEVFORKDONE)
-		if uintptr(data)&^validOpts != 0 {
-			return syserror.EINVAL
-		}
-		target.ptraceOpts = ptraceOptions{
-			ExitKill:       data&linux.PTRACE_O_EXITKILL != 0,
-			SysGood:        data&linux.PTRACE_O_TRACESYSGOOD != 0,
-			TraceClone:     data&linux.PTRACE_O_TRACECLONE != 0,
-			TraceExec:      data&linux.PTRACE_O_TRACEEXEC != 0,
-			TraceExit:      data&linux.PTRACE_O_TRACEEXIT != 0,
-			TraceFork:      data&linux.PTRACE_O_TRACEFORK != 0,
-			TraceSeccomp:   data&linux.PTRACE_O_TRACESECCOMP != 0,
-			TraceVfork:     data&linux.PTRACE_O_TRACEVFORK != 0,
-			TraceVforkDone: data&linux.PTRACE_O_TRACEVFORKDONE != 0,
-		}
-		return nil
+		return target.ptraceSetOptionsLocked(uintptr(data))
 
 	case linux.PTRACE_GETEVENTMSG:
 		t.tg.pidns.owner.mu.RLock()

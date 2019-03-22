@@ -122,7 +122,6 @@ func (t *Task) killLocked() {
 	if t.stop != nil && t.stop.Killable() {
 		t.endInternalStopLocked()
 	}
-	t.groupStopRequired = false
 	t.pendingSignals.enqueue(&arch.SignalInfo{
 		Signo: int32(linux.SIGKILL),
 		// Linux just sets SIGKILL in the pending signal bitmask without
@@ -304,33 +303,16 @@ func (t *Task) exitThreadGroup() bool {
 	t.setSignalMaskLocked(^linux.SignalSet(0))
 
 	// Check if this task's exit interacts with an initiated group stop.
-	if t.tg.groupStopPhase != groupStopInitiated {
+	if !t.groupStopPending {
 		t.tg.signalHandlers.mu.Unlock()
 		return last
 	}
-	if t.groupStopAcknowledged {
-		// Un-acknowledge the group stop.
-		t.tg.groupStopCount--
-		t.groupStopAcknowledged = false
-		// If the group stop wasn't complete before, then there is still at
-		// least one other task that hasn't acknowledged the group stop, so
-		// it is still not complete now.
-		t.tg.signalHandlers.mu.Unlock()
-		return last
-	}
-	if t.tg.groupStopCount != t.tg.activeTasks {
-		t.tg.signalHandlers.mu.Unlock()
-		return last
-	}
-	t.Debugf("Completing group stop")
-	t.tg.groupStopPhase = groupStopComplete
-	t.tg.groupStopWaitable = true
+	t.groupStopPending = false
 	sig := t.tg.groupStopSignal
-	t.tg.groupContNotify = false
-	t.tg.groupContWaitable = false
+	notifyParent := t.participateGroupStopLocked()
 	// signalStop must be called with t's signal mutex unlocked.
 	t.tg.signalHandlers.mu.Unlock()
-	if t.tg.leader.parent != nil {
+	if notifyParent && t.tg.leader.parent != nil {
 		t.tg.leader.parent.signalStop(t, arch.CLD_STOPPED, int32(sig))
 		t.tg.leader.parent.tg.eventQueue.Notify(EventChildGroupStop)
 	}

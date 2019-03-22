@@ -44,6 +44,20 @@ namespace testing {
 
 namespace {
 
+// PTRACE_GETSIGMASK and PTRACE_SETSIGMASK are not defined until glibc 2.23
+// (fb53a27c5741 "Add new header definitions from Linux 4.4 (plus older ptrace
+// definitions)").
+constexpr auto kPtraceGetSigMask = static_cast<__ptrace_request>(0x420a);
+constexpr auto kPtraceSetSigMask = static_cast<__ptrace_request>(0x420b);
+
+// PTRACE_SYSEMU is not defined until glibc 2.27 (c48831d0eebf "linux/x86: sync
+// sys/ptrace.h with Linux 4.14 [BZ #22433]").
+constexpr auto kPtraceSysemu = static_cast<__ptrace_request>(31);
+
+// PTRACE_EVENT_STOP is not defined until glibc 2.26 (3f67d1a7021e "Add Linux
+// PTRACE_EVENT_STOP").
+constexpr int kPtraceEventStop = 128;
+
 // Sends sig to the current process with tgkill(2).
 //
 // glibc's raise(2) may change the signal mask before sending the signal. These
@@ -146,10 +160,6 @@ TEST(PtraceTest, AttachParent_PeekData_PokeData_SignalSuppression) {
 }
 
 TEST(PtraceTest, GetSigMask) {
-  // <sys/user.h> doesn't define these until Linux 4.4, even though the features
-  // were added in 3.11.
-  constexpr auto kPtraceGetSigMask = static_cast<enum __ptrace_request>(0x420a);
-  constexpr auto kPtraceSetSigMask = static_cast<enum __ptrace_request>(0x420b);
   // glibc and the Linux kernel define a sigset_t with different sizes. To avoid
   // creating a kernel_sigset_t and recreating all the modification functions
   // (sigemptyset, etc), we just hardcode the kernel sigset size.
@@ -878,9 +888,7 @@ TEST(PtraceTest, Sysemu_PokeUser) {
       << " status " << status;
 
   // Suppress the SIGSTOP and wait for the child to enter syscall-enter-stop
-  // for its first exit_group syscall. glibc doesn't necessarily define
-  // PTRACE_SYSEMU.
-  constexpr auto kPtraceSysemu = static_cast<__ptrace_request>(31);
+  // for its first exit_group syscall.
   ASSERT_THAT(ptrace(kPtraceSysemu, child_pid, 0, 0), SyscallSucceeds());
   ASSERT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
@@ -998,6 +1006,119 @@ TEST(PtraceTest, ERESTART_NoRandomSave) {
       << " status " << status;
 }
 #endif  // defined(__x86_64__)
+
+TEST(PtraceTest, Seize_Interrupt_Listen) {
+  volatile long child_should_spin = 1;
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    while (child_should_spin) {
+      SleepSafe(absl::Seconds(1));
+    }
+    _exit(1);
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Attach to the child with PTRACE_SEIZE; doing so should not stop the child.
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, 0, 0), SyscallSucceeds());
+  int status;
+  EXPECT_THAT(waitpid(child_pid, &status, WNOHANG),
+              SyscallSucceedsWithValue(0));
+
+  // Stop the child with PTRACE_INTERRUPT.
+  ASSERT_THAT(ptrace(PTRACE_INTERRUPT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGTRAP | (kPtraceEventStop << 8), status >> 8);
+
+  // Unset child_should_spin to verify that the child never leaves the spin
+  // loop.
+  ASSERT_THAT(ptrace(PTRACE_POKEDATA, child_pid, &child_should_spin, 0),
+              SyscallSucceeds());
+
+  // Send SIGSTOP to the child, then resume it, allowing it to proceed to
+  // signal-delivery-stop.
+  ASSERT_THAT(kill(child_pid, SIGSTOP), SyscallSucceeds());
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  // Release the child from signal-delivery-stop without suppressing the
+  // SIGSTOP, causing it to enter group-stop.
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, SIGSTOP), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGSTOP | (kPtraceEventStop << 8), status >> 8);
+
+  // "The state of the tracee after PTRACE_LISTEN is somewhat of a gray area: it
+  // is not in any ptrace-stop (ptrace commands won't work on it, and it will
+  // deliver waitpid(2) notifications), but it also may be considered 'stopped'
+  // because it is not executing instructions (is not scheduled), and if it was
+  // in group-stop before PTRACE_LISTEN, it will not respond to signals until
+  // SIGCONT is received." - ptrace(2).
+  ASSERT_THAT(ptrace(PTRACE_LISTEN, child_pid, 0, 0), SyscallSucceeds());
+  EXPECT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0),
+              SyscallFailsWithErrno(ESRCH));
+  EXPECT_THAT(waitpid(child_pid, &status, WNOHANG),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(kill(child_pid, SIGTERM), SyscallSucceeds());
+  absl::SleepFor(absl::Seconds(1));
+  EXPECT_THAT(waitpid(child_pid, &status, WNOHANG),
+              SyscallSucceedsWithValue(0));
+
+  // Send SIGCONT to the child, causing it to leave group-stop and re-trap due
+  // to PTRACE_LISTEN.
+  EXPECT_THAT(kill(child_pid, SIGCONT), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGTRAP | (kPtraceEventStop << 8), status >> 8);
+
+  // Detach the child and expect it to exit due to the SIGTERM we sent while
+  // it was stopped by PTRACE_LISTEN.
+  ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM)
+      << " status " << status;
+}
+
+TEST(PtraceTest, Interrupt_Listen_RequireSeize) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    MaybeSave();
+    raise(SIGSTOP);
+    _exit(0);
+  }
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Wait for the child to send itself SIGSTOP and enter signal-delivery-stop.
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  // PTRACE_INTERRUPT and PTRACE_LISTEN should fail since the child wasn't
+  // attached with PTRACE_SEIZE, leaving the child in signal-delivery-stop.
+  EXPECT_THAT(ptrace(PTRACE_INTERRUPT, child_pid, 0, 0),
+              SyscallFailsWithErrno(EIO));
+  EXPECT_THAT(ptrace(PTRACE_LISTEN, child_pid, 0, 0),
+              SyscallFailsWithErrno(EIO));
+
+  // Suppress SIGSTOP and detach from the child, expecting it to exit normally.
+  ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
 
 }  // namespace
 

@@ -748,48 +748,21 @@ type groupStop struct{}
 // Killable implements TaskStop.Killable.
 func (*groupStop) Killable() bool { return true }
 
-type groupStopPhase int
-
-const (
-	// groupStopNone indicates that a thread group is not in, or attempting to
-	// enter or leave, a group stop.
-	groupStopNone groupStopPhase = iota
-
-	// groupStopDequeued indicates that at least one task in a thread group has
-	// dequeued a stop signal (or dequeued any signal and entered a
-	// signal-delivery-stop as a result, which allows ptrace to change the
-	// signal into a stop signal), but temporarily dropped the signal mutex
-	// without initiating the group stop.
-	//
-	// groupStopDequeued is analogous to JOBCTL_STOP_DEQUEUED in Linux.
-	groupStopDequeued
-
-	// groupStopInitiated indicates that a task in a thread group has initiated
-	// a group stop, but not all tasks in the thread group have acknowledged
-	// entering the group stop.
-	//
-	// groupStopInitiated is represented by JOBCTL_STOP_PENDING &&
-	// !SIGNAL_STOP_STOPPED in Linux.
-	groupStopInitiated
-
-	// groupStopComplete indicates that all tasks in a thread group have
-	// acknowledged entering the group stop, and the last one to do so has
-	// notified the thread group's parent.
-	//
-	// groupStopComplete is represented by JOBCTL_STOP_PENDING &&
-	// SIGNAL_STOP_STOPPED in Linux.
-	groupStopComplete
-)
-
 // initiateGroupStop attempts to initiate a group stop based on a
 // previously-dequeued stop signal.
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) initiateGroupStop(info *arch.SignalInfo) {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	if t.tg.groupStopPhase != groupStopDequeued {
-		t.Debugf("Signal %d: not stopping thread group: lost to racing signal", info.Signo)
+	if t.groupStopPending {
+		t.Debugf("Signal %d: not stopping thread group: lost to racing stop signal", info.Signo)
+		return
+	}
+	if !t.tg.groupStopDequeued {
+		t.Debugf("Signal %d: not stopping thread group: lost to racing SIGCONT", info.Signo)
 		return
 	}
 	if t.tg.exiting {
@@ -800,15 +773,27 @@ func (t *Task) initiateGroupStop(info *arch.SignalInfo) {
 		t.Debugf("Signal %d: not stopping thread group: lost to racing execve", info.Signo)
 		return
 	}
-	t.Debugf("Signal %d: stopping thread group", info.Signo)
-	t.tg.groupStopPhase = groupStopInitiated
-	t.tg.groupStopSignal = linux.Signal(info.Signo)
-	t.tg.groupStopCount = 0
-	for t2 := t.tg.tasks.Front(); t2 != nil; t2 = t2.Next() {
-		t2.groupStopRequired = true
-		t2.groupStopAcknowledged = false
-		t2.interrupt()
+	if !t.tg.groupStopComplete {
+		t.tg.groupStopSignal = linux.Signal(info.Signo)
 	}
+	t.tg.groupStopPendingCount = 0
+	for t2 := t.tg.tasks.Front(); t2 != nil; t2 = t2.Next() {
+		if t2.killedLocked() || t2.exitState >= TaskExitInitiated {
+			t2.groupStopPending = false
+			continue
+		}
+		t2.groupStopPending = true
+		t2.groupStopAcknowledged = false
+		if t2.ptraceSeized {
+			t2.trapNotifyPending = true
+			if s, ok := t2.stop.(*ptraceStop); ok && s.listen {
+				t2.endInternalStopLocked()
+			}
+		}
+		t2.interrupt()
+		t.tg.groupStopPendingCount++
+	}
+	t.Debugf("Signal %d: stopping %d threads in thread group", info.Signo, t.tg.groupStopPendingCount)
 }
 
 // endGroupStopLocked ensures that all prior stop signals received by tg are
@@ -820,37 +805,77 @@ func (tg *ThreadGroup) endGroupStopLocked(broadcast bool) {
 	// Discard all previously-queued stop signals.
 	linux.ForEachSignal(StopSignals, tg.discardSpecificLocked)
 
-	if tg.groupStopPhase != groupStopNone {
-		tg.leader.Debugf("Ending group stop currently in phase %d", tg.groupStopPhase)
-		if tg.groupStopPhase == groupStopInitiated || tg.groupStopPhase == groupStopComplete {
-			tg.groupStopSignal = 0
-			for t := tg.tasks.Front(); t != nil; t = t.Next() {
-				if _, ok := t.stop.(*groupStop); ok {
-					t.endInternalStopLocked()
-				}
+	if tg.groupStopPendingCount == 0 && !tg.groupStopComplete {
+		return
+	}
+
+	completeStr := "incomplete"
+	if tg.groupStopComplete {
+		completeStr = "complete"
+	}
+	tg.leader.Debugf("Ending %s group stop with %d threads pending", completeStr, tg.groupStopPendingCount)
+	for t := tg.tasks.Front(); t != nil; t = t.Next() {
+		t.groupStopPending = false
+		if t.ptraceSeized {
+			t.trapNotifyPending = true
+			if s, ok := t.stop.(*ptraceStop); ok && s.listen {
+				t.endInternalStopLocked()
 			}
-			if broadcast {
-				// Instead of notifying the parent here, set groupContNotify so
-				// that one of the continuing tasks does so. (Linux does
-				// something similar.) The reason we do this is to keep locking
-				// sane. In order to send a signal to the parent, we need to
-				// lock its signal mutex, but we're already holding tg's signal
-				// mutex, and the TaskSet mutex must be locked for writing for
-				// us to hold two signal mutexes. Since we don't want to
-				// require this for endGroupStopLocked (which is called from
-				// signal-sending paths), nor do we want to lose atomicity by
-				// releasing the mutexes we're already holding, just let the
-				// continuing thread group deal with it.
-				tg.groupContNotify = true
-				tg.groupContInterrupted = tg.groupStopPhase == groupStopInitiated
-				tg.groupContWaitable = true
+		} else {
+			if _, ok := t.stop.(*groupStop); ok {
+				t.endInternalStopLocked()
 			}
 		}
-		// If groupStopPhase was groupStopDequeued, setting it to groupStopNone
-		// will cause following calls to initiateGroupStop to recognize that
-		// the group stop has been cancelled.
-		tg.groupStopPhase = groupStopNone
 	}
+	if broadcast {
+		// Instead of notifying the parent here, set groupContNotify so that
+		// one of the continuing tasks does so. (Linux does something similar.)
+		// The reason we do this is to keep locking sane. In order to send a
+		// signal to the parent, we need to lock its signal mutex, but we're
+		// already holding tg's signal mutex, and the TaskSet mutex must be
+		// locked for writing for us to hold two signal mutexes. Since we don't
+		// want to require this for endGroupStopLocked (which is called from
+		// signal-sending paths), nor do we want to lose atomicity by releasing
+		// the mutexes we're already holding, just let the continuing thread
+		// group deal with it.
+		tg.groupContNotify = true
+		tg.groupContInterrupted = !tg.groupStopComplete
+		tg.groupContWaitable = true
+	}
+	// Unsetting groupStopDequeued will cause racing calls to initiateGroupStop
+	// to recognize that the group stop has been cancelled.
+	tg.groupStopDequeued = false
+	tg.groupStopSignal = 0
+	tg.groupStopPendingCount = 0
+	tg.groupStopComplete = false
+	tg.groupStopWaitable = false
+}
+
+// participateGroupStopLocked is called to handle thread group side effects
+// after t unsets t.groupStopPending. The caller must handle task side effects
+// (e.g. placing the task goroutine into the group stop). It returns true if
+// the caller must notify t.tg.leader's parent of a completed group stop (which
+// participateGroupStopLocked cannot do due to holding the wrong locks).
+//
+// Preconditions: The signal mutex must be locked.
+func (t *Task) participateGroupStopLocked() bool {
+	if t.groupStopAcknowledged {
+		return false
+	}
+	t.groupStopAcknowledged = true
+	t.tg.groupStopPendingCount--
+	if t.tg.groupStopPendingCount != 0 {
+		return false
+	}
+	if t.tg.groupStopComplete {
+		return false
+	}
+	t.Debugf("Completing group stop")
+	t.tg.groupStopComplete = true
+	t.tg.groupStopWaitable = true
+	t.tg.groupContNotify = false
+	t.tg.groupContWaitable = false
+	return true
 }
 
 // signalStop sends a signal to t's thread group of a new group stop, group
@@ -899,7 +924,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		// leader's) tracer are in the same thread group, deduplicate
 		// notifications.
 		notifyParent := t.tg.leader.parent != nil
-		if tracer := t.tg.leader.ptraceTracer.Load().(*Task); tracer != nil {
+		if tracer := t.tg.leader.Tracer(); tracer != nil {
 			if notifyParent && tracer.tg == t.tg.leader.parent.tg {
 				notifyParent = false
 			}
@@ -938,23 +963,21 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 		return (*runInterrupt)(nil)
 	}
 
-	// Do we need to enter a group stop?
-	if t.groupStopRequired {
-		t.groupStopRequired = false
+	// Do we need to enter a group stop or related ptrace stop? This path is
+	// analogous to Linux's kernel/signal.c:get_signal() => do_signal_stop()
+	// (with ptrace enabled) and do_jobctl_trap().
+	if t.groupStopPending || t.trapStopPending || t.trapNotifyPending {
 		sig := t.tg.groupStopSignal
 		notifyParent := false
-		if !t.groupStopAcknowledged {
-			t.groupStopAcknowledged = true
-			t.tg.groupStopCount++
-			if t.tg.groupStopCount == t.tg.activeTasks {
-				t.Debugf("Completing group stop")
-				notifyParent = true
-				t.tg.groupStopPhase = groupStopComplete
-				t.tg.groupStopWaitable = true
-				t.tg.groupContNotify = false
-				t.tg.groupContWaitable = false
-			}
+		if t.groupStopPending {
+			t.groupStopPending = false
+			// We care about t.tg.groupStopSignal (for tracer notification)
+			// even if this doesn't complete a group stop, so keep the
+			// value of sig we've already read.
+			notifyParent = t.participateGroupStopLocked()
 		}
+		t.trapStopPending = false
+		t.trapNotifyPending = false
 		// Drop the signal mutex so we can take the TaskSet mutex.
 		t.tg.signalHandlers.mu.Unlock()
 
@@ -963,8 +986,26 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 			notifyParent = false
 		}
 		if tracer := t.Tracer(); tracer != nil {
-			t.ptraceCode = int32(sig)
-			t.ptraceSiginfo = nil
+			if t.ptraceSeized {
+				if sig == 0 {
+					sig = linux.SIGTRAP
+				}
+				// "If tracee was attached using PTRACE_SEIZE, group-stop is
+				// indicated by PTRACE_EVENT_STOP: status>>16 ==
+				// PTRACE_EVENT_STOP. This allows detection of group-stops
+				// without requiring an extra PTRACE_GETSIGINFO call." -
+				// "Group-stop", ptrace(2)
+				t.ptraceCode = int32(sig) | linux.PTRACE_EVENT_STOP<<8
+				t.ptraceSiginfo = &arch.SignalInfo{
+					Signo: int32(sig),
+					Code:  t.ptraceCode,
+				}
+				t.ptraceSiginfo.SetPid(int32(t.tg.pidns.tids[t]))
+				t.ptraceSiginfo.SetUid(int32(t.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
+			} else {
+				t.ptraceCode = int32(sig)
+				t.ptraceSiginfo = nil
+			}
 			if t.beginPtraceStopLocked() {
 				tracer.signalStop(t, arch.CLD_STOPPED, int32(sig))
 				// For consistency with Linux, if the parent and tracer are in the
@@ -994,12 +1035,11 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 
 	// Are there signals pending?
 	if info := t.dequeueSignalLocked(t.signalMask); info != nil {
-		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 && t.tg.groupStopPhase == groupStopNone {
-			// Indicate that we've dequeued a stop signal before
-			// unlocking the signal mutex; initiateGroupStop will check
-			// that the phase hasn't changed (or is at least another
-			// "stop signal dequeued" phase) after relocking it.
-			t.tg.groupStopPhase = groupStopDequeued
+		if linux.SignalSetOf(linux.Signal(info.Signo))&StopSignals != 0 {
+			// Indicate that we've dequeued a stop signal before unlocking the
+			// signal mutex; initiateGroupStop will check for races with
+			// endGroupStopLocked after relocking it.
+			t.tg.groupStopDequeued = true
 		}
 		if t.ptraceSignalLocked(info) {
 			// Dequeueing the signal action must wait until after the

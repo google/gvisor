@@ -60,25 +60,35 @@ type ThreadGroup struct {
 	// pendingSignals is protected by the signal mutex.
 	pendingSignals pendingSignals
 
-	// groupStopPhase indicates the state of a group stop in progress on the
-	// thread group, if any.
+	// If groupStopDequeued is true, a task in the thread group has dequeued a
+	// stop signal, but has not yet initiated the group stop.
 	//
-	// groupStopPhase is protected by the signal mutex.
-	groupStopPhase groupStopPhase
+	// groupStopDequeued is analogous to Linux's JOBCTL_STOP_DEQUEUED.
+	//
+	// groupStopDequeued is protected by the signal mutex.
+	groupStopDequeued bool
 
 	// groupStopSignal is the signal that caused a group stop to be initiated.
-	// groupStopSignal is only meaningful if groupStopPhase is
-	// groupStopInitiated or groupStopComplete.
 	//
 	// groupStopSignal is protected by the signal mutex.
 	groupStopSignal linux.Signal
 
-	// groupStopCount is the number of non-exited tasks in the thread group
-	// that have acknowledged an initiated group stop. groupStopCount is only
-	// meaningful if groupStopPhase is groupStopInitiated.
+	// groupStopPendingCount is the number of active tasks in the thread group
+	// for which Task.groupStopPending is set.
 	//
-	// groupStopCount is protected by the signal mutex.
-	groupStopCount int
+	// groupStopPendingCount is analogous to Linux's
+	// signal_struct::group_stop_count.
+	//
+	// groupStopPendingCount is protected by the signal mutex.
+	groupStopPendingCount int
+
+	// If groupStopComplete is true, groupStopPendingCount transitioned from
+	// non-zero to zero without an intervening SIGCONT.
+	//
+	// groupStopComplete is analogous to Linux's SIGNAL_STOP_STOPPED.
+	//
+	// groupStopComplete is protected by the signal mutex.
+	groupStopComplete bool
 
 	// If groupStopWaitable is true, the thread group is indicating a waitable
 	// group stop event (as defined by EventChildGroupStop).
@@ -91,14 +101,9 @@ type ThreadGroup struct {
 
 	// If groupContNotify is true, then a SIGCONT has recently ended a group
 	// stop on this thread group, and the first task to observe it should
-	// notify its parent.
-	//
-	// groupContNotify is protected by the signal mutex.
-	groupContNotify bool
-
-	// If groupContNotify is true, groupContInterrupted is true iff SIGCONT
-	// ended a group stop in phase groupStopInitiated. If groupContNotify is
-	// false, groupContInterrupted is meaningless.
+	// notify its parent. groupContInterrupted is true iff SIGCONT ended an
+	// incomplete group stop. If groupContNotify is false, groupContInterrupted is
+	// meaningless.
 	//
 	// Analogues in Linux:
 	//
@@ -110,7 +115,9 @@ type ThreadGroup struct {
 	//
 	// - !groupContNotify is represented by neither flag being set.
 	//
-	// groupContInterrupted is protected by the signal mutex.
+	// groupContNotify and groupContInterrupted are protected by the signal
+	// mutex.
+	groupContNotify      bool
 	groupContInterrupted bool
 
 	// If groupContWaitable is true, the thread group is indicating a waitable

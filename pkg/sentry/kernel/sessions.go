@@ -204,7 +204,7 @@ func (pg *ProcessGroup) handleOrphan() {
 			return
 		}
 		tg.signalHandlers.mu.Lock()
-		if tg.groupStopPhase == groupStopComplete {
+		if tg.groupStopComplete {
 			hasStopped = true
 		}
 		tg.signalHandlers.mu.Unlock()

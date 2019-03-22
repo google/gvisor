@@ -133,27 +133,41 @@ type Task struct {
 	// signalStack is exclusive to the task goroutine.
 	signalStack arch.SignalStack
 
-	// If groupStopRequired is true, the task should enter a group stop in the
-	// interrupt path. groupStopRequired is not redundant with
-	// tg.groupStopPhase != groupStopNone, because ptrace allows tracers to
-	// resume individual tasks from a group stop without ending the group stop
-	// as a whole.
+	// If groupStopPending is true, the task should participate in a group
+	// stop in the interrupt path.
 	//
-	// groupStopRequired is analogous to JOBCTL_TRAP_STOP in Linux, except that
-	// Linux only uses that flag for ptraced tasks.
+	// groupStopPending is analogous to JOBCTL_STOP_PENDING in Linux.
 	//
-	// groupStopRequired is protected by the signal mutex.
-	groupStopRequired bool
+	// groupStopPending is protected by the signal mutex.
+	groupStopPending bool
 
 	// If groupStopAcknowledged is true, the task has already acknowledged that
 	// it is entering the most recent group stop that has been initiated on its
-	// thread group. groupStopAcknowledged is only meaningful if
-	// tg.groupStopPhase == groupStopInitiated.
+	// thread group.
 	//
 	// groupStopAcknowledged is analogous to !JOBCTL_STOP_CONSUME in Linux.
 	//
 	// groupStopAcknowledged is protected by the signal mutex.
 	groupStopAcknowledged bool
+
+	// If trapStopPending is true, the task goroutine should enter a
+	// PTRACE_INTERRUPT-induced stop from the interrupt path.
+	//
+	// trapStopPending is analogous to JOBCTL_TRAP_STOP in Linux, except that
+	// Linux also sets JOBCTL_TRAP_STOP when a ptraced task detects
+	// JOBCTL_STOP_PENDING.
+	//
+	// trapStopPending is protected by the signal mutex.
+	trapStopPending bool
+
+	// If trapNotifyPending is true, this task is PTRACE_SEIZEd, and a group
+	// stop has begun or ended since the last time the task entered a
+	// ptrace-stop from the group-stop path.
+	//
+	// trapNotifyPending is analogous to JOBCTL_TRAP_NOTIFY in Linux.
+	//
+	// trapNotifyPending is protected by the signal mutex.
+	trapNotifyPending bool
 
 	// If stop is not nil, it is the internally-initiated condition that
 	// currently prevents the task goroutine from running.
@@ -295,6 +309,12 @@ type Task struct {
 	//
 	// ptraceTracees is protected by the TaskSet mutex.
 	ptraceTracees map[*Task]struct{}
+
+	// ptraceSeized is true if ptraceTracer attached to this task with
+	// PTRACE_SEIZE.
+	//
+	// ptraceSeized is protected by the TaskSet mutex.
+	ptraceSeized bool
 
 	// ptraceOpts contains ptrace options explicitly set by the tracer. If
 	// ptraceTracer is nil, ptraceOpts is expected to be the zero value.
