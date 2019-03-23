@@ -374,6 +374,31 @@ TEST_F(StatTest, ChildOfNonDir) {
   EXPECT_THAT(lstat(filename.c_str(), &st), SyscallFailsWithErrno(ENOTDIR));
 }
 
+// Test lstating a symlink directory.
+TEST_F(StatTest, LstatSymlinkDir) {
+  // Create a directory and symlink to it.
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string symlink_to_dir = NewTempAbsPath();
+  EXPECT_THAT(symlink(dir.path().c_str(), symlink_to_dir.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&symlink_to_dir]() {
+    EXPECT_THAT(unlink(symlink_to_dir.c_str()), SyscallSucceeds());
+  });
+
+  // Lstat on the symlink should return symlink data.
+  struct stat st = {};
+  ASSERT_THAT(lstat(symlink_to_dir.c_str(), &st), SyscallSucceeds());
+  EXPECT_FALSE(S_ISDIR(st.st_mode));
+  EXPECT_TRUE(S_ISLNK(st.st_mode));
+
+  // Lstat on the symlink with a trailing slash should return the directory
+  // data.
+  ASSERT_THAT(lstat(absl::StrCat(symlink_to_dir, "/").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_FALSE(S_ISLNK(st.st_mode));
+}
+
 // Verify that we get an ELOOP from too many symbolic links even when there
 // are directories in the middle.
 TEST_F(StatTest, LstatELOOPPath) {

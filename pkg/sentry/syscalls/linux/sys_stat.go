@@ -78,7 +78,11 @@ func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, false /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	// If the path ends in a slash (i.e. dirPath is true), then we *do*
+	// want to resolve the final component.
+	resolve := dirPath
+
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
 		return stat(t, d, dirPath, statAddr)
 	})
 }
