@@ -466,9 +466,7 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr,
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, err := mm.getPMAsLocked(ctx, vseg, ar, pmaOpts{
-		breakCOW: at.Write,
-	})
+	pseg, pend, err := mm.getPMAsLocked(ctx, vseg, ar, at)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -498,14 +496,10 @@ func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr usermem.Addr,
 //
 // Preconditions: 0 < ar.Length() <= math.MaxInt64.
 func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.AddrRange, at usermem.AccessType, ignorePermissions bool, f func(safemem.BlockSeq) (uint64, error)) (int64, error) {
-	po := pmaOpts{
-		breakCOW: at.Write,
-	}
-
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
 	mm.activeMu.RLock()
-	if pseg := mm.existingPMAsLocked(ar, at, ignorePermissions, po, true /* needInternalMappings */); pseg.Ok() {
+	if pseg := mm.existingPMAsLocked(ar, at, ignorePermissions, true /* needInternalMappings */); pseg.Ok() {
 		n, err := f(mm.internalMappingsLocked(pseg, ar))
 		mm.activeMu.RUnlock()
 		// Do not convert errors returned by f to EFAULT.
@@ -526,7 +520,7 @@ func (mm *MemoryManager) withInternalMappings(ctx context.Context, ar usermem.Ad
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, po)
+	pseg, pend, perr := mm.getPMAsLocked(ctx, vseg, ar, at)
 	mm.mappingMu.RUnlock()
 	if pendaddr := pend.Start(); pendaddr < ar.End {
 		if pendaddr <= ar.Start {
@@ -578,14 +572,10 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars userme
 		return mm.withInternalMappings(ctx, ars.Head(), at, ignorePermissions, f)
 	}
 
-	po := pmaOpts{
-		breakCOW: at.Write,
-	}
-
 	// If pmas are already available, we can do IO without touching mm.vmas or
 	// mm.mappingMu.
 	mm.activeMu.RLock()
-	if mm.existingVecPMAsLocked(ars, at, ignorePermissions, po, true /* needInternalMappings */) {
+	if mm.existingVecPMAsLocked(ars, at, ignorePermissions, true /* needInternalMappings */) {
 		n, err := f(mm.vecInternalMappingsLocked(ars))
 		mm.activeMu.RUnlock()
 		// Do not convert errors returned by f to EFAULT.
@@ -603,7 +593,7 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars userme
 
 	// Ensure that we have usable pmas.
 	mm.activeMu.Lock()
-	pars, perr := mm.getVecPMAsLocked(ctx, vars, po)
+	pars, perr := mm.getVecPMAsLocked(ctx, vars, at)
 	mm.mappingMu.RUnlock()
 	if pars.NumBytes() == 0 {
 		mm.activeMu.Unlock()

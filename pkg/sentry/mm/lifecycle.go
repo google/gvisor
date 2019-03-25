@@ -124,7 +124,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		}
 		if !pma.needCOW {
 			pma.needCOW = true
-			if pma.vmaEffectivePerms.Write {
+			if pma.effectivePerms.Write {
 				// We don't want to unmap the whole address space, even though
 				// doing so would reduce calls to unmapASLocked(), because mm
 				// will most likely continue to be used after the fork, so
@@ -139,7 +139,9 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 					}
 					unmapAR = srcpseg.Range()
 				}
+				pma.effectivePerms.Write = false
 			}
+			pma.maxPerms.Write = false
 		}
 		fr := srcpseg.fileRange()
 		mm2.incPrivateRef(fr)

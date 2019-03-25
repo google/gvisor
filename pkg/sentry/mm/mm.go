@@ -71,9 +71,6 @@ type MemoryManager struct {
 	// ownership is shared by one or more pmas instead of being owned by a
 	// memmap.Mappable).
 	//
-	// NOTE: This should be replaced using refcounts on
-	// platform.File.
-	//
 	// privateRefs is immutable.
 	privateRefs *privateRefs
 
@@ -374,13 +371,27 @@ type pma struct {
 	file platform.File `state:"nosave"`
 
 	// off is the offset into file at which this pma begins.
+	//
+	// Note that pmas do *not* hold references on offsets in file! If private
+	// is true, MemoryManager.privateRefs holds the reference instead. If
+	// private is false, the corresponding memmap.Mappable holds the reference
+	// instead (per memmap.Mappable.Translate requirement).
 	off uint64
 
-	// vmaEffectivePerms and vmaMaxPerms are duplicated from the
-	// corresponding vma so that the IO implementation can avoid iterating
-	// mm.vmas when pmas already exist.
-	vmaEffectivePerms usermem.AccessType
-	vmaMaxPerms       usermem.AccessType
+	// translatePerms is the permissions returned by memmap.Mappable.Translate.
+	// If private is true, translatePerms is usermem.AnyAccess.
+	translatePerms usermem.AccessType
+
+	// effectivePerms is the permissions allowed for non-ignorePermissions
+	// accesses. maxPerms is the permissions allowed for ignorePermissions
+	// accesses. These are vma.effectivePerms and vma.maxPerms respectively,
+	// masked by pma.translatePerms and with Write disallowed if pma.needCOW is
+	// true.
+	//
+	// These are stored in the pma so that the IO implementation can avoid
+	// iterating mm.vmas when pmas already exist.
+	effectivePerms usermem.AccessType
+	maxPerms       usermem.AccessType
 
 	// needCOW is true if writes to the mapping must be propagated to a copy.
 	needCOW bool

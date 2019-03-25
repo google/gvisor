@@ -94,6 +94,7 @@ func (h *HostMappable) Translate(ctx context.Context, required, optional memmap.
 			Source: optional,
 			File:   h,
 			Offset: optional.Start,
+			Perms:  usermem.AnyAccess,
 		},
 	}, nil
 }

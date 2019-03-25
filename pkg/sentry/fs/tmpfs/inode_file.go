@@ -481,6 +481,7 @@ func (f *fileInodeOperations) Translate(ctx context.Context, required, optional 
 			Source: segMR,
 			File:   mf,
 			Offset: seg.FileRangeOf(segMR).Start,
+			Perms:  usermem.AnyAccess,
 		})
 		translatedEnd = segMR.End
 	}

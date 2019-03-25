@@ -102,6 +102,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 				Source: source,
 				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
+				Perms:  usermem.AnyAccess,
 			},
 		}, err
 	}

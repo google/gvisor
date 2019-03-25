@@ -302,6 +302,7 @@ func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.M
 				Source: source,
 				File:   m.mfp.MemoryFile(),
 				Offset: m.fr.Start + source.Start,
+				Perms:  usermem.AnyAccess,
 			},
 		}, err
 	}

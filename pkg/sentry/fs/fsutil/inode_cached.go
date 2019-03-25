@@ -739,6 +739,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 				Source: optional,
 				File:   c,
 				Offset: optional.Start,
+				Perms:  usermem.AnyAccess,
 			},
 		}, nil
 	}
@@ -768,16 +769,24 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	var translatedEnd uint64
 	for seg := c.cache.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
 		segMR := seg.Range().Intersect(optional)
-		ts = append(ts, memmap.Translation{
-			Source: segMR,
-			File:   mf,
-			Offset: seg.FileRangeOf(segMR).Start,
-		})
+		// TODO: Make Translations writable even if writability is
+		// not required if already kept-dirty by another writable translation.
+		perms := usermem.AccessType{
+			Read:    true,
+			Execute: true,
+		}
 		if at.Write {
 			// From this point forward, this memory can be dirtied through the
 			// mapping at any time.
 			c.dirty.KeepDirty(segMR)
+			perms.Write = true
 		}
+		ts = append(ts, memmap.Translation{
+			Source: segMR,
+			File:   mf,
+			Offset: seg.FileRangeOf(segMR).Start,
+			Perms:  perms,
+		})
 		translatedEnd = segMR.End
 	}
 

@@ -68,12 +68,12 @@ func (pseg pmaIterator) debugStringEntryLocked() []byte {
 	fmt.Fprintf(&b, "%08x-%08x ", pseg.Start(), pseg.End())
 
 	pma := pseg.ValuePtr()
-	if pma.vmaEffectivePerms.Read {
+	if pma.effectivePerms.Read {
 		b.WriteByte('r')
 	} else {
 		b.WriteByte('-')
 	}
-	if pma.vmaEffectivePerms.Write {
+	if pma.effectivePerms.Write {
 		if pma.needCOW {
 			b.WriteByte('c')
 		} else {
@@ -82,7 +82,7 @@ func (pseg pmaIterator) debugStringEntryLocked() []byte {
 	} else {
 		b.WriteByte('-')
 	}
-	if pma.vmaEffectivePerms.Execute {
+	if pma.effectivePerms.Execute {
 		b.WriteByte('x')
 	} else {
 		b.WriteByte('-')

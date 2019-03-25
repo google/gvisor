@@ -93,6 +93,15 @@ func (a AccessType) Intersect(other AccessType) AccessType {
 	}
 }
 
+// Union returns the access types set in either a or other.
+func (a AccessType) Union(other AccessType) AccessType {
+	return AccessType{
+		Read:    a.Read || other.Read,
+		Write:   a.Write || other.Write,
+		Execute: a.Execute || other.Execute,
+	}
+}
+
 // Effective returns the set of effective access types allowed by a, even if
 // some types are not explicitly allowed.
 func (a AccessType) Effective() AccessType {

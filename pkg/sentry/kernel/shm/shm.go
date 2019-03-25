@@ -455,6 +455,7 @@ func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableR
 				Source: source,
 				File:   s.mfp.MemoryFile(),
 				Offset: s.fr.Start + source.Start,
+				Perms:  usermem.AnyAccess,
 			},
 		}, err
 	}

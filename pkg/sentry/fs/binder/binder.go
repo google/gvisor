@@ -244,6 +244,7 @@ func (bp *Proc) Translate(ctx context.Context, required, optional memmap.Mappabl
 				Source: memmap.MappableRange{0, usermem.PageSize},
 				File:   bp.mfp.MemoryFile(),
 				Offset: bp.mapped.Start,
+				Perms:  usermem.AnyAccess,
 			},
 		}, err
 	}

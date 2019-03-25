@@ -179,7 +179,7 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar usermem.AddrRange, pre
 		pma := pseg.ValuePtr()
 		pmaAR := pseg.Range()
 		pmaMapAR := pmaAR.Intersect(mapAR)
-		perms := pma.vmaEffectivePerms
+		perms := pma.effectivePerms
 		if pma.needCOW {
 			perms.Write = false
 		}

@@ -105,13 +105,22 @@ type Translation struct {
 
 	// Offset is the offset into File at which this Translation begins.
 	Offset uint64
+
+	// Perms is the set of permissions for which platform.AddressSpace.MapFile
+	// and platform.AddressSpace.MapInternal on this Translation is permitted.
+	Perms usermem.AccessType
+}
+
+// FileRange returns the platform.FileRange represented by t.
+func (t Translation) FileRange() platform.FileRange {
+	return platform.FileRange{t.Offset, t.Offset + t.Source.Length()}
 }
 
 // CheckTranslateResult returns an error if (ts, terr) does not satisfy all
-// postconditions for Mappable.Translate(required, optional).
+// postconditions for Mappable.Translate(required, optional, at).
 //
 // Preconditions: As for Mappable.Translate.
-func CheckTranslateResult(required, optional MappableRange, ts []Translation, terr error) error {
+func CheckTranslateResult(required, optional MappableRange, at usermem.AccessType, ts []Translation, terr error) error {
 	// Verify that the inputs to Mappable.Translate were valid.
 	if !required.WellFormed() || required.Length() <= 0 {
 		panic(fmt.Sprintf("invalid required range: %v", required))
@@ -155,6 +164,10 @@ func CheckTranslateResult(required, optional MappableRange, ts []Translation, te
 		// Translations must be constrained to the optional range.
 		if !optional.IsSupersetOf(t.Source) {
 			return fmt.Errorf("Translation %+v lies outside optional range %v", t, optional)
+		}
+		// Each Translation must permit a superset of requested accesses.
+		if !t.Perms.SupersetOf(at) {
+			return fmt.Errorf("Translation %+v does not permit all requested access types %v", t, at)
 		}
 	}
 	// If the set of Translations does not cover the entire required range,

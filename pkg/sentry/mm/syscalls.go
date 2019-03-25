@@ -54,9 +54,7 @@ func (mm *MemoryManager) HandleUserFault(ctx context.Context, addr usermem.Addr,
 
 	// Ensure that we have a usable pma.
 	mm.activeMu.Lock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, pmaOpts{
-		breakCOW: at.Write,
-	})
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, at)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		mm.activeMu.Unlock()
@@ -186,7 +184,7 @@ func (mm *MemoryManager) populateVMA(ctx context.Context, vseg vmaIterator, ar u
 	}
 
 	// Ensure that we have usable pmas.
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, pmaOpts{})
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, usermem.NoAccess)
 	if err != nil {
 		// mm/util.c:vm_mmap_pgoff() ignores the error, if any, from
 		// mm/gup.c:mm_populate(). If it matters, we'll get it again when
@@ -231,7 +229,7 @@ func (mm *MemoryManager) populateVMAAndUnlock(ctx context.Context, vseg vmaItera
 	// mm.mappingMu doesn't need to be write-locked for getPMAsLocked, and it
 	// isn't needed at all for mapASLocked.
 	mm.mappingMu.DowngradeLock()
-	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, pmaOpts{})
+	pseg, _, err := mm.getPMAsLocked(ctx, vseg, ar, usermem.NoAccess)
 	mm.mappingMu.RUnlock()
 	if err != nil {
 		mm.activeMu.Unlock()
@@ -651,13 +649,17 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 		for pseg.Ok() && pseg.Start() < vseg.End() {
 			if pseg.Range().Overlaps(vseg.Range()) {
 				pseg = mm.pmas.Isolate(pseg, vseg.Range())
-				if !effectivePerms.SupersetOf(pseg.ValuePtr().vmaEffectivePerms) && !didUnmapAS {
+				pma := pseg.ValuePtr()
+				if !effectivePerms.SupersetOf(pma.effectivePerms) && !didUnmapAS {
 					// Unmap all of ar, not just vseg.Range(), to minimize host
 					// syscalls.
 					mm.unmapASLocked(ar)
 					didUnmapAS = true
 				}
-				pseg.ValuePtr().vmaEffectivePerms = effectivePerms
+				pma.effectivePerms = effectivePerms.Intersect(pma.translatePerms)
+				if pma.needCOW {
+					pma.effectivePerms.Write = false
+				}
 			}
 			pseg = pseg.NextSegment()
 		}
@@ -828,7 +830,7 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr usermem.Addr, length ui
 				mm.mappingMu.RUnlock()
 				return syserror.ENOMEM
 			}
-			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), pmaOpts{})
+			_, _, err := mm.getPMAsLocked(ctx, vseg, vseg.Range().Intersect(ar), usermem.NoAccess)
 			if err != nil {
 				mm.activeMu.Unlock()
 				mm.mappingMu.RUnlock()
@@ -923,7 +925,7 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		mm.mappingMu.DowngradeLock()
 		for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 			if vseg.ValuePtr().effectivePerms.Any() {
-				mm.getPMAsLocked(ctx, vseg, vseg.Range(), pmaOpts{})
+				mm.getPMAsLocked(ctx, vseg, vseg.Range(), usermem.NoAccess)
 			}
 		}
 
@@ -981,7 +983,7 @@ func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 		}
 		for pseg.Ok() && pseg.Start() < vsegAR.End {
 			pma := pseg.ValuePtr()
-			if pma.private && !mm.isPMACopyOnWriteLocked(pseg) {
+			if pma.private && !mm.isPMACopyOnWriteLocked(vseg, pseg) {
 				psegAR := pseg.Range().Intersect(ar)
 				if vsegAR.IsSupersetOf(psegAR) && vma.mappable == nil {
 					if err := mf.Decommit(pseg.fileRangeOf(psegAR)); err == nil {
