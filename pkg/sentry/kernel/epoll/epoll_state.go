@@ -15,7 +15,6 @@
 package epoll
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
@@ -33,18 +32,17 @@ func (e *EventPoll) afterLoad() {
 	e.listsMu.Lock()
 	defer e.listsMu.Unlock()
 
-	for _, ls := range []*ilist.List{&e.waitingList, &e.readyList, &e.disabledList} {
+	for _, ls := range []*pollEntryList{&e.waitingList, &e.readyList, &e.disabledList} {
 		for it := ls.Front(); it != nil; it = it.Next() {
-			it.(*pollEntry).curList = ls
+			it.curList = ls
 		}
 	}
 
 	for it := e.waitingList.Front(); it != nil; it = it.Next() {
-		p := it.(*pollEntry)
-		if p.id.File.Readiness(p.mask) != 0 {
-			e.waitingList.Remove(p)
-			e.readyList.PushBack(p)
-			p.curList = &e.readyList
+		if it.id.File.Readiness(it.mask) != 0 {
+			e.waitingList.Remove(it)
+			e.readyList.PushBack(it)
+			it.curList = &e.readyList
 			e.Notify(waiter.EventIn)
 		}
 	}

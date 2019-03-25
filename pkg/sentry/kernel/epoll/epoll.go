@@ -21,7 +21,6 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -70,7 +69,7 @@ type FileIdentifier struct {
 //
 // +stateify savable
 type pollEntry struct {
-	ilist.Entry
+	pollEntryEntry
 	file     *refs.WeakRef  `state:"manual"`
 	id       FileIdentifier `state:"wait"`
 	userData [2]int32
@@ -84,7 +83,7 @@ type pollEntry struct {
 	// struct, while state framework currently does not support such
 	// in-struct pointers. Instead, EventPoll will properly set this field
 	// in its loading logic.
-	curList *ilist.List `state:"nosave"`
+	curList *pollEntryList `state:"nosave"`
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
@@ -133,9 +132,9 @@ type EventPoll struct {
 	//	disabledList -- when the entry is disabled. This happens when
 	//		a one-shot entry gets delivered via readEvents().
 	listsMu      sync.Mutex `state:"nosave"`
-	readyList    ilist.List
-	waitingList  ilist.List
-	disabledList ilist.List
+	readyList    pollEntryList
+	waitingList  pollEntryList
+	disabledList pollEntryList
 }
 
 // cycleMu is used to serialize all the cycle checks. This is only used when
@@ -189,7 +188,7 @@ func (e *EventPoll) eventsAvailable() bool {
 	e.listsMu.Lock()
 
 	for it := e.readyList.Front(); it != nil; {
-		entry := it.(*pollEntry)
+		entry := it
 		it = it.Next()
 
 		// If the entry is ready, we know 'e' has at least one entry
@@ -225,14 +224,14 @@ func (e *EventPoll) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // ReadEvents returns up to max available events.
 func (e *EventPoll) ReadEvents(max int) []Event {
-	var local ilist.List
+	var local pollEntryList
 	var ret []Event
 
 	e.listsMu.Lock()
 
 	// Go through all entries we believe may be ready.
 	for it := e.readyList.Front(); it != nil && len(ret) < max; {
-		entry := it.(*pollEntry)
+		entry := it
 		it = it.Next()
 
 		// Check the entry's readiness. It it's not really ready, we

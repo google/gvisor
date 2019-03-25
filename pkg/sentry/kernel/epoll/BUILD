@@ -1,17 +1,30 @@
 package(licenses = ["notice"])
 
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+
+go_template_instance(
+    name = "epoll_list",
+    out = "epoll_list.go",
+    package = "epoll",
+    prefix = "pollEntry",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*pollEntry",
+        "Linker": "*pollEntry",
+    },
+)
 
 go_library(
     name = "epoll",
     srcs = [
         "epoll.go",
+        "epoll_list.go",
         "epoll_state.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/epoll",
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/ilist",
         "//pkg/refs",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
