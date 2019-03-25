@@ -39,8 +39,7 @@ func (cfg *Config) decode(opts []option) error {
 	for _, opt := range opts {
 		b := opt.body
 		if !opt.code.lenValid(len(b)) {
-			// TODO: s/%v/%s/ when `go vet` is smarter.
-			return fmt.Errorf("%v: bad length: %d", opt.code, len(b))
+			return fmt.Errorf("%s: bad length: %d", opt.code, len(b))
 		}
 		switch opt.code {
 		case optLeaseTime:
@@ -231,8 +230,7 @@ func (opts options) dhcpMsgType() (dhcpMsgType, error) {
 	for _, opt := range opts {
 		if opt.code == optDHCPMsgType {
 			if len(opt.body) != 1 {
-				// TODO: s/%v/%s/ when `go vet` is smarter.
-				return 0, fmt.Errorf("%v: bad length: %d", opt.code, len(opt.body))
+				return 0, fmt.Errorf("%s: bad length: %d", opt.code, len(opt.body))
 			}
 			v := opt.body[0]
 			if v <= 0 || v >= 8 {
