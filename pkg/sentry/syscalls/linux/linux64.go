@@ -367,7 +367,7 @@ var AMD64 = &kernel.SyscallTable{
 		//     316: Renameat2, TODO
 		317: Seccomp,
 		318: GetRandom,
-		//     319: MemfdCreate, TODO
+		319: MemfdCreate,
 		320: syscalls.CapError(linux.CAP_SYS_BOOT),  // KexecFileLoad, infeasible to support
 		321: syscalls.CapError(linux.CAP_SYS_ADMIN), // Bpf, requires cap_sys_admin for all commands
 		//     322: Execveat, TODO

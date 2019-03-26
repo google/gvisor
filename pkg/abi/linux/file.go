@@ -236,3 +236,21 @@ var fileType = abi.ValueSet{
 	ModeCharacterDevice: "S_IFCHR",
 	ModeNamedPipe:       "S_IFIFO",
 }
+
+// Constants for memfd_create(2). Source: include/uapi/linux/memfd.h
+const (
+	MFD_CLOEXEC       = 0x0001
+	MFD_ALLOW_SEALING = 0x0002
+)
+
+// Constants related to file seals. Source: include/uapi/{asm-generic,linux}/fcntl.h
+const (
+	F_LINUX_SPECIFIC_BASE = 1024
+	F_ADD_SEALS           = F_LINUX_SPECIFIC_BASE + 9
+	F_GET_SEALS           = F_LINUX_SPECIFIC_BASE + 10
+
+	F_SEAL_SEAL   = 0x0001 // Prevent further seals from being set.
+	F_SEAL_SHRINK = 0x0002 // Prevent file from shrinking.
+	F_SEAL_GROW   = 0x0004 // Prevent file from growing.
+	F_SEAL_WRITE  = 0x0008 // Prevent writes.
+)

@@ -3261,3 +3261,20 @@ cc_binary(
         "@com_google_googletest//:gtest",
     ],
 )
+
+cc_binary(
+    name = "memfd_test",
+    testonly = 1,
+    srcs = ["memfd.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:memory_util",
+        "//test/util:multiprocess_util",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
