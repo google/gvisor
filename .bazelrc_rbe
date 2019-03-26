@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Note for gVisor authors:
-#   This version is a derivative of: bazel-0.20.0.bazelrc
+#   This version is a derivative of: bazel-0.23.0.bazelrc
 #   From: https://github.com/bazelbuild/bazel-toolchains/blob/master/bazelrc/bazel-0.20.0.bazelrc
 
 # This .bazelrc file contains all of the flags required for the toolchain,
@@ -33,15 +33,15 @@ build:remote --jobs=50
 # Set several flags related to specifying the platform, toolchain and java
 # properties.
 # These flags are duplicated rather than imported from (for example)
-# %workspace%/configs/ubuntu16_04_clang/1.1/toolchain.bazelrc to make this
+# %workspace%/configs/ubuntu16_04_clang/1.2/toolchain.bazelrc to make this
 # bazelrc a standalone file that can be copied more easily.
 # These flags should only be used as is for the rbe-ubuntu16-04 container
 # and need to be adapted to work with other toolchain containers.
-build:remote --host_javabase=@bazel_toolchains//configs/ubuntu16_04_clang/1.1:jdk8
-build:remote --javabase=@bazel_toolchains//configs/ubuntu16_04_clang/1.1:jdk8
+build:remote --host_javabase=@bazel_toolchains//configs/ubuntu16_04_clang/1.2:jdk8
+build:remote --javabase=@bazel_toolchains//configs/ubuntu16_04_clang/1.2:jdk8
 build:remote --host_java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
 build:remote --java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
-build:remote --crosstool_top=@bazel_toolchains//configs/ubuntu16_04_clang/1.1/bazel_0.20.0/default:toolchain
+build:remote --crosstool_top=@bazel_toolchains//configs/ubuntu16_04_clang/1.2/bazel_0.23.0/default:toolchain
 build:remote --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # Platform flags:
 # The toolchain container used for execution is defined in the target indicated
@@ -62,7 +62,7 @@ build:remote --platforms=//test:rbe_ubuntu1604
 build:remote --spawn_strategy=remote
 build:remote --strategy=Javac=remote
 build:remote --strategy=Closure=remote
-build:remote --genrule_strategy=remote
+build:remote --strategy=Genrule=remote
 build:remote --define=EXECUTOR=remote
 
 # Enable the remote cache so action results can be shared across machines,
@@ -74,11 +74,6 @@ build:remote --remote_executor=remotebuildexecution.googleapis.com
 
 # Enable encryption.
 build:remote --tls_enabled=true
-
-# Enforce stricter environment rules, which eliminates some non-hermetic
-# behavior and therefore improves both the remote cache hit rate and the
-# correctness and repeatability of the build.
-build:remote --experimental_strict_action_env=true
 
 # Set a higher timeout value, just in case.
 build:remote --remote_timeout=3600
@@ -112,10 +107,9 @@ build:results-local --bes_results_url="https://source.cloud.google.com/results/i
 # across machines, developers, and workspaces.
 build:remote-cache --remote_cache=remotebuildexecution.googleapis.com
 build:remote-cache --tls_enabled=true
-build:remote-cache --experimental_strict_action_env=true
 build:remote-cache --remote_timeout=3600
 build:remote-cache --auth_enabled=true
 build:remote-cache --spawn_strategy=standalone
 build:remote-cache --strategy=Javac=standalone
 build:remote-cache --strategy=Closure=standalone
-build:remote-cache --genrule_strategy=standalone
+build:remote-cache --strategy=Genrule=standalone
