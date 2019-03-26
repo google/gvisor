@@ -51,7 +51,6 @@ type endpoint struct {
 	id            stack.NetworkEndpointID
 	linkEP        stack.LinkEndpoint
 	dispatcher    stack.TransportDispatcher
-	echoRequests  chan echoRequest
 	fragmentation *fragmentation.Fragmentation
 }
 
@@ -62,11 +61,8 @@ func (p *protocol) NewEndpoint(nicid tcpip.NICID, addr tcpip.Address, linkAddrCa
 		id:            stack.NetworkEndpointID{LocalAddress: addr},
 		linkEP:        linkEP,
 		dispatcher:    dispatcher,
-		echoRequests:  make(chan echoRequest, 10),
 		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
 	}
-
-	go e.echoReplier()
 
 	return e, nil
 }
@@ -174,9 +170,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 }
 
 // Close cleans up resources associated with the endpoint.
-func (e *endpoint) Close() {
-	close(e.echoRequests)
-}
+func (e *endpoint) Close() {}
 
 type protocol struct{}
 

@@ -17,7 +17,6 @@ package ipv4
 import (
 	"encoding/binary"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
@@ -67,16 +66,16 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		if len(v) < header.ICMPv4EchoMinimumSize {
 			return
 		}
-		echoPayload := vv.ToView()
-		echoPayload.TrimFront(header.ICMPv4MinimumSize)
-		req := echoRequest{r: r.Clone(), v: echoPayload}
-		select {
-		case e.echoRequests <- req:
-		default:
-			req.r.Release()
-		}
 		// It's possible that a raw socket expects to receive this.
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
+
+		vv.TrimFront(header.ICMPv4EchoMinimumSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4EchoMinimumSize)
+		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4EchoMinimumSize))
+		copy(pkt, h)
+		pkt.SetType(header.ICMPv4EchoReply)
+		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
+		r.WritePacket(hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
 
 	case header.ICMPv4EchoReply:
 		if len(v) < header.ICMPv4EchoMinimumSize {
@@ -99,29 +98,4 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		}
 	}
 	// TODO: Handle other ICMP types.
-}
-
-type echoRequest struct {
-	r stack.Route
-	v buffer.View
-}
-
-func (e *endpoint) echoReplier() {
-	for req := range e.echoRequests {
-		sendPing4(&req.r, 0, req.v)
-		req.r.Release()
-	}
-}
-
-func sendPing4(r *stack.Route, code byte, data buffer.View) *tcpip.Error {
-	hdr := buffer.NewPrependable(header.ICMPv4EchoMinimumSize + int(r.MaxHeaderLength()))
-
-	icmpv4 := header.ICMPv4(hdr.Prepend(header.ICMPv4EchoMinimumSize))
-	icmpv4.SetType(header.ICMPv4EchoReply)
-	icmpv4.SetCode(code)
-	copy(icmpv4[header.ICMPv4MinimumSize:], data)
-	data = data[header.ICMPv4EchoMinimumSize-header.ICMPv4MinimumSize:]
-	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
-
-	return r.WritePacket(hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
 }

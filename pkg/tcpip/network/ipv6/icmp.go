@@ -136,8 +136,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		if len(v) < header.ICMPv6EchoMinimumSize {
 			return
 		}
+
 		vv.TrimFront(header.ICMPv6EchoMinimumSize)
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
