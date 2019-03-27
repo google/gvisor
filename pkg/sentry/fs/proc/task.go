@@ -461,7 +461,14 @@ func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle)
 	fmt.Fprintf(&buf, "%d %d ", linux.ClockTFromDuration(cputime.UserTime), linux.ClockTFromDuration(cputime.SysTime))
 	fmt.Fprintf(&buf, "%d %d ", s.t.Priority(), s.t.Niceness())
 	fmt.Fprintf(&buf, "%d ", s.t.ThreadGroup().Count())
-	fmt.Fprintf(&buf, "0 0 " /* itrealvalue starttime */)
+
+	// itrealvalue. Since kernel 2.6.17, this field is no longer
+	// maintained, and is hard coded as 0.
+	fmt.Fprintf(&buf, "0 ")
+
+	// Start time is relative to boot time, expressed in clock ticks.
+	fmt.Fprintf(&buf, "%d ", linux.ClockTFromDuration(s.t.StartTime().Sub(s.t.Kernel().Timekeeper().BootTime())))
+
 	var vss, rss uint64
 	s.t.WithMuLocked(func(t *kernel.Task) {
 		if mm := t.MemoryManager(); mm != nil {

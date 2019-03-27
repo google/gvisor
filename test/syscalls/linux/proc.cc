@@ -880,6 +880,14 @@ TEST_P(ProcPidStatTest, HasBasicFields) {
   EXPECT_EQ("R", fields[2]);  // task state
   EXPECT_EQ(absl::StrCat(getppid()), fields[3]);
 
+  // If the test starts up quickly, then the process start time and the kernel
+  // boot time will be very close, and the proc starttime field (which is the
+  // delta of the two times) will be 0.  For that unfortunate reason, we can
+  // only check that starttime >= 0, and not that it is strictly > 0.
+  uint64_t starttime;
+  ASSERT_TRUE(absl::SimpleAtoi(fields[21], &starttime));
+  EXPECT_GE(starttime, 0);
+
   uint64_t vss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[22], &vss));
   EXPECT_GT(vss, 0);
