@@ -15,8 +15,6 @@
 package ipv6
 
 import (
-	"context"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -181,29 +179,27 @@ func TestLinkResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// This actually takes about 10 milliseconds, so no need to wait for
-	// a multi-minute go test timeout if something is broken.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
 	for {
-		if ctx.Err() != nil {
-			break
+		_, resCh, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: 1, Addr: lladdr1}})
+		if resCh != nil {
+			if err != tcpip.ErrNoLinkAddress {
+				t.Fatalf("ep.Write(_) = _, <non-nil>, %s want _, <non-nil>, tcpip.ErrNoLinkAddress", err)
+			}
+			<-resCh
+			continue
 		}
-		if _, _, err := ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{NIC: 1, Addr: lladdr1}}); err == tcpip.ErrNoLinkAddress {
-			// There's something asynchronous going on; yield to let it do its thing.
-			runtime.Gosched()
-		} else if err == nil {
-			break
-		} else {
-			t.Fatal(err)
+		if err != nil {
+			t.Fatalf("ep.Write(_) = _, _, %s", err)
 		}
+		break
 	}
 
 	stats := make(map[header.ICMPv6Type]int)
 	for {
+		// This actually takes about 10 milliseconds, so no need to wait for
+		// a multi-minute go test timeout if something is broken.
 		select {
-		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
 			t.Errorf("timeout waiting for ICMP, got: %#+v", stats)
 			return
 		case icmpInfo := <-c.icmpCh:
