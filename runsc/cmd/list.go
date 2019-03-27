@@ -42,7 +42,7 @@ func (*List) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*List) Synopsis() string {
-	return "list contaners started by runsc with the given root"
+	return "list containers started by runsc with the given root"
 }
 
 // Usage implements subcommands.Command.Usage.
