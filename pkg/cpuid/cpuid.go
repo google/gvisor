@@ -338,7 +338,7 @@ var x86FeatureStrings = map[Feature]string{
 	X86FeatureRTM:        "rtm",
 	X86FeatureCQM:        "cqm",
 	X86FeatureMPX:        "mpx",
-	X86FeatureRDT:        "rdt",
+	X86FeatureRDT:        "rdt_a",
 	X86FeatureAVX512F:    "avx512f",
 	X86FeatureAVX512DQ:   "avx512dq",
 	X86FeatureRDSEED:     "rdseed",
