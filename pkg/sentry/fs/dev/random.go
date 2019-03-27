@@ -51,7 +51,7 @@ func newRandomDevice(ctx context.Context, owner fs.FileOwner, mode linux.FileMod
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
-func (randomDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+func (*randomDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	return fs.NewFile(ctx, dirent, flags, &randomFileOperations{}), nil
 }
 
@@ -71,6 +71,6 @@ type randomFileOperations struct {
 var _ fs.FileOperations = (*randomFileOperations)(nil)
 
 // Read implements fs.FileOperations.Read.
-func (randomFileOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
+func (*randomFileOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
 	return dst.CopyOutFrom(ctx, safemem.FromIOReader{rand.Reader})
 }

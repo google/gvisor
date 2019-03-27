@@ -117,6 +117,6 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 type readZeros struct{}
 
 // Read implements fs.FileOperations.Read.
-func (readZeros) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+func (*readZeros) Read(ctx context.Context, file *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	return dst.ZeroOut(ctx, math.MaxInt64)
 }

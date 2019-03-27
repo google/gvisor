@@ -73,6 +73,6 @@ type fullFileOperations struct {
 var _ fs.FileOperations = (*fullFileOperations)(nil)
 
 // Write implements FileOperations.Write.
-func (fullFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
+func (*fullFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
 	return 0, syserror.ENOSPC
 }
