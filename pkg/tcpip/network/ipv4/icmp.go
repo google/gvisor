@@ -69,6 +69,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		// It's possible that a raw socket expects to receive this.
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
+		vv := vv.Clone(nil)
 		vv.TrimFront(header.ICMPv4EchoMinimumSize)
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4EchoMinimumSize)
 		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4EchoMinimumSize))
