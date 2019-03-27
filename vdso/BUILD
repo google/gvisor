@@ -55,7 +55,10 @@ genrule(
           "--check-data " +
           "--vdso $(location vdso.so) ",
     features = ["-pie"],
-    toolchains = ["@bazel_tools//tools/cpp:current_cc_toolchain"],
+    toolchains = [
+        "@bazel_tools//tools/cpp:current_cc_toolchain",
+        "@bazel_tools//tools/cpp:cc_flags",
+    ],
     tools = [
         ":check_vdso",
     ],
