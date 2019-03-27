@@ -25,6 +25,7 @@ go_library(
         "bytes_io_unsafe.go",
         "usermem.go",
         "usermem_arm64.go",
+        "usermem_unsafe.go",
         "usermem_x86.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/usermem",

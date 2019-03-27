@@ -37,6 +37,8 @@ type IO interface {
 	//
 	// Preconditions: The caller must not hold mm.MemoryManager.mappingMu or
 	// any following locks in the lock order.
+	//
+	// Postconditions: CopyOut does not retain src.
 	CopyOut(ctx context.Context, addr Addr, src []byte, opts IOOpts) (int, error)
 
 	// CopyIn copies len(dst) bytes from the memory mapped at addr to dst.
@@ -45,6 +47,8 @@ type IO interface {
 	//
 	// Preconditions: The caller must not hold mm.MemoryManager.mappingMu or
 	// any following locks in the lock order.
+	//
+	// Postconditions: CopyIn does not retain dst.
 	CopyIn(ctx context.Context, addr Addr, dst []byte, opts IOOpts) (int, error)
 
 	// ZeroOut sets toZero bytes to 0, starting at addr. It returns the number
@@ -237,7 +241,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr Addr, maxlen int, opts IOOpt
 		if !ok {
 			// Last page of kernel memory. The application can't use this
 			// anyway.
-			return string(buf[:done]), syserror.EFAULT
+			return stringFromImmutableBytes(buf[:done]), syserror.EFAULT
 		}
 		// Read up to copyStringIncrement bytes at a time.
 		readlen := copyStringIncrement
@@ -246,7 +250,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr Addr, maxlen int, opts IOOpt
 		}
 		end, ok := start.AddLength(uint64(readlen))
 		if !ok {
-			return string(buf[:done]), syserror.EFAULT
+			return stringFromImmutableBytes(buf[:done]), syserror.EFAULT
 		}
 		// Shorten the read to avoid crossing page boundaries, since faulting
 		// in a page unnecessarily is expensive. This also ensures that partial
@@ -259,15 +263,15 @@ func CopyStringIn(ctx context.Context, uio IO, addr Addr, maxlen int, opts IOOpt
 		// hitting err.
 		for i, c := range buf[done : done+n] {
 			if c == 0 {
-				return string(buf[:done+i]), nil
+				return stringFromImmutableBytes(buf[:done+i]), nil
 			}
 		}
 		done += n
 		if err != nil {
-			return string(buf[:done]), err
+			return stringFromImmutableBytes(buf[:done]), err
 		}
 	}
-	return string(buf), syserror.ENAMETOOLONG
+	return stringFromImmutableBytes(buf), syserror.ENAMETOOLONG
 }
 
 // CopyOutVec copies bytes from src to the memory mapped at ars in uio. The
