@@ -88,8 +88,8 @@ func (r *Route) Stats() tcpip.Stats {
 
 // PseudoHeaderChecksum forwards the call to the network endpoint's
 // implementation.
-func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber) uint16 {
-	return header.PseudoHeaderChecksum(protocol, r.LocalAddress, r.RemoteAddress)
+func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, totalLen uint16) uint16 {
+	return header.PseudoHeaderChecksum(protocol, r.LocalAddress, r.RemoteAddress, totalLen)
 }
 
 // Capabilities returns the link-layer capabilities of the route.

@@ -200,9 +200,8 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers) {
 	xsum = header.Checksum([]byte{0, uint8(udp.ProtocolNumber)}, xsum)
 
 	// Calculate the UDP checksum and set it.
-	length := uint16(header.UDPMinimumSize + len(payload))
 	xsum = header.Checksum(payload, xsum)
-	u.SetChecksum(^u.CalculateChecksum(xsum, length))
+	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
 	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())
@@ -239,9 +238,8 @@ func (c *testContext) sendPacket(payload []byte, h *headers) {
 	xsum = header.Checksum([]byte{0, uint8(udp.ProtocolNumber)}, xsum)
 
 	// Calculate the UDP checksum and set it.
-	length := uint16(header.UDPMinimumSize + len(payload))
 	xsum = header.Checksum(payload, xsum)
-	u.SetChecksum(^u.CalculateChecksum(xsum, length))
+	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
 	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())

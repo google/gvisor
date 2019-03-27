@@ -17,6 +17,8 @@
 package header
 
 import (
+	"encoding/binary"
+
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 )
@@ -76,12 +78,17 @@ func ChecksumCombine(a, b uint16) uint16 {
 	return uint16(v + v>>16)
 }
 
-// PseudoHeaderChecksum calculates the pseudo-header checksum for the
-// given destination protocol and network address, ignoring the length
-// field. Pseudo-headers are needed by transport layers when calculating
-// their own checksum.
-func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr tcpip.Address, dstAddr tcpip.Address) uint16 {
+// PseudoHeaderChecksum calculates the pseudo-header checksum for the given
+// destination protocol and network address. Pseudo-headers are needed by
+// transport layers when calculating their own checksum.
+func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr tcpip.Address, dstAddr tcpip.Address, totalLen uint16) uint16 {
 	xsum := Checksum([]byte(srcAddr), 0)
 	xsum = Checksum([]byte(dstAddr), xsum)
+
+	// Add the length portion of the checksum to the pseudo-checksum.
+	tmp := make([]byte, 2)
+	binary.BigEndian.PutUint16(tmp, totalLen)
+	xsum = Checksum(tmp, xsum)
+
 	return Checksum([]byte{0, uint8(protocol)}, xsum)
 }

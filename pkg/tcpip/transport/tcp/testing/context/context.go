@@ -332,9 +332,8 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 	xsum = header.Checksum([]byte{0, uint8(tcp.ProtocolNumber)}, xsum)
 
 	// Calculate the TCP checksum and set it.
-	length := uint16(header.TCPMinimumSize + len(h.TCPOpts) + len(payload))
 	xsum = header.Checksum(payload, xsum)
-	t.SetChecksum(^t.CalculateChecksum(xsum, length))
+	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
 	return buf.ToVectorisedView()
@@ -487,9 +486,8 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 	xsum = header.Checksum([]byte{0, uint8(tcp.ProtocolNumber)}, xsum)
 
 	// Calculate the TCP checksum and set it.
-	length := uint16(header.TCPMinimumSize + len(payload))
 	xsum = header.Checksum(payload, xsum)
-	t.SetChecksum(^t.CalculateChecksum(xsum, length))
+	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
 	c.linkEP.Inject(ipv6.ProtocolNumber, buf.ToVectorisedView())

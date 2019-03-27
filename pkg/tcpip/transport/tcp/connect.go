@@ -589,10 +589,10 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 	// Only calculate the checksum if offloading isn't supported.
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
 		length := uint16(hdr.UsedLength() + data.Size())
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
+		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 		xsum = header.ChecksumVV(data, xsum)
 
-		tcp.SetChecksum(^tcp.CalculateChecksum(xsum, length))
+		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 
 	r.Stats().TCP.SegmentsSent.Increment()

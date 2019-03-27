@@ -641,11 +641,11 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 
 	// Only calculate the checksum if offloading isn't supported.
 	if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
-		xsum := r.PseudoHeaderChecksum(ProtocolNumber)
+		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 		for _, v := range data.Views() {
 			xsum = header.Checksum(v, xsum)
 		}
-		udp.SetChecksum(^udp.CalculateChecksum(xsum, length))
+		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
 	// Track count of packets sent.

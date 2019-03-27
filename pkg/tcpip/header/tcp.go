@@ -231,19 +231,12 @@ func (b TCP) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[tcpChecksum:], checksum)
 }
 
-// CalculateChecksum calculates the checksum of the tcp segment given
-// the totalLen and partialChecksum(descriptions below)
-// totalLen is the total length of the segment
+// CalculateChecksum calculates the checksum of the tcp segment.
 // partialChecksum is the checksum of the network-layer pseudo-header
-// (excluding the total length) and the checksum of the segment data.
-func (b TCP) CalculateChecksum(partialChecksum uint16, totalLen uint16) uint16 {
-	// Add the length portion of the checksum to the pseudo-checksum.
-	tmp := make([]byte, 2)
-	binary.BigEndian.PutUint16(tmp, totalLen)
-	checksum := Checksum(tmp, partialChecksum)
-
+// and the checksum of the segment data.
+func (b TCP) CalculateChecksum(partialChecksum uint16) uint16 {
 	// Calculate the rest of the checksum.
-	return Checksum(b[:b.DataOffset()], checksum)
+	return Checksum(b[:b.DataOffset()], partialChecksum)
 }
 
 // Options returns a slice that holds the unparsed TCP options in the segment.
