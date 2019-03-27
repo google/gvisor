@@ -175,21 +175,23 @@ func (a *attachPoint) makeQID(stat syscall.Stat_t) p9.QID {
 }
 
 // localFile implements p9.File wrapping a local file. The underlying file
-// is opened during Walk() and stored in 'file' to be used with other
-// operations. The file is opened as readonly, unless it's a symlink which
-// requires O_PATH. 'file' is dup'ed when Walk(nil) is called to clone the file.
-// This reduces the number of walks that need to be done by the host file
-// system when files are reused.
+// is opened during Walk() and stored in 'controlFile' to be used with other
+// operations. The control file is opened as readonly, unless it's a symlink
+// which requires O_PATH. 'controlFile' is dup'ed when Walk(nil) is called
+// to clone the file. This reduces the number of walks that need to be done by
+// the host file system when files are reused.
 //
-// The file may be reopened if the requested mode in Open() is not a subset of
-// current mode. Consequently, 'file' could have a mode wider than requested and
-// must be verified before read/write operations. Before the file is opened and
-// after it's closed, 'mode' is set to an invalid value to prevent an unopened
-// file from being used.
+// 'openedFile' is assigned when Open() is called. If requested open mode is
+// a subset of controlFile's mode, it's possible to use the same file. If mode
+// is not a subset, then another file is opened. Consequently, 'openedFile'
+// could have a mode wider than requested and must be verified before read/write
+// operations. Before the file is opened and after it's closed, 'mode' is set to
+// an invalid value to prevent an unopened file from being used.
 //
-// The reason that the file is not opened initially as read-write is for better
+// The reason that the control file is never opened as read-write is for better
 // performance with 'overlay2' storage driver. overlay2 eagerly copies the
 // entire file up when it's opened in write mode, and would perform badly when
+// multiple files are being opened for read-only (esp. startup).
 type localFile struct {
 	p9.DefaultWalkGetAttr
 
@@ -199,9 +201,12 @@ type localFile struct {
 	// hostPath will be safely updated by the Renamed hook.
 	hostPath string
 
-	// file is opened when localFile is created and it's never nil. It may be
-	// reopened...
-	file *os.File
+	// controlFile is opened when localFile is created and it's never nil.
+	controlFile *os.File
+
+	// openedFile is nil until localFile is opened. It may point to controlFile
+	// or be a new file struct. See struct comment for more details.
+	openedFile *os.File
 
 	// mode is the mode in which the file was opened. Set to invalidMode
 	// if localFile isn't opened.
@@ -223,7 +228,7 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 	var err error
 	var fd int
 	for i, mode := range modes {
-		fd, err = syscall.Openat(parent.fd(), name, openFlags|mode, 0)
+		fd, err = syscall.Openat(parent.controlFD(), name, openFlags|mode, 0)
 		if err == nil {
 			// openat succeeded, we're done.
 			break
@@ -235,11 +240,11 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 		}
 		// openat failed. Try again with next mode, preserving 'err' in case this
 		// was the last attempt.
-		log.Debugf("Attempt %d to open file failed, mode: %#x, path: %s/%s, err: %v", i, openFlags|mode, parent.file.Name(), name, err)
+		log.Debugf("Attempt %d to open file failed, mode: %#x, path: %s/%s, err: %v", i, openFlags|mode, parent.controlFile.Name(), name, err)
 	}
 	if err != nil {
 		// All attempts to open file have failed, return the last error.
-		log.Debugf("Failed to open file, path: %s/%s, err: %v", parent.file.Name(), name, err)
+		log.Debugf("Failed to open file, path: %s/%s, err: %v", parent.controlFile.Name(), name, err)
 		return nil, "", extractErrno(err)
 	}
 
@@ -262,7 +267,7 @@ func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_
 	return &localFile{
 		attachPoint: a,
 		hostPath:    path,
-		file:        file,
+		controlFile: file,
 		mode:        invalidMode,
 		ft:          ft,
 	}, nil
@@ -297,26 +302,33 @@ func fchown(fd int, uid p9.UID, gid p9.GID) error {
 	return syscall.Fchownat(fd, "", int(uid), int(gid), linux.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
-func (l *localFile) fd() int {
-	return int(l.file.Fd())
+func (l *localFile) controlFD() int {
+	return int(l.controlFile.Fd())
+}
+
+func (l *localFile) openedFD() int {
+	if l.openedFile == nil {
+		panic(fmt.Sprintf("trying to use an unopened file: %q", l.controlFile.Name()))
+	}
+	return int(l.openedFile.Fd())
 }
 
 // Open implements p9.File.
 func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
-	if l.isOpen() {
-		panic(fmt.Sprintf("attempting to open already opened file: %q", l.file.Name()))
+	if l.openedFile != nil {
+		panic(fmt.Sprintf("attempting to open already opened file: %q", l.controlFile.Name()))
 	}
 
 	// Check if control file can be used or if a new open must be created.
 	var newFile *os.File
 	if mode == p9.ReadOnly {
-		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.file.Name())
-		newFile = l.file
+		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.controlFile.Name())
+		newFile = l.controlFile
 	} else {
 		// Ideally reopen would call name_to_handle_at (with empty name) and
 		// open_by_handle_at to reopen the file without using 'hostPath'. However,
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
-		log.Debugf("Open reopening file, mode: %v, %q", mode, l.file.Name())
+		log.Debugf("Open reopening file, mode: %v, %q", mode, l.controlFile.Name())
 		var err error
 
 		newFile, err = os.OpenFile(l.hostPath, openFlags|mode.OSFlags(), 0)
@@ -327,9 +339,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 
 	stat, err := stat(int(newFile.Fd()))
 	if err != nil {
-		if newFile != l.file {
-			newFile.Close()
-		}
+		newFile.Close()
 		return nil, p9.QID{}, 0, extractErrno(err)
 	}
 
@@ -339,13 +349,8 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		fd = newFDMaybe(newFile)
 	}
 
-	// Close old file in case a new one was created.
-	if newFile != l.file {
-		if err := l.file.Close(); err != nil {
-			log.Warningf("Error closing file %q: %v", l.file.Name(), err)
-		}
-		l.file = newFile
-	}
+	// Set fields on success
+	l.openedFile = newFile
 	l.mode = mode
 	return fd, l.attachPoint.makeQID(stat), 0, nil
 }
@@ -360,9 +365,10 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		return nil, nil, p9.QID{}, 0, syscall.EBADF
 	}
 
-	// 'file' may be used for other operations (e.g. Walk), so read access is
-	// always added to flags. Note that resulting file might have a wider mode
-	// than needed for each particular case.
+	// Use a single file for both 'controlFile' and 'openedFile'. Mode must
+	// include read for control and whichever else was requested by caller. Note
+	// that resulting file might have a wider mode than needed for each particular
+	// case.
 	flags := openFlags | syscall.O_CREAT | syscall.O_EXCL
 	if mode == p9.WriteOnly {
 		flags |= syscall.O_RDWR
@@ -370,14 +376,14 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		flags |= mode.OSFlags()
 	}
 
-	fd, err := syscall.Openat(l.fd(), name, flags, uint32(perm.Permissions()))
+	fd, err := syscall.Openat(l.controlFD(), name, flags, uint32(perm.Permissions()))
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
 		syscall.Close(fd)
 		// Best effort attempt to remove the file in case of failure.
-		if err := syscall.Unlinkat(l.fd(), name); err != nil {
+		if err := syscall.Unlinkat(l.controlFD(), name); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, name), err)
 		}
 	})
@@ -396,12 +402,13 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 	c := &localFile{
 		attachPoint: l.attachPoint,
 		hostPath:    cPath,
-		file:        f,
+		controlFile: f,
+		openedFile:  f,
 		mode:        mode,
 	}
 
 	cu.Release()
-	return newFDMaybe(c.file), c, l.attachPoint.makeQID(stat), 0, nil
+	return newFDMaybe(c.openedFile), c, l.attachPoint.makeQID(stat), 0, nil
 }
 
 // Mkdir implements p9.File.
@@ -414,12 +421,12 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 		return p9.QID{}, syscall.EBADF
 	}
 
-	if err := syscall.Mkdirat(l.fd(), name, uint32(perm.Permissions())); err != nil {
+	if err := syscall.Mkdirat(l.controlFD(), name, uint32(perm.Permissions())); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
 		// Best effort attempt to remove the dir in case of failure.
-		if err := unix.Unlinkat(l.fd(), name, unix.AT_REMOVEDIR); err != nil {
+		if err := unix.Unlinkat(l.controlFD(), name, unix.AT_REMOVEDIR); err != nil {
 			log.Warningf("error unlinking dir %q after failure: %v", path.Join(l.hostPath, name), err)
 		}
 	})
@@ -427,7 +434,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 
 	// Open directory to change ownership and stat it.
 	flags := syscall.O_DIRECTORY | syscall.O_RDONLY | openFlags
-	fd, err := syscall.Openat(l.fd(), name, flags, 0)
+	fd, err := syscall.Openat(l.controlFD(), name, flags, 0)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -449,7 +456,7 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	// Duplicate current file if 'names' is empty.
 	if len(names) == 0 {
-		newFd, err := syscall.Dup(l.fd())
+		newFd, err := syscall.Dup(l.controlFD())
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
@@ -462,7 +469,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		c := &localFile{
 			attachPoint: l.attachPoint,
 			hostPath:    l.hostPath,
-			file:        os.NewFile(uintptr(newFd), l.hostPath),
+			controlFile: os.NewFile(uintptr(newFd), l.hostPath),
 			mode:        invalidMode,
 		}
 		return []p9.QID{l.attachPoint.makeQID(stat)}, c, nil
@@ -477,12 +484,10 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		}
 		stat, err := stat(int(f.Fd()))
 		if err != nil {
-			f.Close()
 			return nil, nil, extractErrno(err)
 		}
 		c, err := newLocalFile(last.attachPoint, f, path, stat)
 		if err != nil {
-			f.Close()
 			return nil, nil, extractErrno(err)
 		}
 
@@ -495,7 +500,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 // StatFS implements p9.File.
 func (l *localFile) StatFS() (p9.FSStat, error) {
 	var s syscall.Statfs_t
-	if err := syscall.Fstatfs(l.fd(), &s); err != nil {
+	if err := syscall.Fstatfs(l.controlFD(), &s); err != nil {
 		return p9.FSStat{}, extractErrno(err)
 	}
 
@@ -514,10 +519,10 @@ func (l *localFile) StatFS() (p9.FSStat, error) {
 
 // FSync implements p9.File.
 func (l *localFile) FSync() error {
-	if !l.isOpen() {
+	if l.openedFile == nil {
 		return syscall.EBADF
 	}
-	if err := l.file.Sync(); err != nil {
+	if err := l.openedFile.Sync(); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -525,7 +530,7 @@ func (l *localFile) FSync() error {
 
 // GetAttr implements p9.File.
 func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	stat, err := stat(l.fd())
+	stat, err := stat(l.controlFD())
 	if err != nil {
 		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
@@ -593,11 +598,11 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// Handle all the sanity checks up front so that the client gets a
 	// consistent result that is not attribute dependent.
 	if !valid.IsSubsetOf(allowed) {
-		log.Warningf("SetAttr() failed for %q, mask: %v", l.file.Name(), valid)
+		log.Warningf("SetAttr() failed for %q, mask: %v", l.controlFile.Name(), valid)
 		return syscall.EPERM
 	}
 
-	fd := l.fd()
+	fd := l.controlFD()
 	if l.ft == regular {
 		// Regular files are opened in RO mode, thus it needs to be reopened here
 		// for write.
@@ -714,7 +719,7 @@ func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) 
 	}
 
 	newParent := directory.(*localFile)
-	if err := renameat(l.fd(), oldName, newParent.fd(), newName); err != nil {
+	if err := renameat(l.controlFD(), oldName, newParent.controlFD(), newName); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -725,11 +730,11 @@ func (l *localFile) ReadAt(p []byte, offset uint64) (int, error) {
 	if l.mode != p9.ReadOnly && l.mode != p9.ReadWrite {
 		return 0, syscall.EBADF
 	}
-	if !l.isOpen() {
+	if l.openedFile == nil {
 		return 0, syscall.EBADF
 	}
 
-	r, err := l.file.ReadAt(p, int64(offset))
+	r, err := l.openedFile.ReadAt(p, int64(offset))
 	switch err {
 	case nil, io.EOF:
 		return r, nil
@@ -743,11 +748,11 @@ func (l *localFile) WriteAt(p []byte, offset uint64) (int, error) {
 	if l.mode != p9.WriteOnly && l.mode != p9.ReadWrite {
 		return 0, syscall.EBADF
 	}
-	if !l.isOpen() {
+	if l.openedFile == nil {
 		return 0, syscall.EBADF
 	}
 
-	w, err := l.file.WriteAt(p, int64(offset))
+	w, err := l.openedFile.WriteAt(p, int64(offset))
 	if err != nil {
 		return w, extractErrno(err)
 	}
@@ -764,19 +769,19 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 		return p9.QID{}, syscall.EBADF
 	}
 
-	if err := unix.Symlinkat(target, l.fd(), newName); err != nil {
+	if err := unix.Symlinkat(target, l.controlFD(), newName); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
 		// Best effort attempt to remove the symlink in case of failure.
-		if err := syscall.Unlinkat(l.fd(), newName); err != nil {
+		if err := syscall.Unlinkat(l.controlFD(), newName); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, newName), err)
 		}
 	})
 	defer cu.Clean()
 
 	// Open symlink to change ownership and stat it.
-	fd, err := syscall.Openat(l.fd(), newName, unix.O_PATH|openFlags, 0)
+	fd, err := syscall.Openat(l.controlFD(), newName, unix.O_PATH|openFlags, 0)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -805,7 +810,7 @@ func (l *localFile) Link(target p9.File, newName string) error {
 	}
 
 	targetFile := target.(*localFile)
-	if err := unix.Linkat(targetFile.fd(), "", l.fd(), newName, linux.AT_EMPTY_PATH); err != nil {
+	if err := unix.Linkat(targetFile.controlFD(), "", l.controlFD(), newName, linux.AT_EMPTY_PATH); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -828,7 +833,7 @@ func (l *localFile) UnlinkAt(name string, flags uint32) error {
 		return syscall.EBADF
 	}
 
-	if err := unix.Unlinkat(l.fd(), name, int(flags)); err != nil {
+	if err := unix.Unlinkat(l.controlFD(), name, int(flags)); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -839,7 +844,7 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	if l.mode != p9.ReadOnly && l.mode != p9.ReadWrite {
 		return nil, syscall.EBADF
 	}
-	if !l.isOpen() {
+	if l.openedFile == nil {
 		return nil, syscall.EBADF
 	}
 
@@ -847,11 +852,11 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	// reading all directory contents. Take a lock because this operation is
 	// stateful.
 	l.readDirMu.Lock()
-	if _, err := l.file.Seek(0, 0); err != nil {
+	if _, err := l.openedFile.Seek(0, 0); err != nil {
 		l.readDirMu.Unlock()
 		return nil, extractErrno(err)
 	}
-	names, err := l.file.Readdirnames(-1)
+	names, err := l.openedFile.Readdirnames(-1)
 	if err != nil {
 		l.readDirMu.Unlock()
 		return nil, extractErrno(err)
@@ -860,7 +865,7 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 
 	var dirents []p9.Dirent
 	for i := int(offset); i >= 0 && i < len(names); i++ {
-		stat, err := statAt(l.fd(), names[i])
+		stat, err := statAt(l.openedFD(), names[i])
 		if err != nil {
 			continue
 		}
@@ -878,10 +883,9 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 // Readlink implements p9.File.
 func (l *localFile) Readlink() (string, error) {
 	// Shamelessly stolen from os.Readlink (added upper bound limit to buffer).
-	const limit = 1024 * 1024
-	for len := 128; len < limit; len *= 2 {
+	for len := 128; len < 1024*1024; len *= 2 {
 		b := make([]byte, len)
-		n, err := unix.Readlinkat(l.fd(), "", b)
+		n, err := unix.Readlinkat(l.controlFD(), "", b)
 		if err != nil {
 			return "", extractErrno(err)
 		}
@@ -904,14 +908,18 @@ func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
 
 // Close implements p9.File.
 func (l *localFile) Close() error {
-	l.mode = invalidMode
-	err := l.file.Close()
-	l.file = nil
-	return err
-}
+	err := l.controlFile.Close()
 
-func (l *localFile) isOpen() bool {
-	return l.mode != invalidMode
+	// Close only once in case opened and control files point to
+	// the same os.File struct.
+	if l.openedFile != nil && l.openedFile != l.controlFile {
+		err = l.openedFile.Close()
+	}
+
+	l.openedFile = nil
+	l.controlFile = nil
+	l.mode = invalidMode
+	return err
 }
 
 // Renamed implements p9.Renamed.
