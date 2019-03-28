@@ -1698,7 +1698,13 @@ func utimes(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, ts fs.TimeSpec, r
 			}
 		}
 
-		return d.Inode.SetTimestamps(t, d, ts)
+		if err := d.Inode.SetTimestamps(t, d, ts); err != nil {
+			return err
+		}
+
+		// File attribute changed, generate notification.
+		d.InotifyEvent(linux.IN_ATTRIB, 0)
+		return nil
 	}
 
 	// From utimes.c:
