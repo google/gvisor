@@ -94,21 +94,23 @@ type inodeFileState struct {
 	// handlesMu protects the below fields.
 	handlesMu sync.RWMutex `state:"nosave"`
 
-	// Do minimal open handle caching: only for read only filesystems.
-	readonly *handles `state:"nosave"`
-
-	// Maintain readthrough handles for populating page caches.
-	readthrough *handles `state:"nosave"`
-
-	// Maintain writeback handles for syncing from page caches.
-	writeback *handles `state:"nosave"`
-
-	// writebackRW indicates whether writeback is opened read-write. If
-	// it is not and a read-write handle could replace writeback (above),
-	// then writeback is replaced with the read-write handle. This
-	// ensures that files that were first opened write-only and then
-	// later are opened read-write to be mapped can in fact be mapped.
-	writebackRW bool
+	// If readHandles is non-nil, it holds handles that are either read-only or
+	// read/write. If writeHandles is non-nil, it holds write-only handles if
+	// writeHandlesRW is false, and read/write handles if writeHandlesRW is
+	// true.
+	//
+	// Once readHandles becomes non-nil, it can't be changed until
+	// inodeFileState.Release(), because of a defect in the
+	// fsutil.CachedFileObject interface: there's no way for the caller of
+	// fsutil.CachedFileObject.FD() to keep the returned FD open, so if we
+	// racily replace readHandles after inodeFileState.FD() has returned
+	// readHandles.Host.FD(), fsutil.CachingInodeOperations may use a closed
+	// FD. writeHandles can be changed if writeHandlesRW is false, since
+	// inodeFileState.FD() can't return a write-only FD, but can't be changed
+	// if writeHandlesRW is true for the same reason.
+	readHandles    *handles `state:"nosave"`
+	writeHandles   *handles `state:"nosave"`
+	writeHandlesRW bool     `state:"nosave"`
 
 	// loading is acquired when the inodeFileState begins an asynchronous
 	// load. It releases when the load is complete. Callers that require all
@@ -134,81 +136,82 @@ type inodeFileState struct {
 // Release releases file handles.
 func (i *inodeFileState) Release(ctx context.Context) {
 	i.file.close(ctx)
-	if i.readonly != nil {
-		i.readonly.DecRef()
+	if i.readHandles != nil {
+		i.readHandles.DecRef()
 	}
-	if i.readthrough != nil {
-		i.readthrough.DecRef()
-	}
-	if i.writeback != nil {
-		i.writeback.DecRef()
+	if i.writeHandles != nil {
+		i.writeHandles.DecRef()
 	}
 }
 
-// setHandlesForCachedIO installs file handles for reading and writing
-// through fs.CachingInodeOperations.
-func (i *inodeFileState) setHandlesForCachedIO(flags fs.FileFlags, h *handles) {
-	i.handlesMu.Lock()
-	defer i.handlesMu.Unlock()
+func (i *inodeFileState) canShareHandles() bool {
+	// Only share handles for regular files, since for other file types,
+	// distinct handles may have special semantics even if they represent the
+	// same file. Disable handle sharing for cache policy cacheNone, since this
+	// is legacy behavior.
+	return fs.IsFile(i.sattr) && i.s.cachePolicy != cacheNone
+}
 
-	if flags.Read {
-		if i.readthrough == nil {
-			h.IncRef()
-			i.readthrough = h
-		}
+// Preconditions: i.handlesMu must be locked for writing.
+func (i *inodeFileState) setSharedHandlesLocked(flags fs.FileFlags, h *handles) {
+	if flags.Read && i.readHandles == nil {
+		h.IncRef()
+		i.readHandles = h
 	}
 	if flags.Write {
-		if i.writeback == nil {
+		if i.writeHandles == nil {
 			h.IncRef()
-			i.writeback = h
-		} else if !i.writebackRW && flags.Read {
-			i.writeback.DecRef()
+			i.writeHandles = h
+			i.writeHandlesRW = flags.Read
+		} else if !i.writeHandlesRW && flags.Read {
+			// Upgrade i.writeHandles.
+			i.writeHandles.DecRef()
 			h.IncRef()
-			i.writeback = h
-		}
-		if flags.Read {
-			i.writebackRW = true
+			i.writeHandles = h
+			i.writeHandlesRW = flags.Read
 		}
 	}
 }
 
-// getCachedHandles returns any cached handles which would accelerate
-// performance generally. These handles should only be used if the mount
-// supports caching. This is distinct from fs.CachingInodeOperations
-// which is used for a limited set of file types (those that can be mapped).
-func (i *inodeFileState) getCachedHandles(ctx context.Context, flags fs.FileFlags, msrc *fs.MountSource) (*handles, bool) {
+// getHandles returns a set of handles for a new file using i opened with the
+// given flags.
+func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags) (*handles, error) {
+	if !i.canShareHandles() {
+		return newHandles(ctx, i.file, flags)
+	}
 	i.handlesMu.Lock()
 	defer i.handlesMu.Unlock()
-
-	if flags.Read && !flags.Write && msrc.Flags.ReadOnly {
-		if i.readonly != nil {
-			i.readonly.IncRef()
-			return i.readonly, true
+	// Do we already have usable shared handles?
+	if flags.Write {
+		if i.writeHandles != nil && (i.writeHandlesRW || !flags.Read) {
+			i.writeHandles.IncRef()
+			return i.writeHandles, nil
 		}
-		h, err := newHandles(ctx, i.file, flags)
-		if err != nil {
-			return nil, false
-		}
-		i.readonly = h
-		i.readonly.IncRef()
-		return i.readonly, true
+	} else if i.readHandles != nil {
+		i.readHandles.IncRef()
+		return i.readHandles, nil
 	}
-
-	return nil, false
+	// No; get new handles and cache them for future sharing.
+	h, err := newHandles(ctx, i.file, flags)
+	if err != nil {
+		return nil, err
+	}
+	i.setSharedHandlesLocked(flags, h)
+	return h, nil
 }
 
 // ReadToBlocksAt implements fsutil.CachedFileObject.ReadToBlocksAt.
 func (i *inodeFileState) ReadToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error) {
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
-	return i.readthrough.readWriterAt(ctx, int64(offset)).ReadToBlocks(dsts)
+	return i.readHandles.readWriterAt(ctx, int64(offset)).ReadToBlocks(dsts)
 }
 
 // WriteFromBlocksAt implements fsutil.CachedFileObject.WriteFromBlocksAt.
 func (i *inodeFileState) WriteFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error) {
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
-	return i.writeback.readWriterAt(ctx, int64(offset)).WriteFromBlocks(srcs)
+	return i.writeHandles.readWriterAt(ctx, int64(offset)).WriteFromBlocks(srcs)
 }
 
 // SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
@@ -276,52 +279,31 @@ func (i *inodeFileState) skipSetAttr(mask fs.AttrMask) bool {
 
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
-	return (i.readonly != nil && i.readonly.Host != nil) ||
-		(i.readthrough != nil && i.readthrough.Host != nil) ||
-		(i.writeback != nil && i.writeback.Host != nil)
+	return (i.readHandles != nil && i.readHandles.Host != nil) ||
+		(i.writeHandles != nil && i.writeHandles.Host != nil)
 }
 
 // Sync implements fsutil.CachedFileObject.Sync.
 func (i *inodeFileState) Sync(ctx context.Context) error {
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
-	if i.writeback == nil {
+	if i.writeHandles == nil {
 		return nil
 	}
-	return i.writeback.File.fsync(ctx)
+	return i.writeHandles.File.fsync(ctx)
 }
 
 // FD implements fsutil.CachedFileObject.FD.
-//
-// FD meets the requirements of fsutil.CachedFileObject.FD because p9.File.Open
-// returns a host file descriptor to back _both_ readthrough and writeback or
-// not at all (e.g. both are nil).
 func (i *inodeFileState) FD() int {
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
-	return i.fdLocked()
-}
-
-func (i *inodeFileState) fdLocked() int {
-	// Assert that the file was actually opened.
-	if i.writeback == nil && i.readthrough == nil {
-		panic("cannot get host FD for a file that was never opened")
+	if i.writeHandlesRW && i.writeHandles != nil && i.writeHandles.Host != nil {
+		return int(i.writeHandles.Host.FD())
 	}
-	// If this file is mapped, then it must have been opened
-	// read-write and i.writeback was upgraded to a read-write
-	// handle. Prefer that to map.
-	if i.writeback != nil {
-		if i.writeback.Host == nil {
-			return -1
-		}
-		return int(i.writeback.Host.FD())
+	if i.readHandles != nil && i.readHandles.Host != nil {
+		return int(i.readHandles.Host.FD())
 	}
-	// Otherwise the file may only have been opened readable
-	// so far. That's the only way it can be accessed.
-	if i.readthrough.Host == nil {
-		return -1
-	}
-	return int(i.readthrough.Host.FD())
+	return -1
 }
 
 // waitForLoad makes sure any restore-issued loading is done.
@@ -409,18 +391,15 @@ func (i *inodeOperations) getFileSocket(ctx context.Context, d *fs.Dirent, flags
 }
 
 func (i *inodeOperations) getFilePipe(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	// Try to open as a host pipe.
-	if pipeOps, err := fdpipe.Open(ctx, i, flags); err != errNotHostFile {
-		return fs.NewFile(ctx, d, flags, pipeOps), err
+	// Try to open as a host pipe; if that doesn't work, handle it normally.
+	pipeOps, err := fdpipe.Open(ctx, i, flags)
+	if err == errNotHostFile {
+		return i.getFileDefault(ctx, d, flags)
 	}
-
-	// If the error is due to the fact that this was never a host pipe, then back
-	// this file with its dirent.
-	h, err := newHandles(ctx, i.fileState.file, flags)
 	if err != nil {
 		return nil, err
 	}
-	return NewFile(ctx, d, d.BaseName(), flags, i, h), nil
+	return fs.NewFile(ctx, d, flags, pipeOps), nil
 }
 
 // errNotHostFile indicates that the file is not a host file.
@@ -454,24 +433,10 @@ func (i *inodeOperations) NonBlockingOpen(ctx context.Context, p fs.PermMask) (*
 }
 
 func (i *inodeOperations) getFileDefault(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	if !i.session().cachePolicy.cacheHandles(d.Inode) {
-		h, err := newHandles(ctx, i.fileState.file, flags)
-		if err != nil {
-			return nil, err
-		}
-		return NewFile(ctx, d, d.BaseName(), flags, i, h), nil
+	h, err := i.fileState.getHandles(ctx, flags)
+	if err != nil {
+		return nil, err
 	}
-
-	h, ok := i.fileState.getCachedHandles(ctx, flags, d.Inode.MountSource)
-	if !ok {
-		var err error
-		h, err = newHandles(ctx, i.fileState.file, flags)
-		if err != nil {
-			return nil, err
-		}
-	}
-	i.fileState.setHandlesForCachedIO(flags, h)
-
 	return NewFile(ctx, d, d.BaseName(), flags, i, h), nil
 }
 

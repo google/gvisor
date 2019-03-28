@@ -138,8 +138,15 @@ type CachedFileObject interface {
 	// Sync instructs the remote filesystem to sync the file to stable storage.
 	Sync(ctx context.Context) error
 
-	// FD returns a host file descriptor. Return value must be -1 or not -1
-	// for the lifetime of the CachedFileObject.
+	// FD returns a host file descriptor. If it is possible for
+	// CachingInodeOperations.AddMapping to have ever been called with writable
+	// = true, the FD must have been opened O_RDWR; otherwise, it may have been
+	// opened O_RDONLY or O_RDWR. (mmap unconditionally requires that mapped
+	// files are readable.) If no host file descriptor is available, FD returns
+	// a negative number.
+	//
+	// For any given CachedFileObject, if FD() ever succeeds (returns a
+	// non-negative number), it must always succeed.
 	//
 	// FD is called iff the file has been memory mapped. This implies that
 	// the file was opened (see fs.InodeOperations.GetFile).

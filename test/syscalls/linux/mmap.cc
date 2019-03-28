@@ -1696,6 +1696,29 @@ TEST(MMapDeathTest, TruncateAfterCOWBreak) {
               ::testing::KilledBySignal(SIGBUS), "");
 }
 
+// Regression test for #147.
+TEST(MMapNoFixtureTest, MapReadOnlyAfterCreateWriteOnly) {
+  std::string filename = NewTempAbsPath();
+
+  // We have to create the file O_RDONLY to reproduce the bug because
+  // fsgofer.localFile.Create() silently upgrades O_WRONLY to O_RDWR, causing
+  // the cached "write-only" FD to be read/write and therefore usable by mmap().
+  auto const ro_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(filename, O_RDONLY | O_CREAT | O_EXCL, 0666));
+
+  // Get a write-only FD for the same file, which should be ignored by mmap()
+  // (but isn't in #147).
+  auto const wo_fd = ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_WRONLY));
+  ASSERT_THAT(ftruncate(wo_fd.get(), kPageSize), SyscallSucceeds());
+
+  auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, ro_fd.get(), 0));
+  std::vector<char> buf(kPageSize);
+  // The test passes if this survives.
+  std::copy(static_cast<char*>(mapping.ptr()),
+            static_cast<char*>(mapping.endptr()), buf.data());
+}
+
 // Conditional on MAP_32BIT.
 #ifdef __x86_64__
 

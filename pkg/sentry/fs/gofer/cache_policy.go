@@ -103,18 +103,6 @@ func (cp cachePolicy) useCachingInodeOps(inode *fs.Inode) bool {
 	return cp == cacheAll || cp == cacheAllWritethrough
 }
 
-// cacheHandles determine whether handles need to be cached with the given
-// inode. Handles must be cached when inode can be mapped into memory to
-// implement InodeOperations.Mappable with stable handles.
-func (cp cachePolicy) cacheHandles(inode *fs.Inode) bool {
-	// Do cached IO for regular files only. Some "character devices" expect
-	// no caching.
-	if !fs.IsFile(inode.StableAttr) {
-		return false
-	}
-	return cp.useCachingInodeOps(inode) || cp == cacheRemoteRevalidating
-}
-
 // writeThough indicates whether writes to the file should be synced to the
 // gofer immediately.
 func (cp cachePolicy) writeThrough(inode *fs.Inode) bool {

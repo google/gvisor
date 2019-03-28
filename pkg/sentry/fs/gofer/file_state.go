@@ -29,11 +29,10 @@ func (f *fileOperations) afterLoad() {
 		// Manually load the open handles.
 		var err error
 		// TODO: Context is not plumbed to save/restore.
-		f.handles, err = newHandles(context.Background(), f.inodeOperations.fileState.file, f.flags)
+		f.handles, err = f.inodeOperations.fileState.getHandles(context.Background(), f.flags)
 		if err != nil {
 			return fmt.Errorf("failed to re-open handle: %v", err)
 		}
-		f.inodeOperations.fileState.setHandlesForCachedIO(f.flags, f.handles)
 		return nil
 	}
 	fs.Async(fs.CatchError(load))

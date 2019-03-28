@@ -129,8 +129,10 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		File: newFile,
 		Host: hostFile,
 	}
-	if iops.session().cachePolicy.cacheHandles(d.Inode) {
-		iops.fileState.setHandlesForCachedIO(flags, h)
+	if iops.fileState.canShareHandles() {
+		iops.fileState.handlesMu.Lock()
+		iops.fileState.setSharedHandlesLocked(flags, h)
+		iops.fileState.handlesMu.Unlock()
 	}
 	return NewFile(ctx, d, name, flags, iops, h), nil
 }
