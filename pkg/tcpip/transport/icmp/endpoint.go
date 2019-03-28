@@ -370,7 +370,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 func (e *endpoint) send4(r *stack.Route, data buffer.View) *tcpip.Error {
 	if e.raw {
 		hdr := buffer.NewPrependable(len(data) + int(r.MaxHeaderLength()))
-		return r.WritePacket(hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
+		return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
 	}
 
 	if len(data) < header.ICMPv4EchoMinimumSize {
@@ -395,7 +395,7 @@ func (e *endpoint) send4(r *stack.Route, data buffer.View) *tcpip.Error {
 	icmpv4.SetChecksum(0)
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
-	return r.WritePacket(hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
 }
 
 func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
@@ -419,7 +419,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv6.SetChecksum(0)
 	icmpv6.SetChecksum(^header.Checksum(icmpv6, header.Checksum(data, 0)))
 
-	return r.WritePacket(hdr, data.ToVectorisedView(), header.ICMPv6ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv6ProtocolNumber, r.DefaultTTL())
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {

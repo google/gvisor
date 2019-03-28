@@ -161,7 +161,7 @@ type NetworkEndpoint interface {
 
 	// WritePacket writes a packet to the given destination address and
 	// protocol.
-	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop PacketLooping) *tcpip.Error
+	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop PacketLooping) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID
@@ -226,6 +226,7 @@ const (
 	CapabilitySaveRestore
 	CapabilityDisconnectOk
 	CapabilityLoopback
+	CapabilityGSO
 )
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
@@ -258,7 +259,7 @@ type LinkEndpoint interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
-	WritePacket(r *Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
+	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
 
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
@@ -380,4 +381,42 @@ func FindLinkEndpoint(id tcpip.LinkEndpointID) LinkEndpoint {
 	defer linkEPMu.RUnlock()
 
 	return linkEndpoints[id]
+}
+
+// GSOType is the type of GSO segments.
+//
+// +stateify savable
+type GSOType int
+
+// Types of gso segments.
+const (
+	GSONone GSOType = iota
+	GSOTCPv4
+	GSOTCPv6
+)
+
+// GSO contains generic segmentation offload properties.
+//
+// +stateify savable
+type GSO struct {
+	// Type is one of GSONone, GSOTCPv4, etc.
+	Type GSOType
+	// NeedsCsum is set if the checksum offload is enabled.
+	NeedsCsum bool
+	// CsumOffset is offset after that to place checksum.
+	CsumOffset uint16
+
+	// Mss is maximum segment size.
+	MSS uint16
+	// L3Len is L3 (IP) header length.
+	L3HdrLen uint16
+
+	// MaxSize is maximum GSO packet size.
+	MaxSize uint32
+}
+
+// GSOEndpoint provides access to GSO properties.
+type GSOEndpoint interface {
+	// GSOMaxSize returns the maximum GSO packet size.
+	GSOMaxSize() uint32
 }

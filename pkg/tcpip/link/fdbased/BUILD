@@ -6,6 +6,7 @@ go_library(
     name = "fdbased",
     srcs = [
         "endpoint.go",
+        "endpoint_unsafe.go",
         "mmap.go",
         "mmap_amd64_unsafe.go",
     ],

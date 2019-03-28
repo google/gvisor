@@ -65,9 +65,9 @@ func NonBlockingWrite(fd int, buf []byte) *tcpip.Error {
 	return nil
 }
 
-// NonBlockingWrite2 writes up to two byte slices to a file descriptor in a
+// NonBlockingWrite3 writes up to three byte slices to a file descriptor in a
 // single syscall. It fails if partial data is written.
-func NonBlockingWrite2(fd int, b1, b2 []byte) *tcpip.Error {
+func NonBlockingWrite3(fd int, b1, b2, b3 []byte) *tcpip.Error {
 	// If the is no second buffer, issue a regular write.
 	if len(b2) == 0 {
 		return NonBlockingWrite(fd, b1)
@@ -75,7 +75,7 @@ func NonBlockingWrite2(fd int, b1, b2 []byte) *tcpip.Error {
 
 	// We have two buffers. Build the iovec that represents them and issue
 	// a writev syscall.
-	iovec := [...]syscall.Iovec{
+	iovec := [3]syscall.Iovec{
 		{
 			Base: &b1[0],
 			Len:  uint64(len(b1)),
@@ -85,8 +85,15 @@ func NonBlockingWrite2(fd int, b1, b2 []byte) *tcpip.Error {
 			Len:  uint64(len(b2)),
 		},
 	}
+	iovecLen := uintptr(2)
 
-	_, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), uintptr(len(iovec)))
+	if len(b3) > 0 {
+		iovecLen++
+		iovec[2].Base = &b3[0]
+		iovec[2].Len = uint64(len(b3))
+	}
+
+	_, _, e := syscall.RawSyscall(syscall.SYS_WRITEV, uintptr(fd), uintptr(unsafe.Pointer(&iovec[0])), iovecLen)
 	if e != 0 {
 		return TranslateErrno(e)
 	}

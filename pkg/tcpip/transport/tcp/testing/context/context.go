@@ -699,7 +699,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	synOptions := header.ParseSynOptions(tcpSeg.Options(), false)
 
 	// Build options w/ tsVal to be sent in the SYN-ACK.
-	synAckOptions := make([]byte, 40)
+	synAckOptions := make([]byte, header.TCPOptionsMaximumSize)
 	offset := 0
 	if wantOptions.TS {
 		offset += header.EncodeTSOption(wantOptions.TSVal, synOptions.TSVal, synAckOptions[offset:])
@@ -847,7 +847,7 @@ func (c *Context) PassiveConnect(maxPayload, wndScale int, synOptions header.TCP
 // value of the window scaling option to be sent in the SYN. If synOptions.WS >
 // 0 then we send the WindowScale option.
 func (c *Context) PassiveConnectWithOptions(maxPayload, wndScale int, synOptions header.TCPSynOptions) *RawEndpoint {
-	opts := make([]byte, 40)
+	opts := make([]byte, header.TCPOptionsMaximumSize)
 	offset := 0
 	offset += header.EncodeMSSOption(uint32(maxPayload), opts)
 

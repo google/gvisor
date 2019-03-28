@@ -111,6 +111,10 @@ type endpoint struct {
 	// ringOffset is the current offset into the ring buffer where the next
 	// inbound packet will be placed by the kernel.
 	ringOffset int
+
+	// gsoMaxSize is the maximum GSO packet size. It is zero if GSO is
+	// disabled.
+	gsoMaxSize uint32
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -123,6 +127,7 @@ type Options struct {
 	Address            tcpip.LinkAddress
 	SaveRestore        bool
 	DisconnectOk       bool
+	GSOMaxSize         uint32
 	PacketDispatchMode PacketDispatchMode
 }
 
@@ -165,6 +170,10 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		packetDispatchMode: opts.PacketDispatchMode,
 	}
 
+	if opts.GSOMaxSize != 0 && isSocketFD(opts.FD) {
+		e.caps |= stack.CapabilityGSO
+		e.gsoMaxSize = opts.GSOMaxSize
+	}
 	if isSocketFD(opts.FD) && e.packetDispatchMode == PacketMMap {
 		if err := e.setupPacketRXRing(); err != nil {
 			// TODO: replace panic with an error return.
@@ -185,17 +194,22 @@ func New(opts *Options) tcpip.LinkEndpointID {
 	}
 
 	e.views = make([][]buffer.View, msgsPerRecv)
-	for i, _ := range e.views {
+	for i := range e.views {
 		e.views[i] = make([]buffer.View, len(BufConfig))
 	}
 	e.iovecs = make([][]syscall.Iovec, msgsPerRecv)
-	for i, _ := range e.iovecs {
-		e.iovecs[i] = make([]syscall.Iovec, len(BufConfig))
+	iovLen := len(BufConfig)
+	if e.Capabilities()&stack.CapabilityGSO != 0 {
+		// virtioNetHdr is prepended before each packet.
+		iovLen++
+	}
+	for i := range e.iovecs {
+		e.iovecs[i] = make([]syscall.Iovec, iovLen)
 	}
 	e.msgHdrs = make([]rawfile.MMsgHdr, msgsPerRecv)
-	for i, _ := range e.msgHdrs {
+	for i := range e.msgHdrs {
 		e.msgHdrs[i].Msg.Iov = &e.iovecs[i][0]
-		e.msgHdrs[i].Msg.Iovlen = uint64(len(BufConfig))
+		e.msgHdrs[i].Msg.Iovlen = uint64(iovLen)
 	}
 
 	return stack.RegisterLinkEndpoint(e)
@@ -246,9 +260,27 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
 }
 
+// virtioNetHdr is declared in linux/virtio_net.h.
+type virtioNetHdr struct {
+	flags      uint8
+	gsoType    uint8
+	hdrLen     uint16
+	gsoSize    uint16
+	csumStart  uint16
+	csumOffset uint16
+}
+
+// These constants are declared in linux/virtio_net.h.
+const (
+	_VIRTIO_NET_HDR_F_NEEDS_CSUM = 1
+
+	_VIRTIO_NET_HDR_GSO_TCPV4 = 1
+	_VIRTIO_NET_HDR_GSO_TCPV6 = 4
+)
+
 // WritePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if e.hdrSize > 0 {
 		// Add ethernet header if needed.
 		eth := header.Ethernet(hdr.Prepend(header.EthernetMinimumSize))
@@ -266,11 +298,37 @@ func (e *endpoint) WritePacket(r *stack.Route, hdr buffer.Prependable, payload b
 		eth.Encode(ethHdr)
 	}
 
+	if e.Capabilities()&stack.CapabilityGSO != 0 {
+		vnetHdr := virtioNetHdr{}
+		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
+		if gso != nil {
+			vnetHdr.hdrLen = uint16(hdr.UsedLength())
+			if gso.NeedsCsum {
+				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
+				vnetHdr.csumStart = header.EthernetMinimumSize + gso.L3HdrLen
+				vnetHdr.csumOffset = gso.CsumOffset
+			}
+			if gso.Type != stack.GSONone && uint16(payload.Size()) > gso.MSS {
+				switch gso.Type {
+				case stack.GSOTCPv4:
+					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
+				case stack.GSOTCPv6:
+					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
+				default:
+					panic(fmt.Sprintf("Unknown gso type: %v", gso.Type))
+				}
+				vnetHdr.gsoSize = gso.MSS
+			}
+		}
+
+		return rawfile.NonBlockingWrite3(e.fd, vnetHdrBuf, hdr.View(), payload.ToView())
+	}
+
 	if payload.Size() == 0 {
 		return rawfile.NonBlockingWrite(e.fd, hdr.View())
 	}
 
-	return rawfile.NonBlockingWrite2(e.fd, hdr.View(), payload.ToView())
+	return rawfile.NonBlockingWrite3(e.fd, hdr.View(), payload.ToView(), nil)
 }
 
 // WriteRawPacket writes a raw packet directly to the file descriptor.
@@ -292,13 +350,25 @@ func (e *endpoint) capViews(k, n int, buffers []int) int {
 
 func (e *endpoint) allocateViews(bufConfig []int) {
 	for k := 0; k < len(e.views); k++ {
+		var vnetHdr [virtioNetHdrSize]byte
+		vnetHdrOff := 0
+		if e.Capabilities()&stack.CapabilityGSO != 0 {
+			// The kernel adds virtioNetHdr before each packet, but
+			// we don't use it, so so we allocate a buffer for it,
+			// add it in iovecs but don't add it in a view.
+			e.iovecs[k][0] = syscall.Iovec{
+				Base: &vnetHdr[0],
+				Len:  uint64(virtioNetHdrSize),
+			}
+			vnetHdrOff++
+		}
 		for i := 0; i < len(bufConfig); i++ {
 			if e.views[k][i] != nil {
 				break
 			}
 			b := buffer.NewView(bufConfig[i])
 			e.views[k][i] = b
-			e.iovecs[k][i] = syscall.Iovec{
+			e.iovecs[k][i+vnetHdrOff] = syscall.Iovec{
 				Base: &b[0],
 				Len:  uint64(len(b)),
 			}
@@ -314,7 +384,11 @@ func (e *endpoint) dispatch() (bool, *tcpip.Error) {
 	if err != nil {
 		return false, err
 	}
-
+	if e.Capabilities()&stack.CapabilityGSO != 0 {
+		// Skip virtioNetHdr which is added before each packet, it
+		// isn't used and it isn't in a view.
+		n -= virtioNetHdrSize
+	}
 	if n <= e.hdrSize {
 		return false, nil
 	}
@@ -366,8 +440,11 @@ func (e *endpoint) recvMMsgDispatch() (bool, *tcpip.Error) {
 	}
 	// Process each of received packets.
 	for k := 0; k < nMsgs; k++ {
-		n := e.msgHdrs[k].Len
-		if n <= uint32(e.hdrSize) {
+		n := int(e.msgHdrs[k].Len)
+		if e.Capabilities()&stack.CapabilityGSO != 0 {
+			n -= virtioNetHdrSize
+		}
+		if n <= e.hdrSize {
 			return false, nil
 		}
 
@@ -423,6 +500,11 @@ func (e *endpoint) dispatchLoop() *tcpip.Error {
 			return err
 		}
 	}
+}
+
+// GSOMaxSize returns the maximum GSO packet size.
+func (e *endpoint) GSOMaxSize() uint32 {
+	return e.gsoMaxSize
 }
 
 // InjectableEndpoint is an injectable fd-based endpoint. The endpoint writes

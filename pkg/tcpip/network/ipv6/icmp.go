@@ -118,7 +118,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		defer r.Release()
 		r.LocalAddress = targetAddr
 		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
-		r.WritePacket(hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, r.DefaultTTL())
+		r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
 		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
 
@@ -143,7 +143,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
 		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, vv))
-		r.WritePacket(hdr, vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
+		r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv6ProtocolNumber, r.DefaultTTL())
 
 	case header.ICMPv6EchoReply:
 		if len(v) < header.ICMPv6EchoMinimumSize {
@@ -202,7 +202,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 		DstAddr:       r.RemoteAddress,
 	})
 
-	return linkEP.WritePacket(r, hdr, buffer.VectorisedView{}, ProtocolNumber)
+	return linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
 }
 
 // ResolveStaticAddress implements stack.LinkAddressResolver.

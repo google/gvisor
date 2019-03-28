@@ -76,7 +76,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv4EchoReply)
 		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
-		r.WritePacket(hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
+		r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
 
 	case header.ICMPv4EchoReply:
 		if len(v) < header.ICMPv4EchoMinimumSize {

@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -265,6 +266,8 @@ type endpoint struct {
 	// The following are only used to assist the restore run to re-connect.
 	bindAddress       tcpip.Address
 	connectingAddress tcpip.Address
+
+	gso *stack.GSO
 }
 
 // StopWork halts packet processing. Only to be used in tests.
@@ -1155,6 +1158,8 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 	e.effectiveNetProtos = netProtos
 	e.connectingAddress = connectingAddr
 
+	e.initGSO()
+
 	// Connect in the restore phase does not perform handshake. Restore its
 	// connection setting here.
 	if !handshake {
@@ -1697,4 +1702,26 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		}
 	}
 	return s
+}
+
+func (e *endpoint) initGSO() {
+	if e.route.Capabilities()&stack.CapabilityGSO == 0 {
+		return
+	}
+
+	gso := &stack.GSO{}
+	switch e.netProto {
+	case header.IPv4ProtocolNumber:
+		gso.Type = stack.GSOTCPv4
+		gso.L3HdrLen = header.IPv4MinimumSize
+	case header.IPv6ProtocolNumber:
+		gso.Type = stack.GSOTCPv6
+		gso.L3HdrLen = header.IPv6MinimumSize
+	default:
+		panic(fmt.Sprintf("Unknown netProto: %v", e.netProto))
+	}
+	gso.NeedsCsum = true
+	gso.CsumOffset = header.TCPChecksumOffset()
+	gso.MaxSize = e.route.GSOMaxSize()
+	e.gso = gso
 }

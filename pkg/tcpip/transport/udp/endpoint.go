@@ -651,7 +651,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	// Track count of packets sent.
 	r.Stats().UDP.PacketsSent.Increment()
 
-	return r.WritePacket(hdr, data, ProtocolNumber, ttl)
+	return r.WritePacket(nil /* gso */, hdr, data, ProtocolNumber, ttl)
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {

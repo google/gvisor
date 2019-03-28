@@ -167,6 +167,12 @@ const (
 	// TCPMinimumSize is the minimum size of a valid TCP packet.
 	TCPMinimumSize = 20
 
+	// TCPOptionsMaximumSize is the maximum size of TCP options.
+	TCPOptionsMaximumSize = 40
+
+	// TCPHeaderMaximumSize is the maximum header size of a TCP packet.
+	TCPHeaderMaximumSize = TCPMinimumSize + TCPOptionsMaximumSize
+
 	// TCPProtocolNumber is TCP's transport protocol number.
 	TCPProtocolNumber tcpip.TransportProtocolNumber = 6
 )
@@ -289,6 +295,11 @@ func (b TCP) EncodePartial(partialChecksum, length uint16, seqnum, acknum uint32
 
 	// Encode the checksum.
 	b.SetChecksum(^checksum)
+}
+
+// TCPChecksumOffset returns offset of the checksum field.
+func TCPChecksumOffset() uint16 {
+	return tcpChecksum
 }
 
 // ParseSynOptions parses the options received in a SYN segment and returns the

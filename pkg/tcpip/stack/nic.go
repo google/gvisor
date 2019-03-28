@@ -486,7 +486,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 			vv.RemoveFirst()
 
 			// TODO: use route.WritePacket.
-			if err := n.linkEP.WritePacket(&r, hdr, vv, protocol); err != nil {
+			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, vv, protocol); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
 				n.stats.Tx.Packets.Increment()

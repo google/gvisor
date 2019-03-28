@@ -129,6 +129,9 @@ type sender struct {
 	// It is initialized on demand.
 	maxPayloadSize int
 
+	// gso is set if generic segmentation offload is enabled.
+	gso bool
+
 	// sndWndScale is the number of bits to shift left when reading the send
 	// window size from a segment.
 	sndWndScale uint8
@@ -194,6 +197,11 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 			// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
 			last: iss,
 		},
+		gso: ep.gso != nil,
+	}
+
+	if s.gso {
+		s.ep.gso.MSS = uint16(maxPayloadSize)
 	}
 
 	s.cc = s.initCongestionControl(ep.cc)
@@ -244,6 +252,9 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 	}
 
 	s.maxPayloadSize = m
+	if s.gso {
+		s.ep.gso.MSS = uint16(m)
+	}
 
 	s.outstanding -= count
 	if s.outstanding < 0 {
@@ -338,6 +349,15 @@ func (s *sender) resendSegment() {
 
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
+		if seg.data.Size() > s.maxPayloadSize {
+			available := s.maxPayloadSize
+			// Split this segment up.
+			nSeg := seg.clone()
+			nSeg.data.TrimFront(available)
+			nSeg.sequenceNumber.UpdateForward(seqnum.Size(available))
+			s.writeList.InsertAfter(seg, nSeg)
+			seg.data.CapLength(available)
+		}
 		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
@@ -408,11 +428,24 @@ func (s *sender) retransmitTimerExpired() bool {
 	return true
 }
 
+// pCount returns the number of packets in the segment. Due to GSO, a segment
+// can be composed of multiple packets.
+func (s *sender) pCount(seg *segment) int {
+	size := seg.data.Size()
+	if size == 0 {
+		return 1
+	}
+
+	return (size-1)/s.maxPayloadSize + 1
+}
+
 // sendData sends new data segments. It is called when data becomes available or
 // when the send window opens up.
 func (s *sender) sendData() {
 	limit := s.maxPayloadSize
-
+	if s.gso {
+		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
+	}
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
@@ -427,6 +460,10 @@ func (s *sender) sendData() {
 	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
 	for ; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
+		cwndLimit := (s.sndCwnd - s.outstanding) * s.maxPayloadSize
+		if cwndLimit < limit {
+			limit = cwndLimit
+		}
 		// We abuse the flags field to determine if we have already
 		// assigned a sequence number to this segment.
 		if seg.flags == 0 {
@@ -518,7 +555,7 @@ func (s *sender) sendData() {
 				seg.data.CapLength(available)
 			}
 
-			s.outstanding++
+			s.outstanding += s.pCount(seg)
 			segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 		}
 
@@ -744,8 +781,10 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			datalen := seg.logicalLen()
 
 			if datalen > ackLeft {
+				prevCount := s.pCount(seg)
 				seg.data.TrimFront(int(ackLeft))
 				seg.sequenceNumber.UpdateForward(ackLeft)
+				s.outstanding -= prevCount - s.pCount(seg)
 				break
 			}
 
@@ -753,7 +792,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 				s.writeNext = seg.Next()
 			}
 			s.writeList.Remove(seg)
-			s.outstanding--
+			s.outstanding -= s.pCount(seg)
 			seg.decRef()
 			ackLeft -= datalen
 		}
