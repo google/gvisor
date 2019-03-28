@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -477,7 +478,11 @@ func (s *taskStatData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle)
 		}
 	})
 	fmt.Fprintf(&buf, "%d %d ", vss, rss/usermem.PageSize)
-	fmt.Fprintf(&buf, "0 0 0 0 0 0 " /* rsslim startcode endcode startstack kstkesp kstkeip */)
+
+	// rsslim.
+	fmt.Fprintf(&buf, "%d ", s.t.ThreadGroup().Limits().Get(limits.Rss).Cur)
+
+	fmt.Fprintf(&buf, "0 0 0 0 0 " /* startcode endcode startstack kstkesp kstkeip */)
 	fmt.Fprintf(&buf, "0 0 0 0 0 " /* signal blocked sigignore sigcatch wchan */)
 	fmt.Fprintf(&buf, "0 0 " /* nswap cnswap */)
 	terminationSignal := linux.Signal(0)

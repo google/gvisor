@@ -895,6 +895,10 @@ TEST_P(ProcPidStatTest, HasBasicFields) {
   uint64_t rss;
   ASSERT_TRUE(absl::SimpleAtoi(fields[23], &rss));
   EXPECT_GT(rss, 0);
+
+  uint64_t rsslim;
+  ASSERT_TRUE(absl::SimpleAtoi(fields[24], &rsslim));
+  EXPECT_GT(rsslim, 0);
 }
 
 INSTANTIATE_TEST_CASE_P(SelfAndNumericPid, ProcPidStatTest,

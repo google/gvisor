@@ -42,6 +42,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/limits",
         "//pkg/sentry/mm",
         "//pkg/sentry/socket/rpcinet",
         "//pkg/sentry/socket/unix",
