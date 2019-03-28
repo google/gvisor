@@ -285,14 +285,15 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 
 	// Mount root path followed by submounts.
 	if err := syscall.Mount(spec.Root.Path, root, "bind", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
-		return fmt.Errorf("mounting root on root (%q) err: %v", spec.Root.Path, err)
+		return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
 	}
+
 	flags := uint32(syscall.MS_SLAVE | syscall.MS_REC)
 	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
 		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
 	}
-	if err := syscall.Mount("", spec.Root.Path, "", uintptr(flags), ""); err != nil {
-		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", spec.Root.Path, flags, err)
+	if err := syscall.Mount("", root, "", uintptr(flags), ""); err != nil {
+		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
@@ -315,10 +316,10 @@ func setupRootFS(spec *specs.Spec, conf *boot.Config) error {
 	if spec.Root.Readonly {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
-		log.Infof("Remounting root as readonly: %q", spec.Root.Path)
+		log.Infof("Remounting root as readonly: %q", root)
 		flags := uintptr(syscall.MS_BIND | syscall.MS_REMOUNT | syscall.MS_RDONLY | syscall.MS_REC)
-		if err := syscall.Mount(spec.Root.Path, spec.Root.Path, "bind", flags, ""); err != nil {
-			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", spec.Root.Path, spec.Root.Path, flags, err)
+		if err := syscall.Mount(root, root, "bind", flags, ""); err != nil {
+			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
 		}
 	}
 
