@@ -581,10 +581,156 @@ func (s *StatCounter) String() string {
 	return strconv.FormatUint(s.Value(), 10)
 }
 
+// ICMPv4PacketStats enumerates counts for all ICMPv4 packet types.
+type ICMPv4PacketStats struct {
+	// Echo is the total number of ICMPv4 echo packets counted.
+	Echo *StatCounter
+
+	// EchoReply is the total number of ICMPv4 echo reply packets counted.
+	EchoReply *StatCounter
+
+	// DstUnreachable is the total number of ICMPv4 destination unreachable
+	// packets counted.
+	DstUnreachable *StatCounter
+
+	// SrcQuench is the total number of ICMPv4 source quench packets
+	// counted.
+	SrcQuench *StatCounter
+
+	// Redirect is the total number of ICMPv4 redirect packets counted.
+	Redirect *StatCounter
+
+	// TimeExceeded is the total number of ICMPv4 time exceeded packets
+	// counted.
+	TimeExceeded *StatCounter
+
+	// ParamProblem is the total number of ICMPv4 parameter problem packets
+	// counted.
+	ParamProblem *StatCounter
+
+	// Timestamp is the total number of ICMPv4 timestamp packets counted.
+	Timestamp *StatCounter
+
+	// TimestampReply is the total number of ICMPv4 timestamp reply packets
+	// counted.
+	TimestampReply *StatCounter
+
+	// InfoRequest is the total number of ICMPv4 information request
+	// packets counted.
+	InfoRequest *StatCounter
+
+	// InfoReply is the total number of ICMPv4 information reply packets
+	// counted.
+	InfoReply *StatCounter
+}
+
+// ICMPv6PacketStats enumerates counts for all ICMPv6 packet types.
+type ICMPv6PacketStats struct {
+	// EchoRequest is the total number of ICMPv6 echo request packets
+	// counted.
+	EchoRequest *StatCounter
+
+	// EchoReply is the total number of ICMPv6 echo reply packets counted.
+	EchoReply *StatCounter
+
+	// DstUnreachable is the total number of ICMPv6 destination unreachable
+	// packets counted.
+	DstUnreachable *StatCounter
+
+	// PacketTooBig is the total number of ICMPv6 packet too big packets
+	// counted.
+	PacketTooBig *StatCounter
+
+	// TimeExceeded is the total number of ICMPv6 time exceeded packets
+	// counted.
+	TimeExceeded *StatCounter
+
+	// ParamProblem is the total number of ICMPv6 parameter problem packets
+	// counted.
+	ParamProblem *StatCounter
+
+	// RouterSolicit is the total number of ICMPv6 router solicit packets
+	// counted.
+	RouterSolicit *StatCounter
+
+	// RouterAdvert is the total number of ICMPv6 router advert packets
+	// counted.
+	RouterAdvert *StatCounter
+
+	// NeighborSolicit is the total number of ICMPv6 neighbor solicit
+	// packets counted.
+	NeighborSolicit *StatCounter
+
+	// NeighborAdvert is the total number of ICMPv6 neighbor advert packets
+	// counted.
+	NeighborAdvert *StatCounter
+
+	// RedirectMsg is the total number of ICMPv6 redirect message packets
+	// counted.
+	RedirectMsg *StatCounter
+}
+
+// ICMPv4SentPacketStats collects outbound ICMPv4-specific stats.
+type ICMPv4SentPacketStats struct {
+	ICMPv4PacketStats
+
+	// Dropped is the total number of ICMPv4 packets dropped due to link
+	// layer errors.
+	Dropped *StatCounter
+}
+
+// ICMPv4ReceivedPacketStats collects inbound ICMPv4-specific stats.
+type ICMPv4ReceivedPacketStats struct {
+	ICMPv4PacketStats
+
+	// Invalid is the total number of ICMPv4 packets received that the
+	// transport layer could not parse.
+	Invalid *StatCounter
+}
+
+// ICMPv6SentPacketStats collects outbound ICMPv6-specific stats.
+type ICMPv6SentPacketStats struct {
+	ICMPv6PacketStats
+
+	// Dropped is the total number of ICMPv6 packets dropped due to link
+	// layer errors.
+	Dropped *StatCounter
+}
+
+// ICMPv6ReceivedPacketStats collects inbound ICMPv6-specific stats.
+type ICMPv6ReceivedPacketStats struct {
+	ICMPv6PacketStats
+
+	// Invalid is the total number of ICMPv6 packets received that the
+	// transport layer could not parse.
+	Invalid *StatCounter
+}
+
+// ICMPStats collects ICMP-specific stats (both v4 and v6).
+type ICMPStats struct {
+	// ICMPv4SentPacketStats contains counts of sent packets by ICMPv4 packet type
+	// and a single count of packets which failed to write to the link
+	// layer.
+	V4PacketsSent ICMPv4SentPacketStats
+
+	// ICMPv4ReceivedPacketStats contains counts of received packets by ICMPv4
+	// packet type and a single count of invalid packets received.
+	V4PacketsReceived ICMPv4ReceivedPacketStats
+
+	// ICMPv6SentPacketStats contains counts of sent packets by ICMPv6 packet type
+	// and a single count of packets which failed to write to the link
+	// layer.
+	V6PacketsSent ICMPv6SentPacketStats
+
+	// ICMPv6ReceivedPacketStats contains counts of received packets by ICMPv6
+	// packet type and a single count of invalid packets received.
+	V6PacketsReceived ICMPv6ReceivedPacketStats
+}
+
 // IPStats collects IP-specific stats (both v4 and v6).
 type IPStats struct {
-	// PacketsReceived is the total number of IP packets received from the link
-	// layer in nic.DeliverNetworkPacket.
+	// PacketsReceived is the total number of IP packets received from the
+	// link layer in nic.DeliverNetworkPacket.
 	PacketsReceived *StatCounter
 
 	// InvalidAddressesReceived is the total number of IP packets received
@@ -605,8 +751,8 @@ type IPStats struct {
 
 // TCPStats collects TCP-specific stats.
 type TCPStats struct {
-	// ActiveConnectionOpenings is the number of connections opened successfully
-	// via Connect.
+	// ActiveConnectionOpenings is the number of connections opened
+	// successfully via Connect.
 	ActiveConnectionOpenings *StatCounter
 
 	// PassiveConnectionOpenings is the number of connections opened
@@ -617,8 +763,8 @@ type TCPStats struct {
 	// (active and passive openings, respectively) that end in an error.
 	FailedConnectionAttempts *StatCounter
 
-	// ValidSegmentsReceived is the number of TCP segments received that the
-	// transport layer successfully parsed.
+	// ValidSegmentsReceived is the number of TCP segments received that
+	// the transport layer successfully parsed.
 	ValidSegmentsReceived *StatCounter
 
 	// InvalidSegmentsReceived is the number of TCP segments received that
@@ -694,6 +840,9 @@ type Stats struct {
 	// DroppedPackets is the number of packets dropped due to full queues.
 	DroppedPackets *StatCounter
 
+	// ICMP breaks out ICMP-specific stats (both v4 and v6).
+	ICMP ICMPStats
+
 	// IP breaks out IP-specific stats (both v4 and v6).
 	IP IPStats
 
@@ -709,13 +858,13 @@ func fillIn(v reflect.Value) {
 		v := v.Field(i)
 		switch v.Kind() {
 		case reflect.Ptr:
-			if s, ok := v.Addr().Interface().(**StatCounter); ok {
-				if *s == nil {
-					*s = &StatCounter{}
-				}
+			if s := v.Addr().Interface().(**StatCounter); *s == nil {
+				*s = &StatCounter{}
 			}
 		case reflect.Struct:
 			fillIn(v)
+		default:
+			panic(fmt.Sprintf("unexpected type %s", v.Type()))
 		}
 	}
 }

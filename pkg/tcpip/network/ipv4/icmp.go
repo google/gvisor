@@ -55,15 +55,21 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, vv buffer.
 }
 
 func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.VectorisedView) {
+	stats := r.Stats()
+	received := stats.ICMP.V4PacketsReceived
 	v := vv.First()
 	if len(v) < header.ICMPv4MinimumSize {
+		received.Invalid.Increment()
 		return
 	}
 	h := header.ICMPv4(v)
 
+	// TODO: Meaningfully handle all ICMP types.
 	switch h.Type() {
 	case header.ICMPv4Echo:
+		received.Echo.Increment()
 		if len(v) < header.ICMPv4EchoMinimumSize {
+			received.Invalid.Increment()
 			return
 		}
 		// It's possible that a raw socket expects to receive this.
@@ -76,16 +82,25 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv4EchoReply)
 		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
-		r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL())
+		sent := stats.ICMP.V4PacketsSent
+		if err := r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL()); err != nil {
+			sent.Dropped.Increment()
+			return
+		}
+		sent.EchoReply.Increment()
 
 	case header.ICMPv4EchoReply:
+		received.EchoReply.Increment()
 		if len(v) < header.ICMPv4EchoMinimumSize {
+			received.Invalid.Increment()
 			return
 		}
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 	case header.ICMPv4DstUnreachable:
+		received.DstUnreachable.Increment()
 		if len(v) < header.ICMPv4DstUnreachableMinimumSize {
+			received.Invalid.Increment()
 			return
 		}
 		vv.TrimFront(header.ICMPv4DstUnreachableMinimumSize)
@@ -97,6 +112,32 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			mtu := uint32(binary.BigEndian.Uint16(v[header.ICMPv4DstUnreachableMinimumSize-2:]))
 			e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), vv)
 		}
+
+	case header.ICMPv4SrcQuench:
+		received.SrcQuench.Increment()
+
+	case header.ICMPv4Redirect:
+		received.Redirect.Increment()
+
+	case header.ICMPv4TimeExceeded:
+		received.TimeExceeded.Increment()
+
+	case header.ICMPv4ParamProblem:
+		received.ParamProblem.Increment()
+
+	case header.ICMPv4Timestamp:
+		received.Timestamp.Increment()
+
+	case header.ICMPv4TimestampReply:
+		received.TimestampReply.Increment()
+
+	case header.ICMPv4InfoRequest:
+		received.InfoRequest.Increment()
+
+	case header.ICMPv4InfoReply:
+		received.InfoReply.Increment()
+
+	default:
+		received.Invalid.Increment()
 	}
-	// TODO: Handle other ICMP types.
 }
