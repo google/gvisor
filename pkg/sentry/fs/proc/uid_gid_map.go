@@ -134,10 +134,23 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	if _, err := src.CopyIn(ctx, b); err != nil {
 		return 0, err
 	}
-	lines := bytes.SplitN(bytes.TrimSpace(b), []byte("\n"), maxIDMapLines+1)
+
+	// Truncate from the first NULL byte.
+	var nul int64
+	nul = int64(bytes.IndexByte(b, 0))
+	if nul == -1 {
+		nul = srclen
+	}
+	b = b[:nul]
+	// Remove the last \n.
+	if nul >= 1 && b[nul-1] == '\n' {
+		b = b[:nul-1]
+	}
+	lines := bytes.SplitN(b, []byte("\n"), maxIDMapLines+1)
 	if len(lines) > maxIDMapLines {
 		return 0, syserror.EINVAL
 	}
+
 	entries := make([]auth.IDMapEntry, len(lines))
 	for i, l := range lines {
 		var e auth.IDMapEntry
