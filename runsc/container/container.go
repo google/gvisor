@@ -267,6 +267,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		BundleDir:     bundleDir,
 		Root:          containerRoot,
 		Status:        Creating,
+		CreatedAt:     time.Now(),
 		Owner:         os.Getenv("USER"),
 	}
 	// The Cleanup object cleans up partially created containers when an error occurs.
