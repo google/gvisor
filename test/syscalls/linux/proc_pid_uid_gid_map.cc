@@ -129,6 +129,23 @@ TEST_P(ProcSelfUidGidMapTest, IdentityMapOwnID) {
       IsPosixErrorOkAndHolds(0));
 }
 
+TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
+  // This is identical to IdentityMapOwnID, except that a trailing newline, NUL,
+  // and an invalid (incomplete) map entry are appended to the valid entry. The
+  // newline should be accepted, and everything after the NUL should be ignored.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
+  uint32_t id = CurrentID();
+  std::string line = absl::StrCat(id, " ", id, " 1\n\0 4 3");
+  EXPECT_THAT(
+      InNewUserNamespaceWithMapFD([&](int fd) {
+        DenySelfSetgroups();
+        // The write should return the full size of the write, even though
+        // characters after the NUL were ignored.
+        TEST_PCHECK(write(fd, line.c_str(), line.size()) == line.size());
+      }),
+      IsPosixErrorOkAndHolds(0));
+}
+
 TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveSetIDCapability()));

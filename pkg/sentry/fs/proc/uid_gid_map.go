@@ -169,5 +169,8 @@ func (imfo *idMapFileOperations) Write(ctx context.Context, file *fs.File, src u
 	if err != nil {
 		return 0, err
 	}
-	return int64(len(b)), nil
+
+	// On success, Linux's kernel/user_namespace.c:map_write() always returns
+	// count, even if fewer bytes were used.
+	return int64(srclen), nil
 }
