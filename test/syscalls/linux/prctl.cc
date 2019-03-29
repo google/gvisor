@@ -52,6 +52,30 @@ TEST(PrctlTest, SetNameLongName) {
   ASSERT_EQ(long_name.substr(0, truncated_length), std::string(truncated_name));
 }
 
+TEST(PrctlTest, ChildProcessName) {
+  constexpr size_t kMaxNameLength = 15;
+
+  char parent_name[kMaxNameLength + 1] = {};
+  memset(parent_name, 'a', kMaxNameLength);
+
+  ASSERT_THAT(prctl(PR_SET_NAME, parent_name), SyscallSucceeds());
+
+  pid_t child_pid = fork();
+  TEST_PCHECK(child_pid >= 0);
+  if (child_pid == 0) {
+    char child_name[kMaxNameLength + 1] = {};
+    TEST_PCHECK(prctl(PR_GET_NAME, child_name) >= 0);
+    TEST_CHECK(memcmp(parent_name, child_name, sizeof(parent_name)) == 0);
+    _exit(0);
+  }
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status =" << status;
+}
+
 // Offset added to exit code from test child to distinguish from other abnormal
 // exits.
 constexpr int kPrctlNoNewPrivsTestChildExitBase = 100;

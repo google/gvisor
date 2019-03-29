@@ -74,6 +74,7 @@ func (tc *TaskContext) release() {
 // of the original's.
 func (tc *TaskContext) Fork(ctx context.Context, k *Kernel, shareAddressSpace bool) (*TaskContext, error) {
 	newTC := &TaskContext{
+		Name: tc.Name,
 		Arch: tc.Arch.Fork(),
 		st:   tc.st,
 	}
