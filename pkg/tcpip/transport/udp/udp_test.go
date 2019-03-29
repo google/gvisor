@@ -195,9 +195,7 @@ func (c *testContext) sendV6Packet(payload []byte, h *headers) {
 	})
 
 	// Calculate the UDP pseudo-header checksum.
-	xsum := header.Checksum([]byte(testV6Addr), 0)
-	xsum = header.Checksum([]byte(stackV6Addr), xsum)
-	xsum = header.Checksum([]byte{0, uint8(udp.ProtocolNumber)}, xsum)
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testV6Addr, stackV6Addr, uint16(len(u)))
 
 	// Calculate the UDP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
@@ -233,9 +231,7 @@ func (c *testContext) sendPacket(payload []byte, h *headers) {
 	})
 
 	// Calculate the UDP pseudo-header checksum.
-	xsum := header.Checksum([]byte(testAddr), 0)
-	xsum = header.Checksum([]byte(stackAddr), xsum)
-	xsum = header.Checksum([]byte{0, uint8(udp.ProtocolNumber)}, xsum)
+	xsum := header.PseudoHeaderChecksum(udp.ProtocolNumber, testAddr, stackAddr, uint16(len(u)))
 
 	// Calculate the UDP checksum and set it.
 	xsum = header.Checksum(payload, xsum)

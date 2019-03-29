@@ -327,9 +327,7 @@ func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.VectorisedView
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.Checksum([]byte(TestAddr), 0)
-	xsum = header.Checksum([]byte(StackAddr), xsum)
-	xsum = header.Checksum([]byte{0, uint8(tcp.ProtocolNumber)}, xsum)
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestAddr, StackAddr, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
@@ -481,9 +479,7 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 	})
 
 	// Calculate the TCP pseudo-header checksum.
-	xsum := header.Checksum([]byte(TestV6Addr), 0)
-	xsum = header.Checksum([]byte(StackV6Addr), xsum)
-	xsum = header.Checksum([]byte{0, uint8(tcp.ProtocolNumber)}, xsum)
+	xsum := header.PseudoHeaderChecksum(tcp.ProtocolNumber, TestV6Addr, StackV6Addr, uint16(len(t)))
 
 	// Calculate the TCP checksum and set it.
 	xsum = header.Checksum(payload, xsum)
