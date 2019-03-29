@@ -77,7 +77,7 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 		sacked := i.(header.SACKBlock)
 		// There is a hole between these two SACK blocks, so we can't
 		// merge anymore.
-		if r.End.LessThan(r.Start) {
+		if r.End.LessThan(sacked.Start) {
 			return false
 		}
 		// There is some overlap at this point, merge the blocks and
@@ -167,7 +167,11 @@ func (s *SACKScoreboard) String() string {
 
 // Delete removes all SACK information prior to seq.
 func (s *SACKScoreboard) Delete(seq seqnum.Value) {
+	if s.Empty() {
+		return
+	}
 	toDelete := []btree.Item{}
+	toInsert := []btree.Item{}
 	r := header.SACKBlock{seq, seq.Add(1)}
 	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
 		if i == r {
@@ -179,13 +183,16 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 			s.sacked -= sb.Start.Size(sb.End)
 		} else {
 			newSB := header.SACKBlock{seq, sb.End}
-			s.ranges.ReplaceOrInsert(newSB)
+			toInsert = append(toInsert, newSB)
 			s.sacked -= sb.Start.Size(seq)
 		}
 		return true
 	})
-	for _, i := range toDelete {
-		s.ranges.Delete(i)
+	for _, sb := range toDelete {
+		s.ranges.Delete(sb)
+	}
+	for _, sb := range toInsert {
+		s.ranges.ReplaceOrInsert(sb)
 	}
 }
 

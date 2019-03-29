@@ -77,6 +77,15 @@ func TestSACKScoreboardIsSACKED(t *testing.T) {
 			},
 			4294254144,
 		},
+		{
+			"Test disjoint SACKBlocks out of order",
+			[]header.SACKBlock{{827450276, 827454536}, {827426028, 827428868}},
+			[]blockTest{
+				{header.SACKBlock{827426028, 827428867}, true},
+				{header.SACKBlock{827450168, 827450275}, false},
+			},
+			827426000,
+		},
 	}
 	for _, tc := range testCases {
 		sb := initScoreboard(tc.scoreboardBlocks, tc.iss)
