@@ -75,7 +75,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_GET_NAME:
 		addr := args[1].Pointer()
-		buf := make([]byte, linux.TASK_COMM_LEN)
+		buf := t.CopyScratchBuffer(linux.TASK_COMM_LEN)
 		len := copy(buf, t.Name())
 		if len < linux.TASK_COMM_LEN {
 			buf[len] = 0

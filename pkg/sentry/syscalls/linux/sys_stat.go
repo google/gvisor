@@ -133,7 +133,7 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 	// common syscall for many applications, and t.CopyObjectOut has
 	// noticeable performance impact due to its many slice allocations and
 	// use of reflection.
-	b := make([]byte, 0, linux.SizeOfStat)
+	b := t.CopyScratchBuffer(int(linux.SizeOfStat))[:0]
 
 	// Dev (uint64)
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.DeviceID))

@@ -550,17 +550,16 @@ func (t *Task) afterLoad() {
 	t.futexWaiter = futex.NewWaiter()
 }
 
-// copyScratchBufferLen is the length of the copyScratchBuffer field of the Task
-// struct.
-const copyScratchBufferLen = 52
+// copyScratchBufferLen is the length of Task.copyScratchBuffer.
+const copyScratchBufferLen = 144 // sizeof(struct stat)
 
 // CopyScratchBuffer returns a scratch buffer to be used in CopyIn/CopyOut
 // functions. It must only be used within those functions and can only be used
 // by the task goroutine; it exists to improve performance and thus
 // intentionally lacks any synchronization.
 //
-// Callers should pass a constant value as an argument, which will allow the
-// compiler to inline and optimize out the if statement below.
+// Callers should pass a constant value as an argument if possible, which will
+// allow the compiler to inline and optimize out the if statement below.
 func (t *Task) CopyScratchBuffer(size int) []byte {
 	if size > copyScratchBufferLen {
 		return make([]byte, size)

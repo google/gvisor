@@ -516,7 +516,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if optLen > maxOptLen {
 		return 0, nil, syscall.EINVAL
 	}
-	buf := make([]byte, optLen)
+	buf := t.CopyScratchBuffer(int(optLen))
 	if _, err := t.CopyIn(optValAddr, &buf); err != nil {
 		return 0, nil, err
 	}
