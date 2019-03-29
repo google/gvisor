@@ -24,18 +24,20 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
 	"gvisor.googlesource.com/gvisor/pkg/state/statefile"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
 var previousMetadata map[string]string
 
-// ErrStateFile is returned when the state file cannot be opened.
+// ErrStateFile is returned when an error is encountered writing the statefile
+// (which may occur during open or close calls in addition to write).
 type ErrStateFile struct {
 	err error
 }
 
 // Error implements error.Error().
 func (e ErrStateFile) Error() string {
-	return fmt.Sprintf("failed to open statefile: %v", e.err)
+	return fmt.Sprintf("statefile error: %v", e.err)
 }
 
 // SaveOpts contains save-related options.
@@ -76,6 +78,14 @@ func (opts SaveOpts) Save(k *kernel.Kernel, w *watchdog.Watchdog) error {
 	} else {
 		// Save the kernel.
 		err = k.SaveTo(wc)
+
+		// ENOSPC is a state file error. This error can only come from
+		// writing the state file, and not from fs.FileOperations.Fsync
+		// because we wrap those in kernel.TaskSet.flushWritesToFiles.
+		if err == syserror.ENOSPC {
+			err = ErrStateFile{err}
+		}
+
 		if closeErr := wc.Close(); err == nil && closeErr != nil {
 			err = ErrStateFile{closeErr}
 		}

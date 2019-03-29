@@ -18,5 +18,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/watchdog",
         "//pkg/state/statefile",
+        "//pkg/syserror",
     ],
 )
