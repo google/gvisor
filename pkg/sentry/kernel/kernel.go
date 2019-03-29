@@ -365,12 +365,15 @@ func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
 				syncErr := desc.file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
 				if err := fs.SaveFileFsyncError(syncErr); err != nil {
 					name, _ := desc.file.Dirent.FullName(nil /* root */)
-					// Wrapping this error not only allows
-					// for a more useful message, but is
-					// required to distinguish Fsync errors
-					// from state file errors in
+					// Wrap this error in ErrSaveRejection
+					// so that it will trigger a save
+					// error, rather than a panic. This
+					// also allows us to distinguish Fsync
+					// errors from state file errors in
 					// state.Save.
-					return fmt.Errorf("%q was not sufficiently synced: %v", name, err)
+					return fs.ErrSaveRejection{
+						Err: fmt.Errorf("%q was not sufficiently synced: %v", name, err),
+					}
 				}
 			}
 		}
