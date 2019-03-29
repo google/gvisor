@@ -101,6 +101,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 			if err != nil {
 				return 0, err
 			}
+			defer m.DecRef()
 			opts.MappingIdentity = m
 			opts.Mappable = m
 		}
