@@ -26,6 +26,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/urpc"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
@@ -67,7 +68,7 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.GSO); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case boot.NetworkHost:
@@ -137,7 +138,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO bool) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
@@ -244,6 +245,19 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string) error {
 		ifaceLink, err := netlink.LinkByName(iface.Name)
 		if err != nil {
 			return fmt.Errorf("getting link for interface %q: %v", iface.Name, err)
+		}
+
+		if enableGSO {
+			gso, err := isGSOEnabled(fd, iface.Name)
+			if err != nil {
+				return fmt.Errorf("getting GSO for interface %q: %v", iface.Name, err)
+			}
+			if gso {
+				if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
+					return fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+				}
+				link.GSOMaxSize = ifaceLink.Attrs().GSOMaxSize
+			}
 		}
 
 		// Collect the addresses for the interface, enable forwarding,

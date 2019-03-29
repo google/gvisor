@@ -175,6 +175,9 @@ type Config struct {
 	// Network indicates what type of network to use.
 	Network NetworkType
 
+	// GSO indicates that generic segmentation offload is enabled.
+	GSO bool
+
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool
 

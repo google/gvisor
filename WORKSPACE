@@ -87,7 +87,7 @@ go_repository(
 go_repository(
     name = "com_github_vishvananda_netlink",
     importpath = "github.com/vishvananda/netlink",
-    commit = "d35d6b58e1cb692b27b94fc403170bf44058ac3e",
+    commit = "adb577d4a45e341da53c4d9196ad4222c9a23e69",
 )
 
 go_repository(

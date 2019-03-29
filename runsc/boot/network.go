@@ -52,10 +52,11 @@ type DefaultRoute struct {
 
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
-	Name      string
-	MTU       int
-	Addresses []net.IP
-	Routes    []Route
+	Name       string
+	MTU        int
+	Addresses  []net.IP
+	Routes     []Route
+	GSOMaxSize uint32
 }
 
 // LoopbackLink configures a loopback li nk.
@@ -140,6 +141,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			EthernetHeader:     true,
 			Address:            mac,
 			PacketDispatchMode: fdbased.PacketMMap,
+			GSOMaxSize:         link.GSOMaxSize,
 		})
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)
