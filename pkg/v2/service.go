@@ -240,6 +240,10 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 		}
 		var path string
 		switch o := v.(type) {
+		case *runctypes.CreateOptions: // containerd 1.2.x
+			opts.IoUid = o.IoUid
+			opts.IoGid = o.IoGid
+			opts.ShimCgroup = o.ShimCgroup
 		case *runctypes.RuncOptions: // containerd 1.2.x
 			root := proc.RunscRoot
 			if o.RuntimeRoot != "" {
@@ -262,7 +266,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 			}
 			path = o.ConfigPath
 		default:
-			return nil, errors.Errorf("unsupported option type")
+			return nil, errors.Errorf("unsupported option type %q", r.Options.TypeUrl)
 		}
 		if path != "" {
 			if _, err = toml.DecodeFile(path, &opts); err != nil {
