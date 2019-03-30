@@ -36,8 +36,3 @@ The following applications/images have been tested:
 *   wordpress
 
 [bug]: https://github.com/google/gvisor/issues
-
-## Syscall Reference
-
-This section contains an architecture-specific syscall reference guide. These
-tables are automatically generated from source-level annotations.
