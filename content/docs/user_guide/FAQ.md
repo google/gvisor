@@ -26,7 +26,6 @@ Note that `kubectl cp` works because it does the copy by exec'ing inside the
 sandbox, and thus gVisor cache is aware of the new files and dirs.
 
 There are also different filesystem modes that can be used to avoid this issue.
-See [Filesystem](../filesystem/).
 
 ### What's the security model?
 
