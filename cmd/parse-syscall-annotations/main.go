@@ -59,14 +59,14 @@ var (
 	r2 *regexp.Regexp
 
 	mdTemplate = template.Must(template.New("name").Parse(`+++
-title = "Syscall Reference"
-description = "Syscall Compatibility Reference Documentation"
+title = "AMD64"
+description = "Syscall Compatibility Reference Documentation for AMD64"
 weight = 10
 +++
 
-This table is a reference of Linux syscalls and their compatibility status in
-gVisor. gVisor does not support all syscalls and some syscalls may have a
-partial implementation.
+This table is a reference of Linux syscalls for the AMD64 architecture and
+their compatibility status in gVisor. gVisor does not support all syscalls and
+some syscalls may have a partial implementation.
 
 Of {{ .Total }} syscalls, {{ .Implemented }} syscalls have a full or partial
 implementation. There are currently {{ .Unimplemented }} unimplemented
