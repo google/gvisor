@@ -1,13 +1,16 @@
 +++
 title = "AMD64"
+description = "Syscall Compatibility Reference Documentation for AMD64"
 weight = 10
 +++
-This table is a reference of Linux syscalls for AMD64 and their compatibility
-status in gVisor. gVisor does not support all syscalls and some syscalls may
-have a partial implementation.
 
-Of 329 syscalls, 47 syscalls have a full or partial implementation. There are
-currently 51 unimplemented syscalls. 231 syscalls are not yet documented.
+This table is a reference of Linux syscalls for the AMD64 architecture and
+their compatibility status in gVisor. gVisor does not support all syscalls and
+some syscalls may have a partial implementation.
+
+Of 329 syscalls, 47 syscalls have a full or partial
+implementation. There are currently 51 unimplemented
+syscalls. 231 syscalls are not yet documented.
 
 <table>
   <thead>
