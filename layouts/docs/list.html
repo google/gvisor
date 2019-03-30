@@ -1,0 +1,30 @@
+{{ define "title"}} {{ .Title}} {{end}}
+{{ define "main" }}
+
+{{ if .Content }}
+{{ .Render "content" }}
+{{ else }}
+<div id="hero" class="wrap td-content ">
+  <h1>{{ .Title }}</h1>
+  {{ with .Params.description }}<div class="lead">{{ . | markdownify }}</div>{{ end }}
+</div>
+
+<section id="pageContent">
+
+{{ range .Sections.ByWeight }} 
+    <li>
+      <a href="{{.Permalink}}">{{.Title}}</a>
+    </li>
+{{ end }}
+
+{{ range .Paginator.Pages.ByWeight }} 
+  <li>
+    <a href="{{.Permalink}}">{{.Title}}</a>
+  </li>
+{{ end }}
+
+</section>
+
+{{ end }}
+
+{{ end }}

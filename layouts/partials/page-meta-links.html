@@ -1,0 +1,11 @@
+{{ if .Path }}
+{{ $gh_repo := ($.Param "github_repo") }}
+{{ if $gh_repo }}
+<div class="td-page-meta ml-2 pb-1 pt-2 mb-0">
+{{ $editURL := printf "%s/edit/master/content/%s/%s" $gh_repo ($.Site.Language.Lang) .Path }}
+{{ $issuesURL := printf "%s/issues/new?title=%s" $gh_repo (htmlEscape $.Title )}}
+<a href="{{ $editURL }}" target="_blank" rel="noopener"><i class="fa fa-edit fa-fw"></i> {{ T "post_edit_this" }}</a>
+<a href="{{ $issuesURL }}" target="_blank" rel="noopener"><i class="fab fa-github fa-fw"></i> {{ T "post_create_issue" }}</a>
+</div>
+{{ end }}
+{{ end }}

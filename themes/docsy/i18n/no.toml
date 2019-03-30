@@ -1,0 +1,41 @@
+
+
+# UI strings. Buttons and similar.
+
+[ui_pager_prev]
+other = "Forrige"
+
+[ui_pager_next]
+other = "Neste"
+
+[ui_read_more]
+other = "Les mer"
+
+[ui_search]
+other = "Søk på nettstedet…"
+
+# Used in sentences such as "Posted in News"
+[ui_in]
+other = "i"
+
+# Footer text
+[footer_all_rights_reserved]
+other = "Alle retter er reservert"
+
+[footer_privacy_policy]
+other = "Privacy Policy"
+
+
+# Post (blog, articles etc.)
+[post_byline_by]
+other = "Av"
+[post_created]
+other = "Opprettet"
+[post_last_mod]
+other = "Sist endret"
+[post_edit_this]
+other = "Endre denne siden"
+[post_create_issue]
+other = "Opprett sak"
+[post_posts_in]
+other = "Poster i"

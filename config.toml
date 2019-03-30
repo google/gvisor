@@ -1,0 +1,139 @@
+baseURL = "https://gvisor.dev/"
+title = "gVisor"
+
+publishDir = "public/static"
+
+enableRobotsTXT = true
+
+# Hugo allows theme composition (and inheritance). The precedence is from left to right.
+theme = ["docsy"]
+
+# Will give values to .Lastmod etc.
+# Disabled due to Cloud Build limitations.
+enableGitInfo = false
+
+# Language settings
+contentDir = "content"
+defaultContentLanguage = "en"
+defaultContentLanguageInSubdir = false
+# Useful when translating.
+enableMissingTranslationPlaceholders = false
+
+disableKinds = ["taxonomy", "taxonomyTerm"]
+
+# Highlighting config
+pygmentsCodeFences = true
+pygmentsUseClasses = false
+# Use the new Chroma Go highlighter in Hugo.
+pygmentsUseClassic = false
+#pygmentsOptions = "linenos=table"
+# See https://help.farbox.com/pygments.html
+pygmentsStyle = "tango"
+
+[[menu.main]]
+    name = "Documentation"
+    weight = -100
+    url = "/docs/"
+[[menu.main]]
+    name = "GitHub"
+    weight = -99
+    url = "https://github.com/google/gvisor"
+
+# First one is picked as the Twitter card image if not set on page.
+#images = ["images/project-illustration.png"]
+
+# Configure how URLs look like per section.
+[permalinks]
+blog = "/:section/:year/:month/:day/:slug/"
+
+## Configuration for BlackFriday markdown parser: https://github.com/russross/blackfriday
+[blackfriday]
+plainIDAnchors = true
+hrefTargetBlank = false
+angledQuotes = false
+latexDashes = true
+
+# Image processing configuration.
+[imaging]
+resampleFilter = "CatmullRom"
+quality = 75
+anchor = "smart"
+
+[services]
+[services.googleAnalytics]
+# Comment out the next line to disable GA tracking. Also disables the feature described in [params.ui.feedback].
+# TODO: Add analytics
+# id = "UA-00000000-0"
+
+# Everything below this are Site Params
+
+[params]
+copyright = "Google LLC"
+#privacy_policy = "https://policies.google.com/privacy"
+github_repo = "https://github.com/google/gvisor-website"
+
+# Google Custom Search Engine ID. Remove or comment out to disable search.
+# TODO: custom search engine
+# gcs_engine_id = ""
+
+# User interface configuration
+[params.ui]
+# Enable to show the side bar menu in its compact state.
+sidebar_menu_compact = false
+#  Set to true to disable breadcrumb navigation.
+breadcrumb_disable = false
+
+# Adds a H2 section titled "Feedback" to the bottom of each doc. The responses are sent to Google Analytics as events.
+# This feature depends on [services.googleAnalytics] and will be disabled if "services.googleAnalytics.id" is not set.
+# If you want this feature, but occasionally need to remove the "Feedback" section from a single page,
+# add "hide_feedback: true" to the page's front matter.
+[params.ui.feedback]
+enable = false
+# The responses that the user sees after clicking "yes" (the page was helpful) or "no" (the page was not helpful).
+yes = 'Glad to hear it! Please <a href="https://github.com/USERNAME/REPOSITORY/issues/new">tell us how we can improve</a>.'
+no = 'Sorry to hear that. Please <a href="https://github.com/USERNAME/REPOSITORY/issues/new">tell us how we can improve</a>.'
+
+[params.links]
+# End user relevant links. These will show up on left side of footer and in the community page if you have one.
+# [[params.links.user]]
+#     name = "User mailing list"
+#     url = "https://groups.google.com/forum/#!forum/gvisor-users"
+#     icon = "fa fa-envelope"
+#     desc = "Discussion and help from your fellow users"
+# [[params.links.user]]
+#     name ="Twitter"
+#     url = "https://example.org/twitter"
+#     icon = "fab fa-twitter"
+#     desc = "Follow us on Twitter to get the latest news!"
+# [[params.links.user]]
+#     name = "Stack Overflow"
+#     url = "https://example.org/stack"
+#     icon = "fab fa-stack-overflow"
+#     desc = "Practical questions and curated answers"
+[[params.links.user]]
+    name = "Docs"
+    url = "/docs/"
+    icon = "fa fa-book"
+    desc = "Read our documentation to understand gVisor, its architecture and trade-offs, and how to use it."
+[[params.links.user]]
+    name = "User mailing list"
+    url = "https://groups.google.com/forum/#!forum/gvisor-users"
+    icon = "fa fa-envelope"
+    desc = "Get support and discuss how to use gVisor"
+
+# Developer relevant links. These will show up on right side of footer and in the community page if you have one.
+[[params.links.developer]]
+    name = "GitHub"
+    url = "https://github.com/google/gvisor"
+    icon = "fab fa-github"
+    desc = "Development takes place here!"
+# [[params.links.developer]]
+#   name = "Slack"
+#   url = "https://example.org/slack"
+#   icon = "fab fa-slack"
+#         desc = "Chat with other project developers"
+[[params.links.developer]]
+    name = "Developer mailing list"
+    url = "https://groups.google.com/forum/#!forum/gvisor-dev"
+    icon = "fa fa-envelope"
+    desc = "Get info on the development of gVisor"

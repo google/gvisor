@@ -1,0 +1,99 @@
+// Boxes on the home page and similar.
+.td-box {}
+
+// box-variant creates the main style for a colored section used on the site.
+@mixin box-variant($parent, $color-name, $color-value) {
+    $text-color: color-yiq($color-value);
+    $link-color: mix($blue, $text-color, lightness($color-value));
+    $link-hover-color: rgba($link-color, 0.5) !default;
+
+    #{$parent} {
+        &--#{$color-name} {
+            color: $text-color;
+            background-color: #{$color-value};
+
+            .td-arrow-down {
+                &::before {
+                    left: 50%;
+                    margin-left: -30px;
+                    bottom: -25px;
+                    border: {
+                        style: solid;
+                        width: 25px 30px 0 30px;
+                        color: #{$color-value} transparent transparent transparent;
+                    };
+                    z-index: 3;
+                    position: absolute;
+                    content: "";
+                }
+            }
+        }
+    }
+
+    // Improve contrast for the links in paragraphs.
+    @include link-variant("#{$parent}--#{$color-name} p > a", $link-color, $link-hover-color, false);
+
+    @if $enable-gradients {
+        @include bg-gradient-variant("#{$parent}--1#{$color-name}#{$parent}--gradient", $color-value);
+    }
+}
+
+// Common min-height modifiers used for boxes.
+@mixin td-box-height-modifiers($parent) {
+    #{$parent} {
+        &--height-auto {}
+
+        &--height-min {
+            min-height: 300px;
+        }
+
+        &--height-med {
+            min-height: 400px;
+        }
+
+        &--height-max {
+            min-height: 500px;
+        }
+
+        &--height-full {
+            min-height: 100vh;
+        }
+
+        @include media-breakpoint-up(md) {
+            &--height-min {
+                min-height: 450px;
+            }
+
+            &--height-med {
+                min-height: 500px;
+            }
+
+            &--height-max {
+                min-height: 650px;
+            }
+        }
+    }
+}
+
+@include td-box-height-modifiers(".td-box");
+
+// This allows "painting by numbers"
+@for $i from 1 through length($td-box-colors) {
+    $c: nth($td-box-colors, $i);
+    $name: $i - 1;
+
+    @include box-variant(".td-box", $name, $c);
+}
+
+// Same as above with all the theme color names.
+@each $color, $value in $colors {
+    @include box-variant(".td-box", $color, $value);
+}
+
+@each $color, $value in $theme-colors {
+    @include box-variant(".td-box", $color, $value);
+}
+
+@each $color, $value in $grays {
+    @include box-variant(".td-box", $color, $value);
+}

@@ -1,0 +1,21 @@
+// Common functions.
+
+@function prepend($list, $value) {
+  @return join($value, $list);
+}
+
+
+
+// See https://www.sitepoint.com/using-sass-build-color-palettes/
+@function color-diff($a, $b) {
+  $sat: saturation($a) - saturation($b);
+  $lig: lightness($a) - lightness($b);
+  $fn-sat: if($sat > 0, 'desaturate', 'saturate');
+  $fn-lig: if($lig > 0, 'darken', 'lighten');
+
+  @return (
+    adjust-hue: -(hue($a) - hue($b)),
+    #{$fn-sat}: abs($sat),
+    #{$fn-lig}: abs($lig)
+  );
+}

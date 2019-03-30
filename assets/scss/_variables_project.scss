@@ -1,0 +1,33 @@
+// Colors.
+$primary: #262362;
+$secondary: #ffffff;
+
+// Custom styles.
+a.doc-table-anchor {
+    display: block;
+    position: relative;
+    top: -75px;
+    visibility: hidden;
+}
+
+.td-navbar {
+    .navbar-brand {
+        .navbar-logo {
+             svg {
+                 width: auto;
+             }
+        }
+    }
+}
+
+// Fonts.
+$google_font_name: "Roboto";
+$google_font_family: "Roboto";
+
+$font-size-base: 1rem;
+$h1-font-size:   $font-size-base * 2.5;
+$h2-font-size:   $font-size-base * 2;
+$h3-font-size:   $font-size-base * 1.75;
+$h4-font-size:   $font-size-base * 1.5;
+$h5-font-size:   $font-size-base * 1.25;
+$h6-font-size:   $font-size-base;

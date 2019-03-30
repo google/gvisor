@@ -1,0 +1,51 @@
++++
+title = "gVisor"
+linkTitle = "gVisor"
+description = "A container sandbox runtime focused on security, efficiency, and ease of use."
++++
+
+{{< blocks/cover image_anchor="top" height="auto" color="primary" title="gVisor" >}}
+<div class="mx-auto" style="margin-bottom: 8rem !important;">
+  <p class="lead" style="font-size: 1.6rem">A container sandbox runtime focused on <strong>security</strong>, <strong>efficiency</strong>, and <strong>ease of use</strong>.</p>
+  <a class="btn btn-lg btn-secondary mr-3 mb-4" href="./docs/user_guide/docker/" >Quick Start<i class="fas fa-arrow-alt-circle-right ml-2"></i></a>
+  <a class="btn btn-lg btn-secondary mr-3 mb-4" href="https://github.com/google/gvisor" rel="noopener">GitHub <i class="fab fa-github ml-2 "></i></a>
+</div>
+{{< /blocks/cover >}}
+
+{{% blocks/lead color="secondary" %}}
+gVisor is an open-source, <a href="https://www.opencontainers.org/" target="_blank" rel="noopener">OCI-compatible</a> sandbox runtime that provides a fully-virtualized container environment. It runs containers with a new <a href="https://en.wikipedia.org/wiki/User_space" target="_blank" rel="noopener">user-space</a> kernel, delivering a low overhead container security solution for low I/O, highly scaled applications.
+
+gVisor integrates with <a href="https://www.docker.com/" target="_blank" rel="noopener">Docker</a>, <a href="https://containerd.io/" target="_blank" rel="noopener">containerd</a> and <a href="https://kubernetes.io/" target="_blank" rel="noopener">Kubernetes</a>, making it easier to improve the security isolation of your containers while still using familiar tooling. Additionally, gVisor supports a variety of underlying mechanisms for intercepting application calls, allowing it to run in diverse host environments, including cloud-hosted virtual machines.
+{{% /blocks/lead %}}
+
+{{< blocks/section color="dark" >}}
+
+{{% blocks/feature icon="fas fa-lock" title="Defense in Depth" %}}
+Each sandbox has its own user-space kernel, providing additional protection from host kernel vulnerabilities.
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fas fa-feather-alt" title="Lightweight" %}}
+Runs as a normal process and uses the host kernel for memory management and scheduling.
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fab fa-linux" title="Zero Configuration" %}}
+Capable of running most Linux applications unmodified with zero configuration.
+{{% /blocks/feature %}}
+
+{{< /blocks/section >}}
+
+{{< blocks/section color="white" >}}
+
+{{% blocks/feature icon="fas fa-book" title="Read the docs" %}}
+Read the [documentation](./docs/user_guide/) to understand gVisor, its architecture and trade-offs, and how to use it.
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fas fa-code-branch" title="Contribute to gVisor" %}}
+Anyone is welcome to be a gVisor contributor. Please check out the [community information](./docs/community) to get started.
+{{% /blocks/feature %}}
+
+{{% blocks/feature icon="fab fa-github" title="Give Feedback" %}}
+File feature requests, bugs, and compatibility issues on <a href="https://github.com/google/gvisor/issues" target="_blank" rel="noopener">GitHub</a>.
+{{% /blocks/feature %}}
+
+{{< /blocks/section >}}

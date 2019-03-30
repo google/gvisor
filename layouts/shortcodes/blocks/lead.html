@@ -1,0 +1,11 @@
+{{ $col_id := .Get "color" | default .Ordinal }}
+{{ $height := .Get "height" | default "auto"  }}
+{{/* Height can be one of: auto, min, med, max, full. */}}
+<a id="td-block-{{ .Ordinal }}" class="td-offset-anchor"></a>
+<section class="row td-box td-box--{{ $col_id }} position-relative td-box--gradient td-box--height-{{ $height }}">
+	<div class="container td-arrow-down">
+		<span class="h4 mb-0">
+			{{ .Inner }}
+		</span>
+	</div>
+</section>

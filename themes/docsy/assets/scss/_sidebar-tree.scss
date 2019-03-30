@@ -1,0 +1,132 @@
+//
+// Left side navigation
+//
+.td-sidebar-nav {
+    padding-right: 0.5rem;
+    margin-right: -15px;
+    margin-left: -15px;
+
+    @include media-breakpoint-up(md) {
+        @supports (position: sticky) {
+            max-height: calc(100vh - 10rem);
+            overflow-y: auto;
+        }
+    }
+
+
+    @include media-breakpoint-up(md) {
+        display: block !important;
+    }
+
+
+    &__section {
+        li {
+            list-style: none;
+        }
+
+        ul {
+            padding: 0;
+            margin: 0;
+        }
+
+        @include media-breakpoint-up(md) {
+            & > ul {
+                padding-left: .5rem;
+            }
+        }
+
+
+        padding-left: 0;
+    }
+
+    &__section-title {
+        display: block;
+        font-weight: $font-weight-medium;
+
+        .active {
+            font-weight: $font-weight-bold;
+        }
+
+        a {
+            color: $gray-900;
+        }
+    }
+
+    .td-sidebar-link {
+        display: block;
+        padding-bottom: 0.375rem;
+
+        &__page {
+            color: $gray-700;
+            font-weight: $font-weight-light;
+        }
+    }
+
+    a {
+        &:hover {
+            color: $blue;
+            text-decoration: none;
+        }
+
+        &.active {
+            font-weight: $font-weight-bold;
+        }
+    }
+
+    .dropdown {
+        a {
+            color: $gray-700;
+        }
+
+        .nav-link {
+             padding: 0 0 1rem;
+        }
+    }
+}
+
+.td-sidebar {
+    @include media-breakpoint-up(md) {
+        padding-top: 4rem;
+        background-color: $td-sidebar-bg-color;
+        padding-right: 1rem;
+        border-right: 1px solid $td-sidebar-border-color;
+    }
+
+
+    padding-bottom: 1rem;
+
+    &__toggle {
+        line-height: 1;
+        color: $gray-900;
+        margin: 1rem;
+    }
+
+    &__search {
+        padding: 1rem 15px;
+        margin-right: -15px;
+        margin-left: -15px;
+    }
+
+    &__inner {
+        order: 0;
+
+        @include media-breakpoint-up(md) {
+            @supports (position: sticky) {
+                position: sticky;
+                top: 4rem;
+                z-index: 10;
+                height: calc(100vh - 6rem);
+            }
+        }
+
+
+        @include media-breakpoint-up(xl) {
+            flex: 0 1 320px;
+        }
+
+
+        .td-search-box {
+            width: 100%;
+        }
+    }
+}
