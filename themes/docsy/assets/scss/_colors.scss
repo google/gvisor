@@ -1,0 +1,41 @@
+// Add some local palette classes so you can do -bg-warning -text-warning etc. Even -bg-1 if you want to paint by numbers.
+@mixin palette-variant($color-name, $color-value) {
+    $text-color: color-yiq($color-value);
+    $link-color: mix($blue, $text-color, lightness($color-value));
+   
+    $link-hover-color: rgba($link-color, .5) !default;
+
+    .-bg-#{$color-name} {
+        color: $text-color;
+        background-color: $color-value;
+    }
+
+    // Make links in paragraphs stand out more.
+    @include link-variant(".-bg-#{$color-name} p > a", $link-color, $link-hover-color, false);
+   
+
+    .-text-#{$color-name} {
+        color: $color-value;
+    }
+}
+
+@each $color, $value in $colors {
+    @include palette-variant($color, $value);
+}
+
+@each $color, $value in $theme-colors {
+    @include palette-variant($color, $value);
+}
+
+@each $color, $value in $grays {
+    @include palette-variant($color, $value);
+}
+
+// This allows "painting by numbers", i.e. picking colors by a shortcode Ordianal.
+@for $i from 1 through length($td-box-colors) {
+    $value: nth($td-box-colors, $i);
+    $name: $i - 1;
+    $text-color: color-yiq($value);
+
+    @include palette-variant($name, $value);
+}

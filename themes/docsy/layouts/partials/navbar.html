@@ -1,0 +1,26 @@
+{{ $cover := .HasShortcode "blocks/cover" }}
+<nav class="js-navbar-scroll navbar navbar-expand navbar-dark {{ if $cover}} td-navbar-cover {{ end }}flex-column flex-md-row td-navbar">
+	<a class="navbar-brand" href="{{ .Site.Home.RelPermalink }}">
+		<span class="navbar-logo">{{ with resources.Get "icons/logo.svg" }}{{ ( . | minify).Content | safeHTML }} {{ end }}</span><span class="text-uppercase font-weight-bold">{{ .Site.Title }}</span>
+	</a>
+	<div class="td-navbar-nav-scroll ml-md-auto" id="main_navbar">
+		<ul class="navbar-nav mt-2 mt-lg-0">
+			{{ $p := . }}
+			{{ range .Site.Menus.main }}
+			<li class="nav-item mr-4 mb-2 mb-lg-0">
+				{{ $active := or ($p.IsMenuCurrent "main" .) ($p.HasMenuCurrent "main" .) }}
+				{{ with .Page }}
+				{{ $active = or $active ( $.IsDescendant .)  }}
+				{{ end }}
+				<a class="nav-link{{if $active }} active{{end}}" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}"><span{{if $active }} class="active"{{end}}>{{ .Name }}</span></a>
+			</li>
+			{{ end }}
+			{{ if  (gt (len .Site.Home.Translations) 0) }}
+			<li class="nav-item dropdown d-none d-lg-block">
+				{{ partial "navbar-lang-selector.html" . }}
+			</li>
+			{{ end }}
+		</ul>
+	</div>
+	<div class="navbar-nav d-none d-lg-block">{{ partial "search-input.html" . }}</div>
+</nav>

@@ -1,0 +1,131 @@
+/*
+
+Bootstrap variables overrides for theme.
+See https://github.com/twbs/bootstrap/pull/23260
+*/
+
+@fa-font-path :        "../webfonts";
+
+// Bootstrap flags. For more, see https://getbootstrap.com/docs/4.0/getting-started/theming/
+$enable-gradients: true;
+$enable-rounded: true;
+$enable-shadows: true;
+
+// Theme flags.
+
+$td-enable-google-fonts: true;
+
+// Theme colors
+
+$primary: #30638E !default;
+$primary-light: lighten($primary, 75%) !default;
+$secondary: #FFA630 !default;
+$success: #3772FF !default;
+$info: #C0E0DE !default;
+$warning: #ED6A5A !default;
+$danger: #ED6A5A !default;
+$white: #fff !default;
+$light: #D3F3EE !default;
+
+$dark: #403F4C !default;
+$blue: #72A1E5 !default;
+$orange: #BA5A31 !default;
+$gray-100: #f8f9fa !default;
+$gray-200: #eee !default;
+$gray-300: #dee2e6 !default;
+$gray-400: #ccc !default;
+$gray-500: #adb5bd !default;
+$gray-600: #888 !default;
+$gray-700: #495057 !default;
+$gray-800: #333 !default;
+$gray-900: #222 !default;
+$black: #000 !default;
+
+$code-color: darken($secondary, 20%) !default;
+
+// UI element colors
+
+$border-color: $gray-300 !default;
+$td-sidebar-bg-color: rgba($primary, 0.03) !default;
+$td-sidebar-border-color: $border-color !default;
+
+// Background colors for the sections on home page etc. It is a paint by number system, starting at 0, where the number is taken from the shortcode's ordinal
+// if not provided by the user.
+// These colors are all part of the theme palette, but the mix is fairly random to create variation. This can be overridden by the project if needed.
+$td-box-colors: $dark, $primary, $secondary, $info, $primary-light, $gray-600, $success, $warning, $dark, $danger, $primary, $secondary, $primary-light, $info;
+
+$link-color: darken($blue, 15%) !default;
+$link-decoration: none !default;
+$link-hover-color: darken($link-color, 15%) !default;
+$link-hover-decoration: none !default;
+
+// Fonts
+
+$google_font_name: "Open Sans" !default;
+$google_font_family: "Open+Sans:300,300i,400,400i,700,700i" !default;
+$web-font-path: "https://fonts.googleapis.com/css?family=#{$google_font_family}";
+
+$td-fonts-serif: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+
+@if $td-enable-google-fonts {
+    $td-fonts-serif: prepend($td-fonts-serif, "#{$google_font_name}");
+}
+
+$font-family-sans-serif: $td-fonts-serif !default;
+
+$font-family-monospace: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !default;
+$font-family-base: $font-family-sans-serif !default;
+$font-size-base: 1rem !default;
+
+// Font weights
+
+$font-weight-light: 300 !default;
+$font-weight-normal: 400 !default;
+$font-weight-medium: 500 !default;
+$font-weight-bold: 700 !default;
+
+$font-weight-body-text: $font-weight-normal !default;
+$headings-font-weight: $font-weight-medium !default;
+
+// Heading sizes
+
+$h1-font-size: $font-size-base * 2.25 !default;
+$h2-font-size: $font-size-base * 2 !default;
+$h3-font-size: $font-size-base * 1.5 !default;
+$h4-font-size: $font-size-base * 1.35 !default;
+$h5-font-size: $font-size-base * 1.15 !default;
+$h6-font-size: $font-size-base !default;
+
+// Display styles
+
+$display1-weight: $font-weight-bold !default;
+$display2-weight: $font-weight-bold !default;
+$display3-weight: $font-weight-bold !default;
+$display4-weight: $font-weight-bold !default;
+$display1-size: 3rem !default;
+$display2-size: 2.5rem !default;
+$display3-size: 2rem !default;
+$display4-size: 1.75rem !default;
+
+// Space
+
+$spacer: 1rem;
+$td-block-space-top-base: 4 * $spacer;
+$td-block-space-bottom-base: 4 * $spacer;
+
+// Pagination
+
+$pagination-color: $gray-600 !default;
+$pagination-border-color: rgba($black, 0.1) !default;
+$pagination-active-border-color: darken($primary, 5%) !default;
+$pagination-disabled-color: $gray-300 !default;
+
+// Navbar
+
+$navbar-dark-color: rgba($white, 0.75) !default;
+$navbar-dark-hover-color: rgba($white, 0.5) !default;
+$navbar-dark-active-color: $white !default;
+$navbar-dark-disabled-color: rgba($white, 0.25) !default;
+
+// The yiq lightness value that determines when the lightness of color changes from "dark" to "light".
+$yiq-contrasted-threshold: 200 !default;

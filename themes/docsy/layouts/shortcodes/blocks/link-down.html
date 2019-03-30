@@ -1,0 +1,7 @@
+{{ with .Parent }}
+{{ $id := $.Get "id" | default (printf "td-block-%d" ( add .Ordinal 1 ))  }}
+{{ $color := $.Get "color" | default "blue" }}
+<a class="btn btn-link text-{{ $color }}" href="#{{ $id }}"><i class="fa fa-chevron-circle-down" style="font-size: 400%"></i></a>
+{{ else }}
+{{ errorf "The link-down shortcode is supposed to be nested inside a shortcode"}}
+{{ end }}

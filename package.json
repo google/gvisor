@@ -1,0 +1,8 @@
+{
+  "name": "gvisor-website",
+  "version": "0.0.0",
+  "devDependencies": {
+    "autoprefixer": "^9.4.7",
+    "postcss-cli": "^6.1.1"
+  }
+}

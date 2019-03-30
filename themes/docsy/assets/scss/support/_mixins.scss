@@ -1,0 +1,49 @@
+// Some simple mixins.
+
+@mixin bg-gradient-variant($parent, $color) {
+    #{$parent} {
+        background: $color linear-gradient(180deg, mix($body-bg, $color, 15%), $color) repeat-x !important;
+    }
+}
+
+@mixin link-variant($parent, $color, $hover-color, $underline: false) {
+    #{$parent} {
+        color: $color;
+
+        @if $underline {
+            text-decoration: underline;
+        }
+
+        @include hover-focus {
+            color: $hover-color;
+        }
+    }
+}
+
+@mixin optional-at-root($sel) {
+    @at-root #{if(not &, $sel, selector-append(&, $sel))} {
+        @content;
+    }
+}
+
+// placeholder allows styling of the placeholder used in search input etc.
+@mixin placeholder {
+    @include optional-at-root("::-webkit-input-placeholder") {
+        @content;
+    }
+
+
+    @include optional-at-root(":-moz-placeholder") {
+        @content;
+    }
+
+
+    @include optional-at-root("::-moz-placeholder") {
+        @content;
+    }
+
+
+    @include optional-at-root(":-ms-input-placeholder") {
+        @content;
+    }
+}
