@@ -1,6 +1,6 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
-
 package(licenses = ["notice"])
+
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "device",

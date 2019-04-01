@@ -185,6 +185,9 @@ type Kernel struct {
 	// socketTable is used to track all sockets on the system. Protected by
 	// extMu.
 	socketTable map[int]map[*refs.WeakRef]struct{}
+
+	// deviceRegistry is used to save/restore device.SimpleDevices.
+	deviceRegistry struct{} `state:".(*device.Registry)"`
 }
 
 // InitKernelArgs holds arguments to Init.

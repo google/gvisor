@@ -137,6 +137,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel",
     imports = [
         "gvisor.googlesource.com/gvisor/pkg/bpf",
+        "gvisor.googlesource.com/gvisor/pkg/sentry/device",
         "gvisor.googlesource.com/gvisor/pkg/tcpip",
     ],
     visibility = ["//:sandbox"],
@@ -156,6 +157,7 @@ go_library(
         "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
+        "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/lock",
         "//pkg/sentry/fs/timerfd",

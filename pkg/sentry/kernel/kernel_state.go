@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 )
 
@@ -28,4 +29,14 @@ func (k *Kernel) loadDanglingEndpoints(es []tcpip.Endpoint) {
 	for _, e := range es {
 		tcpip.AddDanglingEndpoint(e)
 	}
+}
+
+// saveDeviceRegistry is invoked by stateify.
+func (k *Kernel) saveDeviceRegistry() *device.Registry {
+	return device.SimpleDevices
+}
+
+// loadDeviceRegistry is invoked by stateify.
+func (k *Kernel) loadDeviceRegistry(r *device.Registry) {
+	device.SimpleDevices.LoadFrom(r)
 }
