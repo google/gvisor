@@ -14,6 +14,7 @@ go_library(
         "dirent_cache.go",
         "dirent_list.go",
         "dirent_state.go",
+        "event_list.go",
         "file.go",
         "file_operations.go",
         "file_overlay.go",
@@ -46,7 +47,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/amutex",
-        "//pkg/ilist",
         "//pkg/log",
         "//pkg/metric",
         "//pkg/p9",
@@ -80,6 +80,18 @@ go_template_instance(
     types = {
         "Linker": "*Dirent",
         "Element": "*Dirent",
+    },
+)
+
+go_template_instance(
+    name = "event_list",
+    out = "event_list.go",
+    package = "fs",
+    prefix = "event",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Linker": "*Event",
+        "Element": "*Event",
     },
 )
 

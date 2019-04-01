@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
@@ -31,7 +30,7 @@ const inotifyEventBaseSize = 16
 //
 // +stateify savable
 type Event struct {
-	ilist.Entry
+	eventEntry
 
 	wd     int32
 	mask   uint32

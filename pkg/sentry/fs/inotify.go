@@ -19,7 +19,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
@@ -51,7 +50,7 @@ type Inotify struct {
 	evMu sync.Mutex `state:"nosave"`
 
 	// A list of pending events for this inotify instance. Protected by evMu.
-	events ilist.List
+	events eventList
 
 	// A scratch buffer, use to serialize inotify events. Use allocate this
 	// ahead of time and reuse performance. Protected by evMu.
@@ -143,9 +142,7 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 	}
 
 	var writeLen int64
-	for e := i.events.Front(); e != nil; e = e.Next() {
-		event := e.(*Event)
-
+	for event := i.events.Front(); event != nil; event = event.Next() {
 		// Does the buffer have enough remaining space to hold the event we're
 		// about to write out?
 		if dst.NumBytes() < int64(event.sizeOf()) {
@@ -160,7 +157,7 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 		// Linux always dequeues an available event as long as there's enough
 		// buffer space to copy it out, even if the copy below fails. Emulate
 		// this behaviour.
-		i.events.Remove(e)
+		i.events.Remove(event)
 
 		// Buffer has enough space, copy event to the read buffer.
 		n, err := event.CopyTo(ctx, i.scratch, dst)
@@ -197,8 +194,7 @@ func (i *Inotify) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArg
 		defer i.evMu.Unlock()
 		var n uint32
 		for e := i.events.Front(); e != nil; e = e.Next() {
-			event := e.(*Event)
-			n += uint32(event.sizeOf())
+			n += uint32(e.sizeOf())
 		}
 		var buf [4]byte
 		usermem.ByteOrder.PutUint32(buf[:], n)
@@ -216,7 +212,7 @@ func (i *Inotify) queueEvent(ev *Event) {
 	// Check if we should coalesce the event we're about to queue with the last
 	// one currently in the queue. Events are coalesced if they are identical.
 	if last := i.events.Back(); last != nil {
-		if ev.equals(last.(*Event)) {
+		if ev.equals(last) {
 			// "Coalesce" the two events by simply not queuing the new one. We
 			// don't need to raise a waiter.EventIn notification because no new
 			// data is available for reading.

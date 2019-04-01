@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -51,7 +50,7 @@ type Pipe struct {
 	Dirent *fs.Dirent
 
 	// The buffered byte queue.
-	data ilist.List
+	data bufferList
 
 	// Max size of the pipe in bytes.  When this max has been reached,
 	// writers will get EWOULDBLOCK.
@@ -170,13 +169,12 @@ func (p *Pipe) read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 		return 0, syserror.ErrWouldBlock
 	}
 	var n int64
-	for b := p.data.Front(); b != nil; b = p.data.Front() {
-		buffer := b.(*Buffer)
+	for buffer := p.data.Front(); buffer != nil; buffer = p.data.Front() {
 		n0, err := dst.CopyOut(ctx, buffer.bytes())
 		n += int64(n0)
 		p.size -= n0
 		if buffer.truncate(n0) == 0 {
-			p.data.Remove(b)
+			p.data.Remove(buffer)
 		}
 		dst = dst.DropFirst(n0)
 		if dst.NumBytes() == 0 || err != nil {
