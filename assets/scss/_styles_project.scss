@@ -21,26 +21,47 @@ a.doc-table-anchor {
    width: auto;
 }
 
-// Only show the logo in the header after scrolling down the page.
+// Only show the navbar after scrolling down the page.
 .td-navbar-cover .navbar-brand {
     display: none;
 }
-.td-navbar-cover.navbar-bg-onscroll .navbar-brand {
-    display: inherit;
+.td-navbar-cover .td-navbar-nav-scroll {
+    @media (min-width: 768px) {
+        display: none;
+    }
+}
+.td-navbar-cover.navbar-bg-onscroll .navbar-brand, .td-navbar-cover.navbar-bg-onscroll .td-navbar-nav-scroll {
+    @media (min-width: 768px) {
+        display: block;
+    }
 }
 
+// Show an inner navbar as part of the cover block
+.cover-content nav {
+    @media (max-width: 767px) {
+        display: none;
+    }
+    padding: 0;
+    margin-top: 3rem;
+    float: right;
+}
 // Left align the cover block and increase text size.
 .td-default main section.td-cover-block {
-    @media (max-width: 768px) {
+    @media (max-width: 767px) {
         text-align: center;
     }
 }
 .td-default main section.td-cover-block h1 {
-    padding-bottom: 5rem;
+    @media (min-width: 768px) {
+        padding-top: 0.5rem; // match padding for .nav-link
+        padding-bottom: 8rem;
+    }
 }
 .td-default main section.td-cover-block {
-    padding-top: 4rem;
-    padding-bottom: 8rem;
+    @media (min-width: 768px) {
+        padding-top: 0;
+        padding-bottom: 10rem;
+    }
 }
 .td-default main section.td-cover-block p.lead {
     @media (min-width: 768px) {

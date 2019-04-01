@@ -25,7 +25,26 @@
 <section id="{{ $blockID }}" class="row td-cover-block td-cover-block--height-{{ $height }} js-td-cover td-overlay td-overlay--dark -bg-{{ $col_id }}">
   <div class="container td-overlay__inner">
     <div class="row">
-      <div class="col-12">
+      <div class="cover-content col-12">
+        <nav class="navbar navbar-expand navbar-dark flex-column flex-md-row">
+          <div class="td-navbar-nav-scroll ml-md-auto" id="main_navbar">
+            <ul class="navbar-nav mt-2 mt-lg-0">
+              {{ $p := . }}
+              {{ range .Site.Menus.main }}
+              <li class="nav-item mr-4 mb-2 mb-lg-0">
+                <a class="nav-link" href="{{ with .Page }}{{ .RelPermalink }}{{ else }}{{ .URL | relLangURL }}{{ end }}"><span>{{ .Name }}</span></a>
+              </li>
+              {{ end }}
+              {{ if  (gt (len .Site.Home.Translations) 0) }}
+              <li class="nav-item dropdown d-none d-lg-block">
+                {{ partial "navbar-lang-selector.html" . }}
+              </li>
+              {{ end }}
+            </ul>
+          </div>
+          <div class="navbar-nav d-none d-lg-block">{{ partial "search-input.html" . }}</div>
+        </nav>
+
         {{ with .Get "title" }}<h1 class="display-1 mt-0 mt-md-5">{{ $title := . }}{{ with $logo_image }}{{ $logo_image_resized := (.Fit (printf "70x70 %s" $logo_anchor)) }}<img class="td-cover-logo" src="{{ $logo_image_resized.RelPermalink }}" alt="{{ $title | html }} Logo">{{ end }}{{ $title | html }}</h1>{{ end }}
         {{ with .Get "subtitle" }}<p class="display-2 text-uppercase mb-0">{{ . | html }}</p>{{ end }}
         <div class="pt-3 lead">
