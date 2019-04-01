@@ -28,17 +28,14 @@ import (
 var redirects = map[string]string{
 	"/change":    "https://gvisor.googlesource.com/gvisor/",
 	"/cl":        "https://gvisor-review.googlesource.com/",
-	"/godoc":     "https://godoc.org/github.com/google/gvisor",
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issue/new": "https://github.com/google/gvisor/issues/new",
 }
 
 var prefixHelpers = map[string]string{
-	"cl":      "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
-	"change":  "https://gvisor.googlesource.com/gvisor/+/%s",
-	"godoc":   "https://godoc.org/github.com/google/gvisor/%s",
-	"issue":   "https://github.com/google/gvisor/issues/%s",
-	"syscall": "/docs/user_guide/compatibility/syscall_reference/#%s",
+	"cl":     "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
+	"change": "https://gvisor.googlesource.com/gvisor/+/%s",
+	"issue":  "https://github.com/google/gvisor/issues/%s",
 }
 
 var validId = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
