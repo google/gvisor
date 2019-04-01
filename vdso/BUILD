@@ -3,6 +3,8 @@
 #   normal system VDSO (time, gettimeofday, clock_gettimeofday) but which uses
 #   timekeeping parameters managed by the sandbox kernel.
 
+load("@bazel_tools//tools/cpp:cc_flags_supplier.bzl", "cc_flags_supplier")
+
 package(licenses = ["notice"])
 
 config_setting(
@@ -57,12 +59,17 @@ genrule(
     features = ["-pie"],
     toolchains = [
         "@bazel_tools//tools/cpp:current_cc_toolchain",
-        "@bazel_tools//tools/cpp:cc_flags",
+        ":no_pie_cc_flags",
     ],
     tools = [
         ":check_vdso",
     ],
     visibility = ["//:sandbox"],
+)
+
+cc_flags_supplier(
+    name = "no_pie_cc_flags",
+    features = ["-pie"],
 )
 
 py_binary(
