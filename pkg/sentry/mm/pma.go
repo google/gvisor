@@ -318,7 +318,23 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 							panic(fmt.Sprintf("pma %v needs to be copied for writing, but is not readable: %v", pseg.Range(), oldpma))
 						}
 					}
-					copyAR := pseg.Range().Intersect(maskAR)
+					// The majority of copy-on-write breaks on executable pages
+					// come from:
+					//
+					// - The ELF loader, which must zero out bytes on the last
+					// page of each segment after the end of the segment.
+					//
+					// - gdb's use of ptrace to insert breakpoints.
+					//
+					// Neither of these cases has enough spatial locality to
+					// benefit from copying nearby pages, so if the vma is
+					// executable, only copy the pages required.
+					var copyAR usermem.AddrRange
+					if vseg.ValuePtr().effectivePerms.Execute {
+						copyAR = pseg.Range().Intersect(ar)
+					} else {
+						copyAR = pseg.Range().Intersect(maskAR)
+					}
 					// Get internal mappings from the pma to copy from.
 					if err := pseg.getInternalMappingsLocked(); err != nil {
 						return pstart, pseg.PrevGap(), err
