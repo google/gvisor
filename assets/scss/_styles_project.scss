@@ -30,6 +30,11 @@ a.doc-table-anchor {
 }
 
 // Left align the cover block and increase text size.
+.td-default main section.td-cover-block {
+    @media (max-width: 768px) {
+        text-align: center;
+    }
+}
 .td-default main section.td-cover-block h1 {
     padding-bottom: 5rem;
 }
@@ -38,7 +43,9 @@ a.doc-table-anchor {
     padding-bottom: 8rem;
 }
 .td-default main section.td-cover-block p.lead {
-    width: 50%;
+    @media (min-width: 768px) {
+        width: 50%;
+    }
     font-size: 2rem;
 }
 .td-default main section.td-cover-block p.lead strong {
