@@ -1,5 +1,11 @@
 // Custom styles.
 
+// Apply the link-color to blocks with white background to improve
+// accessibility.
+a, .td-box--secondary p > a, .td-box--white p > a {
+    color: $link-color;
+}
+
 // The table anchor for syscall references so that entries referenced
 // directly by an anchor aren't buried underneath the header.
 a.doc-table-anchor {
@@ -15,6 +21,7 @@ a.doc-table-anchor {
    width: auto;
 }
 
+// Only show the logo in the header after scrolling down the page.
 .td-navbar-cover .navbar-brand {
     display: none;
 }
@@ -22,22 +29,18 @@ a.doc-table-anchor {
     display: inherit;
 }
 
-// Cover block.
+// Left align the cover block and increase text size.
 .td-default main section.td-cover-block h1 {
     padding-bottom: 6rem;
 }
-
 .td-default main section.td-cover-block {
     padding-top: 4rem;
     padding-bottom: 8rem;
 }
-
 .td-default main section.td-cover-block p.lead {
     width: 50%;
     font-size: 2rem;
 }
-
 .td-default main section.td-cover-block p.lead strong {
     font-weight: bold;
 }
-
