@@ -37,7 +37,7 @@ Access the site at http://localhost:8080
 
 ## Deploy
 
-Deploying the webiste to App Engine requires gcloud. First create a configuration:
+Deploying the website to App Engine requires gcloud. First create a configuration:
 
 ```
 {
