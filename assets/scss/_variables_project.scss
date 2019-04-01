@@ -2,24 +2,6 @@
 $primary: #262362;
 $secondary: #ffffff;
 
-// Custom styles.
-a.doc-table-anchor {
-    display: block;
-    position: relative;
-    top: -75px;
-    visibility: hidden;
-}
-
-.td-navbar {
-    .navbar-brand {
-        .navbar-logo {
-             svg {
-                 width: auto;
-             }
-        }
-    }
-}
-
 // Fonts.
 $google_font_name: "Roboto";
 $google_font_family: "Roboto";

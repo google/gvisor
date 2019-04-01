@@ -1,0 +1,43 @@
+// Custom styles.
+
+// The table anchor for syscall references so that entries referenced
+// directly by an anchor aren't buried underneath the header.
+a.doc-table-anchor {
+    display: block;
+    position: relative;
+    top: -75px;
+    visibility: hidden;
+}
+
+// Adjust the width of the svg logo in the header. For smaller svg
+// files the width is too large.
+.td-navbar .navbar-brand .navbar-logo svg {
+   width: auto;
+}
+
+.td-navbar-cover .navbar-brand {
+    display: none;
+}
+.td-navbar-cover.navbar-bg-onscroll .navbar-brand {
+    display: inherit;
+}
+
+// Cover block.
+.td-default main section.td-cover-block h1 {
+    padding-bottom: 6rem;
+}
+
+.td-default main section.td-cover-block {
+    padding-top: 4rem;
+    padding-bottom: 8rem;
+}
+
+.td-default main section.td-cover-block p.lead {
+    width: 50%;
+    font-size: 2rem;
+}
+
+.td-default main section.td-cover-block p.lead strong {
+    font-weight: bold;
+}
+
