@@ -14,4 +14,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo GIT_REVISION $(git describe --always --abbrev=40 --dirty)
+echo VERSION $(git describe --always --tags --abbrev=12 --dirty)

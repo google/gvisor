@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -40,6 +41,7 @@ var (
 	logFilename = flag.String("log", "", "file path where internal debug information is written, default is stdout")
 	logFormat   = flag.String("log-format", "text", "log format: text (default), json, or json-k8s")
 	debug       = flag.Bool("debug", false, "enable debug logging")
+	showVersion = flag.Bool("version", false, "show version and exit")
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
@@ -68,9 +70,6 @@ var (
 
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 )
-
-// gitRevision is set during linking.
-var gitRevision = ""
 
 func main() {
 	// Help and flags commands are generated automatically.
@@ -106,6 +105,14 @@ func main() {
 
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
+
+	// Are we showing the version?
+	if *showVersion {
+		// The format here is the same as runc.
+		fmt.Fprintf(os.Stdout, "runsc version %s\n", version)
+		fmt.Fprintf(os.Stdout, "spec: %s\n", specutils.Version)
+		os.Exit(0)
+	}
 
 	platformType, err := boot.MakePlatformType(*platform)
 	if err != nil {
@@ -215,7 +222,7 @@ func main() {
 
 	log.Infof("***************************")
 	log.Infof("Args: %s", os.Args)
-	log.Infof("Git Revision: %s", gitRevision)
+	log.Infof("Version %s", version)
 	log.Infof("PID: %d", os.Getpid())
 	log.Infof("UID: %d, GID: %d", os.Getuid(), os.Getgid())
 	log.Infof("Configuration:")

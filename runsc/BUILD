@@ -6,12 +6,13 @@ go_binary(
     name = "runsc",
     srcs = [
         "main.go",
+        "version.go",
     ],
     pure = "on",
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.gitRevision": "{GIT_REVISION}"},
+    x_defs = {"main.version": "{VERSION}"},
     deps = [
         "//pkg/log",
         "//runsc/boot",
@@ -36,12 +37,13 @@ go_binary(
     name = "runsc-race",
     srcs = [
         "main.go",
+        "version.go",
     ],
     static = "on",
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.gitRevision": "{GIT_REVISION}"},
+    x_defs = {"main.version": "{VERSION}"},
     deps = [
         "//pkg/log",
         "//runsc/boot",

@@ -38,6 +38,9 @@ import (
 // changed in tests that aren't linked in the same binary.
 var ExePath = "/proc/self/exe"
 
+// Version is the supported spec version.
+var Version = specs.Version
+
 // LogSpec logs the spec in a human-friendly way.
 func LogSpec(spec *specs.Spec) {
 	log.Debugf("Spec: %+v", spec)
