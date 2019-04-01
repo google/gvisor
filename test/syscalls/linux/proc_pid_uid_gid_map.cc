@@ -20,12 +20,17 @@
 
 #include <functional>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -44,10 +49,53 @@ PosixErrorOr<int> InNewUserNamespace(const std::function<void()>& fn) {
   });
 }
 
+PosixErrorOr<std::tuple<pid_t, Cleanup>> CreateProcessInNewUserNamespace() {
+  int pipefd[2];
+  if (pipe(pipefd) < 0) {
+    return PosixError(errno, "pipe failed");
+  }
+  const auto cleanup_pipe_read =
+      Cleanup([&] { EXPECT_THAT(close(pipefd[0]), SyscallSucceeds()); });
+  auto cleanup_pipe_write =
+      Cleanup([&] { EXPECT_THAT(close(pipefd[1]), SyscallSucceeds()); });
+  pid_t child_pid = fork();
+  if (child_pid < 0) {
+    return PosixError(errno, "fork failed");
+  }
+  if (child_pid == 0) {
+    // Close our copy of the pipe's read end, which doesn't really matter.
+    TEST_PCHECK(close(pipefd[0]) >= 0);
+    TEST_PCHECK(unshare(CLONE_NEWUSER) == 0);
+    MaybeSave();
+    // Indicate that we've switched namespaces by unblocking the parent's read.
+    TEST_PCHECK(close(pipefd[1]) >= 0);
+    while (true) {
+      SleepSafe(absl::Minutes(1));
+    }
+  }
+  auto cleanup_child = Cleanup([child_pid] {
+    EXPECT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+    EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+        << "status = " << status;
+  });
+  // Close our copy of the pipe's write end, then wait for the child to close
+  // its copy, indicating that it's switched namespaces.
+  cleanup_pipe_write.Release()();
+  char buf;
+  if (RetryEINTR(read)(pipefd[0], &buf, 1) < 0) {
+    return PosixError(errno, "reading from pipe failed");
+  }
+  MaybeSave();
+  return std::make_tuple(child_pid, std::move(cleanup_child));
+}
+
 // TEST_CHECK-fails on error, since this function is used in contexts that
 // require async-signal-safety.
-void DenySelfSetgroups() {
-  int fd = open("/proc/self/setgroups", O_WRONLY);
+void DenySetgroupsByPath(const char* path) {
+  int fd = open(path, O_WRONLY);
   if (fd < 0 && errno == ENOENT) {
     // On kernels where this file doesn't exist, writing "deny" to it isn't
     // necessary to write to gid_map.
@@ -61,13 +109,19 @@ void DenySelfSetgroups() {
   TEST_PCHECK(close(fd) == 0);
 }
 
+void DenySelfSetgroups() { DenySetgroupsByPath("/proc/self/setgroups"); }
+
+void DenyPidSetgroups(pid_t pid) {
+  DenySetgroupsByPath(absl::StrCat("/proc/", pid, "/setgroups").c_str());
+}
+
 // Returns a valid UID/GID that isn't id.
 uint32_t another_id(uint32_t id) { return (id + 1) % 65535; }
 
 struct TestParam {
   std::string desc;
-  std::string map_filename;
   int cap;
+  std::function<std::string(absl::string_view)> get_map_filename;
   std::function<uint32_t()> get_current_id;
 };
 
@@ -75,11 +129,29 @@ std::string DescribeTestParam(const ::testing::TestParamInfo<TestParam>& info) {
   return info.param.desc;
 }
 
-class ProcSelfUidGidMapTest : public ::testing::TestWithParam<TestParam> {
+std::vector<TestParam> UidGidMapTestParams() {
+  return {TestParam{"UID", CAP_SETUID,
+                    [](absl::string_view pid) {
+                      return absl::StrCat("/proc/", pid, "/uid_map");
+                    },
+                    []() -> uint32_t { return getuid(); }},
+          TestParam{"GID", CAP_SETGID,
+                    [](absl::string_view pid) {
+                      return absl::StrCat("/proc/", pid, "/gid_map");
+                    },
+                    []() -> uint32_t { return getgid(); }}};
+}
+
+class ProcUidGidMapTest : public ::testing::TestWithParam<TestParam> {
+ protected:
+  uint32_t CurrentID() { return GetParam().get_current_id(); }
+};
+
+class ProcSelfUidGidMapTest : public ProcUidGidMapTest {
  protected:
   PosixErrorOr<int> InNewUserNamespaceWithMapFD(
       const std::function<void(int)>& fn) {
-    std::string map_filename = GetParam().map_filename;
+    std::string map_filename = GetParam().get_map_filename("self");
     return InNewUserNamespace([&] {
       int fd = open(map_filename.c_str(), O_RDWR);
       TEST_PCHECK(fd >= 0);
@@ -88,9 +160,10 @@ class ProcSelfUidGidMapTest : public ::testing::TestWithParam<TestParam> {
       TEST_PCHECK(close(fd) == 0);
     });
   }
+};
 
-  uint32_t CurrentID() { return GetParam().get_current_id(); }
-
+class ProcPidUidGidMapTest : public ProcUidGidMapTest {
+ protected:
   PosixErrorOr<bool> HaveSetIDCapability() {
     return HaveCapability(GetParam().cap);
   }
@@ -100,10 +173,16 @@ class ProcSelfUidGidMapTest : public ::testing::TestWithParam<TestParam> {
   // IDs into a child user namespace, since even with CAP_SET*ID this is only
   // possible if those IDs are mapped into the current one.
   PosixErrorOr<bool> AllIDsMapped() {
-    ASSIGN_OR_RETURN_ERRNO(std::string id_map, GetContents(GetParam().map_filename));
+    ASSIGN_OR_RETURN_ERRNO(std::string id_map,
+                           GetContents(GetParam().get_map_filename("self")));
+    absl::StripTrailingAsciiWhitespace(&id_map);
     std::vector<std::string> id_map_parts =
         absl::StrSplit(id_map, ' ', absl::SkipEmpty());
     return id_map_parts == std::vector<std::string>({"0", "0", "4294967295"});
+  }
+
+  PosixErrorOr<FileDescriptor> OpenMapFile(pid_t pid) {
+    return Open(GetParam().get_map_filename(absl::StrCat(pid)), O_RDWR);
   }
 };
 
@@ -117,7 +196,6 @@ TEST_P(ProcSelfUidGidMapTest, IsInitiallyEmpty) {
 }
 
 TEST_P(ProcSelfUidGidMapTest, IdentityMapOwnID) {
-  // This is the only write permitted if the writer does not have CAP_SET*ID.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   uint32_t id = CurrentID();
   std::string line = absl::StrCat(id, " ", id, " 1");
@@ -148,7 +226,6 @@ TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
 
 TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveSetIDCapability()));
   uint32_t id = CurrentID();
   uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id2, " ", id, " 1");
@@ -160,9 +237,11 @@ TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
       IsPosixErrorOkAndHolds(0));
 }
 
-TEST_P(ProcSelfUidGidMapTest, MapOtherIDUnprivileged) {
+TEST_P(ProcSelfUidGidMapTest, MapOtherID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
-  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(HaveSetIDCapability()));
+  // Whether or not we have CAP_SET*ID is irrelevant: the process running in the
+  // new (child) user namespace won't have any capabilities in the current
+  // (parent) user namespace, which is needed.
   uint32_t id = CurrentID();
   uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id, " ", id2, " 1");
@@ -174,25 +253,41 @@ TEST_P(ProcSelfUidGidMapTest, MapOtherIDUnprivileged) {
               IsPosixErrorOkAndHolds(0));
 }
 
-TEST_P(ProcSelfUidGidMapTest, MapOtherIDPrivileged) {
+INSTANTIATE_TEST_CASE_P(All, ProcSelfUidGidMapTest,
+                        ::testing::ValuesIn(UidGidMapTestParams()),
+                        DescribeTestParam);
+
+TEST_P(ProcPidUidGidMapTest, MapOtherIDPrivileged) {
+  // Like ProcSelfUidGidMapTest_MapOtherID, but since we have CAP_SET*ID in the
+  // parent user namespace (this one), we can map IDs that aren't ours.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveSetIDCapability()));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(AllIDsMapped()));
+
+  pid_t child_pid;
+  Cleanup cleanup_child;
+  std::tie(child_pid, cleanup_child) =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateProcessInNewUserNamespace());
+
   uint32_t id = CurrentID();
   uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id, " ", id2, " 1");
-  EXPECT_THAT(
-      InNewUserNamespaceWithMapFD([&](int fd) {
-        DenySelfSetgroups();
-        TEST_PCHECK(write(fd, line.c_str(), line.size()) == line.size());
-      }),
-      IsPosixErrorOkAndHolds(0));
+  DenyPidSetgroups(child_pid);
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(OpenMapFile(child_pid));
+  EXPECT_THAT(write(fd.get(), line.c_str(), line.size()),
+              SyscallSucceedsWithValue(line.size()));
 }
 
-TEST_P(ProcSelfUidGidMapTest, MapAnyIDsPrivileged) {
+TEST_P(ProcPidUidGidMapTest, MapAnyIDsPrivileged) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveSetIDCapability()));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(AllIDsMapped()));
+
+  pid_t child_pid;
+  Cleanup cleanup_child;
+  std::tie(child_pid, cleanup_child) =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateProcessInNewUserNamespace());
+
   // Test all of:
   //
   // - Mapping ranges of length > 1
@@ -201,21 +296,15 @@ TEST_P(ProcSelfUidGidMapTest, MapAnyIDsPrivileged) {
   //
   // - Non-identity mappings
   char entries[] = "2 0 2\n4 6 2";
-  EXPECT_THAT(
-      InNewUserNamespaceWithMapFD([&](int fd) {
-        DenySelfSetgroups();
-        TEST_PCHECK(write(fd, entries, sizeof(entries)) == sizeof(entries));
-      }),
-      IsPosixErrorOkAndHolds(0));
+  DenyPidSetgroups(child_pid);
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(OpenMapFile(child_pid));
+  EXPECT_THAT(write(fd.get(), entries, sizeof(entries)),
+              SyscallSucceedsWithValue(sizeof(entries)));
 }
 
-INSTANTIATE_TEST_CASE_P(
-    All, ProcSelfUidGidMapTest,
-    ::testing::Values(TestParam{"UID", "/proc/self/uid_map", CAP_SETUID,
-                                []() -> uint32_t { return getuid(); }},
-                      TestParam{"GID", "/proc/self/gid_map", CAP_SETGID,
-                                []() -> uint32_t { return getgid(); }}),
-    DescribeTestParam);
+INSTANTIATE_TEST_CASE_P(All, ProcPidUidGidMapTest,
+                        ::testing::ValuesIn(UidGidMapTestParams()),
+                        DescribeTestParam);
 
 }  // namespace testing
 }  // namespace gvisor
