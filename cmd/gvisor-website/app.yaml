@@ -15,16 +15,11 @@
 runtime: go111
 
 handlers:
+  - url: /(change|cl||issue)(/.*)?
+    secure: always
+    script: auto
   - url: /.*
     secure: always
     script: auto
-    # TODO: remove this when published
+    # TODO: remove this when published.
     login: admin
-  # - url: /(change|cl|godoc|issue)(/.*)?
-  #   secure: always
-  #   script: auto
-  # - url: /(.*)
-  #   secure: always
-  #   redirect_http_response_code: 301
-  #   static_files: static/\1
-  #   upload: static/.*
