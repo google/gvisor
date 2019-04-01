@@ -485,10 +485,12 @@ TEST(MemfdTest, CanOpenFromProcfs) {
 TEST(MemfdTest, OtherProcessCanOpenFromProcfs) {
   const FileDescriptor memfd =
       ASSERT_NO_ERRNO_AND_VALUE(MemfdCreate(kMemfdName, MFD_ALLOW_SEALING));
-  pid_t pid = getpid();
+  const auto memfd_path =
+      absl::StrFormat("/proc/%d/fd/%d", getpid(), memfd.get());
   const auto rest = [&] {
-    ASSERT_NO_ERRNO(
-        Open(absl::StrFormat("/proc/self/%d/%d", pid, memfd.get()), O_RDWR));
+    int fd = open(memfd_path.c_str(), O_RDWR);
+    TEST_PCHECK(fd >= 0);
+    TEST_PCHECK(close(fd) >= 0);
   };
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
