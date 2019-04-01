@@ -52,6 +52,7 @@ const (
 	regular fileType = iota
 	directory
 	symlink
+	unknown
 )
 
 // String implements fmt.Stringer.
@@ -221,9 +222,11 @@ type localFile struct {
 
 func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 	// Attempt to open file in the following mode in order:
-	//   1. RDONLY: for all files, works for directories and ro mounts too
+	//   1. RDONLY | NONBLOCK: for all files, works for directories and ro mounts too.
+	//      Use non-blocking to prevent getting stuck inside open(2) for FIFOs. This option
+	//      has no effect on regular files.
 	//   2. PATH: for symlinks
-	modes := []int{syscall.O_RDONLY, unix.O_PATH}
+	modes := []int{syscall.O_RDONLY | syscall.O_NONBLOCK, unix.O_PATH}
 
 	var err error
 	var fd int
@@ -252,7 +255,7 @@ func openAnyFile(parent *localFile, name string) (*os.File, string, error) {
 	return os.NewFile(uintptr(fd), newPath), newPath, nil
 }
 
-func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_t) (*localFile, error) {
+func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
 	var ft fileType
 	switch stat.Mode & syscall.S_IFMT {
 	case syscall.S_IFREG:
@@ -262,8 +265,17 @@ func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_
 	case syscall.S_IFLNK:
 		ft = symlink
 	default:
-		return nil, syscall.EINVAL
+		return unknown, syscall.EPERM
 	}
+	return ft, nil
+}
+
+func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_t) (*localFile, error) {
+	ft, err := getSupportedFileType(stat)
+	if err != nil {
+		return nil, err
+	}
+
 	return &localFile{
 		attachPoint: a,
 		hostPath:    path,
@@ -484,10 +496,12 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		}
 		stat, err := stat(int(f.Fd()))
 		if err != nil {
+			f.Close()
 			return nil, nil, extractErrno(err)
 		}
 		c, err := newLocalFile(last.attachPoint, f, path, stat)
 		if err != nil {
+			f.Close()
 			return nil, nil, extractErrno(err)
 		}
 
