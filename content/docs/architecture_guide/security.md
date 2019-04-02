@@ -146,8 +146,8 @@ For gVisor development, there are several engineering principles that are
 employed in order to ensure that the system meets its design goals.
 
  1. No system call is passed through directly to the host. Every supported call
-    has a distinct implementation in the Sentry, that is unlikely to suffer from
-    identical vulnerabilities that may appear in the host. This has the
+    has an independent implementation in the Sentry, that is unlikely to suffer
+    from identical vulnerabilities that may appear in the host. This has the
     consequence that all kernel features used by applications require an
     implementation within the Sentry.
  1. Only common, universal functionality is implemented. Some filesystems,
