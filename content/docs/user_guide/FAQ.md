@@ -30,7 +30,3 @@ There are also different filesystem modes that can be used to avoid this issue.
 ### What's the security model?
 
 See the [Security Model](../../architecture_guide/security/).
-
-### What's the expected performance?
-
-See the [Performance Guide](../../architecture_guide/performance/).
