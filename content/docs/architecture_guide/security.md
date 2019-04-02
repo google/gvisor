@@ -7,7 +7,7 @@ exploitation of kernel bugs when running untrusted code. In order to understand
 how gVisor achieves this goal, it is first necessary to understand the basic
 threat model.
 
-## Threats: the Anatomy of an Exploit
+## Threats: The Anatomy of an Exploit
 
 An exploit takes advantage of a software or hardware bug in order to escalate
 privileges, gain access to privileged data, or disrupt services. All of the
