@@ -42,6 +42,48 @@ func assertPanic(t *testing.T, f func()) {
 	f()
 }
 
+func testReadWrite(f p9.File, flags p9.OpenFlags, content []byte) error {
+	want := make([]byte, len(content))
+	copy(want, content)
+
+	b := []byte("test-1-2-3")
+	w, err := f.WriteAt(b, uint64(len(content)))
+	if flags == p9.WriteOnly || flags == p9.ReadWrite {
+		if err != nil {
+			return fmt.Errorf("WriteAt(): %v", err)
+		}
+		if w != len(b) {
+			return fmt.Errorf("WriteAt() was partial, got: %d, want: %d", w, len(b))
+		}
+		want = append(want, b...)
+	} else {
+		if e, ok := err.(syscall.Errno); !ok || e != syscall.EBADF {
+			return fmt.Errorf("WriteAt() should have failed, got: %d, want: EBADFD", err)
+		}
+	}
+
+	rBuf := make([]byte, len(want))
+	r, err := f.ReadAt(rBuf, 0)
+	if flags == p9.ReadOnly || flags == p9.ReadWrite {
+		if err != nil {
+			return fmt.Errorf("ReadAt(): %v", err)
+		}
+		if r != len(rBuf) {
+			return fmt.Errorf("ReadAt() was partial, got: %d, want: %d", r, len(rBuf))
+		}
+		if string(rBuf) != string(want) {
+			return fmt.Errorf("ReadAt() wrong data, got: %s, want: %s", string(rBuf), want)
+		}
+	} else {
+		if e, ok := err.(syscall.Errno); !ok || e != syscall.EBADF {
+			return fmt.Errorf("ReadAt() should have failed, got: %d, want: EBADFD", err)
+		}
+	}
+	return nil
+}
+
+var allOpenFlags = []p9.OpenFlags{p9.ReadOnly, p9.WriteOnly, p9.ReadWrite}
+
 var (
 	allTypes = []fileType{regular, directory, symlink}
 
@@ -160,61 +202,24 @@ func TestReadWrite(t *testing.T) {
 			t.Fatalf("%v: createFile() failed, err: %v", s, err)
 		}
 		defer child.Close()
-		b := []byte("foobar")
-		w, err := child.WriteAt(b, 0)
+		want := []byte("foobar")
+		w, err := child.WriteAt(want, 0)
 		if err != nil {
 			t.Fatalf("%v: Write() failed, err: %v", s, err)
 		}
-		if w != len(b) {
-			t.Fatalf("%v: Write() was partial, got: %d, expected: %d", s, w, len(b))
+		if w != len(want) {
+			t.Fatalf("%v: Write() was partial, got: %d, expected: %d", s, w, len(want))
 		}
-		for _, test := range []struct {
-			flags p9.OpenFlags
-			read  bool
-			write bool
-		}{
-			{flags: p9.ReadOnly, read: true, write: false},
-			{flags: p9.WriteOnly, read: false, write: true},
-			{flags: p9.ReadWrite, read: true, write: true},
-		} {
+		for _, flags := range allOpenFlags {
 			_, l, err := s.file.Walk([]string{"test"})
 			if err != nil {
 				t.Fatalf("%v: Walk(%s) failed, err: %v", s, "test", err)
 			}
-			if _, _, _, err := l.Open(test.flags); err != nil {
-				t.Fatalf("%v: Open(%v) failed, err: %v", s, test.flags, err)
+			if _, _, _, err := l.Open(flags); err != nil {
+				t.Fatalf("%v: Open(%v) failed, err: %v", s, flags, err)
 			}
-
-			w, err = l.WriteAt(b, 0)
-			if test.write {
-				if err != nil {
-					t.Fatalf("%v, %v: WriteAt() failed, err: %v", s, test.flags, err)
-				}
-				if w != len(b) {
-					t.Fatalf("%v, %v: WriteAt() was partial, got: %d, expected: %d", s, test.flags, w, len(b))
-				}
-			} else {
-				if err == nil {
-					t.Fatalf("%v, %v: WriteAt() should have failed", s, test.flags)
-				}
-			}
-
-			rBuf := make([]byte, len(b))
-			r, err := l.ReadAt(rBuf, 0)
-			if test.read {
-				if err != nil {
-					t.Fatalf("%v, %v: ReadAt() failed, err: %v", s, test.flags, err)
-				}
-				if r != len(rBuf) {
-					t.Fatalf("%v, %v: ReadAt() was partial, got: %d, expected: %d", s, test.flags, r, len(rBuf))
-				}
-				if string(rBuf) != "foobar" {
-					t.Fatalf("%v, %v: ReadAt() wrong data, got: %s, expected: %s", s, test.flags, string(rBuf), "foobar")
-				}
-			} else {
-				if err == nil {
-					t.Fatalf("%v, %v: ReadAt() should have failed", s, test.flags)
-				}
+			if err := testReadWrite(l, flags, want); err != nil {
+				t.Fatalf("%v: testReadWrite(%v) failed: %v", s, flags, err)
 			}
 		}
 	})
@@ -222,42 +227,57 @@ func TestReadWrite(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
-		for i, test := range []struct {
-			flags p9.OpenFlags
-			read  bool
-		}{
-			{flags: p9.WriteOnly, read: false},
-			{flags: p9.ReadWrite, read: true},
-		} {
-			_, l, _, _, err := s.file.Create(fmt.Sprintf("test-%d", i), test.flags, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
+		for i, flags := range allOpenFlags {
+			_, l, _, _, err := s.file.Create(fmt.Sprintf("test-%d", i), flags, 0777, p9.UID(os.Getuid()), p9.GID(os.Getgid()))
 			if err != nil {
-				t.Fatalf("%v, %v: WriteAt() failed, err: %v", s, test.flags, err)
+				t.Fatalf("%v, %v: WriteAt() failed, err: %v", s, flags, err)
 			}
 
-			b := []byte("foobar")
-			w, err := l.WriteAt(b, 0)
-			if err != nil {
-				t.Fatalf("%v, %v: WriteAt() failed, err: %v", s, test.flags, err)
+			if err := testReadWrite(l, flags, []byte{}); err != nil {
+				t.Fatalf("%v: testReadWrite(%v) failed: %v", s, flags, err)
 			}
-			if w != len(b) {
-				t.Fatalf("%v, %v: WriteAt() was partial, got: %d, expected: %d", s, test.flags, w, len(b))
-			}
+		}
+	})
+}
 
-			rBuf := make([]byte, len(b))
-			r, err := l.ReadAt(rBuf, 0)
-			if test.read {
+// TestReadWriteDup tests that a file opened in any mode can be dup'ed and
+// reopened in any other mode.
+func TestReadWriteDup(t *testing.T) {
+	runCustom(t, []fileType{directory}, rwConfs, func(t *testing.T, s state) {
+		child, err := createFile(s.file, "test")
+		if err != nil {
+			t.Fatalf("%v: createFile() failed, err: %v", s, err)
+		}
+		defer child.Close()
+		want := []byte("foobar")
+		w, err := child.WriteAt(want, 0)
+		if err != nil {
+			t.Fatalf("%v: Write() failed, err: %v", s, err)
+		}
+		if w != len(want) {
+			t.Fatalf("%v: Write() was partial, got: %d, expected: %d", s, w, len(want))
+		}
+		for _, flags := range allOpenFlags {
+			_, l, err := s.file.Walk([]string{"test"})
+			if err != nil {
+				t.Fatalf("%v: Walk(%s) failed, err: %v", s, "test", err)
+			}
+			defer l.Close()
+			if _, _, _, err := l.Open(flags); err != nil {
+				t.Fatalf("%v: Open(%v) failed, err: %v", s, flags, err)
+			}
+			for _, dupFlags := range allOpenFlags {
+				t.Logf("Original flags: %v, dup flags: %v", flags, dupFlags)
+				_, dup, err := l.Walk([]string{})
 				if err != nil {
-					t.Fatalf("%v, %v: ReadAt() failed, err: %v", s, test.flags, err)
+					t.Fatalf("%v: Walk(<empty>) failed: %v", s, err)
 				}
-				if r != len(rBuf) {
-					t.Fatalf("%v, %v: ReadAt() was partial, got: %d, expected: %d", s, test.flags, r, len(rBuf))
+				defer dup.Close()
+				if _, _, _, err := dup.Open(dupFlags); err != nil {
+					t.Fatalf("%v: Open(%v) failed: %v", s, flags, err)
 				}
-				if string(rBuf) != "foobar" {
-					t.Fatalf("%v, %v: ReadAt() wrong data, got: %s, expected: %s", s, test.flags, string(rBuf), "foobar")
-				}
-			} else {
-				if err == nil {
-					t.Fatalf("%v, %v: ReadAt() should have failed", s, test.flags)
+				if err := testReadWrite(dup, dupFlags, want); err != nil {
+					t.Fatalf("%v: testReadWrite(%v) failed: %v", s, dupFlags, err)
 				}
 			}
 		}
