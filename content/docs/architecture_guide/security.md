@@ -99,7 +99,7 @@ interactions with a guest operating system and a set of virtualized hardware
 devices. These hardware devices are then implemented via the host System API by
 a Virtual Machine Monitor (VMM). For both the Sentry and a VMM, it’s worth
 noting that while direct interactions are minimized, indirect interactions are
-still possible. For example, a read on a host-backed file in the Sentry with
+still possible. For example, a read on a host-backed file in the Sentry will
 ultimately result in a host read system call (made by the Sentry, not by passing
 through arguments from the application), similarly to how a read on a block
 device in a VMM will often result in a host read system call from the backing
