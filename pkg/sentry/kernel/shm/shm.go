@@ -286,7 +286,7 @@ func (r *Registry) remove(s *Shm) {
 	defer s.mu.Unlock()
 
 	if s.key != linux.IPC_PRIVATE {
-		panic(fmt.Sprintf("Attempted to remove shm segment %d (key=%d) from the registry whose key is still associated", s.ID, s.key))
+		panic(fmt.Sprintf("Attempted to remove %s from the registry whose key is still associated", s.debugLocked()))
 	}
 
 	delete(r.shms, s.ID)
@@ -370,6 +370,12 @@ type Shm struct {
 	pendingDestruction bool
 }
 
+// Precondition: Caller must hold s.mu.
+func (s *Shm) debugLocked() string {
+	return fmt.Sprintf("Shm{id: %d, key: %d, size: %d bytes, refs: %d, destroyed: %v}",
+		s.ID, s.key, s.size, s.ReadRefs(), s.pendingDestruction)
+}
+
 // MappedName implements memmap.MappingIdentity.MappedName.
 func (s *Shm) MappedName(ctx context.Context) string {
 	s.mu.Lock()
@@ -412,7 +418,7 @@ func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.A
 	} else {
 		// AddMapping is called during a syscall, so ctx should always be a task
 		// context.
-		log.Warningf("Adding mapping to shm %+v but couldn't get the current pid; not updating the last attach pid", s)
+		log.Warningf("Adding mapping to %s but couldn't get the current pid; not updating the last attach pid", s.debugLocked())
 	}
 	return nil
 }
@@ -434,7 +440,7 @@ func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ userme
 	if pid, ok := context.ThreadGroupIDFromContext(ctx); ok {
 		s.lastAttachDetachPID = pid
 	} else {
-		log.Debugf("Couldn't obtain pid when removing mapping to shm %+v, not updating the last detach pid.", s)
+		log.Debugf("Couldn't obtain pid when removing mapping to %s, not updating the last detach pid.", s.debugLocked())
 	}
 }
 
