@@ -185,7 +185,7 @@ The security of a VM depends to a large extent on what is exposed from the host
 kernel and user space support code. For example, device emulation code in the
 host kernel (e.g. APIC) or optimizations (e.g. vhost) can be more complex than a
 simple system call, and exploits carry the same risks. Similarly, the user space
-support code is frequently unsandboxed and exploits, while rare, may allowed
+support code is frequently unsandboxed, and exploits, while rare, may allow
 unfettered access to the system.
 
 Some platforms leverage the same virtualization hardware as VMs in order to
