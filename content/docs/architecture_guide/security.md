@@ -33,8 +33,8 @@ the API. A typical exploit might perform some combination of the following:
  1. Passing crafted, malicious arguments, structures or packets.
  1. Racing with multiple threads in order to hit specific code paths.
 
-For example, for the “Dirty Cow” privilege escalation bug (CVE-2016-5195), an
-application would open a specific file in proc or use a specific ptrace system
+For example, for the [Dirty Cow][dirtycow] privilege escalation bug, an
+application would open a specific file in proc or use a specific `ptrace` system
 call, and use multiple threads in order to trigger a race condition when
 touching a fresh page of memory. The attacker then gains control over a page of
 memory belonging to the system. With additional privileges or access to
@@ -50,9 +50,9 @@ exploit is what gVisor aims to minimize and control, described in detail below.
 Hardware and software exploits occasionally exist in execution paths that are
 not part of an intended System API. In this case, exploits may be found as part
 of implicit actions the hardware or privileged system code takes in response to
-certain events, such as traps or interrupts. For example, the recent “POPSS”
-flaw (CVE-2018-8897) required only native code execution (no specific system
-call or file access). In that case, the Xen hypervisor was similarly vulnerable,
+certain events, such as traps or interrupts. For example, the recent
+[POPSS][popss] flaw required only native code execution (no specific system call
+or file access). In that case, the Xen hypervisor was similarly vulnerable,
 highlighting that hypervisors are not immune to this vector.
 
 ### Side Channels
@@ -67,19 +67,19 @@ there is no mitigation against an application in a normally functioning Virtual
 Machine (VM) exploiting the L1TF vulnerability for another VM on the sibling
 hyperthread.
 
-### What’s missing?
+### Other Vectors
 
-These categories in no way represent an exhaustive list of exploits, as we focus
-only on running untrusted code from within the operating system or hypervisor.
-We do not consider the many other ways that a more generic adversary may
-interact with a system, such as inserting a portable storage device with a
+The above categories in no way represent an exhaustive list of exploits, as we
+focus only on running untrusted code from within the operating system or
+hypervisor.  We do not consider many other ways that a more generic adversary
+may interact with a system, such as inserting a portable storage device with a
 malicious filesystem image, using a combination of crafted keyboard or touch
-inputs, or saturating a network device with ill-formed ICMP packets.
+inputs, or saturating a network device with ill-formed packets.
 
 Furthermore, high-level systems may contain exploitable components. An attacker
 need not escalate privileges within a container if there’s an exploitable
-network-accessible service on the host or some other API path. A sandbox is not
-a substitute for a secure architecture.
+network-accessible service on the host or some other API path. *A sandbox is not
+a substitute for a secure architecture*.
 
 ## Goals: Limiting Exposure
 
@@ -117,6 +117,33 @@ may be wasted or duplicated. The Sentry opts instead to defer to the host for
 many operations during runtime, for improved efficiency but lower performance in
 some use cases.
 
+### What can a sandbox do?
+
+An application in a gVisor sandbox is permitted to do most things a standard
+container can do: for example, applications can read and write files mapped
+within the container, make network connections, etc. As described above,
+gVisor's primary goal is to limit exposure to bugs and exploits while still
+allowing most applications to run. Even so, gVisor will limit some operations
+that might be permitted with a standard container. Even with appropriate
+capabilities, a user in a gVisor sandbox will only be able to manipulate
+virtualized system resources (e.g. the system time, kernel settings or
+filesystem attributes) and not underlying host system resources.
+
+While the sandbox virtualizes many operations for the application, we limit the
+sandbox's own interactions with the host to the following high-level operations:
+
+ 1. Communicate with a Gofer process via a connected socket. The sandbox may
+    receive new file descriptors from the Gofer process, corresponding to opened
+    files. These files can then be read from and written to by the sandbox.
+ 1. Make a minimal set of host system calls. The calls do not include the
+    creation of new sockets (unless host networking mode is enabled) or opening
+    files. The calls include duplication and closing of file descriptors,
+    synchronization, timers and signal management.
+ 1. Read and write packets to a virtual ethernet device. This is not required if
+    host networking is enabled (or networking is disabled).
+
+### System ABI, Side Channels and Other Vectors
+
 gVisor relies on the host operating system and the platform for defense against
 hardware-based attacks. Given the nature of these vulnerabilities, there is
 little defense that gVisor can provide (there’s no guarantee that additional
@@ -126,19 +153,12 @@ hardware virtualization for acceleration, as the host kernel or hypervisor is
 ultimately responsible for defending against attacks from within malicious
 guests.
 
-### What can a sandbox do?
-
-We allow a sandbox to do the following.
-
- 1. Communicate with a Gofer process via a connected socket. The sandbox may
-    receive new file descriptors from the Gofer process, corresponding to opened
-    files.
- 1. Make a minimal set of host system calls. The calls do not include the
-    creation of new sockets (unless host networking mode is enabled) or opening
-    files. The calls include duplication and closing of file descriptors,
-    synchronization, timers and signal management.
- 1. Read and write packets to a virtual ethernet device. This is not required if
-    host networking is enabled (or networking is disabled).
+gVisor similarly relies on the host resource mechanisms (cgroups) for defense
+against resource exhaustion and denial of service attacks. Network policy
+controls should be applied at the container level to ensure appropriate network
+policy enforcement. Note that the sandbox itself is not capable of altering or
+configuring these mechanisms, and the sandbox itself should make an attacker
+less likely to exploit or override these controls through other means.
 
 ## Principles: Defense-in-Depth
 
@@ -219,3 +239,6 @@ a call directly. Instead, all system calls are interpreted and handled by the
 Sentry itself, who reflects resulting register state back into the tracee before
 continuing execution in user space. This is very similar to the mechanism used
 by User-Mode Linux (UML).
+
+[dirtycow]: https://en.wikipedia.org/wiki/Dirty_COW
+[popss]: https://nvd.nist.gov/vuln/detail/CVE-2018-8897
