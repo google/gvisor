@@ -59,10 +59,6 @@ type endpoint struct {
 	netProto    tcpip.NetworkProtocolNumber
 	transProto  tcpip.TransportProtocolNumber
 	waiterQueue *waiter.Queue
-	// raw indicates whether the endpoint is intended for use by a raw
-	// socket, which returns the network layer header along with the
-	// payload. It is immutable.
-	raw bool
 
 	// The following fields are used to manage the receive queue, and are
 	// protected by rcvMu.
@@ -80,32 +76,26 @@ type endpoint struct {
 	shutdownFlags tcpip.ShutdownFlags
 	id            stack.TransportEndpointID
 	state         endpointState
-	bindNICID     tcpip.NICID
-	bindAddr      tcpip.Address
-	regNICID      tcpip.NICID
-	route         stack.Route `state:"manual"`
+	// bindNICID and bindAddr are set via calls to Bind(). They are used to
+	// reject attempts to send data or connect via a different NIC or
+	// address
+	bindNICID tcpip.NICID
+	bindAddr  tcpip.Address
+	// regNICID is the default NIC to be used when callers don't specify a
+	// NIC.
+	regNICID tcpip.NICID
+	route    stack.Route `state:"manual"`
 }
 
-func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue, raw bool) (*endpoint, *tcpip.Error) {
-	e := &endpoint{
+func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return &endpoint{
 		stack:         stack,
 		netProto:      netProto,
 		transProto:    transProto,
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
-		raw:           raw,
-	}
-
-	// Raw endpoints must be immediately bound because they receive all
-	// ICMP traffic starting from when they're created via socket().
-	if raw {
-		if err := e.bindLocked(tcpip.FullAddress{}); err != nil {
-			return nil, err
-		}
-	}
-
-	return e, nil
+	}, nil
 }
 
 // Close puts the endpoint in a closed state and frees all resources
@@ -115,11 +105,7 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		if e.raw {
-			e.stack.UnregisterRawTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e)
-		} else {
-			e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id, e)
-		}
+		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id, e)
 	}
 
 	// Close the receive list and drain it.
@@ -244,8 +230,9 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		route = &e.route
 
 		if route.IsResolutionRequired() {
-			// Promote lock to exclusive if using a shared route, given that it may
-			// need to change in Route.Resolve() call below.
+			// Promote lock to exclusive if using a shared route,
+			// given that it may need to change in Route.Resolve()
+			// call below.
 			e.mu.RUnlock()
 			defer e.mu.RLock()
 
@@ -290,8 +277,9 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		waker := &sleep.Waker{}
 		if ch, err := route.Resolve(waker); err != nil {
 			if err == tcpip.ErrWouldBlock {
-				// Link address needs to be resolved. Resolution was triggered the
-				// background. Better luck next time.
+				// Link address needs to be resolved.
+				// Resolution was triggered the background.
+				// Better luck next time.
 				route.RemoveWaker(waker)
 				return 0, ch, tcpip.ErrNoLinkAddress
 			}
@@ -368,11 +356,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 func (e *endpoint) send4(r *stack.Route, data buffer.View) *tcpip.Error {
-	if e.raw {
-		hdr := buffer.NewPrependable(len(data) + int(r.MaxHeaderLength()))
-		return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
-	}
-
 	if len(data) < header.ICMPv4EchoMinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -439,11 +422,6 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
-	// TODO: We don't yet support connect on a raw socket.
-	if e.raw {
-		return tcpip.ErrNotSupported
-	}
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -547,11 +525,6 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
-	if e.raw {
-		err := e.stack.RegisterRawTransportEndpoint(nicid, netProtos, e.transProto, e, false)
-		return stack.TransportEndpointID{}, err
-	}
-
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
@@ -687,11 +660,12 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) {
+func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) {
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.
 	if !e.rcvReady || e.rcvClosed || e.rcvBufSize >= e.rcvBufSizeMax {
+		e.stack.Stats().DroppedPackets.Increment()
 		e.rcvMu.Unlock()
 		return
 	}
@@ -706,13 +680,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, ne
 		},
 	}
 
-	if e.raw {
-		combinedVV := netHeader.ToVectorisedView()
-		combinedVV.Append(vv)
-		pkt.data = combinedVV.Clone(pkt.views[:])
-	} else {
-		pkt.data = vv.Clone(pkt.views[:])
-	}
+	pkt.data = vv.Clone(pkt.views[:])
 
 	e.rcvList.PushBack(pkt)
 	e.rcvBufSize += pkt.data.Size()

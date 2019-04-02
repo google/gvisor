@@ -30,6 +30,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -73,7 +74,7 @@ func (p *protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtoco
 	if netProto != p.netProto() {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-	return newEndpoint(stack, netProto, p.number, waiterQueue, false)
+	return newEndpoint(stack, netProto, p.number, waiterQueue)
 }
 
 // NewRawEndpoint creates a new raw icmp endpoint. It implements
@@ -82,7 +83,7 @@ func (p *protocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProt
 	if netProto != p.netProto() {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-	return newEndpoint(stack, netProto, p.number, waiterQueue, true)
+	return raw.NewEndpoint(stack, netProto, p.number, waiterQueue)
 }
 
 // MinimumPacketSize returns the minimum valid icmp packet size.

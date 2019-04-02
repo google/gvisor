@@ -64,11 +64,22 @@ const (
 type TransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint.
-	HandlePacket(r *Route, id TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView)
+	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
 
 	// HandleControlPacket is called by the stack when new control (e.g.,
 	// ICMP) packets arrive to this transport endpoint.
 	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView)
+}
+
+// RawTransportEndpoint is the interface that needs to be implemented by raw
+// transport protocol endpoints. RawTransportEndpoints receive the entire
+// packet - including the link, network, and transport headers - as delivered
+// to netstack.
+type RawTransportEndpoint interface {
+	// HandlePacket is called by the stack when new packets arrive to
+	// this transport endpoint. The packet contains all data from the link
+	// layer up.
+	HandlePacket(r *Route, netHeader buffer.View, packet buffer.VectorisedView)
 }
 
 // TransportProtocol is the interface that needs to be implemented by transport

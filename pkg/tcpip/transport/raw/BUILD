@@ -1,38 +1,37 @@
-package(licenses = ["notice"])
+package(licenses = ["notice"])  # Apache 2.0
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
-    name = "icmp_packet_list",
-    out = "icmp_packet_list.go",
-    package = "icmp",
-    prefix = "icmpPacket",
+    name = "packet_list",
+    out = "packet_list.go",
+    package = "raw",
+    prefix = "packet",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*icmpPacket",
-        "Linker": "*icmpPacket",
+        "Element": "*packet",
+        "Linker": "*packet",
     },
 )
 
 go_library(
-    name = "icmp",
+    name = "raw",
     srcs = [
-        "endpoint.go",
-        "endpoint_state.go",
-        "icmp_packet_list.go",
-        "protocol.go",
+        "packet_list.go",
+        "raw.go",
+        "state.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/icmp",
+    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/raw",
     imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/log",
         "//pkg/sleep",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/raw",
         "//pkg/waiter",
     ],
 )
@@ -40,7 +39,7 @@ go_library(
 filegroup(
     name = "autogen",
     srcs = [
-        "icmp_packet_list.go",
+        "packet_list.go",
     ],
     visibility = ["//:sandbox"],
 )

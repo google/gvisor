@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 
@@ -37,7 +38,7 @@ type transportEndpoints struct {
 	endpoints map[TransportEndpointID]TransportEndpoint
 	// rawEndpoints contains endpoints for raw sockets, which receive all
 	// traffic of a given protocol regardless of port.
-	rawEndpoints []TransportEndpoint
+	rawEndpoints []RawTransportEndpoint
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it
@@ -60,8 +61,10 @@ func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep Tra
 // transportDemuxer demultiplexes packets targeted at a transport endpoint
 // (i.e., after they've been parsed by the network layer). It does two levels
 // of demultiplexing: first based on the network and transport protocols, then
-// based on endpoints IDs.
+// based on endpoints IDs. It should only be instantiated via
+// newTransportDemuxer.
 type transportDemuxer struct {
+	// protocol is immutable.
 	protocol map[protocolIDs]*transportEndpoints
 }
 
@@ -137,22 +140,22 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID) TransportEnd
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) {
+func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
 	// If this is a broadcast datagram, deliver the datagram to all endpoints
 	// managed by ep.
 	if id.LocalAddress == header.IPv4Broadcast {
 		for i, endpoint := range ep.endpointsArr {
 			// HandlePacket modifies vv, so each endpoint needs its own copy.
 			if i == len(ep.endpointsArr)-1 {
-				endpoint.HandlePacket(r, id, netHeader, vv)
+				endpoint.HandlePacket(r, id, vv)
 				break
 			}
 			vvCopy := buffer.NewView(vv.Size())
 			copy(vvCopy, vv.ToView())
-			endpoint.HandlePacket(r, id, buffer.NewViewFromBytes(netHeader), vvCopy.ToVectorisedView())
+			endpoint.HandlePacket(r, id, vvCopy.ToVectorisedView())
 		}
 	} else {
-		ep.selectEndpoint(id).HandlePacket(r, id, netHeader, vv)
+		ep.selectEndpoint(id).HandlePacket(r, id, vv)
 	}
 }
 
@@ -286,17 +289,17 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	// As in net/ipv4/ip_input.c:ip_local_deliver, attempt to deliver via
 	// raw endpoint first. If there are multipe raw endpoints, they all
 	// receive the packet.
-	found := false
+	foundRaw := false
 	for _, rawEP := range eps.rawEndpoints {
 		// Each endpoint gets its own copy of the packet for the sake
 		// of save/restore.
-		rawEP.HandlePacket(r, id, buffer.NewViewFromBytes(netHeader), vv.ToView().ToVectorisedView())
-		found = true
+		rawEP.HandlePacket(r, buffer.NewViewFromBytes(netHeader), vv.ToView().ToVectorisedView())
+		foundRaw = true
 	}
 	eps.mu.RUnlock()
 
 	// Fail if we didn't find at least one matching transport endpoint.
-	if len(destEps) == 0 && !found {
+	if len(destEps) == 0 && !foundRaw {
 		// UDP packet could not be delivered to an unknown destination port.
 		if protocol == header.UDPProtocolNumber {
 			r.Stats().UDP.UnknownPortErrors.Increment()
@@ -306,7 +309,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 
 	// Deliver the packet.
 	for _, ep := range destEps {
-		ep.HandlePacket(r, id, netHeader, vv)
+		ep.HandlePacket(r, id, vv)
 	}
 
 	return true
@@ -371,19 +374,8 @@ func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer
 // that packets of the appropriate protocol are delivered to it. A single
 // packet can be sent to one or more raw endpoints along with a non-raw
 // endpoint.
-func (d *transportDemuxer) registerRawEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, ep TransportEndpoint, reusePort bool) *tcpip.Error {
-	for i, n := range netProtos {
-		if err := d.singleRegisterRawEndpoint(n, protocol, ep); err != nil {
-			d.unregisterRawEndpoint(netProtos[:i], protocol, ep)
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *transportDemuxer) singleRegisterRawEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, ep TransportEndpoint) *tcpip.Error {
-	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
+func (d *transportDemuxer) registerRawEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
+	eps, ok := d.protocol[protocolIDs{netProto, transProto}]
 	if !ok {
 		return nil
 	}
@@ -395,19 +387,20 @@ func (d *transportDemuxer) singleRegisterRawEndpoint(netProto tcpip.NetworkProto
 	return nil
 }
 
-// unregisterRawEndpoint unregisters the raw endpoint for the given protocol
-// such that it won't receive any more packets.
-func (d *transportDemuxer) unregisterRawEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, ep TransportEndpoint) {
-	for _, n := range netProtos {
-		if eps, ok := d.protocol[protocolIDs{n, protocol}]; ok {
-			eps.mu.Lock()
-			defer eps.mu.Unlock()
-			for i, rawEP := range eps.rawEndpoints {
-				if rawEP == ep {
-					eps.rawEndpoints = append(eps.rawEndpoints[:i], eps.rawEndpoints[i+1:]...)
-					return
-				}
-			}
+// unregisterRawEndpoint unregisters the raw endpoint for the given transport
+// protocol such that it won't receive any more packets.
+func (d *transportDemuxer) unregisterRawEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) {
+	eps, ok := d.protocol[protocolIDs{netProto, transProto}]
+	if !ok {
+		panic(fmt.Errorf("tried to unregister endpoint with unsupported network and transport protocol pair: %d, %d", netProto, transProto))
+	}
+
+	eps.mu.Lock()
+	defer eps.mu.Unlock()
+	for i, rawEP := range eps.rawEndpoints {
+		if rawEP == ep {
+			eps.rawEndpoints = append(eps.rawEndpoints[:i], eps.rawEndpoints[i+1:]...)
+			return
 		}
 	}
 }

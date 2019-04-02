@@ -955,11 +955,11 @@ func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip
 }
 
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
-// transport dispatcher. Received packets that match the provided protocol will
-// be delivered to the given endpoint.
-func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, ep TransportEndpoint, reusePort bool) *tcpip.Error {
+// transport dispatcher. Received packets that match the provided transport
+// protocol will be delivered to the given endpoint.
+func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
 	if nicID == 0 {
-		return s.demux.registerRawEndpoint(netProtos, protocol, ep, reusePort)
+		return s.demux.registerRawEndpoint(netProto, transProto, ep)
 	}
 
 	s.mu.RLock()
@@ -970,14 +970,14 @@ func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProtos []tcpi
 		return tcpip.ErrUnknownNICID
 	}
 
-	return nic.demux.registerRawEndpoint(netProtos, protocol, ep, reusePort)
+	return nic.demux.registerRawEndpoint(netProto, transProto, ep)
 }
 
-// UnregisterRawTransportEndpoint removes the endpoint for the protocol from
-// the stack transport dispatcher.
-func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, ep TransportEndpoint) {
+// UnregisterRawTransportEndpoint removes the endpoint for the transport
+// protocol from the stack transport dispatcher.
+func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) {
 	if nicID == 0 {
-		s.demux.unregisterRawEndpoint(netProtos, protocol, ep)
+		s.demux.unregisterRawEndpoint(netProto, transProto, ep)
 		return
 	}
 
@@ -986,7 +986,7 @@ func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProtos []tc
 
 	nic := s.nics[nicID]
 	if nic != nil {
-		nic.demux.unregisterRawEndpoint(netProtos, protocol, ep)
+		nic.demux.unregisterRawEndpoint(netProto, transProto, ep)
 	}
 }
 
