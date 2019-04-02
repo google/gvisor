@@ -1552,6 +1552,7 @@ cc_binary(
     srcs = ["proc_net.cc"],
     linkstatic = 1,
     deps = [
+        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",

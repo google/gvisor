@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "gtest/gtest.h"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/syscall.h>
+
+#include "absl/strings/str_split.h"
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
+#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
@@ -55,6 +63,209 @@ TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
   EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(buf)));
   EXPECT_EQ(buf, to_write);
+}
+
+PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
+                                             const std::string &type,
+                                             const std::string &item) {
+  std::vector<std::string> snmp_vec = absl::StrSplit(snmp, '\n');
+
+  // /proc/net/snmp prints a line of headers followed by a line of metrics.
+  // Only search the headers.
+  for (unsigned i = 0; i < snmp_vec.size(); i = i + 2) {
+    if (!absl::StartsWith(snmp_vec[i], type)) continue;
+
+    std::vector<std::string> fields =
+        absl::StrSplit(snmp_vec[i], ' ', absl::SkipWhitespace());
+
+    EXPECT_TRUE((i + 1) < snmp_vec.size());
+    std::vector<std::string> values =
+        absl::StrSplit(snmp_vec[i + 1], ' ', absl::SkipWhitespace());
+
+    EXPECT_TRUE(!fields.empty() && fields.size() == values.size());
+
+    // Metrics start at the first index.
+    for (unsigned j = 1; j < fields.size(); j++) {
+      if (fields[j] == item) {
+        uint64_t val;
+        if (!absl::SimpleAtoi(values[j], &val)) {
+          return PosixError(EINVAL,
+                            absl::StrCat("field is not a number: ", values[j]));
+        }
+
+        return val;
+      }
+    }
+  }
+  // We should never get here.
+  return PosixError(
+      EINVAL, absl::StrCat("failed to find ", type, "/", item, " in:", snmp));
+}
+
+TEST(ProcNetSnmp, TcpReset) {
+  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
+  const DisableSave ds;
+
+  uint64_t oldAttemptFails;
+  uint64_t oldActiveOpens;
+  uint64_t oldOutRsts;
+  auto snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  oldActiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "ActiveOpens"));
+  oldOutRsts = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "OutRsts"));
+  oldAttemptFails = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "AttemptFails"));
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+
+  struct sockaddr_in sin = {
+    .sin_family = AF_INET,
+    .sin_port = htons(1234),
+  };
+  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+  ASSERT_THAT(connect(s.get(), (struct sockaddr *)&sin, sizeof(sin)),
+              SyscallFailsWithErrno(ECONNREFUSED));
+
+  uint64_t newAttemptFails;
+  uint64_t newActiveOpens;
+  uint64_t newOutRsts;
+  snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  newActiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "ActiveOpens"));
+  newOutRsts = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "OutRsts"));
+  newAttemptFails = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "AttemptFails"));
+
+  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
+  EXPECT_EQ(oldOutRsts, newOutRsts - 1);
+  EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
+}
+
+TEST(ProcNetSnmp, TcpEstab) {
+  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
+  const DisableSave ds;
+
+  uint64_t oldEstabResets;
+  uint64_t oldActiveOpens;
+  uint64_t oldPassiveOpens;
+  uint64_t oldCurrEstab;
+  auto snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  oldActiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "ActiveOpens"));
+  oldPassiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "PassiveOpens"));
+  oldCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));
+  oldEstabResets = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "EstabResets"));
+
+  FileDescriptor s_listen =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+
+  struct sockaddr_in sin = {
+    .sin_family = AF_INET,
+    .sin_port = htons(1234),
+  };
+  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+  ASSERT_THAT(bind(s_listen.get(), (struct sockaddr *)&sin, sizeof(sin)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(s_listen.get(), 1), SyscallSucceeds());
+
+  FileDescriptor s_connect =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
+  ASSERT_THAT(connect(s_connect.get(), (struct sockaddr *)&sin, sizeof(sin)),
+              SyscallSucceeds());
+
+  auto s_accept =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(s_listen.get(), nullptr, nullptr));
+
+  uint64_t newEstabResets;
+  uint64_t newActiveOpens;
+  uint64_t newPassiveOpens;
+  uint64_t newCurrEstab;
+  snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  newActiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "ActiveOpens"));
+  newPassiveOpens = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "PassiveOpens"));
+  newCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));
+
+  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
+  EXPECT_EQ(oldPassiveOpens, newPassiveOpens - 1);
+  EXPECT_EQ(oldCurrEstab, newCurrEstab - 2);
+
+  ASSERT_THAT(send(s_connect.get(), "a", 1, 0), SyscallSucceedsWithValue(1));
+
+  s_accept.reset(-1);
+  s_connect.reset(-1);
+
+  snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  newCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));
+  newEstabResets = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "EstabResets"));
+
+  EXPECT_EQ(oldCurrEstab, newCurrEstab);
+  EXPECT_EQ(oldEstabResets, newEstabResets - 2);
+}
+
+TEST(ProcNetSnmp, UdpNoPorts) {
+  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
+  const DisableSave ds;
+
+  uint64_t oldOutDatagrams;
+  uint64_t oldNoPorts;
+  auto snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  oldOutDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "OutDatagrams"));
+  oldNoPorts = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "NoPorts"));
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct sockaddr_in sin = {
+    .sin_family = AF_INET,
+    .sin_port = htons(1234),
+  };
+  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+  ASSERT_THAT(sendto(s.get(), "a", 1, 0, (struct sockaddr *)&sin, sizeof(sin)),
+              SyscallSucceedsWithValue(1));
+
+  uint64_t newOutDatagrams;
+  uint64_t newNoPorts;
+  snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  newOutDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "OutDatagrams"));
+  newNoPorts = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "NoPorts"));
+
+  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
+  EXPECT_EQ(oldNoPorts, newNoPorts - 1);
+}
+
+TEST(ProcNetSnmp, UdpIn) {
+  // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
+  const DisableSave ds;
+
+  uint64_t oldOutDatagrams;
+  uint64_t oldInDatagrams;
+  auto snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  oldOutDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "OutDatagrams"));
+  oldInDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "InDatagrams"));
+
+  FileDescriptor server =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+
+  struct sockaddr_in sin = {
+    .sin_family = AF_INET,
+    .sin_port = htons(1234),
+  };
+  sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+  ASSERT_THAT(bind(server.get(), (struct sockaddr *)&sin, sizeof(sin)),
+      SyscallSucceeds());
+
+  FileDescriptor client =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  ASSERT_THAT(sendto(client.get(), "a", 1, 0, (struct sockaddr *)&sin,
+                     sizeof(sin)), SyscallSucceedsWithValue(1));
+
+  char buf[128];
+  ASSERT_THAT(recvfrom(server.get(), buf, sizeof(buf), 0, NULL, NULL),
+              SyscallSucceedsWithValue(1));
+
+  uint64_t newOutDatagrams;
+  uint64_t newInDatagrams;
+  snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
+  newOutDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "OutDatagrams"));
+  newInDatagrams = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "InDatagrams"));
+
+  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
+  EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
 }
 
 }  // namespace
