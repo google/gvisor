@@ -8,9 +8,9 @@ platform.
 
 ## What is a Platform?
 
-gVisor requires a *platform* to implement basic context switching and memory
-mapping functionality. These are described in more depth in the [Architecture
-Guide](../../architecture_guide/).
+gVisor requires a *platform* to implement interception of syscalls, basic
+context switching, and memory mapping functionality. These are described in
+more depth in the [Architecture Guide](../../architecture_guide/).
 
 ## Selecting a Platform
 
