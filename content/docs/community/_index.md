@@ -18,7 +18,7 @@ collaborate.
 <iframe src="https://calendar.google.com/calendar/b/1/embed?showTitle=0&amp;height=600&amp;wkst=1&amp;bgcolor=%23FFFFFF&amp;src=bd6f4k210u3ukmlj9b8vl053fk%40group.calendar.google.com&amp;color=%23AB8B00&amp;ctz=America%2FLos_Angeles" style="border-width:0" width="800" height="600" frameborder="0" scrolling="no"></iframe>
 
 [community]: https://gvisor.googlesource.com/community
-[goverance]: https://gvisor.googlesource.com/community/+/refs/heads/master/README.md
+[governance]: https://gvisor.googlesource.com/community/+/refs/heads/master/README.md
 [gvisor-dev]: https://groups.google.com/forum/#!forum/gvisor-dev
 [gvisor-users]: https://groups.google.com/forum/#!forum/gvisor-users
 [codeofconduct]: https://gvisor.googlesource.com/community/+/refs/heads/master/CODE_OF_CONDUCT.md
