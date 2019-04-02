@@ -27,12 +27,36 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
+// Memory device numbers are from Linux's drivers/char/mem.c
+const (
+	// Mem device major.
+	memDevMajor uint16 = 1
+
+	// Mem device minors.
+	nullDevMinor    uint32 = 3
+	zeroDevMinor    uint32 = 5
+	fullDevMinor    uint32 = 7
+	randomDevMinor  uint32 = 8
+	urandomDevMinor uint32 = 9
+)
+
 func newCharacterDevice(iops fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
 	return fs.NewInode(iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
 		BlockSize: usermem.PageSize,
 		Type:      fs.CharacterDevice,
+	})
+}
+
+func newMemDevice(iops fs.InodeOperations, msrc *fs.MountSource, minor uint32) *fs.Inode {
+	return fs.NewInode(iops, msrc, fs.StableAttr{
+		DeviceID:        devDevice.DeviceID(),
+		InodeID:         devDevice.NextIno(),
+		BlockSize:       usermem.PageSize,
+		Type:            fs.CharacterDevice,
+		DeviceFileMajor: memDevMajor,
+		DeviceFileMinor: minor,
 	})
 }
 
@@ -64,17 +88,17 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 		"stdout": newSymlink(ctx, "/proc/self/fd/1", msrc),
 		"stderr": newSymlink(ctx, "/proc/self/fd/2", msrc),
 
-		"null": newCharacterDevice(newNullDevice(ctx, fs.RootOwner, 0666), msrc),
-		"zero": newCharacterDevice(newZeroDevice(ctx, fs.RootOwner, 0666), msrc),
-		"full": newCharacterDevice(newFullDevice(ctx, fs.RootOwner, 0666), msrc),
+		"null": newMemDevice(newNullDevice(ctx, fs.RootOwner, 0666), msrc, nullDevMinor),
+		"zero": newMemDevice(newZeroDevice(ctx, fs.RootOwner, 0666), msrc, zeroDevMinor),
+		"full": newMemDevice(newFullDevice(ctx, fs.RootOwner, 0666), msrc, fullDevMinor),
 
 		// This is not as good as /dev/random in linux because go
 		// runtime uses sys_random and /dev/urandom internally.
 		// According to 'man 4 random', this will be sufficient unless
 		// application uses this to generate long-lived GPG/SSL/SSH
 		// keys.
-		"random":  newCharacterDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc),
-		"urandom": newCharacterDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc),
+		"random":  newMemDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc, randomDevMinor),
+		"urandom": newMemDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc, urandomDevMinor),
 
 		"shm": tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc),
 
