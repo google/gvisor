@@ -138,7 +138,7 @@ We allow a sandbox to do the following.
     files. The calls include duplication and closing of file descriptors,
     synchronization, timers and signal management.
  1. Read and write packets to a virtual ethernet device. This is not required if
-    host networking is enabled.
+    host networking is enabled (or networking is disabled).
 
 ## Principles: Defense-in-Depth
 
