@@ -232,7 +232,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	}
 	// Prevent CIDs containing ".." from confusing the sentry when creating
 	// /containers/<cid> directory.
-	// TODO: Once we have multiple independant roots, this
+	// TODO: Once we have multiple independent roots, this
 	// check won't be necessary.
 	if path.Clean(args.CID) != args.CID {
 		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
