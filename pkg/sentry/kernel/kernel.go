@@ -866,14 +866,14 @@ func (k *Kernel) SendContainerSignal(cid string, info *arch.SignalInfo) error {
 	defer k.tasks.mu.RUnlock()
 
 	var lastErr error
-	for t := range k.tasks.Root.tids {
-		if t == t.tg.leader && t.ContainerID() == cid {
-			t.tg.signalHandlers.mu.Lock()
-			defer t.tg.signalHandlers.mu.Unlock()
+	for tg := range k.tasks.Root.tgids {
+		if tg.leader.ContainerID() == cid {
+			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
-			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
 				lastErr = err
 			}
+			tg.signalHandlers.mu.Unlock()
 		}
 	}
 	return lastErr

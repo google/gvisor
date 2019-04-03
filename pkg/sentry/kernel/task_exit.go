@@ -329,14 +329,15 @@ func (t *Task) exitChildren() {
 		// signal." - pid_namespaces(7)
 		t.Debugf("Init process terminating, killing namespace")
 		t.tg.pidns.exiting = true
-		for other := range t.tg.pidns.tids {
-			if other.tg != t.tg {
-				other.tg.signalHandlers.mu.Lock()
-				other.sendSignalLocked(&arch.SignalInfo{
-					Signo: int32(linux.SIGKILL),
-				}, false /* group */)
-				other.tg.signalHandlers.mu.Unlock()
+		for other := range t.tg.pidns.tgids {
+			if other == t.tg {
+				continue
 			}
+			other.signalHandlers.mu.Lock()
+			other.leader.sendSignalLocked(&arch.SignalInfo{
+				Signo: int32(linux.SIGKILL),
+			}, true /* group */)
+			other.signalHandlers.mu.Unlock()
 		}
 		// TODO: The init process waits for all processes in the
 		// namespace to exit before completing its own exit
@@ -652,6 +653,9 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			tid := ns.tids[t]
 			delete(ns.tasks, tid)
 			delete(ns.tids, t)
+			if t == t.tg.leader {
+				delete(ns.tgids, t.tg)
+			}
 		}
 		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
 		t.tg.ioUsage.Accumulate(t.ioUsage)

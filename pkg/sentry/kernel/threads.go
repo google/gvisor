@@ -100,10 +100,8 @@ func newTaskSet() *TaskSet {
 //
 // Preconditions: ts.mu must be locked (for reading or writing).
 func (ts *TaskSet) forEachThreadGroupLocked(f func(tg *ThreadGroup)) {
-	for t := range ts.Root.tids {
-		if t == t.tg.leader {
-			f(t.tg)
-		}
+	for tg := range ts.Root.tgids {
+		f(tg)
 	}
 }
 
@@ -145,6 +143,13 @@ type PIDNamespace struct {
 	// identifiers in this namespace.
 	tids map[*Task]ThreadID
 
+	// tgids is a mapping from thread groups visible in this namespace to
+	// their identifiers in this namespace.
+	//
+	// The content of tgids is equivalent to tids[tg.leader]. This exists
+	// primarily as an optimization to quickly find all thread groups.
+	tgids map[*ThreadGroup]ThreadID
+
 	// sessions is a mapping from SessionIDs in this namespace to sessions
 	// visible in the namespace.
 	sessions map[SessionID]*Session
@@ -173,6 +178,7 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		userns:        userns,
 		tasks:         make(map[ThreadID]*Task),
 		tids:          make(map[*Task]ThreadID),
+		tgids:         make(map[*ThreadGroup]ThreadID),
 		sessions:      make(map[SessionID]*Session),
 		sids:          make(map[*Session]SessionID),
 		processGroups: make(map[ProcessGroupID]*ProcessGroup),
@@ -227,7 +233,7 @@ func (ns *PIDNamespace) IDOfTask(t *Task) ThreadID {
 func (ns *PIDNamespace) IDOfThreadGroup(tg *ThreadGroup) ThreadID {
 	ns.owner.mu.RLock()
 	defer ns.owner.mu.RUnlock()
-	return ns.tids[tg.leader]
+	return ns.tgids[tg]
 }
 
 // Tasks returns a snapshot of the tasks in ns.
@@ -250,10 +256,8 @@ func (ns *PIDNamespace) ThreadGroups() []*ThreadGroup {
 func (ns *PIDNamespace) ThreadGroupsAppend(tgs []*ThreadGroup) []*ThreadGroup {
 	ns.owner.mu.RLock()
 	defer ns.owner.mu.RUnlock()
-	for t := range ns.tids {
-		if t == t.tg.leader {
-			tgs = append(tgs, t.tg)
-		}
+	for tg := range ns.tgids {
+		tgs = append(tgs, tg)
 	}
 	return tgs
 }
@@ -387,7 +391,7 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 func (tg *ThreadGroup) ID() ThreadID {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
-	return tg.pidns.tids[tg.leader]
+	return tg.pidns.tgids[tg]
 }
 
 // A taskNode defines the relationship between a task and the rest of the

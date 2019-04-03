@@ -212,11 +212,18 @@ func (ts *TaskSet) assignTIDsLocked(t *Task) error {
 			for _, a := range allocatedTIDs {
 				delete(a.ns.tasks, a.tid)
 				delete(a.ns.tids, t)
+				if t.tg.leader == nil {
+					delete(a.ns.tgids, t.tg)
+				}
 			}
 			return err
 		}
 		ns.tasks[tid] = t
 		ns.tids[t] = tid
+		if t.tg.leader == nil {
+			// New thread group.
+			ns.tgids[t.tg] = tid
+		}
 		allocatedTIDs = append(allocatedTIDs, allocatedTID{ns, tid})
 	}
 	return nil

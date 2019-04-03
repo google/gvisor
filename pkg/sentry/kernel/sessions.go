@@ -240,14 +240,14 @@ func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
 	defer tasks.mu.RUnlock()
 
 	var lastErr error
-	for t := range tasks.Root.tids {
-		if t == t.tg.leader && t.tg.ProcessGroup() == pg {
-			t.tg.signalHandlers.mu.Lock()
-			defer t.tg.signalHandlers.mu.Unlock()
+	for tg := range tasks.Root.tgids {
+		if tg.ProcessGroup() == pg {
+			tg.signalHandlers.mu.Lock()
 			infoCopy := *info
-			if err := t.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
+			if err := tg.leader.sendSignalLocked(&infoCopy, true /*group*/); err != nil {
 				lastErr = err
 			}
+			tg.signalHandlers.mu.Unlock()
 		}
 	}
 	return lastErr
@@ -268,7 +268,7 @@ func (tg *ThreadGroup) CreateSession() error {
 // Precondition: callers must hold TaskSet.mu for writing.
 func (tg *ThreadGroup) createSession() error {
 	// Get the ID for this thread in the current namespace.
-	id := tg.pidns.tids[tg.leader]
+	id := tg.pidns.tgids[tg]
 
 	// Check if this ThreadGroup already leads a Session, or
 	// if the proposed group is already taken.
@@ -337,7 +337,7 @@ func (tg *ThreadGroup) createSession() error {
 
 	// Ensure a translation is added to all namespaces.
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
-		local := ns.tids[tg.leader]
+		local := ns.tgids[tg]
 		ns.sids[s] = SessionID(local)
 		ns.sessions[SessionID(local)] = s
 		ns.pgids[pg] = ProcessGroupID(local)
@@ -356,7 +356,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	defer tg.pidns.owner.mu.Unlock()
 
 	// Get the ID for this thread in the current namespace.
-	id := tg.pidns.tids[tg.leader]
+	id := tg.pidns.tgids[tg]
 
 	// Per above, check for a Session leader or existing group.
 	for s := tg.pidns.owner.sessions.Front(); s != nil; s = s.Next() {
@@ -401,7 +401,7 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 
 	// Ensure this translation is added to all namespaces.
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
-		local := ns.tids[tg.leader]
+		local := ns.tgids[tg]
 		ns.pgids[pg] = ProcessGroupID(local)
 		ns.processGroups[ProcessGroupID(local)] = pg
 	}

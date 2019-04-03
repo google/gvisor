@@ -234,6 +234,8 @@ func (t *Task) promoteLocked() {
 		ns.tids[t] = leaderTID
 		ns.tasks[oldTID] = oldLeader
 		ns.tasks[leaderTID] = t
+		// Neither the ThreadGroup nor TGID change, so no need to
+		// update ns.tgids.
 	}
 
 	// Inherit the old leader's start time.
