@@ -34,6 +34,33 @@ const _AUDIT_ARCH_X86_64 = 0xc000003e
 // AMD64 is a table of Linux amd64 syscall API with the corresponding syscall
 // numbers from Linux 4.4. The entries commented out are those syscalls we
 // don't currently support.
+//
+// Syscall support is documented as annotations in Go comments of the form:
+// @Syscall(<name>, <key:value>, ...)
+//
+// Supported args and values are:
+//
+// - arg: A syscall option. This entry only applies to the syscall when given
+//        this option.
+// - support: Indicates support level
+//   - UNIMPLEMENTED: Unimplemented (default, implies returns:ENOSYS)
+//   - PARTIAL: Partial support. Details should be provided in note.
+//   - FULL: Full support
+// - returns: Indicates a known return value. Values are syscall errors. This
+//            is treated as a string so you can use something like
+//            "returns:EPERM or ENOSYS".
+// - issue: A Github issue number.
+// - note: A note
+//
+// Example:
+// // @Syscall(mmap, arg:MAP_PRIVATE, support:FULL, note:Private memory fully supported)
+// // @Syscall(mmap, arg:MAP_SHARED, issue:123, note:Shared memory not supported)
+// // @Syscall(setxattr, returns:ENOTSUP, note:Requires file system support)
+//
+// Annotations should be placed as close to their implementation as possible
+// (preferrably as part of a supporting function's Godoc) and should be
+// updated as syscall support changes. Unimplemented syscalls are documented
+// here due to their lack of a supporting function or method.
 var AMD64 = &kernel.SyscallTable{
 	OS:   abi.Linux,
 	Arch: arch.AMD64,
@@ -116,10 +143,10 @@ var AMD64 = &kernel.SyscallTable{
 		65: Semop,
 		66: Semctl,
 		67: Shmdt,
-		//     68: Msgget, TODO
-		//     69: Msgsnd, TODO
-		//     70: Msgrcv, TODO
-		//     71: Msgctl, TODO
+		//     68: @Syscall(Msgget), TODO
+		//     69: @Syscall(Msgsnd), TODO
+		//     70: @Syscall(Msgrcv), TODO
+		//     71: @Syscall(Msgctl), TODO
 		72:  Fcntl,
 		73:  Flock,
 		74:  Fsync,
@@ -170,8 +197,8 @@ var AMD64 = &kernel.SyscallTable{
 		119: Setresgid,
 		120: Getresgid,
 		121: Getpgid,
-		//     122: Setfsuid, TODO
-		//     123: Setfsgid, TODO
+		//     122: @Syscall(Setfsuid), TODO
+		//     123: @Syscall(Setfsgid), TODO
 		124: Getsid,
 		125: Capget,
 		126: Capset,
@@ -182,93 +209,140 @@ var AMD64 = &kernel.SyscallTable{
 		131: Sigaltstack,
 		132: Utime,
 		133: Mknod,
-		134: syscalls.Error(syscall.ENOSYS),          // Uselib, obsolete
-		135: syscalls.ErrorWithEvent(syscall.EINVAL), // SetPersonality, unable to change personality
-		136: syscalls.ErrorWithEvent(syscall.ENOSYS), // Ustat, needs filesystem support
+		// @Syscall(Uselib, note:Obsolete)
+		134: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(SetPersonality, returns:EINVAL, note:Unable to change personality)
+		135: syscalls.ErrorWithEvent(syscall.EINVAL),
+		// @Syscall(Ustat, note:Needs filesystem support)
+		136: syscalls.ErrorWithEvent(syscall.ENOSYS),
 		137: Statfs,
 		138: Fstatfs,
-		//     139: Sysfs, TODO
+		//     139: @Syscall(Sysfs), TODO
 		140: Getpriority,
 		141: Setpriority,
-		142: syscalls.CapError(linux.CAP_SYS_NICE), // SchedSetparam, requires cap_sys_nice
+		// @Syscall(SchedSetparam, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise)
+		142: syscalls.CapError(linux.CAP_SYS_NICE), // requires cap_sys_nice
 		143: SchedGetparam,
 		144: SchedSetscheduler,
 		145: SchedGetscheduler,
 		146: SchedGetPriorityMax,
 		147: SchedGetPriorityMin,
-		148: syscalls.ErrorWithEvent(syscall.EPERM), // SchedRrGetInterval,
+		// @Syscall(SchedRrGetInterval, returns:EPERM)
+		148: syscalls.ErrorWithEvent(syscall.EPERM),
 		149: Mlock,
 		150: Munlock,
 		151: Mlockall,
 		152: Munlockall,
-		153: syscalls.CapError(linux.CAP_SYS_TTY_CONFIG), // Vhangup,
-		154: syscalls.Error(syscall.EPERM),               // ModifyLdt,
-		155: syscalls.Error(syscall.EPERM),               // PivotRoot,
-		156: syscalls.Error(syscall.EPERM),               // Sysctl, syscall is "worthless"
+		// @Syscall(Vhangup, returns:EPERM)
+		153: syscalls.CapError(linux.CAP_SYS_TTY_CONFIG),
+		// @Syscall(ModifyLdt, returns:EPERM)
+		154: syscalls.Error(syscall.EPERM),
+		// @Syscall(PivotRoot, returns:EPERM)
+		155: syscalls.Error(syscall.EPERM),
+		// @Syscall(Sysctl, returns:EPERM)
+		156: syscalls.Error(syscall.EPERM), // syscall is "worthless"
 		157: Prctl,
 		158: ArchPrctl,
-		159: syscalls.CapError(linux.CAP_SYS_TIME), // Adjtimex, requires cap_sys_time
+		// @Syscall(Adjtimex, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_time; ENOSYS otherwise)
+		159: syscalls.CapError(linux.CAP_SYS_TIME), // requires cap_sys_time
 		160: Setrlimit,
 		161: Chroot,
 		162: Sync,
-		163: syscalls.CapError(linux.CAP_SYS_PACCT), // Acct, requires cap_sys_pacct
-		164: syscalls.CapError(linux.CAP_SYS_TIME),  // Settimeofday, requires cap_sys_time
+		// @Syscall(Acct, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_pacct; ENOSYS otherwise)
+		163: syscalls.CapError(linux.CAP_SYS_PACCT), // requires cap_sys_pacct
+		// @Syscall(Settimeofday, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_time; ENOSYS otherwise)
+		164: syscalls.CapError(linux.CAP_SYS_TIME), // requires cap_sys_time
 		165: Mount,
 		166: Umount2,
-		167: syscalls.CapError(linux.CAP_SYS_ADMIN), // Swapon, requires cap_sys_admin
-		168: syscalls.CapError(linux.CAP_SYS_ADMIN), // Swapoff, requires cap_sys_admin
-		169: syscalls.CapError(linux.CAP_SYS_BOOT),  // Reboot, requires cap_sys_boot
+		// @Syscall(Swapon, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		167: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin
+		// @Syscall(Swapoff, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		168: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin
+		// @Syscall(Reboot, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_boot; ENOSYS otherwise)
+		169: syscalls.CapError(linux.CAP_SYS_BOOT), // requires cap_sys_boot
 		170: Sethostname,
 		171: Setdomainname,
-		172: syscalls.CapError(linux.CAP_SYS_RAWIO),  // Iopl, requires cap_sys_rawio
-		173: syscalls.CapError(linux.CAP_SYS_RAWIO),  // Ioperm, requires cap_sys_rawio
+		// @Syscall(Iopl, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_rawio; ENOSYS otherwise)
+		172: syscalls.CapError(linux.CAP_SYS_RAWIO), // requires cap_sys_rawio
+		// @Syscall(Ioperm, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_rawio; ENOSYS otherwise)
+		173: syscalls.CapError(linux.CAP_SYS_RAWIO), // requires cap_sys_rawio
+		// @Syscall(CreateModule, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
 		174: syscalls.CapError(linux.CAP_SYS_MODULE), // CreateModule, requires cap_sys_module
-		175: syscalls.CapError(linux.CAP_SYS_MODULE), // InitModule, requires cap_sys_module
-		176: syscalls.CapError(linux.CAP_SYS_MODULE), // DeleteModule, requires cap_sys_module
-		177: syscalls.Error(syscall.ENOSYS),          // GetKernelSyms, not supported in > 2.6
-		178: syscalls.Error(syscall.ENOSYS),          // QueryModule, not supported in > 2.6
-		179: syscalls.CapError(linux.CAP_SYS_ADMIN),  // Quotactl, requires cap_sys_admin (most operations)
-		180: syscalls.Error(syscall.ENOSYS),          // Nfsservctl, does not exist > 3.1
-		181: syscalls.Error(syscall.ENOSYS),          // Getpmsg, not implemented in Linux
-		182: syscalls.Error(syscall.ENOSYS),          // Putpmsg, not implemented in Linux
-		183: syscalls.Error(syscall.ENOSYS),          // AfsSyscall, not implemented in Linux
-		184: syscalls.Error(syscall.ENOSYS),          // Tuxcall, not implemented in Linux
-		185: syscalls.Error(syscall.ENOSYS),          // Security, not implemented in Linux
+		// @Syscall(InitModule, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
+		175: syscalls.CapError(linux.CAP_SYS_MODULE), // requires cap_sys_module
+		// @Syscall(DeleteModule, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
+		176: syscalls.CapError(linux.CAP_SYS_MODULE), // requires cap_sys_module
+		// @Syscall(GetKernelSyms, note:Not supported in > 2.6)
+		177: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(QueryModule, note:Not supported in > 2.6)
+		178: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(Quotactl, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		179: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin (most operations)
+		// @Syscall(Nfsservctl, note:Does not exist > 3.1)
+		180: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(Getpmsg, note:Not implemented in Linux)
+		181: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(Putpmsg, note:Not implemented in Linux)
+		182: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(AfsSyscall, note:Not implemented in Linux)
+		183: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(Tuxcall, note:Not implemented in Linux)
+		184: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(Security, note:Not implemented in Linux)
+		185: syscalls.Error(syscall.ENOSYS),
 		186: Gettid,
-		187: nil,                                      // Readahead, TODO
-		188: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Setxattr, requires filesystem support
-		189: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Lsetxattr, requires filesystem support
-		190: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Fsetxattr, requires filesystem support
-		191: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Getxattr, requires filesystem support
-		192: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Lgetxattr, requires filesystem support
-		193: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Fgetxattr, requires filesystem support
-		194: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Listxattr, requires filesystem support
-		195: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Llistxattr, requires filesystem support
-		196: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Flistxattr, requires filesystem support
-		197: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Removexattr, requires filesystem support
-		198: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Lremovexattr, requires filesystem support
-		199: syscalls.ErrorWithEvent(syscall.ENOTSUP), // Fremovexattr, requires filesystem support
+		187: nil, // @Syscall(Readahead), TODO
+		// @Syscall(Setxattr, returns:ENOTSUP, note:Requires filesystem support)
+		188: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Lsetxattr, returns:ENOTSUP, note:Requires filesystem support)
+		189: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Fsetxattr, returns:ENOTSUP, note:Requires filesystem support)
+		190: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Getxattr, returns:ENOTSUP, note:Requires filesystem support)
+		191: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Lgetxattr, returns:ENOTSUP, note:Requires filesystem support)
+		192: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Fgetxattr, returns:ENOTSUP, note:Requires filesystem support)
+		193: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Listxattr, returns:ENOTSUP, note:Requires filesystem support)
+		194: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Llistxattr, returns:ENOTSUP, note:Requires filesystem support)
+		195: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Flistxattr, returns:ENOTSUP, note:Requires filesystem support)
+		196: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Removexattr, returns:ENOTSUP, note:Requires filesystem support)
+		197: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Lremovexattr, returns:ENOTSUP, note:Requires filesystem support)
+		198: syscalls.ErrorWithEvent(syscall.ENOTSUP),
+		// @Syscall(Fremovexattr, returns:ENOTSUP, note:Requires filesystem support)
+		199: syscalls.ErrorWithEvent(syscall.ENOTSUP),
 		200: Tkill,
 		201: Time,
 		202: Futex,
 		203: SchedSetaffinity,
 		204: SchedGetaffinity,
-		205: syscalls.Error(syscall.ENOSYS), // SetThreadArea, expected to return ENOSYS on 64-bit
+		// @Syscall(SetThreadArea, note:Expected to return ENOSYS on 64-bit)
+		205: syscalls.Error(syscall.ENOSYS),
 		206: IoSetup,
 		207: IoDestroy,
 		208: IoGetevents,
 		209: IoSubmit,
 		210: IoCancel,
-		211: syscalls.Error(syscall.ENOSYS),         // GetThreadArea, expected to return ENOSYS on 64-bit
-		212: syscalls.CapError(linux.CAP_SYS_ADMIN), // LookupDcookie, requires cap_sys_admin
+		// @Syscall(GetThreadArea, note:Expected to return ENOSYS on 64-bit)
+		211: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(LookupDcookie, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		212: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin
 		213: EpollCreate,
-		214: syscalls.ErrorWithEvent(syscall.ENOSYS), // EpollCtlOld, deprecated (afaik, unused)
-		215: syscalls.ErrorWithEvent(syscall.ENOSYS), // EpollWaitOld, deprecated (afaik, unused)
-		216: syscalls.ErrorWithEvent(syscall.ENOSYS), // RemapFilePages, deprecated since 3.16
+		// @Syscall(EpollCtlOld, note:Deprecated)
+		214: syscalls.ErrorWithEvent(syscall.ENOSYS), // deprecated (afaik, unused)
+		// @Syscall(EpollWaitOld, note:Deprecated)
+		215: syscalls.ErrorWithEvent(syscall.ENOSYS), // deprecated (afaik, unused)
+		// @Syscall(RemapFilePages, note:Deprecated)
+		216: syscalls.ErrorWithEvent(syscall.ENOSYS), // deprecated since 3.16
 		217: Getdents64,
 		218: SetTidAddress,
 		219: RestartSyscall,
-		//     220: Semtimedop, TODO
+		//     220: @Syscall(Semtimedop), TODO
 		221: Fadvise64,
 		222: TimerCreate,
 		223: TimerSettime,
@@ -284,27 +358,35 @@ var AMD64 = &kernel.SyscallTable{
 		233: EpollCtl,
 		234: Tgkill,
 		235: Utimes,
-		236: syscalls.Error(syscall.ENOSYS),        // Vserver, not implemented by Linux
-		237: syscalls.CapError(linux.CAP_SYS_NICE), // Mbind, may require cap_sys_nice TODO
+		// @Syscall(Vserver, note:Not implemented by Linux)
+		236: syscalls.Error(syscall.ENOSYS), // Vserver, not implemented by Linux
+		// @Syscall(Mbind, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise), TODO
+		237: syscalls.CapError(linux.CAP_SYS_NICE), // may require cap_sys_nice
 		238: SetMempolicy,
 		239: GetMempolicy,
-		//     240: MqOpen, TODO
-		//     241: MqUnlink, TODO
-		//     242: MqTimedsend, TODO
-		//     243: MqTimedreceive, TODO
-		//     244: MqNotify, TODO
-		//     245: MqGetsetattr, TODO
+		//     240: @Syscall(MqOpen), TODO
+		//     241: @Syscall(MqUnlink), TODO
+		//     242: @Syscall(MqTimedsend), TODO
+		//     243: @Syscall(MqTimedreceive), TODO
+		//     244: @Syscall(MqNotify), TODO
+		//     245: @Syscall(MqGetsetattr), TODO
 		246: syscalls.CapError(linux.CAP_SYS_BOOT), // kexec_load, requires cap_sys_boot
 		247: Waitid,
-		248: syscalls.Error(syscall.EACCES),         // AddKey, not available to user
-		249: syscalls.Error(syscall.EACCES),         // RequestKey, not available to user
-		250: syscalls.Error(syscall.EACCES),         // Keyctl, not available to user
-		251: syscalls.CapError(linux.CAP_SYS_ADMIN), // IoprioSet, requires cap_sys_nice or cap_sys_admin (depending)
-		252: syscalls.CapError(linux.CAP_SYS_ADMIN), // IoprioGet, requires cap_sys_nice or cap_sys_admin (depending)
+		// @Syscall(AddKey, returns:EACCES, note:Not available to user)
+		248: syscalls.Error(syscall.EACCES),
+		// @Syscall(RequestKey, returns:EACCES, note:Not available to user)
+		249: syscalls.Error(syscall.EACCES),
+		// @Syscall(Keyctl, returns:EACCES, note:Not available to user)
+		250: syscalls.Error(syscall.EACCES),
+		// @Syscall(IoprioSet, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		251: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_nice or cap_sys_admin (depending)
+		// @Syscall(IoprioGet, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise)
+		252: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_nice or cap_sys_admin (depending)
 		253: InotifyInit,
 		254: InotifyAddWatch,
 		255: InotifyRmWatch,
-		256: syscalls.CapError(linux.CAP_SYS_NICE), // MigratePages, requires cap_sys_nice
+		// @Syscall(MigratePages, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise)
+		256: syscalls.CapError(linux.CAP_SYS_NICE),
 		257: Openat,
 		258: Mkdirat,
 		259: Mknodat,
@@ -321,23 +403,26 @@ var AMD64 = &kernel.SyscallTable{
 		270: Pselect,
 		271: Ppoll,
 		272: Unshare,
-		273: syscalls.Error(syscall.ENOSYS), // SetRobustList, obsolete
-		274: syscalls.Error(syscall.ENOSYS), // GetRobustList, obsolete
-		//     275: Splice, TODO
-		//     276: Tee, TODO
+		// @Syscall(SetRobustList, note:Obsolete)
+		273: syscalls.Error(syscall.ENOSYS),
+		// @Syscall(GetRobustList, note:Obsolete)
+		274: syscalls.Error(syscall.ENOSYS),
+		//     275: @Syscall(Splice), TODO
+		//     276: @Syscall(Tee), TODO
 		277: SyncFileRange,
-		//     278: Vmsplice, TODO
-		279: syscalls.CapError(linux.CAP_SYS_NICE), // MovePages, requires cap_sys_nice (mostly)
+		//     278: @Syscall(Vmsplice), TODO
+		// @Syscall(MovePages, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise)
+		279: syscalls.CapError(linux.CAP_SYS_NICE), // requires cap_sys_nice (mostly)
 		280: Utimensat,
 		281: EpollPwait,
-		//     282: Signalfd, TODO
+		//     282: @Syscall(Signalfd), TODO
 		283: TimerfdCreate,
 		284: Eventfd,
 		285: Fallocate,
 		286: TimerfdSettime,
 		287: TimerfdGettime,
 		288: Accept4,
-		//     289: Signalfd4, TODO
+		//     289: @Syscall(Signalfd4), TODO
 		290: Eventfd2,
 		291: EpollCreate1,
 		292: Dup3,
@@ -346,36 +431,46 @@ var AMD64 = &kernel.SyscallTable{
 		295: Preadv,
 		296: Pwritev,
 		297: RtTgsigqueueinfo,
-		298: syscalls.ErrorWithEvent(syscall.ENODEV), // PerfEventOpen, no support for perf counters
+		// @Syscall(PerfEventOpen, returns:ENODEV, note:No support for perf counters)
+		298: syscalls.ErrorWithEvent(syscall.ENODEV),
 		299: RecvMMsg,
-		300: syscalls.ErrorWithEvent(syscall.ENOSYS), // FanotifyInit, needs CONFIG_FANOTIFY
-		301: syscalls.ErrorWithEvent(syscall.ENOSYS), // FanotifyMark, needs CONFIG_FANOTIFY
+		// @Syscall(FanotifyInit, note:Needs CONFIG_FANOTIFY)
+		300: syscalls.ErrorWithEvent(syscall.ENOSYS),
+		// @Syscall(FanotifyMark, note:Needs CONFIG_FANOTIFY)
+		301: syscalls.ErrorWithEvent(syscall.ENOSYS),
 		302: Prlimit64,
-		303: syscalls.ErrorWithEvent(syscall.EOPNOTSUPP), // NameToHandleAt, needs filesystem support
-		304: syscalls.ErrorWithEvent(syscall.EOPNOTSUPP), // OpenByHandleAt, needs filesystem support
-		305: syscalls.CapError(linux.CAP_SYS_TIME),       // ClockAdjtime, requires cap_sys_time
+		// @Syscall(NameToHandleAt, returns:EOPNOTSUPP, note:Needs filesystem support)
+		303: syscalls.ErrorWithEvent(syscall.EOPNOTSUPP),
+		// @Syscall(OpenByHandleAt, returns:EOPNOTSUPP, note:Needs filesystem support)
+		304: syscalls.ErrorWithEvent(syscall.EOPNOTSUPP),
+		// @Syscall(ClockAdjtime, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
+		305: syscalls.CapError(linux.CAP_SYS_TIME), // requires cap_sys_time
 		306: Syncfs,
 		307: SendMMsg,
-		//     308: Setns, TODO
+		//     308: @Syscall(Setns), TODO
 		309: Getcpu,
-		//     310: ProcessVmReadv, TODO may require cap_sys_ptrace
-		//     311: ProcessVmWritev, TODO may require cap_sys_ptrace
-		312: syscalls.CapError(linux.CAP_SYS_PTRACE), // Kcmp, requires cap_sys_ptrace
-		313: syscalls.CapError(linux.CAP_SYS_MODULE), // FinitModule, requires cap_sys_module
-		//     314: SchedSetattr, TODO, we have no scheduler
-		//     315: SchedGetattr, TODO, we have no scheduler
-		//     316: Renameat2, TODO
+		//     310: @Syscall(ProcessVmReadv), TODO may require cap_sys_ptrace
+		//     311: @Syscall(ProcessVmWritev), TODO may require cap_sys_ptrace
+		// @Syscall(Kcmp, returns:EPERM or ENOSYS, note:Requires cap_sys_ptrace)
+		312: syscalls.CapError(linux.CAP_SYS_PTRACE),
+		// @Syscall(FinitModule, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
+		313: syscalls.CapError(linux.CAP_SYS_MODULE),
+		//     314: @Syscall(SchedSetattr), TODO, we have no scheduler
+		//     315: @Syscall(SchedGetattr), TODO, we have no scheduler
+		//     316: @Syscall(Renameat2), TODO
 		317: Seccomp,
 		318: GetRandom,
 		319: MemfdCreate,
-		320: syscalls.CapError(linux.CAP_SYS_BOOT),  // KexecFileLoad, infeasible to support
-		321: syscalls.CapError(linux.CAP_SYS_ADMIN), // Bpf, requires cap_sys_admin for all commands
-		//     322: Execveat, TODO
-		//     323: Userfaultfd, TODO
-		//     324: Membarrier, TODO
+		// @Syscall(KexecFileLoad, EPERM or ENOSYS, note:Infeasible to support. Returns EPERM if the process does not have cap_sys_boot; ENOSYS otherwise)
+		320: syscalls.CapError(linux.CAP_SYS_BOOT),
+		// @Syscall(Bpf, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_boot; ENOSYS otherwise)
+		321: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin for all commands
+		//     322: @Syscall(Execveat), TODO
+		//     323: @Syscall(Userfaultfd), TODO
+		//     324: @Syscall(Membarrier), TODO
 		325: Mlock2,
 		// Syscalls after 325 are "backports" from versions of Linux after 4.4.
-		//	326: CopyFileRange,
+		//	326: @Syscall(CopyFileRange),
 		327: Preadv2,
 		328: Pwritev2,
 	},
