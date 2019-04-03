@@ -11,8 +11,8 @@ gVisor with the default platform.
 
 ## Configuring Docker
 
-> Note: This guide requires Docker. Refer to the [Docker documentation][docker] for
-> how to install it.
+> Note: This guide requires Docker version 17.09.0 or greater. Refer to the
+> [Docker documentation][docker] for how to install it.
 
 First you will need to configure Docker to use `runsc` by adding a runtime
 entry to your Docker configuration (`/etc/docker/daemon.json`). You may have to
