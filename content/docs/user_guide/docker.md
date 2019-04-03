@@ -3,7 +3,7 @@ title = "Docker Quick Start"
 weight = 10
 +++
 This guide will help you quickly get started running Docker containers using
-gVisor with the default platform.
+gVisor.
 
 ## Install gVisor
 
@@ -43,13 +43,19 @@ sudo systemctl restart docker
 Now run your container using the `runsc` runtime:
 
 ```bash
-docker run --runtime=runsc hello-world
+docker run --runtime=runsc --rm hello-world
 ```
 
 You can also run a terminal to explore the container.
 
 ```bash
-docker run --runtime=runsc -it ubuntu /bin/bash
+docker run --runtime=runsc --rm -it ubuntu /bin/bash
+```
+
+Many docker options are compatible with gVisor, try them out. Here is an example:
+
+```bash
+docker run --runtime=runsc --rm --link backend:database -v ~/bin:/tools:ro -p 8080:80 --cpus=0.5 -it busybox telnet towel.blinkenlights.nl
 ```
 
 ## Verify the runtime
@@ -75,7 +81,8 @@ $ docker run --runtime=runsc -it ubuntu dmesg
 Note that this is easily replicated by an attacker so applications should never
 use `dmesg` to verify the runtime in a security sensitive context.
 
-Next, try running gVisor using the [KVM platform](../platforms/).
+Next, look at the different options available for gVisor: [platform](../platforms/),
+[network](../networking/), [filesystem](../filesystem/).
 
 [docker]: https://docs.docker.com/install/
 [storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
