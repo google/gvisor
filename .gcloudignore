@@ -1,5 +1,3 @@
-# Explicitly add .git so that hugo has git commit info
-!.git
 public/
 resources/
 node_modules/
