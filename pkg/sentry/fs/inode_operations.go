@@ -104,15 +104,12 @@ type InodeOperations interface {
 	CreateLink(ctx context.Context, dir *Inode, oldname string, newname string) error
 
 	// CreateHardLink creates a hard link under dir between the target
-	// Inode and name. Implementations must ensure that name does not
-	// already exist.
+	// Inode and name.
 	//
 	// The caller must ensure this operation is permitted.
 	CreateHardLink(ctx context.Context, dir *Inode, target *Inode, name string) error
 
 	// CreateFifo creates a new named pipe under dir at name.
-	// Implementations must ensure that an Inode at name does not
-	// already exist.
 	//
 	// The caller must ensure that this operation is permitted.
 	CreateFifo(ctx context.Context, dir *Inode, name string, perm FilePermissions) error
@@ -144,7 +141,6 @@ type InodeOperations interface {
 	Rename(ctx context.Context, oldParent *Inode, oldName string, newParent *Inode, newName string, replacement bool) error
 
 	// Bind binds a new socket under dir at the given name.
-	// Implementations must ensure that name does not already exist.
 	//
 	// The caller must ensure that this operation is permitted.
 	Bind(ctx context.Context, dir *Inode, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error)

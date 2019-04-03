@@ -268,10 +268,6 @@ func (d *Dir) createInodeOperationsCommon(ctx context.Context, name string, make
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	if _, ok := d.children[name]; ok {
-		return nil, syscall.EEXIST
-	}
-
 	inode, err := makeInodeOperations()
 	if err != nil {
 		return nil, err

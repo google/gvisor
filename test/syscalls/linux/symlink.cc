@@ -113,23 +113,19 @@ TEST(SymlinkTest, CannotCreateSymlinkInReadOnlyDir) {
 }
 
 TEST(SymlinkTest, CannotSymlinkOverExistingFile) {
-  const std::string oldname = NewTempAbsPath();
-  const std::string newname = NewTempAbsPath();
+  const auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const auto newfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  int oldfd;
-  int newfd;
-  ASSERT_THAT(oldfd = open(oldname.c_str(), O_CREAT | O_RDWR, 0666),
-              SyscallSucceeds());
-  EXPECT_THAT(close(oldfd), SyscallSucceeds());
-  ASSERT_THAT(newfd = open(newname.c_str(), O_CREAT | O_RDWR, 0666),
-              SyscallSucceeds());
-  EXPECT_THAT(close(newfd), SyscallSucceeds());
-
-  EXPECT_THAT(symlink(oldname.c_str(), newname.c_str()),
+  EXPECT_THAT(symlink(oldfile.path().c_str(), newfile.path().c_str()),
               SyscallFailsWithErrno(EEXIST));
+}
 
-  EXPECT_THAT(unlink(oldname.c_str()), SyscallSucceeds());
-  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
+TEST(SymlinkTest, CannotSymlinkOverExistingDir) {
+  const auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const auto newdir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(symlink(oldfile.path().c_str(), newdir.path().c_str()),
+              SyscallFailsWithErrno(EEXIST));
 }
 
 TEST(SymlinkTest, OldnameIsEmpty) {
