@@ -33,4 +33,26 @@ Add the following `runtimeArgs` to your Docker configuration
 }
 ```
 
+## Disabling external networking
+
+To completely isolate the host and network from the sandbox, external
+networking can be disabled. The sandbox will still contain a loopback provided
+by netstack.
+
+Add the following `runtimeArgs` to your Docker configuration
+(`/etc/docker/daemon.json`) and restart the Docker daemon:
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--network=none"
+            ]
+       }
+    }
+}
+```
+
 [netstack]: https://github.com/google/netstack
