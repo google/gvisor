@@ -63,49 +63,6 @@ type queue struct {
 	transformer
 }
 
-// ReadToBlocks implements safemem.Reader.ReadToBlocks.
-func (q *queue) ReadToBlocks(dst safemem.BlockSeq) (uint64, error) {
-	src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(q.readBuf))
-	n, err := safemem.CopySeq(dst, src)
-	if err != nil {
-		return 0, err
-	}
-	q.readBuf = q.readBuf[n:]
-
-	// If we read everything, this queue is no longer readable.
-	if len(q.readBuf) == 0 {
-		q.readable = false
-	}
-
-	return n, nil
-}
-
-// WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
-func (q *queue) WriteFromBlocks(src safemem.BlockSeq) (uint64, error) {
-	copyLen := src.NumBytes()
-	room := waitBufMaxBytes - q.waitBufLen
-	// If out of room, return EAGAIN.
-	if room == 0 && copyLen > 0 {
-		return 0, syserror.ErrWouldBlock
-	}
-	// Cap the size of the wait buffer.
-	if copyLen > room {
-		copyLen = room
-		src = src.TakeFirst64(room)
-	}
-	buf := make([]byte, copyLen)
-
-	// Copy the data into the wait buffer.
-	dst := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf))
-	n, err := safemem.CopySeq(dst, src)
-	if err != nil {
-		return 0, err
-	}
-	q.waitBufAppend(buf)
-
-	return n, nil
-}
-
 // readReadiness returns whether q is ready to be read from.
 func (q *queue) readReadiness(t *linux.KernelTermios) waiter.EventMask {
 	q.mu.Lock()
@@ -118,6 +75,8 @@ func (q *queue) readReadiness(t *linux.KernelTermios) waiter.EventMask {
 
 // writeReadiness returns whether q is ready to be written to.
 func (q *queue) writeReadiness(t *linux.KernelTermios) waiter.EventMask {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.waitBufLen < waitBufMaxBytes {
 		return waiter.EventOut
 	}
@@ -158,7 +117,21 @@ func (q *queue) read(ctx context.Context, dst usermem.IOSequence, l *lineDiscipl
 		dst = dst.TakeFirst(canonMaxBytes)
 	}
 
-	n, err := dst.CopyOutFrom(ctx, q)
+	n, err := dst.CopyOutFrom(ctx, safemem.ReaderFunc(func(dst safemem.BlockSeq) (uint64, error) {
+		src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(q.readBuf))
+		n, err := safemem.CopySeq(dst, src)
+		if err != nil {
+			return 0, err
+		}
+		q.readBuf = q.readBuf[n:]
+
+		// If we read everything, this queue is no longer readable.
+		if len(q.readBuf) == 0 {
+			q.readable = false
+		}
+
+		return n, nil
+	}))
 	if err != nil {
 		return 0, false, err
 	}
@@ -178,7 +151,30 @@ func (q *queue) write(ctx context.Context, src usermem.IOSequence, l *lineDiscip
 	defer q.mu.Unlock()
 
 	// Copy data into the wait buffer.
-	n, err := src.CopyInTo(ctx, q)
+	n, err := src.CopyInTo(ctx, safemem.WriterFunc(func(src safemem.BlockSeq) (uint64, error) {
+		copyLen := src.NumBytes()
+		room := waitBufMaxBytes - q.waitBufLen
+		// If out of room, return EAGAIN.
+		if room == 0 && copyLen > 0 {
+			return 0, syserror.ErrWouldBlock
+		}
+		// Cap the size of the wait buffer.
+		if copyLen > room {
+			copyLen = room
+			src = src.TakeFirst64(room)
+		}
+		buf := make([]byte, copyLen)
+
+		// Copy the data into the wait buffer.
+		dst := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(buf))
+		n, err := safemem.CopySeq(dst, src)
+		if err != nil {
+			return 0, err
+		}
+		q.waitBufAppend(buf)
+
+		return n, nil
+	}))
 	if err != nil {
 		return 0, err
 	}
@@ -241,6 +237,7 @@ func (q *queue) pushWaitBufLocked(l *lineDiscipline) int {
 	return total
 }
 
+// Precondition: q.mu must be locked.
 func (q *queue) waitBufAppend(b []byte) {
 	q.waitBuf = append(q.waitBuf, b)
 	q.waitBufLen += uint64(len(b))
