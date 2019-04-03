@@ -24,5 +24,4 @@ steps:
     entrypoint: 'bash'
     args:
       - '-c'
-      - |
-        [[ "$BRANCH_NAME" == "master" ]] && gcloud app deploy public/app.yaml || true
+      - 'if [[ "$PROJECT_ID" == "gvisor-website" && "$BRANCH_NAME" == "master" ]]; then gcloud app deploy public/app.yaml; fi'
