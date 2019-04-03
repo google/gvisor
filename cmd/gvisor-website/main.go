@@ -30,17 +30,24 @@ var redirects = map[string]string{
 	"/cl":        "https://gvisor-review.googlesource.com/",
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issue/new": "https://github.com/google/gvisor/issues/new",
+
+	// Redirects to compatibility docs.
+	"/c":             "/docs/user_guide/compatibility",
+	"/c/linux/amd64": "/docs/user_guide/compatibility/amd64",
 }
 
 var prefixHelpers = map[string]string{
 	"cl":     "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
 	"change": "https://gvisor.googlesource.com/gvisor/+/%s",
 	"issue":  "https://github.com/google/gvisor/issues/%s",
+
+	// Redirects to compatibility docs.
+	"c/linux/amd64": "/docs/user_guide/compatibility/amd64/#%s",
 }
 
 var validId = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
 
-// redirectWithQuery redirects to the given target url preserving query parameters
+// redirectWithQuery redirects to the given target url preserving query parameters.
 func redirectWithQuery(w http.ResponseWriter, r *http.Request, target string) {
 	url := target
 	if qs := r.URL.RawQuery; qs != "" {
@@ -53,7 +60,7 @@ func redirectWithQuery(w http.ResponseWriter, r *http.Request, target string) {
 func prefixRedirectHandler(prefix, baseURL string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p := r.URL.Path; p == prefix {
-			// redirect /prefix/ to /prefix
+			// Redirect /prefix/ to /prefix.
 			http.Redirect(w, r, p[:len(p)-1], http.StatusFound)
 			return
 		}
