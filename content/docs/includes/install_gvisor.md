@@ -11,7 +11,7 @@ With corresponding SHA512 checksums here:
 `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc.sha512`
 
 **It is important to copy this binary to a location that is accessible to all
-users, and make sure it is executable to all users**, since `runsc` executes itself
+users, and ensure it is executable by all users**, since `runsc` executes itself
 as user `nobody` to avoid unnecessary privileges. The `/usr/local/bin` directory is
 a good place to put the `runsc` binary.
 
