@@ -25,4 +25,4 @@ steps:
     args:
       - '-c'
       - |
-        [[ "$BRANCH_NAME" == "master" ]] && gcloud app deploy public/app.yaml || return 0
+        [[ "$BRANCH_NAME" == "master" ]] && gcloud app deploy public/app.yaml || true
