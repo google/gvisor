@@ -235,6 +235,8 @@ syscall_test(test = "//test/syscalls/linux:pwritev2_test")
 
 syscall_test(test = "//test/syscalls/linux:pwrite64_test")
 
+syscall_test(test = "//test/syscalls/linux:raw_socket_ipv4_test")
+
 syscall_test(test = "//test/syscalls/linux:read_test")
 
 syscall_test(
