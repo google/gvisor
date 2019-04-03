@@ -1,6 +1,6 @@
 +++
 title = "Kubernetes"
-weight = 30
+weight = 20
 +++
 gVisor can be used to run Kubernetes pods and has several integration points
 with Kubernetes.
