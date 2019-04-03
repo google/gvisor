@@ -15,9 +15,6 @@
 runtime: go111
 
 handlers:
-  - url: /(change|cl||issue)(/.*)?
-    secure: always
-    script: auto
   - url: /.*
     secure: always
     script: auto
