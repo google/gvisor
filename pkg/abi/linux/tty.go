@@ -14,10 +14,6 @@
 
 package linux
 
-import (
-	"unicode/utf8"
-)
-
 const (
 	// NumControlCharacters is the number of control characters in Termios.
 	NumControlCharacters = 19
@@ -104,11 +100,19 @@ func (t *KernelTermios) FromTermios(term Termios) {
 }
 
 // IsTerminating returns whether c is a line terminating character.
-func (t *KernelTermios) IsTerminating(c rune) bool {
+func (t *KernelTermios) IsTerminating(cBytes []byte) bool {
+	// All terminating characters are 1 byte.
+	if len(cBytes) != 1 {
+		return false
+	}
+	c := cBytes[0]
+
+	// Is this the user-set EOF character?
 	if t.IsEOF(c) {
 		return true
 	}
-	switch byte(c) {
+
+	switch c {
 	case disabledChar:
 		return false
 	case '\n', t.ControlCharacters[VEOL]:
@@ -120,8 +124,8 @@ func (t *KernelTermios) IsTerminating(c rune) bool {
 }
 
 // IsEOF returns whether c is the EOF character.
-func (t *KernelTermios) IsEOF(c rune) bool {
-	return utf8.RuneLen(c) == 1 && byte(c) == t.ControlCharacters[VEOF] && t.ControlCharacters[VEOF] != disabledChar
+func (t *KernelTermios) IsEOF(c byte) bool {
+	return c == t.ControlCharacters[VEOF] && t.ControlCharacters[VEOF] != disabledChar
 }
 
 // Input flags.

@@ -568,6 +568,12 @@ TEST_F(PtyTest, WriteSlaveToMaster) {
   EXPECT_EQ(memcmp(buf, kExpected, sizeof(kExpected)), 0);
 }
 
+TEST_F(PtyTest, WriteInvalidUTF8) {
+  char c = 0xff;
+  ASSERT_THAT(syscall(__NR_write, master_.get(), &c, sizeof(c)),
+              SyscallSucceedsWithValue(sizeof(c)));
+}
+
 // Both the master and slave report the standard default termios settings.
 //
 // Note that TCGETS on the master actually redirects to the slave (see comment
