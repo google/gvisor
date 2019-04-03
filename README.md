@@ -13,18 +13,24 @@ generate CSS files. Please install them before building.
 - Node.js >= 10.15.0 LTS
 - hugo extended >= v0.53
 
-## Building
+## Contributing to Documentation
 
-Build the website using `make`:
+### Using Github
 
-```
-make
-```
+You can use the "Edit this page" link on any documentation page to edit the
+page content directly via GitHub and submit a pull request. This should
+generally be done for relatively small changes.
 
-This will output the App Engine application code, configuration, and html and
-CSS into the `public/` directory.
+### Using Git
 
-## Testing
+You can submit pull requests by making changes in a Git branch. See more
+information on GitHub pull requests
+[here](https://help.github.com/en/articles/about-pull-requests).
+
+Documentation is located in the [content/docs/](content/docs/) directory.
+Documentation is written in markdown with hugo extensions. Please read more
+about [content management](https://gohugo.io/categories/content-management) in
+the hugo documentation.
 
 You can use the hugo web server for testing. This will start a webserver that
 will rebuild the site when you make content changes:
@@ -35,53 +41,24 @@ make server
 
 Access the site at http://localhost:8080
 
-## Deploy
+## Building
 
-Deploying the website to App Engine requires gcloud. First create a configuration:
+If you are making changes to App Engine config or application code, you can
+build the website using `make`. This will output the App Engine application
+code, configuration, and html and CSS into the `public/` directory.
+
+```
+make
+```
+
+If you have Go installed you can run a local version of the website via the
+`public/` directory.
 
 ```
 {
-  gcloud config configurations create gvisor-website
-  gcloud config set project gvisor-website
+  cd public/
+  go run main.go
 }
 ```
 
-Deploy the application:
-
-```
-make deploy
-```
-
-## Editing documentation
-
-Documentation is located in the [content/docs/](content/docs/) directory.
-Documentation is written in markdown with hugo extensions. Please read more
-about [content management](https://gohugo.io/categories/content-management) in
-the hugo documentation.
-
-## Submit a Build
-
-Normally a build is triggered when you push to the gvisor-website repository.
-However, you can submit a build to Cloud Build manually.
-
-As one-time setup, enable the App Engine Admin API, and set IAM roles for the [Cloud Build service
-account](https://cloud.google.com/cloud-build/docs/securing-builds/set-service-account-permissions).
-
-```
-{
-  PROJECT_NUMBER=$(gcloud projects list --filter=projectId:gvisor-website --format="value(projectNumber)")
-  gcloud services enable appengine.googleapis.com
-  gcloud projects add-iam-policy-binding gvisor-website \
-    --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
-    --role='roles/appengine.deployer'
-  gcloud projects add-iam-policy-binding gvisor-website \
-    --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
-    --role='roles/appengine.serviceAdmin'
-}
-```
-
-Submit the build.
-
-```
-make cloud-build
-```
+Access the site at http://localhost:8080
