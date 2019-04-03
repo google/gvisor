@@ -1120,6 +1120,46 @@ TEST(PtraceTest, Interrupt_Listen_RequireSeize) {
       << " status " << status;
 }
 
+TEST(PtraceTest, SeizeSetOptions) {
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    while (true) {
+      SleepSafe(absl::Seconds(1));
+    }
+  }
+
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Attach to the child with PTRACE_SEIZE while setting PTRACE_O_TRACESYSGOOD.
+  ASSERT_THAT(ptrace(PTRACE_SEIZE, child_pid, 0, PTRACE_O_TRACESYSGOOD),
+              SyscallSucceeds());
+
+  // Stop the child with PTRACE_INTERRUPT.
+  ASSERT_THAT(ptrace(PTRACE_INTERRUPT, child_pid, 0, 0), SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_EQ(SIGTRAP | (kPtraceEventStop << 8), status >> 8);
+
+  // Resume the child with PTRACE_SYSCALL and wait for it to enter
+  // syscall-enter-stop. The stop signal status from the syscall stop should be
+  // SIGTRAP|0x80, reflecting PTRACE_O_TRACESYSGOOD.
+  ASSERT_THAT(ptrace(PTRACE_SYSCALL, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == (SIGTRAP | 0x80))
+      << " status " << status;
+
+  // SIGKILL the child (detaching the tracer) and wait for it to exit.
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL)
+      << " status " << status;
+}
+
 }  // namespace
 
 }  // namespace testing

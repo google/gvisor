@@ -374,7 +374,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 		return syserror.EPERM
 	}
 	if seize {
-		if err := t.ptraceSetOptionsLocked(opts); err != nil {
+		if err := target.ptraceSetOptionsLocked(opts); err != nil {
 			return syserror.EIO
 		}
 	}
