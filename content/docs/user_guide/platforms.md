@@ -14,9 +14,10 @@ more depth in the [Architecture Guide](../../architecture_guide/).
 
 ## Selecting a Platform
 
-The platform is selected by a `--platform` command line flag passed to `runsc`.
-To select a different platform, modify your Docker configuration
-(`/etc/docker/daemon.json`) to pass this argument:
+The platform is selected by the `--platform` command line flag passed to
+`runsc`. By default, the ptrace platform is selected. To select a different
+platform, modify your Docker configuration (`/etc/docker/daemon.json`) to
+pass this argument:
 
 ```json
 {
@@ -31,7 +32,12 @@ To select a different platform, modify your Docker configuration
 }
 ```
 
-Then restart the Docker daemon.
+You must restart the Docker daemon after making changes to this file, typically
+this is done via `systemd`:
+
+```bash
+sudo systemctl restart docker
+```
 
 ## Example: Using the KVM Platform
 
@@ -50,7 +56,7 @@ sudo apt-get install qemu-kvm
 
 If you are using a virtual machine you will need to make sure that nested
 virtualization is configured. Here are links to documents on how to set up
-nested virtualization in several popular environments.
+nested virtualization in several popular environments:
 
  * Google Cloud: [Enabling Nested Virtualization for VM Instances][nested-gcp]
  * Microsoft Azure: [How to enable nested virtualization in an Azure VM][nested-azure]
@@ -99,7 +105,7 @@ Now run your container using the `runsc-kvm` runtime. This will run the
 container using the KVM platform:
 
 ```bash
-docker run --runtime=runsc-kvm hello-world
+docker run --runtime=runsc-kvm --rm hello-world
 ```
 
 [nested-azure]: https://docs.microsoft.com/en-us/azure/virtual-machines/windows/nested-virtualization
