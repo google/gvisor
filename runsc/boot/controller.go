@@ -193,7 +193,6 @@ type StartArgs struct {
 	// Spec is the spec of the container to start.
 	Spec *specs.Spec
 
-	// TODO: Separate sandbox and container configs.
 	// Config is the runsc-specific configuration for the sandbox.
 	Conf *Config
 
