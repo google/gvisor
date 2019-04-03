@@ -69,7 +69,7 @@ account](https://cloud.google.com/cloud-build/docs/securing-builds/set-service-a
 
 ```
 {
-  PROJECT_NUMBER=$(gcloud projects list --filter=gvisor-website --format="value(projectNumber)")
+  PROJECT_NUMBER=$(gcloud projects list --filter=projectId:gvisor-website --format="value(projectNumber)")
   gcloud services enable appengine.googleapis.com
   gcloud projects add-iam-policy-binding gvisor-website \
     --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
