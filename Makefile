@@ -21,8 +21,6 @@ public:
 public/app.yaml: public
 	cp -vr cmd/gvisor-website/app.yaml public/
 
-
-
 # Load repositories.
 upstream:
 	mkdir -p upstream
@@ -44,29 +42,38 @@ content/docs/community/sigs: upstream/community $(wildcard upstream/community/si
 $(GO_TARGET): public $(GO_SOURCE)
 	cd cmd/gvisor-website && find . -name "*.go" -exec cp --parents \{\} ../../public \;
 
-deploy: public/app.yaml
-	cd public && $(GCLOUD) app deploy
-.PHONY: deploy
-
 public/static: node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	$(HUGO)
-
-server: all-upstream
-	$(HUGO) server -FD --port 8080
 
 node_modules: package.json package-lock.json
 	# Use npm ci because npm install will update the package-lock.json.
 	# See: https://github.com/npm/npm/issues/18286
 	$(NPM) ci
 
+# Run a local content development server. Redirects will not be supported.
+server: all-upstream
+	$(HUGO) server -FD --port 8080
+.PHONY: server
+
+# Deploy the website to App Engine.
+deploy: public/app.yaml
+	cd public && $(GCLOUD) app deploy
+.PHONY: deploy
+
+# CI related Commmands
+##############################################################################
+
+# Submit a build to Cloud Build manually. Used to test cloudbuild.yaml changes.
 cloud-build:
 	gcloud builds submit --config cloudbuild/cloudbuild.yaml .
 
+# Build and push the hugo Docker image used by Cloud Build.
 hugo-docker-image:
 	docker build --build-arg HUGO_VERSION=$(HUGO_VERSION) -t gcr.io/gvisor-website/hugo:$(HUGO_VERSION) cloudbuild/hugo/
 	docker push gcr.io/gvisor-website/hugo:$(HUGO_VERSION)
 .PHONY: hugo-docker-image
 
+# Build and push the html-proofer image used by Cloud Build.
 htmlproofer-docker-image:
 	docker build --build-arg HTMLPROOFER_VERSION=$(HTMLPROOFER_VERSION) -t gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION) cloudbuild/html-proofer/
 	docker push gcr.io/gvisor-website/html-proofer:$(HTMLPROOFER_VERSION)
