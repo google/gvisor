@@ -1,117 +1,123 @@
 # Load go bazel rules and gazelle.
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
 http_archive(
     name = "io_bazel_rules_go",
-    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.1/rules_go-0.18.1.tar.gz",
     sha256 = "77dfd303492f2634de7a660445ee2d3de2960cbd52f97d8c0dffa9362d3ddef9",
+    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.1/rules_go-0.18.1.tar.gz",
 )
+
 http_archive(
     name = "bazel_gazelle",
-    url = "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz",
     sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
+    url = "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz",
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
+
 go_rules_dependencies()
-go_register_toolchains(go_version="1.12.1")
+
+go_register_toolchains(go_version = "1.12.1")
+
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+
 gazelle_dependencies()
 
 # Load bazel_toolchain to support Remote Build Execution.
 # See releases at https://releases.bazel.build/bazel-toolchains.html
 http_archive(
-  name = "bazel_toolchains",
-  sha256 = "4b1468b254a572dbe134cc1fd7c6eab1618a72acd339749ea343bd8f55c3b7eb",
-  strip_prefix = "bazel-toolchains-d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4",
-  urls = [
-    "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4.tar.gz",
-    "https://github.com/bazelbuild/bazel-toolchains/archive/d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4.tar.gz",
-  ],
+    name = "bazel_toolchains",
+    sha256 = "4b1468b254a572dbe134cc1fd7c6eab1618a72acd339749ea343bd8f55c3b7eb",
+    strip_prefix = "bazel-toolchains-d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4",
+    urls = [
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4.tar.gz",
+        "https://github.com/bazelbuild/bazel-toolchains/archive/d665ccfa3e9c90fa789671bf4ef5f7c19c5715c4.tar.gz",
+    ],
 )
 
 # External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
-    importpath = "github.com/cenkalti/backoff",
     commit = "66e726b43552c0bab0539b28e640b89fd6862115",
+    importpath = "github.com/cenkalti/backoff",
 )
 
 go_repository(
     name = "com_github_gofrs_flock",
+    commit = "886344bea0798d02ff3fae16a922be5f6b26cee0",
     importpath = "github.com/gofrs/flock",
-    commit = "886344bea0798d02ff3fae16a922be5f6b26cee0"
 )
 
 go_repository(
     name = "com_github_golang_mock",
-    importpath = "github.com/golang/mock",
     commit = "600781dde9cca80734169b9e969d9054ccc57937",
+    importpath = "github.com/golang/mock",
 )
 
 go_repository(
     name = "com_github_google_go-cmp",
-    importpath = "github.com/google/go-cmp",
     commit = "3af367b6b30c263d47e8895973edcca9a49cf029",
+    importpath = "github.com/google/go-cmp",
 )
 
 go_repository(
     name = "com_github_google_subcommands",
-    importpath = "github.com/google/subcommands",
     commit = "ce3d4cfc062faac7115d44e5befec8b5a08c3faa",
+    importpath = "github.com/google/subcommands",
 )
 
 go_repository(
     name = "com_github_google_uuid",
-    importpath = "github.com/google/uuid",
     commit = "dec09d789f3dba190787f8b4454c7d3c936fed9e",
+    importpath = "github.com/google/uuid",
 )
 
 go_repository(
     name = "com_github_kr_pty",
-    importpath = "github.com/kr/pty",
     commit = "282ce0e5322c82529687d609ee670fac7c7d917c",
+    importpath = "github.com/kr/pty",
 )
 
 go_repository(
     name = "com_github_opencontainers_runtime-spec",
-    importpath = "github.com/opencontainers/runtime-spec",
     commit = "b2d941ef6a780da2d9982c1fb28d77ad97f54fc7",
+    importpath = "github.com/opencontainers/runtime-spec",
 )
 
 go_repository(
     name = "com_github_syndtr_gocapability",
-    importpath = "github.com/syndtr/gocapability",
     commit = "d98352740cb2c55f81556b63d4a1ec64c5a319c2",
+    importpath = "github.com/syndtr/gocapability",
 )
 
 go_repository(
     name = "com_github_vishvananda_netlink",
-    importpath = "github.com/vishvananda/netlink",
     commit = "adb577d4a45e341da53c4d9196ad4222c9a23e69",
+    importpath = "github.com/vishvananda/netlink",
 )
 
 go_repository(
     name = "com_github_vishvananda_netns",
-    importpath = "github.com/vishvananda/netns",
     commit = "be1fbeda19366dea804f00efff2dd73a1642fdcc",
+    importpath = "github.com/vishvananda/netns",
 )
 
 go_repository(
     name = "org_golang_x_net",
-    importpath = "golang.org/x/net",
     commit = "b3c676e531a6dc479fa1b35ac961c13f5e2b4d2e",
+    importpath = "golang.org/x/net",
 )
 
 go_repository(
     name = "org_golang_x_sys",
-    importpath = "golang.org/x/sys",
     commit = "0dd5e194bbf5eb84a39666eb4c98a4d007e4203a",
+    importpath = "golang.org/x/sys",
 )
 
 go_repository(
     name = "com_github_google_btree",
-    importpath = "github.com/google/btree",
     commit = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306",
+    importpath = "github.com/google/btree",
 )
 
 # System Call test dependencies.
