@@ -88,6 +88,7 @@ func (t *Task) RSEQCPUAddr() usermem.Addr {
 func (t *Task) SetRSEQCPUAddr(addr usermem.Addr) error {
 	t.rseqCPUAddr = addr
 	if addr != 0 {
+		t.rseqCPU = int32(hostcpu.GetCPU())
 		if err := t.rseqCopyOutCPU(); err != nil {
 			t.rseqCPUAddr = 0
 			t.rseqCPU = -1
@@ -102,7 +103,6 @@ func (t *Task) SetRSEQCPUAddr(addr usermem.Addr) error {
 // Preconditions: The caller must be running on the task goroutine. t's
 // AddressSpace must be active.
 func (t *Task) rseqCopyOutCPU() error {
-	t.rseqCPU = int32(hostcpu.GetCPU())
 	buf := t.CopyScratchBuffer(4)
 	usermem.ByteOrder.PutUint32(buf, uint32(t.rseqCPU))
 	_, err := t.CopyOutBytes(t.rseqCPUAddr, buf)

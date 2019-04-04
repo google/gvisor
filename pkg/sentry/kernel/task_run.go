@@ -21,6 +21,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
@@ -169,12 +170,16 @@ func (*runApp) execute(t *Task) taskRunState {
 	if t.rseqPreempted {
 		t.rseqPreempted = false
 		if t.rseqCPUAddr != 0 {
-			if err := t.rseqCopyOutCPU(); err != nil {
-				t.Warningf("Failed to copy CPU to %#x for RSEQ: %v", t.rseqCPUAddr, err)
-				t.forceSignal(linux.SIGSEGV, false)
-				t.SendSignal(sigPriv(linux.SIGSEGV))
-				// Re-enter the task run loop for signal delivery.
-				return (*runApp)(nil)
+			cpu := int32(hostcpu.GetCPU())
+			if t.rseqCPU != cpu {
+				t.rseqCPU = cpu
+				if err := t.rseqCopyOutCPU(); err != nil {
+					t.Warningf("Failed to copy CPU to %#x for RSEQ: %v", t.rseqCPUAddr, err)
+					t.forceSignal(linux.SIGSEGV, false)
+					t.SendSignal(sigPriv(linux.SIGSEGV))
+					// Re-enter the task run loop for signal delivery.
+					return (*runApp)(nil)
+				}
 			}
 		}
 		t.rseqInterrupt()
