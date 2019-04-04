@@ -629,7 +629,7 @@ func (d *Dirent) Walk(ctx context.Context, root *Dirent, name string) (*Dirent, 
 // - d.mu must be held.
 // - name must must not contain "/"s.
 func (d *Dirent) exists(ctx context.Context, root *Dirent, name string) bool {
-	child, err := d.walk(ctx, root, name, true /* may unlock */)
+	child, err := d.walk(ctx, root, name, false /* may unlock */)
 	if err != nil {
 		// Child may not exist.
 		return false
@@ -1377,8 +1377,13 @@ func (d *Dirent) dropExtendedReference() {
 // lockForRename takes locks on oldParent and newParent as required by Rename
 // and returns a function that will unlock the locks taken. The returned
 // function must be called even if a non-nil error is returned.
+//
+// Note that lockForRename does not take renameMu if the source and destination
+// of the rename are within the same directory.
 func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName string) (func(), error) {
 	if oldParent == newParent {
+		// Rename source and destination are in the same directory. In
+		// this case, we only need to take a lock on that directory.
 		oldParent.mu.Lock()
 		return oldParent.mu.Unlock, nil
 	}
