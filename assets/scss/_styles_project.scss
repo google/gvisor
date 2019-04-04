@@ -67,7 +67,7 @@ a.doc-table-anchor {
     @media (min-width: 768px) {
         width: 50%;
     }
-    font-size: 2rem;
+    font-size: $h1-font-size;
 }
 .td-default main section.td-cover-block p.lead strong {
     font-weight: bold;
