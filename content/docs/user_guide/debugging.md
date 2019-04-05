@@ -35,7 +35,7 @@ be useful for identifying missing or broken system calls in gVisor.
 ## Stack Trace
 
 `runsc debug --stacks` command allows stack traces to be collected while the 
-sandbox is running which can be useful to troubleshoot hangs or just to learn 
+sandbox is running which can be useful to troubleshoot issues or just to learn 
 more about gVisor. It connects to the sandbox process, collects a stack dump,
 and writes it to the console.
 
@@ -55,8 +55,8 @@ sudo runsc --root /var/run/docker/runtime-runsc/moby debug --stacks 63254c6ab3a6
 
 ## Profiling
 
-`runsc` integrates with Go profiler and gives you easy commands to profile CPU
-and heap usage. First you need to enable `--profile` in the command line options
+`runsc` integrates with Go profilling tools and gives you easy commands to profile
+CPU and heap usage. First you need to enable `--profile` in the command line options
 before starting the container:
 
 ```json
@@ -72,7 +72,8 @@ before starting the container:
 }
 ```
 
-> Note: Enabling profiler loosens the seccomp protection added to the sandbox.
+> Note: Enabling profiler loosens the seccomp protection added to the sandbox,
+> and should not be run in production under normal circumstances.
 
 Then restart docker to refresh the runtime options. While the container is running,
 execute `runsc debug` to collect profile information and save to a file. Here are
