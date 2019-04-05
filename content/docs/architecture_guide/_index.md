@@ -2,7 +2,7 @@
 title = "Architecture Guide"
 weight = 20
 +++
-gVisor provides a fully-virtualized environment in order to sandbox untrusted
+gVisor provides a virtualized environment in order to sandbox untrusted
 containers. The system interfaces normally implemented by the host kernel are
 moved into a distinct, per-sandbox user space kernel in order to minimize the
 risk of an exploit.  gVisor does not introduce large fixed overheads however,
