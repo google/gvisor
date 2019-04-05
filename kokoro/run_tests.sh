@@ -47,11 +47,6 @@ bazel version
 # Load the kvm module
 sudo -n -E modprobe kvm
 
-# Bazel start-up flags for RBE.
-BAZEL_RBE_FLAGS=(
-  "--bazelrc=${WORKSPACE_DIR}/.bazelrc_rbe"
-)
-
 # General Bazel build/test flags.
 BAZEL_BUILD_FLAGS=(
   "--show_timestamps"
@@ -77,9 +72,7 @@ build_everything() {
   FLAVOR="${1}"
 
   cd ${WORKSPACE_DIR}
-  bazel \
-    "${BAZEL_RBE_FLAGS[@]}" \
-    build \
+  bazel build \
     -c "${FLAVOR}" "${BAZEL_BUILD_RBE_FLAGS[@]}" \
     "${BUILD_PACKAGES[@]}"
 }
@@ -88,8 +81,7 @@ build_everything() {
 # configuration.
 run_simple_tests() {
   cd ${WORKSPACE_DIR}
-  bazel \
-    test \
+  bazel test \
     "${BAZEL_BUILD_FLAGS[@]}" \
     "${TEST_PACKAGES[@]}"
 }
@@ -178,9 +170,7 @@ run_root_tests() {
 # Run syscall unit tests.
 run_syscall_tests() {
   cd ${WORKSPACE_DIR}
-  bazel \
-    "${BAZEL_RBE_FLAGS[@]}" \
-    test "${BAZEL_BUILD_RBE_FLAGS[@]}" \
+  bazel test "${BAZEL_BUILD_RBE_FLAGS[@]}" \
     --test_tag_filters=runsc_ptrace //test/syscalls/...
 }
 

@@ -1,1 +1,55 @@
+# Copyright 2019 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Start with a base bazelrc for a recent version of bazel. These can be
+# downloaded from:
+# https://github.com/bazelbuild/bazel-toolchains/tree/master/bazelrc
+import %workspace%/tools/bazel-0.24.0.bazelrc
+
+# All changes below are gVisor-specific.
+
+# Display the current git revision in the info block.
 build --workspace_status_command tools/workspace_status.sh
+
+# Add a custom toolchain that builds in a privileged docker container, which is
+# required by our syscall tests.
+build:remote --extra_toolchains=//test:cc-toolchain-clang-x86_64-default
+build:remote --extra_execution_platforms=//test:rbe_ubuntu1604
+build:remote --host_platform=//test:rbe_ubuntu1604
+build:remote --platforms=//test:rbe_ubuntu1604
+
+# RBE requires a strong hash function, such as SHA256.
+startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
+
+# Auth scope needed for authentication with RBE.
+build:remote --auth_scope="https://www.googleapis.com/auth/cloud-source-tools"
+
+# Set flags for uploading to BES in order to view results in the Bazel Build
+# Results UI.
+build:results --bes_backend="buildeventservice.googleapis.com"
+build:results --bes_timeout=60s
+build:results --tls_enabled
+
+# Output BES results url
+build:results --bes_results_url="https://source.cloud.google.com/results/invocations/"
+
+# Set flags for uploading to BES without Remote Build Execution.
+build:results-local --bes_backend="buildeventservice.googleapis.com"
+build:results-local --bes_timeout=60s
+build:results-local --tls_enabled=true
+build:results-local --auth_enabled=true
+build:results-local --spawn_strategy=local
+build:results-local --remote_cache=remotebuildexecution.googleapis.com
+build:results-local --remote_timeout=3600
+build:results-local --bes_results_url="https://source.cloud.google.com/results/invocations/"

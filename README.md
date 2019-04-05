@@ -314,6 +314,28 @@ Run your container again, and inspect the files under `/tmp/runsc`. The log file
 with name `boot` will contain the strace logs from your application, which can
 be useful for identifying missing or broken system calls in gVisor.
 
+### Building/testing with Remote Execution
+
+If you have a [Remote Build Execution][rbe] environment, you can use it to speed
+up gVisor build and test cycles.
+
+You must authenticate with the project first:
+
+```
+gcloud auth application-default login --no-launch-browser
+```
+
+Then invoke bazel with the following flags:
+
+```
+--config=remote
+--project_id=$PROJECT
+--remote_instance_name=projects/$PROJECT/instances/default_instance
+```
+
+You can also add those flags to your local ~/.bazelrc to avoid needing to
+specify them each time on the command line.
+
 ### Enabling network passthrough
 
 For high-performance networking applications, you may choose to disable the user
@@ -455,6 +477,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [netstack]: https://github.com/google/netstack
 [oci]: https://www.opencontainers.org
 [python]: https://python.org
+[rbe]: https://blog.bazel.build/2018/10/05/remote-build-execution.html
 [runsc-nightly-sha]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
 [runsc-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
