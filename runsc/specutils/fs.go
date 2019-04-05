@@ -39,6 +39,7 @@ var optionsMap = map[string]mapping{
 	"diratime":      {set: false, val: syscall.MS_NODIRATIME},
 	"dirsync":       {set: true, val: syscall.MS_DIRSYNC},
 	"exec":          {set: false, val: syscall.MS_NOEXEC},
+	"noexec":        {set: true, val: syscall.MS_NOEXEC},
 	"iversion":      {set: true, val: syscall.MS_I_VERSION},
 	"loud":          {set: false, val: syscall.MS_SILENT},
 	"mand":          {set: true, val: syscall.MS_MANDLOCK},
@@ -76,9 +77,7 @@ var propOptionsMap = map[string]mapping{
 // invalidOptions list options not allowed.
 //   - shared: sandbox must be isolated from the host. Propagating mount changes
 //     from the sandbox to the host breaks the isolation.
-//   - noexec: not yet supported. Don't ignore it since it could break
-//     in-sandbox security.
-var invalidOptions = []string{"shared", "rshared", "noexec"}
+var invalidOptions = []string{"shared", "rshared"}
 
 // OptionsToFlags converts mount options to syscall flags.
 func OptionsToFlags(opts []string) uint32 {

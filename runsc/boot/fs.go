@@ -482,6 +482,8 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 			mf.ReadOnly = true
 		case "noatime":
 			mf.NoAtime = true
+		case "noexec":
+			mf.NoExec = true
 		default:
 			log.Warningf("ignoring unknown mount option %q", o)
 		}

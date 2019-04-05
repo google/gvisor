@@ -140,6 +140,10 @@ type MountSourceFlags struct {
 	// cache, even when the platform supports direct mapped I/O. This
 	// doesn't correspond to any Linux mount options.
 	ForcePageCache bool
+
+	// NoExec corresponds to mount(2)'s "MS_NOEXEC" and indicates that
+	// binaries from this file system can't be executed.
+	NoExec bool
 }
 
 // GenericMountSourceOptions splits a string containing comma separated tokens of the

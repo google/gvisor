@@ -31,6 +31,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/mount_util.h"
+#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -275,6 +276,23 @@ TEST(MountTest, MountNoAtime) {
 
   // Expect that atime hasn't changed.
   EXPECT_EQ(before, after);
+}
+
+TEST(MountTest, MountNoExec) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", MS_NOEXEC, "mode=0777", 0));
+
+  std::string const contents = "No no no, don't follow the instructions!";
+  auto const file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), contents, 0777));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(file.path(), {}, {}, nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, EACCES);
 }
 
 TEST(MountTest, RenameRemoveMountPoint) {

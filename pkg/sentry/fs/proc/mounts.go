@@ -129,6 +129,9 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 		if m.Flags.NoAtime {
 			opts += ",noatime"
 		}
+		if m.Flags.NoExec {
+			opts += ",noexec"
+		}
 		fmt.Fprintf(&buf, "%s ", opts)
 
 		// (7) Optional fields: zero or more fields of the form "tag[:value]".

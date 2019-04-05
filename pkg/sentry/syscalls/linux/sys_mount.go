@@ -75,7 +75,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits
 	// anyway.
-	const unsupportedFlags = linux.MS_NODEV | linux.MS_NOEXEC |
+	const unsupportedFlags = linux.MS_NODEV |
 		linux.MS_NODIRATIME | linux.MS_STRICTATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
@@ -99,6 +99,9 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 	if flags&linux.MS_RDONLY == linux.MS_RDONLY {
 		superFlags.ReadOnly = true
+	}
+	if flags&linux.MS_NOEXEC == linux.MS_NOEXEC {
+		superFlags.NoExec = true
 	}
 
 	rootInode, err := rsys.Mount(t, sourcePath, superFlags, data, nil)

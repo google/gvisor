@@ -46,6 +46,11 @@ func ContextCanAccessFile(ctx context.Context, inode *Inode, reqPerms PermMask) 
 		p = uattr.Perms.Group
 	}
 
+	// Do not allow programs to be executed if MS_NOEXEC is set.
+	if IsFile(inode.StableAttr) && reqPerms.Execute && inode.MountSource.Flags.NoExec {
+		return false
+	}
+
 	// Are permissions satisfied without capability checks?
 	if p.SupersetOf(reqPerms) {
 		return true
