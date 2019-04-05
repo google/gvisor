@@ -551,6 +551,16 @@ func (fs FeatureSet) CPUInfo(cpu uint) string {
 	return b.String()
 }
 
+// AMD returns true if fs describes an AMD CPU.
+func (fs *FeatureSet) AMD() bool {
+	return fs.VendorID == "AuthenticAMD"
+}
+
+// Intel returns true if fs describes an Intel CPU.
+func (fs *FeatureSet) Intel() bool {
+	return fs.VendorID == "GenuineIntel"
+}
+
 // Helper to convert 3 regs into 12-byte vendor ID.
 func vendorIDFromRegs(bx, cx, dx uint32) string {
 	bytes := make([]byte, 0, 12)
@@ -735,6 +745,20 @@ func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 		cx = fs.blockMask(block(0))
 		dx = fs.blockMask(block(1))
 		ax = fs.signature()
+	case intelCacheDescriptors:
+		if !fs.Intel() {
+			// Reserved on non-Intel.
+			return 0, 0, 0, 0
+		}
+
+		// "The least-significant byte in register EAX (register AL)
+		// will always return 01H. Software should ignore this value
+		// and not interpret it as an informational descriptor." - SDM
+		//
+		// We do not support exposing cache information, but we do set
+		// this fixed field because some language runtimes (dlang) get
+		// confused by ax = 0 and will loop infinitely.
+		ax = 1
 	case xSaveInfo:
 		if !fs.UseXsave() {
 			return 0, 0, 0, 0
@@ -753,7 +777,7 @@ func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 	case extendedFeatures:
 		cx = fs.blockMask(block(5))
 		dx = fs.blockMask(block(6))
-		if fs.VendorID == "AuthenticAMD" {
+		if fs.AMD() {
 			// AMD duplicates some block 1 features in block 6.
 			dx |= fs.blockMask(block(1)) & block6DuplicateMask
 		}
