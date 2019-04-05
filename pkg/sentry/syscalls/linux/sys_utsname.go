@@ -35,7 +35,7 @@ func Uname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	copy(u.Nodename[:], uts.HostName())
 	copy(u.Release[:], version.Release)
 	copy(u.Version[:], version.Version)
-	copy(u.Machine[:], "x86_64") // +build tag above.
+	copy(u.Machine[:], "x86_64") // build tag above.
 	copy(u.Domainname[:], uts.DomainName())
 
 	// Copy out the result.

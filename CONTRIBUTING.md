@@ -12,6 +12,24 @@ You generally only need to submit a CLA once, so if you've already submitted one
 (even if it was for a different project), you probably don't need to do it
 again.
 
+### Using GOPATH
+
+Some editors may require the code to be structured in a `GOPATH` directory tree.
+In this case, you may use the `:gopath` target to generate a directory tree with
+symlinks to the original source files.
+
+```
+bazel build :gopath
+```
+
+You can then set the `GOPATH` in your editor to `bazel-bin/gopath`.
+
+If you use this mechanism, keep in mind that the generated tree is not the
+canonical source. You will still need to build and test with `bazel`. New files
+will need to be added to the appropriate `BUILD` files, and the `:gopath` target
+will need to be re-run to generate appropriate symlinks in the `GOPATH`
+directory tree.
+
 ### Coding Guidelines
 
 All code should conform to the [Go style guidelines][gostyle].
