@@ -18,5 +18,3 @@ handlers:
   - url: /.*
     secure: always
     script: auto
-    # TODO: remove this when published.
-    login: admin
