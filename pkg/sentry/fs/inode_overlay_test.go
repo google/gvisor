@@ -383,13 +383,13 @@ type dir struct {
 }
 
 // Getxattr implements InodeOperations.Getxattr.
-func (d *dir) Getxattr(inode *fs.Inode, name string) ([]byte, error) {
+func (d *dir) Getxattr(inode *fs.Inode, name string) (string, error) {
 	for _, n := range d.negative {
 		if name == fs.XattrOverlayWhiteout(n) {
-			return []byte("y"), nil
+			return "y", nil
 		}
 	}
-	return nil, syserror.ENOATTR
+	return "", syserror.ENOATTR
 }
 
 // GetFile implements InodeOperations.GetFile.

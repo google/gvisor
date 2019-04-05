@@ -197,25 +197,25 @@ func (i *InodeSimpleAttributes) NotifyStatusChange(ctx context.Context) {
 type InodeSimpleExtendedAttributes struct {
 	// mu protects xattrs.
 	mu     sync.RWMutex `state:"nosave"`
-	xattrs map[string][]byte
+	xattrs map[string]string
 }
 
 // Getxattr implements fs.InodeOperations.Getxattr.
-func (i *InodeSimpleExtendedAttributes) Getxattr(_ *fs.Inode, name string) ([]byte, error) {
+func (i *InodeSimpleExtendedAttributes) Getxattr(_ *fs.Inode, name string) (string, error) {
 	i.mu.RLock()
 	value, ok := i.xattrs[name]
 	i.mu.RUnlock()
 	if !ok {
-		return nil, syserror.ENOATTR
+		return "", syserror.ENOATTR
 	}
 	return value, nil
 }
 
 // Setxattr implements fs.InodeOperations.Setxattr.
-func (i *InodeSimpleExtendedAttributes) Setxattr(_ *fs.Inode, name string, value []byte) error {
+func (i *InodeSimpleExtendedAttributes) Setxattr(_ *fs.Inode, name, value string) error {
 	i.mu.Lock()
 	if i.xattrs == nil {
-		i.xattrs = make(map[string][]byte)
+		i.xattrs = make(map[string]string)
 	}
 	i.xattrs[name] = value
 	i.mu.Unlock()
@@ -424,12 +424,12 @@ func (InodeNotSymlink) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
 type InodeNoExtendedAttributes struct{}
 
 // Getxattr implements fs.InodeOperations.Getxattr.
-func (InodeNoExtendedAttributes) Getxattr(*fs.Inode, string) ([]byte, error) {
-	return nil, syserror.EOPNOTSUPP
+func (InodeNoExtendedAttributes) Getxattr(*fs.Inode, string) (string, error) {
+	return "", syserror.EOPNOTSUPP
 }
 
 // Setxattr implements fs.InodeOperations.Setxattr.
-func (InodeNoExtendedAttributes) Setxattr(*fs.Inode, string, []byte) error {
+func (InodeNoExtendedAttributes) Setxattr(*fs.Inode, string, string) error {
 	return syserror.EOPNOTSUPP
 }
 

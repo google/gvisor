@@ -253,7 +253,7 @@ func (i *Inode) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
 }
 
 // Getxattr calls i.InodeOperations.Getxattr with i as the Inode.
-func (i *Inode) Getxattr(name string) ([]byte, error) {
+func (i *Inode) Getxattr(name string) (string, error) {
 	if i.overlay != nil {
 		return overlayGetxattr(i.overlay, name)
 	}

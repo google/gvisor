@@ -25,12 +25,12 @@ import (
 )
 
 func overlayHasWhiteout(parent *Inode, name string) bool {
-	buf, err := parent.Getxattr(XattrOverlayWhiteout(name))
-	return err == nil && string(buf) == "y"
+	s, err := parent.Getxattr(XattrOverlayWhiteout(name))
+	return err == nil && s == "y"
 }
 
 func overlayCreateWhiteout(parent *Inode, name string) error {
-	return parent.InodeOperations.Setxattr(parent, XattrOverlayWhiteout(name), []byte("y"))
+	return parent.InodeOperations.Setxattr(parent, XattrOverlayWhiteout(name), "y")
 }
 
 func overlayWriteOut(ctx context.Context, o *overlayEntry) error {
@@ -491,28 +491,28 @@ func overlayUnstableAttr(ctx context.Context, o *overlayEntry) (UnstableAttr, er
 	return attr, err
 }
 
-func overlayGetxattr(o *overlayEntry, name string) ([]byte, error) {
+func overlayGetxattr(o *overlayEntry, name string) (string, error) {
 	// Hot path. This is how the overlay checks for whiteout files.
 	// Avoid defers.
 	var (
-		b   []byte
+		s   string
 		err error
 	)
 
 	// Don't forward the value of the extended attribute if it would
 	// unexpectedly change the behavior of a wrapping overlay layer.
 	if strings.HasPrefix(XattrOverlayPrefix, name) {
-		return nil, syserror.ENODATA
+		return "", syserror.ENODATA
 	}
 
 	o.copyMu.RLock()
 	if o.upper != nil {
-		b, err = o.upper.Getxattr(name)
+		s, err = o.upper.Getxattr(name)
 	} else {
-		b, err = o.lower.Getxattr(name)
+		s, err = o.lower.Getxattr(name)
 	}
 	o.copyMu.RUnlock()
-	return b, err
+	return s, err
 }
 
 func overlayListxattr(o *overlayEntry) (map[string]struct{}, error) {
