@@ -192,7 +192,7 @@ Additionally, we have practical restrictions that are imposed on the project to
 minimize the risk of Sentry exploitability. For example:
 
  1. Unsafe code is carefully controlled. All unsafe code is isolated in files
-    that end with “_unsafe.go”, in order to facilitate validation and auditing.
+    that end with "unsafe.go", in order to facilitate validation and auditing.
     No file without the unsafe suffix may import the unsafe package.
  1. No CGo is allowed. The Sentry must be a pure Go binary.
  1. External imports are not generally allowed within the core packages. Only
