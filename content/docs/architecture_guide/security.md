@@ -3,7 +3,7 @@ title = "Security Model"
 weight = 20
 +++
 gVisor was created in order to provide additional defense against the
-exploitation of kernel bugs when running untrusted code. In order to understand
+exploitation of kernel bugs by untrusted userspace code. In order to understand
 how gVisor achieves this goal, it is first necessary to understand the basic
 threat model.
 
@@ -19,7 +19,7 @@ vectors into several common classes.
 
 An operating system or hypervisor exposes an abstract System API in the form of
 system calls and traps. This API may be documented and stable, as with Linux, or
-it may be hidden behind a library, as with Windows (i.e. win32.dll or
+it may be abstracted behind a library, as with Windows (i.e. win32.dll or
 ntdll.dll). The System API includes all standard interfaces that application
 code uses to interact with the system. This includes high-level abstractions
 that are derived from low-level system calls, such as system files, sockets and
@@ -27,7 +27,10 @@ namespaces.
 
 Although the System API is exposed to applications by design, bugs and race
 conditions within the kernel or hypervisor may occasionally be exploitable via
-the API. A typical exploit might perform some combination of the following:
+the API. This is common in part due to the fact that most kernels and hypervisors
+are written in [C][clang], which is well-suited to interfacing with hardware but
+often prone to security issues. In order to exploit these issues, a typical attack
+might involve some combination of the following:
 
  1. Opening or creating some combination of files, sockets or other descriptors.
  1. Passing crafted, malicious arguments, structures or packets.
@@ -71,7 +74,7 @@ hyperthread.
 
 The above categories in no way represent an exhaustive list of exploits, as we
 focus only on running untrusted code from within the operating system or
-hypervisor.  We do not consider many other ways that a more generic adversary
+hypervisor.  We do not consider other ways that a more generic adversary
 may interact with a system, such as inserting a portable storage device with a
 malicious filesystem image, using a combination of crafted keyboard or touch
 inputs, or saturating a network device with ill-formed packets.
@@ -97,25 +100,30 @@ The first principle is similar to the security basis for a Virtual Machine (VM).
 With a VM, an application’s interactions with the host are replaced by
 interactions with a guest operating system and a set of virtualized hardware
 devices. These hardware devices are then implemented via the host System API by
-a Virtual Machine Monitor (VMM). For both the Sentry and a VMM, it’s worth
-noting that while direct interactions are minimized, indirect interactions are
-still possible. For example, a read on a host-backed file in the Sentry will
-ultimately result in a host read system call (made by the Sentry, not by passing
-through arguments from the application), similarly to how a read on a block
-device in a VMM will often result in a host read system call from the backing
-file. The same applies for a write on a socket, on a write on a tap device.
+a Virtual Machine Monitor (VMM). The Sentry similarly prevents direct interactions
+by providing its own implementation of the System API that the application
+must interact with. Applications are not able to to directly craft specific
+arguments or flags for the host System API, or interact directly with host
+primitives.
 
-The key difference here is that the Sentry implements a second System API
-directly instead of relying on virtualized hardware and a guest operating
-system. This selects a distinct set of trade-offs, largely in the performance
-and compatibility domains. Since sandbox transitions of the nature described
-above are generally expensive, a guest operating system will typically take
-ownership of resources. For example, in the above case, the guest operating
-system may read the block device data in a local page cache, to avoid subsequent
-reads. This may lead to better performance but lower efficiency, since memory
-may be wasted or duplicated. The Sentry opts instead to defer to the host for
-many operations during runtime, for improved efficiency but lower performance in
-some use cases.
+For both the Sentry and a VMM, it’s worth noting that while direct interactions
+are not possible, indirect interactions are still possible. For example, a read
+on a host-backed file in the Sentry may ultimately result in a host read system
+call (made by the Sentry, not by passing through arguments from the application),
+similar to how a read on a block device in a VM may result in the VMM issuing
+a corresponding host read system call from a backing file.
+
+An important distinction from a VM is that the Sentry implements a System API based
+directly on host System API primitives instead of relying on virtualized hardware
+and a guest operating system. This selects a distinct set of trade-offs, largely
+in the performance, efficiency and compatibility domains. Since transitions in
+and out of the sandbox are relatively expensive, a guest operating system will
+typically take ownership of resources. For example, in the above case, the
+guest operating system may read the block device data in a local page cache,
+to avoid subsequent reads. This may lead to better performance but lower
+efficiency, since memory may be wasted or duplicated. The Sentry opts instead
+to defer to the host for many operations during runtime, for improved efficiency
+but lower performance in some use cases.
 
 ### What can a sandbox do?
 
@@ -212,10 +220,10 @@ Some platforms leverage the same virtualization hardware as VMs in order to
 provide better system call interception performance. However, gVisor does not
 implement any device emulation, and instead opts to use a sandboxed host System
 API directly. Both approaches significantly reduce the original attack surface.
-Ultimately, since gVisor uses the same hardware mechanism, one should not assume
-that the mere use of virtualization hardware makes a system more or less secure,
-just as it would be a mistake to make the claim that the use of an engine makes
-a car safe.
+Ultimately, since gVisor is capable of using the same hardware mechanism, one
+should not assume that the mere use of virtualization hardware makes a system
+more or less secure, just as it would be a mistake to make the claim that the
+use of a unibody alone makes a car safe.
 
 ### Does this stop hardware side channels?
 
@@ -226,12 +234,12 @@ from vendors and keep your host kernel and firmware up-to-date.
 
 ### Is this just a ptrace sandbox?
 
-No: the term “ptrace sandbox” generally refers to software that uses ptrace in
-order to inspect and authorize system calls made by applications, enforcing a
-specific policy. These commonly suffer from two issues. First, vulnerable system
-calls may be authorized by the sandbox, as the application still has direct
-access to some System API. Second, it’s impossible to avoid time-of-check,
-time-of-use race conditions without disabling multi-threading.
+No: the term “ptrace sandbox” generally refers to software that uses the Linux
+ptrace facility to inspect and authorize system calls made by applications,
+enforcing a specific policy. These commonly suffer from two issues. First,
+vulnerable system calls may be authorized by the sandbox, as the application
+still has direct access to some System API. Second, it’s impossible to avoid
+time-of-check, time-of-use race conditions without disabling multi-threading.
 
 In gVisor, the platforms that use ptrace operate differently. The stubs that are
 traced are never allowed to continue execution into the host kernel and complete
@@ -241,4 +249,5 @@ continuing execution in user space. This is very similar to the mechanism used
 by User-Mode Linux (UML).
 
 [dirtycow]: https://en.wikipedia.org/wiki/Dirty_COW
+[clang]: https://en.wikipedia.org/wiki/C_(programming_language)
 [popss]: https://nvd.nist.gov/vuln/detail/CVE-2018-8897
