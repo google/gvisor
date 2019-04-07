@@ -53,7 +53,7 @@ func (i *taskOwnedInodeOps) UnstableAttr(ctx context.Context, inode *fs.Inode) (
 //
 // +stateify savable
 type staticFileInodeOps struct {
-	fsutil.InodeGenericChecker       `state:"nosave"`
+	InodeDenyWriteChecker            `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopTruncate         `state:"nosave"`
@@ -69,6 +69,18 @@ type staticFileInodeOps struct {
 }
 
 var _ fs.InodeOperations = (*staticFileInodeOps)(nil)
+
+// InodeDenyWriteChecker returns false for all write options
+type InodeDenyWriteChecker struct{}
+
+// Check implements fs.InodeOperations.Check.
+// this is written in context of cpuinfo only. honestly all files /proc should have this kind
+func (InodeDenyWriteChecker) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
+	if p.Write {
+		return false
+	}
+	return fs.ContextCanAccessFile(ctx, inode, p)
+}
 
 // newStaticFileInode returns a procfs InodeOperations with static contents.
 func newStaticProcInode(ctx context.Context, msrc *fs.MountSource, contents []byte) *fs.Inode {
