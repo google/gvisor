@@ -30,7 +30,8 @@ TEST(RlimitTest, SetRlimitHigher) {
   struct rlimit rl = {};
   EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
 
-  // Even with CAP_SYS_RESOURCE, gVisor does not allow setting a higher rlimit.
+  // TODO: Even with CAP_SYS_RESOURCE, gVisor does not allow
+  // setting a higher rlimit.
   rl.rlim_max++;
   EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallFailsWithErrno(EPERM));
 }
