@@ -249,6 +249,9 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 			if o.RuntimeRoot != "" {
 				root = o.RuntimeRoot
 			}
+
+			opts.BinaryName = o.Runtime
+
 			path = filepath.Join(root, configFile)
 			if _, err := os.Stat(path); err != nil {
 				if !os.IsNotExist(err) {
