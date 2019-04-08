@@ -19,9 +19,9 @@ import (
 	"sync"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/metric"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
@@ -53,10 +53,7 @@ func handleIOError(t *kernel.Task, partialResult bool, err, intr error, op strin
 		//
 		// Do not consume the error and return it as EFBIG.
 		// Simultaneously send a SIGXFSZ per setrlimit(2).
-		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(syscall.SIGXFSZ),
-			Code:  arch.SignalInfoKernel,
-		})
+		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
 		return syscall.EFBIG
 	case syserror.ErrInterrupted:
 		// The syscall was interrupted. Return nil if it completed

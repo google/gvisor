@@ -224,7 +224,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 			// Send a forced SIGSEGV. If the signal that couldn't be delivered
 			// was a SIGSEGV, force the handler to SIG_DFL.
 			t.forceSignal(linux.SIGSEGV, linux.Signal(info.Signo) == linux.SIGSEGV /* unconditional */)
-			t.SendSignal(sigPriv(linux.SIGSEGV))
+			t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 		}
 
 	default:

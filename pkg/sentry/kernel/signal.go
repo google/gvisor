@@ -56,11 +56,21 @@ func (k *Kernel) sendExternalSignal(info *arch.SignalInfo, context string) {
 	}
 }
 
-// sigPriv returns a SignalInfo representing a signal sent by the sentry. (The
-// name reflects its equivalence to Linux's SEND_SIG_PRIV.)
-func sigPriv(sig linux.Signal) *arch.SignalInfo {
+// SignalInfoPriv returns a SignalInfo equivalent to Linux's SEND_SIG_PRIV.
+func SignalInfoPriv(sig linux.Signal) *arch.SignalInfo {
 	return &arch.SignalInfo{
 		Signo: int32(sig),
 		Code:  arch.SignalInfoKernel,
 	}
+}
+
+// SignalInfoNoInfo returns a SignalInfo equivalent to Linux's SEND_SIG_NOINFO.
+func SignalInfoNoInfo(sig linux.Signal, sender, receiver *Task) *arch.SignalInfo {
+	info := &arch.SignalInfo{
+		Signo: int32(sig),
+		Code:  arch.SignalInfoUser,
+	}
+	info.SetPid(int32(receiver.tg.pidns.IDOfThreadGroup(sender.tg)))
+	info.SetUid(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
+	return info
 }

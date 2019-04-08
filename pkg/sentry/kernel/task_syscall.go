@@ -250,7 +250,7 @@ type runSyscallAfterSyscallEnterStop struct{}
 func (*runSyscallAfterSyscallEnterStop) execute(t *Task) taskRunState {
 	if sig := linux.Signal(t.ptraceCode); sig.IsValid() {
 		t.tg.signalHandlers.mu.Lock()
-		t.sendSignalLocked(sigPriv(sig), false /* group */)
+		t.sendSignalLocked(SignalInfoPriv(sig), false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 	}
 	if t.killed() {
@@ -270,7 +270,7 @@ type runSyscallAfterSysemuStop struct{}
 func (*runSyscallAfterSysemuStop) execute(t *Task) taskRunState {
 	if sig := linux.Signal(t.ptraceCode); sig.IsValid() {
 		t.tg.signalHandlers.mu.Lock()
-		t.sendSignalLocked(sigPriv(sig), false /* group */)
+		t.sendSignalLocked(SignalInfoPriv(sig), false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 	}
 	if t.killed() {
@@ -335,7 +335,7 @@ func (t *Task) doVsyscall(addr usermem.Addr, sysno uintptr) taskRunState {
 	if _, err := t.CopyIn(usermem.Addr(t.Arch().Stack()), caller); err != nil {
 		t.Debugf("vsyscall %d: error reading return address from stack: %v", sysno, err)
 		t.forceSignal(linux.SIGSEGV, false /* unconditional */)
-		t.SendSignal(sigPriv(linux.SIGSEGV))
+		t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 		return (*runApp)(nil)
 	}
 
@@ -405,7 +405,7 @@ func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, calle
 		t.Debugf("vsyscall %d, caller %x: emulated syscall returned error: %v", sysno, t.Arch().Value(caller), err)
 		if err == syserror.EFAULT {
 			t.forceSignal(linux.SIGSEGV, false /* unconditional */)
-			t.SendSignal(sigPriv(linux.SIGSEGV))
+			t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 			// A return is not emulated in this case.
 			return (*runApp)(nil)
 		}

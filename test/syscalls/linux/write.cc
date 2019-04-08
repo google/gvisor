@@ -17,6 +17,7 @@
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -105,23 +106,33 @@ TEST_F(WriteTest, WriteExceedsRLimit) {
   EXPECT_THAT(write(fd, buf.data(), target_lim + 1),
               SyscallSucceedsWithValue(target_lim));
   EXPECT_THAT(write(fd, buf.data(), 1), SyscallFailsWithErrno(EFBIG));
+  siginfo_t info;
   struct timespec timelimit = {0, 0};
-  EXPECT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, nullptr, &timelimit),
+  ASSERT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, &info, &timelimit),
               SyscallSucceedsWithValue(SIGXFSZ));
+  EXPECT_EQ(info.si_code, SI_USER);
+  EXPECT_EQ(info.si_pid, getpid());
+  EXPECT_EQ(info.si_uid, getuid());
 
   EXPECT_THAT(pwrite(fd, buf.data(), target_lim + 1, 1),
               SyscallSucceedsWithValue(target_lim - 1));
   EXPECT_THAT(pwrite(fd, buf.data(), 1, target_lim),
               SyscallFailsWithErrno(EFBIG));
-  EXPECT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, nullptr, &timelimit),
+  ASSERT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, &info, &timelimit),
               SyscallSucceedsWithValue(SIGXFSZ));
+  EXPECT_EQ(info.si_code, SI_USER);
+  EXPECT_EQ(info.si_pid, getpid());
+  EXPECT_EQ(info.si_uid, getuid());
 
   EXPECT_THAT(pwrite64(fd, buf.data(), target_lim + 1, 1),
               SyscallSucceedsWithValue(target_lim - 1));
   EXPECT_THAT(pwrite64(fd, buf.data(), 1, target_lim),
               SyscallFailsWithErrno(EFBIG));
-  EXPECT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, nullptr, &timelimit),
+  ASSERT_THAT(RetryEINTR(sigtimedwait)(&filesize_mask, &info, &timelimit),
               SyscallSucceedsWithValue(SIGXFSZ));
+  EXPECT_EQ(info.si_code, SI_USER);
+  EXPECT_EQ(info.si_pid, getpid());
+  EXPECT_EQ(info.si_uid, getuid());
 
   ASSERT_THAT(sigprocmask(SIG_UNBLOCK, &filesize_mask, nullptr),
               SyscallSucceeds());

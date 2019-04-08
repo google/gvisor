@@ -394,7 +394,7 @@ func (ticker *kernelCPUClockTicker) Notify(exp uint64) {
 			newItimerVirtSetting, exp := tg.itimerVirtSetting.At(tgVirtNow)
 			tg.itimerVirtSetting = newItimerVirtSetting
 			if exp != 0 {
-				virtReceiver.sendSignalLocked(sigPriv(linux.SIGVTALRM), true)
+				virtReceiver.sendSignalLocked(SignalInfoPriv(linux.SIGVTALRM), true)
 			}
 		}
 		if profReceiver != nil {
@@ -402,18 +402,18 @@ func (ticker *kernelCPUClockTicker) Notify(exp uint64) {
 			newItimerProfSetting, exp := tg.itimerProfSetting.At(tgProfNow)
 			tg.itimerProfSetting = newItimerProfSetting
 			if exp != 0 {
-				profReceiver.sendSignalLocked(sigPriv(linux.SIGPROF), true)
+				profReceiver.sendSignalLocked(SignalInfoPriv(linux.SIGPROF), true)
 			}
 			// RLIMIT_CPU soft limit
 			newRlimitCPUSoftSetting, exp := tg.rlimitCPUSoftSetting.At(tgProfNow)
 			tg.rlimitCPUSoftSetting = newRlimitCPUSoftSetting
 			if exp != 0 {
-				profReceiver.sendSignalLocked(sigPriv(linux.SIGXCPU), true)
+				profReceiver.sendSignalLocked(SignalInfoPriv(linux.SIGXCPU), true)
 			}
 			// RLIMIT_CPU hard limit
 			rlimitCPUMax := tg.limits.Get(limits.CPU).Max
 			if rlimitCPUMax != limits.Infinity && !tgProfNow.Before(ktime.FromSeconds(int64(rlimitCPUMax))) {
-				profReceiver.sendSignalLocked(sigPriv(linux.SIGKILL), true)
+				profReceiver.sendSignalLocked(SignalInfoPriv(linux.SIGKILL), true)
 			}
 		}
 		tg.signalHandlers.mu.Unlock()
@@ -471,7 +471,7 @@ func (t *Task) NotifyRlimitCPUUpdated() {
 			tgcpu := t.tg.cpuStatsAtLocked(t.k.CPUClockNow())
 			tgProfNow := ktime.FromNanoseconds((tgcpu.UserTime + tgcpu.SysTime).Nanoseconds())
 			if !tgProfNow.Before(ktime.FromSeconds(int64(rlimitCPU.Max))) {
-				t.sendSignalLocked(sigPriv(linux.SIGKILL), true)
+				t.sendSignalLocked(SignalInfoPriv(linux.SIGKILL), true)
 			}
 		}
 		t.tg.updateCPUTimersEnabledLocked()

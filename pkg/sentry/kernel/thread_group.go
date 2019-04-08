@@ -322,7 +322,7 @@ type itimerRealListener struct {
 
 // Notify implements ktime.TimerListener.Notify.
 func (l *itimerRealListener) Notify(exp uint64) {
-	l.tg.SendSignal(sigPriv(linux.SIGALRM))
+	l.tg.SendSignal(SignalInfoPriv(linux.SIGALRM))
 }
 
 // Destroy implements ktime.TimerListener.Destroy.

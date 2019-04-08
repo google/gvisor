@@ -344,11 +344,8 @@ func (t *TTYFileOperations) checkChange(ctx context.Context, sig linux.Signal) e
 	// 040b6362d58f "tty: fix leakage of -ERESTARTSYS to userland" doesn't
 	// apply: the sentry will handle -ERESTARTSYS in
 	// kernel.runApp.execute() even if the kernel.Task isn't interrupted.
-	si := arch.SignalInfo{
-		Code:  arch.SignalInfoKernel,
-		Signo: int32(sig),
-	}
+	//
 	// Linux ignores the result of kill_pgrp().
-	_ = pg.SendSignal(&si)
+	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
 	return kernel.ERESTARTSYS
 }

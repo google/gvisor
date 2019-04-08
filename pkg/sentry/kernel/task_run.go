@@ -176,7 +176,7 @@ func (*runApp) execute(t *Task) taskRunState {
 				if err := t.rseqCopyOutCPU(); err != nil {
 					t.Warningf("Failed to copy CPU to %#x for RSEQ: %v", t.rseqCPUAddr, err)
 					t.forceSignal(linux.SIGSEGV, false)
-					t.SendSignal(sigPriv(linux.SIGSEGV))
+					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 					// Re-enter the task run loop for signal delivery.
 					return (*runApp)(nil)
 				}

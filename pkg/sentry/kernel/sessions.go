@@ -219,8 +219,8 @@ func (pg *ProcessGroup) handleOrphan() {
 			return
 		}
 		tg.signalHandlers.mu.Lock()
-		tg.leader.sendSignalLocked(sigPriv(linux.SIGHUP), true /* group */)
-		tg.leader.sendSignalLocked(sigPriv(linux.SIGCONT), true /* group */)
+		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGHUP), true /* group */)
+		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGCONT), true /* group */)
 		tg.signalHandlers.mu.Unlock()
 	})
 
