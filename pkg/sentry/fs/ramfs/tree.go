@@ -28,6 +28,13 @@ import (
 // MakeDirectoryTree constructs a ramfs tree of all directories containing
 // subdirs. Each element of subdir must be a clean path, and cannot be empty or
 // "/".
+//
+// All directories in the created tree will have full (read-write-execute)
+// permissions, but note that file creation inside the directories is not
+// actually supported because ramfs.Dir.CreateOpts == nil. However, these
+// directory trees are normally "underlayed" under another filesystem (possibly
+// the root), and file creation inside these directories in the overlay will be
+// possible if the upper is writeable.
 func MakeDirectoryTree(ctx context.Context, msrc *fs.MountSource, subdirs []string) (*fs.Inode, error) {
 	root := emptyDir(ctx, msrc)
 	for _, subdir := range subdirs {
@@ -58,9 +65,9 @@ func makeSubdir(ctx context.Context, msrc *fs.MountSource, root *Dir, subdir str
 	}
 }
 
-// emptyDir returns an empty *ramfs.Dir that is traversable but not writable.
+// emptyDir returns an empty *ramfs.Dir with all permissions granted.
 func emptyDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	dir := NewDir(ctx, make(map[string]*fs.Inode), fs.RootOwner, fs.FilePermsFromMode(0555))
+	dir := NewDir(ctx, make(map[string]*fs.Inode), fs.RootOwner, fs.FilePermsFromMode(0777))
 	return fs.NewInode(dir, msrc, fs.StableAttr{
 		DeviceID:  anon.PseudoDevice.DeviceID(),
 		InodeID:   anon.PseudoDevice.NextIno(),
