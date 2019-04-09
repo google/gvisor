@@ -22,10 +22,10 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
-// _MAX_RW_COUNT is the maximum size in bytes of a single read or write.
+// MAX_RW_COUNT is the maximum size in bytes of a single read or write.
 // Reads and writes that exceed this size may be silently truncated.
 // (Linux: include/linux/fs.h:MAX_RW_COUNT)
-var _MAX_RW_COUNT = int(usermem.Addr(math.MaxInt32).RoundDown())
+var MAX_RW_COUNT = int(usermem.Addr(math.MaxInt32).RoundDown())
 
 // Activate ensures that the task has an active address space.
 func (t *Task) Activate() {
@@ -187,9 +187,9 @@ func (t *Task) CopyOutIovecs(addr usermem.Addr, src usermem.AddrRangeSeq) error 
 // - If any AddrRange would include addresses outside the application address
 // range, CopyInIovecs returns EFAULT.
 //
-// - The combined length of all AddrRanges is limited to _MAX_RW_COUNT. If the
+// - The combined length of all AddrRanges is limited to MAX_RW_COUNT. If the
 // combined length of all AddrRanges would otherwise exceed this amount, ranges
-// beyond _MAX_RW_COUNT are silently truncated.
+// beyond MAX_RW_COUNT are silently truncated.
 //
 // Preconditions: As for usermem.IO.CopyIn. The caller must be running on the
 // task goroutine. t's AddressSpace must be active.
@@ -228,7 +228,7 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 
 			if numIovecs == 1 {
 				// Special case to avoid allocating dst.
-				return usermem.AddrRangeSeqOf(ar).TakeFirst(_MAX_RW_COUNT), nil
+				return usermem.AddrRangeSeqOf(ar).TakeFirst(MAX_RW_COUNT), nil
 			}
 			dst = append(dst, ar)
 
@@ -239,11 +239,11 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 		return usermem.AddrRangeSeq{}, syserror.ENOSYS
 	}
 
-	// Truncate to _MAX_RW_COUNT.
+	// Truncate to MAX_RW_COUNT.
 	var total uint64
 	for i := range dst {
 		dstlen := uint64(dst[i].Length())
-		if rem := uint64(_MAX_RW_COUNT) - total; rem < dstlen {
+		if rem := uint64(MAX_RW_COUNT) - total; rem < dstlen {
 			dst[i].End -= usermem.Addr(dstlen - rem)
 			dstlen = rem
 		}
@@ -256,16 +256,16 @@ func (t *Task) CopyInIovecs(addr usermem.Addr, numIovecs int) (usermem.AddrRange
 // SingleIOSequence returns a usermem.IOSequence representing [addr,
 // addr+length) in t's address space. If this contains addresses outside the
 // application address range, it returns EFAULT. If length exceeds
-// _MAX_RW_COUNT, the range is silently truncated.
+// MAX_RW_COUNT, the range is silently truncated.
 //
 // SingleIOSequence is analogous to Linux's
 // lib/iov_iter.c:import_single_range(). (Note that the non-vectorized read and
 // write syscalls in Linux do not use import_single_range(). However they check
 // access_ok() in fs/read_write.c:vfs_read/vfs_write, and overflowing address
-// ranges are truncated to _MAX_RW_COUNT by fs/read_write.c:rw_verify_area().)
+// ranges are truncated to MAX_RW_COUNT by fs/read_write.c:rw_verify_area().)
 func (t *Task) SingleIOSequence(addr usermem.Addr, length int, opts usermem.IOOpts) (usermem.IOSequence, error) {
-	if length > _MAX_RW_COUNT {
-		length = _MAX_RW_COUNT
+	if length > MAX_RW_COUNT {
+		length = MAX_RW_COUNT
 	}
 	ar, ok := t.MemoryManager().CheckIORange(addr, int64(length))
 	if !ok {

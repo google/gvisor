@@ -2002,6 +2002,10 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.EINVAL
 	}
 
+	if count > int64(kernel.MAX_RW_COUNT) {
+		count = int64(kernel.MAX_RW_COUNT)
+	}
+
 	// Get files.
 	outFile := t.FDMap().GetFile(outFD)
 	if outFile == nil {
