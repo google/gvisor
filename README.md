@@ -1,17 +1,15 @@
-# gVisor
+![gVisor](g3doc/logo.png)
 
-gVisor is a user-space kernel, written in Go, that implements a substantial
+## What is gVisor?
+
+**gVisor** is a user-space kernel, written in Go, that implements a substantial
 portion of the Linux system surface. It includes an
 [Open Container Initiative (OCI)][oci] runtime called `runsc` that provides an
 isolation boundary between the application and the host kernel. The `runsc`
 runtime integrates with Docker and Kubernetes, making it simple to run sandboxed
 containers.
 
-gVisor takes a distinct approach to container sandboxing and makes a different
-set of technical trade-offs compared to existing sandbox technologies, thus
-providing new tools and ideas for the container security landscape.
-
-### Why does gVisor exist?
+## Why does gVisor exist?
 
 Containers are not a [**sandbox**][sandbox]. While containers have
 revolutionized how we develop, package, and deploy applications, running
@@ -31,223 +29,17 @@ against external threats, provide additional integrity checks, or limit the
 scope of access for a service. One should always be careful about what data is
 made available to a container.
 
-### How is gVisor different from other container isolation mechanisms?
+## Documentation
 
-Two other approaches are commonly taken to provide stronger isolation than
-native containers.
+User documentation and technical architecture, including quick start guides, can
+be found at [gvisor.dev][gvisor-dev].
 
-**Machine-level virtualization**, such as [KVM][kvm] and [Xen][xen], exposes
-virtualized hardware to a guest kernel via a Virtual Machine Monitor (VMM). This
-virtualized hardware is generally enlightened (paravirtualized) and additional
-mechanisms can be used to improve the visibility between the guest and host
-(e.g. balloon drivers, paravirtualized spinlocks). Running containers in
-distinct virtual machines can provide great isolation, compatibility and
-performance (though nested virtualization may bring challenges in this area),
-but for containers it often requires additional proxies and agents, and may
-require a larger resource footprint and slower start-up times.
+## Installing from source
 
-![Machine-level virtualization](g3doc/Machine-Virtualization.png "Machine-level virtualization")
+gVisor currently requires x86\_64 Linux to build, though support for other
+architectures may become available in the future.
 
-**Rule-based execution**, such as [seccomp][seccomp], [SELinux][selinux] and
-[AppArmor][apparmor], allows the specification of a fine-grained security policy
-for an application or container. These schemes typically rely on hooks
-implemented inside the host kernel to enforce the rules. If the surface can be
-made small enough (i.e. a sufficiently complete policy defined), then this is an
-excellent way to sandbox applications and maintain native performance. However,
-in practice it can be extremely difficult (if not impossible) to reliably define
-a policy for arbitrary, previously unknown applications, making this approach
-challenging to apply universally.
-
-![Rule-based execution](g3doc/Rule-Based-Execution.png "Rule-based execution")
-
-Rule-based execution is often combined with additional layers for
-defense-in-depth.
-
-**gVisor** provides a third isolation mechanism, distinct from those mentioned
-above.
-
-gVisor intercepts application system calls and acts as the guest kernel, without
-the need for translation through virtualized hardware. gVisor may be thought of
-as either a merged guest kernel and VMM, or as seccomp on steroids. This
-architecture allows it to provide a flexible resource footprint (i.e. one based
-on threads and memory mappings, not fixed guest physical resources) while also
-lowering the fixed costs of virtualization. However, this comes at the price of
-reduced application compatibility and higher per-system call overhead.
-
-![gVisor](g3doc/Layers.png "gVisor")
-
-On top of this, gVisor employs rule-based execution to provide defense-in-depth
-(details below).
-
-gVisor's approach is similar to [User Mode Linux (UML)][uml], although UML
-virtualizes hardware internally and thus provides a fixed resource footprint.
-
-Each of the above approaches may excel in distinct scenarios. For example,
-machine-level virtualization will face challenges achieving high density, while
-gVisor may provide poor performance for system call heavy workloads.
-
-### Why Go?
-
-gVisor was written in Go in order to avoid security pitfalls that can plague
-kernels. With Go, there are strong types, built-in bounds checks, no
-uninitialized variables, no use-after-free, no stack overflow, and a built-in
-race detector. (The use of Go has its challenges too, and isn't free.)
-
-## Architecture
-
-gVisor intercepts all system calls made by the application, and does the
-necessary work to service them. Importantly, gVisor does not simply redirect
-application system calls through to the host kernel. Instead, gVisor implements
-most kernel primitives (signals, file systems, futexes, pipes, mm, etc.) and has
-complete system call handlers built on top of these primitives.
-
-Since gVisor is itself a user-space application, it will make some host system
-calls to support its operation, but much like a VMM, it will not allow the
-application to directly control the system calls it makes.
-
-### File System Access
-
-In order to provide defense-in-depth and limit the host system surface, the
-gVisor container runtime is normally split into two separate processes. First,
-the *Sentry* process includes the kernel and is responsible for executing user
-code and handling system calls. Second, file system operations that extend
-beyond the sandbox (not internal proc or tmp files, pipes, etc.) are sent to a
-proxy, called a *Gofer*, via a 9P connection.
-
-![Sentry](g3doc/Sentry-Gofer.png "Sentry and Gofer")
-
-The Gofer acts as a file system proxy by opening host files on behalf of the
-application, and passing them to the Sentry process, which has no host file
-access itself. Furthermore, the Sentry runs in an empty user namespace, and the
-system calls made by gVisor to the host are restricted using seccomp filters in
-order to provide defense-in-depth.
-
-### Network Access
-
-The Sentry implements its own network stack (also written in Go) called
-[netstack][netstack]. All aspects of the network stack are handled inside the
-Sentry — including TCP connection state, control messages, and packet assembly —
-keeping it isolated from the host network stack. Data link layer packets are
-written directly to the virtual device inside the network namespace setup by
-Docker or Kubernetes.
-
-A network passthrough mode is also supported, but comes at the cost of reduced
-isolation (see below).
-
-### Platforms
-
-The Sentry requires a *platform* to implement basic context switching and memory
-mapping functionality. Today, gVisor supports two platforms:
-
-*   The **Ptrace** platform uses SYSEMU functionality to execute user code
-    without executing host system calls. This platform can run anywhere that
-    `ptrace` works (even VMs without nested virtualization).
-
-*   The **KVM** platform (experimental) allows the Sentry to act as both guest
-    OS and VMM, switching back and forth between the two worlds seamlessly. The
-    KVM platform can run on bare-metal or on a VM with nested virtualization
-    enabled. While there is no virtualized hardware layer -- the sandbox retains
-    a process model -- gVisor leverages virtualization extensions available on
-    modern processors in order to improve isolation and performance of address
-    space switches.
-
-### Performance
-
-There are several factors influencing performance. The platform choice has the
-largest direct impact that varies depending on the specific workload. There is
-no best platform: Ptrace works universally, including on VM instances, but
-applications may perform at a fraction of their original levels. Beyond the
-platform choice, passthrough modes may be useful for improving performance at
-the cost of some isolation.
-
-## Installation
-
-These instructions will get you up-and-running sandboxed containers with gVisor
-and Docker.
-
-Note that gVisor can only run on x86\_64 Linux 3.17+. In addition, gVisor only
-supports x86\_64 binaries inside the sandbox (i.e., it cannot run 32-bit
-binaries).
-
-### Download a Build
-
-The easiest way to get `runsc` is from the
-[latest nightly build][runsc-nightly]. After you download the binary, check it
-against the SHA512 [checksum file][runsc-nightly-sha]. Older builds can be found
-here:
-`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc` and
-`https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc.sha512`
-
-**It is important to copy this binary to some place that is accessible to all
-users, and make is executable to all users**, since `runsc` executes itself as
-user `nobody` to avoid unnecessary privileges. The `/usr/local/bin` directory is
-a good place to put the `runsc` binary.
-
-```
-wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
-wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
-sha512sum -c runsc.sha512
-chmod a+x runsc
-sudo mv runsc /usr/local/bin
-```
-
-### Running with Docker
-
-To use gVisor with Docker you must add `runsc` as a runtime to your Docker
-configuration (`/etc/docker/daemon.json`). You may have to create this file if
-it does not exist. Also, some Docker versions also require you to
-[specify the `storage-driver` field][docker-storage-driver].
-
-In the end, the file should look something like:
-
-```
-{
-    "runtimes": {
-        "runsc": {
-            "path": "/usr/local/bin/runsc"
-        }
-    }
-}
-```
-
-You must restart the Docker daemon after making changes to this file, typically
-this is done via:
-
-```
-sudo systemctl restart docker
-```
-
-Now run your container in `runsc`:
-
-```
-docker run --runtime=runsc hello-world
-```
-
-Terminal support works too:
-
-```
-docker run --runtime=runsc -it ubuntu /bin/bash
-```
-
-### Running with Kubernetes
-
-gVisor can run sandboxed containers in a Kubernetes cluster with Minikube. After
-the gVisor addon is enabled, pods with `io.kubernetes.cri.untrusted-workload`
-set to true will execute with `runsc`. Follow [these instructions][minikube] to
-enable gVisor addon.
-
-You can also setup Kubernetes nodes to run pods in gvisor using the `containerd`
-CRI runtime and the `gvisor-containerd-shim`. Pods with the
-`io.kubernetes.cri.untrusted-workload` annotation will execute with `runsc`. You
-can find instructions [here][gvisor-containerd-shim].
-
-## Advanced Usage
-
-### Installing from Source
-
-gVisor currently requires x86\_64 Linux to build.
-
-#### Requirements
+### Requirements
 
 Make sure the following dependencies are installed:
 
@@ -257,9 +49,9 @@ Make sure the following dependencies are installed:
 *   [Docker version 17.09.0 or greater][docker]
 *   Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
-#### Getting the source
+### Getting the source
 
-Clone the gVisor repo:
+Clone the repository:
 
 ```
 git clone https://gvisor.googlesource.com/gvisor gvisor
@@ -268,7 +60,7 @@ cd gvisor
 
 ### Building
 
-Build and install the `runsc` binary.
+Build and install the `runsc` binary:
 
 ```
 bazel build runsc
@@ -277,47 +69,16 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 
 ### Testing
 
-The gVisor test suite can be run with Bazel:
+The test suite can be run with Bazel:
 
 ```
 bazel test ...
 ```
 
-### Debugging
-
-To enable debug and system call logging, add the `runtimeArgs` below to your
-Docker configuration (`/etc/docker/daemon.json`):
-
-```
-{
-    "runtimes": {
-        "runsc": {
-            "path": "/usr/local/bin/runsc",
-            "runtimeArgs": [
-                "--debug-log=/tmp/runsc/",
-                "--debug",
-                "--strace"
-            ]
-       }
-    }
-}
-```
-
-You may also want to pass `--log-packets` to troubleshoot network problems. Then
-restart the Docker daemon:
-
-```
-sudo systemctl restart docker
-```
-
-Run your container again, and inspect the files under `/tmp/runsc`. The log file
-with name `boot` will contain the strace logs from your application, which can
-be useful for identifying missing or broken system calls in gVisor.
-
-### Building/testing with Remote Execution
+### Using remote execution
 
 If you have a [Remote Build Execution][rbe] environment, you can use it to speed
-up gVisor build and test cycles.
+up build and test cycles.
 
 You must authenticate with the project first:
 
@@ -336,152 +97,33 @@ Then invoke bazel with the following flags:
 You can also add those flags to your local ~/.bazelrc to avoid needing to
 specify them each time on the command line.
 
-### Enabling network passthrough
+## Community & Governance
 
-For high-performance networking applications, you may choose to disable the user
-space network stack and instead use the host network stack. Note that this mode
-decreases the isolation to the host.
+The governance model is documented in our [community][community] repository.
 
-Add the following `runtimeArgs` to your Docker configuration
-(`/etc/docker/daemon.json`) and restart the Docker daemon:
+The [gvisor-users mailing list][gvisor-users-list] and
+[gvisor-dev mailing list][gvisor-dev-list] are good starting points for
+questions and discussion.
 
-```
-{
-    "runtimes": {
-        "runsc": {
-            "path": "/usr/local/bin/runsc",
-            "runtimeArgs": [
-                "--network=host"
-            ]
-       }
-    }
-}
-```
+## Security
 
-### Selecting a different platform
-
-Depending on hardware and performance characteristics, you may choose to use a
-different platform. The Ptrace platform is the default, but the KVM platform may
-be specified by passing the `--platform` flag to `runsc` in your Docker
-configuration (`/etc/docker/daemon.json`):
-
-```
-{
-    "runtimes": {
-        "runsc": {
-            "path": "/usr/local/bin/runsc",
-            "runtimeArgs": [
-                "--platform=kvm"
-            ]
-       }
-    }
-}
-```
-
-Then restart the Docker daemon.
-
-### Checkpoint/Restore
-
-gVisor has the ability to checkpoint a process, save its current state in a
-state file, and restore into a new container using the state file. For more
-information about the checkpoint and restore commands, see the
-[checkpoint/restore readme][checkpoint-restore].
-
-## FAQ & Known Issues
-
-### Will my container work with gVisor?
-
-gVisor implements a large portion of the Linux surface and while we strive to
-make it broadly compatible, there are (and always will be) unimplemented
-features and bugs. The only real way to know if it will work is to try. If you
-find a container that doesn’t work and there is no known issue, please
-[file a bug][bug] indicating the full command you used to run the image.
-Providing the debug logs is also helpful.
-
-### What works?
-
-The following applications/images have been tested:
-
-*   elasticsearch
-*   golang
-*   httpd
-*   java8
-*   jenkins
-*   mariadb
-*   memcached
-*   mongo
-*   mysql
-*   nginx
-*   node
-*   php
-*   postgres
-*   prometheus
-*   python
-*   redis
-*   registry
-*   tomcat
-*   wordpress
-
-### My container runs fine with *runc* but fails with *runsc*.
-
-If you’re having problems running a container with `runsc` it’s most likely due
-to a compatibility issue or a missing feature in gVisor. See **Debugging**,
-above.
-
-### When I run my container, docker fails with `flag provided but not defined: -console`
-
-You're using an old version of Docker. Refer to the
-[Requirements](#requirements) section for the minimum version supported.
-
-### I can’t see a file copied with `docker cp`.
-
-For performance reasons, gVisor caches directory contents, and therefore it may
-not realize a new file was copied to a given directory. To invalidate the cache
-and force a refresh, create a file under the directory in question and list the
-contents again.
-
-This bug is tracked in [bug #4](https://github.com/google/gvisor/issues/4).
-
-Note that `kubectl cp` works because it does the copy by exec'ing inside the
-sandbox, and thus gVisor cache is aware of the new files and dirs.
-
-## Technical details
-
-We plan to release a full paper with technical details and will include it here
-when available.
-
-## Community
-
-Join the [gvisor-users mailing list][gvisor-users-list] to discuss all things
-gVisor.
-
-Sensitive security-related questions and comments can be sent to the private
-[gvisor-security mailing list][gvisor-security-list].
+Sensitive security-related questions, comments and disclosures can be sent to
+the [gvisor-security mailing list][gvisor-security-list]. The full security
+disclosure policy is defined in the [community][community] repository.
 
 ## Contributing
 
 See [Contributing.md](CONTRIBUTING.md).
 
-[apparmor]: https://wiki.ubuntu.com/AppArmor
 [bazel]: https://bazel.build
-[bug]: https://github.com/google/gvisor/issues
-[checkpoint-restore]: https://gvisor.googlesource.com/gvisor/+/master/g3doc/checkpoint_restore.md
-[docker-storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
+[community]: https://gvisor.googlesource.com/community
 [docker]: https://www.docker.com
 [git]: https://git-scm.com
-[gvisor-containerd-shim]: https://github.com/google/gvisor-containerd-shim
 [gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
-[kvm]: https://www.linux-kvm.org
-[minikube]: https://github.com/kubernetes/minikube/blob/master/deploy/addons/gvisor/README.md
-[netstack]: https://github.com/google/netstack
+[gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [oci]: https://www.opencontainers.org
 [python]: https://python.org
 [rbe]: https://blog.bazel.build/2018/10/05/remote-build-execution.html
-[runsc-nightly-sha]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
-[runsc-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
-[seccomp]: https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt
-[selinux]: https://selinuxproject.org
-[uml]: http://user-mode-linux.sourceforge.net/
-[xen]: https://www.xenproject.org
+[gvisor-dev]: https://gvisor.dev
