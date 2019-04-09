@@ -99,8 +99,11 @@ std::vector<std::string> saved_argv;  // NOLINT
 void CompareProcessState(absl::string_view state, int pid) {
   auto status_file = ASSERT_NO_ERRNO_AND_VALUE(
       GetContents(absl::StrCat("/proc/", pid, "/status")));
-  EXPECT_THAT(status_file, ContainsRegex(absl::StrCat("State:.[", state,
-                                                      "]\\s+\\(\\w+\\)")));
+  // N.B. POSIX extended regexes don't support shorthand character classes (\w)
+  // inside of brackets.
+  EXPECT_THAT(status_file,
+              ContainsRegex(absl::StrCat("State:.[", state,
+                                         R"EOL(]\s+\([a-zA-Z ]+\))EOL")));
 }
 
 // Run callbacks while a subprocess is running, zombied, and/or exited.
