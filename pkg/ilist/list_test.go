@@ -15,7 +15,6 @@
 package ilist
 
 import (
-	"runtime"
 	"testing"
 )
 
@@ -30,20 +29,20 @@ type direct struct {
 }
 
 func verifyEquality(t *testing.T, entries []testEntry, l *List) {
+	t.Helper()
+
 	i := 0
 	for it := l.Front(); it != nil; it = it.Next() {
 		e := it.(*testEntry)
 		if e != &entries[i] {
-			_, file, line, _ := runtime.Caller(1)
-			t.Errorf("Wrong entry at index (%s:%d): %v", file, line, i)
+			t.Errorf("Wrong entry at index %d", i)
 			return
 		}
 		i++
 	}
 
 	if i != len(entries) {
-		_, file, line, _ := runtime.Caller(1)
-		t.Errorf("Wrong number of entries (%s:%d)", file, line)
+		t.Errorf("Wrong number of entries; want = %d, got = %d", len(entries), i)
 		return
 	}
 
@@ -51,16 +50,14 @@ func verifyEquality(t *testing.T, entries []testEntry, l *List) {
 	for it := l.Back(); it != nil; it = it.Prev() {
 		e := it.(*testEntry)
 		if e != &entries[len(entries)-1-i] {
-			_, file, line, _ := runtime.Caller(1)
-			t.Errorf("Wrong entry at index (%s:%d): %v", file, line, i)
+			t.Errorf("Wrong entry at index %d", i)
 			return
 		}
 		i++
 	}
 
 	if i != len(entries) {
-		_, file, line, _ := runtime.Caller(1)
-		t.Errorf("Wrong number of entries (%s:%d)", file, line)
+		t.Errorf("Wrong number of entries; want = %d, got = %d", len(entries), i)
 		return
 	}
 }
