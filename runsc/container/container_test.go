@@ -1250,6 +1250,82 @@ func TestReadonlyRoot(t *testing.T) {
 	}
 }
 
+func TestUIDMap(t *testing.T) {
+	for _, conf := range configs(noOverlay...) {
+		t.Logf("Running test with conf: %+v", conf)
+		testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(testDir)
+		testFile := path.Join(testDir, "testfile")
+
+		spec := testutil.NewSpecWithArgs("touch", "/tmp/testfile")
+		uid := os.Getuid()
+		gid := os.Getgid()
+		spec.Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{Type: specs.UserNamespace},
+				{Type: specs.PIDNamespace},
+				{Type: specs.MountNamespace},
+			},
+			UIDMappings: []specs.LinuxIDMapping{
+				{
+					ContainerID: 0,
+					HostID:      uint32(uid),
+					Size:        1,
+				},
+			},
+			GIDMappings: []specs.LinuxIDMapping{
+				{
+					ContainerID: 0,
+					HostID:      uint32(gid),
+					Size:        1,
+				},
+			},
+		}
+
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/tmp",
+			Source:      testDir,
+			Type:        "bind",
+		})
+
+		rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		defer os.RemoveAll(bundleDir)
+
+		// Create, start and wait for the container.
+		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		defer c.Destroy()
+		if err := c.Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+
+		ws, err := c.Wait()
+		if err != nil {
+			t.Fatalf("error waiting on container: %v", err)
+		}
+		if !ws.Exited() || ws.ExitStatus() != 0 {
+			t.Fatalf("container failed, waitStatus: %v", ws)
+		}
+		st := syscall.Stat_t{}
+		if err := syscall.Stat(testFile, &st); err != nil {
+			t.Fatalf("error stat /testfile: %v", err)
+		}
+
+		if st.Uid != uint32(uid) || st.Gid != uint32(gid) {
+			t.Fatalf("UID: %d (%d) GID: %d (%d)", st.Uid, uid, st.Gid, gid)
+		}
+	}
+}
+
 func TestReadonlyMount(t *testing.T) {
 	for _, conf := range configs(overlay) {
 		t.Logf("Running test with conf: %+v", conf)
