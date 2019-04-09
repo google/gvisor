@@ -37,8 +37,8 @@ might involve some combination of the following:
  1. Racing with multiple threads in order to hit specific code paths.
 
 For example, for the [Dirty Cow][dirtycow] privilege escalation bug, an
-application would open a specific file in proc or use a specific `ptrace` system
-call, and use multiple threads in order to trigger a race condition when
+application would open a specific file in `/proc` or use a specific `ptrace`
+system call, and use multiple threads in order to trigger a race condition when
 touching a fresh page of memory. The attacker then gains control over a page of
 memory belonging to the system. With additional privileges or access to
 privileged data in the kernel, an attacker will often be able to employ
