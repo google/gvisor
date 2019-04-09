@@ -122,13 +122,14 @@ type Options struct {
 	FD                 int
 	MTU                uint32
 	EthernetHeader     bool
-	ChecksumOffload    bool
 	ClosedFunc         func(*tcpip.Error)
 	Address            tcpip.LinkAddress
 	SaveRestore        bool
 	DisconnectOk       bool
 	GSOMaxSize         uint32
 	PacketDispatchMode PacketDispatchMode
+	TXChecksumOffload  bool
+	RXChecksumOffload  bool
 }
 
 // New creates a new fd-based endpoint.
@@ -142,8 +143,12 @@ func New(opts *Options) tcpip.LinkEndpointID {
 	}
 
 	caps := stack.LinkEndpointCapabilities(0)
-	if opts.ChecksumOffload {
-		caps |= stack.CapabilityChecksumOffload
+	if opts.RXChecksumOffload {
+		caps |= stack.CapabilityRXChecksumOffload
+	}
+
+	if opts.TXChecksumOffload {
+		caps |= stack.CapabilityTXChecksumOffload
 	}
 
 	hdrSize := 0
@@ -527,12 +532,13 @@ func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buf
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
-func NewInjectable(fd int, mtu uint32) (tcpip.LinkEndpointID, *InjectableEndpoint) {
+func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) (tcpip.LinkEndpointID, *InjectableEndpoint) {
 	syscall.SetNonblock(fd, true)
 
 	e := &InjectableEndpoint{endpoint: endpoint{
-		fd:  fd,
-		mtu: mtu,
+		fd:   fd,
+		mtu:  mtu,
+		caps: capabilities,
 	}}
 
 	return stack.RegisterLinkEndpoint(e), e

@@ -1447,6 +1447,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 		return
 	}
 
+	if !s.csumValid {
+		e.stack.Stats().MalformedRcvdPackets.Increment()
+		e.stack.Stats().TCP.ChecksumErrors.Increment()
+		s.decRef()
+		return
+	}
+
 	e.stack.Stats().TCP.ValidSegmentsReceived.Increment()
 	if (s.flags & header.TCPFlagRst) != 0 {
 		e.stack.Stats().TCP.ResetsReceived.Increment()
@@ -1721,7 +1728,7 @@ func (e *endpoint) initGSO() {
 		panic(fmt.Sprintf("Unknown netProto: %v", e.netProto))
 	}
 	gso.NeedsCsum = true
-	gso.CsumOffset = header.TCPChecksumOffset()
+	gso.CsumOffset = header.TCPChecksumOffset
 	gso.MaxSize = e.route.GSOMaxSize()
 	e.gso = gso
 }

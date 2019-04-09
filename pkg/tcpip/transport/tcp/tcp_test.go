@@ -2963,13 +2963,38 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 		RcvWnd:  30000,
 	})
 	tcpbuf := vv.First()[header.IPv4MinimumSize:]
-	// 12 is the TCP header data offset.
-	tcpbuf[12] = ((header.TCPMinimumSize - 1) / 4) << 4
+	tcpbuf[header.TCPDataOffset] = ((header.TCPMinimumSize - 1) / 4) << 4
 
 	c.SendSegment(vv)
 
 	if got := stats.TCP.InvalidSegmentsReceived.Value(); got != want {
 		t.Errorf("got stats.TCP.InvalidSegmentsReceived.Value() = %v, want = %v", got, want)
+	}
+}
+
+func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+	c.CreateConnected(789, 30000, nil)
+	stats := c.Stack().Stats()
+	want := stats.TCP.ChecksumErrors.Value() + 1
+	vv := c.BuildSegment([]byte{0x1, 0x2, 0x3}, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  seqnum.Value(790),
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  30000,
+	})
+	tcpbuf := vv.First()[header.IPv4MinimumSize:]
+	// Overwrite a byte in the payload which should cause checksum
+	// verification to fail.
+	tcpbuf[(tcpbuf[header.TCPDataOffset]>>4)*4] = 0x4
+
+	c.SendSegment(vv)
+
+	if got := stats.TCP.ChecksumErrors.Value(); got != want {
+		t.Errorf("got stats.TCP.ChecksumErrors.Value() = %d, want = %d", got, want)
 	}
 }
 

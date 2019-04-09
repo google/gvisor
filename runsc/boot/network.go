@@ -142,6 +142,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			Address:            mac,
 			PacketDispatchMode: fdbased.PacketMMap,
 			GSOMaxSize:         link.GSOMaxSize,
+			RXChecksumOffload:  true,
 		})
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)

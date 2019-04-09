@@ -595,7 +595,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		// TCP header, then the kernel calculate a checksum of the
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
-	} else if r.Capabilities()&stack.CapabilityChecksumOffload == 0 {
+	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
 		xsum = header.ChecksumVV(data, xsum)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}

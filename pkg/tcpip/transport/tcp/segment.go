@@ -45,6 +45,10 @@ type segment struct {
 	ackNumber      seqnum.Value
 	flags          uint8
 	window         seqnum.Size
+	// csum is only populated for received segments.
+	csum uint16
+	// csumValid is true if the csum in the received segment is valid.
+	csumValid bool
 
 	// parsedOptions stores the parsed values from the options in the segment.
 	parsedOptions  header.TCPOptions
@@ -124,7 +128,13 @@ func (s *segment) logicalLen() seqnum.Size {
 
 // parse populates the sequence & ack numbers, flags, and window fields of the
 // segment from the TCP header stored in the data. It then updates the view to
-// skip the data. Returns boolean indicating if the parsing was successful.
+// skip the header.
+//
+// Returns boolean indicating if the parsing was successful.
+//
+// If checksum verification is not offloaded then parse also verifies the
+// TCP checksum and stores the checksum and result of checksum verification in
+// the csum and csumValid fields of the segment.
 func (s *segment) parse() bool {
 	h := header.TCP(s.data.First())
 
@@ -145,12 +155,27 @@ func (s *segment) parse() bool {
 
 	s.options = []byte(h[header.TCPMinimumSize:offset])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
-	s.data.TrimFront(offset)
+
+	// Query the link capabilities to decide if checksum validation is
+	// required.
+	verifyChecksum := true
+	if s.route.Capabilities()&stack.CapabilityRXChecksumOffload != 0 {
+		s.csumValid = true
+		verifyChecksum = false
+		s.data.TrimFront(offset)
+	}
+	if verifyChecksum {
+		s.csum = h.Checksum()
+		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()))
+		xsum = h.CalculateChecksum(xsum)
+		s.data.TrimFront(offset)
+		xsum = header.ChecksumVV(s.data, xsum)
+		s.csumValid = xsum == 0xffff
+	}
 
 	s.sequenceNumber = seqnum.Value(h.SequenceNumber())
 	s.ackNumber = seqnum.Value(h.AckNumber())
 	s.flags = h.Flags()
 	s.window = seqnum.Size(h.WindowSize())
-
 	return true
 }

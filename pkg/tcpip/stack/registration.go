@@ -232,7 +232,15 @@ type LinkEndpointCapabilities uint
 
 // The following are the supported link endpoint capabilities.
 const (
-	CapabilityChecksumOffload LinkEndpointCapabilities = 1 << iota
+	CapabilityNone LinkEndpointCapabilities = 0
+	// CapabilityTXChecksumOffload indicates that the link endpoint supports
+	// checksum computation for outgoing packets and the stack can skip
+	// computing checksums when sending packets.
+	CapabilityTXChecksumOffload LinkEndpointCapabilities = 1 << iota
+	// CapabilityRXChecksumOffload indicates that the link endpoint supports
+	// checksum verification on received packets and that it's safe for the
+	// stack to skip checksum verification.
+	CapabilityRXChecksumOffload
 	CapabilityResolutionRequired
 	CapabilitySaveRestore
 	CapabilityDisconnectOk

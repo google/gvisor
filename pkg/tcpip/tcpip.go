@@ -801,6 +801,9 @@ type TCPStats struct {
 
 	// Timeouts is the number of times the RTO expired.
 	Timeouts *StatCounter
+
+	// ChecksumErrors is the number of segments dropped due to bad checksums.
+	ChecksumErrors *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.

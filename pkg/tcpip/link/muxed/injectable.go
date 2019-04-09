@@ -105,7 +105,7 @@ func (m *InjectableEndpoint) WriteRawPacket(dest tcpip.Address, packet []byte) *
 }
 
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
-func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint, mtu uint32) (tcpip.LinkEndpointID, *InjectableEndpoint) {
+func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) (tcpip.LinkEndpointID, *InjectableEndpoint) {
 	e := &InjectableEndpoint{
 		routes: routes,
 	}

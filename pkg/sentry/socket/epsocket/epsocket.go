@@ -154,6 +154,7 @@ var Metrics = tcpip.Stats{
 		SlowStartRetransmits:      mustCreateMetric("/netstack/tcp/slow_start_retransmits", "Number of segments retransmitted in slow start mode."),
 		FastRetransmit:            mustCreateMetric("/netstack/tcp/fast_retransmit", "Number of TCP segments which were fast retransmitted."),
 		Timeouts:                  mustCreateMetric("/netstack/tcp/timeouts", "Number of times RTO expired."),
+		ChecksumErrors:            mustCreateMetric("/netstack/tcp/checksum_errors", "Number of segments dropped due to bad checksums."),
 	},
 	UDP: tcpip.UDPStats{
 		PacketsReceived:          mustCreateMetric("/netstack/udp/packets_received", "Number of UDP datagrams received via HandlePacket."),

@@ -130,7 +130,7 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 	s := newSegment(r, id, vv)
 	defer s.decRef()
 
-	if !s.parse() {
+	if !s.parse() || !s.csumValid {
 		return false
 	}
 
