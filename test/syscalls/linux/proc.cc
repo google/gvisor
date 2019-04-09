@@ -1377,7 +1377,7 @@ TEST(ProcPidFile, SubprocessZombie) {
   char buf[1];
 
   // 4.17: Succeeds and returns 1
-  // gVisor: Succeds and returns 0
+  // gVisor: Succeeds and returns 0
   EXPECT_THAT(ReadWhileZombied("auxv", buf, sizeof(buf)), SyscallSucceeds());
 
   EXPECT_THAT(ReadWhileZombied("cmdline", buf, sizeof(buf)),
