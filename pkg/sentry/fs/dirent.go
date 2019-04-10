@@ -1377,15 +1377,14 @@ func (d *Dirent) dropExtendedReference() {
 // lockForRename takes locks on oldParent and newParent as required by Rename
 // and returns a function that will unlock the locks taken. The returned
 // function must be called even if a non-nil error is returned.
-//
-// Note that lockForRename does not take renameMu if the source and destination
-// of the rename are within the same directory.
 func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName string) (func(), error) {
+	renameMu.Lock()
 	if oldParent == newParent {
-		// Rename source and destination are in the same directory. In
-		// this case, we only need to take a lock on that directory.
 		oldParent.mu.Lock()
-		return oldParent.mu.Unlock, nil
+		return func() {
+			oldParent.mu.Unlock()
+			renameMu.Unlock()
+		}, nil
 	}
 
 	// Renaming between directories is a bit subtle:
@@ -1398,7 +1397,6 @@ func lockForRename(oldParent *Dirent, oldName string, newParent *Dirent, newName
 	// lock on the ancestor; to avoid this, ensure we take locks in the same
 	// ancestor-to-descendant order. (Holding renameMu prevents this
 	// relationship from changing.)
-	renameMu.Lock()
 
 	// First check if newParent is a descendant of oldParent.
 	child := newParent
