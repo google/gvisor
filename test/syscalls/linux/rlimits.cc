@@ -29,6 +29,12 @@ TEST(RlimitTest, SetRlimitHigher) {
   struct rlimit rl = {};
   EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
 
+  // Lower the rlimit first, as it may be equal to /proc/sys/fs/nr_open, in
+  // which case even users with CAP_SYS_RESOURCE can't raise it.
+  rl.rlim_cur--;
+  rl.rlim_max--;
+  ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
   rl.rlim_max++;
   EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
 }
