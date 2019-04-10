@@ -162,7 +162,9 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 	if offset == 0 {
 		// Serialize "." and "..".
 		root := fs.RootFromContext(ctx)
-		defer root.DecRef()
+		if root != nil {
+			defer root.DecRef()
+		}
 		dot, dotdot := file.Dirent.GetDotAttrs(root)
 		if err := dirCtx.DirEmit(".", dot); err != nil {
 			return offset, err

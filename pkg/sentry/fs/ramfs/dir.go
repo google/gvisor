@@ -417,7 +417,9 @@ func (dfo *dirFileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx,
 // Readdir implements FileOperations.Readdir.
 func (dfo *dirFileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,
 		DirCursor:  &dfo.dirCursor,

@@ -166,7 +166,9 @@ func (f *fileOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 // Readdir implements fs.FileOperations.Readdir.
 func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer fs.DentrySerializer) (int64, error) {
 	root := fs.RootFromContext(ctx)
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	dirCtx := &fs.DirCtx{
 		Serializer: serializer,
 		DirCursor:  &f.dirCursor,

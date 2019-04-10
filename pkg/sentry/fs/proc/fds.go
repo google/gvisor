@@ -119,7 +119,9 @@ func (f *fd) GetFile(context.Context, *fs.Dirent, fs.FileFlags) (*fs.File, error
 // Readlink returns the current target.
 func (f *fd) Readlink(ctx context.Context, _ *fs.Inode) (string, error) {
 	root := fs.RootFromContext(ctx)
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	n, _ := f.Dirent.FullName(root)
 	return n, nil
 }

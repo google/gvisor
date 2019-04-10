@@ -169,7 +169,9 @@ func (f *overlayFileOperations) Seek(ctx context.Context, file *File, whence See
 // Readdir implements FileOperations.Readdir.
 func (f *overlayFileOperations) Readdir(ctx context.Context, file *File, serializer DentrySerializer) (int64, error) {
 	root := RootFromContext(ctx)
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	dirCtx := &DirCtx{
 		Serializer: serializer,
 		DirCursor:  &f.dirCursor,
@@ -440,7 +442,11 @@ func (omi *overlayMappingIdentity) InodeID() uint64 {
 
 // MappedName implements MappingIdentity.MappedName.
 func (omi *overlayMappingIdentity) MappedName(ctx context.Context) string {
-	name, _ := omi.overlayFile.Dirent.FullName(RootFromContext(ctx))
+	root := RootFromContext(ctx)
+	if root != nil {
+		defer root.DecRef()
+	}
+	name, _ := omi.overlayFile.Dirent.FullName(root)
 	return name
 }
 

@@ -676,6 +676,10 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	root := args.Root
 	if root == nil {
 		root = fs.RootFromContext(ctx)
+		// Is the root STILL nil?
+		if root == nil {
+			return nil, 0, fmt.Errorf("CreateProcessArgs.Root was not provided, and failed to get root from context")
+		}
 	}
 	defer root.DecRef()
 	args.Root = nil

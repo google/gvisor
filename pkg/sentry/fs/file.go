@@ -410,7 +410,11 @@ func (f *File) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 
 // MappedName implements memmap.MappingIdentity.MappedName.
 func (f *File) MappedName(ctx context.Context) string {
-	name, _ := f.Dirent.FullName(RootFromContext(ctx))
+	root := RootFromContext(ctx)
+	if root != nil {
+		defer root.DecRef()
+	}
+	name, _ := f.Dirent.FullName(root)
 	return name
 }
 

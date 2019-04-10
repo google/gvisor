@@ -210,7 +210,9 @@ func (rpf *rootProcFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dent
 
 	// Add dot and dotdot.
 	root := fs.RootFromContext(ctx)
-	defer root.DecRef()
+	if root != nil {
+		defer root.DecRef()
+	}
 	dot, dotdot := file.Dirent.GetDotAttrs(root)
 	names = append(names, ".", "..")
 	m["."] = dot

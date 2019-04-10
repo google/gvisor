@@ -188,11 +188,15 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 
 	var childUpperInode *Inode
 	parentUpper := parent.Inode.overlay.upper
+	root := RootFromContext(ctx)
+	if root != nil {
+		defer root.DecRef()
+	}
 
 	// Create the file in the upper filesystem and get an Inode for it.
 	switch next.Inode.StableAttr.Type {
 	case RegularFile:
-		childFile, err := parentUpper.Create(ctx, RootFromContext(ctx), next.name, FileFlags{Read: true, Write: true}, attrs.Perms)
+		childFile, err := parentUpper.Create(ctx, root, next.name, FileFlags{Read: true, Write: true}, attrs.Perms)
 		if err != nil {
 			log.Warningf("copy up failed to create file: %v", err)
 			return syserror.EIO
@@ -201,7 +205,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		childUpperInode = childFile.Dirent.Inode
 
 	case Directory:
-		if err := parentUpper.CreateDirectory(ctx, RootFromContext(ctx), next.name, attrs.Perms); err != nil {
+		if err := parentUpper.CreateDirectory(ctx, root, next.name, attrs.Perms); err != nil {
 			log.Warningf("copy up failed to create directory: %v", err)
 			return syserror.EIO
 		}
@@ -221,7 +225,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 			log.Warningf("copy up failed to read symlink value: %v", err)
 			return syserror.EIO
 		}
-		if err := parentUpper.CreateLink(ctx, RootFromContext(ctx), link, next.name); err != nil {
+		if err := parentUpper.CreateLink(ctx, root, link, next.name); err != nil {
 			log.Warningf("copy up failed to create symlink: %v", err)
 			return syserror.EIO
 		}
