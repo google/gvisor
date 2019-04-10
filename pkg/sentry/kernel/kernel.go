@@ -311,7 +311,9 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 	// Clear the dirent cache before saving because Dirents must be Loaded in a
 	// particular order (parents before children), and Loading dirents from a cache
 	// breaks that order.
-	k.mounts.FlushMountSourceRefs()
+	if err := k.flushMountSourceRefs(); err != nil {
+		return err
+	}
 
 	// Ensure that all pending asynchronous work is complete:
 	//   - inode and mount release
@@ -351,37 +353,65 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 	return nil
 }
 
-func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
+// flushMountSourceRefs flushes the MountSources for all mounted filesystems
+// and open FDs.
+func (k *Kernel) flushMountSourceRefs() error {
+	// Flush all mount sources for currently mounted filesystems.
+	k.mounts.FlushMountSourceRefs()
+
+	// There may be some open FDs whose filesystems have been unmounted. We
+	// must flush those as well.
+	return k.tasks.forEachFDPaused(func(desc descriptor) error {
+		desc.file.Dirent.Inode.MountSource.FlushDirentRefs()
+		return nil
+	})
+}
+
+// forEachFDPaused applies the given function to each open file descriptor in each
+// task.
+//
+// Precondition: Must be called with the kernel paused.
+func (ts *TaskSet) forEachFDPaused(f func(descriptor) error) error {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if fdmap := t.fds; fdmap != nil {
-			for _, desc := range fdmap.files {
-				if flags := desc.file.Flags(); !flags.Write {
-					continue
-				}
-				if sattr := desc.file.Dirent.Inode.StableAttr; !fs.IsFile(sattr) && !fs.IsDir(sattr) {
-					continue
-				}
-				// Here we need all metadata synced.
-				syncErr := desc.file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
-				if err := fs.SaveFileFsyncError(syncErr); err != nil {
-					name, _ := desc.file.Dirent.FullName(nil /* root */)
-					// Wrap this error in ErrSaveRejection
-					// so that it will trigger a save
-					// error, rather than a panic. This
-					// also allows us to distinguish Fsync
-					// errors from state file errors in
-					// state.Save.
-					return fs.ErrSaveRejection{
-						Err: fmt.Errorf("%q was not sufficiently synced: %v", name, err),
-					}
-				}
+		if t.fds == nil {
+			continue
+		}
+		for _, desc := range t.fds.files {
+			if err := f(desc); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
+	return ts.forEachFDPaused(func(desc descriptor) error {
+		if flags := desc.file.Flags(); !flags.Write {
+			return nil
+		}
+		if sattr := desc.file.Dirent.Inode.StableAttr; !fs.IsFile(sattr) && !fs.IsDir(sattr) {
+			return nil
+		}
+		// Here we need all metadata synced.
+		syncErr := desc.file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
+		if err := fs.SaveFileFsyncError(syncErr); err != nil {
+			name, _ := desc.file.Dirent.FullName(nil /* root */)
+			// Wrap this error in ErrSaveRejection
+			// so that it will trigger a save
+			// error, rather than a panic. This
+			// also allows us to distinguish Fsync
+			// errors from state file errors in
+			// state.Save.
+			return fs.ErrSaveRejection{
+				Err: fmt.Errorf("%q was not sufficiently synced: %v", name, err),
+			}
+		}
+		return nil
+	})
 }
 
 // Preconditions: The kernel must be paused.

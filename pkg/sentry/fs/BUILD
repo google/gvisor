@@ -32,7 +32,6 @@ go_library(
         "mock.go",
         "mount.go",
         "mount_overlay.go",
-        "mount_state.go",
         "mounts.go",
         "offset.go",
         "overlay.go",

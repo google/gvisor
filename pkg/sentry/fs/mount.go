@@ -119,7 +119,7 @@ type MountSource struct {
 
 	// fscache keeps Dirents pinned beyond application references to them.
 	// It must be flushed before kernel.SaveTo.
-	fscache *DirentCache `state:"nosave"`
+	fscache *DirentCache
 
 	// direntRefs is the sum of references on all Dirents in this MountSource.
 	//
