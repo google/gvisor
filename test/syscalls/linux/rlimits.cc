@@ -25,15 +25,12 @@ namespace {
 
 TEST(RlimitTest, SetRlimitHigher) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
-  SKIP_IF(!IsRunningOnGvisor());
 
   struct rlimit rl = {};
   EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
 
-  // TODO: Even with CAP_SYS_RESOURCE, gVisor does not allow
-  // setting a higher rlimit.
   rl.rlim_max++;
-  EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallFailsWithErrno(EPERM));
+  EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
 }
 
 TEST(RlimitTest, UnprivilegedSetRlimit) {
@@ -54,6 +51,16 @@ TEST(RlimitTest, UnprivilegedSetRlimit) {
 
   rl.rlim_max = 100000;
   EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallFailsWithErrno(EPERM));
+}
+
+TEST(RlimitTest, SetSoftRlimitAboveHard) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE)));
+
+  struct rlimit rl = {};
+  EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  rl.rlim_cur = rl.rlim_max + 1;
+  EXPECT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

@@ -40,7 +40,7 @@ func newTestFDMap() *FDMap {
 func TestFDMapMany(t *testing.T) {
 	file := filetest.NewTestFile(t)
 	limitSet := limits.NewLimitSet()
-	limitSet.Set(limits.NumberOfFiles, limits.Limit{maxFD, maxFD})
+	limitSet.Set(limits.NumberOfFiles, limits.Limit{maxFD, maxFD}, true /* privileged */)
 
 	f := newTestFDMap()
 	for i := 0; i < maxFD; i++ {
@@ -64,7 +64,7 @@ func TestFDMapMany(t *testing.T) {
 func TestFDMap(t *testing.T) {
 	file := filetest.NewTestFile(t)
 	limitSet := limits.NewLimitSet()
-	limitSet.Set(limits.NumberOfFiles, limits.Limit{1, maxFD})
+	limitSet.Set(limits.NumberOfFiles, limits.Limit{1, maxFD}, true /* privileged */)
 
 	f := newTestFDMap()
 	if _, err := f.NewFDFrom(0, file, FDFlags{}, limitSet); err != nil {
@@ -76,7 +76,7 @@ func TestFDMap(t *testing.T) {
 	}
 
 	largeLimit := limits.Limit{maxFD, maxFD}
-	limitSet.Set(limits.NumberOfFiles, largeLimit)
+	limitSet.Set(limits.NumberOfFiles, largeLimit, true /* privileged */)
 
 	if fd, err := f.NewFDFrom(0, file, FDFlags{}, limitSet); err != nil {
 		t.Fatalf("Adding an FD to a resized map: got %v, want nil", err)
@@ -117,7 +117,7 @@ func TestDescriptorFlags(t *testing.T) {
 	file := filetest.NewTestFile(t)
 	f := newTestFDMap()
 	limitSet := limits.NewLimitSet()
-	limitSet.Set(limits.NumberOfFiles, limits.Limit{maxFD, maxFD})
+	limitSet.Set(limits.NumberOfFiles, limits.Limit{maxFD, maxFD}, true /* privileged */)
 
 	origFlags := FDFlags{CloseOnExec: true}
 

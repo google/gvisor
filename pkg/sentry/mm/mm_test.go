@@ -70,7 +70,7 @@ func TestUsageASUpdates(t *testing.T) {
 
 func TestBrkDataLimitUpdates(t *testing.T) {
 	limitSet := limits.NewLimitSet()
-	limitSet.Set(limits.Data, limits.Limit{}) // zero RLIMIT_DATA
+	limitSet.Set(limits.Data, limits.Limit{}, true /* privileged */) // zero RLIMIT_DATA
 
 	ctx := contexttest.WithLimitSet(contexttest.Context(t), limitSet)
 	mm := testMemoryManager(ctx)

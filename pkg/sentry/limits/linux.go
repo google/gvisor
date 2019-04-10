@@ -95,6 +95,6 @@ func NewLinuxDistroLimitSet() (*LimitSet, error) {
 	// 1,048,576 ought to be enough for anyone.
 	l := ls.Get(ProcessCount)
 	l.Cur = 1 << 20
-	ls.Set(ProcessCount, l)
+	ls.Set(ProcessCount, l, true /* privileged */)
 	return ls, nil
 }

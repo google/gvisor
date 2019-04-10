@@ -20,18 +20,24 @@ import (
 )
 
 func TestSet(t *testing.T) {
+	testCases := []struct {
+		limit       Limit
+		privileged  bool
+		expectedErr error
+	}{
+		{limit: Limit{Cur: 50, Max: 50}, privileged: false, expectedErr: nil},
+		{limit: Limit{Cur: 20, Max: 50}, privileged: false, expectedErr: nil},
+		{limit: Limit{Cur: 20, Max: 60}, privileged: false, expectedErr: syscall.EPERM},
+		{limit: Limit{Cur: 60, Max: 50}, privileged: false, expectedErr: syscall.EINVAL},
+		{limit: Limit{Cur: 11, Max: 10}, privileged: false, expectedErr: syscall.EINVAL},
+		{limit: Limit{Cur: 20, Max: 60}, privileged: true, expectedErr: nil},
+	}
+
 	ls := NewLimitSet()
-	ls.Set(1, Limit{Cur: 50, Max: 50})
-	if _, err := ls.Set(1, Limit{Cur: 20, Max: 50}); err != nil {
-		t.Fatalf("Tried to lower Limit to valid new value: got %v, wanted nil", err)
+	for _, tc := range testCases {
+		if _, err := ls.Set(1, tc.limit, tc.privileged); err != tc.expectedErr {
+			t.Fatalf("Tried to set Limit to %+v and privilege %t: got %v, wanted %v", tc.limit, tc.privileged, err, tc.expectedErr)
+		}
 	}
-	if _, err := ls.Set(1, Limit{Cur: 20, Max: 60}); err != syscall.EPERM {
-		t.Fatalf("Tried to raise limit.Max to invalid higher value: got %v, wanted syscall.EPERM", err)
-	}
-	if _, err := ls.Set(1, Limit{Cur: 60, Max: 50}); err != syscall.EINVAL {
-		t.Fatalf("Tried to raise limit.Cur to invalid higher value: got %v, wanted syscall.EINVAL", err)
-	}
-	if _, err := ls.Set(1, Limit{Cur: 11, Max: 10}); err != syscall.EINVAL {
-		t.Fatalf("Tried to set new limit with Cur > Max: got %v, wanted syscall.EINVAL", err)
-	}
+
 }
