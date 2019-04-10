@@ -452,3 +452,15 @@ type InodeGenericChecker struct{}
 func (InodeGenericChecker) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
 	return fs.ContextCanAccessFile(ctx, inode, p)
 }
+
+// InodeDenyWriteChecker implements fs.InodeOperations.Check which denies all
+// write operations.
+type InodeDenyWriteChecker struct{}
+
+// Check implements fs.InodeOperations.Check.
+func (InodeDenyWriteChecker) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
+	if p.Write {
+		return false
+	}
+	return fs.ContextCanAccessFile(ctx, inode, p)
+}

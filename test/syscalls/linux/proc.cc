@@ -725,6 +725,10 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
   }
 }
 
+TEST(ProcCpuinfo, DeniesWrite) {
+  EXPECT_THAT(open("/proc/cpuinfo", O_WRONLY), SyscallFailsWithErrno(EACCES));
+}
+
 // Sanity checks that uptime is present.
 TEST(ProcUptime, IsPresent) {
   std::string proc_uptime = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/uptime"));
