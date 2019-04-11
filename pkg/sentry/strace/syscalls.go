@@ -35,6 +35,9 @@ const (
 	// Oct is just an octal number.
 	Oct
 
+	// FD is a file descriptor.
+	FD
+
 	// ReadBuffer is a buffer for a read-style call. The syscall return
 	// value is used for the length.
 	//
