@@ -32,7 +32,9 @@ directory tree.
 
 ### Coding Guidelines
 
-All code should conform to the [Go style guidelines][gostyle].
+All Go code should conform to the [Go style guidelines][gostyle]. C++ code
+should conform to the [Google C++ Style Guide][cppstyle] and the guidelines
+described for [tests][teststyle].
 
 As a secure runtime, we need to maintain the safety of all of code included in
 gVisor. The following rules help mitigate issues.
@@ -130,8 +132,10 @@ Contributions made by corporations are covered by a different agreement than the
 one above, the
 [Software Grant and Corporate Contributor License Agreement][gccla].
 
+[cppstyle]: https://google.github.io/styleguide/cppguide.html
 [gcla]: https://cla.developers.google.com/about/google-individual
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [gerrit]: https://gvisor-review.googlesource.com
 [gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
 [repo]: https://gvisor.googlesource.com
+[teststyle]: ./test/

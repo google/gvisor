@@ -92,19 +92,16 @@ fixtures.
 A test utility should be created when there is more than one test that requires
 that same functionality, otherwise the class should be test local.
 
-
 ## Save/Restore support in tests
+
 gVisor supports save/restore, and our syscall tests are written in a way to
 enable saving/restoring at certain points. Hence, there are calls to
 `MaybeSave`, and certain tests that should not trigger saves are named with
 `NoSave`.
 
 However, the current open-source test runner does not yet support triggering
-save/restore, so these functions and annotations have no effect on the
-open-source tests.
-
-We plan on extending our open-source test runner to trigger save/restore. Until
-then, these functions and annotations should be ignored.
-
+save/restore, so these functions and annotations have no effect on the tests. We
+plan on extending the test runner to trigger save/restore. Until then, these
+functions and annotations should be ignored.
 
 [googletest]: https://github.com/abseil/googletest
