@@ -84,8 +84,8 @@ TEST(Syscall32Bit, Int80) {
       // disabled).
       return;
     case Platform::kPtrace:
-      // TODO: The ptrace platform does not have a consistent story
-      // here.
+      // TODO: The ptrace platform does not have a
+      // consistent story here.
       return;
     case Platform::kNative:
       break;

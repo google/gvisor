@@ -261,8 +261,9 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 
 	return &VDSO{
 		ParamPage: mm.NewSpecialMappable("[vvar]", mfp, paramPage),
-		// TODO: Don't advertise the VDSO, as some applications may
-		// not be able to handle multiple [vdso] hints.
+		// TODO: Don't advertise the VDSO, as
+		// some applications may not be able to handle multiple [vdso]
+		// hints.
 		vdso:  mm.NewSpecialMappable("", mfp, vdso),
 		phdrs: info.phdrs,
 	}, nil

@@ -70,9 +70,9 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 	defer d.DecRef()
 
 	perms := fs.PermMask{
-		// TODO: Linux requires only execute permission,
-		// not read. However, our backing filesystems may prevent us
-		// from reading the file without read permission.
+		// TODO: Linux requires only execute
+		// permission, not read. However, our backing filesystems may
+		// prevent us from reading the file without read permission.
 		//
 		// Additionally, a task with a non-readable executable has
 		// additional constraints on access via ptrace and procfs.

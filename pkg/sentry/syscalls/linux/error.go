@@ -89,8 +89,8 @@ func handleIOError(t *kernel.Task, partialResult bool, err, intr error, op strin
 		// side is gone. The partial write is returned. EPIPE will be
 		// returned on the next call.
 		//
-		// TODO: In some cases SIGPIPE should also be sent
-		// to the application.
+		// TODO: In some cases SIGPIPE should
+		// also be sent to the application.
 		return nil
 	case syserror.ErrWouldBlock:
 		// Syscall would block, but completed a partial read/write.

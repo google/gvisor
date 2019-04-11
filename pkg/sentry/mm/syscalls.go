@@ -698,11 +698,11 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 		return mm.brk.End, syserror.EINVAL
 	}
 
-	// TODO: This enforces RLIMIT_DATA, but is slightly more
-	// permissive than the usual data limit. In particular, this only
-	// limits the size of the heap; a true RLIMIT_DATA limits the size of
-	// heap + data + bss. The segment sizes need to be plumbed from the
-	// loader package to fully enforce RLIMIT_DATA.
+	// TODO: This enforces RLIMIT_DATA, but is
+	// slightly more permissive than the usual data limit. In particular,
+	// this only limits the size of the heap; a true RLIMIT_DATA limits the
+	// size of heap + data + bss. The segment sizes need to be plumbed from
+	// the loader package to fully enforce RLIMIT_DATA.
 	if uint64(addr-mm.brk.Start) > limits.FromContext(ctx).Get(limits.Data).Cur {
 		mm.mappingMu.Unlock()
 		return mm.brk.End, syserror.ENOMEM

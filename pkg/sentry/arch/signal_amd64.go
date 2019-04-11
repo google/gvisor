@@ -392,15 +392,16 @@ func (c *context64) SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt
 		Sigset: sigset,
 	}
 
-	// TODO: Set SignalContext64.Err, Trapno, and Cr2 based on
-	// the fault that caused the signal. For now, leave Err and Trapno
-	// unset and assume CR2 == info.Addr() for SIGSEGVs and SIGBUSes.
+	// TODO: Set SignalContext64.Err, Trapno, and Cr2
+	// based on the fault that caused the signal. For now, leave Err and
+	// Trapno unset and assume CR2 == info.Addr() for SIGSEGVs and
+	// SIGBUSes.
 	if linux.Signal(info.Signo) == linux.SIGSEGV || linux.Signal(info.Signo) == linux.SIGBUS {
 		uc.MContext.Cr2 = info.Addr()
 	}
 
-	// "... the value (%rsp+8) is always a multiple of 16 (...) when control is
-	// transferred to the function entry point." - AMD64 ABI
+	// "... the value (%rsp+8) is always a multiple of 16 (...) when
+	// control is transferred to the function entry point." - AMD64 ABI
 	ucSize := binary.Size(uc)
 	if ucSize < 0 {
 		// This can only happen if we've screwed up the definition of

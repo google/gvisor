@@ -285,9 +285,9 @@ ElfBinary<64> StandardElf() {
   elf.header.e_phoff = sizeof(elf.header);
   elf.header.e_phentsize = sizeof(decltype(elf)::ElfPhdr);
 
-  // TODO: Always include a PT_GNU_STACK segment to disable
-  // executable stacks. With this omitted the stack (and all PROT_READ) mappings
-  // should be executable, but gVisor doesn't support that.
+  // TODO: Always include a PT_GNU_STACK segment to
+  // disable executable stacks. With this omitted the stack (and all PROT_READ)
+  // mappings should be executable, but gVisor doesn't support that.
   decltype(elf)::ElfPhdr phdr = {};
   phdr.p_type = PT_GNU_STACK;
   phdr.p_flags = PF_R | PF_W;
@@ -1005,8 +1005,8 @@ TEST(ElfTest, NoExecute) {
 
 // Execute, but no read permissions on the binary works just fine.
 TEST(ElfTest, NoRead) {
-  // TODO: gVisor's backing filesystem may prevent the sentry from
-  // reading the executable.
+  // TODO: gVisor's backing filesystem may prevent the
+  // sentry from reading the executable.
   SKIP_IF(IsRunningOnGvisor());
 
   ElfBinary<64> elf = StandardElf();

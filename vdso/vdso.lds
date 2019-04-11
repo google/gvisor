@@ -56,8 +56,8 @@ SECTIONS {
   .altinstr_replacement  : { *(.altinstr_replacement) }
 
   /*
-   * TODO: Remove this alignment? Then the VDSO would fit in a
-   * single page.
+   * TODO: Remove this alignment? Then the VDSO would fit
+   * in a single page.
    */
   . = ALIGN(0x1000);
   .text          : { *(.text*) }            :text    =0x90909090
