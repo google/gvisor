@@ -36,6 +36,8 @@ be found at [gvisor.dev][gvisor-dev].
 
 ## Installing from source
 
+[![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
+
 gVisor currently requires x86\_64 Linux to build, though support for other
 architectures may become available in the future.
 
