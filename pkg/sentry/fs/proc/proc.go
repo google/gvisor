@@ -191,7 +191,8 @@ func (p *proc) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlag
 //
 // +stateify savable
 type rootProcFile struct {
-	fsutil.DirFileOperations `state:"nosave"`
+	fsutil.DirFileOperations        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	iops *proc
 }

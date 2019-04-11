@@ -339,6 +339,32 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 	return nil
 }
 
+// UnstableAttr implements fs.FileOperations.UnstableAttr.
+func (f *overlayFileOperations) UnstableAttr(ctx context.Context, file *File) (UnstableAttr, error) {
+	// Hot path. Avoid defers.
+	f.upperMu.Lock()
+	if f.upper != nil {
+		attr, err := f.upper.UnstableAttr(ctx)
+		f.upperMu.Unlock()
+		return attr, err
+	}
+	f.upperMu.Unlock()
+
+	// It's possible that copy-up has occurred, but we haven't opened a upper
+	// file yet. If this is the case, just use the upper inode's UnstableAttr
+	// rather than opening a file.
+	o := file.Dirent.Inode.overlay
+	o.copyMu.RLock()
+	if o.upper != nil {
+		attr, err := o.upper.UnstableAttr(ctx)
+		o.copyMu.RUnlock()
+		return attr, err
+	}
+	o.copyMu.RUnlock()
+
+	return f.lower.UnstableAttr(ctx)
+}
+
 // Ioctl implements fs.FileOperations.Ioctl and always returns ENOTTY.
 func (*overlayFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	return 0, syserror.ENOTTY

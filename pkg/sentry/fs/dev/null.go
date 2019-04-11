@@ -60,16 +60,17 @@ func (n *nullDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.Fi
 
 // +stateify savable
 type nullFileOperations struct {
-	waiter.AlwaysReady       `state:"nosave"`
-	fsutil.FileGenericSeek   `state:"nosave"`
-	fsutil.FileNoIoctl       `state:"nosave"`
-	fsutil.FileNoMMap        `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNoopFsync     `state:"nosave"`
-	fsutil.FileNoopRead      `state:"nosave"`
-	fsutil.FileNoopWrite     `state:"nosave"`
-	fsutil.FileNoopRelease   `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRead             `state:"nosave"`
+	fsutil.FileNoopWrite            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*nullFileOperations)(nil)
@@ -100,15 +101,16 @@ func (zd *zeroDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 
 // +stateify savable
 type zeroFileOperations struct {
-	waiter.AlwaysReady       `state:"nosave"`
-	fsutil.FileGenericSeek   `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNoopFsync     `state:"nosave"`
-	fsutil.FileNoopRelease   `state:"nosave"`
-	fsutil.FileNoopWrite     `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
-	fsutil.FileNoIoctl       `state:"nosave"`
-	readZeros                `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNoopWrite            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	readZeros                       `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*zeroFileOperations)(nil)

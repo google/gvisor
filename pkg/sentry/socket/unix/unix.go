@@ -45,11 +45,12 @@ import (
 //
 // +stateify savable
 type SocketOperations struct {
-	fsutil.FilePipeSeek      `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
-	fsutil.FileNoFsync       `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNoMMap        `state:"nosave"`
+	fsutil.FilePipeSeek             `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileNoFsync              `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	refs.AtomicRefCount
 	socket.SendReceiveTimeout
 

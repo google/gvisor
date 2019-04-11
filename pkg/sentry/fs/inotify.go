@@ -186,6 +186,11 @@ func (*Inotify) ConfigureMMap(context.Context, *File, *memmap.MMapOpts) error {
 	return syserror.ENODEV
 }
 
+// UnstableAttr implements FileOperations.UnstableAttr.
+func (i *Inotify) UnstableAttr(ctx context.Context, file *File) (UnstableAttr, error) {
+	return file.Dirent.Inode.UnstableAttr(ctx)
+}
+
 // Ioctl implements fs.FileOperations.Ioctl.
 func (i *Inotify) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch args[1].Int() {

@@ -310,6 +310,22 @@ func (f *fileOperations) ConfigureMMap(ctx context.Context, file *fs.File, opts 
 	return f.inodeOperations.configureMMap(file, opts)
 }
 
+// UnstableAttr implements fs.FileOperations.UnstableAttr.
+func (f *fileOperations) UnstableAttr(ctx context.Context, file *fs.File) (fs.UnstableAttr, error) {
+	s := f.inodeOperations.session()
+	if s.cachePolicy.cacheUAttrs(file.Dirent.Inode) {
+		return f.inodeOperations.cachingInodeOps.UnstableAttr(ctx, file.Dirent.Inode)
+	}
+	// Use f.handles.File, which represents 9P fids that have been opened,
+	// instead of inodeFileState.file, which represents 9P fids that have not.
+	// This may be significantly more efficient in some implementations.
+	_, valid, pattr, err := getattr(ctx, f.handles.File)
+	if err != nil {
+		return fs.UnstableAttr{}, err
+	}
+	return unstable(ctx, valid, pattr, s.mounter, s.client), nil
+}
+
 // Seek implements fs.FileOperations.Seek.
 func (f *fileOperations) Seek(ctx context.Context, file *fs.File, whence fs.SeekWhence, offset int64) (int64, error) {
 	return fsutil.SeekWithDirCursor(ctx, file, whence, offset, &f.dirCursor)

@@ -388,7 +388,8 @@ func (*Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, new
 //
 // +stateify savable
 type dirFileOperations struct {
-	fsutil.DirFileOperations `state:"nosave"`
+	fsutil.DirFileOperations        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	// dirCursor contains the name of the last directory entry that was
 	// serialized.

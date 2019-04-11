@@ -98,12 +98,13 @@ func (p *pollEntry) WeakRefGone() {
 //
 // +stateify savable
 type EventPoll struct {
-	fsutil.FilePipeSeek      `state:"zerovalue"`
-	fsutil.FileNotDirReaddir `state:"zerovalue"`
-	fsutil.FileNoFsync       `state:"zerovalue"`
-	fsutil.FileNoopFlush     `state:"zerovalue"`
-	fsutil.FileNoMMap        `state:"zerovalue"`
-	fsutil.FileNoIoctl       `state:"zerovalue"`
+	fsutil.FilePipeSeek             `state:"zerovalue"`
+	fsutil.FileNotDirReaddir        `state:"zerovalue"`
+	fsutil.FileNoFsync              `state:"zerovalue"`
+	fsutil.FileNoopFlush            `state:"zerovalue"`
+	fsutil.FileNoMMap               `state:"zerovalue"`
+	fsutil.FileNoIoctl              `state:"zerovalue"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	// Wait queue is used to notify interested parties when the event poll
 	// object itself becomes readable or writable.

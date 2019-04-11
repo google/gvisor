@@ -238,15 +238,16 @@ func (i *InodeSimpleExtendedAttributes) Listxattr(_ *fs.Inode) (map[string]struc
 //
 // +stateify savable
 type staticFile struct {
-	waiter.AlwaysReady `state:"nosave"`
-	FileGenericSeek    `state:"nosave"`
-	FileNoIoctl        `state:"nosave"`
-	FileNoMMap         `state:"nosave"`
-	FileNoopFsync      `state:"nosave"`
-	FileNoopFlush      `state:"nosave"`
-	FileNoopRelease    `state:"nosave"`
-	FileNoopWrite      `state:"nosave"`
-	FileNotDirReaddir  `state:"nosave"`
+	waiter.AlwaysReady       `state:"nosave"`
+	FileGenericSeek          `state:"nosave"`
+	FileNoIoctl              `state:"nosave"`
+	FileNoMMap               `state:"nosave"`
+	FileNoopFsync            `state:"nosave"`
+	FileNoopFlush            `state:"nosave"`
+	FileNoopRelease          `state:"nosave"`
+	FileNoopWrite            `state:"nosave"`
+	FileNotDirReaddir        `state:"nosave"`
+	FileUseInodeUnstableAttr `state:"nosave"`
 
 	FileStaticContentReader
 }

@@ -134,15 +134,16 @@ var _ fs.InodeOperations = (*hostname)(nil)
 
 // +stateify savable
 type hostnameFile struct {
-	waiter.AlwaysReady       `state:"nosave"`
-	fsutil.FileNoIoctl       `state:"nosave"`
-	fsutil.FileNoMMap        `state:"nosave"`
-	fsutil.FileNoSeek        `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNoopFsync     `state:"nosave"`
-	fsutil.FileNoopRelease   `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
-	fsutil.FileNoWrite       `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSeek               `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileNoWrite              `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 }
 
 // Read implements fs.FileOperations.Read.

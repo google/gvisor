@@ -224,7 +224,7 @@ func (FileNoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallAr
 }
 
 // DirFileOperations implements most of fs.FileOperations for directories,
-// except for Readdir which the embedding type must implement.
+// except for Readdir and UnstableAttr which the embedding type must implement.
 type DirFileOperations struct {
 	waiter.AlwaysReady
 	FileGenericSeek
@@ -250,7 +250,8 @@ func (*DirFileOperations) Write(context.Context, *fs.File, usermem.IOSequence, i
 //
 // +stateify savable
 type StaticDirFileOperations struct {
-	DirFileOperations
+	DirFileOperations        `state:"nosave"`
+	FileUseInodeUnstableAttr `state:"nosave"`
 
 	// dentryMap is a SortedDentryMap used to implement Readdir.
 	dentryMap *fs.SortedDentryMap
@@ -291,16 +292,17 @@ func (sdfo *StaticDirFileOperations) Readdir(ctx context.Context, file *fs.File,
 //
 // +stateify savable
 type NoReadWriteFile struct {
-	waiter.AlwaysReady `state:"nosave"`
-	FileGenericSeek    `state:"nosave"`
-	FileNoIoctl        `state:"nosave"`
-	FileNoMMap         `state:"nosave"`
-	FileNoopFsync      `state:"nosave"`
-	FileNoopFlush      `state:"nosave"`
-	FileNoopRelease    `state:"nosave"`
-	FileNoRead         `state:"nosave"`
-	FileNoWrite        `state:"nosave"`
-	FileNotDirReaddir  `state:"nosave"`
+	waiter.AlwaysReady       `state:"nosave"`
+	FileGenericSeek          `state:"nosave"`
+	FileNoIoctl              `state:"nosave"`
+	FileNoMMap               `state:"nosave"`
+	FileNoopFsync            `state:"nosave"`
+	FileNoopFlush            `state:"nosave"`
+	FileNoopRelease          `state:"nosave"`
+	FileNoRead               `state:"nosave"`
+	FileNoWrite              `state:"nosave"`
+	FileNotDirReaddir        `state:"nosave"`
+	FileUseInodeUnstableAttr `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*NoReadWriteFile)(nil)
@@ -364,4 +366,13 @@ type FileNoopRead struct{}
 // Read implements fs.FileOperations.Read.
 func (FileNoopRead) Read(context.Context, *fs.File, usermem.IOSequence, int64) (int64, error) {
 	return 0, nil
+}
+
+// FileUseInodeUnstableAttr implements fs.FileOperations.UnstableAttr by calling
+// InodeOperations.UnstableAttr.
+type FileUseInodeUnstableAttr struct{}
+
+// UnstableAttr implements fs.FileOperations.UnstableAttr.
+func (FileUseInodeUnstableAttr) UnstableAttr(ctx context.Context, file *fs.File) (fs.UnstableAttr, error) {
+	return file.Dirent.Inode.UnstableAttr(ctx)
 }

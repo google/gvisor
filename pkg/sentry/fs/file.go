@@ -408,6 +408,18 @@ func (f *File) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return f.FileOperations.ConfigureMMap(ctx, f, opts)
 }
 
+// UnstableAttr calls f.FileOperations.UnstableAttr with f as the File.
+//
+// Returns syserror.ErrInterrupted if interrupted.
+func (f *File) UnstableAttr(ctx context.Context) (UnstableAttr, error) {
+	if !f.mu.Lock(ctx) {
+		return UnstableAttr{}, syserror.ErrInterrupted
+	}
+	defer f.mu.Unlock()
+
+	return f.FileOperations.UnstableAttr(ctx, f)
+}
+
 // MappedName implements memmap.MappingIdentity.MappedName.
 func (f *File) MappedName(ctx context.Context) string {
 	root := RootFromContext(ctx)

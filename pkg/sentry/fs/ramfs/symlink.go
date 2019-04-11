@@ -88,16 +88,17 @@ func (s *Symlink) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileF
 
 // +stateify savable
 type symlinkFileOperations struct {
-	waiter.AlwaysReady       `state:"nosave"`
-	fsutil.FileNoIoctl       `state:"nosave"`
-	fsutil.FileNoMMap        `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNoopFsync     `state:"nosave"`
-	fsutil.FileNoopRelease   `state:"nosave"`
-	fsutil.FileNoRead        `state:"nosave"`
-	fsutil.FileNoSeek        `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
-	fsutil.FileNoWrite       `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNoRead               `state:"nosave"`
+	fsutil.FileNoSeek               `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileNoWrite              `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*symlinkFileOperations)(nil)

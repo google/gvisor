@@ -60,7 +60,7 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		}
 		defer file.DecRef()
 
-		return 0, nil, stat(t, file.Dirent, false, statAddr)
+		return 0, nil, fstat(t, file, statAddr)
 	}
 
 	return 0, nil, fileOpOn(t, fd, path, flags&linux.AT_SYMLINK_NOFOLLOW == 0, func(root *fs.Dirent, d *fs.Dirent) error {
@@ -98,7 +98,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 	defer file.DecRef()
 
-	return 0, nil, stat(t, file.Dirent, false /* dirPath */, statAddr)
+	return 0, nil, fstat(t, file, statAddr)
 }
 
 // stat implements stat from the given *fs.Dirent.
@@ -110,9 +110,26 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 	if err != nil {
 		return err
 	}
+	return copyOutStat(t, statAddr, d.Inode.StableAttr, uattr)
+}
 
+// fstat implements fstat for the given *fs.File.
+func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
+	uattr, err := f.UnstableAttr(t)
+	if err != nil {
+		return err
+	}
+	return copyOutStat(t, statAddr, f.Dirent.Inode.StableAttr, uattr)
+}
+
+// copyOutStat copies the attributes (sattr, uattr) to the struct stat at
+// address dst in t's address space. It encodes the stat struct to bytes
+// manually, as stat() is a very common syscall for many applications, and
+// t.CopyObjectOut has noticeable performance impact due to its many slice
+// allocations and use of reflection.
+func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs.UnstableAttr) error {
 	var mode uint32
-	switch d.Inode.StableAttr.Type {
+	switch sattr.Type {
 	case fs.RegularFile, fs.SpecialFile:
 		mode |= linux.ModeRegular
 	case fs.Symlink:
@@ -129,16 +146,12 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 		mode |= linux.ModeSocket
 	}
 
-	// We encode the stat struct to bytes manually, as stat() is a very
-	// common syscall for many applications, and t.CopyObjectOut has
-	// noticeable performance impact due to its many slice allocations and
-	// use of reflection.
 	b := t.CopyScratchBuffer(int(linux.SizeOfStat))[:0]
 
 	// Dev (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.DeviceID))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.DeviceID))
 	// Ino (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.InodeID))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.InodeID))
 	// Nlink (uint64)
 	b = binary.AppendUint64(b, usermem.ByteOrder, uattr.Links)
 	// Mode (uint32)
@@ -150,11 +163,11 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 	// Padding (uint32)
 	b = binary.AppendUint32(b, usermem.ByteOrder, 0)
 	// Rdev (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(linux.MakeDeviceID(d.Inode.StableAttr.DeviceFileMajor, d.Inode.StableAttr.DeviceFileMinor)))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(linux.MakeDeviceID(sattr.DeviceFileMajor, sattr.DeviceFileMinor)))
 	// Size (uint64)
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Size))
 	// Blksize (uint64)
-	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(d.Inode.StableAttr.BlockSize))
+	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(sattr.BlockSize))
 	// Blocks (uint64)
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(uattr.Usage/512))
 
@@ -173,7 +186,7 @@ func stat(t *kernel.Task, d *fs.Dirent, dirPath bool, statAddr usermem.Addr) err
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Sec))
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Nsec))
 
-	_, err = t.CopyOutBytes(statAddr, b)
+	_, err := t.CopyOutBytes(dst, b)
 	return err
 }
 

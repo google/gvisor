@@ -42,10 +42,11 @@ const (
 //
 // +stateify savable
 type Area struct {
-	waiter.AlwaysReady       `state:"nosave"`
-	fsutil.FileNoFsync       `state:"nosave"`
-	fsutil.FileNoopFlush     `state:"nosave"`
-	fsutil.FileNotDirReaddir `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+	fsutil.FileNoFsync              `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	ad *Device
 

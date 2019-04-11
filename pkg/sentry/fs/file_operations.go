@@ -96,6 +96,12 @@ type FileOperations interface {
 	// memmap.Mappable.
 	ConfigureMMap(ctx context.Context, file *File, opts *memmap.MMapOpts) error
 
+	// UnstableAttr returns the "unstable" attributes of the inode represented
+	// by the file. Most implementations can embed
+	// fsutil.FileUseInodeUnstableAttr, which delegates to
+	// InodeOperations.UnstableAttr.
+	UnstableAttr(ctx context.Context, file *File) (UnstableAttr, error)
+
 	// Ioctl implements the ioctl(2) linux syscall.
 	//
 	// io provides access to the virtual memory space to which pointers in args

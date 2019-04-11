@@ -91,7 +91,7 @@ func readDescriptors(t *kernel.Task, c *fs.DirCtx, offset int64, toDentAttr func
 // fd implements fs.InodeOperations for a file in /proc/TID/fd/.
 type fd struct {
 	ramfs.Symlink
-	*fs.File
+	file *fs.File
 }
 
 var _ fs.InodeOperations = (*fd)(nil)
@@ -103,7 +103,7 @@ func newFd(t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
 	fd := &fd{
 		// RootOwner overridden by taskOwnedInodeOps.UnstableAttrs().
 		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
-		File:    f,
+		file:    f,
 	}
 	return newProcInode(fd, msrc, fs.Symlink, t)
 }
@@ -112,8 +112,8 @@ func newFd(t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
 // arguments are ignored.
 func (f *fd) GetFile(context.Context, *fs.Dirent, fs.FileFlags) (*fs.File, error) {
 	// Take a reference on the fs.File.
-	f.File.IncRef()
-	return f.File, nil
+	f.file.IncRef()
+	return f.file, nil
 }
 
 // Readlink returns the current target.
@@ -122,14 +122,14 @@ func (f *fd) Readlink(ctx context.Context, _ *fs.Inode) (string, error) {
 	if root != nil {
 		defer root.DecRef()
 	}
-	n, _ := f.Dirent.FullName(root)
+	n, _ := f.file.Dirent.FullName(root)
 	return n, nil
 }
 
 // Getlink implements fs.InodeOperations.Getlink.
 func (f *fd) Getlink(context.Context, *fs.Inode) (*fs.Dirent, error) {
-	f.Dirent.IncRef()
-	return f.Dirent, nil
+	f.file.Dirent.IncRef()
+	return f.file.Dirent, nil
 }
 
 // Truncate is ignored.
@@ -139,12 +139,12 @@ func (f *fd) Truncate(context.Context, *fs.Inode, int64) error {
 
 func (f *fd) Release(ctx context.Context) {
 	f.Symlink.Release(ctx)
-	f.File.DecRef()
+	f.file.DecRef()
 }
 
 // Close releases the reference on the file.
 func (f *fd) Close() error {
-	f.DecRef()
+	f.file.DecRef()
 	return nil
 }
 
@@ -212,7 +212,8 @@ func (f *fdDir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFla
 
 // +stateify savable
 type fdDirFile struct {
-	fsutil.DirFileOperations `state:"nosave"`
+	fsutil.DirFileOperations        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	isInfoFile bool
 
