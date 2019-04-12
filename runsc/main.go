@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,7 @@ func main() {
 	subcommands.Register(new(cmd.Checkpoint), "")
 	subcommands.Register(new(cmd.Create), "")
 	subcommands.Register(new(cmd.Delete), "")
+	subcommands.Register(new(cmd.Do), "")
 	subcommands.Register(new(cmd.Events), "")
 	subcommands.Register(new(cmd.Exec), "")
 	subcommands.Register(new(cmd.Gofer), "")
@@ -168,6 +170,8 @@ func main() {
 		log.SetLevel(log.Debug)
 	}
 
+	subcommand := flag.CommandLine.Arg(0)
+
 	var logFile io.Writer = os.Stderr
 	if *logFD > -1 {
 		logFile = os.NewFile(uintptr(*logFD), "log file")
@@ -180,11 +184,12 @@ func main() {
 			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
 		}
 		logFile = f
+	} else if subcommand == "do" {
+		logFile = ioutil.Discard
 	}
 
 	e := newEmitter(*logFormat, logFile)
 
-	subcommand := flag.CommandLine.Arg(0)
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 

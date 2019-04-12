@@ -13,6 +13,7 @@ go_library(
         "create.go",
         "debug.go",
         "delete.go",
+        "do.go",
         "events.go",
         "exec.go",
         "gofer.go",

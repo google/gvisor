@@ -104,7 +104,7 @@ func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	// Wait until the sandbox has booted.
 	b := make([]byte, 1)
 	if l, err := clientSyncFile.Read(b); err != nil || l != 1 {
-		return nil, fmt.Errorf("reading from the start-sync descriptor: %v", err)
+		return nil, fmt.Errorf("waiting for sandbox to start: %v", err)
 	}
 
 	c.Release()
