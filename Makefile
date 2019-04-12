@@ -43,7 +43,7 @@ $(GO_TARGET): public $(GO_SOURCE)
 	cd cmd/gvisor-website && find . -name "*.go" -exec cp --parents \{\} ../../public \;
 
 public/static: node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
-	$(HUGO)
+	HUGO_ENV="production" $(HUGO)
 
 node_modules: package.json package-lock.json
 	# Use npm ci because npm install will update the package-lock.json.
