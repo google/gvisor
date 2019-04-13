@@ -14,11 +14,14 @@ as user `nobody` to avoid unnecessary privileges. The `/usr/local/bin` directory
 a good place to put the `runsc` binary.
 
 ```bash
-wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
-wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
-sha512sum -c runsc.sha512
-chmod a+x runsc
-sudo mv runsc /usr/local/bin
+(
+  set -e 
+  wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
+  wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
+  sha512sum -c runsc.sha512
+  chmod a+x runsc
+  sudo mv runsc /usr/local/bin
+)
 ```
 
 [latest-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
