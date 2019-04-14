@@ -55,10 +55,24 @@ If you have Go installed you can run a local version of the website via the
 `public/` directory.
 
 ```
-{
-  cd public/
-  go run main.go
-}
+cd public/
+go run main.go
 ```
 
 Access the site at http://localhost:8080
+
+## Troubleshooting
+
+#### I get errors when building the website.
+
+If you get the following errors you should check that you have the "extended"
+version of Hugo. This is the version of hugo named "hugo\_extended" on the
+[releases page](https://github.com/gohugoio/hugo/releases).
+
+```
+ERROR 2019/04/03 11:25:58 Failed to add template "partials/navbar.html" in path "/home/me/gvisor-website/layouts/partials/navbar.html": template: partials/navbar.html:5: function "resources" not defined
+ERROR 2019/04/03 11:25:58 partials/navbar.html : template: partials/navbar.html:5: function "resources" not defined
+ERROR 2019/04/03 11:25:58 Unable to locate template for shortcode "readfile" in page "docs/user_guide/docker.md"
+ERROR 2019/04/03 11:25:58 Unable to locate template for shortcode "readfile" in page "docs/user_guide/oci.md"
+ERROR 2019/04/03 11:25:58 Unable to locate template for shortcode "blocks" in page "_index.html"
+```
