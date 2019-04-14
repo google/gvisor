@@ -137,3 +137,6 @@ no = 'Sorry to hear that. Please <a href="https://github.com/USERNAME/REPOSITORY
     url = "https://groups.google.com/forum/#!forum/gvisor-dev"
     icon = "fa fa-envelope"
     desc = "Get info on the development of gVisor"
+
+[params.vars]
+required_linux = "3.17+"

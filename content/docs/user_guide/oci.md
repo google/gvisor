@@ -7,6 +7,8 @@ container using the runtime directly with the default platform.
 
 ## Install gVisor
 
+> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}.
+
 {{% readfile file="docs/includes/install_gvisor.md" markdown="true" %}}
 
 ## Run an OCI compatible container

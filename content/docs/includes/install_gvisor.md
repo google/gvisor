@@ -1,5 +1,3 @@
-> Note: gVisor supports only x86\_64 and requires Linux 3.17+.
-
 The easiest way to get `runsc` is from the [latest nightly
 build][latest-nightly]. After you download the binary, check it against the
 SHA512 [checksum file][latest-hash].
