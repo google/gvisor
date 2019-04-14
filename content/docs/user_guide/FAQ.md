@@ -3,6 +3,32 @@ title = "FAQ"
 weight = 1000
 +++
 
+### What operating systems are supported?
+
+gVisor requires Linux {{< required_linux >}}.
+
+### What CPU architectures are supported?
+
+gVisor currently supports [x86_64/AMD64](https://en.wikipedia.org/wiki/X86-64)
+compatible processors.
+
+### Do I need to modify my Linux application to use gVisor?
+
+No. gVisor is capable of running unmodified Linux binaries.
+
+### What binary formats does gVisor support?
+
+gVisor supports Linux
+[ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) binaries.
+Binaries run in gVisor should be built for the
+[AMD64](https://en.wikipedia.org/wiki/X86-64) CPU architecture.
+
+### Can I run Docker images using gVisor.
+
+Yes. Please see the [Docker Quick Start](/docs/user_guide/docker/).
+
+## Troubleshooting
+
 ### My container runs fine with `runc` but fails with `runsc`
 
 If you’re having problems running a container with `runsc` it’s most likely due
