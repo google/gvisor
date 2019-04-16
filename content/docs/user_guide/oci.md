@@ -7,7 +7,8 @@ container using the runtime directly with the default platform.
 
 ## Install gVisor
 
-> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}.
+> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}
+> ([older Linux][old-linux]).
 
 {{% readfile file="docs/includes/install_gvisor.md" markdown="true" %}}
 
@@ -47,3 +48,4 @@ sudo runsc run hello
 Next try [running gVisor using Docker](../docker/).
 
 [oci]: https://opencontainers.org/
+[old-linux]: /docs/user_guide/networking/#gso

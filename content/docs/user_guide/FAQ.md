@@ -5,7 +5,7 @@ weight = 1000
 
 ### What operating systems are supported?
 
-gVisor requires Linux {{< required_linux >}}.
+gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
 
 ### What CPU architectures are supported?
 
@@ -57,3 +57,5 @@ directories.
 ### What's the security model?
 
 See the [Security Model](../../architecture_guide/security/).
+
+[old-linux]: /docs/user_guide/networking/#gso

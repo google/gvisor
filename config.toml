@@ -139,4 +139,4 @@ no = 'Sorry to hear that. Please <a href="https://github.com/USERNAME/REPOSITORY
     desc = "Get info on the development of gVisor"
 
 [params.vars]
-required_linux = "3.17+"
+required_linux = "4.14.77+"

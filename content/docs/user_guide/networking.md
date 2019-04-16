@@ -60,4 +60,26 @@ Add the following `runtimeArgs` to your Docker configuration
 }
 ```
 
+### Disable GSO {#gso}
+
+If your Linux is older than {{< required_linux >}}, you can disable Generic
+Segmentation Offload (GSO) to run with a kernel that is newer than 3.17. Add the
+`--gso=false` flag to your Docker runtime configuration (`/etc/docker/daemon.json`)
+and restart the Docker daemon:
+
+> Note: Network performance, especially for large payloads, will be greatly reduced.
+
+```json
+{
+    "runtimes": {
+        "runsc": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--gso=false"
+            ]
+       }
+    }
+}
+```
+
 [netstack]: https://github.com/google/netstack
