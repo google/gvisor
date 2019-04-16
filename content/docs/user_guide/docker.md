@@ -7,7 +7,8 @@ gVisor.
 
 ## Install gVisor
 
-> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}.
+> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}
+> ([older Linux][old-linux]).
 
 {{% readfile file="docs/includes/install_gvisor.md" markdown="true" %}}
 
@@ -87,4 +88,5 @@ Next, look at the different options available for gVisor: [platform](../platform
 [network](../networking/), [filesystem](../filesystem/).
 
 [docker]: https://docs.docker.com/install/
+[old-linux]: /docs/user_guide/networking/#gso
 [storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
