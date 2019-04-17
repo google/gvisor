@@ -70,6 +70,14 @@ func (c *CPU) init() {
 	c.tss.ist1Lo = uint32(stackAddr)
 	c.tss.ist1Hi = uint32(stackAddr >> 32)
 
+	// Set the I/O bitmap base address beyond the last byte in the TSS
+	// to block access to the entire I/O address range.
+
+	// From section 18.5.2 "I/O Permission Bit Map" from Intel SDM vol1:
+	// I/O addresses not spanned by the map are treated as if they had
+	// set bits in the map.
+	c.tss.ioPerm = tssLimit + 1
+
 	// Permanently set the kernel segments.
 	c.registers.Cs = uint64(Kcode)
 	c.registers.Ds = uint64(Kdata)
