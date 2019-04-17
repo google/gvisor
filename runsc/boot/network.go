@@ -135,7 +135,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 
 		mac := tcpip.LinkAddress(generateRndMac())
-		linkEP := fdbased.New(&fdbased.Options{
+		linkEP, err := fdbased.New(&fdbased.Options{
 			FD:                 newFD,
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     true,
@@ -144,6 +144,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			GSOMaxSize:         link.GSOMaxSize,
 			RXChecksumOffload:  true,
 		})
+		if err != nil {
+			return err
+		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)
 		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses, false /* loopback */); err != nil {

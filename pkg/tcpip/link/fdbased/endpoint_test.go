@@ -68,7 +68,11 @@ func newContext(t *testing.T, opt *Options) *context {
 	}
 
 	opt.FD = fds[1]
-	ep := stack.FindLinkEndpoint(New(opt)).(*endpoint)
+	epID, err := New(opt)
+	if err != nil {
+		t.Fatalf("Failed to create FD endpoint: %v", err)
+	}
+	ep := stack.FindLinkEndpoint(epID).(*endpoint)
 
 	c := &context{
 		t:    t,

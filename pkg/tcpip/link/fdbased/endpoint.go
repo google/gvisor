@@ -136,10 +136,9 @@ type Options struct {
 //
 // Makes fd non-blocking, but does not take ownership of fd, which must remain
 // open for the lifetime of the returned endpoint.
-func New(opts *Options) tcpip.LinkEndpointID {
+func New(opts *Options) (tcpip.LinkEndpointID, error) {
 	if err := syscall.SetNonblock(opts.FD, true); err != nil {
-		// TODO : replace panic with an error return.
-		panic(fmt.Sprintf("syscall.SetNonblock(%v) failed: %v", opts.FD, err))
+		return 0, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", opts.FD, err)
 	}
 
 	caps := stack.LinkEndpointCapabilities(0)
@@ -175,27 +174,34 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		packetDispatchMode: opts.PacketDispatchMode,
 	}
 
-	if opts.GSOMaxSize != 0 && isSocketFD(opts.FD) {
-		e.caps |= stack.CapabilityGSO
-		e.gsoMaxSize = opts.GSOMaxSize
-	}
-	if isSocketFD(opts.FD) && e.packetDispatchMode == PacketMMap {
-		if err := e.setupPacketRXRing(); err != nil {
-			// TODO: replace panic with an error return.
-			panic(fmt.Sprintf("e.setupPacketRXRing failed: %v", err))
-		}
-		e.inboundDispatcher = e.packetMMapDispatch
-		return stack.RegisterLinkEndpoint(e)
-	}
-
-	// For non-socket FDs we read one packet a time (e.g. TAP devices)
+	// For non-socket FDs we read one packet a time (e.g. TAP devices).
 	msgsPerRecv := 1
 	e.inboundDispatcher = e.dispatch
-	// If the provided FD is a socket then we optimize packet reads by
-	// using recvmmsg() instead of read() to read packets in a batch.
-	if isSocketFD(opts.FD) && e.packetDispatchMode == RecvMMsg {
-		e.inboundDispatcher = e.recvMMsgDispatch
-		msgsPerRecv = MaxMsgsPerRecv
+
+	isSocket, err := isSocketFD(opts.FD)
+	if err != nil {
+		return 0, err
+	}
+	if isSocket {
+		if opts.GSOMaxSize != 0 {
+			e.caps |= stack.CapabilityGSO
+			e.gsoMaxSize = opts.GSOMaxSize
+		}
+
+		switch e.packetDispatchMode {
+		case PacketMMap:
+			if err := e.setupPacketRXRing(); err != nil {
+				return 0, fmt.Errorf("e.setupPacketRXRing failed: %v", err)
+			}
+			e.inboundDispatcher = e.packetMMapDispatch
+			return stack.RegisterLinkEndpoint(e), nil
+
+		case RecvMMsg:
+			// If the provided FD is a socket then we optimize packet reads by
+			// using recvmmsg() instead of read() to read packets in a batch.
+			e.inboundDispatcher = e.recvMMsgDispatch
+			msgsPerRecv = MaxMsgsPerRecv
+		}
 	}
 
 	e.views = make([][]buffer.View, msgsPerRecv)
@@ -217,16 +223,15 @@ func New(opts *Options) tcpip.LinkEndpointID {
 		e.msgHdrs[i].Msg.Iovlen = uint64(iovLen)
 	}
 
-	return stack.RegisterLinkEndpoint(e)
+	return stack.RegisterLinkEndpoint(e), nil
 }
 
-func isSocketFD(fd int) bool {
+func isSocketFD(fd int) (bool, error) {
 	var stat syscall.Stat_t
 	if err := syscall.Fstat(fd, &stat); err != nil {
-		// TODO : replace panic with an error return.
-		panic(fmt.Sprintf("syscall.Fstat(%v,...) failed: %v", fd, err))
+		return false, fmt.Errorf("syscall.Fstat(%v,...) failed: %v", fd, err)
 	}
-	return (stat.Mode & syscall.S_IFSOCK) == syscall.S_IFSOCK
+	return (stat.Mode & syscall.S_IFSOCK) == syscall.S_IFSOCK, nil
 }
 
 // Attach launches the goroutine that reads packets from the file descriptor and
