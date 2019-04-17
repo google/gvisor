@@ -6,7 +6,6 @@ go_library(
     name = "syscalls",
     srcs = [
         "epoll.go",
-        "polling.go",
         "syscalls.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls",
@@ -14,7 +13,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/kdefs",

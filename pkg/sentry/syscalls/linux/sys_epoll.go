@@ -87,7 +87,7 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			flags |= epoll.EdgeTriggered
 		}
 
-		mask = waiter.EventMask(e.Events)
+		mask = waiter.EventMaskFromLinux(e.Events)
 		data[0] = e.Fd
 		data[1] = e.Pad
 	}

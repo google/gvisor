@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build linux
+
 package fdnotifier
 
 import (
@@ -30,7 +32,7 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 		revents int16
 	}{
 		fd:     fd,
-		events: int16(mask),
+		events: int16(mask.ToLinux()),
 	}
 
 	for {
@@ -51,7 +53,7 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 		}
 
 		// Otherwise we got the ready events in the revents field.
-		return waiter.EventMask(e.revents)
+		return waiter.EventMaskFromLinux(uint32(e.revents))
 	}
 }
 

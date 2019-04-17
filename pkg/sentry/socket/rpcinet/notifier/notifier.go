@@ -76,7 +76,7 @@ func (n *Notifier) waitFD(fd uint32, fi *fdInfo, mask waiter.EventMask) error {
 	}
 
 	e := pb.EpollEvent{
-		Events: uint32(mask) | -syscall.EPOLLET,
+		Events: mask.ToLinux() | -syscall.EPOLLET,
 		Fd:     fd,
 	}
 
@@ -178,7 +178,7 @@ func (n *Notifier) waitAndNotify() error {
 		n.mu.Lock()
 		for _, e := range res.(*pb.EpollWaitResponse_Events).Events.Events {
 			if fi, ok := n.fdMap[e.Fd]; ok {
-				fi.queue.Notify(waiter.EventMask(e.Events))
+				fi.queue.Notify(waiter.EventMaskFromLinux(e.Events))
 			}
 		}
 		n.mu.Unlock()
@@ -214,7 +214,7 @@ func (n *Notifier) HasFD(fd uint32) bool {
 // although the syscall is non-blocking.
 func (n *Notifier) NonBlockingPoll(fd uint32, mask waiter.EventMask) waiter.EventMask {
 	for {
-		id, c := n.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Poll{&pb.PollRequest{Fd: fd, Events: uint32(mask)}}}, false /* ignoreResult */)
+		id, c := n.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Poll{&pb.PollRequest{Fd: fd, Events: mask.ToLinux()}}}, false /* ignoreResult */)
 		<-c
 
 		res := n.rpcConn.Request(id).Result.(*pb.SyscallResponse_Poll).Poll.Result
@@ -225,6 +225,6 @@ func (n *Notifier) NonBlockingPoll(fd uint32, mask waiter.EventMask) waiter.Even
 			return mask
 		}
 
-		return waiter.EventMask(res.(*pb.PollResponse_Events).Events)
+		return waiter.EventMaskFromLinux(res.(*pb.PollResponse_Events).Events)
 	}
 }

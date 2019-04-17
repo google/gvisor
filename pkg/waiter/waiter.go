@@ -67,13 +67,27 @@ type EventMask uint16
 // Events that waiters can wait on. The meaning is the same as those in the
 // poll() syscall.
 const (
-	EventIn   EventMask = 0x01 // syscall.EPOLLIN
-	EventPri  EventMask = 0x02 // syscall.EPOLLPRI
-	EventOut  EventMask = 0x04 // syscall.EPOLLOUT
-	EventErr  EventMask = 0x08 // syscall.EPOLLERR
-	EventHUp  EventMask = 0x10 // syscall.EPOLLHUP
-	EventNVal EventMask = 0x20 // Not defined in syscall.
+	EventIn  EventMask = 0x01 // POLLIN
+	EventPri EventMask = 0x02 // POLLPRI
+	EventOut EventMask = 0x04 // POLLOUT
+	EventErr EventMask = 0x08 // POLLERR
+	EventHUp EventMask = 0x10 // POLLHUP
+
+	allEvents EventMask = 0x1f
 )
+
+// EventMaskFromLinux returns an EventMask representing the supported events
+// from the Linux events e, which is in the format used by poll(2).
+func EventMaskFromLinux(e uint32) EventMask {
+	// Our flag definitions are currently identical to Linux.
+	return EventMask(e) & allEvents
+}
+
+// ToLinux returns e in the format used by Linux poll(2).
+func (e EventMask) ToLinux() uint32 {
+	// Our flag definitions are currently identical to Linux.
+	return uint32(e)
+}
 
 // Waitable contains the methods that need to be implemented by waitable
 // objects.
