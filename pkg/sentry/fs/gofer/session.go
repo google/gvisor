@@ -28,6 +28,10 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/unet"
 )
 
+// DefaultDirentCacheSize is the default dirent cache size for 9P mounts. It can
+// be adjusted independentely from the other dirent caches.
+var DefaultDirentCacheSize uint64 = fs.DefaultDirentCacheSize
+
 // +stateify savable
 type endpointMaps struct {
 	// mu protexts the direntMap, the keyMap, and the pathMap below.
@@ -248,6 +252,11 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 
 	// Construct the MountSource with the session and superBlockFlags.
 	m := fs.NewMountSource(s, filesystem, superBlockFlags)
+
+	// Given that gofer files can consume host FDs, restrict the number
+	// of files that can be held by the cache.
+	m.SetDirentCacheMaxSize(DefaultDirentCacheSize)
+	m.SetDirentCacheLimiter(fs.DirentCacheLimiterFromContext(ctx))
 
 	// Send the Tversion request.
 	s.client, err = p9.NewClient(conn, s.msize, s.version)

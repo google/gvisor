@@ -16,8 +16,11 @@ package boot
 
 import (
 	"fmt"
+	"sync"
+	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 )
 
@@ -41,10 +44,43 @@ var fromLinuxResource = map[string]limits.LimitType{
 	"RLIMIT_STACK":      limits.Stack,
 }
 
-func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
+func findName(lt limits.LimitType) string {
+	for k, v := range fromLinuxResource {
+		if v == lt {
+			return k
+		}
+	}
+	return "unknown"
+}
+
+var defaults defs
+
+type defs struct {
+	mu  sync.Mutex
+	set *limits.LimitSet
+	err error
+}
+
+func (d *defs) get() (*limits.LimitSet, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.err != nil {
+		return nil, d.err
+	}
+	if d.set == nil {
+		if err := d.initDefaults(); err != nil {
+			d.err = err
+			return nil, err
+		}
+	}
+	return d.set, nil
+}
+
+func (d *defs) initDefaults() error {
 	ls, err := limits.NewLinuxLimitSet()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Set default limits based on what containers get by default, ex:
@@ -65,6 +101,43 @@ func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
 	ls.SetUnchecked(limits.Rttime, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
 	ls.SetUnchecked(limits.SignalsPending, limits.Limit{Cur: 0, Max: 0})
 	ls.SetUnchecked(limits.Stack, limits.Limit{Cur: 8388608, Max: limits.Infinity})
+
+	// Read host limits that directly affect the sandbox and adjust the defaults
+	// based on them.
+	for _, res := range []int{syscall.RLIMIT_FSIZE, syscall.RLIMIT_NOFILE} {
+		var hl syscall.Rlimit
+		if err := syscall.Getrlimit(res, &hl); err != nil {
+			return err
+		}
+
+		lt, ok := limits.FromLinuxResource[res]
+		if !ok {
+			return fmt.Errorf("unknown rlimit type %v", res)
+		}
+		hostLimit := limits.Limit{
+			Cur: limits.FromLinux(hl.Cur),
+			Max: limits.FromLinux(hl.Max),
+		}
+
+		defaultLimit := ls.Get(lt)
+		if hostLimit.Cur != limits.Infinity && hostLimit.Cur < defaultLimit.Cur {
+			log.Warningf("Host limit is lower than recommended, resource: %q, host: %d, recommended: %d", findName(lt), hostLimit.Cur, defaultLimit.Cur)
+		}
+		if hostLimit.Cur != defaultLimit.Cur || hostLimit.Max != defaultLimit.Max {
+			log.Infof("Setting limit from host, resource: %q {soft: %d, hard: %d}", findName(lt), hostLimit.Cur, hostLimit.Max)
+			ls.SetUnchecked(lt, hostLimit)
+		}
+	}
+
+	d.set = ls
+	return nil
+}
+
+func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
+	ls, err := defaults.get()
+	if err != nil {
+		return nil, err
+	}
 
 	// Then apply overwrites on top of defaults.
 	for _, rl := range spec.Process.Rlimits {

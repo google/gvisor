@@ -274,6 +274,10 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
 
+	if err := adjustDirentCache(k); err != nil {
+		return nil, err
+	}
+
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {
 		log.Infof("Packet logging enabled")

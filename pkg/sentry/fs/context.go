@@ -26,6 +26,9 @@ type contextID int
 const (
 	// CtxRoot is a Context.Value key for a Dirent.
 	CtxRoot contextID = iota
+
+	// CtxDirentCacheLimiter is a Context.Value key for DirentCacheLimiter.
+	CtxDirentCacheLimiter
 )
 
 // ContextCanAccessFile determines whether `file` can be accessed in the requested way
@@ -97,6 +100,15 @@ func FileOwnerFromContext(ctx context.Context) FileOwner {
 func RootFromContext(ctx context.Context) *Dirent {
 	if v := ctx.Value(CtxRoot); v != nil {
 		return v.(*Dirent)
+	}
+	return nil
+}
+
+// DirentCacheLimiterFromContext returns the DirentCacheLimiter used by ctx, or
+// nil if ctx does not have a dirent cache limiter.
+func DirentCacheLimiterFromContext(ctx context.Context) *DirentCacheLimiter {
+	if v := ctx.Value(CtxDirentCacheLimiter); v != nil {
+		return v.(*DirentCacheLimiter)
 	}
 	return nil
 }

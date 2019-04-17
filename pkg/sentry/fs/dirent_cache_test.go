@@ -120,6 +120,96 @@ func TestDirentCache(t *testing.T) {
 	}
 }
 
+func TestDirentCacheLimiter(t *testing.T) {
+	const (
+		globalMaxSize = 5
+		maxSize       = 3
+	)
+
+	limit := NewDirentCacheLimiter(globalMaxSize)
+	c1 := NewDirentCache(maxSize)
+	c1.limit = limit
+	c2 := NewDirentCache(maxSize)
+	c2.limit = limit
+
+	// Create a Dirent d.
+	d := NewNegativeDirent("")
+
+	// Add d to the cache.
+	c1.Add(d)
+	if got, want := c1.Size(), uint64(1); got != want {
+		t.Errorf("c1.Size() got %v, want %v", got, want)
+	}
+
+	// Add maxSize-1 more elements. d should be oldest element.
+	for i := 0; i < maxSize-1; i++ {
+		c1.Add(NewNegativeDirent(""))
+	}
+	if got, want := c1.Size(), uint64(maxSize); got != want {
+		t.Errorf("c1.Size() got %v, want %v", got, want)
+	}
+
+	// Check that d is still there.
+	if got, want := c1.contains(d), true; got != want {
+		t.Errorf("c1.contains(d) got %v want %v", got, want)
+	}
+
+	// Fill up the other cache, it will start dropping old entries from the cache
+	// when the global limit is reached.
+	for i := 0; i < maxSize; i++ {
+		c2.Add(NewNegativeDirent(""))
+	}
+
+	// Check is what's remaining from global max.
+	if got, want := c2.Size(), globalMaxSize-maxSize; int(got) != want {
+		t.Errorf("c2.Size() got %v, want %v", got, want)
+	}
+
+	// Check that d was not dropped.
+	if got, want := c1.contains(d), true; got != want {
+		t.Errorf("c1.contains(d) got %v want %v", got, want)
+	}
+
+	// Add an entry that will eventually be dropped. Check is done later...
+	drop := NewNegativeDirent("")
+	c1.Add(drop)
+
+	// Check that d is bumped to front even when global limit is reached.
+	c1.Add(d)
+	if got, want := c1.contains(d), true; got != want {
+		t.Errorf("c1.contains(d) got %v want %v", got, want)
+	}
+
+	// Add 2 more element and check that:
+	//   - d is still in the list: to verify that d was bumped
+	//   - d2/d3 are in the list: older entries are dropped when global limit is
+	//     reached.
+	//   - drop is not in the list: indeed older elements are dropped.
+	d2 := NewNegativeDirent("")
+	c1.Add(d2)
+	d3 := NewNegativeDirent("")
+	c1.Add(d3)
+	if got, want := c1.contains(d), true; got != want {
+		t.Errorf("c1.contains(d) got %v want %v", got, want)
+	}
+	if got, want := c1.contains(d2), true; got != want {
+		t.Errorf("c1.contains(d2) got %v want %v", got, want)
+	}
+	if got, want := c1.contains(d3), true; got != want {
+		t.Errorf("c1.contains(d3) got %v want %v", got, want)
+	}
+	if got, want := c1.contains(drop), false; got != want {
+		t.Errorf("c1.contains(drop) got %v want %v", got, want)
+	}
+
+	// Drop all entries from one cache. The other will be allowed to grow.
+	c1.Invalidate()
+	c2.Add(NewNegativeDirent(""))
+	if got, want := c2.Size(), uint64(maxSize); got != want {
+		t.Errorf("c2.Size() got %v, want %v", got, want)
+	}
+}
+
 // TestNilDirentCache tests that a nil cache supports all cache operations, but
 // treats them as noop.
 func TestNilDirentCache(t *testing.T) {

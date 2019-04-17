@@ -12,6 +12,7 @@ go_library(
         "dentry.go",
         "dirent.go",
         "dirent_cache.go",
+        "dirent_cache_limiter.go",
         "dirent_list.go",
         "dirent_state.go",
         "event_list.go",

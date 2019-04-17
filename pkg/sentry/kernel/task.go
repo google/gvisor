@@ -601,6 +601,8 @@ func (t *Task) Value(key interface{}) interface{} {
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
 		return t.fsc.RootDirectory()
+	case fs.CtxDirentCacheLimiter:
+		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
 		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:

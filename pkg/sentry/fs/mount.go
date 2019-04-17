@@ -151,9 +151,9 @@ type MountSource struct {
 	children map[*MountSource]struct{}
 }
 
-// defaultDirentCacheSize is the number of Dirents that the VFS can hold an extra
-// reference on.
-const defaultDirentCacheSize uint64 = 1000
+// DefaultDirentCacheSize is the number of Dirents that the VFS can hold an
+// extra reference on.
+const DefaultDirentCacheSize uint64 = 1000
 
 // NewMountSource returns a new MountSource. Filesystem may be nil if there is no
 // filesystem backing the mount.
@@ -162,7 +162,7 @@ func NewMountSource(mops MountSourceOperations, filesystem Filesystem, flags Mou
 		MountSourceOperations: mops,
 		Flags:                 flags,
 		Filesystem:            filesystem,
-		fscache:               NewDirentCache(defaultDirentCacheSize),
+		fscache:               NewDirentCache(DefaultDirentCacheSize),
 		children:              make(map[*MountSource]struct{}),
 	}
 }
@@ -244,6 +244,18 @@ func (msrc *MountSource) DecRef() {
 // FlushDirentRefs drops all references held by the MountSource on Dirents.
 func (msrc *MountSource) FlushDirentRefs() {
 	msrc.fscache.Invalidate()
+}
+
+// SetDirentCacheMaxSize sets the max size to the dirent cache associated with
+// this mount source.
+func (msrc *MountSource) SetDirentCacheMaxSize(max uint64) {
+	msrc.fscache.setMaxSize(max)
+}
+
+// SetDirentCacheLimiter sets the limiter objcet to the dirent cache associated
+// with this mount source.
+func (msrc *MountSource) SetDirentCacheLimiter(l *DirentCacheLimiter) {
+	msrc.fscache.limit = l
 }
 
 // NewCachingMountSource returns a generic mount that will cache dirents

@@ -32,6 +32,10 @@ type DirentCache struct {
 	// when cache is nil.
 	maxSize uint64
 
+	// limit restricts the number of entries in the cache amoung multiple caches.
+	// It may be nil if there are no global limit for this cache.
+	limit *DirentCacheLimiter
+
 	// mu protects currentSize and direntList.
 	mu sync.Mutex `state:"nosave"`
 
@@ -45,8 +49,7 @@ type DirentCache struct {
 	list direntList `state:"zerovalue"`
 }
 
-// NewDirentCache returns a new DirentCache with the given maxSize. If maxSize
-// is 0, nil is returned.
+// NewDirentCache returns a new DirentCache with the given maxSize.
 func NewDirentCache(maxSize uint64) *DirentCache {
 	return &DirentCache{
 		maxSize: maxSize,
@@ -71,15 +74,24 @@ func (c *DirentCache) Add(d *Dirent) {
 		return
 	}
 
+	// First check against the global limit.
+	for c.limit != nil && !c.limit.tryInc() {
+		if c.currentSize == 0 {
+			// If the global limit is reached, but there is nothing more to drop from
+			// this cache, there is not much else to do.
+			c.mu.Unlock()
+			return
+		}
+		c.remove(c.list.Back())
+	}
+
 	// d is not in cache. Add it and take a reference.
 	c.list.PushFront(d)
 	d.IncRef()
 	c.currentSize++
 
-	// Remove the oldest until we are under the size limit.
-	for c.maxSize > 0 && c.currentSize > c.maxSize {
-		c.remove(c.list.Back())
-	}
+	c.maybeShrink()
+
 	c.mu.Unlock()
 }
 
@@ -92,6 +104,9 @@ func (c *DirentCache) remove(d *Dirent) {
 	d.SetNext(nil)
 	d.DecRef()
 	c.currentSize--
+	if c.limit != nil {
+		c.limit.dec()
+	}
 }
 
 // Remove removes the element from the cache and decrements its refCount. It
@@ -141,4 +156,20 @@ func (c *DirentCache) Invalidate() {
 		c.remove(c.list.Front())
 	}
 	c.mu.Unlock()
+}
+
+// setMaxSize sets cache max size. If current size is larger than max size, the
+// cache shrinks to acommodate the new max.
+func (c *DirentCache) setMaxSize(max uint64) {
+	c.mu.Lock()
+	c.maxSize = max
+	c.maybeShrink()
+	c.mu.Unlock()
+}
+
+// shrink removes the oldest element until the list is under the size limit.
+func (c *DirentCache) maybeShrink() {
+	for c.maxSize > 0 && c.currentSize > c.maxSize {
+		c.remove(c.list.Back())
+	}
 }

@@ -20,10 +20,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	// Include filesystem types that OCI spec might mount.
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/dev"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/gofer"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc"
 	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/sys"
@@ -38,6 +38,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/gofer"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
@@ -79,6 +80,22 @@ func (f *fdDispenser) remove() int {
 
 func (f *fdDispenser) empty() bool {
 	return len(f.fds) == 0
+}
+
+func adjustDirentCache(k *kernel.Kernel) error {
+	var hl syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &hl); err != nil {
+		return fmt.Errorf("getting RLIMIT_NOFILE: %v", err)
+	}
+	if int64(hl.Cur) != syscall.RLIM_INFINITY {
+		newSize := hl.Cur / 2
+		if newSize < gofer.DefaultDirentCacheSize {
+			log.Infof("Setting gofer dirent cache size to %d", newSize)
+			gofer.DefaultDirentCacheSize = newSize
+			k.DirentCacheLimiter = fs.NewDirentCacheLimiter(newSize)
+		}
+	}
+	return nil
 }
 
 // setupRootContainerFS creates a mount namespace containing the root filesystem

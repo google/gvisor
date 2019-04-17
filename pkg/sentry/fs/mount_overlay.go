@@ -31,10 +31,19 @@ type overlayMountSourceOperations struct {
 func newOverlayMountSource(upper, lower *MountSource, flags MountSourceFlags) *MountSource {
 	upper.IncRef()
 	lower.IncRef()
-	return NewMountSource(&overlayMountSourceOperations{
+	msrc := NewMountSource(&overlayMountSourceOperations{
 		upper: upper,
 		lower: lower,
 	}, &overlayFilesystem{}, flags)
+
+	// Use the minimum number to keep resource usage under limits.
+	size := lower.fscache.maxSize
+	if size > upper.fscache.maxSize {
+		size = upper.fscache.maxSize
+	}
+	msrc.fscache.setMaxSize(size)
+
+	return msrc
 }
 
 // Revalidate implements MountSourceOperations.Revalidate for an overlay by

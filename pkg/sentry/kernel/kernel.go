@@ -188,6 +188,11 @@ type Kernel struct {
 
 	// deviceRegistry is used to save/restore device.SimpleDevices.
 	deviceRegistry struct{} `state:".(*device.Registry)"`
+
+	// DirentCacheLimiter controls the number of total dirent entries can be in
+	// caches. Not all caches use it, only the caches that use host resources use
+	// the limiter. It may be nil if disabled.
+	DirentCacheLimiter *fs.DirentCacheLimiter
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -626,6 +631,8 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 			return ctx.k.mounts.Root()
 		}
 		return nil
+	case fs.CtxDirentCacheLimiter:
+		return ctx.k.DirentCacheLimiter
 	case ktime.CtxRealtimeClock:
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:
@@ -1170,6 +1177,8 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 		return auth.NewRootCredentials(ctx.k.rootUserNamespace)
 	case fs.CtxRoot:
 		return ctx.k.mounts.Root()
+	case fs.CtxDirentCacheLimiter:
+		return ctx.k.DirentCacheLimiter
 	case ktime.CtxRealtimeClock:
 		return ctx.k.RealtimeClock()
 	case limits.CtxLimits:
