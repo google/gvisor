@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/signal_util.h"
 #include "test/util/test_util.h"
@@ -161,6 +162,81 @@ TEST(SigtimedwaitTest, ChildExitGeneratedSIGCHLDWithHandler) {
   int status;
   EXPECT_THAT(waitpid(pid, &status, 0), SyscallSucceedsWithValue(pid));
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+}
+
+// sigtimedwait cannot catch SIGKILL.
+TEST(SigtimedwaitTest, SIGKILLUncaught) {
+  // This is a regression test for sigtimedwait dequeuing SIGKILLs, thus
+  // preventing the task from exiting.
+  //
+  // The explanation below is specific to behavior in gVisor. The Linux behavior
+  // here is irrelevant because without a bug that prevents delivery of SIGKILL,
+  // none of this behavior is visible (in Linux or gVisor).
+  //
+  // SIGKILL is rather intrusive. Simply sending the SIGKILL marks
+  // ThreadGroup.exitStatus as exiting with SIGKILL, before the SIGKILL is even
+  // delivered.
+  //
+  // As a result, we cannot simply exit the child with a different exit code if
+  // it survives and expect to see that code in waitpid because:
+  //   1. PrepareGroupExit will override Task.exitStatus with
+  //      ThreadGroup.exitStatus.
+  //   2. waitpid(2) will always return ThreadGroup.exitStatus rather than
+  //      Task.exitStatus.
+  //
+  // We could use exit(2) to set Task.exitStatus without override, and a SIGCHLD
+  // handler to receive Task.exitStatus in the parent, but with that much
+  // test complexity, it is cleaner to simply use a pipe to notify the parent
+  // that we survived.
+  constexpr auto kSigtimedwaitSetupTime = absl::Seconds(2);
+
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    rfd.reset();
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGKILL);
+    RetryEINTR(sigtimedwait)(&mask, nullptr, nullptr);
+
+    // Survived.
+    char c = 'a';
+    TEST_PCHECK(WriteFd(wfd.get(), &c, 1) == 1);
+    _exit(1);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+
+  wfd.reset();
+
+  // Wait for child to block in sigtimedwait, then kill it.
+  absl::SleepFor(kSigtimedwaitSetupTime);
+
+  // Sending SIGKILL will attempt to enqueue the signal twice: once in the
+  // normal signal sending path, and once to all Tasks in the ThreadGroup when
+  // applying SIGKILL side-effects.
+  //
+  // If we use kill(2), the former will be on the ThreadGroup signal queue and
+  // the latter will be on the Task signal queue. sigtimedwait can only dequeue
+  // one signal, so the other would kill the Task, masking bugs.
+  //
+  // If we use tkill(2), the former will be on the Task signal queue and the
+  // latter will be dropped as a duplicate. Then sigtimedwait can theoretically
+  // dequeue the single SIGKILL.
+  EXPECT_THAT(syscall(SYS_tkill, pid, SIGKILL), SyscallSucceeds());
+
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) << status;
+
+  // Child shouldn't have survived.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, 1), SyscallSucceedsWithValue(0));
 }
 
 TEST(SigtimedwaitTest, IgnoredUnmaskedSignal) {

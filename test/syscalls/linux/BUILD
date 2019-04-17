@@ -1825,6 +1825,7 @@ cc_binary(
     srcs = ["sigtimedwait.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:signal_util",
         "//test/util:test_util",

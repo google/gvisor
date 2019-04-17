@@ -307,7 +307,7 @@ func (t *Task) SignalReturn(rt bool) (*SyscallControl, error) {
 func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*arch.SignalInfo, error) {
 	// set is the set of signals we're interested in; invert it to get the set
 	// of signals to block.
-	mask := ^set &^ UnblockableSignals
+	mask := ^(set &^ UnblockableSignals)
 
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
