@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -55,8 +56,8 @@ func TestPanic(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			defer func() {
 				r := recover()
-				if got := fmt.Sprint(r); got != test.want {
-					t.Errorf("Got recover() = %q, want = %q", got, test.want)
+				if got := fmt.Sprint(r); !strings.HasPrefix(got, test.want) {
+					t.Errorf("Got recover() = %q, want prefix = %q", got, test.want)
 				}
 			}()
 
