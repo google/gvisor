@@ -202,6 +202,10 @@ const (
 	// PostCapData is the data argument to capget(2)/capset(2), formatted
 	// after syscall execution. The previous argument must be CapHeader.
 	PostCapData
+
+	// PollFDs is an array of struct pollfd. The number of entries in the
+	// array is in the next argument.
+	PollFDs
 )
 
 // defaultFormat is the syscall argument format to use if the actual format is

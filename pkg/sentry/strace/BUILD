@@ -11,6 +11,7 @@ go_library(
         "futex.go",
         "linux64.go",
         "open.go",
+        "poll.go",
         "ptrace.go",
         "signal.go",
         "socket.go",

@@ -438,6 +438,8 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, capHeader(t, args[arg].Pointer()))
 		case CapData:
 			output = append(output, capData(t, args[arg-1].Pointer(), args[arg].Pointer()))
+		case PollFDs:
+			output = append(output, pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), false))
 		case Oct:
 			output = append(output, "0o"+strconv.FormatUint(args[arg].Uint64(), 8))
 		case Hex:
@@ -502,6 +504,8 @@ func (i *SyscallInfo) post(t *kernel.Task, args arch.SyscallArguments, rval uint
 			output[arg] = sigAction(t, args[arg].Pointer())
 		case PostCapData:
 			output[arg] = capData(t, args[arg-1].Pointer(), args[arg].Pointer())
+		case PollFDs:
+			output[arg] = pollFDs(t, args[arg].Pointer(), uint(args[arg+1].Uint()), true)
 		}
 	}
 }

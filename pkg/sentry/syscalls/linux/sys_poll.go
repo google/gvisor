@@ -155,16 +155,26 @@ func pollBlock(t *kernel.Task, pfd []linux.PollFD, timeout time.Duration) (time.
 	return timeout, n, nil
 }
 
-func doPoll(t *kernel.Task, pfdAddr usermem.Addr, nfds uint, timeout time.Duration) (time.Duration, uintptr, error) {
+// CopyInPollFDs copies an array of struct pollfd unless nfds exceeds the max.
+func CopyInPollFDs(t *kernel.Task, addr usermem.Addr, nfds uint) ([]linux.PollFD, error) {
 	if uint64(nfds) > t.ThreadGroup().Limits().GetCapped(limits.NumberOfFiles, fileCap) {
-		return timeout, 0, syserror.EINVAL
+		return nil, syserror.EINVAL
 	}
 
 	pfd := make([]linux.PollFD, nfds)
 	if nfds > 0 {
-		if _, err := t.CopyIn(pfdAddr, &pfd); err != nil {
-			return timeout, 0, err
+		if _, err := t.CopyIn(addr, &pfd); err != nil {
+			return nil, err
 		}
+	}
+
+	return pfd, nil
+}
+
+func doPoll(t *kernel.Task, addr usermem.Addr, nfds uint, timeout time.Duration) (time.Duration, uintptr, error) {
+	pfd, err := CopyInPollFDs(t, addr, nfds)
+	if err != nil {
+		return timeout, 0, err
 	}
 
 	// Compatibility warning: Linux adds POLLHUP and POLLERR just before
@@ -180,7 +190,7 @@ func doPoll(t *kernel.Task, pfdAddr usermem.Addr, nfds uint, timeout time.Durati
 	// The poll entries are copied out regardless of whether
 	// any are set or not. This aligns with the Linux behavior.
 	if nfds > 0 && err == nil {
-		if _, err := t.CopyOut(pfdAddr, pfd); err != nil {
+		if _, err := t.CopyOut(addr, pfd); err != nil {
 			return remainingTimeout, 0, err
 		}
 	}
