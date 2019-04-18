@@ -783,10 +783,10 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		return int32(v), nil
 
 	case linux.SO_LINGER:
-		if outLen < syscall.SizeofLinger {
+		if outLen < linux.SizeOfLinger {
 			return nil, syserr.ErrInvalidArgument
 		}
-		return syscall.Linger{}, nil
+		return linux.Linger{}, nil
 
 	case linux.SO_SNDTIMEO:
 		// TODO: Linux allows shorter lengths for partial results.
@@ -1124,6 +1124,33 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 			return syserr.ErrDomain
 		}
 		s.SetRecvTimeout(v.ToNsecCapped())
+		return nil
+
+	case linux.SO_OOBINLINE:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+
+		if v == 0 {
+			socket.SetSockOptEmitUnimplementedEvent(t, name)
+		}
+
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.OutOfBandInlineOption(v)))
+
+	case linux.SO_LINGER:
+		if len(optVal) < linux.SizeOfLinger {
+			return syserr.ErrInvalidArgument
+		}
+
+		var v linux.Linger
+		binary.Unmarshal(optVal[:linux.SizeOfLinger], usermem.ByteOrder, &v)
+
+		if v != (linux.Linger{}) {
+			socket.SetSockOptEmitUnimplementedEvent(t, name)
+		}
+
 		return nil
 
 	default:

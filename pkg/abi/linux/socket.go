@@ -247,6 +247,15 @@ type SockAddrUnix struct {
 	Path   [UnixPathMax]int8
 }
 
+// Linger is struct linger, from include/linux/socket.h.
+type Linger struct {
+	OnOff  int32
+	Linger int32
+}
+
+// SizeOfLinger is the binary size of a Linger struct.
+const SizeOfLinger = 8
+
 // TCPInfo is a collection of TCP statistics.
 //
 // From uapi/linux/tcp.h.
@@ -322,8 +331,8 @@ type TCPInfo struct {
 	SndBufLimited uint64
 }
 
-// SizeOfTCPInfo is the binary size of a TCPInfo struct (104 bytes).
-var SizeOfTCPInfo = binary.Size(TCPInfo{})
+// SizeOfTCPInfo is the binary size of a TCPInfo struct.
+const SizeOfTCPInfo = 104
 
 // Control message types, from linux/socket.h.
 const (
