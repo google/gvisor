@@ -23,9 +23,9 @@
 #include "vdso/vdso_time.h"
 
 namespace vdso {
+namespace {
 
-// __vdso_clock_gettime() implements clock_gettime()
-extern "C" int __vdso_clock_gettime(clockid_t clock, struct timespec* ts) {
+int __common_clock_gettime(clockid_t clock, struct timespec* ts) {
   int ret;
 
   switch (clock) {
@@ -44,11 +44,8 @@ extern "C" int __vdso_clock_gettime(clockid_t clock, struct timespec* ts) {
 
   return ret;
 }
-extern "C" int clock_gettime(clockid_t clock, struct timespec* ts)
-    __attribute__((weak, alias("__vdso_clock_gettime")));
 
-// __vdso_gettimeofday() implements gettimeofday()
-extern "C" int __vdso_gettimeofday(struct timeval* tv, struct timezone* tz) {
+int __common_gettimeofday(struct timeval* tv, struct timezone* tz) {
   if (tv) {
     struct timespec ts;
     int ret = ClockRealtime(&ts);
@@ -67,6 +64,21 @@ extern "C" int __vdso_gettimeofday(struct timeval* tv, struct timezone* tz) {
   }
 
   return 0;
+}
+}  // namespace
+
+#if __x86_64__
+
+// __vdso_clock_gettime() implements clock_gettime()
+extern "C" int __vdso_clock_gettime(clockid_t clock, struct timespec* ts) {
+  return __common_clock_gettime(clock, ts);
+}
+extern "C" int clock_gettime(clockid_t clock, struct timespec* ts)
+    __attribute__((weak, alias("__vdso_clock_gettime")));
+
+// __vdso_gettimeofday() implements gettimeofday()
+extern "C" int __vdso_gettimeofday(struct timeval* tv, struct timezone* tz) {
+  return __common_gettimeofday(tv, tz);
 }
 extern "C" int gettimeofday(struct timeval* tv, struct timezone* tz)
     __attribute__((weak, alias("__vdso_gettimeofday")));
@@ -92,4 +104,45 @@ extern "C" long getcpu(unsigned* cpu, unsigned* node,
                        struct getcpu_cache* cache)
     __attribute__((weak, alias("__vdso_getcpu")));
 
+#elif __aarch64__
+
+// __kernel_clock_gettime() implements clock_gettime()
+extern "C" int __kernel_clock_gettime(clockid_t clock, struct timespec* ts) {
+  return __common_clock_gettime(clock, ts);
+}
+
+// __kernel_gettimeofday() implements gettimeofday()
+extern "C" int __kernel_gettimeofday(struct timeval* tv, struct timezone* tz) {
+  return __common_gettimeofday(tv, tz);
+}
+
+// __kernel_clock_getres() implements clock_getres()
+extern "C" int __kernel_clock_getres(clockid_t clock, struct timespec* res) {
+  int ret = 0;
+
+  switch (clock) {
+    case CLOCK_REALTIME:
+    case CLOCK_MONOTONIC: {
+      res->tv_sec = 0;
+      res->tv_nsec = 1;
+      break;
+    }
+
+    default:
+      ret = sys_clock_getres(clock, res);
+      break;
+  }
+
+  return ret;
+}
+
+// __kernel_rt_sigreturn() implements gettimeofday()
+extern "C" int __kernel_rt_sigreturn(unsigned long unused) {
+  // No optimizations yet, just make the real system call.
+  return sys_rt_sigreturn();
+}
+
+#else
+#error "unsupported architecture"
+#endif
 }  // namespace vdso

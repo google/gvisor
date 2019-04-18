@@ -12,6 +12,11 @@ config_setting(
     constraint_values = ["@bazel_tools//platforms:x86_64"],
 )
 
+config_setting(
+    name = "aarch64",
+    constraint_values = ["@bazel_tools//platforms:aarch64"],
+)
+
 genrule(
     name = "vdso",
     srcs = [
@@ -21,7 +26,8 @@ genrule(
         "seqlock.h",
         "syscalls.h",
         "vdso.cc",
-        "vdso.lds",
+        "vdso_amd64.lds",
+        "vdso_arm64.lds",
         "vdso_time.h",
         "vdso_time.cc",
     ],
@@ -49,7 +55,13 @@ genrule(
           "-Wl,-Bsymbolic " +
           "-Wl,-z,max-page-size=4096 " +
           "-Wl,-z,common-page-size=4096 " +
-          "-Wl,-T$(location vdso.lds) " +
+          select(
+              {
+                  ":x86_64": "-Wl,-T$(location vdso_amd64.lds) ",
+                  ":aarch64": "-Wl,-T$(location vdso_arm64.lds) ",
+              },
+              no_match_error = "Unsupported architecture",
+          ) +
           "-o $(location vdso.so) " +
           "$(location vdso.cc) " +
           "$(location vdso_time.cc) " +

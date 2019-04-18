@@ -55,11 +55,25 @@ struct params {
 //
 // So instead, we use inline assembly with a construct that seems to have wide
 // compatibility across many toolchains.
+#if __x86_64__
+
 inline struct params* get_params() {
   struct params* p = nullptr;
-  asm volatile("leaq _params(%%rip), %0" : "=r"(p) : :);
+  asm("leaq _params(%%rip), %0" : "=r"(p) : :);
   return p;
 }
+
+#elif __aarch64__
+
+inline struct params* get_params() {
+  struct params* p = nullptr;
+  asm("adr %0, _params" : "=r"(p) : :);
+  return p;
+}
+
+#else
+#error "unsupported architecture"
+#endif
 
 namespace vdso {
 

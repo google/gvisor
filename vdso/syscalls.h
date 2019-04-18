@@ -26,9 +26,11 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-struct getcpu_cache;
-
 namespace vdso {
+
+#if __x86_64__
+
+struct getcpu_cache;
 
 static inline int sys_clock_gettime(clockid_t clock, struct timespec* ts) {
   int num = __NR_clock_gettime;
@@ -49,6 +51,49 @@ static inline int sys_getcpu(unsigned* cpu, unsigned* node,
   return num;
 }
 
+#elif __aarch64__
+
+static inline int sys_rt_sigreturn(void) {
+  int num = __NR_rt_sigreturn;
+
+  asm volatile(
+      "mov x8, %0\n"
+      "svc #0    \n"
+      : "+r"(num)
+      :
+      :);
+  return num;
+}
+
+static inline int sys_clock_gettime(clockid_t _clkid, struct timespec *_ts) {
+  register struct timespec *ts asm("x1") = _ts;
+  register clockid_t clkid asm("x0") = _clkid;
+  register long ret asm("x0");
+  register long nr asm("x8") = __NR_clock_gettime;
+
+  asm volatile("svc #0\n"
+               : "=r"(ret)
+               : "r"(clkid), "r"(ts), "r"(nr)
+               : "memory");
+  return ret;
+}
+
+static inline int sys_clock_getres(clockid_t _clkid, struct timespec *_ts) {
+  register struct timespec *ts asm("x1") = _ts;
+  register clockid_t clkid asm("x0") = _clkid;
+  register long ret asm("x0");
+  register long nr asm("x8") = __NR_clock_getres;
+
+  asm volatile("svc #0\n"
+               : "=r"(ret)
+               : "r"(clkid), "r"(ts), "r"(nr)
+               : "memory");
+  return ret;
+}
+
+#else
+#error "unsupported architecture"
+#endif
 }  // namespace vdso
 
 #endif  // VDSO_SYSCALLS_H_

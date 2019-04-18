@@ -33,6 +33,15 @@ static inline uint64_t cycle_clock(void) {
   asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
   return ((uint64_t)hi << 32) | lo;
 }
+
+#elif __aarch64__
+
+static inline uint64_t cycle_clock(void) {
+  uint64_t val;
+  asm volatile("mrs %0, CNTVCT_EL0" : "=r"(val)::"memory");
+  return val;
+}
+
 #else
 #error "unsupported architecture"
 #endif
