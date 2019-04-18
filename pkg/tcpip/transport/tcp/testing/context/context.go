@@ -234,6 +234,10 @@ func (c *Context) GetPacket() []byte {
 		copy(b, p.Header)
 		copy(b[len(p.Header):], p.Payload)
 
+		if p.GSO != nil && p.GSO.L3HdrLen != header.IPv4MinimumSize {
+			c.t.Errorf("L3HdrLen %v (expected %v)", p.GSO.L3HdrLen, header.IPv4MinimumSize)
+		}
+
 		checker.IPv4(c.t, b, checker.SrcAddr(StackAddr), checker.DstAddr(TestAddr))
 		return b
 
@@ -955,4 +959,9 @@ func (c *Context) SACKEnabled() bool {
 		return false
 	}
 	return bool(v)
+}
+
+// SetGSOEnabled enables or disables generic segmentation offload.
+func (c *Context) SetGSOEnabled(enable bool) {
+	c.linkEP.GSO = enable
 }

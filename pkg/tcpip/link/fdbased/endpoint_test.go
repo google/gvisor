@@ -166,6 +166,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32) {
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
 			MaxSize:    gsoMaxSize,
+			L3HdrLen:   header.IPv4MaximumHeaderSize,
 		}
 	}
 	if err := c.ep.WritePacket(r, gso, hdr, payload.ToVectorisedView(), proto); err != nil {

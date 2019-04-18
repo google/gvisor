@@ -28,6 +28,7 @@ type PacketInfo struct {
 	Header  buffer.View
 	Payload buffer.View
 	Proto   tcpip.NetworkProtocolNumber
+	GSO     *stack.GSO
 }
 
 // Endpoint is link layer endpoint that stores outbound packets in a channel
@@ -36,6 +37,7 @@ type Endpoint struct {
 	dispatcher stack.NetworkDispatcher
 	mtu        uint32
 	linkAddr   tcpip.LinkAddress
+	GSO        bool
 
 	// C is where outbound packets are queued.
 	C chan PacketInfo
@@ -93,8 +95,17 @@ func (e *Endpoint) MTU() uint32 {
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
-func (*Endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return 0
+func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
+	caps := stack.LinkEndpointCapabilities(0)
+	if e.GSO {
+		caps |= stack.CapabilityGSO
+	}
+	return caps
+}
+
+// GSOMaxSize returns the maximum GSO packet size.
+func (*Endpoint) GSOMaxSize() uint32 {
+	return 1 << 15
 }
 
 // MaxHeaderLength returns the maximum size of the link layer header. Given it
@@ -109,11 +120,12 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // WritePacket stores outbound packets into the channel.
-func (e *Endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	p := PacketInfo{
 		Header:  hdr.View(),
 		Proto:   protocol,
 		Payload: payload.ToView(),
+		GSO:     gso,
 	}
 
 	select {

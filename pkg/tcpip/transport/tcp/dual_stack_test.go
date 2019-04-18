@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/checker"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
@@ -330,6 +331,9 @@ func TestV6RefuseOnBoundToV4Mapped(t *testing.T) {
 }
 
 func testV4Accept(t *testing.T, c *context.Context) {
+	c.SetGSOEnabled(true)
+	defer c.SetGSOEnabled(false)
+
 	// Start listening.
 	if err := c.EP.Listen(10); err != nil {
 		t.Fatalf("Listen failed: %v", err)
@@ -405,6 +409,14 @@ func testV4Accept(t *testing.T, c *context.Context) {
 
 	if addr.Addr != context.TestAddr {
 		t.Fatalf("Unexpected remote address: got %v, want %v", addr.Addr, context.TestAddr)
+	}
+
+	data := "Don't panic"
+	nep.Write(tcpip.SlicePayload(buffer.NewViewFromBytes([]byte(data))), tcpip.WriteOptions{})
+	b = c.GetPacket()
+	tcp = header.TCP(header.IPv4(b).Payload())
+	if string(tcp.Payload()) != data {
+		t.Fatalf("Unexpected data: got %v, want %v", string(tcp.Payload()), data)
 	}
 }
 

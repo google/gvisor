@@ -1717,7 +1717,7 @@ func (e *endpoint) initGSO() {
 	}
 
 	gso := &stack.GSO{}
-	switch e.netProto {
+	switch e.route.NetProto {
 	case header.IPv4ProtocolNumber:
 		gso.Type = stack.GSOTCPv4
 		gso.L3HdrLen = header.IPv4MinimumSize
