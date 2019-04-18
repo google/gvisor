@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // newNet creates a new proc net entry.
@@ -60,7 +61,7 @@ func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSo
 			// (ClockGetres returns 1ns resolution).
 			"psched": newStaticProcInode(ctx, msrc, []byte(fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond)))),
 			"ptype":  newStaticProcInode(ctx, msrc, []byte("Type Device      Function")),
-			"route":  newStaticProcInode(ctx, msrc, []byte("Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT")),
+			"route":  seqfile.NewSeqFileInode(ctx, &netRoute{s: s}, msrc),
 			"tcp":    seqfile.NewSeqFileInode(ctx, &netTCP{k: k}, msrc),
 			"udp":    seqfile.NewSeqFileInode(ctx, &netUDP{k: k}, msrc),
 			"unix":   seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
@@ -305,6 +306,81 @@ func (n *netSnmp) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 	data := make([]seqfile.SeqData, 0, len(snmp)*2)
 	for _, l := range contents {
 		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*netSnmp)(nil)})
+	}
+
+	return data, 0
+}
+
+// netRoute implements seqfile.SeqSource for /proc/net/route.
+//
+// +stateify savable
+type netRoute struct {
+	s inet.Stack
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (n *netRoute) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+// See Linux's net/ipv4/fib_trie.c:fib_route_seq_show.
+func (n *netRoute) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	if h != nil {
+		return nil, 0
+	}
+
+	interfaces := n.s.Interfaces()
+	contents := []string{"Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT"}
+	for _, rt := range n.s.RouteTable() {
+		// /proc/net/route only includes ipv4 routes.
+		if rt.Family != linux.AF_INET {
+			continue
+		}
+
+		// /proc/net/route does not include broadcast or multicast routes.
+		if rt.Type == linux.RTN_BROADCAST || rt.Type == linux.RTN_MULTICAST {
+			continue
+		}
+
+		iface, ok := interfaces[rt.OutputInterface]
+		if !ok || iface.Name == "lo" {
+			continue
+		}
+
+		var (
+			gw     uint32
+			prefix uint32
+			flags  = linux.RTF_UP
+		)
+		if len(rt.GatewayAddr) == header.IPv4AddressSize {
+			flags |= linux.RTF_GATEWAY
+			gw = usermem.ByteOrder.Uint32(rt.GatewayAddr)
+		}
+		if len(rt.DstAddr) == header.IPv4AddressSize {
+			prefix = usermem.ByteOrder.Uint32(rt.DstAddr)
+		}
+		l := fmt.Sprintf(
+			"%s\t%08X\t%08X\t%04X\t%d\t%d\t%d\t%08X\t%d\t%d\t%d",
+			iface.Name,
+			prefix,
+			gw,
+			flags,
+			0, // RefCnt.
+			0, // Use.
+			0, // Metric.
+			(uint32(1)<<rt.DstLen)-1,
+			0, // MTU.
+			0, // Window.
+			0, // RTT.
+		)
+		contents = append(contents, l)
+	}
+
+	var data []seqfile.SeqData
+	for _, l := range contents {
+		l = fmt.Sprintf("%-127s\n", l)
+		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*netRoute)(nil)})
 	}
 
 	return data, 0
