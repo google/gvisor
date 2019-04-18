@@ -151,33 +151,27 @@ TEST(SymlinkTest, NewnameCannotExist) {
 }
 
 TEST(SymlinkTest, CanEvaluateLink) {
-  const std::string oldname = NewTempAbsPath();
-  const std::string newname = NewTempAbsPath();
+  const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  int fd;
-  ASSERT_THAT(fd = open(oldname.c_str(), O_CREAT | O_RDWR, 0666),
-              SyscallSucceeds());
-  struct stat old;
-  EXPECT_THAT(fstat(fd, &old), SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  // We are going to assert that the symlink inode id is the same as the linked
+  // file's inode id. In order for the inode id to be stable across
+  // save/restore, it must be kept open. The FileDescriptor type will do that
+  // for us automatically.
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  struct stat file_st;
+  EXPECT_THAT(fstat(fd.get(), &file_st), SyscallSucceeds());
 
-  EXPECT_THAT(symlink(oldname.c_str(), newname.c_str()), SyscallSucceeds());
-  EXPECT_EQ(FilePermission(newname), 0777);
+  const std::string link = NewTempAbsPath();
+  EXPECT_THAT(symlink(file.path().c_str(), link.c_str()), SyscallSucceeds());
+  EXPECT_EQ(FilePermission(link), 0777);
 
-  EXPECT_THAT(fd = open(newname.c_str(), O_RDWR, 0666), SyscallSucceeds());
-  struct stat old_linked;
-  EXPECT_THAT(fstat(fd, &old_linked), SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
+  auto linkfd = ASSERT_NO_ERRNO_AND_VALUE(Open(link.c_str(), O_RDWR));
+  struct stat link_st;
+  EXPECT_THAT(fstat(linkfd.get(), &link_st), SyscallSucceeds());
 
   // Check that in fact newname points to the file we expect.
-  // FIXME: use only inodes here once they are consistent,
-  // but this is better than nothing.
-  EXPECT_EQ(old.st_dev, old_linked.st_dev);
-  EXPECT_EQ(old.st_mode, old_linked.st_mode);
-  EXPECT_EQ(old.st_size, old_linked.st_size);
-
-  EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
-  EXPECT_THAT(unlink(oldname.c_str()), SyscallSucceeds());
+  EXPECT_EQ(file_st.st_dev, link_st.st_dev);
+  EXPECT_EQ(file_st.st_ino, link_st.st_ino);
 }
 
 TEST(SymlinkTest, TargetIsNotMapped) {
