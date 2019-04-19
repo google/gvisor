@@ -673,7 +673,7 @@ func (s *socketOperations) extractControlMessages(payload *pb.RecvmsgResponse_Re
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
+func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	req := &pb.SyscallRequest_Recvmsg{&pb.RecvmsgRequest{
 		Fd:         s.fd,
 		Length:     uint32(dst.NumBytes()),
@@ -694,10 +694,10 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			}
 		}
 		c := s.extractControlMessages(res)
-		return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
+		return int(res.Length), 0, res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
 	}
 	if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain || flags&linux.MSG_DONTWAIT != 0 {
-		return 0, nil, 0, socket.ControlMessages{}, err
+		return 0, 0, nil, 0, socket.ControlMessages{}, err
 	}
 
 	// We'll have to block. Register for notifications and keep trying to
@@ -718,23 +718,23 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 				}
 			}
 			c := s.extractControlMessages(res)
-			return int(res.Length), res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
+			return int(res.Length), 0, res.Address.GetAddress(), res.Address.GetLength(), c, syserr.FromError(e)
 		}
 		if err != syserr.ErrWouldBlock && err != syserr.ErrTryAgain {
-			return 0, nil, 0, socket.ControlMessages{}, err
+			return 0, 0, nil, 0, socket.ControlMessages{}, err
 		}
 
 		if s.isShutRdSet() {
 			// Blocking would have caused us to block indefinitely so we return 0,
 			// this is the same behavior as Linux.
-			return 0, nil, 0, socket.ControlMessages{}, nil
+			return 0, 0, nil, 0, socket.ControlMessages{}, nil
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
+				return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
+			return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }

@@ -220,6 +220,86 @@ TEST(NetlinkRouteTest, GetLinkDump) {
   EXPECT_TRUE(loopbackFound);
 }
 
+TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  // No destination required; it defaults to pid 0, the kernel.
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  // Small enough to ensure that the response doesn't fit.
+  constexpr size_t kBufferSize = 10;
+  std::vector<char> buf(kBufferSize);
+  iov.iov_base = buf.data();
+  iov.iov_len = buf.size();
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(fd.get(), &msg, 0),
+              SyscallSucceedsWithValue(kBufferSize));
+  EXPECT_EQ((msg.msg_flags & MSG_TRUNC), MSG_TRUNC);
+}
+
+TEST(NetlinkRouteTest, MsgTruncMsgHdrMsgTrunc) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  // No destination required; it defaults to pid 0, the kernel.
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  // Small enough to ensure that the response doesn't fit.
+  constexpr size_t kBufferSize = 10;
+  std::vector<char> buf(kBufferSize);
+  iov.iov_base = buf.data();
+  iov.iov_len = buf.size();
+
+  int res = 0;
+  ASSERT_THAT(res = RetryEINTR(recvmsg)(fd.get(), &msg, MSG_TRUNC),
+              SyscallSucceeds());
+  EXPECT_GT(res, kBufferSize);
+  EXPECT_EQ((msg.msg_flags & MSG_TRUNC), MSG_TRUNC);
+}
+
 TEST(NetlinkRouteTest, ControlMessageIgnored) {
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
   uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));

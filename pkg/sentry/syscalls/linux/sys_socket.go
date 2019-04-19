@@ -742,17 +742,15 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 	// Fast path when no control message nor name buffers are provided.
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
-		n, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
+		n, mflags, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
 		if err != nil {
 			return 0, syserror.ConvertIntr(err.ToError(), kernel.ERESTARTSYS)
 		}
 		cms.Unix.Release()
 
-		if msg.Flags != 0 {
+		if int(msg.Flags) != mflags {
 			// Copy out the flags to the caller.
-			//
-			// TODO: Plumb through actual flags.
-			if _, err := t.CopyOut(msgPtr+flagsOffset, int32(0)); err != nil {
+			if _, err := t.CopyOut(msgPtr+flagsOffset, int32(mflags)); err != nil {
 				return 0, err
 			}
 		}
@@ -763,7 +761,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	if msg.ControlLen > maxControlLen {
 		return 0, syscall.ENOBUFS
 	}
-	n, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
+	n, mflags, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
@@ -802,9 +800,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	}
 
 	// Copy out the flags to the caller.
-	//
-	// TODO: Plumb through actual flags.
-	if _, err := t.CopyOut(msgPtr+flagsOffset, int32(0)); err != nil {
+	if _, err := t.CopyOut(msgPtr+flagsOffset, int32(mflags)); err != nil {
 		return 0, err
 	}
 
@@ -856,7 +852,7 @@ func recvFrom(t *kernel.Task, fd kdefs.FD, bufPtr usermem.Addr, bufLen uint64, f
 		flags |= linux.MSG_DONTWAIT
 	}
 
-	n, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
+	n, _, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
 	cm.Unix.Release()
 	if e != nil {
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)

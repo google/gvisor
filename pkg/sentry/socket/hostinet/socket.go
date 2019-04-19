@@ -345,20 +345,22 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
+func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	// Whitelist flags.
 	//
 	// FIXME: We can't support MSG_ERRQUEUE because it uses ancillary
 	// messages that netstack/tcpip/transport/unix doesn't understand. Kill the
 	// Socket interface's dependence on netstack.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC) != 0 {
-		return 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
+		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 
 	var senderAddr []byte
 	if senderRequested {
 		senderAddr = make([]byte, sizeofSockaddr)
 	}
+
+	var msgFlags int
 
 	recvmsgToBlocks := safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
 		// Refuse to do anything if any part of dst.Addrs was unusable.
@@ -391,6 +393,7 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			return 0, err
 		}
 		senderAddr = senderAddr[:msg.Namelen]
+		msgFlags = int(msg.Flags)
 		return n, nil
 	})
 
@@ -417,7 +420,10 @@ func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		}
 	}
 
-	return int(n), senderAddr, uint32(len(senderAddr)), socket.ControlMessages{}, syserr.FromError(err)
+	// We don't allow control messages.
+	msgFlags &^= linux.MSG_CTRUNC
+
+	return int(n), msgFlags, senderAddr, uint32(len(senderAddr)), socket.ControlMessages{}, syserr.FromError(err)
 }
 
 // SendMsg implements socket.Socket.SendMsg.

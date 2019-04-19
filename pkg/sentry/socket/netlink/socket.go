@@ -397,7 +397,7 @@ func (s *Socket) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
+func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	from := linux.SockAddrNetlink{
 		Family: linux.AF_NETLINK,
 		PortID: 0,
@@ -412,10 +412,14 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	}
 
 	if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock || flags&linux.MSG_DONTWAIT != 0 {
+		var mflags int
+		if n < int64(r.MsgSize) {
+			mflags |= linux.MSG_TRUNC
+		}
 		if trunc {
 			n = int64(r.MsgSize)
 		}
-		return int(n), from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+		return int(n), mflags, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
 	}
 
 	// We'll have to block. Register for notification and keep trying to
@@ -426,17 +430,21 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 
 	for {
 		if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock {
+			var mflags int
+			if n < int64(r.MsgSize) {
+				mflags |= linux.MSG_TRUNC
+			}
 			if trunc {
 				n = int64(r.MsgSize)
 			}
-			return int(n), from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
+			return int(n), mflags, from, fromLen, socket.ControlMessages{}, syserr.FromError(err)
 		}
 
 		if err := t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 			if err == syserror.ETIMEDOUT {
-				return 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
+				return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrTryAgain
 			}
-			return 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
+			return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 		}
 	}
 }

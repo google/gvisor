@@ -15,6 +15,7 @@
 #include "test/syscalls/linux/socket_non_stream.h"
 
 #include <stdio.h>
+#include <sys/socket.h>
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
@@ -89,6 +90,33 @@ TEST_P(NonStreamSocketPairTest, SingleRecv) {
   EXPECT_EQ(0, memcmp(sent_data1, received_data, sizeof(sent_data1)));
 }
 
+TEST_P(NonStreamSocketPairTest, RecvmsgMsghdrFlagMsgTrunc) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[10];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data) / 2] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(received_data)));
+
+  // Check that msghdr flags were updated.
+  EXPECT_EQ(msg.msg_flags, MSG_TRUNC);
+}
+
 // Stream sockets allow data sent with multiple sends to be peeked at in a
 // single recv. Datagram sockets (except for unix sockets) do not.
 //
@@ -140,6 +168,33 @@ TEST_P(NonStreamSocketPairTest, MsgTruncTruncation) {
   EXPECT_NE(0, memcmp(sent_data + sizeof(sent_data) / 2,
                       received_data + sizeof(received_data) / 2,
                       sizeof(sent_data) / 2));
+}
+
+TEST_P(NonStreamSocketPairTest, MsgTruncTruncationRecvmsgMsghdrFlagMsgTrunc) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[10];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_THAT(
+      RetryEINTR(send)(sockets->first_fd(), sent_data, sizeof(sent_data), 0),
+      SyscallSucceedsWithValue(sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data) / 2] = {};
+
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, MSG_TRUNC),
+              SyscallSucceedsWithValue(sizeof(sent_data)));
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(received_data)));
+
+  // Check that msghdr flags were updated.
+  EXPECT_EQ(msg.msg_flags, MSG_TRUNC);
 }
 
 TEST_P(NonStreamSocketPairTest, MsgTruncSameSize) {
