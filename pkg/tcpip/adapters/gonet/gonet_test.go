@@ -222,6 +222,62 @@ func TestCloseReaderWithForwarder(t *testing.T) {
 	sender.close()
 }
 
+func TestUDPForwarder(t *testing.T) {
+	s, terr := newLoopbackStack()
+	if terr != nil {
+		t.Fatalf("newLoopbackStack() = %v", terr)
+	}
+
+	ip1 := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
+	addr1 := tcpip.FullAddress{NICID, ip1, 11211}
+	s.AddAddress(NICID, ipv4.ProtocolNumber, ip1)
+	ip2 := tcpip.Address(net.IPv4(169, 254, 10, 2).To4())
+	addr2 := tcpip.FullAddress{NICID, ip2, 11311}
+	s.AddAddress(NICID, ipv4.ProtocolNumber, ip2)
+
+	done := make(chan struct{})
+	fwd := udp.NewForwarder(s, func(r *udp.ForwarderRequest) {
+		defer close(done)
+
+		var wq waiter.Queue
+		ep, err := r.CreateEndpoint(&wq)
+		if err != nil {
+			t.Fatalf("r.CreateEndpoint() = %v", err)
+		}
+		defer ep.Close()
+
+		c := NewConn(&wq, ep)
+
+		buf := make([]byte, 256)
+		n, e := c.Read(buf)
+		if e != nil {
+			t.Errorf("c.Read() = %v", e)
+		}
+
+		if _, e := c.Write(buf[:n]); e != nil {
+			t.Errorf("c.Write() = %v", e)
+		}
+	})
+	s.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
+
+	c2, err := NewPacketConn(s, addr2, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatal("NewPacketConn(port 5):", err)
+	}
+
+	sent := "abc123"
+	sendAddr := fullToUDPAddr(addr1)
+	if n, err := c2.WriteTo([]byte(sent), sendAddr); err != nil || n != len(sent) {
+		t.Errorf("c1.WriteTo(%q, %v) = %d, %v, want = %d, %v", sent, sendAddr, n, err, len(sent), nil)
+	}
+
+	buf := make([]byte, 256)
+	n, recvAddr, err := c2.ReadFrom(buf)
+	if err != nil || recvAddr.String() != sendAddr.String() {
+		t.Errorf("c1.ReadFrom() = %d, %v, %v, want = %d, %v, %v", n, recvAddr, err, len(sent), sendAddr, nil)
+	}
+}
+
 // TestDeadlineChange tests that changing the deadline affects currently blocked reads.
 func TestDeadlineChange(t *testing.T) {
 	s, err := newLoopbackStack()

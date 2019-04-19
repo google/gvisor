@@ -20,6 +20,7 @@ go_library(
     srcs = [
         "endpoint.go",
         "endpoint_state.go",
+        "forwarder.go",
         "protocol.go",
         "udp_packet_list.go",
     ],
