@@ -190,8 +190,7 @@ TEST_P(TCPSocketPairTest, FINSentOnShutdownWrWithUnreadData) {
 }
 
 // This test will verify that when data is received by a socket, even if it's
-// not read SHUT_RD will not cause any packets to be generated and data will
-// remain in the buffer and can be read later.
+// not read SHUT_RD will not cause any packets to be generated.
 TEST_P(TCPSocketPairTest, ShutdownRdShouldCauseNoPacketsWithUnreadData) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -213,10 +212,36 @@ TEST_P(TCPSocketPairTest, ShutdownRdShouldCauseNoPacketsWithUnreadData) {
   constexpr int kPollNoResponseTimeoutMs = 3000;
   ASSERT_THAT(RetryEINTR(poll)(&poll_fd2, 1, kPollNoResponseTimeoutMs),
               SyscallSucceedsWithValue(0));  // Timeout.
+}
+
+// This test will verify that a socket which has unread data will still allow
+// the data to be read after shutting down the read side, and once there is no
+// unread data left, then read will return an EOF.
+TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char buf[10] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // Wait until t_ sees the data on its side but don't read it.
+  struct pollfd poll_fd = {sockets->second_fd(), POLLIN | POLLHUP, 0};
+  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  // Now shutdown the read end.
+  ASSERT_THAT(shutdown(sockets->second_fd(), SHUT_RD), SyscallSucceeds());
 
   // Even though we did a SHUT_RD on the read end we can still read the data.
   ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
+
+  // After reading all of the data, reading the closed read end returns EOF.
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
 }
 
 TEST_P(TCPSocketPairTest, ClosedReadNonBlockingSocket) {

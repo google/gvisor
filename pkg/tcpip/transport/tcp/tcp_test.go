@@ -687,6 +687,25 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	})
 }
 
+func TestShutdownRead(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateConnected(789, 30000, nil)
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
+	}
+
+	if err := c.EP.Shutdown(tcpip.ShutdownRead); err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrClosedForReceive)
+	}
+}
+
 func TestFullWindowReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

@@ -1199,21 +1199,24 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 
 	switch e.state {
 	case stateConnected:
+		// Close for read.
+		if (e.shutdownFlags & tcpip.ShutdownRead) != 0 {
+			// Mark read side as closed.
+			e.rcvListMu.Lock()
+			e.rcvClosed = true
+			rcvBufUsed := e.rcvBufUsed
+			e.rcvListMu.Unlock()
+
+			// If we're fully closed and we have unread data we need to abort
+			// the connection with a RST.
+			if (e.shutdownFlags&tcpip.ShutdownWrite) != 0 && rcvBufUsed > 0 {
+				e.notifyProtocolGoroutine(notifyReset)
+				return nil
+			}
+		}
+
 		// Close for write.
 		if (e.shutdownFlags & tcpip.ShutdownWrite) != 0 {
-			if (e.shutdownFlags & tcpip.ShutdownRead) != 0 {
-				// We're fully closed, if we have unread data we need to abort
-				// the connection with a RST.
-				e.rcvListMu.Lock()
-				rcvBufUsed := e.rcvBufUsed
-				e.rcvListMu.Unlock()
-
-				if rcvBufUsed > 0 {
-					e.notifyProtocolGoroutine(notifyReset)
-					return nil
-				}
-			}
-
 			e.sndBufMu.Lock()
 
 			if e.sndClosed {
