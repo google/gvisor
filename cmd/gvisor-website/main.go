@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 )
 
 var redirects = map[string]string{
@@ -54,6 +55,20 @@ func redirectWithQuery(w http.ResponseWriter, r *http.Request, target string) {
 		url += "?" + qs
 	}
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+// hostRedirectHandler redirects the www. domain to the naked domain.
+func hostRedirectHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Host, "www.") {
+			// Redirect to the naked domain.
+			r.URL.Scheme = "https"  // Assume https.
+			r.URL.Host = r.Host[4:] // Remove the 'www.'
+			http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // prefixRedirectHandler returns a handler that redirects to the given formated url.
@@ -89,11 +104,11 @@ func registerRedirects(mux *http.ServeMux) {
 
 	for prefix, baseURL := range prefixHelpers {
 		p := "/" + prefix + "/"
-		mux.Handle(p, prefixRedirectHandler(p, baseURL))
+		mux.Handle(p, hostRedirectHandler(prefixRedirectHandler(p, baseURL)))
 	}
 
 	for path, redirect := range redirects {
-		mux.Handle(path, redirectHandler(redirect))
+		mux.Handle(path, hostRedirectHandler(redirectHandler(redirect)))
 	}
 }
 
@@ -102,7 +117,7 @@ func registerStatic(mux *http.ServeMux, staticDir string) {
 	if mux == nil {
 		mux = http.DefaultServeMux
 	}
-	mux.Handle("/", http.FileServer(http.Dir(staticDir)))
+	mux.Handle("/", hostRedirectHandler(http.FileServer(http.Dir(staticDir))))
 }
 
 func envFlagString(name, def string) string {
