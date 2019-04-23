@@ -99,7 +99,9 @@ type Container struct {
 	// BundleDir is the directory containing the container bundle.
 	BundleDir string `json:"bundleDir"`
 
-	// Root is the directory containing the container metadata file.
+	// Root is the directory containing the container metadata file. If this
+	// container is the root container, Root and RootContainerDir will be the
+	// same.
 	Root string `json:"root"`
 
 	// CreatedAt is the time the container was created.
@@ -128,6 +130,12 @@ type Container struct {
 	// Sandbox is the sandbox this container is running in. It's set when the
 	// container is created and reset when the sandbox is destroyed.
 	Sandbox *sandbox.Sandbox `json:"sandbox"`
+
+	// RootContainerDir is the root directory containing the metadata file of the
+	// sandbox root container. It's used to lock in order to serialize creating
+	// and deleting this Container's metadata directory. If this container is the
+	// root container, this is the same as Root.
+	RootContainerDir string
 }
 
 // Load loads a container with the given id from a metadata file. id may be an
@@ -243,6 +251,12 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		return nil, err
 	}
 
+	unlockRoot, err := maybeLockRootContainer(spec, conf.RootDir)
+	if err != nil {
+		return nil, err
+	}
+	defer unlockRoot()
+
 	// Lock the container metadata file to prevent concurrent creations of
 	// containers with the same id.
 	containerRoot := filepath.Join(conf.RootDir, id)
@@ -261,14 +275,15 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	}
 
 	c := &Container{
-		ID:            id,
-		Spec:          spec,
-		ConsoleSocket: consoleSocket,
-		BundleDir:     bundleDir,
-		Root:          containerRoot,
-		Status:        Creating,
-		CreatedAt:     time.Now(),
-		Owner:         os.Getenv("USER"),
+		ID:               id,
+		Spec:             spec,
+		ConsoleSocket:    consoleSocket,
+		BundleDir:        bundleDir,
+		Root:             containerRoot,
+		Status:           Creating,
+		CreatedAt:        time.Now(),
+		Owner:            os.Getenv("USER"),
+		RootContainerDir: conf.RootDir,
 	}
 	// The Cleanup object cleans up partially created containers when an error occurs.
 	// Any errors occuring during cleanup itself are ignored.
@@ -279,7 +294,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// started in an existing sandbox, we must do so. The metadata will
 	// indicate the ID of the sandbox, which is the same as the ID of the
 	// init container in the sandbox.
-	if specutils.ShouldCreateSandbox(spec) {
+	if isRoot(spec) {
 		log.Debugf("Creating new sandbox for container %q", id)
 
 		// Create and join cgroup before processes are created to ensure they are
@@ -354,6 +369,13 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 // Start starts running the containerized process inside the sandbox.
 func (c *Container) Start(conf *boot.Config) error {
 	log.Debugf("Start container %q", c.ID)
+
+	unlockRoot, err := maybeLockRootContainer(c.Spec, c.RootContainerDir)
+	if err != nil {
+		return err
+	}
+	defer unlockRoot()
+
 	unlock, err := c.lock()
 	if err != nil {
 		return err
@@ -371,7 +393,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		}
 	}
 
-	if specutils.ShouldCreateSandbox(c.Spec) {
+	if isRoot(c.Spec) {
 		if err := c.Sandbox.StartRoot(c.Spec, conf); err != nil {
 			return err
 		}
@@ -418,6 +440,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 		return err
 	}
 	defer unlock()
+
 	if err := c.requireStatus("restore", Created); err != nil {
 		return err
 	}
@@ -643,6 +666,12 @@ func (c *Container) Destroy() error {
 	// do our best to perform all of the cleanups. Hence, we keep a slice
 	// of errors return their concatenation.
 	var errs []string
+
+	unlock, err := maybeLockRootContainer(c.Spec, c.RootContainerDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	if err := c.stop(); err != nil {
 		err = fmt.Errorf("stopping container: %v", err)
@@ -958,6 +987,33 @@ func lockContainerMetadata(containerRootDir string) (func() error, error) {
 		return nil, fmt.Errorf("acquiring lock on container lock file %q: %v", f, err)
 	}
 	return l.Unlock, nil
+}
+
+// maybeLockRootContainer locks the sandbox root container. It is used to
+// prevent races to create and delete child container sandboxes.
+func maybeLockRootContainer(spec *specs.Spec, rootDir string) (func() error, error) {
+	if isRoot(spec) {
+		return func() error { return nil }, nil
+	}
+
+	sbid, ok := specutils.SandboxID(spec)
+	if !ok {
+		return nil, fmt.Errorf("no sandbox ID found when locking root container")
+	}
+	sb, err := Load(rootDir, sbid)
+	if err != nil {
+		return nil, err
+	}
+
+	unlock, err := sb.lock()
+	if err != nil {
+		return nil, err
+	}
+	return unlock, nil
+}
+
+func isRoot(spec *specs.Spec) bool {
+	return specutils.ShouldCreateSandbox(spec)
 }
 
 // runInCgroup executes fn inside the specified cgroup. If cg is nil, execute
