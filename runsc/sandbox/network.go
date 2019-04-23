@@ -257,6 +257,8 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 					return fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
 				}
 				link.GSOMaxSize = ifaceLink.Attrs().GSOMaxSize
+			} else {
+				log.Infof("GSO not available in host.")
 			}
 		}
 

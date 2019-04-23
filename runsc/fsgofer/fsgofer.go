@@ -27,6 +27,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -122,13 +123,13 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
-	mode := os.O_RDWR
+	mode := syscall.O_RDWR
 	if a.conf.ROMount || stat.Mode&syscall.S_IFDIR != 0 {
-		mode = os.O_RDONLY
+		mode = syscall.O_RDONLY
 	}
 
 	// Open the root directory.
-	f, err := os.OpenFile(a.prefix, mode|openFlags, 0)
+	f, err := fd.Open(a.prefix, openFlags|mode, 0)
 	if err != nil {
 		return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
 	}
@@ -201,8 +202,9 @@ type localFile struct {
 	hostPath string
 
 	// file is opened when localFile is created and it's never nil. It may be
-	// reopened...
-	file *os.File
+	// reopened if the Open() mode is wider than the mode the file was originally
+	// opened with.
+	file *fd.FD
 
 	// mode is the mode in which the file was opened. Set to invalidMode
 	// if localFile isn't opened.
@@ -215,14 +217,10 @@ type localFile struct {
 	readDirMu sync.Mutex
 }
 
-func openAnyFileFromParent(parent *localFile, name string) (*os.File, string, error) {
+func openAnyFileFromParent(parent *localFile, name string) (*fd.FD, string, error) {
 	path := path.Join(parent.hostPath, name)
-	f, err := openAnyFile(path, func(mode int) (*os.File, error) {
-		fd, err := syscall.Openat(parent.fd(), name, openFlags|mode, 0)
-		if err != nil {
-			return nil, err
-		}
-		return os.NewFile(uintptr(fd), path), nil
+	f, err := openAnyFile(path, func(mode int) (*fd.FD, error) {
+		return fd.OpenAt(parent.file, name, openFlags|mode, 0)
 	})
 	return f, path, err
 }
@@ -230,7 +228,7 @@ func openAnyFileFromParent(parent *localFile, name string) (*os.File, string, er
 // openAnyFile attempts to open the file in O_RDONLY and if it fails fallsback
 // to O_PATH. 'path' is used for logging messages only. 'fn' is what does the
 // actual file open and is customizable by the caller.
-func openAnyFile(path string, fn func(mode int) (*os.File, error)) (*os.File, error) {
+func openAnyFile(path string, fn func(mode int) (*fd.FD, error)) (*fd.FD, error) {
 	// Attempt to open file in the following mode in order:
 	//   1. RDONLY | NONBLOCK: for all files, works for directories and ro mounts too.
 	//      Use non-blocking to prevent getting stuck inside open(2) for FIFOs. This option
@@ -239,7 +237,7 @@ func openAnyFile(path string, fn func(mode int) (*os.File, error)) (*os.File, er
 	modes := []int{syscall.O_RDONLY | syscall.O_NONBLOCK, unix.O_PATH}
 
 	var err error
-	var file *os.File
+	var file *fd.FD
 	for i, mode := range modes {
 		file, err = fn(mode)
 		if err == nil {
@@ -279,7 +277,7 @@ func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
 	return ft, nil
 }
 
-func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_t) (*localFile, error) {
+func newLocalFile(a *attachPoint, file *fd.FD, path string, stat syscall.Stat_t) (*localFile, error) {
 	ft, err := getSupportedFileType(stat)
 	if err != nil {
 		return nil, err
@@ -297,18 +295,22 @@ func newLocalFile(a *attachPoint, file *os.File, path string, stat syscall.Stat_
 // newFDMaybe creates a fd.FD from a file, dup'ing the FD and setting it as
 // non-blocking. If anything fails, returns nil. It's better to have a file
 // without host FD, than to fail the operation.
-func newFDMaybe(file *os.File) *fd.FD {
-	fd, err := fd.NewFromFile(file)
+func newFDMaybe(file *fd.FD) *fd.FD {
+	dupFD, err := syscall.Dup(file.FD())
+	// Technically, the runtime may call the finalizer on file as soon as
+	// FD() returns.
+	runtime.KeepAlive(file)
 	if err != nil {
 		return nil
 	}
+	dup := fd.New(dupFD)
 
 	// fd is blocking; non-blocking is required.
-	if err := syscall.SetNonblock(fd.FD(), true); err != nil {
-		fd.Close()
+	if err := syscall.SetNonblock(dup.FD(), true); err != nil {
+		dup.Close()
 		return nil
 	}
-	return fd
+	return dup
 }
 
 func stat(fd int) (syscall.Stat_t, error) {
@@ -323,35 +325,30 @@ func fchown(fd int, uid p9.UID, gid p9.GID) error {
 	return syscall.Fchownat(fd, "", int(uid), int(gid), linux.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
-func (l *localFile) fd() int {
-	return int(l.file.Fd())
-}
-
 // Open implements p9.File.
 func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	if l.isOpen() {
-		panic(fmt.Sprintf("attempting to open already opened file: %q", l.file.Name()))
+		panic(fmt.Sprintf("attempting to open already opened file: %q", l.hostPath))
 	}
 
 	// Check if control file can be used or if a new open must be created.
-	var newFile *os.File
+	var newFile *fd.FD
 	if mode == p9.ReadOnly {
-		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.file.Name())
+		log.Debugf("Open reusing control file, mode: %v, %q", mode, l.hostPath)
 		newFile = l.file
 	} else {
 		// Ideally reopen would call name_to_handle_at (with empty name) and
 		// open_by_handle_at to reopen the file without using 'hostPath'. However,
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
-		log.Debugf("Open reopening file, mode: %v, %q", mode, l.file.Name())
+		log.Debugf("Open reopening file, mode: %v, %q", mode, l.hostPath)
 		var err error
-
-		newFile, err = os.OpenFile(l.hostPath, openFlags|mode.OSFlags(), 0)
+		newFile, err = fd.Open(l.hostPath, openFlags|mode.OSFlags(), 0)
 		if err != nil {
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
 	}
 
-	stat, err := stat(int(newFile.Fd()))
+	stat, err := stat(newFile.FD())
 	if err != nil {
 		if newFile != l.file {
 			newFile.Close()
@@ -368,7 +365,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 	// Close old file in case a new one was created.
 	if newFile != l.file {
 		if err := l.file.Close(); err != nil {
-			log.Warningf("Error closing file %q: %v", l.file.Name(), err)
+			log.Warningf("Error closing file %q: %v", l.hostPath, err)
 		}
 		l.file = newFile
 	}
@@ -396,33 +393,31 @@ func (l *localFile) Create(name string, mode p9.OpenFlags, perm p9.FileMode, uid
 		flags |= mode.OSFlags()
 	}
 
-	fd, err := syscall.Openat(l.fd(), name, flags, uint32(perm.Permissions()))
+	child, err := fd.OpenAt(l.file, name, flags, uint32(perm.Permissions()))
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
-		syscall.Close(fd)
+		child.Close()
 		// Best effort attempt to remove the file in case of failure.
-		if err := syscall.Unlinkat(l.fd(), name); err != nil {
+		if err := syscall.Unlinkat(l.file.FD(), name); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, name), err)
 		}
 	})
 	defer cu.Clean()
 
-	if err := fchown(fd, uid, gid); err != nil {
+	if err := fchown(child.FD(), uid, gid); err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
-	stat, err := stat(fd)
+	stat, err := stat(child.FD())
 	if err != nil {
 		return nil, nil, p9.QID{}, 0, extractErrno(err)
 	}
 
-	cPath := path.Join(l.hostPath, name)
-	f := os.NewFile(uintptr(fd), cPath)
 	c := &localFile{
 		attachPoint: l.attachPoint,
-		hostPath:    cPath,
-		file:        f,
+		hostPath:    path.Join(l.hostPath, name),
+		file:        child,
 		mode:        mode,
 	}
 
@@ -440,12 +435,12 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 		return p9.QID{}, syscall.EBADF
 	}
 
-	if err := syscall.Mkdirat(l.fd(), name, uint32(perm.Permissions())); err != nil {
+	if err := syscall.Mkdirat(l.file.FD(), name, uint32(perm.Permissions())); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
 		// Best effort attempt to remove the dir in case of failure.
-		if err := unix.Unlinkat(l.fd(), name, unix.AT_REMOVEDIR); err != nil {
+		if err := unix.Unlinkat(l.file.FD(), name, unix.AT_REMOVEDIR); err != nil {
 			log.Warningf("error unlinking dir %q after failure: %v", path.Join(l.hostPath, name), err)
 		}
 	})
@@ -453,16 +448,16 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 
 	// Open directory to change ownership and stat it.
 	flags := syscall.O_DIRECTORY | syscall.O_RDONLY | openFlags
-	fd, err := syscall.Openat(l.fd(), name, flags, 0)
+	f, err := fd.OpenAt(l.file, name, flags, 0)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	defer syscall.Close(fd)
+	defer f.Close()
 
-	if err := fchown(fd, uid, gid); err != nil {
+	if err := fchown(f.FD(), uid, gid); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	stat, err := stat(fd)
+	stat, err := stat(f.FD())
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -475,25 +470,25 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	// Duplicate current file if 'names' is empty.
 	if len(names) == 0 {
-		var newFile *os.File
+		var newFile *fd.FD
 		if l.isOpen() {
 			// File mode may have changed when it was opened, so open a new one.
 			var err error
-			newFile, err = openAnyFile(l.hostPath, func(mode int) (*os.File, error) {
-				return os.OpenFile(l.hostPath, openFlags|mode, 0)
+			newFile, err = openAnyFile(l.hostPath, func(mode int) (*fd.FD, error) {
+				return fd.Open(l.hostPath, openFlags|mode, 0)
 			})
 			if err != nil {
 				return nil, nil, extractErrno(err)
 			}
 		} else {
-			newFd, err := syscall.Dup(l.fd())
+			newFd, err := syscall.Dup(l.file.FD())
 			if err != nil {
 				return nil, nil, extractErrno(err)
 			}
-			newFile = os.NewFile(uintptr(newFd), l.hostPath)
+			newFile = fd.New(newFd)
 		}
 
-		stat, err := stat(int(newFile.Fd()))
+		stat, err := stat(int(newFile.FD()))
 		if err != nil {
 			newFile.Close()
 			return nil, nil, extractErrno(err)
@@ -515,7 +510,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
-		stat, err := stat(int(f.Fd()))
+		stat, err := stat(f.FD())
 		if err != nil {
 			f.Close()
 			return nil, nil, extractErrno(err)
@@ -535,7 +530,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 // StatFS implements p9.File.
 func (l *localFile) StatFS() (p9.FSStat, error) {
 	var s syscall.Statfs_t
-	if err := syscall.Fstatfs(l.fd(), &s); err != nil {
+	if err := syscall.Fstatfs(l.file.FD(), &s); err != nil {
 		return p9.FSStat{}, extractErrno(err)
 	}
 
@@ -557,7 +552,7 @@ func (l *localFile) FSync() error {
 	if !l.isOpen() {
 		return syscall.EBADF
 	}
-	if err := l.file.Sync(); err != nil {
+	if err := syscall.Fsync(l.file.FD()); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -565,7 +560,7 @@ func (l *localFile) FSync() error {
 
 // GetAttr implements p9.File.
 func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
-	stat, err := stat(l.fd())
+	stat, err := stat(l.file.FD())
 	if err != nil {
 		return p9.QID{}, p9.AttrMask{}, p9.Attr{}, extractErrno(err)
 	}
@@ -633,20 +628,20 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// Handle all the sanity checks up front so that the client gets a
 	// consistent result that is not attribute dependent.
 	if !valid.IsSubsetOf(allowed) {
-		log.Warningf("SetAttr() failed for %q, mask: %v", l.file.Name(), valid)
+		log.Warningf("SetAttr() failed for %q, mask: %v", l.hostPath, valid)
 		return syscall.EPERM
 	}
 
 	// Check if it's possible to use cached file, or if another one needs to be
 	// opened for write.
-	fd := l.fd()
+	f := l.file
 	if l.ft == regular && l.mode != p9.WriteOnly && l.mode != p9.ReadWrite {
-		f, err := os.OpenFile(l.hostPath, openFlags|os.O_WRONLY, 0)
+		var err error
+		f, err = fd.Open(l.hostPath, openFlags|syscall.O_WRONLY, 0)
 		if err != nil {
 			return extractErrno(err)
 		}
 		defer f.Close()
-		fd = int(f.Fd())
 	}
 
 	// The semantics are to either return an error if no changes were made,
@@ -661,14 +656,14 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	// over another.
 	var err error
 	if valid.Permissions {
-		if cerr := syscall.Fchmod(fd, uint32(attr.Permissions)); cerr != nil {
+		if cerr := syscall.Fchmod(f.FD(), uint32(attr.Permissions)); cerr != nil {
 			log.Debugf("SetAttr fchmod failed %q, err: %v", l.hostPath, cerr)
 			err = extractErrno(cerr)
 		}
 	}
 
 	if valid.Size {
-		if terr := syscall.Ftruncate(fd, int64(attr.Size)); terr != nil {
+		if terr := syscall.Ftruncate(f.FD(), int64(attr.Size)); terr != nil {
 			log.Debugf("SetAttr ftruncate failed %q, err: %v", l.hostPath, terr)
 			err = extractErrno(terr)
 		}
@@ -700,20 +695,20 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 			// name.
-			f, err := os.OpenFile(path.Dir(l.hostPath), openFlags|unix.O_PATH, 0)
+			parent, err := syscall.Open(path.Dir(l.hostPath), openFlags|unix.O_PATH, 0)
 			if err != nil {
 				return extractErrno(err)
 			}
-			defer f.Close()
+			defer syscall.Close(parent)
 
-			if terr := utimensat(int(f.Fd()), path.Base(l.hostPath), utimes, linux.AT_SYMLINK_NOFOLLOW); terr != nil {
+			if terr := utimensat(parent, path.Base(l.hostPath), utimes, linux.AT_SYMLINK_NOFOLLOW); terr != nil {
 				log.Debugf("SetAttr utimens failed %q, err: %v", l.hostPath, terr)
 				err = extractErrno(terr)
 			}
 		} else {
 			// Directories and regular files can operate directly on the fd
 			// using empty name.
-			if terr := utimensat(fd, "", utimes, 0); terr != nil {
+			if terr := utimensat(f.FD(), "", utimes, 0); terr != nil {
 				log.Debugf("SetAttr utimens failed %q, err: %v", l.hostPath, terr)
 				err = extractErrno(terr)
 			}
@@ -729,7 +724,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 		if valid.GID {
 			gid = int(attr.GID)
 		}
-		if oerr := syscall.Fchownat(fd, "", uid, gid, linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW); oerr != nil {
+		if oerr := syscall.Fchownat(f.FD(), "", uid, gid, linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW); oerr != nil {
 			log.Debugf("SetAttr fchownat failed %q, err: %v", l.hostPath, oerr)
 			err = extractErrno(oerr)
 		}
@@ -754,7 +749,7 @@ func (l *localFile) RenameAt(oldName string, directory p9.File, newName string) 
 	}
 
 	newParent := directory.(*localFile)
-	if err := renameat(l.fd(), oldName, newParent.fd(), newName); err != nil {
+	if err := renameat(l.file.FD(), oldName, newParent.file.FD(), newName); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -804,28 +799,28 @@ func (l *localFile) Symlink(target, newName string, uid p9.UID, gid p9.GID) (p9.
 		return p9.QID{}, syscall.EBADF
 	}
 
-	if err := unix.Symlinkat(target, l.fd(), newName); err != nil {
+	if err := unix.Symlinkat(target, l.file.FD(), newName); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
 	cu := specutils.MakeCleanup(func() {
 		// Best effort attempt to remove the symlink in case of failure.
-		if err := syscall.Unlinkat(l.fd(), newName); err != nil {
+		if err := syscall.Unlinkat(l.file.FD(), newName); err != nil {
 			log.Warningf("error unlinking file %q after failure: %v", path.Join(l.hostPath, newName), err)
 		}
 	})
 	defer cu.Clean()
 
 	// Open symlink to change ownership and stat it.
-	fd, err := syscall.Openat(l.fd(), newName, unix.O_PATH|openFlags, 0)
+	f, err := fd.OpenAt(l.file, newName, unix.O_PATH|openFlags, 0)
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	defer syscall.Close(fd)
+	defer f.Close()
 
-	if err := fchown(fd, uid, gid); err != nil {
+	if err := fchown(f.FD(), uid, gid); err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
-	stat, err := stat(fd)
+	stat, err := stat(f.FD())
 	if err != nil {
 		return p9.QID{}, extractErrno(err)
 	}
@@ -845,7 +840,7 @@ func (l *localFile) Link(target p9.File, newName string) error {
 	}
 
 	targetFile := target.(*localFile)
-	if err := unix.Linkat(targetFile.fd(), "", l.fd(), newName, linux.AT_EMPTY_PATH); err != nil {
+	if err := unix.Linkat(targetFile.file.FD(), "", l.file.FD(), newName, linux.AT_EMPTY_PATH); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -868,7 +863,7 @@ func (l *localFile) UnlinkAt(name string, flags uint32) error {
 		return syscall.EBADF
 	}
 
-	if err := unix.Unlinkat(l.fd(), name, int(flags)); err != nil {
+	if err := unix.Unlinkat(l.file.FD(), name, int(flags)); err != nil {
 		return extractErrno(err)
 	}
 	return nil
@@ -887,30 +882,67 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	// reading all directory contents. Take a lock because this operation is
 	// stateful.
 	l.readDirMu.Lock()
-	if _, err := l.file.Seek(0, 0); err != nil {
-		l.readDirMu.Unlock()
-		return nil, extractErrno(err)
-	}
-	names, err := l.file.Readdirnames(-1)
-	if err != nil {
-		l.readDirMu.Unlock()
-		return nil, extractErrno(err)
-	}
-	l.readDirMu.Unlock()
+	defer l.readDirMu.Unlock()
 
-	var dirents []p9.Dirent
-	for i := int(offset); i >= 0 && i < len(names); i++ {
-		stat, err := statAt(l.fd(), names[i])
+	if _, err := syscall.Seek(l.file.FD(), 0, 0); err != nil {
+		return nil, extractErrno(err)
+	}
+
+	return l.readDirent(l.file.FD(), offset, count)
+}
+
+func (l *localFile) readDirent(f int, offset uint64, count uint32) ([]p9.Dirent, error) {
+	// Limit 'count' to cap the slice size that is returned.
+	const maxCount = 100000
+	if count > maxCount {
+		count = maxCount
+	}
+
+	dirents := make([]p9.Dirent, 0, count)
+
+	// Pre-allocate buffers that will be reused to get partial results.
+	direntsBuf := make([]byte, 8192)
+	names := make([]string, 0, 100)
+
+	skip := offset // Tracks the number of entries to skip.
+	end := offset + uint64(count)
+	for offset < end {
+		dirSize, err := syscall.ReadDirent(f, direntsBuf)
 		if err != nil {
-			continue
+			return dirents, err
 		}
-		qid := l.attachPoint.makeQID(stat)
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   names[i],
-			Offset: uint64(i + 1),
-		})
+		if dirSize <= 0 {
+			return dirents, nil // EOF
+		}
+
+		names := names[:0]
+		_, _, names = syscall.ParseDirent(direntsBuf[:dirSize], -1, names)
+
+		// Skip over entries that the caller is not interested in.
+		if skip > 0 {
+			if skip > uint64(len(names)) {
+				skip -= uint64(len(names))
+				names = names[:0]
+			} else {
+				names = names[skip:]
+				skip = 0
+			}
+		}
+		for _, name := range names {
+			stat, err := statAt(l.file.FD(), name)
+			if err != nil {
+				log.Warningf("Readdir is skipping file with failed stat %q, err: %v", l.hostPath, err)
+				continue
+			}
+			qid := l.attachPoint.makeQID(stat)
+			offset++
+			dirents = append(dirents, p9.Dirent{
+				QID:    qid,
+				Type:   qid.Type,
+				Name:   name,
+				Offset: offset,
+			})
+		}
 	}
 	return dirents, nil
 }
@@ -921,7 +953,7 @@ func (l *localFile) Readlink() (string, error) {
 	const limit = 1024 * 1024
 	for len := 128; len < limit; len *= 2 {
 		b := make([]byte, len)
-		n, err := unix.Readlinkat(l.fd(), "", b)
+		n, err := unix.Readlinkat(l.file.FD(), "", b)
 		if err != nil {
 			return "", extractErrno(err)
 		}
