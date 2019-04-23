@@ -83,25 +83,19 @@ docker start --checkpoint --checkpoint-dir=<directory> <container>
 
 ### Issues Preventing Compatibility with Docker
 
-#### [Moby #37360][leave-running]
-
-Docker version 18.03.0-ce and earlier hangs when checkpointing and does not
-create the checkpoint. To successfully use this feature, install a custom
-version of docker-ce from the moby repository. This issue is caused by an
-improper implementation of the `--leave-running` flag. This issue is fixed in
-newer releases.
-
-#### Docker does not support restoration into new containers.
-
-Docker currently expects the container which created the checkpoint to be the
-same container used to restore which is not possible in runsc. When Docker
-supports container migration and therefore restoration into new containers, this
-will be the flow.
-
-#### [Moby #37344][checkpoint-dir]
-
-Docker does not currently support the `--checkpoint-dir` flag but this will be
-required when restoring from a checkpoint made in another container.
+- **[Moby #37360][leave-running]:** Docker version 18.03.0-ce and earlier hangs
+  when checkpointing and does not create the checkpoint. To successfully use
+  this feature, install a custom version of docker-ce from the moby repository.
+  This issue is caused by an improper implementation of the `--leave-running`
+  flag. This issue is fixed in newer releases.
+- **Docker does not support restoration into new containers:** Docker currently
+  expects the container which created the checkpoint to be the same container
+  used to restore which is not possible in runsc. When Docker supports container
+  migration and therefore restoration into new containers, this will be the
+  flow.
+- **[Moby #37344][checkpoint-dir]:** Docker does not currently support the
+  `--checkpoint-dir` flag but this will be required when restoring from a
+  checkpoint made in another container.
 
 [leave-running]: https://github.com/moby/moby/pull/37360
 [checkpoint-dir]: https://github.com/moby/moby/issues/37344
