@@ -73,8 +73,8 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS; Obsolete</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="setpersonality"></a>135</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/setpersonality.2.html" target="_blank" rel="noopener">setpersonality</a></td>
+      <td><a class="doc-table-anchor" id="personality"></a>135</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/personality.2.html" target="_blank" rel="noopener">personality</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EINVAL; Unable to change personality</td>
@@ -94,15 +94,15 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="schedsetparam"></a>142</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/schedsetparam.2.html" target="_blank" rel="noopener">schedsetparam</a></td>
+      <td><a class="doc-table-anchor" id="sched_setparam"></a>142</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/sched_setparam.2.html" target="_blank" rel="noopener">sched_setparam</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise</td>
     </tr>
     <tr>
       <td><a class="doc-table-anchor" id="schedrrgetinterval"></a>148</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/schedrrgetinterval.2.html" target="_blank" rel="noopener">schedrrgetinterval</a></td>
+      <td><a href="http://man7.org/linux/man-pages/man2/sched_rr_get_interval.2.html" target="_blank" rel="noopener">sched_rr_get_interval</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM</td>
@@ -115,15 +115,15 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns EPERM</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="modifyldt"></a>154</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/modifyldt.2.html" target="_blank" rel="noopener">modifyldt</a></td>
+      <td><a class="doc-table-anchor" id="modify_ldt"></a>154</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/modify_ldt.2.html" target="_blank" rel="noopener">modify_ldt</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="pivotroot"></a>155</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/pivotroot.2.html" target="_blank" rel="noopener">pivotroot</a></td>
+      <td><a class="doc-table-anchor" id="pivot_root"></a>155</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/pivot_root.2.html" target="_blank" rel="noopener">pivot_root</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM</td>
@@ -192,36 +192,36 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_rawio; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="createmodule"></a>174</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/createmodule.2.html" target="_blank" rel="noopener">createmodule</a></td>
+      <td><a class="doc-table-anchor" id="create_module"></a>174</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/create_module.2.html" target="_blank" rel="noopener">create_module</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="initmodule"></a>175</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/initmodule.2.html" target="_blank" rel="noopener">initmodule</a></td>
+      <td><a class="doc-table-anchor" id="init_module"></a>175</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/init_module.2.html" target="_blank" rel="noopener">init_module</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="deletemodule"></a>176</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/deletemodule.2.html" target="_blank" rel="noopener">deletemodule</a></td>
+      <td><a class="doc-table-anchor" id="delete_module"></a>176</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/delete_module.2.html" target="_blank" rel="noopener">delete_module</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="getkernelsyms"></a>177</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/getkernelsyms.2.html" target="_blank" rel="noopener">getkernelsyms</a></td>
+      <td><a class="doc-table-anchor" id="get_kernel_syms"></a>177</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/get_kernel_syms.2.html" target="_blank" rel="noopener">get_kernel_syms</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Not supported in > 2.6</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="querymodule"></a>178</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/querymodule.2.html" target="_blank" rel="noopener">querymodule</a></td>
+      <td><a class="doc-table-anchor" id="query_module"></a>178</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/query_module.2.html" target="_blank" rel="noopener">query_module</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Not supported in > 2.6</td>
@@ -255,8 +255,8 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS; Not implemented in Linux</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="afssyscall"></a>183</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/afssyscall.2.html" target="_blank" rel="noopener">afssyscall</a></td>
+      <td><a class="doc-table-anchor" id="afs_syscall"></a>183</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/afs_syscall.2.html" target="_blank" rel="noopener">afs_syscall</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Not implemented in Linux</td>
@@ -367,43 +367,43 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOTSUP; Requires filesystem support</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="setthreadarea"></a>205</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/setthreadarea.2.html" target="_blank" rel="noopener">setthreadarea</a></td>
+      <td><a class="doc-table-anchor" id="set_thread_area"></a>205</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/set_thread_area.2.html" target="_blank" rel="noopener">set_thread_area</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Expected to return ENOSYS on 64-bit</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="getthreadarea"></a>211</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/getthreadarea.2.html" target="_blank" rel="noopener">getthreadarea</a></td>
+      <td><a class="doc-table-anchor" id="get_thread_area"></a>211</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/get_thread_area.2.html" target="_blank" rel="noopener">get_thread_area</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Expected to return ENOSYS on 64-bit</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="lookupdcookie"></a>212</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/lookupdcookie.2.html" target="_blank" rel="noopener">lookupdcookie</a></td>
+      <td><a class="doc-table-anchor" id="lookup_dcookie"></a>212</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/lookup_dcookie.2.html" target="_blank" rel="noopener">lookup_dcookie</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="epollctlold"></a>214</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/epollctlold.2.html" target="_blank" rel="noopener">epollctlold</a></td>
+      <td><a class="doc-table-anchor" id="epoll_ctl_old"></a>214</td>
+      <td>epoll_ctl_old</td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Deprecated</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="epollwaitold"></a>215</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/epollwaitold.2.html" target="_blank" rel="noopener">epollwaitold</a></td>
+      <td><a class="doc-table-anchor" id="epoll_wait_old"></a>215</td>
+      <td>epoll_wait_old</td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Deprecated</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="remapfilepages"></a>216</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/remapfilepages.2.html" target="_blank" rel="noopener">remapfilepages</a></td>
+      <td><a class="doc-table-anchor" id="remap_file_pages"></a>216</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/remap_file_pages.2.html" target="_blank" rel="noopener">remap_file_pages</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Deprecated</td>
@@ -430,57 +430,57 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqopen"></a>240</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqopen.2.html" target="_blank" rel="noopener">mqopen</a></td>
+      <td><a class="doc-table-anchor" id="mq_open"></a>240</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_open.2.html" target="_blank" rel="noopener">mq_open</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqunlink"></a>241</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqunlink.2.html" target="_blank" rel="noopener">mqunlink</a></td>
+      <td><a class="doc-table-anchor" id="mq_unlink"></a>241</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_unlink.2.html" target="_blank" rel="noopener">mq_unlink</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqtimedsend"></a>242</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqtimedsend.2.html" target="_blank" rel="noopener">mqtimedsend</a></td>
+      <td><a class="doc-table-anchor" id="mq_timedsend"></a>242</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_timedsend.2.html" target="_blank" rel="noopener">mq_timedsend</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqtimedreceive"></a>243</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqtimedreceive.2.html" target="_blank" rel="noopener">mqtimedreceive</a></td>
+      <td><a class="doc-table-anchor" id="mq_timedreceive"></a>243</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_timedreceive.2.html" target="_blank" rel="noopener">mq_timedreceive</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqnotify"></a>244</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqnotify.2.html" target="_blank" rel="noopener">mqnotify</a></td>
+      <td><a class="doc-table-anchor" id="mq_notify"></a>244</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_notify.2.html" target="_blank" rel="noopener">mq_notify</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="mqgetsetattr"></a>245</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/mqgetsetattr.2.html" target="_blank" rel="noopener">mqgetsetattr</a></td>
+      <td><a class="doc-table-anchor" id="mq_getsetattr"></a>245</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/mq_getsetattr.2.html" target="_blank" rel="noopener">mq_getsetattr</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="addkey"></a>248</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/addkey.2.html" target="_blank" rel="noopener">addkey</a></td>
+      <td><a class="doc-table-anchor" id="add_key"></a>248</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/add_key.2.html" target="_blank" rel="noopener">add_key</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EACCES; Not available to user</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="requestkey"></a>249</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/requestkey.2.html" target="_blank" rel="noopener">requestkey</a></td>
+      <td><a class="doc-table-anchor" id="request_key"></a>249</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/request_key.2.html" target="_blank" rel="noopener">request_key</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EACCES; Not available to user</td>
@@ -493,36 +493,36 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns EACCES; Not available to user</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="ioprioset"></a>251</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/ioprioset.2.html" target="_blank" rel="noopener">ioprioset</a></td>
+      <td><a class="doc-table-anchor" id="ioprio_set"></a>251</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/ioprio_set.2.html" target="_blank" rel="noopener">ioprio_set</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="ioprioget"></a>252</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/ioprioget.2.html" target="_blank" rel="noopener">ioprioget</a></td>
+      <td><a class="doc-table-anchor" id="ioprio_get"></a>252</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/ioprio_get.2.html" target="_blank" rel="noopener">ioprio_get</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_admin; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="migratepages"></a>256</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/migratepages.2.html" target="_blank" rel="noopener">migratepages</a></td>
+      <td><a class="doc-table-anchor" id="migrate_pages"></a>256</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/migrate_pages.2.html" target="_blank" rel="noopener">migrate_pages</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="setrobustlist"></a>273</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/setrobustlist.2.html" target="_blank" rel="noopener">setrobustlist</a></td>
+      <td><a class="doc-table-anchor" id="set_robust_list"></a>273</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/set_robust_list.2.html" target="_blank" rel="noopener">set_robust_list</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Obsolete</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="getrobustlist"></a>274</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/getrobustlist.2.html" target="_blank" rel="noopener">getrobustlist</a></td>
+      <td><a class="doc-table-anchor" id="get_robust_list"></a>274</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/get_robust_list.2.html" target="_blank" rel="noopener">get_robust_list</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Obsolete</td>
@@ -549,8 +549,8 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="movepages"></a>279</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/movepages.2.html" target="_blank" rel="noopener">movepages</a></td>
+      <td><a class="doc-table-anchor" id="move_pages"></a>279</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/move_pages.2.html" target="_blank" rel="noopener">move_pages</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise</td>
@@ -570,43 +570,43 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="perfeventopen"></a>298</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/perfeventopen.2.html" target="_blank" rel="noopener">perfeventopen</a></td>
+      <td><a class="doc-table-anchor" id="perf_event_open"></a>298</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/perf_event_open.2.html" target="_blank" rel="noopener">perf_event_open</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns ENODEV; No support for perf counters</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="fanotifyinit"></a>300</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/fanotifyinit.2.html" target="_blank" rel="noopener">fanotifyinit</a></td>
+      <td><a class="doc-table-anchor" id="fanotify_init"></a>300</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/fanotify_init.2.html" target="_blank" rel="noopener">fanotify_init</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Needs CONFIG_FANOTIFY</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="fanotifymark"></a>301</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/fanotifymark.2.html" target="_blank" rel="noopener">fanotifymark</a></td>
+      <td><a class="doc-table-anchor" id="fanotify_mark"></a>301</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/fanotify_mark.2.html" target="_blank" rel="noopener">fanotify_mark</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS; Needs CONFIG_FANOTIFY</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="nametohandleat"></a>303</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/nametohandleat.2.html" target="_blank" rel="noopener">nametohandleat</a></td>
+      <td><a class="doc-table-anchor" id="name_to_handle_at"></a>303</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/name_to_handle_at.2.html" target="_blank" rel="noopener">name_to_handle_at</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EOPNOTSUPP; Needs filesystem support</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="openbyhandleat"></a>304</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/openbyhandleat.2.html" target="_blank" rel="noopener">openbyhandleat</a></td>
+      <td><a class="doc-table-anchor" id="open_by_handle_at"></a>304</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/open_by_handle_at.2.html" target="_blank" rel="noopener">open_by_handle_at</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EOPNOTSUPP; Needs filesystem support</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="clockadjtime"></a>305</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/clockadjtime.2.html" target="_blank" rel="noopener">clockadjtime</a></td>
+      <td><a class="doc-table-anchor" id="clock_adjtime"></a>305</td>
+      <td>clock_adjtime</td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise</td>
@@ -619,15 +619,15 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="processvmreadv"></a>310</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/processvmreadv.2.html" target="_blank" rel="noopener">processvmreadv</a></td>
+      <td><a class="doc-table-anchor" id="process_vm_readv"></a>310</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/process_vm_readv.2.html" target="_blank" rel="noopener">process_vm_readv</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="processvmwritev"></a>311</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/processvmwritev.2.html" target="_blank" rel="noopener">processvmwritev</a></td>
+      <td><a class="doc-table-anchor" id="process_vm_writev"></a>311</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/process_vm_writev.2.html" target="_blank" rel="noopener">process_vm_writev</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
@@ -640,22 +640,22 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns EPERM or ENOSYS; Requires cap_sys_ptrace</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="finitmodule"></a>313</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/finitmodule.2.html" target="_blank" rel="noopener">finitmodule</a></td>
+      <td><a class="doc-table-anchor" id="finit_module"></a>313</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/finit_module.2.html" target="_blank" rel="noopener">finit_module</a></td>
       <td>Partial</td>
       <td></td>
       <td>Returns EPERM or ENOSYS; Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="schedsetattr"></a>314</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/schedsetattr.2.html" target="_blank" rel="noopener">schedsetattr</a></td>
+      <td><a class="doc-table-anchor" id="sched_setattr"></a>314</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/sched_setattr.2.html" target="_blank" rel="noopener">sched_setattr</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="schedgetattr"></a>315</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/schedgetattr.2.html" target="_blank" rel="noopener">schedgetattr</a></td>
+      <td><a class="doc-table-anchor" id="sched_getattr"></a>315</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/sched_getattr.2.html" target="_blank" rel="noopener">sched_getattr</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
@@ -668,8 +668,8 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="memfdcreate"></a>319</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/memfdcreate.2.html" target="_blank" rel="noopener">memfdcreate</a></td>
+      <td><a class="doc-table-anchor" id="memfd_create"></a>319</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/memfd_create.2.html" target="_blank" rel="noopener">memfd_create</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
@@ -703,8 +703,8 @@ syscalls. 231 syscalls are not yet documented.
       <td>Returns ENOSYS</td>
     </tr>
     <tr>
-      <td><a class="doc-table-anchor" id="copyfilerange"></a>326</td>
-      <td><a href="http://man7.org/linux/man-pages/man2/copyfilerange.2.html" target="_blank" rel="noopener">copyfilerange</a></td>
+      <td><a class="doc-table-anchor" id="copy_file_range"></a>326</td>
+      <td><a href="http://man7.org/linux/man-pages/man2/copy_file_range.2.html" target="_blank" rel="noopener">copy_file_range</a></td>
       <td>Unimplemented</td>
       <td></td>
       <td>Returns ENOSYS</td>
