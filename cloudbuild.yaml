@@ -18,7 +18,7 @@ steps:
     args: ["make"]
   # Test the HTML for issues.
   - name: 'gcr.io/gvisor-website/html-proofer:3.10.2'
-    args: ["htmlproofer", "--disable-external", "public/static"]
+    args: ["htmlproofer", "--disable-external", "--check-html", "public/static"]
   # Deploy to App Engine only for master branch.
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
