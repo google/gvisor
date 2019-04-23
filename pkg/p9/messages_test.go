@@ -400,18 +400,20 @@ func TestEncodeDecode(t *testing.T) {
 
 func TestMessageStrings(t *testing.T) {
 	for typ, fn := range messageRegistry {
-		name := fmt.Sprintf("%+v", typ)
-		t.Run(name, func(t *testing.T) {
-			defer func() { // Ensure no panic.
-				if r := recover(); r != nil {
-					t.Errorf("printing %s failed: %v", name, r)
-				}
-			}()
-			m := fn()
-			_ = fmt.Sprintf("%v", m)
-			err := ErrInvalidMsgType{typ}
-			_ = err.Error()
-		})
+		if fn != nil {
+			name := fmt.Sprintf("%+v", typ)
+			t.Run(name, func(t *testing.T) {
+				defer func() { // Ensure no panic.
+					if r := recover(); r != nil {
+						t.Errorf("printing %s failed: %v", name, r)
+					}
+				}()
+				m := fn()
+				_ = fmt.Sprintf("%v", m)
+				err := ErrInvalidMsgType{MsgType(typ)}
+				_ = err.Error()
+			})
+		}
 	}
 }
 
@@ -424,5 +426,5 @@ func TestRegisterDuplicate(t *testing.T) {
 	}()
 
 	// Register a duplicate.
-	register(&Rlerror{})
+	register(MsgRlerror, func() message { return &Rlerror{} })
 }

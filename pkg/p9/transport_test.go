@@ -180,5 +180,5 @@ func TestSendClosed(t *testing.T) {
 }
 
 func init() {
-	register(&badDecode{})
+	register(MsgTypeBadDecode, func() message { return &badDecode{} })
 }
