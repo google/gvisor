@@ -175,9 +175,9 @@ type Kernel struct {
 	// netlinkPorts manages allocation of netlink socket port IDs.
 	netlinkPorts *port.Manager
 
-	// exitErr is the error causing the sandbox to exit, if any. It is
-	// protected by extMu.
-	exitErr error `state:"nosave"`
+	// saveErr is the error causing the sandbox to exit during save, if
+	// any. It is protected by extMu.
+	saveErr error `state:"nosave"`
 
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
@@ -1029,20 +1029,21 @@ func (k *Kernel) NetlinkPorts() *port.Manager {
 	return k.netlinkPorts
 }
 
-// ExitError returns the sandbox error that caused the kernel to exit.
-func (k *Kernel) ExitError() error {
+// SaveError returns the sandbox error that caused the kernel to exit during
+// save.
+func (k *Kernel) SaveError() error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	return k.exitErr
+	return k.saveErr
 }
 
-// SetExitError sets the sandbox error that caused the kernel to exit, if one is
-// not already set.
-func (k *Kernel) SetExitError(err error) {
+// SetSaveError sets the sandbox error that caused the kernel to exit during
+// save, if one is not already set.
+func (k *Kernel) SetSaveError(err error) {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
-	if k.exitErr == nil {
-		k.exitErr = err
+	if k.saveErr == nil {
+		k.saveErr = err
 	}
 }
 

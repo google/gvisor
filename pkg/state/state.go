@@ -60,8 +60,8 @@ import (
 
 // ErrState is returned when an error is encountered during encode/decode.
 type ErrState struct {
-	// Err is the underlying error.
-	Err error
+	// err is the underlying error.
+	err error
 
 	// path is the visit path from root to the current object.
 	path string
@@ -72,7 +72,17 @@ type ErrState struct {
 
 // Error returns a sensible description of the state error.
 func (e *ErrState) Error() string {
-	return fmt.Sprintf("%v:\nstate path: %s\n%s", e.Err, e.path, e.trace)
+	return fmt.Sprintf("%v:\nstate path: %s\n%s", e.err, e.path, e.trace)
+}
+
+// UnwrapErrState returns the underlying error in ErrState.
+//
+// If err is not *ErrState, err is returned directly.
+func UnwrapErrState(err error) error {
+	if e, ok := err.(*ErrState); ok {
+		return e.err
+	}
+	return err
 }
 
 // Save saves the given object state.
@@ -318,9 +328,9 @@ func (sr *recoverable) safely(fn func()) (err error) {
 		if r := recover(); r != nil {
 			es := new(ErrState)
 			if e, ok := r.(error); ok {
-				es.Err = e
+				es.err = e
 			} else {
-				es.Err = fmt.Errorf("%v", r)
+				es.err = fmt.Errorf("%v", r)
 			}
 
 			es.path = sr.path()

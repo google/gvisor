@@ -64,7 +64,7 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 				log.Infof("Save succeeded: exiting...")
 			} else {
 				log.Warningf("Save failed: exiting...")
-				s.Kernel.SetExitError(err)
+				s.Kernel.SetSaveError(err)
 			}
 			s.Kernel.Kill(kernel.ExitStatus{})
 		},
