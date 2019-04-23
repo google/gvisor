@@ -63,7 +63,11 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, fstat(t, file, statAddr)
 	}
 
-	return 0, nil, fileOpOn(t, fd, path, flags&linux.AT_SYMLINK_NOFOLLOW == 0, func(root *fs.Dirent, d *fs.Dirent) error {
+	// If the path ends in a slash (i.e. dirPath is true) or if AT_SYMLINK_NOFOLLOW is unset,
+	// then we must resolve the final component.
+	resolve := dirPath || flags&linux.AT_SYMLINK_NOFOLLOW == 0
+
+	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
 		return stat(t, d, dirPath, statAddr)
 	})
 }

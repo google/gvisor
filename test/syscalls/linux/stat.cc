@@ -207,6 +207,98 @@ TEST_F(StatTest, TrailingSlashNotCleanedReturnsENOTDIR) {
   EXPECT_THAT(lstat(bad_path.c_str(), &buf), SyscallFailsWithErrno(ENOTDIR));
 }
 
+// Test fstatating a symlink directory.
+TEST_F(StatTest, FstatatSymlinkDir) {
+  // Create a directory and symlink to it.
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  const std::string symlink_to_dir = NewTempAbsPath();
+  EXPECT_THAT(symlink(dir.path().c_str(), symlink_to_dir.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&symlink_to_dir]() {
+    EXPECT_THAT(unlink(symlink_to_dir.c_str()), SyscallSucceeds());
+  });
+
+  // Fstatat the link with AT_SYMLINK_NOFOLLOW should return symlink data.
+  struct stat st = {};
+  EXPECT_THAT(
+      fstatat(AT_FDCWD, symlink_to_dir.c_str(), &st, AT_SYMLINK_NOFOLLOW),
+      SyscallSucceeds());
+  EXPECT_FALSE(S_ISDIR(st.st_mode));
+  EXPECT_TRUE(S_ISLNK(st.st_mode));
+
+  // Fstatat the link should return dir data.
+  EXPECT_THAT(fstatat(AT_FDCWD, symlink_to_dir.c_str(), &st, 0),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_FALSE(S_ISLNK(st.st_mode));
+}
+
+// Test fstatating a symlink directory with trailing slash.
+TEST_F(StatTest, FstatatSymlinkDirWithTrailingSlash) {
+  // Create a directory and symlink to it.
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string symlink_to_dir = NewTempAbsPath();
+  EXPECT_THAT(symlink(dir.path().c_str(), symlink_to_dir.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&symlink_to_dir]() {
+    EXPECT_THAT(unlink(symlink_to_dir.c_str()), SyscallSucceeds());
+  });
+
+  // Fstatat on the symlink with a trailing slash should return the directory
+  // data.
+  struct stat st = {};
+  EXPECT_THAT(
+      fstatat(AT_FDCWD, absl::StrCat(symlink_to_dir, "/").c_str(), &st, 0),
+      SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_FALSE(S_ISLNK(st.st_mode));
+
+  // Fstatat on the symlink with a trailing slash with AT_SYMLINK_NOFOLLOW
+  // should return the directory data.
+  // Symlink to directory with trailing slash will ignore AT_SYMLINK_NOFOLLOW.
+  EXPECT_THAT(fstatat(AT_FDCWD, absl::StrCat(symlink_to_dir, "/").c_str(), &st,
+                      AT_SYMLINK_NOFOLLOW),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+  EXPECT_FALSE(S_ISLNK(st.st_mode));
+}
+
+// Test fstatating a symlink directory with a trailing slash
+// should return same stat data with fstatating directory.
+TEST_F(StatTest, FstatatSymlinkDirWithTrailingSlashSameInode) {
+  // Create a directory and symlink to it.
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // We are going to assert that the symlink inode id is the same as the linked
+  // dir's inode id. In order for the inode id to be stable across
+  // save/restore, it must be kept open. The FileDescriptor type will do that
+  // for us automatically.
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY));
+
+  const std::string symlink_to_dir = NewTempAbsPath();
+  EXPECT_THAT(symlink(dir.path().c_str(), symlink_to_dir.c_str()),
+              SyscallSucceeds());
+  auto cleanup = Cleanup([&symlink_to_dir]() {
+    EXPECT_THAT(unlink(symlink_to_dir.c_str()), SyscallSucceeds());
+  });
+
+  // Fstatat on the symlink with a trailing slash should return the directory
+  // data.
+  struct stat st = {};
+  EXPECT_THAT(fstatat(AT_FDCWD, absl::StrCat(symlink_to_dir, "/").c_str(), &st,
+                      AT_SYMLINK_NOFOLLOW),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISDIR(st.st_mode));
+
+  // Dir and symlink should point to same inode.
+  struct stat st_dir = {};
+  EXPECT_THAT(
+      fstatat(AT_FDCWD, dir.path().c_str(), &st_dir, AT_SYMLINK_NOFOLLOW),
+      SyscallSucceeds());
+  EXPECT_EQ(st.st_ino, st_dir.st_ino);
+}
+
 TEST_F(StatTest, LeadingDoubleSlash) {
   // Create a file, and make sure we can stat it.
   TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
