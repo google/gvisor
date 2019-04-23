@@ -155,7 +155,7 @@ type ErrCorruption struct {
 	Err error
 }
 
-// Error returns a sensible description of the save rejection error.
+// Error returns a sensible description of the restore error.
 func (e ErrCorruption) Error() string {
 	return "restore failed due to external file system state in corruption: " + e.Err.Error()
 }
