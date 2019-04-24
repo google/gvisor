@@ -19,7 +19,9 @@
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <sys/un.h>
+
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -181,6 +183,162 @@ TEST_P(UnixSocketPairTest, BasicFDPassNoSpace) {
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 }
 
+// BasicFDPassNoSpaceMsgCtrunc sends an FD, but does not provide any space to
+// receive it. It then verifies that the MSG_CTRUNC flag is set in the msghdr.
+TEST_P(UnixSocketPairTest, BasicFDPassNoSpaceMsgCtrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pair->second_fd(),
+                                       sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  std::vector<char> control(CMSG_SPACE(0));
+  msg.msg_control = &control[0];
+  msg.msg_controllen = control.size();
+
+  char received_data[sizeof(sent_data)];
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_controllen, 0);
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+}
+
+// BasicFDPassNullControlMsgCtrunc sends an FD and sets contradictory values for
+// msg_controllen and msg_control. msg_controllen is set to the correct size to
+// accomidate the FD, but msg_control is set to NULL. In this case, msg_control
+// should override msg_controllen.
+TEST_P(UnixSocketPairTest, BasicFDPassNullControlMsgCtrunc) {
+  // FIXME: Fix handling of NULL msg_control.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pair->second_fd(),
+                                       sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  msg.msg_controllen = CMSG_SPACE(1);
+
+  char received_data[sizeof(sent_data)];
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_controllen, 0);
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+}
+
+// BasicFDPassNotEnoughSpaceMsgCtrunc sends an FD, but does not provide enough
+// space to receive it. It then verifies that the MSG_CTRUNC flag is set in the
+// msghdr.
+TEST_P(UnixSocketPairTest, BasicFDPassNotEnoughSpaceMsgCtrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pair->second_fd(),
+                                       sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  std::vector<char> control(CMSG_SPACE(0) + 1);
+  msg.msg_control = &control[0];
+  msg.msg_controllen = control.size();
+
+  char received_data[sizeof(sent_data)];
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_controllen, 0);
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+}
+
+// BasicThreeFDPassTruncationMsgCtrunc sends three FDs, but only provides enough
+// space to receive two of them. It then verifies that the MSG_CTRUNC flag is
+// set in the msghdr.
+TEST_P(UnixSocketPairTest, BasicThreeFDPassTruncationMsgCtrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair1 =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+  auto pair2 =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+  auto pair3 =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+  int sent_fds[] = {pair1->second_fd(), pair2->second_fd(), pair3->second_fd()};
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), sent_fds, 3, sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  std::vector<char> control(CMSG_SPACE(2 * sizeof(int)));
+  msg.msg_control = &control[0];
+  msg.msg_controllen = control.size();
+
+  char received_data[sizeof(sent_data)];
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(2 * sizeof(int)));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+}
+
 // BasicFDPassUnalignedRecv starts off by sending a single FD just like
 // BasicFDPass. The difference is that when calling recvmsg, the length of the
 // receive data is only aligned on a 4 byte boundry instead of the normal 8.
@@ -204,6 +362,90 @@ TEST_P(UnixSocketPairTest, BasicFDPassUnalignedRecv) {
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
 
   ASSERT_NO_FATAL_FAILURE(TransferTest(fd, pair->first_fd()));
+}
+
+// BasicFDPassUnalignedRecvNoMsgTrunc sends one FD and only provides enough
+// space to receive just it. (Normally the minimum amount of space one would
+// provide would be enough space for two FDs.) It then verifies that the
+// MSG_CTRUNC flag is not set in the msghdr.
+TEST_P(UnixSocketPairTest, BasicFDPassUnalignedRecvNoMsgTrunc) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+  ASSERT_NO_FATAL_FAILURE(SendSingleFD(sockets->first_fd(), pair->second_fd(),
+                                       sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(int)) - sizeof(int)];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_flags, 0);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
+}
+
+// BasicTwoFDPassUnalignedRecvTruncationMsgTrunc sends two FDs, but only
+// provides enough space to receive one of them. It then verifies that the
+// MSG_CTRUNC flag is set in the msghdr.
+TEST_P(UnixSocketPairTest, BasicTwoFDPassUnalignedRecvTruncationMsgTrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  auto pair =
+      ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+  int sent_fds[] = {pair->first_fd(), pair->second_fd()};
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), sent_fds, 2, sent_data, sizeof(sent_data)));
+
+  struct msghdr msg = {};
+  // CMSG_SPACE rounds up to two FDs, we only want one.
+  char control[CMSG_SPACE(sizeof(int)) - sizeof(int)];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_RIGHTS);
 }
 
 TEST_P(UnixSocketPairTest, ConcurrentBasicFDPass) {
@@ -668,6 +910,202 @@ TEST_P(UnixSocketPairTest, WriteBeforeSoPassCredRecvEndAfterSendEnd) {
   EXPECT_EQ(want_creds.pid, received_creds.pid);
   EXPECT_EQ(want_creds.uid, received_creds.uid);
   EXPECT_EQ(want_creds.gid, received_creds.gid);
+}
+
+TEST_P(UnixSocketPairTest, CredPassTruncated) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+
+  ASSERT_THAT(sent_creds.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendCreds(sockets->first_fd(), sent_creds, sent_data, sizeof(sent_data)));
+
+  SetSoPassCred(sockets->second_fd());
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(0) + sizeof(pid_t)];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+
+  EXPECT_EQ(msg.msg_controllen, sizeof(control));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, sizeof(control));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+
+  pid_t pid = 0;
+  memcpy(&pid, CMSG_DATA(cmsg), sizeof(pid));
+  EXPECT_EQ(pid, sent_creds.pid);
+}
+
+// CredPassNoMsgCtrunc passes a full set of credentials. It then verifies that
+// receiving the full set does not result in MSG_CTRUNC being set in the msghdr.
+TEST_P(UnixSocketPairTest, CredPassNoMsgCtrunc) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+
+  ASSERT_THAT(sent_creds.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendCreds(sockets->first_fd(), sent_creds, sent_data, sizeof(sent_data)));
+
+  SetSoPassCred(sockets->second_fd());
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(sizeof(struct ucred))];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+
+  // The control message should not be truncated.
+  EXPECT_EQ(msg.msg_flags, 0);
+  EXPECT_EQ(msg.msg_controllen, sizeof(control));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(struct ucred)));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+}
+
+// CredPassNoSpaceMsgCtrunc passes a full set of credentials. It then receives
+// the data without providing space for any credentials and verifies that
+// MSG_CTRUNC is set in the msghdr.
+TEST_P(UnixSocketPairTest, CredPassNoSpaceMsgCtrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+
+  ASSERT_THAT(sent_creds.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendCreds(sockets->first_fd(), sent_creds, sent_data, sizeof(sent_data)));
+
+  SetSoPassCred(sockets->second_fd());
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(0)];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+
+  // The control message should be truncated.
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+  EXPECT_EQ(msg.msg_controllen, sizeof(control));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, sizeof(control));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+}
+
+// CredPassTruncatedMsgCtrunc passes a full set of credentials. It then receives
+// the data while providing enough space for only the first field of the
+// credentials and verifies that MSG_CTRUNC is set in the msghdr.
+TEST_P(UnixSocketPairTest, CredPassTruncatedMsgCtrunc) {
+  // FIXME: Support MSG_CTRUNC.
+  SKIP_IF(IsRunningOnGvisor());
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+
+  struct ucred sent_creds;
+
+  ASSERT_THAT(sent_creds.pid = getpid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.uid = getuid(), SyscallSucceeds());
+  ASSERT_THAT(sent_creds.gid = getgid(), SyscallSucceeds());
+
+  ASSERT_NO_FATAL_FAILURE(
+      SendCreds(sockets->first_fd(), sent_creds, sent_data, sizeof(sent_data)));
+
+  SetSoPassCred(sockets->second_fd());
+
+  struct msghdr msg = {};
+  char control[CMSG_SPACE(0) + sizeof(pid_t)];
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  char received_data[sizeof(sent_data)] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(recvmsg)(sockets->second_fd(), &msg, 0),
+              SyscallSucceedsWithValue(sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+
+  // The control message should be truncated.
+  EXPECT_EQ(msg.msg_flags, MSG_CTRUNC);
+  EXPECT_EQ(msg.msg_controllen, sizeof(control));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  EXPECT_EQ(cmsg->cmsg_len, sizeof(control));
+  EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  EXPECT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
 }
 
 TEST_P(UnixSocketPairTest, SoPassCred) {
