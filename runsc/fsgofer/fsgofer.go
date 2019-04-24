@@ -215,6 +215,12 @@ type localFile struct {
 
 	// readDirMu protects against concurrent Readdir calls.
 	readDirMu sync.Mutex
+
+	// lastDirentOffset is the last offset returned by Readdir(). If another call
+	// to Readdir is made at the same offset, the file doesn't need to be
+	// repositioned. This is an important optimization because the caller must
+	// always make one extra call to detect EOF (empty result, no error).
+	lastDirentOffset uint64
 }
 
 func openAnyFileFromParent(parent *localFile, name string) (*fd.FD, string, error) {
@@ -470,25 +476,14 @@ func (l *localFile) Mkdir(name string, perm p9.FileMode, uid p9.UID, gid p9.GID)
 func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	// Duplicate current file if 'names' is empty.
 	if len(names) == 0 {
-		var newFile *fd.FD
-		if l.isOpen() {
-			// File mode may have changed when it was opened, so open a new one.
-			var err error
-			newFile, err = openAnyFile(l.hostPath, func(mode int) (*fd.FD, error) {
-				return fd.Open(l.hostPath, openFlags|mode, 0)
-			})
-			if err != nil {
-				return nil, nil, extractErrno(err)
-			}
-		} else {
-			newFd, err := syscall.Dup(l.file.FD())
-			if err != nil {
-				return nil, nil, extractErrno(err)
-			}
-			newFile = fd.New(newFd)
+		newFile, err := openAnyFile(l.hostPath, func(mode int) (*fd.FD, error) {
+			return fd.Open(l.hostPath, openFlags|mode, 0)
+		})
+		if err != nil {
+			return nil, nil, extractErrno(err)
 		}
 
-		stat, err := stat(int(newFile.FD()))
+		stat, err := stat(newFile.FD())
 		if err != nil {
 			newFile.Close()
 			return nil, nil, extractErrno(err)
@@ -884,14 +879,30 @@ func (l *localFile) Readdir(offset uint64, count uint32) ([]p9.Dirent, error) {
 	l.readDirMu.Lock()
 	defer l.readDirMu.Unlock()
 
-	if _, err := syscall.Seek(l.file.FD(), 0, 0); err != nil {
-		return nil, extractErrno(err)
+	skip := uint64(0)
+
+	// Check if the file is at the correct position already. If not, seek to the
+	// beginning and read the entire directory again.
+	if l.lastDirentOffset != offset {
+		if _, err := syscall.Seek(l.file.FD(), 0, 0); err != nil {
+			return nil, extractErrno(err)
+		}
+		skip = offset
 	}
 
-	return l.readDirent(l.file.FD(), offset, count)
+	dirents, err := l.readDirent(l.file.FD(), offset, count, skip)
+	if err == nil {
+		// On success, remember the offset that was returned at the current
+		// position.
+		l.lastDirentOffset = offset + uint64(len(dirents))
+	} else {
+		// On failure, the state is unknown, force call to seek() next time.
+		l.lastDirentOffset = math.MaxUint64
+	}
+	return dirents, err
 }
 
-func (l *localFile) readDirent(f int, offset uint64, count uint32) ([]p9.Dirent, error) {
+func (l *localFile) readDirent(f int, offset uint64, count uint32, skip uint64) ([]p9.Dirent, error) {
 	// Limit 'count' to cap the slice size that is returned.
 	const maxCount = 100000
 	if count > maxCount {
@@ -904,7 +915,6 @@ func (l *localFile) readDirent(f int, offset uint64, count uint32) ([]p9.Dirent,
 	direntsBuf := make([]byte, 8192)
 	names := make([]string, 0, 100)
 
-	skip := offset // Tracks the number of entries to skip.
 	end := offset + uint64(count)
 	for offset < end {
 		dirSize, err := syscall.ReadDirent(f, direntsBuf)
@@ -912,7 +922,7 @@ func (l *localFile) readDirent(f int, offset uint64, count uint32) ([]p9.Dirent,
 			return dirents, err
 		}
 		if dirSize <= 0 {
-			return dirents, nil // EOF
+			return dirents, nil
 		}
 
 		names := names[:0]
