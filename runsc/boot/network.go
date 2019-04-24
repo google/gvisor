@@ -140,7 +140,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     true,
 			Address:            mac,
-			PacketDispatchMode: fdbased.PacketMMap,
+			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
 			RXChecksumOffload:  true,
 		})
