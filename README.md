@@ -45,6 +45,7 @@ architectures may become available in the future.
 
 Make sure the following dependencies are installed:
 
+*   Linux 4.14.77+ ([older linux][old-linux])
 *   [git][git]
 *   [Bazel][bazel] 0.18+
 *   [Python][python]
@@ -125,6 +126,7 @@ See [Contributing.md](CONTRIBUTING.md).
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [oci]: https://www.opencontainers.org
+[old-linux]: https://gvisor.dev/docs/user_guide/networking/#gso
 [python]: https://python.org
 [rbe]: https://blog.bazel.build/2018/10/05/remote-build-execution.html
 [sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
