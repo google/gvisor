@@ -95,10 +95,10 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   PosixErrorOr& operator=(PosixErrorOr<U> other);
 
   // Return a reference to the error or NoError().
-  const PosixError error() const;
+  PosixError error() const;
 
   // Returns this->error().error_message();
-  const std::string error_message() const;
+  std::string error_message() const;
 
   // Returns true if this PosixErrorOr contains some T.
   bool ok() const;
@@ -115,7 +115,7 @@ class ABSL_MUST_USE_RESULT PosixErrorOr {
   void IgnoreError() const {}
 
  private:
-  const int errno_value() const;
+  int errno_value() const;
   absl::variant<T, PosixError> value_;
 
   friend class PosixErrorIsMatcherCommonImpl;
@@ -163,7 +163,7 @@ inline PosixErrorOr<T>& PosixErrorOr<T>::operator=(PosixErrorOr<U> other) {
 }
 
 template <typename T>
-const PosixError PosixErrorOr<T>::error() const {
+PosixError PosixErrorOr<T>::error() const {
   if (!absl::holds_alternative<PosixError>(value_)) {
     return PosixError();
   }
@@ -171,12 +171,12 @@ const PosixError PosixErrorOr<T>::error() const {
 }
 
 template <typename T>
-const int PosixErrorOr<T>::errno_value() const {
+int PosixErrorOr<T>::errno_value() const {
   return error().errno_value();
 }
 
 template <typename T>
-const std::string PosixErrorOr<T>::error_message() const {
+std::string PosixErrorOr<T>::error_message() const {
   return error().error_message();
 }
 
