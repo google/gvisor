@@ -32,13 +32,23 @@ std::string PosixError::ToString() const {
   std::string ret;
 
   char strerrno_buf[1024] = {};
-  char* msg = nullptr;
-  if ((msg = strerror_r(errno_, strerrno_buf, sizeof(strerrno_buf))) ==
-      nullptr) {
-    ret = absl::StrCat("PosixError(errno=", errno_, " strerror_r FAILED)");
+
+  auto res = strerror_r(errno_, strerrno_buf, sizeof(strerrno_buf));
+
+// The GNU version of strerror_r always returns a non-null char* pointing to a
+// buffer containing the stringified errno; the XSI version returns a positive
+// errno which indicates the result of writing the stringified errno into the
+// supplied buffer. The gymnastics below are needed to support both.
+#ifndef _GNU_SOURCE
+  if (res != 0) {
+    ret = absl::StrCat("PosixError(errno=", errno_, " strerror_r FAILED(", ret,
+                       "))");
   } else {
-    ret = absl::StrCat("PosixError(errno=", errno_, " ", msg, ")");
+    ret = absl::StrCat("PosixError(errno=", errno_, " ", strerrno_buf, ")");
   }
+#else
+  ret = absl::StrCat("PosixError(errno=", errno_, " ", res, ")");
+#endif
 
   if (!msg_.empty()) {
     ret.append(" ");

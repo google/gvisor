@@ -270,16 +270,6 @@ PosixErrorOr<uint64_t> Links(const std::string& path);
 
 namespace internal {
 
-inline std::string ErrnoWithMessage(int const errnum) {
-  char buf[1024] = {};
-  const char* str = strerror_r(errnum, buf, sizeof(buf));
-  if (str == nullptr || str[0] == '\0') {
-    snprintf(buf, sizeof(buf), "Unknown error %d", errnum);
-    str = buf;
-  }
-  return absl::StrCat(errnum, " (", str, ")");
-}
-
 template <typename Container>
 class ElementOfMatcher {
  public:
@@ -348,7 +338,7 @@ class SyscallSuccessMatcher {
         T const& rv,
         ::testing::MatchResultListener* const listener) const override {
       if (rv == static_cast<decltype(rv)>(-1) && errno != 0) {
-        *listener << "with errno " << ErrnoWithMessage(errno);
+        *listener << "with errno " << PosixError(errno);
         return false;
       }
       bool match = matcher_.MatchAndExplain(rv, listener);
@@ -416,7 +406,7 @@ class SyscallFailureMatcher {
       return false;
     }
     int actual_errno = errno;
-    *listener << "with errno " << ErrnoWithMessage(actual_errno);
+    *listener << "with errno " << PosixError(actual_errno);
     bool match = errno_matcher_.MatchAndExplain(actual_errno, listener);
     if (match) {
       MaybeSave();
@@ -449,11 +439,11 @@ class SpecificErrnoMatcher : public ::testing::MatcherInterface<int> {
   }
 
   void DescribeTo(::std::ostream* const os) const override {
-    *os << ErrnoWithMessage(expected_);
+    *os << PosixError(expected_);
   }
 
   void DescribeNegationTo(::std::ostream* const os) const override {
-    *os << "not " << ErrnoWithMessage(expected_);
+    *os << "not " << PosixError(expected_);
   }
 
  private:
