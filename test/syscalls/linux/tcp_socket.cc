@@ -15,9 +15,10 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
 #include <limits>
 #include <vector>
 

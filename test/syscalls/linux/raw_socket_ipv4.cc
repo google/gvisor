@@ -16,10 +16,11 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <algorithm>
 
 #include "gtest/gtest.h"
