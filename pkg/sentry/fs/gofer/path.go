@@ -27,9 +27,17 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
+// maxFilenameLen is the maximum length of a filename. This is dictated by 9P's
+// encoding of strings, which uses 2 bytes for the length prefix.
+const maxFilenameLen = (1 << 16) - 1
+
 // Lookup loads an Inode at name into a Dirent based on the session's cache
 // policy.
 func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dirent, error) {
+	if len(name) > maxFilenameLen {
+		return nil, syserror.ENAMETOOLONG
+	}
+
 	cp := i.session().cachePolicy
 	if cp.cacheReaddir() {
 		// Check to see if we have readdirCache that indicates the
@@ -72,6 +80,10 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 //
 // Ownership is currently ignored.
 func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.FileFlags, perm fs.FilePermissions) (*fs.File, error) {
+	if len(name) > maxFilenameLen {
+		return nil, syserror.ENAMETOOLONG
+	}
+
 	// Create replaces the directory fid with the newly created/opened
 	// file, so clone this directory so it doesn't change out from under
 	// this node.
@@ -139,6 +151,10 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 
 // CreateLink uses Create to create a symlink between oldname and newname.
 func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname string, newname string) error {
+	if len(newname) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	owner := fs.FileOwnerFromContext(ctx)
 	if _, err := i.fileState.file.symlink(ctx, oldname, newname, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
@@ -149,6 +165,10 @@ func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname
 
 // CreateHardLink implements InodeOperations.CreateHardLink.
 func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, target *fs.Inode, newName string) error {
+	if len(newName) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	targetOpts, ok := target.InodeOperations.(*inodeOperations)
 	if !ok {
 		return syscall.EXDEV
@@ -167,6 +187,10 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, t
 
 // CreateDirectory uses Create to create a directory named s under inodeOperations.
 func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s string, perm fs.FilePermissions) error {
+	if len(s) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	owner := fs.FileOwnerFromContext(ctx)
 	if _, err := i.fileState.file.mkdir(ctx, s, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
@@ -184,6 +208,10 @@ func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s 
 
 // Bind implements InodeOperations.Bind.
 func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport.BoundEndpoint, perm fs.FilePermissions) (*fs.Dirent, error) {
+	if len(name) > maxFilenameLen {
+		return nil, syserror.ENAMETOOLONG
+	}
+
 	if i.session().endpoints == nil {
 		return nil, syscall.EOPNOTSUPP
 	}
@@ -252,6 +280,10 @@ func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePe
 
 // Remove implements InodeOperations.Remove.
 func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string) error {
+	if len(name) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	var key device.MultiDeviceKey
 	removeSocket := false
 	if i.session().endpoints != nil {
@@ -284,6 +316,10 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 
 // Remove implements InodeOperations.RemoveDirectory.
 func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, name string) error {
+	if len(name) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	// 0x200 = AT_REMOVEDIR.
 	if err := i.fileState.file.unlinkAt(ctx, name, 0x200); err != nil {
 		return err
@@ -301,6 +337,10 @@ func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, na
 
 // Rename renames this node.
 func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+	if len(newName) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
 	// Unwrap the new parent to a *inodeOperations.
 	newParentInodeOperations, ok := newParent.InodeOperations.(*inodeOperations)
 	if !ok {

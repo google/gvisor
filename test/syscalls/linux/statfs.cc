@@ -49,6 +49,7 @@ TEST(StatfsTest, NameLen) {
   struct statfs st;
   EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
 
+  // This assumes that /dev/shm is tmpfs.
   EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 

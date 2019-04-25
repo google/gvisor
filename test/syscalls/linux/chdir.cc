@@ -54,11 +54,6 @@ TEST(ChdirTest, NotDir) {
   EXPECT_THAT(chdir(temp_file.path().c_str()), SyscallFailsWithErrno(ENOTDIR));
 }
 
-TEST(ChdirTest, NameTooLong) {
-  std::string name(NAME_MAX + 1, 'a');
-  ASSERT_THAT(chdir(name.c_str()), SyscallFailsWithErrno(ENAMETOOLONG));
-}
-
 TEST(ChdirTest, NotExist) {
   EXPECT_THAT(chdir("/foo/bar"), SyscallFailsWithErrno(ENOENT));
 }

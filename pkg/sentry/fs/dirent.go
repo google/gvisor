@@ -459,11 +459,6 @@ func (d *Dirent) walk(ctx context.Context, root *Dirent, name string, walkMayUnl
 		return nil, syscall.ENOTDIR
 	}
 
-	// The component must be less than NAME_MAX.
-	if len(name) > linux.NAME_MAX {
-		return nil, syscall.ENAMETOOLONG
-	}
-
 	if name == "" || name == "." {
 		d.IncRef()
 		return d, nil
