@@ -1,0 +1,4 @@
+cron:
+- description: "daily rebuild"
+  url: /rebuild
+  schedule: every 24 hours
