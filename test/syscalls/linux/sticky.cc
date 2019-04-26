@@ -27,7 +27,7 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid1, 65534, "first scratch UID");
+DEFINE_int32(scratch_uid, 65534, "first scratch UID");
 DEFINE_int32(scratch_gid, 65534, "first scratch GID");
 
 namespace gvisor {
@@ -54,7 +54,7 @@ TEST(StickyTest, StickyBitPermDenied) {
     // Change EUID and EGID.
     EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
                 SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid1, -1),
+    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid, -1),
                 SyscallSucceeds());
 
     EXPECT_THAT(rmdir(path.c_str()), SyscallFailsWithErrno(EPERM));
@@ -103,7 +103,7 @@ TEST(StickyTest, StickyBitCapFOWNER) {
     // Change EUID and EGID.
     EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
                 SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid1, -1),
+    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid, -1),
                 SyscallSucceeds());
 
     EXPECT_NO_ERRNO(SetCapability(CAP_FOWNER, true));
