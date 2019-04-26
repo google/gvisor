@@ -337,6 +337,17 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 		return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
 	}
 
+	// Save the CPUID FeatureSet before the rest of the kernel so we can
+	// verify its compatibility on restore before attempting to restore the
+	// entire kernel, which may fail on an incompatible machine.
+	//
+	// N.B. This will also be saved along with the full kernel save below.
+	cpuidStart := time.Now()
+	if err := state.Save(w, k.FeatureSet(), nil); err != nil {
+		return err
+	}
+	log.Infof("CPUID save took [%s].", time.Since(cpuidStart))
+
 	// Save the kernel state.
 	kernelStart := time.Now()
 	var stats state.Stats
@@ -468,6 +479,25 @@ func (k *Kernel) LoadFrom(r io.Reader, net inet.Stack) error {
 	k.networkStack = net
 
 	initAppCores := k.applicationCores
+
+	// Load the pre-saved CPUID FeatureSet.
+	//
+	// N.B. This was also saved along with the full kernel below, so we
+	// don't need to explicitly install it in the Kernel.
+	cpuidStart := time.Now()
+	var features cpuid.FeatureSet
+	if err := state.Load(r, &features, nil); err != nil {
+		return err
+	}
+	log.Infof("CPUID load took [%s].", time.Since(cpuidStart))
+
+	// Verify that the FeatureSet is usable on this host. We do this before
+	// Kernel load so that the explicit CPUID mismatch error has priority
+	// over floating point state restore errors that may occur on load on
+	// an incompatible machine.
+	if err := features.CheckHostCompatible(); err != nil {
+		return err
+	}
 
 	// Load the kernel state.
 	kernelStart := time.Now()

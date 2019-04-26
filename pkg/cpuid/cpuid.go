@@ -446,6 +446,20 @@ const (
 	extendedFeatures                                       // Returns some extended feature bits in edx and ecx.
 )
 
+// These are the extended floating point state features. They are used to
+// enumerate floating point features in XCR0, XSTATE_BV, etc.
+const (
+	XSAVEFeatureX87         = 1 << 0
+	XSAVEFeatureSSE         = 1 << 1
+	XSAVEFeatureAVX         = 1 << 2
+	XSAVEFeatureBNDREGS     = 1 << 3
+	XSAVEFeatureBNDCSR      = 1 << 4
+	XSAVEFeatureAVX512op    = 1 << 5
+	XSAVEFeatureAVX512zmm0  = 1 << 6
+	XSAVEFeatureAVX512zmm16 = 1 << 7
+	XSAVEFeaturePKRU        = 1 << 9
+)
+
 var cpuFreqMHz float64
 
 // x86FeaturesFromString includes features from x86FeatureStrings and
@@ -559,6 +573,26 @@ func (fs *FeatureSet) AMD() bool {
 // Intel returns true if fs describes an Intel CPU.
 func (fs *FeatureSet) Intel() bool {
 	return fs.VendorID == "GenuineIntel"
+}
+
+// ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
+// subset of the host feature set.
+type ErrIncompatible struct {
+	message string
+}
+
+// Error implements error.
+func (e ErrIncompatible) Error() string {
+	return e.message
+}
+
+// CheckHostCompatible returns nil if fs is a subset of the host feature set.
+func (fs *FeatureSet) CheckHostCompatible() error {
+	hfs := HostFeatureSet()
+	if diff := fs.Subtract(hfs); diff != nil {
+		return ErrIncompatible{fmt.Sprintf("CPU feature set %v incompatible with host feature set %v (missing: %v)", fs.FlagsString(false), hfs.FlagsString(false), diff)}
+	}
+	return nil
 }
 
 // Helper to convert 3 regs into 12-byte vendor ID.

@@ -15,14 +15,31 @@
 package arch
 
 import (
-	"sync"
+	"fmt"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/cpuid"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// warnOnce is used to warn about truncated state only once.
-var warnOnce sync.Once
+// ErrFloatingPoint indicates a failed restore due to unusable floating point
+// state.
+type ErrFloatingPoint struct {
+	// supported is the supported floating point state.
+	supported uint64
+
+	// saved is the saved floating point state.
+	saved uint64
+}
+
+// Error returns a sensible description of the restore error.
+func (e ErrFloatingPoint) Error() string {
+	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supported, e.saved)
+}
+
+// XSTATE_BV does not exist if FXSAVE is used, but FXSAVE implicitly saves x87
+// and SSE state, so this is the equivalent XSTATE_BV value.
+const fxsaveBV uint64 = cpuid.XSAVEFeatureX87 | cpuid.XSAVEFeatureSSE
 
 // afterLoad is invoked by stateify.
 func (s *State) afterLoad() {
@@ -33,7 +50,8 @@ func (s *State) afterLoad() {
 	// state that may be saved by the new CPU. Even if extraneous new state
 	// is saved, the state we care about is guaranteed to be a subset of
 	// new state. Later optimizations can use less space when using a
-	// smaller state component bitmap. Intel SDM section 13 has more info.
+	// smaller state component bitmap. Intel SDM Volume 1 Chapter 13 has
+	// more info.
 	s.x86FPState = newX86FPState()
 
 	// x86FPState always contains all the FP state supported by the host.
@@ -41,15 +59,30 @@ func (s *State) afterLoad() {
 	// which we cannot restore.
 	//
 	// The x86 FP state areas are backwards compatible, so we can simply
-	// truncate the additional floating point state. Applications should
-	// not depend on the truncated state because it should relate only to
-	// features that were not exposed in the app FeatureSet.
+	// truncate the additional floating point state.
+	//
+	// Applications should not depend on the truncated state because it
+	// should relate only to features that were not exposed in the app
+	// FeatureSet. However, because we do not *prevent* them from using
+	// this state, we must verify here that there is no in-use state
+	// (according to XSTATE_BV) which we do not support.
 	if len(s.x86FPState) < len(old) {
-		warnOnce.Do(func() {
-			// This will occur on every instance of state, don't
-			// bother warning more than once.
-			log.Infof("dropping %d bytes of floating point state; the application should not depend on this state", len(old)-len(s.x86FPState))
-		})
+		// What do we support?
+		supportedBV := fxsaveBV
+		if fs := cpuid.HostFeatureSet(); fs.UseXsave() {
+			supportedBV = fs.ValidXCR0Mask()
+		}
+
+		// What was in use?
+		savedBV := fxsaveBV
+		if len(old) >= xstateBVOffset+8 {
+			savedBV = usermem.ByteOrder.Uint64(old[xstateBVOffset:])
+		}
+
+		// Supported features must be a superset of saved features.
+		if savedBV&^supportedBV != 0 {
+			panic(ErrFloatingPoint{supported: supportedBV, saved: savedBV})
+		}
 	}
 
 	// Copy to the new, aligned location.
