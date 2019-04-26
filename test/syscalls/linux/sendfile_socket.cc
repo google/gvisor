@@ -17,6 +17,8 @@
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <iostream>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -110,7 +112,7 @@ TEST(SendFileTest, SendMultiple) {
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = inet_addr("127.0.0.1");
   addr.sin_port = server_addr.sin_port;
-  LOG(INFO) << "Connecting on port=" << server_addr.sin_port;
+  std::cout << "Connecting on port=" << server_addr.sin_port;
   ASSERT_THAT(
       RetryEINTR(connect)(
           outf.get(), reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)),
@@ -119,7 +121,7 @@ TEST(SendFileTest, SendMultiple) {
   int cnt = 0;
   for (size_t sent = 0; sent < data.size(); cnt++) {
     const size_t remain = data.size() - sent;
-    LOG(INFO) << "sendfile, size=" << data.size() << ", sent=" << sent
+    std::cout << "sendfile, size=" << data.size() << ", sent=" << sent
               << ", remain=" << remain;
 
     // Send data and verify that sendfile returns the correct value.

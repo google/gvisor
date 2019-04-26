@@ -103,7 +103,6 @@ TEST(ConcurrencyTest, MultiProcessConcurrency) {
   if (child_pid == 0) {
     while (true) {
     }
-    __builtin_unreachable();
   }
   ASSERT_THAT(child_pid, SyscallSucceeds());
 

@@ -226,7 +226,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
-        "@com_google_glog//:glog",
         "@com_google_googletest//:gtest",
     ],
 )

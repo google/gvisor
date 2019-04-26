@@ -19,6 +19,8 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 
+#include <iostream>
+
 #include "absl/strings/str_cat.h"
 #include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
@@ -61,13 +63,13 @@ PosixErrorOr<bool> CanCreateUserNamespace() {
     // is in a chroot environment (i.e., the caller's root directory does
     // not match the root directory of the mount namespace in which it
     // resides)."
-    LOG(INFO) << "clone(CLONE_NEWUSER) failed with EPERM";
+    std::cerr << "clone(CLONE_NEWUSER) failed with EPERM";
     return false;
   } else if (errno == EUSERS) {
     // "(since Linux 3.11) CLONE_NEWUSER was specified in flags, and the call
     // would cause the limit on the number of nested user namespaces to be
     // exceeded. See user_namespaces(7)."
-    LOG(INFO) << "clone(CLONE_NEWUSER) failed with EUSERS";
+    std::cerr << "clone(CLONE_NEWUSER) failed with EUSERS";
     return false;
   } else {
     // Unexpected error code; indicate an actual error.

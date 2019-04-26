@@ -138,9 +138,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
     //
     // TODO: When internal UDS support SO_SNDBUF, we can assert that
     // we always get the right SO_SNDBUF on gVisor.
-    LOG(INFO) << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf
-              << ". Skipping test";
-    return;
+    GTEST_SKIP() << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf;
   }
 
   // Create a contiguous region of memory of 2*UIO_MAXIOV*PAGE_SIZE. We'll call
@@ -196,9 +194,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
     //
     // TODO: When internal UDS support SO_SNDBUF, we can assert that
     // we always get the right SO_SNDBUF on gVisor.
-    LOG(INFO) << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf
-              << ". Skipping test";
-    return;
+    GTEST_SKIP() << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf;
   }
 
   std::vector<char> write_buf(buffer_size, 'a');

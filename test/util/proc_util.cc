@@ -15,6 +15,7 @@
 #include "test/util/proc_util.h"
 
 #include <algorithm>
+#include <iostream>
 #include <vector>
 
 #include "absl/strings/ascii.h"
@@ -86,7 +87,7 @@ PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
   std::vector<ProcMapsEntry> entries;
   auto lines = absl::StrSplit(contents, '\n', absl::SkipEmpty());
   for (const auto& l : lines) {
-    LOG(INFO) << "line: " << l;
+    std::cout << "line: " << l;
     ASSIGN_OR_RETURN_ERRNO(auto entry, ParseProcMapsLine(l));
     entries.push_back(entry);
   }

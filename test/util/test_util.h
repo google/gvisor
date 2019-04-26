@@ -186,7 +186,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <glog/logging.h>
 #include "gmock/gmock.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
@@ -210,12 +209,9 @@ void TestInit(int* argc, char*** argv);
 // SKIP_IF may be used to skip a test case.
 //
 // These cases are still emitted, but a SKIPPED line will appear.
-#define SKIP_IF(expr)                                                        \
-  do {                                                                       \
-    if (expr) {                                                              \
-      std::cout << "\033[0;33m[  SKIPPED ]\033[m => " << #expr << std::endl; \
-      return;                                                                \
-    }                                                                        \
+#define SKIP_IF(expr)                \
+  do {                               \
+    if (expr) GTEST_SKIP() << #expr; \
   } while (0)
 
 enum class Platform {

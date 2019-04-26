@@ -16,7 +16,9 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+
 #include <algorithm>
+#include <iostream>
 
 #include "gtest/gtest.h"
 #include "absl/synchronization/notification.h"
@@ -264,7 +266,7 @@ TEST_F(PollTest, Nfds) {
   }
 
   rlim_t max_fds = rlim.rlim_cur;
-  LOG(INFO) << "Using limit: " << max_fds;
+  std::cout << "Using limit: " << max_fds;
 
   // Create an eventfd. Since its value is initially zero, it is writable.
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());

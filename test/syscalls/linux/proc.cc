@@ -133,7 +133,6 @@ PosixError WithSubprocess(SubprocessCallback const& running,
     while (true) {
       SleepSafe(absl::Milliseconds(100));
     }
-    __builtin_unreachable();
   }
 
   close(pipe_fds[1]);  // Close the write end.
@@ -565,12 +564,9 @@ TEST(ProcSelfMaps, MapUnmap) {
 }
 
 TEST(ProcSelfMaps, Mprotect) {
-  if (!IsRunningOnGvisor()) {
-    // FIXME: Linux's mprotect() sometimes fails to merge VMAs in this
-    // case.
-    LOG(WARNING) << "Skipping test on Linux";
-    return;
-  }
+  // FIXME: Linux's mprotect() sometimes fails to merge VMAs in this
+  // case.
+  SKIP_IF(!IsRunningOnGvisor());
 
   // Reserve 5 pages of address space.
   Mapping m = ASSERT_NO_ERRNO_AND_VALUE(

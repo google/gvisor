@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 
 #include <atomic>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -1025,7 +1026,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
           setsockopt(fd2, SOL_SOCKET, SO_REUSEPORT, &portreuse2, sizeof(int)),
           SyscallSucceeds());
 
-      LOG(INFO) << portreuse1 << " " << portreuse2;
+      std::cout << portreuse1 << " " << portreuse2;
       int ret = bind(fd2, reinterpret_cast<sockaddr*>(&addr), addrlen);
 
       // Verify that two sockets can be bound to the same port only if

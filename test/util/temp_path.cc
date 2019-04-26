@@ -15,8 +15,10 @@
 #include "test/util/temp_path.h"
 
 #include <unistd.h>
+
 #include <atomic>
 #include <cstdlib>
+#include <iostream>
 
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
@@ -52,9 +54,9 @@ void TryDeleteRecursively(std::string const& path) {
     int undeleted_files = 0;
     auto status = RecursivelyDelete(path, &undeleted_dirs, &undeleted_files);
     if (undeleted_dirs || undeleted_files || !status.ok()) {
-      LOG(WARNING) << path << ": failed to delete " << undeleted_dirs
-                   << " directories and " << undeleted_files
-                   << " files: " << status;
+      std::cerr << path << ": failed to delete " << undeleted_dirs
+                << " directories and " << undeleted_files
+                << " files: " << status;
     }
   }
 }

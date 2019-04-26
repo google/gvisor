@@ -18,6 +18,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <iostream>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -210,7 +212,7 @@ TEST(NetlinkRouteTest, GetLinkDump) {
         ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ifinfomsg)));
         const struct ifinfomsg* msg =
             reinterpret_cast<const struct ifinfomsg*>(NLMSG_DATA(hdr));
-        LOG(INFO) << "Found interface idx=" << msg->ifi_index
+        std::cout << "Found interface idx=" << msg->ifi_index
                   << ", type=" << std::hex << msg->ifi_type;
         if (msg->ifi_type == ARPHRD_LOOPBACK) {
           loopbackFound = true;

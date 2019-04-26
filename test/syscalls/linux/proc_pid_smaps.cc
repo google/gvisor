@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include <algorithm>
+#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -172,7 +173,7 @@ PosixErrorOr<std::vector<ProcPidSmapsEntry>> ParseProcPidSmaps(
       return;
     }
     unknown_fields.insert(std::string(key));
-    LOG(INFO) << "skipping unknown smaps field " << key;
+    std::cerr << "skipping unknown smaps field " << key;
   };
 
   auto lines = absl::StrSplit(contents, '\n', absl::SkipEmpty());
@@ -189,8 +190,8 @@ PosixErrorOr<std::vector<ProcPidSmapsEntry>> ParseProcPidSmaps(
     // "key:value" (where value in practice will be preceded by a variable
     // amount of whitespace).
     if (!entry) {
-      LOG(WARNING) << "smaps line not considered a maps line: "
-                   << maybe_maps_entry.error_message();
+      std::cerr << "smaps line not considered a maps line: "
+                << maybe_maps_entry.error_message();
       return PosixError(
           EINVAL,
           absl::StrCat("smaps field line without preceding maps line: ", l));

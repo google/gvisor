@@ -121,8 +121,7 @@ TEST_F(AffinityTest, SchedSetAffinityOnlyNonexistentCPUFails) {
   // it's implicitly returned by raw sched_getaffinity syscall.
   int cpu = cpuset_size_ * 8 - 1;
   if (cpu <= NumCPUs()) {
-    LOG(INFO) << "Skipping test: cpu " << cpu << " exists";
-    return;
+    GTEST_SKIP() << "Skipping test: cpu " << cpu << " exists";
   }
   CPU_SET(cpu, &mask_);
   EXPECT_THAT(

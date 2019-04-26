@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <ctime>
+#include <iostream>
 #include <vector>
 
 #include "absl/base/attributes.h"
@@ -54,8 +55,8 @@ Platform GvisorPlatform() {
   if (strcmp(env, "kvm") == 0) {
     return Platform::kKVM;
   }
-  LOG(FATAL) << "unknown platform " << env;
-  __builtin_unreachable();
+  std::cerr << "unknown platform " << env;
+  abort();
 }
 
 // Inline cpuid instruction.  Preserve %ebx/%rbx register. In PIC compilations
@@ -227,7 +228,7 @@ void SleepSafe(absl::Duration duration) {
 
 uint64_t Megabytes(uint64_t n) {
   // Overflow check, upper 20 bits in n shouldn't be set.
-  CHECK(!(0xfffff00000000000 & n));
+  TEST_CHECK(!(0xfffff00000000000 & n));
   return n << 20;
 }
 

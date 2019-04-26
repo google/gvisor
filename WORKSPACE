@@ -123,36 +123,30 @@ go_repository(
 # System Call test dependencies.
 http_archive(
     name = "com_github_gflags_gflags",
-    sha256 = "6e16c8bc91b1310a44f3965e616383dbda48f83e8c1eaa2370a215057b00cabe",
-    strip_prefix = "gflags-77592648e3f3be87d6c7123eb81cbad75f9aef5a",
+    sha256 = "34af2f15cf7367513b352bdcd2493ab14ce43692d2dcd9dfc499492966c64dcf",
+    strip_prefix = "gflags-2.2.2",
     urls = [
-        "https://mirror.bazel.build/github.com/gflags/gflags/archive/77592648e3f3be87d6c7123eb81cbad75f9aef5a.tar.gz",
-        "https://github.com/gflags/gflags/archive/77592648e3f3be87d6c7123eb81cbad75f9aef5a.tar.gz",
+        "https://mirror.bazel.build/github.com/gflags/gflags/archive/v2.2.2.tar.gz",
+        "https://github.com/gflags/gflags/archive/v2.2.2.tar.gz",
     ],
 )
 
 http_archive(
     name = "com_google_absl",
-    strip_prefix = "abseil-cpp-master",
-    urls = ["https://github.com/abseil/abseil-cpp/archive/master.zip"],
-)
-
-http_archive(
-    name = "com_google_glog",
-    sha256 = "eaabbfc16ecfacb36960ca9c8977f40172c51e4b03234331a1f84040a77ab12c",
-    strip_prefix = "glog-781096619d3dd368cfebd33889e417a168493ce7",
+    sha256 = "01ba1185a0e6e048e4890f39e383515195bc335f0627cdddc0c325ee68be4434",
+    strip_prefix = "abseil-cpp-cd86d0d20ab167c33b23d3875db68d1d4bad3a3b",
     urls = [
-        "https://mirror.bazel.build/github.com/google/glog/archive/781096619d3dd368cfebd33889e417a168493ce7.tar.gz",
-        "https://github.com/google/glog/archive/781096619d3dd368cfebd33889e417a168493ce7.tar.gz",
+        "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/cd86d0d20ab167c33b23d3875db68d1d4bad3a3b.tar.gz",
+        "https://github.com/abseil/abseil-cpp/archive/cd86d0d20ab167c33b23d3875db68d1d4bad3a3b.tar.gz",
     ],
 )
 
 http_archive(
     name = "com_google_googletest",
-    sha256 = "353ab86e35cea1cd386115279cf4b16695bbf21b897bfbf2721cf4cb5f64ade8",
-    strip_prefix = "googletest-997d343dd680e541ef96ce71ee54a91daf2577a0",
+    sha256 = "574e884a41f0a9b76f849a5cdd89c393651e7537e5daa725cf12511232cbd74b",
+    strip_prefix = "googletest-61cdca569b1f7e4629f8b949f0a9606c28281a6b",
     urls = [
-        "https://mirror.bazel.build/github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
-        "https://github.com/google/googletest/archive/997d343dd680e541ef96ce71ee54a91daf2577a0.zip",
+        "https://mirror.bazel.build/github.com/google/googletest/archive/61cdca569b1f7e4629f8b949f0a9606c28281a6b.tar.gz",
+        "https://github.com/google/googletest/archive/61cdca569b1f7e4629f8b949f0a9606c28281a6b.tar.gz",
     ],
 )

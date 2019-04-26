@@ -22,6 +22,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <iostream>
 #include <utility>
 
 #include "gmock/gmock.h"
@@ -1188,7 +1189,7 @@ TEST(PtraceTest, SeizeSetOptions) {
     // gVisor is not susceptible to this race because
     // kernel.Task.waitCollectTraceeStopLocked() checks specifically for an
     // active ptraceStop, which is not initiated if SIGKILL is pending.
-    LOG(INFO) << "Observed syscall-exit after SIGKILL";
+    std::cout << "Observed syscall-exit after SIGKILL";
     ASSERT_THAT(waitpid(child_pid, &status, 0),
                 SyscallSucceedsWithValue(child_pid));
   }
