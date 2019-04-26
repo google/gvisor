@@ -1,22 +1,21 @@
-/*
-Copyright 2019 Google LLC
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+// Copyright 2019 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -24,6 +23,10 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	// For triggering manual rebuilds.
+	"golang.org/x/oauth2/google"
+	"google.golang.org/api/cloudbuild/v1"
 )
 
 var redirects = map[string]string{
@@ -120,6 +123,56 @@ func registerStatic(mux *http.ServeMux, staticDir string) {
 	mux.Handle("/", hostRedirectHandler(http.FileServer(http.Dir(staticDir))))
 }
 
+// registerRebuild registers the rebuild handler.
+func registerRebuild(mux *http.ServeMux) {
+	if mux == nil {
+		mux = http.DefaultServeMux
+	}
+
+	mux.Handle("/rebuild", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.Background()
+		credentials, err := google.FindDefaultCredentials(ctx, cloudbuild.CloudPlatformScope)
+		if err != nil {
+			http.Error(w, "credentials error: "+err.Error(), 500)
+			return
+		}
+		cloudbuildService, err := cloudbuild.NewService(ctx)
+		if err != nil {
+			http.Error(w, "cloudbuild service error: "+err.Error(), 500)
+			return
+		}
+		projectID := credentials.ProjectID
+		if projectID == "" {
+			// If running locally, then this project will not be
+			// available. Use the default project here.
+			projectID = "gvisor-website"
+		}
+		triggers, err := cloudbuildService.Projects.Triggers.List(projectID).Do()
+		if err != nil {
+			http.Error(w, "trigger list error: "+err.Error(), 500)
+			return
+		}
+		if len(triggers.Triggers) < 1 {
+			http.Error(w, "trigger list error: no triggers", 500)
+			return
+		}
+		if _, err := cloudbuildService.Projects.Triggers.Run(
+			projectID,
+			triggers.Triggers[0].Id,
+			&cloudbuild.RepoSource{
+				// In the current project, require that a
+				// github cloud source repository exists with
+				// the given name, and build from master.
+				BranchName: "master",
+				RepoName:   "github_google_gvisor-website",
+				ProjectId:  projectID,
+			}).Do(); err != nil {
+			http.Error(w, "run error: "+err.Error(), 500)
+			return
+		}
+	}))
+}
+
 func envFlagString(name, def string) string {
 	if val := os.Getenv(name); val != "" {
 		return val
@@ -136,6 +189,7 @@ func main() {
 	flag.Parse()
 
 	registerRedirects(nil)
+	registerRebuild(nil)
 	registerStatic(nil, *staticDir)
 
 	log.Fatal(http.ListenAndServe(*addr, nil))
