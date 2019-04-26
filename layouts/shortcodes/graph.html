@@ -1,0 +1,199 @@
+<svg id="{{ .Get "id" }}" width=500 height=200>
+  <title>{{ .Get "title" }}</title>
+</svg>
+
+<script type="text/javascript">
+d3.csv("{{ .Get "url" }}", function(d, i, columns) {
+    return d; // Transformed below.
+}, function(error, data) {
+    if (error) throw(error);
+
+    // Create a new data that pivots on runtime.
+    //
+    // To start, we have:
+    //    runtime, ..., result
+    //    runc,    ..., 1
+    //    runsc,   ..., 2
+    //
+    // In the end we want:
+    //    ..., runsc, runc
+    //    ..., 1,     2
+
+    // Filter by metric, if required.
+    if ("{{ .Get "metric" }}" != "") {
+      orig_columns = data.columns;
+      data = data.filter(d => d.metric == "{{ .Get "metric" }}");
+      data.columns = orig_columns;
+    }
+
+    // Filter by method, if required.
+    if ("{{ .Get "method" }}" != "") {
+      orig_columns = data.columns;
+      data = data.filter(d => d.method == "{{ .Get "method" }}");
+      data.columns = orig_columns.filter(key => key != "method");
+    }
+
+    // Enumerate runtimes.
+    var runtimes = Array.from(new Set(data.map(d => d.runtime)));
+    var metrics = Array.from(new Set(data.map(d => d.metric)));
+    if (metrics.length < 1) {
+        console.log(data);
+        throw("need at least one metric");
+    } else if (metrics.length == 1) {
+        metric = metrics[0];
+        data.columns = data.columns.filter(key => key != "metric");
+    } else {
+        metric = ""; // Used for grouping.
+    }
+
+    var isSubset = function(a, sup) {
+        var ap = Object.getOwnPropertyNames(a);
+        for (var i = 0; i < ap.length; i++) {
+            if (a[ap[i]] !== sup[ap[i]]) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // Execute a pivot to include runtimes as attributes.
+    var new_data = data.map(function(data_item) {
+        // Generate a prototype data item.
+        var proto_item = Object.assign({}, data_item);
+        delete proto_item.runtime;
+        delete proto_item.result;
+        var next_item = Object.assign({}, proto_item);
+
+        // Find all matching runtime items.
+        data.forEach(function(d) {
+            if (isSubset(proto_item, d)) {
+                // Add the result result.
+                next_item[d.runtime] = d.result;
+            }
+        });
+        return next_item;
+    });
+
+    // Remove any duplication.
+    new_data = Array.from(new Set(new_data));
+    new_data.columns = data.columns;
+    new_data.columns = new_data.columns.filter(key => key != "runtime" && key != "result");
+    new_data.columns = new_data.columns.concat(runtimes);
+    data = new_data;
+
+    // Slice based on the first key.
+    if (data.columns.length != runtimes.length) {
+        x0_key = new_data.columns[0];
+        var x1_domain = data.columns.slice(1);
+    } else {
+        x0_key = "runtime";
+        var x1_domain = runtimes;
+    }
+
+    // Determine varaible margins.
+    var x0_domain = data.map(d => d[x0_key]);
+    var margin_bottom_pad = 0;
+    if (x0_domain.length > 8) {
+        margin_bottom_pad = 50;
+    }
+
+    // Use log scale if required.
+    var y_min = 0;
+    if ({{ .Get "log" | default false }}) {
+        // Need to cap lower end of the domain at 1.
+        y_min = 1;
+    }
+
+    var svg = d3.select("#{{ .Get "id" }}"),
+        margin = {top: 20, right: 20, bottom: 30 + margin_bottom_pad, left: 50},
+        width = +svg.attr("width") - margin.left - margin.right,
+        height = +svg.attr("height") - margin.top - margin.bottom,
+        g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    var x0 = d3.scaleBand()
+        .rangeRound([margin.left / 2, width - (4 * margin.right)])
+        .paddingInner(0.1);
+
+    var x1 = d3.scaleBand()
+        .padding(0.05);
+
+    var y = d3.scaleLinear()
+        .rangeRound([height, 0]);
+    if ({{ .Get "log" | default false }}) {
+        y = d3.scaleLog()
+           .rangeRound([height, 0]);
+    }
+
+    var z = d3.scaleOrdinal()
+        .range(["#262362", "#FBB03B", "#286FD7", "#6b486b"]);
+
+    // Set all domains.
+    x0.domain(x0_domain);
+    x1.domain(x1_domain).rangeRound([0, x0.bandwidth()]);
+    y.domain([y_min, d3.max(data, d => d3.max(x1_domain, key => parseFloat(d[key])))]).nice();
+
+    // The data.
+    g.append("g")
+        .selectAll("g")
+        .data(data)
+        .enter().append("g")
+          .attr("transform", function(d) { return "translate(" + x0(d[x0_key]) + ",0)"; })
+        .selectAll("rect")
+        .data(d => x1_domain.map(key => ({key, value: d[key]})))
+        .enter().append("rect")
+          .attr("x", d => x1(d.key))
+          .attr("y", d => y(d.value))
+          .attr("width", x1.bandwidth())
+          .attr("height", d => y(y_min) - y(d.value))
+          .attr("fill", d => z(d.key));
+
+    // X0 ticks and labels.
+    var x0_axis = g.append("g")
+        .attr("class", "axis")
+        .attr("transform", "translate(0," + height + ")")
+        .call(d3.axisBottom(x0));
+    if (x0_domain.length > 8) {
+        x0_axis.selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", ".15em")
+            .attr("transform", "rotate(-65)");
+    }
+
+    // Y ticks and top-label.
+    if (metric == "default") {
+        metric = ""; // Don't display.
+    }
+    g.append("g")
+        .attr("class", "axis")
+        .call(d3.axisLeft(y).ticks(null, "s"))
+        .append("text")
+        .attr("x", -30.0)
+        .attr("y", y(y.ticks().pop()) - 10.0)
+        .attr("dy", "0.32em")
+        .attr("fill", "#000")
+        .attr("font-weight", "bold")
+        .attr("text-anchor", "start")
+        .text(metric);
+
+    // The legend.
+    var legend = g.append("g")
+        .attr("font-family", "sans-serif")
+        .attr("font-size", 10)
+        .attr("text-anchor", "end")
+        .selectAll("g")
+        .data(x1_domain.slice().reverse())
+        .enter().append("g")
+        .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; });
+    legend.append("rect")
+        .attr("x", width - 19)
+        .attr("width", 19)
+        .attr("height", 19)
+        .attr("fill", z);
+    legend.append("text")
+        .attr("x", width - 24)
+        .attr("y", 9.5)
+        .attr("dy", "0.32em")
+        .text(function(d) { return d; });
+});
+</script>
