@@ -1,0 +1,7 @@
+runtime,method,metric,result
+runc,density.empty,memory_usage,2460794.88
+runc,density.node,memory_usage,18692915.2
+runc,density.ruby,memory_usage,18854543.36
+runsc,density.empty,memory_usage,22531850.24
+runsc,density.node,memory_usage,43994398.72
+runsc,density.ruby,memory_usage,51410862.08

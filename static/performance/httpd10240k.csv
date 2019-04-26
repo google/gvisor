@@ -1,0 +1,17 @@
+connections,runtime,metric,result
+1,runc,transfer_rate,880.36
+1,runc,latency,0.0
+1,runsc,transfer_rate,404.93
+1,runsc,latency,1.0
+5,runc,transfer_rate,4263.6
+5,runc,latency,1.0
+5,runsc,transfer_rate,1211.68
+5,runsc,latency,2.0
+10,runc,transfer_rate,5172.49
+10,runc,latency,1.0
+10,runsc,transfer_rate,1338.98
+10,runsc,latency,3.0
+25,runc,transfer_rate,5485.12
+25,runc,latency,2.0
+25,runsc,transfer_rate,1077.82
+25,runsc,latency,11.0
