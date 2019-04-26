@@ -50,8 +50,9 @@ type physicalRegion struct {
 var physicalRegions []physicalRegion
 
 // fillAddressSpace fills the host address space with PROT_NONE mappings until
-// the number of available bits until we have a host address space size that is
-// equal to the physical address space.
+// we have a host address space size that is less than or equal to the physical
+// address space. This allows us to have an injective host virtual to guest
+// physical mapping.
 //
 // The excluded regions are returned.
 func fillAddressSpace() (excludedRegions []region) {
@@ -67,11 +68,6 @@ func fillAddressSpace() (excludedRegions []region) {
 	pSize := uintptr(1) << ring0.PhysicalAddressBits()
 	pSize -= reservedMemory
 
-	// Sanity check.
-	if vSize < pSize {
-		panic(fmt.Sprintf("vSize (%x) < pSize (%x)", vSize, pSize))
-	}
-
 	// Add specifically excluded regions; see excludeVirtualRegion.
 	applyVirtualRegions(func(vr virtualRegion) {
 		if excludeVirtualRegion(vr) {
@@ -80,6 +76,11 @@ func fillAddressSpace() (excludedRegions []region) {
 			log.Infof("excluded: virtual [%x,%x)", vr.virtual, vr.virtual+vr.length)
 		}
 	})
+
+	// Do we need any more work?
+	if vSize < pSize {
+		return excludedRegions
+	}
 
 	// Calculate the required space and fill it.
 	//
