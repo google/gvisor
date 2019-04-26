@@ -197,8 +197,9 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 			return stack.RegisterLinkEndpoint(e), nil
 
 		case RecvMMsg:
-			// If the provided FD is a socket then we optimize packet reads by
-			// using recvmmsg() instead of read() to read packets in a batch.
+			// If the provided FD is a socket then we optimize
+			// packet reads by using recvmmsg() instead of read() to
+			// read packets in a batch.
 			e.inboundDispatcher = e.recvMMsgDispatch
 			msgsPerRecv = MaxMsgsPerRecv
 		}

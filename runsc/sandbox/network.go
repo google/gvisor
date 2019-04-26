@@ -262,6 +262,17 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 			}
 		}
 
+		// Use SO_RCVBUFFORCE because on linux the receive buffer for an
+		// AF_PACKET socket is capped by "net.core.rmem_max". rmem_max
+		// defaults to a unusually low value of 208KB. This is too low
+		// for gVisor to be able to receive packets at high throughputs
+		// without incurring packet drops.
+		const rcvBufSize = 4 << 20 // 4MB.
+
+		if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, rcvBufSize); err != nil {
+			return fmt.Errorf("failed to increase socket rcv buffer to %d: %v", rcvBufSize, err)
+		}
+
 		// Collect the addresses for the interface, enable forwarding,
 		// and remove them from the host.
 		for _, addr := range ip4addrs {
