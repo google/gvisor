@@ -455,24 +455,26 @@ TEST_F(PipeTest, LargeFile) {
   EXPECT_EQ(rflags, 0);
 }
 
-// Test that accessing /proc/<PID>/fd/<FD> correctly decrements the refcount of
-// that file descriptor.
+// Test that accesses of /proc/<PID>/fd/<FD> and /proc/<PID>/fdinfo/<FD>
+// correctly decrement the refcount of that file descriptor.
 TEST_F(PipeTest, ProcFDReleasesFile) {
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-  FileDescriptor rfd(fds[0]);
-  FileDescriptor wfd(fds[1]);
+  std::vector<std::string> paths = {"/proc/self/fd/", "/proc/self/fdinfo/"};
+  for (const std::string& path : paths) {
+    int fds[2];
+    ASSERT_THAT(pipe(fds), SyscallSucceeds());
+    FileDescriptor rfd(fds[0]);
+    FileDescriptor wfd(fds[1]);
 
-  // Stat the pipe FD, which shouldn't alter the refcount of the write end of
-  // the pipe.
-  struct stat wst;
-  ASSERT_THAT(lstat(absl::StrCat("/proc/self/fd/", wfd.get()).c_str(), &wst),
-              SyscallSucceeds());
-
-  // Close the write end of the pipe and ensure that read indicates EOF.
-  wfd.reset();
-  char buf;
-  ASSERT_THAT(read(rfd.get(), &buf, 1), SyscallSucceedsWithValue(0));
+    // Stat the pipe FD, which shouldn't alter the refcount of the write end of
+    // the pipe.
+    struct stat wst;
+    ASSERT_THAT(lstat(absl::StrCat(path.c_str(), wfd.get()).c_str(), &wst),
+                SyscallSucceeds());
+    // Close the write end of the pipe and ensure that read indicates EOF.
+    wfd.reset();
+    char buf;
+    ASSERT_THAT(read(rfd.get(), &buf, 1), SyscallSucceedsWithValue(0));
+  }
 }
 
 }  // namespace

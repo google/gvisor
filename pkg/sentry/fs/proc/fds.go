@@ -236,24 +236,6 @@ func (f *fdDirFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySer
 	})
 }
 
-// fdInfoInode is a single file in /proc/TID/fdinfo/.
-//
-// +stateify savable
-type fdInfoInode struct {
-	staticFileInodeOps
-
-	file    *fs.File
-	flags   fs.FileFlags
-	fdFlags kernel.FDFlags
-}
-
-var _ fs.InodeOperations = (*fdInfoInode)(nil)
-
-// Release implements fs.InodeOperations.Release.
-func (f *fdInfoInode) Release(ctx context.Context) {
-	f.file.DecRef()
-}
-
 // fdInfoDir implements /proc/TID/fdinfo.  It embeds an fdDir, but overrides
 // Lookup and Readdir.
 //
@@ -283,6 +265,7 @@ func (fdid *fdInfoDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs
 		// locks, and other data.  For now we only have flags.
 		// See https://www.kernel.org/doc/Documentation/filesystems/proc.txt
 		flags := file.Flags().ToLinux() | fdFlags.ToLinuxFileFlags()
+		file.DecRef()
 		contents := []byte(fmt.Sprintf("flags:\t0%o\n", flags))
 		return newStaticProcInode(ctx, dir.MountSource, contents)
 	})
