@@ -45,6 +45,7 @@ var (
 	ErrNoSuchFile            = New(tcpip.ErrNoSuchFile.String(), linux.ENOENT)
 	ErrInvalidOptionValue    = New(tcpip.ErrInvalidOptionValue.String(), linux.EINVAL)
 	ErrBroadcastDisabled     = New(tcpip.ErrBroadcastDisabled.String(), linux.EACCES)
+	ErrNotPermittedNet       = New(tcpip.ErrNotPermitted.String(), linux.EPERM)
 )
 
 var netstackErrorTranslations = map[*tcpip.Error]*Error{
@@ -84,6 +85,7 @@ var netstackErrorTranslations = map[*tcpip.Error]*Error{
 	tcpip.ErrMessageTooLong:        ErrMessageTooLong,
 	tcpip.ErrNoBufferSpace:         ErrNoBufferSpace,
 	tcpip.ErrBroadcastDisabled:     ErrBroadcastDisabled,
+	tcpip.ErrNotPermitted:          ErrNotPermittedNet,
 }
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry

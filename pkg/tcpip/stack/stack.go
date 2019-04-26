@@ -291,6 +291,10 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
+	// raw indicates whether raw sockets may be created. It is set during
+	// Stack creation and is immutable.
+	raw bool
+
 	mu         sync.RWMutex
 	nics       map[tcpip.NICID]*NIC
 	forwarding bool
@@ -327,6 +331,9 @@ type Options struct {
 	// should be handled by the stack internally (true) or outside the
 	// stack (false).
 	HandleLocal bool
+
+	// Raw indicates whether raw sockets may be created.
+	Raw bool
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -352,6 +359,7 @@ func New(network []string, transport []string, opts Options) *Stack {
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
 		handleLocal:        opts.HandleLocal,
+		raw:                opts.Raw,
 	}
 
 	// Add specified network protocols.
@@ -512,6 +520,10 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // protocol. Raw endpoints receive all traffic for a given protocol regardless
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	if !s.raw {
+		return nil, tcpip.ErrNotPermitted
+	}
+
 	t, ok := s.transportProtocols[transport]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol

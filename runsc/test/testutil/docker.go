@@ -334,19 +334,32 @@ func (d *Docker) Wait(timeout time.Duration) (syscall.WaitStatus, error) {
 // WaitForOutput calls 'docker logs' to retrieve containers output and searches
 // for the given pattern.
 func (d *Docker) WaitForOutput(pattern string, timeout time.Duration) (string, error) {
+	matches, err := d.WaitForOutputSubmatch(pattern, timeout)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		return "", nil
+	}
+	return matches[0], nil
+}
+
+// WaitForOutputSubmatch calls 'docker logs' to retrieve containers output and
+// searches for the given pattern. It returns any regexp submatches as well.
+func (d *Docker) WaitForOutputSubmatch(pattern string, timeout time.Duration) ([]string, error) {
 	re := regexp.MustCompile(pattern)
 	var out string
 	for exp := time.Now().Add(timeout); time.Now().Before(exp); {
 		var err error
 		out, err = d.Logs()
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		if match := re.FindString(out); match != "" {
+		if matches := re.FindStringSubmatch(out); matches != nil {
 			// Success!
-			return match, nil
+			return matches, nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return "", fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
+	return nil, fmt.Errorf("timeout waiting for output %q: %s", re.String(), out)
 }

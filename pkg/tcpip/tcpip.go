@@ -102,6 +102,7 @@ var (
 	ErrMessageTooLong        = &Error{msg: "message too long"}
 	ErrNoBufferSpace         = &Error{msg: "no buffer space available"}
 	ErrBroadcastDisabled     = &Error{msg: "broadcast socket option disabled"}
+	ErrNotPermitted          = &Error{msg: "operation not permitted"}
 )
 
 // Errors related to Subnet

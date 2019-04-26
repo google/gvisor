@@ -27,10 +27,13 @@
 package integration
 
 import (
+	"fmt"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
@@ -46,11 +49,28 @@ func TestExecCapabilities(t *testing.T) {
 	}
 	defer d.CleanUp()
 
-	want, err := d.WaitForOutput("CapEff:\t[0-9a-f]+\n", 5*time.Second)
+	matches, err := d.WaitForOutputSubmatch("CapEff:\t([0-9a-f]+)\n", 5*time.Second)
 	if err != nil {
-		t.Fatalf("WaitForOutput() timeout: %v", err)
+		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
 	}
-	t.Log("Root capabilities:", want)
+	if len(matches) != 2 {
+		t.Fatalf("There should be a match for the whole line and the capability bitmask")
+	}
+	capString := matches[1]
+	t.Log("Root capabilities:", capString)
+
+	// CAP_NET_RAW was in the capability set for the container, but was
+	// removed. However, `exec` does not remove it. Verify that it's not
+	// set in the container, then re-add it for comparison.
+	caps, err := strconv.ParseUint(capString, 16, 64)
+	if err != nil {
+		t.Fatalf("failed to convert capabilities %q: %v", capString, err)
+	}
+	if caps&(1<<uint64(linux.CAP_NET_RAW)) != 0 {
+		t.Fatalf("CAP_NET_RAW should be filtered, but is set in the container: %x", caps)
+	}
+	caps |= 1 << uint64(linux.CAP_NET_RAW)
+	want := fmt.Sprintf("CapEff:\t%016x\n", caps)
 
 	// Now check that exec'd process capabilities match the root.
 	got, err := d.Exec("grep", "CapEff:", "/proc/self/status")

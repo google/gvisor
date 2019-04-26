@@ -227,7 +227,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create capabilities.
-	caps, err := specutils.Capabilities(args.Spec.Process.Capabilities)
+	caps, err := specutils.Capabilities(args.Conf.EnableRaw, args.Spec.Process.Capabilities)
 	if err != nil {
 		return nil, fmt.Errorf("converting capabilities: %v", err)
 	}
@@ -554,7 +554,7 @@ func (l *Loader) createContainer(cid string) error {
 // this method returns.
 func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
 	// Create capabilities.
-	caps, err := specutils.Capabilities(spec.Process.Capabilities)
+	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
 		return fmt.Errorf("creating capabilities: %v", err)
 	}
@@ -800,6 +800,9 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			Clock:       clock,
 			Stats:       epsocket.Metrics,
 			HandleLocal: true,
+			// Enable raw sockets for users with sufficient
+			// privileges.
+			Raw: true,
 		})}
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
 			return nil, fmt.Errorf("failed to enable SACK: %v", err)

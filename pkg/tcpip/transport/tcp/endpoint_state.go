@@ -341,6 +341,7 @@ func loadError(s string) *tcpip.Error {
 			tcpip.ErrMessageTooLong,
 			tcpip.ErrNoBufferSpace,
 			tcpip.ErrBroadcastDisabled,
+			tcpip.ErrNotPermitted,
 		}
 
 		messageToError = make(map[string]*tcpip.Error)

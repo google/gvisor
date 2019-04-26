@@ -132,7 +132,11 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 	}
 	if e.Capabilities == nil {
-		e.Capabilities, err = specutils.Capabilities(c.Spec.Process.Capabilities)
+		// enableRaw is set to true to prevent the filtering out of
+		// CAP_NET_RAW. This is the opposite of Create() because exec
+		// requires the capability to be set explicitly, while 'docker
+		// run' sets it by default.
+		e.Capabilities, err = specutils.Capabilities(true /* enableRaw */, c.Spec.Process.Capabilities)
 		if err != nil {
 			Fatalf("creating capabilities: %v", err)
 		}
@@ -351,7 +355,11 @@ func argsFromProcess(p *specs.Process) (*control.ExecArgs, error) {
 	var caps *auth.TaskCapabilities
 	if p.Capabilities != nil {
 		var err error
-		caps, err = specutils.Capabilities(p.Capabilities)
+		// enableRaw is set to true to prevent the filtering out of
+		// CAP_NET_RAW. This is the opposite of Create() because exec
+		// requires the capability to be set explicitly, while 'docker
+		// run' sets it by default.
+		caps, err = specutils.Capabilities(true /* enableRaw */, p.Capabilities)
 		if err != nil {
 			return nil, fmt.Errorf("error creating capabilities: %v", err)
 		}
@@ -413,7 +421,11 @@ func capabilities(cs []string) (*auth.TaskCapabilities, error) {
 		specCaps.Inheritable = append(specCaps.Inheritable, cap)
 		specCaps.Permitted = append(specCaps.Permitted, cap)
 	}
-	return specutils.Capabilities(&specCaps)
+	// enableRaw is set to true to prevent the filtering out of
+	// CAP_NET_RAW. This is the opposite of Create() because exec requires
+	// the capability to be set explicitly, while 'docker run' sets it by
+	// default.
+	return specutils.Capabilities(true /* enableRaw */, &specCaps)
 }
 
 // stringSlice allows a flag to be used multiple times, where each occurrence

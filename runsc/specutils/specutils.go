@@ -198,20 +198,26 @@ func ReadMounts(f *os.File) ([]specs.Mount, error) {
 
 // Capabilities takes in spec and returns a TaskCapabilities corresponding to
 // the spec.
-func Capabilities(specCaps *specs.LinuxCapabilities) (*auth.TaskCapabilities, error) {
+func Capabilities(enableRaw bool, specCaps *specs.LinuxCapabilities) (*auth.TaskCapabilities, error) {
+	// Strip CAP_NET_RAW from all capability sets if necessary.
+	skipSet := map[linux.Capability]struct{}{}
+	if !enableRaw {
+		skipSet[linux.CAP_NET_RAW] = struct{}{}
+	}
+
 	var caps auth.TaskCapabilities
 	if specCaps != nil {
 		var err error
-		if caps.BoundingCaps, err = capsFromNames(specCaps.Bounding); err != nil {
+		if caps.BoundingCaps, err = capsFromNames(specCaps.Bounding, skipSet); err != nil {
 			return nil, err
 		}
-		if caps.EffectiveCaps, err = capsFromNames(specCaps.Effective); err != nil {
+		if caps.EffectiveCaps, err = capsFromNames(specCaps.Effective, skipSet); err != nil {
 			return nil, err
 		}
-		if caps.InheritableCaps, err = capsFromNames(specCaps.Inheritable); err != nil {
+		if caps.InheritableCaps, err = capsFromNames(specCaps.Inheritable, skipSet); err != nil {
 			return nil, err
 		}
-		if caps.PermittedCaps, err = capsFromNames(specCaps.Permitted); err != nil {
+		if caps.PermittedCaps, err = capsFromNames(specCaps.Permitted, skipSet); err != nil {
 			return nil, err
 		}
 		// TODO: Support ambient capabilities.
@@ -275,12 +281,16 @@ var capFromName = map[string]linux.Capability{
 	"CAP_AUDIT_READ":       linux.CAP_AUDIT_READ,
 }
 
-func capsFromNames(names []string) (auth.CapabilitySet, error) {
+func capsFromNames(names []string, skipSet map[linux.Capability]struct{}) (auth.CapabilitySet, error) {
 	var caps []linux.Capability
 	for _, n := range names {
 		c, ok := capFromName[n]
 		if !ok {
 			return 0, fmt.Errorf("unknown capability %q", n)
+		}
+		// Should we skip this capabilty?
+		if _, ok := skipSet[c]; ok {
+			continue
 		}
 		caps = append(caps, c)
 	}

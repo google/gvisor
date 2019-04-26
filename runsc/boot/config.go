@@ -175,6 +175,11 @@ type Config struct {
 	// Network indicates what type of network to use.
 	Network NetworkType
 
+	// EnableRaw indicates whether raw sockets should be enabled. Raw
+	// sockets are disabled by stripping CAP_NET_RAW from the list of
+	// capabilities.
+	EnableRaw bool
+
 	// GSO indicates that generic segmentation offload is enabled.
 	GSO bool
 
@@ -235,6 +240,7 @@ func (c *Config) ToFlags() []string {
 		"--watchdog-action=" + c.WatchdogAction.String(),
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 		"--profile=" + strconv.FormatBool(c.ProfileEnable),
+		"--net-raw=" + strconv.FormatBool(c.EnableRaw),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.

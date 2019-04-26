@@ -15,7 +15,10 @@ go_test(
         "manual",
         "local",
     ],
-    deps = ["//runsc/test/testutil"],
+    deps = [
+        "//pkg/abi/linux",
+        "//runsc/test/testutil",
+    ],
 )
 
 go_library(
