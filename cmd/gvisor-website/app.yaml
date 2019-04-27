@@ -20,4 +20,5 @@ handlers:
     script: auto
   - url: /rebuild
     secure: always
+    script: auto
     login: admin
