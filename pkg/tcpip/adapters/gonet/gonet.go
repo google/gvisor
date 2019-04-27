@@ -435,6 +435,28 @@ func (c *Conn) Close() error {
 	return nil
 }
 
+// CloseRead shuts down the reading side of the TCP connection. Most callers
+// should just use Close.
+//
+// A TCP Half-Close is performed the same as CloseRead for *net.TCPConn.
+func (c *Conn) CloseRead() error {
+	if terr := c.ep.Shutdown(tcpip.ShutdownRead); terr != nil {
+		return c.newOpError("close", errors.New(terr.String()))
+	}
+	return nil
+}
+
+// CloseWrite shuts down the writing side of the TCP connection. Most callers
+// should just use Close.
+//
+// A TCP Half-Close is performed the same as CloseWrite for *net.TCPConn.
+func (c *Conn) CloseWrite() error {
+	if terr := c.ep.Shutdown(tcpip.ShutdownWrite); terr != nil {
+		return c.newOpError("close", errors.New(terr.String()))
+	}
+	return nil
+}
+
 // LocalAddr implements net.Conn.LocalAddr.
 func (c *Conn) LocalAddr() net.Addr {
 	a, err := c.ep.GetLocalAddress()
