@@ -395,7 +395,7 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Receive a message.
-	tag, m, err := recv(cs.conn, messageSize, messageByType)
+	tag, m, err := recv(cs.conn, messageSize, msgRegistry.get)
 	if errSocket, ok := err.(ErrSocket); ok {
 		// Connection problem; stop serving.
 		cs.recvDone <- errSocket.error
@@ -458,6 +458,8 @@ func (cs *connState) handleRequest() {
 		// Produce an ENOSYS error.
 		r = newErr(syscall.ENOSYS)
 	}
+	msgRegistry.put(m)
+	m = nil // 'm' should not be touched after this point.
 }
 
 func (cs *connState) handleRequests() {

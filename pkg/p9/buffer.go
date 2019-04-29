@@ -20,7 +20,8 @@ import (
 
 // encoder is used for messages and 9P primitives.
 type encoder interface {
-	// Decode decodes from the given buffer.
+	// Decode decodes from the given buffer. Decode may be called more than once
+	// to reuse the instance. It must clear any previous state.
 	//
 	// This may not fail, exhaustion will be recorded in the buffer.
 	Decode(b *buffer)

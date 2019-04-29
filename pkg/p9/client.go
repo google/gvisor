@@ -110,16 +110,16 @@ type Client struct {
 // You should not use the same socket for multiple clients.
 func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client, error) {
 	// Need at least one byte of payload.
-	if messageSize <= largestFixedSize {
+	if messageSize <= msgRegistry.largestFixedSize {
 		return nil, &ErrMessageTooLarge{
 			size:  messageSize,
-			msize: largestFixedSize,
+			msize: msgRegistry.largestFixedSize,
 		}
 	}
 
 	// Compute a payload size and round to 512 (normal block size)
 	// if it's larger than a single block.
-	payloadSize := messageSize - largestFixedSize
+	payloadSize := messageSize - msgRegistry.largestFixedSize
 	if payloadSize > 512 && payloadSize%512 != 0 {
 		payloadSize -= (payloadSize % 512)
 	}

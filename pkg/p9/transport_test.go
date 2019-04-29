@@ -41,7 +41,7 @@ func TestSendRecv(t *testing.T) {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	tag, m, err := recv(server, maximumLength, messageByType)
+	tag, m, err := recv(server, maximumLength, msgRegistry.get)
 	if err != nil {
 		t.Fatalf("recv got err %v expected nil", err)
 	}
@@ -73,7 +73,7 @@ func TestRecvOverrun(t *testing.T) {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	if _, _, err := recv(server, maximumLength, messageByType); err == nil {
+	if _, _, err := recv(server, maximumLength, msgRegistry.get); err == nil {
 		t.Fatalf("recv got err %v expected ErrSocket{ErrNoValidMessage}", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestRecvInvalidType(t *testing.T) {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 
-	_, _, err = recv(server, maximumLength, messageByType)
+	_, _, err = recv(server, maximumLength, msgRegistry.get)
 	if _, ok := err.(*ErrInvalidMsgType); !ok {
 		t.Fatalf("recv got err %v expected ErrInvalidMsgType", err)
 	}
@@ -129,7 +129,7 @@ func TestSendRecvWithFile(t *testing.T) {
 	}
 
 	// Enable withFile.
-	tag, m, err := recv(server, maximumLength, messageByType)
+	tag, m, err := recv(server, maximumLength, msgRegistry.get)
 	if err != nil {
 		t.Fatalf("recv got err %v expected nil", err)
 	}
@@ -153,7 +153,7 @@ func TestRecvClosed(t *testing.T) {
 	defer server.Close()
 	client.Close()
 
-	_, _, err = recv(server, maximumLength, messageByType)
+	_, _, err = recv(server, maximumLength, msgRegistry.get)
 	if err == nil {
 		t.Fatalf("got err nil expected non-nil")
 	}
@@ -180,5 +180,5 @@ func TestSendClosed(t *testing.T) {
 }
 
 func init() {
-	register(MsgTypeBadDecode, func() message { return &badDecode{} })
+	msgRegistry.register(MsgTypeBadDecode, func() message { return &badDecode{} })
 }
