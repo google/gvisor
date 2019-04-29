@@ -348,8 +348,8 @@ std::vector<SocketKind> IoctlSocketTypes() {
           SimpleSocket(AF_INET6, SOCK_DGRAM, 0)};
 }
 
-INSTANTIATE_TEST_CASE_P(IoctlTest, IoctlTestSIOCGIFCONF,
-                        ::testing::ValuesIn(IoctlSocketTypes()));
+INSTANTIATE_TEST_SUITE_P(IoctlTest, IoctlTestSIOCGIFCONF,
+                         ::testing::ValuesIn(IoctlSocketTypes()));
 
 }  // namespace
 

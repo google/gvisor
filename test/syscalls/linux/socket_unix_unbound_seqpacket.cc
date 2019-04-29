@@ -71,7 +71,7 @@ TEST_P(UnboundUnixSeqpacketSocketPairTest, SendtoWithoutConnectIgnoresAddr) {
       SyscallFailsWithErrno(ENOTCONN));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnboundUnixSeqpacketSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(

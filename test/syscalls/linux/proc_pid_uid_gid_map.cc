@@ -253,9 +253,9 @@ TEST_P(ProcSelfUidGidMapTest, MapOtherID) {
               IsPosixErrorOkAndHolds(0));
 }
 
-INSTANTIATE_TEST_CASE_P(All, ProcSelfUidGidMapTest,
-                        ::testing::ValuesIn(UidGidMapTestParams()),
-                        DescribeTestParam);
+INSTANTIATE_TEST_SUITE_P(All, ProcSelfUidGidMapTest,
+                         ::testing::ValuesIn(UidGidMapTestParams()),
+                         DescribeTestParam);
 
 TEST_P(ProcPidUidGidMapTest, MapOtherIDPrivileged) {
   // Like ProcSelfUidGidMapTest_MapOtherID, but since we have CAP_SET*ID in the
@@ -302,9 +302,9 @@ TEST_P(ProcPidUidGidMapTest, MapAnyIDsPrivileged) {
               SyscallSucceedsWithValue(sizeof(entries)));
 }
 
-INSTANTIATE_TEST_CASE_P(All, ProcPidUidGidMapTest,
-                        ::testing::ValuesIn(UidGidMapTestParams()),
-                        DescribeTestParam);
+INSTANTIATE_TEST_SUITE_P(All, ProcPidUidGidMapTest,
+                         ::testing::ValuesIn(UidGidMapTestParams()),
+                         DescribeTestParam);
 
 }  // namespace testing
 }  // namespace gvisor

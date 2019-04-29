@@ -653,7 +653,7 @@ TEST_P(UnixStreamSocketPairTest, CoalescedDifferingCreds) {
                       sizeof(sent_data3)));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnixStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(UnixDomainSocketPair,
@@ -715,7 +715,7 @@ TEST_P(UnboundUnixStreamSocketPairTest, SendtoWithoutConnectIgnoresAddr) {
       SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnboundUnixStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(FilesystemUnboundUnixDomainSocketPair,

@@ -508,8 +508,8 @@ TEST_P(TcpSocketTest, SetNoDelay) {
   EXPECT_EQ(get, kSockOptOff);
 }
 
-INSTANTIATE_TEST_CASE_P(AllInetTests, TcpSocketTest,
-                        ::testing::Values(AF_INET, AF_INET6));
+INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
+                         ::testing::Values(AF_INET, AF_INET6));
 
 // Fixture for tests parameterized by address family that don't want the fixture
 // to do things.
@@ -751,8 +751,8 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
 }
 
-INSTANTIATE_TEST_CASE_P(AllInetTests, SimpleTcpSocketTest,
-                        ::testing::Values(AF_INET, AF_INET6));
+INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
+                         ::testing::Values(AF_INET, AF_INET6));
 
 }  // namespace
 

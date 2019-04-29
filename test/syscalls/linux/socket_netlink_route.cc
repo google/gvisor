@@ -160,8 +160,8 @@ TEST_P(IntSockOptTest, GetSockOpt) {
   EXPECT_GT(res, 0);
 }
 
-INSTANTIATE_TEST_CASE_P(NetlinkRouteTest, IntSockOptTest,
-                        ::testing::Values(SO_SNDBUF, SO_RCVBUF));
+INSTANTIATE_TEST_SUITE_P(NetlinkRouteTest, IntSockOptTest,
+                         ::testing::Values(SO_SNDBUF, SO_RCVBUF));
 
 // Validates the reponses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {

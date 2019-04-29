@@ -904,8 +904,8 @@ TEST_P(ProcPidStatTest, HasBasicFields) {
   EXPECT_GT(rsslim, 0);
 }
 
-INSTANTIATE_TEST_CASE_P(SelfAndNumericPid, ProcPidStatTest,
-                        ::testing::Values("self", absl::StrCat(getpid())));
+INSTANTIATE_TEST_SUITE_P(SelfAndNumericPid, ProcPidStatTest,
+                         ::testing::Values("self", absl::StrCat(getpid())));
 
 using ProcPidStatmTest = ::testing::TestWithParam<std::string>;
 
@@ -925,8 +925,8 @@ TEST_P(ProcPidStatmTest, HasBasicFields) {
   EXPECT_GT(rss, 0);
 }
 
-INSTANTIATE_TEST_CASE_P(SelfAndNumericPid, ProcPidStatmTest,
-                        ::testing::Values("self", absl::StrCat(getpid())));
+INSTANTIATE_TEST_SUITE_P(SelfAndNumericPid, ProcPidStatmTest,
+                         ::testing::Values("self", absl::StrCat(getpid())));
 
 PosixErrorOr<uint64_t> CurrentRSS() {
   ASSIGN_OR_RETURN_ERRNO(auto proc_self_stat, GetContents("/proc/self/stat"));

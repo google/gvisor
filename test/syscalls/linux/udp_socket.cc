@@ -1019,8 +1019,8 @@ TEST_P(UdpSocketTest, TimestampIoctlPersistence) {
   ASSERT_EQ(tv.tv_usec, tv2.tv_usec);
 }
 
-INSTANTIATE_TEST_CASE_P(AllInetTests, UdpSocketTest,
-                        ::testing::Values(AF_INET, AF_INET6));
+INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketTest,
+                         ::testing::Values(AF_INET, AF_INET6));
 
 }  // namespace
 

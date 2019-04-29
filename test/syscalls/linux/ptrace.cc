@@ -625,7 +625,7 @@ TEST_P(PtraceExecveTest, Execve_GetRegs_PeekUser_SIGKILL_TraceClone_TraceExit) {
   _exit(1);
 }
 
-INSTANTIATE_TEST_CASE_P(TraceExec, PtraceExecveTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(TraceExec, PtraceExecveTest, ::testing::Bool());
 
 // This test has expectations on when syscall-enter/exit-stops occur that are
 // violated if saving occurs, since saving interrupts all syscalls, causing

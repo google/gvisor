@@ -43,7 +43,7 @@ TEST_P(NonBlockingDgramUnixSocketPairTest, ReadOneSideClosed) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, NonBlockingDgramUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(std::vector<SocketPairKind>{
         UnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),

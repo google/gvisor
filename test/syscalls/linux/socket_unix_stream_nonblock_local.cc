@@ -30,7 +30,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
   };
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, NonBlockingStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

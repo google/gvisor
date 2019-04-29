@@ -144,7 +144,7 @@ TEST_P(SocketInetLoopbackTest, TCP) {
   ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     All, SocketInetLoopbackTest,
     ::testing::Values(
         // Listeners bound to IPv4 addresses refuse connections using IPv6
@@ -394,7 +394,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     All, SocketInetReusePortTest,
     ::testing::Values(
         // Listeners bound to IPv4 addresses refuse connections using IPv6
@@ -1040,10 +1040,11 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(AllFamlies, SocketMultiProtocolInetLoopbackTest,
-                        ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
-                                          ProtocolTestParam{"UDP", SOCK_DGRAM}),
-                        DescribeProtocolTestParam);
+INSTANTIATE_TEST_SUITE_P(
+    AllFamlies, SocketMultiProtocolInetLoopbackTest,
+    ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
+                      ProtocolTestParam{"UDP", SOCK_DGRAM}),
+    DescribeProtocolTestParam);
 
 }  // namespace
 

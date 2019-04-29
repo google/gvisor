@@ -28,8 +28,8 @@ std::vector<SocketPairKind> GetSocketPairs() {
       AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK}));
 }
 
-INSTANTIATE_TEST_CASE_P(IPv4UDPSockets, IPv4UDPUnboundSocketPairTest,
-                        ::testing::ValuesIn(GetSocketPairs()));
+INSTANTIATE_TEST_SUITE_P(IPv4UDPSockets, IPv4UDPUnboundSocketPairTest,
+                         ::testing::ValuesIn(GetSocketPairs()));
 
 }  // namespace testing
 }  // namespace gvisor

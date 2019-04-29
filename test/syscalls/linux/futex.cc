@@ -503,8 +503,8 @@ TEST_P(PrivateAndSharedFutexTest, WakeWrongKind_NoRandomSave) {
   EXPECT_THAT(futex_wake(!IsPrivate(), &a, 1), SyscallSucceedsWithValue(0));
 }
 
-INSTANTIATE_TEST_CASE_P(SharedPrivate, PrivateAndSharedFutexTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(SharedPrivate, PrivateAndSharedFutexTest,
+                         ::testing::Bool());
 
 // Passing null as the address only works for private futexes.
 

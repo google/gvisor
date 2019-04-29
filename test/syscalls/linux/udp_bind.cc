@@ -175,7 +175,7 @@ socklen_t Ipv4MappedIpv6Addr(sockaddr_storage* addr, int port = 0) {
   return sizeof(struct sockaddr_in6);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     UdpBindTest, SendtoTest,
     ::testing::Values(
         []() {

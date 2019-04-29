@@ -224,8 +224,8 @@ class GetdentsTest : public ::testing::Test {
   FileDescriptor fd_;
 };
 
-// GUnit TYPED_TEST_CASE does not allow multiple template parameters, so we
-// must use explicit template specialization to set the syscall number.
+// Multiple template parameters are not allowed, so we must use explicit
+// template specialization to set the syscall number.
 template <>
 int GetdentsTest<struct linux_dirent>::SyscallNum() {
   return SYS_getdents;
@@ -239,7 +239,7 @@ int GetdentsTest<struct linux_dirent64>::SyscallNum() {
 // Test both legacy getdents and getdents64.
 typedef ::testing::Types<struct linux_dirent, struct linux_dirent64>
     GetdentsTypes;
-TYPED_TEST_CASE(GetdentsTest, GetdentsTypes);
+TYPED_TEST_SUITE(GetdentsTest, GetdentsTypes);
 
 // N.B. TYPED_TESTs require explicitly using this-> to access members of
 // GetdentsTest, since we are inside of a derived class template.

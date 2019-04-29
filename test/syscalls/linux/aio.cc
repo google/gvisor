@@ -397,9 +397,9 @@ TEST_P(AIOReadWriteParamTest, BadOffset) {
   ASSERT_THAT(Submit(1, cbs), SyscallFailsWithErrno(EINVAL));
 }
 
-INSTANTIATE_TEST_CASE_P(BadOffset, AIOReadWriteParamTest,
-                        ::testing::Values(IOCB_CMD_PREAD, IOCB_CMD_PWRITE,
-                                          IOCB_CMD_PREADV, IOCB_CMD_PWRITEV));
+INSTANTIATE_TEST_SUITE_P(BadOffset, AIOReadWriteParamTest,
+                         ::testing::Values(IOCB_CMD_PREAD, IOCB_CMD_PWRITE,
+                                           IOCB_CMD_PREADV, IOCB_CMD_PWRITEV));
 
 class AIOVectorizedParamTest : public AIOTest,
                                public ::testing::WithParamInterface<int> {};
@@ -426,8 +426,8 @@ TEST_P(AIOVectorizedParamTest, BadIOVecs) {
   ASSERT_THAT(Submit(1, cbs), SyscallFailsWithErrno(EFAULT));
 }
 
-INSTANTIATE_TEST_CASE_P(BadIOVecs, AIOVectorizedParamTest,
-                        ::testing::Values(IOCB_CMD_PREADV, IOCB_CMD_PWRITEV));
+INSTANTIATE_TEST_SUITE_P(BadIOVecs, AIOVectorizedParamTest,
+                         ::testing::Values(IOCB_CMD_PREADV, IOCB_CMD_PWRITEV));
 
 }  // namespace testing
 }  // namespace gvisor

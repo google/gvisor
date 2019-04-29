@@ -123,8 +123,8 @@ TEST_P(WallClockNanosleepTest, SleepUntil) {
   EXPECT_GE(after, until);
 }
 
-INSTANTIATE_TEST_CASE_P(Sleepers, WallClockNanosleepTest,
-                        ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC));
+INSTANTIATE_TEST_SUITE_P(Sleepers, WallClockNanosleepTest,
+                         ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC));
 
 TEST(ClockNanosleepProcessTest, SleepFiveSeconds) {
   absl::Duration const kDuration = absl::Seconds(5);

@@ -32,15 +32,15 @@ std::vector<SocketPairKind> GetSocketPairs() {
   };
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, AllSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, NonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     UDPSockets, UDPSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

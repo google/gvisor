@@ -828,7 +828,7 @@ TEST_P(ElfInterpreterStaticTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Cases, ElfInterpreterStaticTest,
     ::testing::ValuesIn({
         // Simple NUL-terminator to run the interpreter as normal.
@@ -866,7 +866,7 @@ TEST_P(ElfInterpreterBadPathTest, Test) {
   EXPECT_EQ(execve_errno, expected_errno);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Cases, ElfInterpreterBadPathTest,
     ::testing::ValuesIn({
         // NUL-terminated fake path in the PT_INTERP segment.

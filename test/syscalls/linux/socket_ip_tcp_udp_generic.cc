@@ -68,7 +68,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
           AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK})));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllTCPSockets, TcpUdpSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

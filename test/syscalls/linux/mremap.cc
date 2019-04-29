@@ -377,8 +377,8 @@ TEST_P(MremapParamTest, Fixed_Expansion) {
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
-INSTANTIATE_TEST_CASE_P(PrivateShared, MremapParamTest,
-                        ::testing::Values(MAP_PRIVATE, MAP_SHARED));
+INSTANTIATE_TEST_SUITE_P(PrivateShared, MremapParamTest,
+                         ::testing::Values(MAP_PRIVATE, MAP_SHARED));
 
 // mremap with old_size == 0 only works with MAP_SHARED after Linux 4.14
 // (dba58d3b8c50 "mm/mremap: fail map duplication attempts for private

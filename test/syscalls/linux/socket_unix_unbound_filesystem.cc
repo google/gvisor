@@ -70,7 +70,7 @@ TEST_P(UnboundFilesystemUnixSocketPairTest, GetSockNameLength) {
             strlen(want_addr.sun_path) + 1 + sizeof(want_addr.sun_family));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnboundFilesystemUnixSocketPairTest,
     ::testing::ValuesIn(ApplyVec<SocketPairKind>(
         FilesystemUnboundUnixDomainSocketPair,

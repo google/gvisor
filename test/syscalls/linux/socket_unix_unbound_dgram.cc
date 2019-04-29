@@ -142,7 +142,7 @@ TEST_P(UnboundDgramUnixSocketPairTest, SendtoWithoutConnect) {
       SyscallSucceedsWithValue(sizeof(data)));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnboundDgramUnixSocketPairTest,
     ::testing::ValuesIn(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(FilesystemUnboundUnixDomainSocketPair,

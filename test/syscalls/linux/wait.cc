@@ -309,7 +309,7 @@ TEST_P(WaitAnyChildTest, IgnoredChildRusage) {
   EXPECT_EQ(before.ru_stime.tv_usec, after.ru_stime.tv_usec);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Waiters, WaitAnyChildTest,
     ::testing::Values(
         [](int code, int options) -> PosixErrorOr<pid_t> {
@@ -551,7 +551,7 @@ TEST_P(WaitSpecificChildTest, AfterChildExecve) {
   EXPECT_NO_ERRNO(WaitFor(child, 0));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Waiters, WaitSpecificChildTest,
     ::testing::Values(
         [](pid_t pid, int code) -> PosixError {

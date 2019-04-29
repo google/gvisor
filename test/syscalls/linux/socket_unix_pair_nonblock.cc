@@ -29,7 +29,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
                              List<int>{SOCK_NONBLOCK}));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, NonBlockingSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

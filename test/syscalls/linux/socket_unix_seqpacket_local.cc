@@ -40,15 +40,15 @@ std::vector<SocketPairKind> GetSocketPairs() {
                                  List<int>{0, SOCK_NONBLOCK}))));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, NonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, SeqpacketUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnixNonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

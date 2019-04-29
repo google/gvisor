@@ -94,9 +94,9 @@ TEST_P(CorrectVDSOClockTest, IsCorrect) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(ClockGettime, CorrectVDSOClockTest,
-                        ::testing::Values(CLOCK_MONOTONIC, CLOCK_REALTIME),
-                        PrintClockId);
+INSTANTIATE_TEST_SUITE_P(ClockGettime, CorrectVDSOClockTest,
+                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_REALTIME),
+                         PrintClockId);
 
 }  // namespace
 

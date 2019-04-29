@@ -36,7 +36,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
           std::vector<int>{SOCK_STREAM, SOCK_SEQPACKET, SOCK_DGRAM}));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, BlockingSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 

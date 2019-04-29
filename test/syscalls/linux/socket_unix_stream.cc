@@ -44,7 +44,7 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosed) {
               SyscallSucceedsWithValue(0));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(UnixDomainSocketPair,

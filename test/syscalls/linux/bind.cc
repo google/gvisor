@@ -126,7 +126,7 @@ TEST_P(AllSocketPairTest, Unbind) {
   ASSERT_THAT(close(sockets->release_second_fd()), SyscallSucceeds());
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, AllSocketPairTest,
     ::testing::ValuesIn(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(

@@ -73,7 +73,7 @@ TEST_P(AllSocketPairTest, BoundSenderAddrCoalesced) {
       0);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, AllSocketPairTest,
     ::testing::ValuesIn(VecCat<SocketPairKind>(
         ApplyVec<SocketPairKind>(FilesystemUnboundUnixDomainSocketPair,

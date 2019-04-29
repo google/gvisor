@@ -102,7 +102,7 @@ TEST_P(UnboundAbstractUnixSocketPairTest, GetSockNamePartialLength) {
   EXPECT_EQ(addr_len, sockets->first_addr_size() - 1);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnboundAbstractUnixSocketPairTest,
     ::testing::ValuesIn(ApplyVec<SocketPairKind>(
         AbstractUnboundUnixDomainSocketPair,

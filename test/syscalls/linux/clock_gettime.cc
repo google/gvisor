@@ -132,11 +132,11 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(ClockGettime, MonotonicClockTest,
-                        ::testing::Values(CLOCK_MONOTONIC,
-                                          CLOCK_MONOTONIC_COARSE,
-                                          CLOCK_MONOTONIC_RAW),
-                        PrintClockId);
+INSTANTIATE_TEST_SUITE_P(ClockGettime, MonotonicClockTest,
+                         ::testing::Values(CLOCK_MONOTONIC,
+                                           CLOCK_MONOTONIC_COARSE,
+                                           CLOCK_MONOTONIC_RAW),
+                         PrintClockId);
 
 TEST(ClockGettime, UnimplementedReturnsEINVAL) {
   SKIP_IF(!IsRunningOnGvisor());
