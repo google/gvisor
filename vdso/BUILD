@@ -87,5 +87,6 @@ cc_flags_supplier(
 py_binary(
     name = "check_vdso",
     srcs = ["check_vdso.py"],
+    python_version = "PY2",
     visibility = ["//:sandbox"],
 )
