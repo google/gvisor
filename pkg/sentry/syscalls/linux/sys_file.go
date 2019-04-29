@@ -347,10 +347,9 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 				return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 			}
 			defer newFile.DecRef()
-		case syserror.EACCES:
-			// Permission denied while walking to the file.
-			return err
-		default:
+		case syserror.ENOENT:
+			// File does not exist. Proceed with creation.
+
 			// Do we have write permissions on the parent?
 			if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
 				return err
@@ -365,6 +364,8 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			}
 			defer newFile.DecRef()
 			targetDirent = newFile.Dirent
+		default:
+			return err
 		}
 
 		// Success.

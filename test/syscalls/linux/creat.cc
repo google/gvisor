@@ -51,6 +51,17 @@ TEST(CreatTest, CreatTruncatesExistingFile) {
   EXPECT_EQ("", new_contents);
 }
 
+TEST(CreatTest, CreatWithNameTooLong) {
+  // Start with a unique name, and pad it to NAME_MAX + 1;
+  std::string name = NewTempRelPath();
+  int padding = (NAME_MAX + 1) - name.size();
+  name.append(padding, 'x');
+  const std::string& path = JoinPath(GetAbsoluteTestTmpdir(), name);
+
+  // Creation should return ENAMETOOLONG.
+  ASSERT_THAT(creat(path.c_str(), kMode), SyscallFailsWithErrno(ENAMETOOLONG));
+}
+
 }  // namespace
 
 }  // namespace testing
