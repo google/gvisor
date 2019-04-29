@@ -31,7 +31,7 @@ using NonBlockingDgramUnixSocketPairTest = SocketPairTest;
 
 TEST_P(NonBlockingDgramUnixSocketPairTest, ReadOneSideClosed) {
   if (IsRunningOnGvisor()) {
-    // FIXME: gVisor datagram sockets return 0 instead of
+    // FIXME(b/70803293): gVisor datagram sockets return 0 instead of
     // EAGAIN.
     return;
   }

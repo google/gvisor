@@ -53,7 +53,7 @@ type FloatingPointData byte
 
 // Context provides architecture-dependent information for a specific thread.
 //
-// NOTE: Currently we use uintptr here to refer to a generic native
+// NOTE(b/34169503): Currently we use uintptr here to refer to a generic native
 // register value. While this will work for the foreseeable future, it isn't
 // strictly correct. We may want to create some abstraction that makes this
 // more clear or enables us to store values of arbitrary widths. This is

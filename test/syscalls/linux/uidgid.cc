@@ -169,7 +169,7 @@ TEST(UidGidRootTest, SetgidNotFromThreadGroupLeader) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
   const gid_t gid = FLAGS_scratch_gid1;
-  // NOTE: Do setgid in a separate thread so that we can test if
+  // NOTE(b/64676707): Do setgid in a separate thread so that we can test if
   // info.si_pid is set correctly.
   ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
   EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));

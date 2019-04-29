@@ -816,7 +816,7 @@ class MMapFileTest : public MMapTest {
 // MAP_POPULATE allowed.
 // There isn't a good way to verify it actually did anything.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, MapPopulate) {
   ASSERT_THAT(
       Map(0, kPageSize, PROT_READ, MAP_PRIVATE | MAP_POPULATE, fd_.get(), 0),
@@ -825,7 +825,7 @@ TEST_F(MMapFileTest, MapPopulate) {
 
 // MAP_POPULATE on a short file.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, MapPopulateShort) {
   ASSERT_THAT(Map(0, 2 * kPageSize, PROT_READ, MAP_PRIVATE | MAP_POPULATE,
                   fd_.get(), 0),
@@ -923,7 +923,7 @@ TEST_F(MMapFileTest, WriteSharedOnReadOnlyFd) {
 
 // MAP_SHARED PROT_READ not allowed on write-only FDs.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, ReadSharedOnWriteOnlyFd) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
@@ -936,7 +936,7 @@ TEST_F(MMapFileTest, ReadSharedOnWriteOnlyFd) {
 // MAP_SHARED PROT_WRITE not allowed on write-only FDs.
 // The FD must always be readable.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, WriteSharedOnWriteOnlyFd) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(filename_, O_WRONLY));
@@ -1371,7 +1371,7 @@ TEST_F(MMapFileTest, WritePrivate) {
 
 // SIGBUS raised when writing past end of file to a private mapping.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, SigBusDeathWritePrivate) {
   SetupGvisorDeathTest();
 
@@ -1390,7 +1390,7 @@ TEST_F(MMapFileTest, SigBusDeathWritePrivate) {
 
 // SIGBUS raised when reading past end of file on a shared mapping.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, SigBusDeathReadShared) {
   SetupGvisorDeathTest();
 
@@ -1410,7 +1410,7 @@ TEST_F(MMapFileTest, SigBusDeathReadShared) {
 
 // SIGBUS raised when reading past end of file on a shared mapping.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, SigBusDeathWriteShared) {
   SetupGvisorDeathTest();
 
@@ -1459,7 +1459,7 @@ TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFWritePrivate) {
 // Tests that SIGBUS is not raised when reading from a file-mapped page
 // containing EOF, *after* the EOF for a shared mapping.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFReadShared) {
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ, MAP_SHARED, fd_.get(), 0),
@@ -1476,7 +1476,7 @@ TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFReadShared) {
 // Tests that SIGBUS is not raised when writing to a file-mapped page containing
 // EOF, *after* the EOF for a shared mapping.
 //
-// FIXME: Parameterize.
+// FIXME(b/37222275): Parameterize.
 TEST_F(MMapFileTest, NoSigBusOnPageContainingEOFWriteShared) {
   uintptr_t addr;
   ASSERT_THAT(addr = Map(0, 2 * kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED,

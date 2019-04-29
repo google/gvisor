@@ -211,7 +211,7 @@ func SocketPair(packet bool) (*Socket, *Socket, error) {
 	// variable between our two sockets. We only use SocketPair in tests
 	// anyway.
 	//
-	// NOTE: This is purely due to the fact that the raw
+	// NOTE(b/27107811): This is purely due to the fact that the raw
 	// syscall does not serve as a boundary for the sanitizer.
 	var race int32
 	a, err := NewSocket(fds[0])

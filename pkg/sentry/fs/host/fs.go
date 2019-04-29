@@ -87,7 +87,7 @@ func (f *Filesystem) Mount(ctx context.Context, _ string, flags fs.MountSourceFl
 	options := fs.GenericMountSourceOptions(data)
 
 	// Grab the whitelist if one was specified.
-	// TODO: require another option "testonly" in order to allow
+	// TODO(edahlgren/mpratt/hzy): require another option "testonly" in order to allow
 	// no whitelist.
 	if wl, ok := options[whitelistKey]; ok {
 		f.paths = strings.Split(wl, "|")
@@ -320,7 +320,7 @@ func (m *superOperations) SaveInodeMapping(inode *fs.Inode, path string) {
 
 // Keep implements fs.MountSourceOperations.Keep.
 //
-// TODO: It is possible to change the permissions on a
+// TODO(b/72455313,b/77596690): It is possible to change the permissions on a
 // host file while it is in the dirent cache (say from RO to RW), but it is not
 // possible to re-open the file with more relaxed permissions, since the host
 // FD is already open and stored in the inode.

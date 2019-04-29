@@ -75,7 +75,7 @@ class RtSignalTest : public ::testing::Test {
 static int rt_sigqueueinfo(pid_t tgid, int sig, siginfo_t* uinfo) {
   int ret;
   do {
-    // NOTE: rt_sigqueueinfo(2) could return EAGAIN for RT signals.
+    // NOTE(b/25434735): rt_sigqueueinfo(2) could return EAGAIN for RT signals.
     ret = syscall(SYS_rt_sigqueueinfo, tgid, sig, uinfo);
   } while (ret == -1 && errno == EAGAIN);
   return ret;

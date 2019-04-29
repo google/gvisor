@@ -33,7 +33,7 @@ namespace gvisor {
 namespace testing {
 
 TEST_P(BlockingStreamSocketPairTest, BlockPartialWriteClosed) {
-    // FIXME: gVisor doesn't support SO_SNDBUF on UDS, nor does it
+    // FIXME(b/35921550): gVisor doesn't support SO_SNDBUF on UDS, nor does it
     // enforce any limit; it will write arbitrary amounts of data without
     // blocking.
     SKIP_IF(IsRunningOnGvisor());

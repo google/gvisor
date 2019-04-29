@@ -274,7 +274,7 @@ func getMountNameAndOptions(conf *Config, m specs.Mount, fds *fdDispenser) (stri
 		useOverlay = conf.Overlay && !mountFlags(m.Options).ReadOnly
 
 	default:
-		// TODO: Support all the mount types and make this a
+		// TODO(nlacasse): Support all the mount types and make this a
 		// fatal error.  Most applications will "just work" without
 		// them, so this is a warning for now.
 		// we do not support.
@@ -425,7 +425,7 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 	if err != nil {
 		return err
 	}
-	// TODO: Fix this when we support all the mount types and
+	// TODO(nlacasse): Fix this when we support all the mount types and
 	// make this a fatal error.
 	if fsName == "" {
 		return nil
@@ -475,7 +475,7 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 		}
 	}
 
-	// TODO: handle '/tmp' properly (see mountTmp()).
+	// TODO(b/67958150): handle '/tmp' properly (see mountTmp()).
 	if !tmpMounted {
 		tmpMount := specs.Mount{
 			Type:        tmpfs,

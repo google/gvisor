@@ -194,7 +194,7 @@ TEST(LseekTest, EtcPasswdDup) {
   ASSERT_THAT(lseek(fd3.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(1000));
 }
 
-// TODO: Add tests where we have donated in sockets.
+// TODO(magi): Add tests where we have donated in sockets.
 
 }  // namespace
 

@@ -28,7 +28,7 @@ import (
 
 // IO provides access to the contents of a virtual memory space.
 //
-// FIXME: Implementations of IO cannot expect ctx to contain any
+// FIXME(b/38173783): Implementations of IO cannot expect ctx to contain any
 // meaningful data.
 type IO interface {
 	// CopyOut copies len(src) bytes from src to the memory mapped at addr. It
@@ -85,7 +85,7 @@ type IO interface {
 	// order.
 	CopyInTo(ctx context.Context, ars AddrRangeSeq, dst safemem.Writer, opts IOOpts) (int64, error)
 
-	// TODO: The requirement that CopyOutFrom/CopyInTo call src/dst
+	// TODO(jamieliu): The requirement that CopyOutFrom/CopyInTo call src/dst
 	// at most once, which is unnecessary in most cases, forces implementations
 	// to gather safemem.Blocks into a single slice to pass to src/dst. Add
 	// CopyOutFromIter/CopyInToIter, which relaxes this restriction, to avoid

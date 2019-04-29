@@ -95,7 +95,7 @@ type inodeFileState struct {
 
 // ReadToBlocksAt implements fsutil.CachedFileObject.ReadToBlocksAt.
 func (i *inodeFileState) ReadToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error) {
-	// TODO: Using safemem.FromIOReader here is wasteful for two
+	// TODO(jamieliu): Using safemem.FromIOReader here is wasteful for two
 	// reasons:
 	//
 	// - Using preadv instead of iterated preads saves on host system calls.
@@ -325,7 +325,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 // canMap returns true if this fs.Inode can be memory mapped.
 func canMap(inode *fs.Inode) bool {
-	// FIXME: Some obscure character devices can be mapped.
+	// FIXME(b/38213152): Some obscure character devices can be mapped.
 	return fs.IsFile(inode.StableAttr)
 }
 
@@ -428,15 +428,15 @@ func (i *inodeOperations) StatFS(context.Context) (fs.Info, error) {
 }
 
 // AddLink implements fs.InodeOperations.AddLink.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) AddLink() {}
 
 // DropLink implements fs.InodeOperations.DropLink.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}
 
 // readdirAll returns all of the directory entries in i.

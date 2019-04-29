@@ -65,7 +65,7 @@ func (v *versionData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	// Since we don't really want to expose build information to
 	// applications, those fields are omitted.
 	//
-	// FIXME: Using Version from the init task SyscallTable
+	// FIXME(mpratt): Using Version from the init task SyscallTable
 	// disregards the different version a task may have (e.g., in a uts
 	// namespace).
 	ver := init.Leader().SyscallTable().Version

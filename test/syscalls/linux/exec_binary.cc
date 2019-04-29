@@ -285,7 +285,7 @@ ElfBinary<64> StandardElf() {
   elf.header.e_phoff = sizeof(elf.header);
   elf.header.e_phentsize = sizeof(decltype(elf)::ElfPhdr);
 
-  // TODO: Always include a PT_GNU_STACK segment to
+  // TODO(gvisor.dev/issue/153): Always include a PT_GNU_STACK segment to
   // disable executable stacks. With this omitted the stack (and all PROT_READ)
   // mappings should be executable, but gVisor doesn't support that.
   decltype(elf)::ElfPhdr phdr = {};
@@ -403,7 +403,7 @@ TEST(ElfTest, DataSegment) {
 
 // Linux will allow PT_LOAD segments to overlap.
 TEST(ElfTest, DirectlyOverlappingSegments) {
-  // NOTE: see PIEOutOfOrderSegments.
+  // NOTE(b/37289926): see PIEOutOfOrderSegments.
   SKIP_IF(IsRunningOnGvisor());
 
   ElfBinary<64> elf = StandardElf();
@@ -439,7 +439,7 @@ TEST(ElfTest, DirectlyOverlappingSegments) {
 
 // Linux allows out-of-order PT_LOAD segments.
 TEST(ElfTest, OutOfOrderSegments) {
-  // NOTE: see PIEOutOfOrderSegments.
+  // NOTE(b/37289926): see PIEOutOfOrderSegments.
   SKIP_IF(IsRunningOnGvisor());
 
   ElfBinary<64> elf = StandardElf();
@@ -670,7 +670,7 @@ TEST(ElfTest, PIENonZeroStart) {
 }
 
 TEST(ElfTest, PIEOutOfOrderSegments) {
-  // TODO: This triggers a bug in Linux where it computes the size
+  // TODO(b/37289926): This triggers a bug in Linux where it computes the size
   // of the binary as 0x20000 - 0x40000 = 0xfffffffffffe0000, which obviously
   // fails to map.
   //
@@ -1005,7 +1005,7 @@ TEST(ElfTest, NoExecute) {
 
 // Execute, but no read permissions on the binary works just fine.
 TEST(ElfTest, NoRead) {
-  // TODO: gVisor's backing filesystem may prevent the
+  // TODO(gvisor.dev/issue/160): gVisor's backing filesystem may prevent the
   // sentry from reading the executable.
   SKIP_IF(IsRunningOnGvisor());
 
@@ -1024,7 +1024,7 @@ TEST(ElfTest, NoRead) {
 
   ASSERT_NO_ERRNO(WaitStopped(child));
 
-  // TODO: A task with a non-readable executable is marked
+  // TODO(gvisor.dev/issue/160): A task with a non-readable executable is marked
   // non-dumpable, preventing access to proc files. gVisor does not implement
   // this behavior.
 }

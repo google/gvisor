@@ -137,7 +137,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 		return 0, err
 	}
 
-	// TODO: In Linux, VM_LOCKONFAULT (which may be set on the new
+	// TODO(jamieliu): In Linux, VM_LOCKONFAULT (which may be set on the new
 	// vma by mlockall(MCL_FUTURE|MCL_ONFAULT) => mm_struct::def_flags) appears
 	// to effectively disable MAP_POPULATE by unsetting FOLL_POPULATE in
 	// mm/util.c:vm_mmap_pgoff() => mm/gup.c:__mm_populate() =>
@@ -148,7 +148,7 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (userme
 		mm.populateVMAAndUnlock(ctx, vseg, ar, true)
 
 	case opts.Mappable == nil && length <= privateAllocUnit:
-		// NOTE: Get pmas and map eagerly in the hope
+		// NOTE(b/63077076, b/63360184): Get pmas and map eagerly in the hope
 		// that doing so will save on future page faults. We only do this for
 		// anonymous mappings, since otherwise the cost of
 		// memmap.Mappable.Translate is unknown; and only for small mappings,
@@ -698,7 +698,7 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 		return mm.brk.End, syserror.EINVAL
 	}
 
-	// TODO: This enforces RLIMIT_DATA, but is
+	// TODO(gvisor.dev/issue/156): This enforces RLIMIT_DATA, but is
 	// slightly more permissive than the usual data limit. In particular,
 	// this only limits the size of the heap; a true RLIMIT_DATA limits the
 	// size of heap + data + bss. The segment sizes need to be plumbed from

@@ -306,7 +306,7 @@ func (s *State) ptraceGetRegs() syscall.PtraceRegs {
 	// FS/GS_TLS_SEL when fs_base/gs_base is a 64-bit value. (We do the
 	// same in PtraceSetRegs.)
 	//
-	// TODO: Remove this fixup since newer Linux
+	// TODO(gvisor.dev/issue/168): Remove this fixup since newer Linux
 	// doesn't have this behavior anymore.
 	if regs.Fs == 0 && regs.Fs_base <= 0xffffffff {
 		regs.Fs = _FS_TLS_SEL

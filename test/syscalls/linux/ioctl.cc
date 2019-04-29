@@ -158,7 +158,7 @@ TEST_F(IoctlTest, FIOASYNCNoTarget) {
 }
 
 TEST_F(IoctlTest, FIOASYNCSelfTarget) {
-  // FIXME: gVisor erroneously sends SIGIO on close(2), which would
+  // FIXME(b/120624367): gVisor erroneously sends SIGIO on close(2), which would
   // kill the test when pair goes out of scope. Temporarily ignore SIGIO so that
   // that the close signal is ignored.
   struct sigaction sa;
@@ -195,7 +195,7 @@ TEST_F(IoctlTest, FIOASYNCSelfTarget) {
 // Equivalent to FIOASYNCSelfTarget except that FIOSETOWN is called before
 // FIOASYNC.
 TEST_F(IoctlTest, FIOASYNCSelfTarget2) {
-  // FIXME: gVisor erroneously sends SIGIO on close(2), which would
+  // FIXME(b/120624367): gVisor erroneously sends SIGIO on close(2), which would
   // kill the test when pair goes out of scope. Temporarily ignore SIGIO so that
   // that the close signal is ignored.
   struct sigaction sa;

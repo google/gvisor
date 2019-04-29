@@ -208,7 +208,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tc = *r.tc
 	t.mu.Unlock()
 	t.unstopVforkParent()
-	// NOTE: All locks must be dropped prior to calling Activate.
+	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
 	t.MemoryManager().Activate()
 
 	t.ptraceExec(oldTID)

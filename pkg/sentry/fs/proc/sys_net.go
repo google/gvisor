@@ -39,7 +39,7 @@ const (
 
 // tcpMemInode is used to read/write the size of netstack tcp buffers.
 //
-// TODO: If we have multiple proc mounts, concurrent writes can
+// TODO(b/121381035): If we have multiple proc mounts, concurrent writes can
 // leave netstack and the proc files in an inconsistent state. Since we set the
 // buffer size from these proc files on restore, we may also race and end up in
 // an inconsistent state on restore.

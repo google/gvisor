@@ -244,7 +244,7 @@ TestAddress V4Multicast() {
 // set interface or group membership.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
        TestSendMulticastSelfNoGroup) {
-  // FIXME: A group membership is not required for external
+  // FIXME(b/125485338): A group membership is not required for external
   // multicast on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 
@@ -371,7 +371,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 // Check that multicast packets won't be delivered to another socket with no
 // set interface or group membership.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastNoGroup) {
-  // FIXME: A group membership is not required for external
+  // FIXME(b/125485338): A group membership is not required for external
   // multicast on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 

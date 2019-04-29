@@ -356,6 +356,6 @@ type MMapOpts struct {
 	// Hint is the name used for the mapping in /proc/[pid]/maps. If Hint is
 	// empty, MappingIdentity.MappedName() will be used instead.
 	//
-	// TODO: Replace entirely with MappingIdentity?
+	// TODO(jamieliu): Replace entirely with MappingIdentity?
 	Hint string
 }

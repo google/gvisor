@@ -421,7 +421,7 @@ func (t *Task) SetKeepCaps(k bool) {
 
 // updateCredsForExec updates t.creds to reflect an execve().
 //
-// NOTE: We currently do not implement privileged executables
+// NOTE(b/30815691): We currently do not implement privileged executables
 // (set-user/group-ID bits and file capabilities). This allows us to make a lot
 // of simplifying assumptions:
 //

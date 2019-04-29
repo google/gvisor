@@ -42,7 +42,7 @@ type DirentOperations interface {
 
 // MountSourceOperations contains filesystem specific operations.
 type MountSourceOperations interface {
-	// TODO: Add:
+	// TODO(b/67778729): Add:
 	// BlockSize() int64
 	// FS() Filesystem
 
@@ -101,7 +101,7 @@ func (i InodeMappings) String() string {
 // amalgamation implies that a mount source cannot be shared by multiple mounts
 // (e.g. cannot be mounted at different locations).
 //
-// TODO: Move mount-specific information out of MountSource.
+// TODO(b/63601033): Move mount-specific information out of MountSource.
 //
 // +stateify savable
 type MountSource struct {

@@ -15,7 +15,7 @@
 package segment
 
 // Basic numeric constants that we define because the math package doesn't.
-// TODO: These should be Math.MaxInt64/MinInt64?
+// TODO(nlacasse): These should be Math.MaxInt64/MinInt64?
 const (
 	maxInt = int(^uint(0) >> 1)
 	minInt = -maxInt - 1

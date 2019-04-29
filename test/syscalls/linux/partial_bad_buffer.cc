@@ -158,7 +158,7 @@ TEST_F(PartialBadBufferTest, PreadvSmall) {
 }
 
 TEST_F(PartialBadBufferTest, WriteBig) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -168,7 +168,7 @@ TEST_F(PartialBadBufferTest, WriteBig) {
 }
 
 TEST_F(PartialBadBufferTest, WriteSmall) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -178,7 +178,7 @@ TEST_F(PartialBadBufferTest, WriteSmall) {
 }
 
 TEST_F(PartialBadBufferTest, PwriteBig) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -188,7 +188,7 @@ TEST_F(PartialBadBufferTest, PwriteBig) {
 }
 
 TEST_F(PartialBadBufferTest, PwriteSmall) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -198,7 +198,7 @@ TEST_F(PartialBadBufferTest, PwriteSmall) {
 }
 
 TEST_F(PartialBadBufferTest, WritevBig) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -211,7 +211,7 @@ TEST_F(PartialBadBufferTest, WritevBig) {
 }
 
 TEST_F(PartialBadBufferTest, WritevSmall) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -224,7 +224,7 @@ TEST_F(PartialBadBufferTest, WritevSmall) {
 }
 
 TEST_F(PartialBadBufferTest, PwritevBig) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -238,7 +238,7 @@ TEST_F(PartialBadBufferTest, PwritevBig) {
 }
 
 TEST_F(PartialBadBufferTest, PwritevSmall) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());
@@ -279,7 +279,7 @@ TEST_F(PartialBadBufferTest, GetdentsOneEntry) {
 // Verify that when write returns EFAULT the kernel hasn't silently written
 // the initial valid bytes.
 TEST_F(PartialBadBufferTest, WriteEfaultIsntPartial) {
-  // FIXME: The sentry write syscalls will return immediately
+  // FIXME(b/24788078): The sentry write syscalls will return immediately
   // if Access returns an error, but Access may not return an error
   // and the sentry will instead perform a partial write.
   SKIP_IF(IsRunningOnGvisor());

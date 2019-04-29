@@ -3,7 +3,7 @@ syntax = "proto3";
 // package syscall_rpc is a set of networking related system calls that can be
 // forwarded to a socket gofer.
 //
-// TODO: Document individual RPCs.
+// TODO(b/77963526): Document individual RPCs.
 package syscall_rpc;
 
 message SendmsgRequest {

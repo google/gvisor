@@ -68,7 +68,7 @@ TEST_F(StatTimesTest, FileCreationTimes) {
 TEST_F(StatTimesTest, FileCtimeChanges) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  MaybeSave();  // FIXME: ctime is inconsistent.
+  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
 
   absl::Time atime, mtime, ctime;
   std::tie(atime, mtime, ctime) = GetTime(file);
@@ -150,7 +150,7 @@ TEST_F(StatTimesTest, FileAtimeChanges) {
   const auto file = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), contents, 0666));
 
-  MaybeSave();  // FIXME: ctime is inconsistent.
+  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
 
   absl::Time atime, mtime, ctime;
   std::tie(atime, mtime, ctime) = GetTime(file);
@@ -184,7 +184,7 @@ TEST_F(StatTimesTest, DirAtimeChanges) {
   const auto file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
 
-  MaybeSave();  // FIXME: ctime is inconsistent.
+  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
 
   absl::Time atime, mtime, ctime;
   std::tie(atime, mtime, ctime) = GetTime(dir);
@@ -193,7 +193,7 @@ TEST_F(StatTimesTest, DirAtimeChanges) {
 
   const absl::Time before = absl::Now() - absl::Seconds(1);
 
-  // NOTE: Keep an fd open. This ensures that the inode backing the
+  // NOTE(b/37756234): Keep an fd open. This ensures that the inode backing the
   // directory won't be destroyed before the final GetTime to avoid writing out
   // timestamps and causing side effects.
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0));

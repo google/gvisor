@@ -142,7 +142,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 				} else {
 					// If we have something from the upper, we can only use it if the types
 					// match.
-					// NOTE: Allow SpecialDirectories and Directories to merge.
+					// NOTE(b/112312863): Allow SpecialDirectories and Directories to merge.
 					// This is needed to allow submounts in /proc and /sys.
 					if upperInode.StableAttr.Type == child.Inode.StableAttr.Type ||
 						(IsDir(upperInode.StableAttr) && IsDir(child.Inode.StableAttr)) {
@@ -226,7 +226,7 @@ func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name st
 		return nil, err
 	}
 
-	// NOTE: Replace the Dirent with a transient Dirent, since
+	// NOTE(b/71766861): Replace the Dirent with a transient Dirent, since
 	// we are about to create the real Dirent: an overlay Dirent.
 	//
 	// This ensures the *fs.File returned from overlayCreate is in the same
@@ -338,7 +338,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		// directory will appear empty in the upper fs, which will then
 		// allow the rename to proceed when it should return ENOTEMPTY.
 		//
-		// NOTE: Ideally, we'd just pass in the replaced
+		// NOTE(b/111808347): Ideally, we'd just pass in the replaced
 		// Dirent from Rename, but we must drop the reference on
 		// replaced before we make the rename call, so Rename can't
 		// pass the Dirent to the Inode without significantly

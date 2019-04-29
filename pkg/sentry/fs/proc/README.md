@@ -91,7 +91,7 @@ CPU.IO utilization in last 10 minutes | Always zero
 Num currently running processes       | Always zero
 Total num processes                   | Always zero
 
-TODO: Populate the columns with accurate statistics.
+TODO(b/62345059): Populate the columns with accurate statistics.
 
 ### meminfo
 
@@ -128,12 +128,12 @@ Field name        | Notes
 Buffers           | Always zero, no block devices
 SwapCache         | Always zero, no swap
 Inactive(anon)    | Always zero, see SwapCache
-Unevictable       | Always zero TODO
-Mlocked           | Always zero TODO
+Unevictable       | Always zero TODO(b/31823263)
+Mlocked           | Always zero TODO(b/31823263)
 SwapTotal         | Always zero, no swap
 SwapFree          | Always zero, no swap
-Dirty             | Always zero TODO
-Writeback         | Always zero TODO
+Dirty             | Always zero TODO(b/31823263)
+Writeback         | Always zero TODO(b/31823263)
 MemAvailable      | Uses the same value as MemFree since there is no swap.
 Slab              | Missing
 SReclaimable      | Missing
@@ -185,7 +185,7 @@ softirq 0 0 0 0 0 0 0 0 0 0 0
 
 All fields except for `btime` are always zero.
 
-TODO: Populate with accurate fields.
+TODO(b/37226836): Populate with accurate fields.
 
 ### sys
 

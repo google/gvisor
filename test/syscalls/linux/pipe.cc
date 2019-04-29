@@ -36,7 +36,7 @@ namespace {
 
 // Buffer size of a pipe.
 //
-// TODO: Get this from F_GETPIPE_SZ.
+// TODO(b/35762278): Get this from F_GETPIPE_SZ.
 constexpr int kPipeSize = 65536;
 
 class PipeTest : public ::testing::Test {
@@ -316,7 +316,7 @@ TEST_F(PipeTest, BlockWriteClosed) {
 // Blocking write returns EPIPE when read end is closed even if something has
 // been written.
 //
-// FIXME: Pipe writes blocking early allows S/R to interrupt the
+// FIXME(b/35924046): Pipe writes blocking early allows S/R to interrupt the
 // write(2) call before the buffer is full. Then the next call will will return
 // non-zero instead of EPIPE.
 TEST_F(PipeTest, BlockPartialWriteClosed_NoRandomSave) {
@@ -329,7 +329,7 @@ TEST_F(PipeTest, BlockPartialWriteClosed_NoRandomSave) {
     // Write more than fits in the buffer. Blocks then returns partial write
     // when the other end is closed. The next call returns EPIPE.
     if (IsRunningOnGvisor()) {
-      // FIXME: Pipe writes block early on gVisor, resulting in a
+      // FIXME(b/35924046): Pipe writes block early on gVisor, resulting in a
       // shorter than expected partial write.
       ASSERT_THAT(write(wfd, buf.data(), buf.size()),
                   SyscallSucceedsWithValue(::testing::Gt(0)));

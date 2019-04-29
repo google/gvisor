@@ -235,7 +235,7 @@ TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds_NoRandomSave) {
 
 // Verify that we can get a RW FD after chmod, even if a RO fd is left open.
 TEST(ChmodTest, ChmodWritableWithOpenFD) {
-  // FIXME: broken on hostfs.
+  // FIXME(b/72455313): broken on hostfs.
   if (IsRunningOnGvisor()) {
     return;
   }

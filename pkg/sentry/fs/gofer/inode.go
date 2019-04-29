@@ -570,13 +570,13 @@ func init() {
 }
 
 // AddLink implements InodeOperations.AddLink, but is currently a noop.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (*inodeOperations) AddLink() {}
 
 // DropLink implements InodeOperations.DropLink, but is currently a noop.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (*inodeOperations) DropLink() {}
 
 // NotifyStatusChange implements fs.InodeOperations.NotifyStatusChange.
-// FIXME: Remove this from InodeOperations altogether.
+// FIXME(b/63117438): Remove this from InodeOperations altogether.
 func (i *inodeOperations) NotifyStatusChange(ctx context.Context) {}

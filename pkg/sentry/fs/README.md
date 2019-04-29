@@ -59,7 +59,7 @@ two categories:
 
 The first is always necessary to save and restore. An application may never have
 any open file descriptors, but across save and restore it should see a coherent
-view of any mount namespace. NOTE: Currently only one "initial"
+view of any mount namespace. NOTE(b/63601033): Currently only one "initial"
 mount namespace is supported.
 
 The second is so that system calls across save and restore are coherent with

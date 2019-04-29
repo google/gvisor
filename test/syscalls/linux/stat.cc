@@ -416,7 +416,7 @@ TEST_F(StatTest, ZeroLinksOpenFdRegularFileChild_NoRandomSave) {
   EXPECT_EQ(st_child_before.st_gid, st_child_fd.st_gid);
   EXPECT_EQ(st_child_before.st_size, st_child_fd.st_size);
 
-  // TODO: This isn't ideal but since fstatfs(2) will always return
+  // TODO(b/34861058): This isn't ideal but since fstatfs(2) will always return
   // OVERLAYFS_SUPER_MAGIC we have no way to know if this fs is backed by a
   // gofer which doesn't support links.
   EXPECT_TRUE(st_child_fd.st_nlink == 0 || st_child_fd.st_nlink == 1);

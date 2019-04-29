@@ -348,7 +348,7 @@ func (s *socketOperations) SetSockOpt(t *kernel.Task, level int, name int, opt [
 func (s *socketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	// Whitelist flags.
 	//
-	// FIXME: We can't support MSG_ERRQUEUE because it uses ancillary
+	// FIXME(jamieliu): We can't support MSG_ERRQUEUE because it uses ancillary
 	// messages that netstack/tcpip/transport/unix doesn't understand. Kill the
 	// Socket interface's dependence on netstack.
 	if flags&^(syscall.MSG_DONTWAIT|syscall.MSG_PEEK|syscall.MSG_TRUNC) != 0 {

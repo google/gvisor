@@ -444,7 +444,7 @@ type PasscredOption int
 
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
 //
-// TODO: Add and populate stat fields.
+// TODO(b/64800844): Add and populate stat fields.
 type TCPInfoOption struct {
 	RTT    time.Duration
 	RTTVar time.Duration

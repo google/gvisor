@@ -279,7 +279,7 @@ TEST_F(OpenTest, Null) {
   ASSERT_THAT(open(&c, O_RDONLY), SyscallFailsWithErrno(ENOENT));
 }
 
-// NOTE: While the man pages specify that this behavior should be
+// NOTE(b/119785738): While the man pages specify that this behavior should be
 // undefined, Linux truncates the file on opening read only if we have write
 // permission, so we will too.
 TEST_F(OpenTest, CanTruncateReadOnly) {

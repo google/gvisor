@@ -77,7 +77,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"fd":      newFdDir(t, msrc),
 		"fdinfo":  newFdInfoDir(t, msrc),
 		"gid_map": newGIDMap(t, msrc),
-		// FIXME: create the correct io file for threads.
+		// FIXME(b/123511468): create the correct io file for threads.
 		"io":        newIO(t, msrc),
 		"maps":      newMaps(t, msrc),
 		"mountinfo": seqfile.NewSeqFileInode(t, &mountInfoFile{t: t}, msrc),
@@ -93,7 +93,7 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		contents["task"] = newSubtasks(t, msrc, pidns)
 	}
 
-	// TODO: Set EUID/EGID based on dumpability.
+	// TODO(b/31916171): Set EUID/EGID based on dumpability.
 	d := &taskDir{
 		Dir:   *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
 		t:     t,
@@ -245,7 +245,7 @@ func (e *exe) executable() (d *fs.Dirent, err error) {
 	e.t.WithMuLocked(func(t *kernel.Task) {
 		mm := t.MemoryManager()
 		if mm == nil {
-			// TODO: Check shouldn't allow Readlink once the
+			// TODO(b/34851096): Check shouldn't allow Readlink once the
 			// Task is zombied.
 			err = syserror.EACCES
 			return
@@ -297,7 +297,7 @@ type namespaceSymlink struct {
 }
 
 func newNamespaceSymlink(t *kernel.Task, msrc *fs.MountSource, name string) *fs.Inode {
-	// TODO: Namespace symlinks should contain the namespace name and the
+	// TODO(rahat): Namespace symlinks should contain the namespace name and the
 	// inode number for the namespace instance, so for example user:[123456]. We
 	// currently fake the inode number by sticking the symlink inode in its
 	// place.

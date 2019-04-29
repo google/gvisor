@@ -236,7 +236,7 @@ func (w *Watchdog) runTurn() {
 				if !ok {
 					// New stuck task detected.
 					//
-					// TODO: Tasks blocked doing IO may be considered stuck in kernel.
+					// TODO(b/65849403): Tasks blocked doing IO may be considered stuck in kernel.
 					tc = &offender{lastUpdateTime: lastUpdateTime}
 					stuckTasks.Increment()
 					newTaskFound = true

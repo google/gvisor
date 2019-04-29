@@ -105,7 +105,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		return subcommands.ExitSuccess
 	}
 
-	// TODO: Make it possible to restore into same container.
+	// TODO(b/110843694): Make it possible to restore into same container.
 	// For now, we can fake it by destroying the container and making a
 	// new container with the same ID. This hack does not work with docker
 	// which uses the container pid to ensure that the restore-container is

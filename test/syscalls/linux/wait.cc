@@ -40,7 +40,7 @@ using ::testing::UnorderedElementsAre;
 // These unit tests focus on the wait4(2) system call, but include a basic
 // checks for the i386 waitpid(2) syscall, which is a subset of wait4(2).
 //
-// NOTE: Some functionality is not tested as
+// NOTE(b/22640830,b/27680907,b/29049891): Some functionality is not tested as
 // it is not currently supported by gVisor:
 // * UID in waitid(2) siginfo.
 // * Process groups.

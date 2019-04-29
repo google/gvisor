@@ -43,7 +43,7 @@ func (*filesystem) Name() string {
 
 // AllowUserMount allows users to mount(2) this file system.
 func (*filesystem) AllowUserMount() bool {
-	// TODO: Users may mount this once the terminals are in a
+	// TODO(b/29356795): Users may mount this once the terminals are in a
 	// usable state.
 	return false
 }

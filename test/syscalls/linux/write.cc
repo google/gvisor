@@ -33,7 +33,7 @@ namespace testing {
 namespace {
 // This test is currently very rudimentary.
 //
-// TODO:
+// TODO(edahlgren):
 // * bad buffer states (EFAULT).
 // * bad fds (wrong permission, wrong type of file, EBADF).
 // * check offset is incremented.

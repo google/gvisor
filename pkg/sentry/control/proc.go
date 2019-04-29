@@ -261,7 +261,7 @@ func (proc *Proc) Ps(args *PsArgs, out *string) error {
 }
 
 // Process contains information about a single process in a Sandbox.
-// TODO: Implement TTY field.
+// TODO(b/117881927): Implement TTY field.
 type Process struct {
 	UID auth.KUID       `json:"uid"`
 	PID kernel.ThreadID `json:"pid"`

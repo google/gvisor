@@ -114,7 +114,7 @@ var bgContext = &logContext{Logger: log.Log()}
 // Background returns an empty context using the default logger.
 //
 // Users should be wary of using a Background context. Please tag any use with
-// FIXME and a note to remove this use.
+// FIXME(b/38173783) and a note to remove this use.
 //
 // Generally, one should use the Task as their context when available, or avoid
 // having to use a context in places where a Task is unavailable.

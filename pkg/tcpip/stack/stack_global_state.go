@@ -15,5 +15,5 @@
 package stack
 
 // StackFromEnv is the global stack created in restore run.
-// FIXME
+// FIXME(b/36201077)
 var StackFromEnv *Stack

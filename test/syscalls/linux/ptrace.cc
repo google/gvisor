@@ -823,7 +823,7 @@ TEST(PtraceTest,
 TEST(PtraceTest, Int3) {
   switch (GvisorPlatform()) {
     case Platform::kKVM:
-      // TODO: int3 isn't handled properly.
+      // TODO(b/124248694): int3 isn't handled properly.
       return;
     default:
       break;

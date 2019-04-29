@@ -186,7 +186,7 @@ TEST_P(UnixSocketPairTest, BasicFDPassNoSpace) {
 // BasicFDPassNoSpaceMsgCtrunc sends an FD, but does not provide any space to
 // receive it. It then verifies that the MSG_CTRUNC flag is set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicFDPassNoSpaceMsgCtrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -224,7 +224,7 @@ TEST_P(UnixSocketPairTest, BasicFDPassNoSpaceMsgCtrunc) {
 // accomidate the FD, but msg_control is set to NULL. In this case, msg_control
 // should override msg_controllen.
 TEST_P(UnixSocketPairTest, BasicFDPassNullControlMsgCtrunc) {
-  // FIXME: Fix handling of NULL msg_control.
+  // FIXME(gvisor.dev/issue/207): Fix handling of NULL msg_control.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -259,7 +259,7 @@ TEST_P(UnixSocketPairTest, BasicFDPassNullControlMsgCtrunc) {
 // space to receive it. It then verifies that the MSG_CTRUNC flag is set in the
 // msghdr.
 TEST_P(UnixSocketPairTest, BasicFDPassNotEnoughSpaceMsgCtrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -296,7 +296,7 @@ TEST_P(UnixSocketPairTest, BasicFDPassNotEnoughSpaceMsgCtrunc) {
 // space to receive two of them. It then verifies that the MSG_CTRUNC flag is
 // set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicThreeFDPassTruncationMsgCtrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -408,7 +408,7 @@ TEST_P(UnixSocketPairTest, BasicFDPassUnalignedRecvNoMsgTrunc) {
 // provides enough space to receive one of them. It then verifies that the
 // MSG_CTRUNC flag is set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicTwoFDPassUnalignedRecvTruncationMsgTrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -1010,7 +1010,7 @@ TEST_P(UnixSocketPairTest, CredPassNoMsgCtrunc) {
 // the data without providing space for any credentials and verifies that
 // MSG_CTRUNC is set in the msghdr.
 TEST_P(UnixSocketPairTest, CredPassNoSpaceMsgCtrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -1061,7 +1061,7 @@ TEST_P(UnixSocketPairTest, CredPassNoSpaceMsgCtrunc) {
 // the data while providing enough space for only the first field of the
 // credentials and verifies that MSG_CTRUNC is set in the msghdr.
 TEST_P(UnixSocketPairTest, CredPassTruncatedMsgCtrunc) {
-  // FIXME: Support MSG_CTRUNC.
+  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
   SKIP_IF(IsRunningOnGvisor());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -1615,7 +1615,7 @@ TEST_P(UnixSocketPairTest, SocketShutdown) {
 }
 
 TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
-  // TODO: We should be returning ENXIO and NOT EIO.
+  // TODO(b/122310852): We should be returning ENXIO and NOT EIO.
   SKIP_IF(IsRunningOnGvisor());
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

@@ -103,7 +103,7 @@ TEST_F(AIOTest, BasicWrite) {
   // aio implementation uses aio_ring. gVisor doesn't and returns all zeroes.
   // Linux implements aio_ring, so skip the zeroes check.
   //
-  // TODO: Remove when gVisor implements aio_ring.
+  // TODO(b/65486370): Remove when gVisor implements aio_ring.
   auto ring = reinterpret_cast<struct aio_ring*>(ctx_);
   auto magic = IsRunningOnGvisor() ? 0 : AIO_RING_MAGIC;
   EXPECT_EQ(ring->magic, magic);

@@ -33,7 +33,7 @@ func cacheReallyContains(cache *DirentCache, d *Dirent) bool {
 }
 
 // TestMountSourceOnlyCachedOnce tests that a Dirent that is mounted over only ends
-// up in a single Dirent Cache. NOTE: Having a dirent in multiple
+// up in a single Dirent Cache. NOTE(b/63848693): Having a dirent in multiple
 // caches causes major consistency issues.
 func TestMountSourceOnlyCachedOnce(t *testing.T) {
 	ctx := contexttest.Context(t)

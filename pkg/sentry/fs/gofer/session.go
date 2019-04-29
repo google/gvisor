@@ -134,7 +134,7 @@ type session struct {
 	// socket files. This allows unix domain sockets to be used with paths that
 	// belong to a gofer.
 	//
-	// TODO: there are few possible races with someone stat'ing the
+	// TODO(b/77154739): there are few possible races with someone stat'ing the
 	// file and another deleting it concurrently, where the file will not be
 	// reported as socket file.
 	endpoints *endpointMaps `state:"wait"`

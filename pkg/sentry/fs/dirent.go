@@ -318,7 +318,7 @@ func (d *Dirent) SyncAll(ctx context.Context) {
 
 	// There is nothing to sync for a read-only filesystem.
 	if !d.Inode.MountSource.Flags.ReadOnly {
-		// FIXME: This should be a mount traversal, not a
+		// FIXME(b/34856369): This should be a mount traversal, not a
 		// Dirent traversal, because some Inodes that need to be synced
 		// may no longer be reachable by name (after sys_unlink).
 		//
@@ -1506,7 +1506,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	}
 
 	// Are we frozen?
-	// TODO: Is this the right errno?
+	// TODO(jamieliu): Is this the right errno?
 	if oldParent.frozen && !oldParent.Inode.IsVirtual() {
 		return syscall.ENOENT
 	}
@@ -1565,7 +1565,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 	} else {
 		// Check constraints on the dirent being replaced.
 
-		// NOTE: We don't want to keep replaced alive
+		// NOTE(b/111808347): We don't want to keep replaced alive
 		// across the Rename, so must call DecRef manually (no defer).
 
 		// Check that we can delete replaced.
@@ -1606,7 +1606,7 @@ func Rename(ctx context.Context, root *Dirent, oldParent *Dirent, oldName string
 		// Allow the file system to drop extra references on replaced.
 		replaced.dropExtendedReference()
 
-		// NOTE: Keeping a dirent
+		// NOTE(b/31798319,b/31867149,b/31867671): Keeping a dirent
 		// open across renames is currently broken for multiple
 		// reasons, so we flush all references on the replaced node and
 		// its children.

@@ -180,7 +180,7 @@ void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
   // RTM_NEWLINK contains at least the header and ifinfomsg.
   EXPECT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct ifinfomsg)));
 
-  // TODO: Check ifinfomsg contents and following attrs.
+  // TODO(mpratt): Check ifinfomsg contents and following attrs.
 }
 
 TEST(NetlinkRouteTest, GetLinkDump) {
@@ -370,7 +370,7 @@ TEST(NetlinkRouteTest, GetAddrDump) {
         // RTM_NEWADDR contains at least the header and ifaddrmsg.
         EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct ifaddrmsg));
 
-        // TODO: Check ifaddrmsg contents and following attrs.
+        // TODO(mpratt): Check ifaddrmsg contents and following attrs.
       }));
 }
 

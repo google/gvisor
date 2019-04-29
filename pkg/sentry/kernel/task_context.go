@@ -60,7 +60,7 @@ func (tc *TaskContext) release() {
 	// Nil out pointers so that if the task is saved after release, it doesn't
 	// follow the pointers to possibly now-invalid objects.
 	if tc.MemoryManager != nil {
-		// TODO
+		// TODO(b/38173783)
 		tc.MemoryManager.DecUsers(context.Background())
 		tc.MemoryManager = nil
 	}

@@ -143,10 +143,10 @@ var AMD64 = &kernel.SyscallTable{
 		65: Semop,
 		66: Semctl,
 		67: Shmdt,
-		//     68: @Syscall(Msgget), TODO
-		//     69: @Syscall(Msgsnd), TODO
-		//     70: @Syscall(Msgrcv), TODO
-		//     71: @Syscall(Msgctl), TODO
+		//     68: @Syscall(Msgget), TODO(b/29354921)
+		//     69: @Syscall(Msgsnd), TODO(b/29354921)
+		//     70: @Syscall(Msgrcv), TODO(b/29354921)
+		//     71: @Syscall(Msgctl), TODO(b/29354921)
 		72:  Fcntl,
 		73:  Flock,
 		74:  Fsync,
@@ -197,8 +197,8 @@ var AMD64 = &kernel.SyscallTable{
 		119: Setresgid,
 		120: Getresgid,
 		121: Getpgid,
-		//     122: @Syscall(Setfsuid), TODO
-		//     123: @Syscall(Setfsgid), TODO
+		//     122: @Syscall(Setfsuid), TODO(b/112851702)
+		//     123: @Syscall(Setfsgid), TODO(b/112851702)
 		124: Getsid,
 		125: Capget,
 		126: Capset,
@@ -217,7 +217,7 @@ var AMD64 = &kernel.SyscallTable{
 		136: syscalls.ErrorWithEvent(syscall.ENOSYS),
 		137: Statfs,
 		138: Fstatfs,
-		//     139: @Syscall(Sysfs), TODO
+		//     139: @Syscall(Sysfs), TODO(gvisor.dev/issue/165)
 		140: Getpriority,
 		141: Setpriority,
 		// @Syscall(SchedSetparam, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise)
@@ -291,7 +291,7 @@ var AMD64 = &kernel.SyscallTable{
 		// @Syscall(Security, note:Not implemented in Linux)
 		185: syscalls.Error(syscall.ENOSYS),
 		186: Gettid,
-		187: nil, // @Syscall(Readahead), TODO
+		187: nil, // @Syscall(Readahead), TODO(b/29351341)
 		// @Syscall(Setxattr, returns:ENOTSUP, note:Requires filesystem support)
 		188: syscalls.ErrorWithEvent(syscall.ENOTSUP),
 		// @Syscall(Lsetxattr, returns:ENOTSUP, note:Requires filesystem support)
@@ -342,7 +342,7 @@ var AMD64 = &kernel.SyscallTable{
 		217: Getdents64,
 		218: SetTidAddress,
 		219: RestartSyscall,
-		//     220: @Syscall(Semtimedop), TODO
+		//     220: @Syscall(Semtimedop), TODO(b/29354920)
 		221: Fadvise64,
 		222: TimerCreate,
 		223: TimerSettime,
@@ -360,16 +360,16 @@ var AMD64 = &kernel.SyscallTable{
 		235: Utimes,
 		// @Syscall(Vserver, note:Not implemented by Linux)
 		236: syscalls.Error(syscall.ENOSYS), // Vserver, not implemented by Linux
-		// @Syscall(Mbind, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise), TODO
+		// @Syscall(Mbind, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise), TODO(b/117792295)
 		237: syscalls.CapError(linux.CAP_SYS_NICE), // may require cap_sys_nice
 		238: SetMempolicy,
 		239: GetMempolicy,
-		//     240: @Syscall(MqOpen), TODO
-		//     241: @Syscall(MqUnlink), TODO
-		//     242: @Syscall(MqTimedsend), TODO
-		//     243: @Syscall(MqTimedreceive), TODO
-		//     244: @Syscall(MqNotify), TODO
-		//     245: @Syscall(MqGetsetattr), TODO
+		//     240: @Syscall(MqOpen), TODO(b/29354921)
+		//     241: @Syscall(MqUnlink), TODO(b/29354921)
+		//     242: @Syscall(MqTimedsend), TODO(b/29354921)
+		//     243: @Syscall(MqTimedreceive), TODO(b/29354921)
+		//     244: @Syscall(MqNotify), TODO(b/29354921)
+		//     245: @Syscall(MqGetsetattr), TODO(b/29354921)
 		246: syscalls.CapError(linux.CAP_SYS_BOOT), // kexec_load, requires cap_sys_boot
 		247: Waitid,
 		// @Syscall(AddKey, returns:EACCES, note:Not available to user)
@@ -407,22 +407,22 @@ var AMD64 = &kernel.SyscallTable{
 		273: syscalls.Error(syscall.ENOSYS),
 		// @Syscall(GetRobustList, note:Obsolete)
 		274: syscalls.Error(syscall.ENOSYS),
-		//     275: @Syscall(Splice), TODO
-		//     276: @Syscall(Tee), TODO
+		//     275: @Syscall(Splice), TODO(b/29354098)
+		//     276: @Syscall(Tee), TODO(b/29354098)
 		277: SyncFileRange,
-		//     278: @Syscall(Vmsplice), TODO
+		//     278: @Syscall(Vmsplice), TODO(b/29354098)
 		// @Syscall(MovePages, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise)
 		279: syscalls.CapError(linux.CAP_SYS_NICE), // requires cap_sys_nice (mostly)
 		280: Utimensat,
 		281: EpollPwait,
-		//     282: @Syscall(Signalfd), TODO
+		//     282: @Syscall(Signalfd), TODO(b/19846426)
 		283: TimerfdCreate,
 		284: Eventfd,
 		285: Fallocate,
 		286: TimerfdSettime,
 		287: TimerfdGettime,
 		288: Accept4,
-		//     289: @Syscall(Signalfd4), TODO
+		//     289: @Syscall(Signalfd4), TODO(b/19846426)
 		290: Eventfd2,
 		291: EpollCreate1,
 		292: Dup3,
@@ -447,17 +447,17 @@ var AMD64 = &kernel.SyscallTable{
 		305: syscalls.CapError(linux.CAP_SYS_TIME), // requires cap_sys_time
 		306: Syncfs,
 		307: SendMMsg,
-		//     308: @Syscall(Setns), TODO
+		//     308: @Syscall(Setns), TODO(b/29354995)
 		309: Getcpu,
-		//     310: @Syscall(ProcessVmReadv), TODO may require cap_sys_ptrace
-		//     311: @Syscall(ProcessVmWritev), TODO may require cap_sys_ptrace
+		//     310: @Syscall(ProcessVmReadv), TODO(gvisor.dev/issue/158) may require cap_sys_ptrace
+		//     311: @Syscall(ProcessVmWritev), TODO(gvisor.dev/issue/158) may require cap_sys_ptrace
 		// @Syscall(Kcmp, returns:EPERM or ENOSYS, note:Requires cap_sys_ptrace)
 		312: syscalls.CapError(linux.CAP_SYS_PTRACE),
 		// @Syscall(FinitModule, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_module; ENOSYS otherwise)
 		313: syscalls.CapError(linux.CAP_SYS_MODULE),
-		//     314: @Syscall(SchedSetattr), TODO, we have no scheduler
-		//     315: @Syscall(SchedGetattr), TODO, we have no scheduler
-		//     316: @Syscall(Renameat2), TODO
+		//     314: @Syscall(SchedSetattr), TODO(b/118902272), we have no scheduler
+		//     315: @Syscall(SchedGetattr), TODO(b/118902272), we have no scheduler
+		//     316: @Syscall(Renameat2), TODO(b/118902772)
 		317: Seccomp,
 		318: GetRandom,
 		319: MemfdCreate,
@@ -465,9 +465,9 @@ var AMD64 = &kernel.SyscallTable{
 		320: syscalls.CapError(linux.CAP_SYS_BOOT),
 		// @Syscall(Bpf, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_boot; ENOSYS otherwise)
 		321: syscalls.CapError(linux.CAP_SYS_ADMIN), // requires cap_sys_admin for all commands
-		//     322: @Syscall(Execveat), TODO
-		//     323: @Syscall(Userfaultfd), TODO
-		//     324: @Syscall(Membarrier), TODO
+		//     322: @Syscall(Execveat), TODO(b/118901836)
+		//     323: @Syscall(Userfaultfd), TODO(b/118906345)
+		//     324: @Syscall(Membarrier), TODO(b/118904897)
 		325: Mlock2,
 		// Syscalls after 325 are "backports" from versions of Linux after 4.4.
 		//	326: @Syscall(CopyFileRange),

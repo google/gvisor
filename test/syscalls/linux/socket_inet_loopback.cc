@@ -221,7 +221,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
   std::atomic<int> connects_received = ATOMIC_VAR_INIT(0);
   std::unique_ptr<ScopedThread> listen_thread[kThreadCount];
   int accept_counts[kThreadCount] = {};
-  // TODO: figure how to not disable S/R for the whole test.
+  // TODO(avagin): figure how to not disable S/R for the whole test.
   // We need to take into account that this test executes a lot of system
   // calls from many threads.
   DisableSave ds;
@@ -325,7 +325,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
   std::atomic<int> packets_received = ATOMIC_VAR_INIT(0);
   std::unique_ptr<ScopedThread> receiver_thread[kThreadCount];
   int packets_per_socket[kThreadCount] = {};
-  // TODO: figure how to not disable S/R for the whole test.
+  // TODO(avagin): figure how to not disable S/R for the whole test.
   DisableSave ds;  // Too expensive.
 
   for (int i = 0; i < kThreadCount; i++) {
@@ -642,7 +642,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6OnlyV6AnyReservesV6) {
 TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME
+  // FIXME(b/114268588)
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {
@@ -743,7 +743,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
 TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME
+  // FIXME(b/114268588)
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {
@@ -867,7 +867,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
 TEST_P(SocketMultiProtocolInetLoopbackTest, V4EphemeralPortReserved) {
   auto const& param = GetParam();
 
-  // FIXME
+  // FIXME(b/114268588)
   SKIP_IF(IsRunningOnGvisor() && param.type == SOCK_STREAM);
 
   for (int i = 0; true; i++) {

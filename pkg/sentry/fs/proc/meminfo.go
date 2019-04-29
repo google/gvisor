@@ -58,7 +58,7 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	fmt.Fprintf(&buf, "MemTotal:       %8d kB\n", totalSize/1024)
 	memFree := (totalSize - totalUsage) / 1024
 	// We use MemFree as MemAvailable because we don't swap.
-	// TODO: When reclaim is implemented the value of MemAvailable
+	// TODO(rahat): When reclaim is implemented the value of MemAvailable
 	// should change.
 	fmt.Fprintf(&buf, "MemFree:        %8d kB\n", memFree)
 	fmt.Fprintf(&buf, "MemAvailable:   %8d kB\n", memFree)
@@ -72,8 +72,8 @@ func (d *meminfoData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) 
 	fmt.Fprintf(&buf, "Inactive(anon):        0 kB\n")
 	fmt.Fprintf(&buf, "Active(file):   %8d kB\n", activeFile/1024)
 	fmt.Fprintf(&buf, "Inactive(file): %8d kB\n", inactiveFile/1024)
-	fmt.Fprintf(&buf, "Unevictable:           0 kB\n") // TODO
-	fmt.Fprintf(&buf, "Mlocked:               0 kB\n") // TODO
+	fmt.Fprintf(&buf, "Unevictable:           0 kB\n") // TODO(b/31823263)
+	fmt.Fprintf(&buf, "Mlocked:               0 kB\n") // TODO(b/31823263)
 	fmt.Fprintf(&buf, "SwapTotal:             0 kB\n")
 	fmt.Fprintf(&buf, "SwapFree:              0 kB\n")
 	fmt.Fprintf(&buf, "Dirty:                 0 kB\n")

@@ -120,7 +120,7 @@ func (c *Client) Config() Config {
 // If the server sets a lease limit a timer is set to automatically
 // renew it.
 func (c *Client) Request(ctx context.Context, requestedAddr tcpip.Address) (cfg Config, reterr error) {
-	// TODO: remove calls to {Add,Remove}Address when they're no
+	// TODO(b/127321246): remove calls to {Add,Remove}Address when they're no
 	// longer required to send and receive broadcast.
 	if err := c.stack.AddAddressWithOptions(c.nicid, ipv4.ProtocolNumber, tcpipHeader.IPv4Any, stack.NeverPrimaryEndpoint); err != nil && err != tcpip.ErrDuplicateAddress {
 		return Config{}, fmt.Errorf("dhcp: AddAddressWithOptions(): %s", err)

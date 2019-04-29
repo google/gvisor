@@ -269,7 +269,7 @@ TEST_P(UnixStreamSocketPairTest, SinglePeek) {
     // 9f389e35674f5b086edd70ed524ca0f287259725 which changes this behavior. We
     // used to target 3.11 compatibility, so disable this test on newer kernels.
     //
-    // NOTE: Bring this up to Linux 4.4 compatibility.
+    // NOTE(b/118902768): Bring this up to Linux 4.4 compatibility.
     auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
     SKIP_IF(version.major > 4 || (version.major == 4 && version.minor >= 3));
   }
@@ -686,7 +686,7 @@ TEST_P(UnboundUnixStreamSocketPairTest, SendtoWithoutConnect) {
 }
 
 TEST_P(UnboundUnixStreamSocketPairTest, SendtoWithoutConnectIgnoresAddr) {
-  // FIXME: gVisor tries to find /foo/bar and thus returns ENOENT.
+  // FIXME(b/68223466): gVisor tries to find /foo/bar and thus returns ENOENT.
   if (IsRunningOnGvisor()) {
     return;
   }

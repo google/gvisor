@@ -29,7 +29,7 @@ type CPUSet []byte
 
 // CPUSetSize returns the size in bytes of a CPUSet that can contain num cpus.
 func CPUSetSize(num uint) uint {
-	// NOTE: Applications may expect that the size of a CPUSet in
+	// NOTE(b/68859821): Applications may expect that the size of a CPUSet in
 	// bytes is always a multiple of sizeof(unsigned long), since this is true
 	// in Linux. Thus we always round up.
 	bytes := (num + bitsPerByte - 1) / bitsPerByte

@@ -722,7 +722,7 @@ func (s SyscallMap) Name(sysno uintptr) string {
 // N.B. This is not in an init function because we can't be sure all syscall
 // tables are registered with the kernel when init runs.
 //
-// TODO: remove kernel package dependencies from this
+// TODO(gvisor.dev/issue/155): remove kernel package dependencies from this
 // package and have the kernel package self-initialize all syscall tables.
 func Initialize() {
 	for _, table := range kernel.SyscallTables() {

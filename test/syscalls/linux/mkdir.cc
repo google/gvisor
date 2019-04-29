@@ -36,7 +36,7 @@ class MkdirTest : public ::testing::Test {
 
   // TearDown unlinks created files.
   void TearDown() override {
-    // FIXME: We don't currently implement rmdir.
+    // FIXME(edahlgren): We don't currently implement rmdir.
     // We do this unconditionally because there's no harm in trying.
     rmdir(dirname_.c_str());
   }

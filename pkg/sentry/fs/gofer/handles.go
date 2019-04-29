@@ -49,7 +49,7 @@ func (h *handles) DecRef() {
 				log.Warningf("error closing host file: %v", err)
 			}
 		}
-		// FIXME: Context is not plumbed here.
+		// FIXME(b/38173783): Context is not plumbed here.
 		if err := h.File.close(context.Background()); err != nil {
 			log.Warningf("error closing p9 file: %v", err)
 		}

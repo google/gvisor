@@ -36,7 +36,7 @@ func (FileNoopRelease) Release() {}
 //
 // Currently only seeking to 0 on a directory is supported.
 //
-// FIXME: Lift directory seeking limitations.
+// FIXME(b/33075855): Lift directory seeking limitations.
 func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence, offset int64, dirCursor *string) (int64, error) {
 	inode := file.Dirent.Inode
 	current := file.Offset()
@@ -50,7 +50,7 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 	if fs.IsCharDevice(inode.StableAttr) {
 		// Ignore seek requests.
 		//
-		// FIXME: This preserves existing
+		// FIXME(b/34716638): This preserves existing
 		// behavior but is not universally correct.
 		return 0, nil
 	}
@@ -104,7 +104,7 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 				return current, syserror.EINVAL
 			}
 			return sz + offset, nil
-		// FIXME: This is not universally correct.
+		// FIXME(b/34778850): This is not universally correct.
 		// Remove SpecialDirectory.
 		case fs.SpecialDirectory:
 			if offset != 0 {
@@ -112,7 +112,7 @@ func SeekWithDirCursor(ctx context.Context, file *fs.File, whence fs.SeekWhence,
 			}
 			// SEEK_END to 0 moves the directory "cursor" to the end.
 			//
-			// FIXME: The ensures that after the seek,
+			// FIXME(b/35442290): The ensures that after the seek,
 			// reading on the directory will get EOF. But it is not
 			// correct in general because the directory can grow in
 			// size; attempting to read those new entries will be

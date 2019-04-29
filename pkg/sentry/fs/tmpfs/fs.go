@@ -34,7 +34,7 @@ const (
 	// GID for the root directory.
 	rootGIDKey = "gid"
 
-	// TODO: support a tmpfs size limit.
+	// TODO(edahlgren/mpratt): support a tmpfs size limit.
 	// size = "size"
 
 	// Permissions that exceed modeMask will be rejected.

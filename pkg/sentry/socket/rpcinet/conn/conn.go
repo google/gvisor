@@ -50,7 +50,7 @@ type RPCConnection struct {
 // NewRPCConnection initializes a RPC connection to a socket gofer.
 func NewRPCConnection(s *unet.Socket) *RPCConnection {
 	conn := &RPCConnection{socket: s, requests: map[uint64]request{}}
-	go func() { // S/R-FIXME
+	go func() { // S/R-FIXME(b/77962828)
 		var nums [16]byte
 		for {
 			for n := 0; n < len(nums); {

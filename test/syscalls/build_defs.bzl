@@ -78,10 +78,10 @@ def _syscall_test(
     tags += [full_platform, "file_" + file_access]
 
     # Add tag to prevent the tests from running in a Bazel sandbox.
-    # TODO: Make the tests run without this tag.
+    # TODO(b/120560048): Make the tests run without this tag.
     tags.append("no-sandbox")
 
-    # TODO: KVM tests are tagged "manual" to until the platform is
+    # TODO(b/112165693): KVM tests are tagged "manual" to until the platform is
     # more stable.
     if platform == "kvm":
         tags += ["manual"]

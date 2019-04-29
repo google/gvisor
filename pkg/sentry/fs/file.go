@@ -65,7 +65,7 @@ const FileMaxOffset = math.MaxInt64
 // under a single abortable mutex which also synchronizes lseek(2), read(2),
 // and write(2).
 //
-// FIXME: Split synchronization from cancellation.
+// FIXME(b/38451980): Split synchronization from cancellation.
 //
 // +stateify savable
 type File struct {

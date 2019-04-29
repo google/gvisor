@@ -259,7 +259,7 @@ func mknodAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileM
 		case linux.ModeCharacterDevice:
 			fallthrough
 		case linux.ModeBlockDevice:
-			// TODO: We don't support creating block or character
+			// TODO(b/72101894): We don't support creating block or character
 			// devices at the moment.
 			//
 			// When we start supporting block and character devices, we'll
@@ -1532,7 +1532,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 		owner.GID = kgid
 	}
 
-	// FIXME: This is racy; the inode's owner may have changed in
+	// FIXME(b/62949101): This is racy; the inode's owner may have changed in
 	// the meantime. (Linux holds i_mutex while calling
 	// fs/attr.c:notify_change() => inode_operations::setattr =>
 	// inode_change_ok().)

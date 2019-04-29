@@ -240,7 +240,7 @@ func (a *Area) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgume
 			return 0, syserror.EINVAL
 		}
 
-		// TODO: If personality flag
+		// TODO(b/30946773,gvisor.dev/issue/153): If personality flag
 		// READ_IMPLIES_EXEC is set, set PROT_EXEC if PORT_READ is set.
 
 		a.perms = perms
@@ -290,7 +290,7 @@ func (a *Area) pinOperation(pin linux.AshmemPin, op uint32) (uintptr, error) {
 		return linux.AshmemNotPurged, nil
 
 	case linux.AshmemUnpinIoctl:
-		// TODO: Implement purge on unpin.
+		// TODO(b/30946773): Implement purge on unpin.
 		a.pb.UnpinRange(r)
 		return 0, nil
 

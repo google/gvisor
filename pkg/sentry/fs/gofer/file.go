@@ -297,7 +297,7 @@ func (f *fileOperations) Flush(ctx context.Context, file *fs.File) error {
 	// We do this because some p9 server implementations of Flush are
 	// over-zealous.
 	//
-	// FIXME: weaken these implementations and remove this check.
+	// FIXME(edahlgren): weaken these implementations and remove this check.
 	if !file.Flags().Write {
 		return nil
 	}

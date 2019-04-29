@@ -192,8 +192,8 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Pwritev2 implements linux syscall pwritev2(2).
-// TODO: Implement RWF_HIPRI functionality.
-// TODO: Implement O_SYNC and D_SYNC functionality.
+// TODO(b/120162627): Implement RWF_HIPRI functionality.
+// TODO(b/120161091): Implement O_SYNC and D_SYNC functionality.
 func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the syscall is
 	// pwritev2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)

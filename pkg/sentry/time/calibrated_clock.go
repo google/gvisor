@@ -37,7 +37,7 @@ var fallbackMetric = metric.MustCreateNewUint64Metric("/time/fallback", false /*
 // clock.
 type CalibratedClock struct {
 	// mu protects the fields below.
-	// TODO: consider a sequence counter for read locking.
+	// TODO(mpratt): consider a sequence counter for read locking.
 	mu sync.RWMutex
 
 	// ref sample the reference clock that this clock is calibrated
@@ -140,7 +140,7 @@ func (c *CalibratedClock) updateParams(actual Parameters) {
 		// N.B. logErrorAdjustment will have already logged the error
 		// at warning level.
 		//
-		// TODO: We could allow Realtime clock jumps here.
+		// TODO(mpratt): We could allow Realtime clock jumps here.
 		c.resetLocked("Extreme clock error.")
 		return
 	}
@@ -229,7 +229,7 @@ func (c *CalibratedClock) GetTime() (int64, error) {
 
 // CalibratedClocks contains calibrated monotonic and realtime clocks.
 //
-// TODO: We know that Linux runs the monotonic and realtime clocks at
+// TODO(mpratt): We know that Linux runs the monotonic and realtime clocks at
 // the same rate, so rather than tracking both individually, we could do one
 // calibration for both clocks.
 type CalibratedClocks struct {

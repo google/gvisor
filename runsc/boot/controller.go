@@ -231,7 +231,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	}
 	// Prevent CIDs containing ".." from confusing the sentry when creating
 	// /containers/<cid> directory.
-	// TODO: Once we have multiple independent roots, this
+	// TODO(b/129293409): Once we have multiple independent roots, this
 	// check won't be necessary.
 	if path.Clean(args.CID) != args.CID {
 		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
@@ -352,7 +352,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("creating network: %v", err)
 	}
 	if eps, ok := networkStack.(*epsocket.Stack); ok {
-		stack.StackFromEnv = eps.Stack // FIXME
+		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
 	}
 	info, err := o.FilePayload.Files[0].Stat()
 	if err != nil {

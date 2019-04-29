@@ -23,7 +23,7 @@ namespace vdso {
 
 #if __x86_64__
 
-// TODO: The appropriate barrier instruction to use with rdtsc on
+// TODO(b/74613497): The appropriate barrier instruction to use with rdtsc on
 // x86_64 depends on the vendor. Intel processors can use lfence but AMD may
 // need mfence, depending on MSR_F10H_DECFG_LFENCE_SERIALIZE_BIT.
 

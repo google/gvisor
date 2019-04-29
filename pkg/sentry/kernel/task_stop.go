@@ -69,7 +69,7 @@ import (
 // A TaskStop is a condition visible to the task control flow graph that
 // prevents a task goroutine from running or exiting, i.e. an internal stop.
 //
-// NOTE: Most TaskStops don't contain any data; they're
+// NOTE(b/30793614): Most TaskStops don't contain any data; they're
 // distinguished by their type. The obvious way to implement such a TaskStop
 // is:
 //

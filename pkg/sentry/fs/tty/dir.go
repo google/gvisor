@@ -66,7 +66,7 @@ type dirInodeOperations struct {
 
 	// msrc is the super block this directory is on.
 	//
-	// TODO: Plumb this through instead of storing it here.
+	// TODO(chrisko): Plumb this through instead of storing it here.
 	msrc *fs.MountSource
 
 	// mu protects the fields below.
@@ -89,7 +89,7 @@ type dirInodeOperations struct {
 
 	// next is the next pty index to use.
 	//
-	// TODO: reuse indices when ptys are closed.
+	// TODO(b/29356795): reuse indices when ptys are closed.
 	next uint32
 }
 
@@ -118,7 +118,7 @@ func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 		// N.B. Linux always uses inode id 1 for the directory. See
 		// fs/devpts/inode.c:devpts_fill_super.
 		//
-		// TODO: Since ptsDevice must be shared between
+		// TODO(b/75267214): Since ptsDevice must be shared between
 		// different mounts, we must not assign fixed numbers.
 		InodeID:   ptsDevice.NextIno(),
 		BlockSize: usermem.PageSize,

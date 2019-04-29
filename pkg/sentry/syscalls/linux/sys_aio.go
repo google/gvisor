@@ -120,7 +120,7 @@ func IoDestroy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		// Does not exist.
 		return 0, nil, syserror.EINVAL
 	}
-	// FIXME: Linux blocks until all AIO to the destroyed context is
+	// FIXME(fvoznika): Linux blocks until all AIO to the destroyed context is
 	// done.
 	return 0, nil, nil
 }

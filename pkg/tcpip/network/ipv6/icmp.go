@@ -73,7 +73,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 	}
 	h := header.ICMPv6(v)
 
-	// TODO: Meaningfully handle all ICMP types.
+	// TODO(b/112892170): Meaningfully handle all ICMP types.
 	switch h.Type() {
 	case header.ICMPv6PacketTooBig:
 		received.PacketTooBig.Increment()
@@ -247,7 +247,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 		DstAddr:       r.RemoteAddress,
 	})
 
-	// TODO: count this in ICMP stats.
+	// TODO(stijlist): count this in ICMP stats.
 	return linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
 }
 

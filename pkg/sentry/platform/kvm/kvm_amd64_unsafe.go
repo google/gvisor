@@ -62,7 +62,7 @@ func updateSystemValues(fd int) error {
 
 	// Calculate whether guestPCID is supported.
 	//
-	// FIXME: These should go through the much more pleasant
+	// FIXME(ascannell): These should go through the much more pleasant
 	// cpuid package interfaces, once a way to accept raw kvm CPUID entries
 	// is plumbed (or some rough equivalent).
 	for i := 0; i < int(cpuidSupported.nr); i++ {

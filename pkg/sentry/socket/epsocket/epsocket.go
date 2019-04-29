@@ -608,7 +608,7 @@ func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (interface{}, *syserr.Error) {
-	// TODO: Unlike other socket options, SO_TIMESTAMP is
+	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for epsocket.SocketOperations rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
 	// options where the implementation is not shared, as unix sockets need
@@ -658,7 +658,7 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 
 // getSockOptSocket implements GetSockOpt when level is SOL_SOCKET.
 func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType transport.SockType, name, outLen int) (interface{}, *syserr.Error) {
-	// TODO: Stop rejecting short optLen values in getsockopt.
+	// TODO(b/124056281): Stop rejecting short optLen values in getsockopt.
 	switch name {
 	case linux.SO_TYPE:
 		if outLen < sizeOfInt32 {
@@ -789,7 +789,7 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		return linux.Linger{}, nil
 
 	case linux.SO_SNDTIMEO:
-		// TODO: Linux allows shorter lengths for partial results.
+		// TODO(igudger): Linux allows shorter lengths for partial results.
 		if outLen < linux.SizeOfTimeval {
 			return nil, syserr.ErrInvalidArgument
 		}
@@ -797,7 +797,7 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 		return linux.NsecToTimeval(s.SendTimeout()), nil
 
 	case linux.SO_RCVTIMEO:
-		// TODO: Linux allows shorter lengths for partial results.
+		// TODO(igudger): Linux allows shorter lengths for partial results.
 		if outLen < linux.SizeOfTimeval {
 			return nil, syserr.ErrInvalidArgument
 		}
@@ -894,7 +894,7 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
-		// TODO: Translate fields once they are added to
+		// TODO(b/64800844): Translate fields once they are added to
 		// tcpip.TCPInfoOption.
 		info := linux.TCPInfo{}
 
@@ -995,7 +995,7 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
-	// TODO: Unlike other socket options, SO_TIMESTAMP is
+	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for epsocket.SocketOperations rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
 	// options where the implementation is not shared, as unix sockets need
@@ -1338,7 +1338,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.AddMembershipOption{
 			NIC: tcpip.NICID(req.InterfaceIndex),
-			// TODO: Change AddMembership to use the standard
+			// TODO(igudger): Change AddMembership to use the standard
 			// any address representation.
 			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
 			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
@@ -1352,7 +1352,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.RemoveMembershipOption{
 			NIC: tcpip.NICID(req.InterfaceIndex),
-			// TODO: Change DropMembership to use the standard
+			// TODO(igudger): Change DropMembership to use the standard
 			// any address representation.
 			InterfaceAddr: tcpip.Address(req.InterfaceAddr[:]),
 			MulticastAddr: tcpip.Address(req.MulticastAddr[:]),
@@ -1380,7 +1380,7 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		))
 
 	case linux.MCAST_JOIN_GROUP:
-		// FIXME: Implement MCAST_JOIN_GROUP.
+		// FIXME(b/124219304): Implement MCAST_JOIN_GROUP.
 		t.Kernel().EmitUnimplementedEvent(t)
 		return syserr.ErrInvalidArgument
 
@@ -1695,7 +1695,7 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 
 // nonBlockingRead issues a non-blocking read.
 //
-// TODO: Support timestamps for stream sockets.
+// TODO(b/78348848): Support timestamps for stream sockets.
 func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek, trunc, senderRequested bool) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
 	isPacket := s.isPacketBased()
 
@@ -1762,7 +1762,7 @@ func (s *SocketOperations) nonBlockingRead(ctx context.Context, dst usermem.IOSe
 		dst = dst.DropFirst(n)
 		num, err := dst.CopyOutFrom(ctx, safemem.FromVecReaderFunc{func(dsts [][]byte) (int64, error) {
 			n, _, err := s.Endpoint.Peek(dsts)
-			// TODO: Handle peek timestamp.
+			// TODO(b/78348848): Handle peek timestamp.
 			if err != nil {
 				return int64(n), syserr.TranslateNetstackError(err).ToError()
 			}
@@ -1963,7 +1963,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// SIOCGSTAMP is implemented by epsocket rather than all commonEndpoint
 	// sockets.
-	// TODO: Add a commonEndpoint method to support SIOCGSTAMP.
+	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.
 	if int(args[1].Int()) == syscall.SIOCGSTAMP {
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
@@ -2153,19 +2153,19 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 
 	case syscall.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
-		// TODO: Implement.
+		// TODO(b/71872867): Implement.
 
 	case syscall.SIOCGIFTXQLEN:
 		// Gets the transmit queue length of the device.
-		// TODO: Implement.
+		// TODO(b/71872867): Implement.
 
 	case syscall.SIOCGIFDSTADDR:
 		// Gets the destination address of a point-to-point device.
-		// TODO: Implement.
+		// TODO(b/71872867): Implement.
 
 	case syscall.SIOCGIFBRDADDR:
 		// Gets the broadcast address of a device.
-		// TODO: Implement.
+		// TODO(b/71872867): Implement.
 
 	case syscall.SIOCGIFNETMASK:
 		// Gets the network mask of a device.

@@ -100,7 +100,7 @@ type endpoint struct {
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
-// TODO: IP_HDRINCL, IPPROTO_RAW, and AF_PACKET.
+// TODO(b/129292371): IP_HDRINCL, IPPROTO_RAW, and AF_PACKET.
 func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	if netProto != header.IPv4ProtocolNumber {
 		return nil, tcpip.ErrUnknownProtocol

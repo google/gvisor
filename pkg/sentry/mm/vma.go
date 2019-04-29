@@ -274,7 +274,7 @@ func (mm *MemoryManager) getVMAsLocked(ctx context.Context, ar usermem.AddrRange
 		// Loop invariants: vgap = vseg.PrevGap(); addr < vseg.End().
 		vma := vseg.ValuePtr()
 		if addr < vseg.Start() {
-			// TODO: Implement vma.growsDown here.
+			// TODO(jamieliu): Implement vma.growsDown here.
 			return vbegin, vgap, syserror.EFAULT
 		}
 

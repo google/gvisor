@@ -66,7 +66,7 @@ func (t *Task) SetRSEQCriticalRegion(rscr RSEQCriticalRegion) error {
 	if rscr.CriticalSection.Contains(rscr.Restart) {
 		return syserror.EINVAL
 	}
-	// TODO: check that rscr.CriticalSection and rscr.Restart are in
+	// TODO(jamieliu): check that rscr.CriticalSection and rscr.Restart are in
 	// the application address range, for consistency with Linux
 	t.tg.rscr.Store(&rscr)
 	return nil

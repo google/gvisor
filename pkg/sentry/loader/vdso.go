@@ -194,7 +194,7 @@ func validateVDSO(ctx context.Context, f *fs.File, size uint64) (elfInfo, error)
 
 // VDSO describes a VDSO.
 //
-// NOTE: to support multiple architectures or operating systems, this
+// NOTE(mpratt): to support multiple architectures or operating systems, this
 // would need to contain a VDSO for each.
 //
 // +stateify savable
@@ -262,7 +262,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 
 	return &VDSO{
 		ParamPage: mm.NewSpecialMappable("[vvar]", mfp, paramPage),
-		// TODO: Don't advertise the VDSO, as
+		// TODO(gvisor.dev/issue/157): Don't advertise the VDSO, as
 		// some applications may not be able to handle multiple [vdso]
 		// hints.
 		vdso:  mm.NewSpecialMappable("", mfp, vdso),
@@ -279,7 +279,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 // kernel simply directly maps the entire file into process memory, with very
 // little real ELF parsing.
 //
-// NOTE: This means that userspace can, and unfortunately does,
+// NOTE(b/25323870): This means that userspace can, and unfortunately does,
 // depend on parts of the ELF that would normally not be mapped.  To maintain
 // compatibility with such binaries, we load the VDSO much like Linux.
 //

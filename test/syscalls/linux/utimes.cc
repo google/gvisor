@@ -33,7 +33,7 @@ namespace testing {
 
 namespace {
 
-// TODO: utimes(nullptr) does not pick the "now" time in the
+// TODO(b/36516566): utimes(nullptr) does not pick the "now" time in the
 // application's time domain, so when asserting that times are within a window,
 // we expand the window to allow for differences between the time domains.
 constexpr absl::Duration kClockSlack = absl::Milliseconds(100);
@@ -235,7 +235,7 @@ void TestUtimensat(int dirFd, std::string const& path) {
   EXPECT_LE(mtime3, after);
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Gofers set atime and mtime to different "now" times.
+    // FIXME(b/36516566): Gofers set atime and mtime to different "now" times.
     EXPECT_EQ(atime3, mtime3);
   }
 }

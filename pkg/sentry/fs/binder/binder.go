@@ -69,7 +69,7 @@ func NewDevice(ctx context.Context, owner fs.FileOwner, fp fs.FilePermissions) *
 
 // GetFile implements fs.InodeOperations.GetFile.
 //
-// TODO: Add functionality to GetFile: Additional fields will be
+// TODO(b/30946773): Add functionality to GetFile: Additional fields will be
 // needed in the Device structure, initialize them here. Also, Device will need
 // to keep track of the created Procs in order to implement BINDER_READ_WRITE
 // ioctl.
@@ -133,7 +133,7 @@ func (bp *Proc) Write(ctx context.Context, file *fs.File, src usermem.IOSequence
 
 // Flush implements fs.FileOperations.Flush.
 //
-// TODO: Implement.
+// TODO(b/30946773): Implement.
 func (bp *Proc) Flush(ctx context.Context, file *fs.File) error {
 	return nil
 }
@@ -149,7 +149,7 @@ func (bp *Proc) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.M
 	}
 	opts.MaxPerms.Write = false
 
-	// TODO: Binder sets VM_DONTCOPY, preventing the created vma
+	// TODO(b/30946773): Binder sets VM_DONTCOPY, preventing the created vma
 	// from being copied across fork(), but we don't support this yet. As
 	// a result, MMs containing a Binder mapping cannot be forked (MM.Fork will
 	// fail when AddMapping returns EBUSY).
@@ -159,7 +159,7 @@ func (bp *Proc) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.M
 
 // Ioctl implements fs.FileOperations.Ioctl.
 //
-// TODO: Implement.
+// TODO(b/30946773): Implement.
 func (bp *Proc) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch uint32(args[1].Int()) {
@@ -173,22 +173,22 @@ func (bp *Proc) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArgum
 		})
 		return 0, err
 	case linux.BinderWriteReadIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		fallthrough
 	case linux.BinderSetIdleTimeoutIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		fallthrough
 	case linux.BinderSetMaxThreadsIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		fallthrough
 	case linux.BinderSetIdlePriorityIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		fallthrough
 	case linux.BinderSetContextMgrIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		fallthrough
 	case linux.BinderThreadExitIoctl:
-		// TODO: Implement.
+		// TODO(b/30946773): Implement.
 		return 0, syserror.ENOSYS
 	default:
 		// Ioctls irrelevant to Binder.
@@ -228,7 +228,7 @@ func (bp *Proc) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, 
 
 // Translate implements memmap.Mappable.Translate.
 func (bp *Proc) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
-	// TODO: In addition to the page initially allocated and mapped
+	// TODO(b/30946773): In addition to the page initially allocated and mapped
 	// in AddMapping (Linux: binder_mmap), Binder allocates and maps pages for
 	// each transaction (Linux: binder_ioctl => binder_ioctl_write_read =>
 	// binder_thread_write => binder_transaction => binder_alloc_buf =>

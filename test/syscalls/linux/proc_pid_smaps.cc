@@ -82,7 +82,7 @@ struct ProcPidSmapsEntry {
 // Given the value part of a /proc/[pid]/smaps field containing a value in kB
 // (for example, "    4 kB", returns the value in kB (in this example, 4).
 PosixErrorOr<size_t> SmapsValueKb(absl::string_view value) {
-  // TODO: let us use RE2 or <regex>
+  // TODO(jamieliu): let us use RE2 or <regex>
   std::pair<absl::string_view, absl::string_view> parts =
       absl::StrSplit(value, ' ', absl::SkipEmpty());
   if (parts.second != "kB") {

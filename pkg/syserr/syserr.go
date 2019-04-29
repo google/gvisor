@@ -49,7 +49,7 @@ func New(message string, linuxTranslation *linux.Errno) *Error {
 		return err
 	}
 
-	// TODO: Remove this.
+	// TODO(b/34162363): Remove this.
 	errno := linuxTranslation.Number()
 	if errno <= 0 || errno >= len(linuxBackwardsTranslations) {
 		panic(fmt.Sprint("invalid errno: ", errno))
@@ -106,12 +106,12 @@ type linuxBackwardsTranslation struct {
 	ok  bool
 }
 
-// TODO: Remove this.
+// TODO(b/34162363): Remove this.
 var linuxBackwardsTranslations [maxErrno]linuxBackwardsTranslation
 
 // ToError translates an Error to a corresponding error value.
 //
-// TODO: Remove this.
+// TODO(b/34162363): Remove this.
 func (e *Error) ToError() error {
 	if e == nil {
 		return nil
@@ -138,7 +138,7 @@ func (e *Error) ToLinux() *linux.Errno {
 	return e.errno
 }
 
-// TODO: Remove or replace most of these errors.
+// TODO(b/34162363): Remove or replace most of these errors.
 //
 // Some of the errors should be replaced with package specific errors and
 // others should be removed entirely.
@@ -278,7 +278,7 @@ var (
 
 // FromError converts a generic error to an *Error.
 //
-// TODO: Remove this function.
+// TODO(b/34162363): Remove this function.
 func FromError(err error) *Error {
 	if err == nil {
 		return nil

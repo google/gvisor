@@ -176,7 +176,7 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 
 	for e := list.Front(); e != nil; e = e.Next() {
 		r := e.(*referencedNetworkEndpoint)
-		// TODO: allow broadcast address when SO_BROADCAST is set.
+		// TODO(crawshaw): allow broadcast address when SO_BROADCAST is set.
 		switch r.ep.ID().LocalAddress {
 		case header.IPv4Broadcast, header.IPv4Any:
 			continue
@@ -476,7 +476,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 		n.mu.RUnlock()
 		if ok && ref.tryIncRef() {
 			r.RemoteAddress = src
-			// TODO: Update the source NIC as well.
+			// TODO(b/123449044): Update the source NIC as well.
 			ref.ep.HandlePacket(&r, vv)
 			ref.decRef()
 		} else {
@@ -485,7 +485,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 			hdr := buffer.NewPrependableFromView(vv.First())
 			vv.RemoveFirst()
 
-			// TODO: use route.WritePacket.
+			// TODO(b/128629022): use route.WritePacket.
 			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, vv, protocol); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {

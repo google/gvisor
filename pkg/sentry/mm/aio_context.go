@@ -331,7 +331,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 		Length:          aioRingBufferSize,
 		MappingIdentity: m,
 		Mappable:        m,
-		// TODO: Linux does "do_mmap_pgoff(..., PROT_READ |
+		// TODO(fvoznika): Linux does "do_mmap_pgoff(..., PROT_READ |
 		// PROT_WRITE, ...)" in fs/aio.c:aio_setup_ring(); why do we make this
 		// mapping read-only?
 		Perms:    usermem.Read,

@@ -110,7 +110,7 @@ func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader
 		m.PutAttr(linux.IFLA_ADDRESS, mac)
 		m.PutAttr(linux.IFLA_BROADCAST, brd)
 
-		// TODO: There are many more attributes.
+		// TODO(b/68878065): There are many more attributes.
 	}
 
 	return nil
@@ -122,7 +122,7 @@ func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
 	//
-	// TODO: Filter output by passed protocol family.
+	// TODO(b/68878065): Filter output by passed protocol family.
 
 	// The RTM_GETADDR dump response is a set of RTM_NEWADDR messages each
 	// containing an InterfaceAddrMessage followed by a set of netlink
@@ -151,7 +151,7 @@ func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader
 
 			m.PutAttr(linux.IFA_ADDRESS, []byte(a.Addr))
 
-			// TODO: There are many more attributes.
+			// TODO(b/68878065): There are many more attributes.
 		}
 	}
 
@@ -175,7 +175,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, hdr linux.NetlinkMessageH
 		}
 	}
 
-	// TODO: Only the dump variant of the types below are
+	// TODO(b/68878065): Only the dump variant of the types below are
 	// supported.
 	if hdr.Flags&linux.NLM_F_DUMP != linux.NLM_F_DUMP {
 		return syserr.ErrNotSupported

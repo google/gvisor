@@ -165,7 +165,7 @@ type Stracer interface {
 	//
 	// The returned private data is passed to SyscallExit.
 	//
-	// TODO: remove kernel imports from the strace
+	// TODO(gvisor.dev/issue/155): remove kernel imports from the strace
 	// package so that the type can be used directly.
 	SyscallEnter(t *Task, sysno uintptr, args arch.SyscallArguments, flags uint32) interface{}
 

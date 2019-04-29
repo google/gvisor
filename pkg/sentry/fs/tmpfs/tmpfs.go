@@ -32,7 +32,7 @@ import (
 var fsInfo = fs.Info{
 	Type: linux.TMPFS_MAGIC,
 
-	// TODO: allow configuring a tmpfs size and enforce it.
+	// TODO(b/29637826): allow configuring a tmpfs size and enforce it.
 	TotalBlocks: 0,
 	FreeBlocks:  0,
 }

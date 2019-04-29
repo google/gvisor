@@ -317,7 +317,7 @@ func accept(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, addrLen usermem.Addr
 		return 0, syserror.ConvertIntr(e.ToError(), kernel.ERESTARTSYS)
 	}
 	if peerRequested {
-		// NOTE: Linux does not give you an error if it can't
+		// NOTE(magi): Linux does not give you an error if it can't
 		// write the data back out so neither do we.
 		if err := writeAddress(t, peer, peerLen, addr, addrLen); err == syscall.EINVAL {
 			return 0, err
@@ -735,7 +735,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		return 0, err
 	}
 
-	// FIXME: Pretend we have an empty error queue.
+	// FIXME(b/63594852): Pretend we have an empty error queue.
 	if flags&linux.MSG_ERRQUEUE != 0 {
 		return 0, syscall.EAGAIN
 	}

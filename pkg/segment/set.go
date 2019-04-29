@@ -1270,7 +1270,7 @@ func segmentAfterPosition(n *node, i int) Iterator {
 }
 
 func zeroValueSlice(slice []Value) {
-	// TODO: check if Go is actually smart enough to optimize a
+	// TODO(jamieliu): check if Go is actually smart enough to optimize a
 	// ClearValue that assigns nil to a memset here
 	for i := range slice {
 		Functions{}.ClearValue(&slice[i])

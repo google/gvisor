@@ -77,7 +77,7 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 				Family:    family,
 				PrefixLen: uint8(len(a.Address) * 8),
 				Addr:      []byte(a.Address),
-				// TODO: Other fields.
+				// TODO(b/68878065): Other fields.
 			})
 		}
 		nicAddrs[int32(id)] = addrs

@@ -267,7 +267,7 @@ func (s *Sandbox) Event(cid string) (*boot.Event, error) {
 	defer conn.Close()
 
 	var e boot.Event
-	// TODO: Pass in the container id (cid) here. The sandbox
+	// TODO(b/129292330): Pass in the container id (cid) here. The sandbox
 	// should return events only for that container.
 	if err := conn.Call(boot.ContainerEvent, nil, &e); err != nil {
 		return nil, fmt.Errorf("retrieving event data from sandbox: %v", err)
@@ -457,7 +457,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	if conf.Platform == boot.PlatformPtrace {
-		// TODO: Also set a new PID namespace so that we limit
+		// TODO(b/75837838): Also set a new PID namespace so that we limit
 		// access to other host processes.
 		log.Infof("Sandbox will be started in the current PID namespace")
 	} else {
@@ -520,7 +520,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 			// root for itself, so it has to have the CAP_SYS_ADMIN
 			// capability.
 			//
-			// FIXME: The current implementations of
+			// FIXME(b/122554829): The current implementations of
 			// os/exec doesn't allow to set ambient capabilities if
 			// a process is started in a new user namespace. As a
 			// workaround, we start the sandbox process with the 0

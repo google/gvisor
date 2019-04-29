@@ -28,7 +28,7 @@ namespace testing {
 namespace {
 
 TEST_P(DgramUnixSocketPairTest, WriteOneSideClosed) {
-  // FIXME: gVisor datagram sockets return EPIPE instead of
+  // FIXME(b/35925052): gVisor datagram sockets return EPIPE instead of
   // ECONNREFUSED.
   SKIP_IF(IsRunningOnGvisor());
 

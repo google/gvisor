@@ -40,7 +40,7 @@ func randomFilename() (string, error) {
 		return "", err
 	}
 
-	// NOTE: We try to use relative path if possible. This is
+	// NOTE(b/26918832): We try to use relative path if possible. This is
 	// to help conforming to the unix path length limit.
 	if rel, err := filepath.Rel(cwd, file); err == nil {
 		return rel, nil

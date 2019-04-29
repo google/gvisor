@@ -358,7 +358,7 @@ func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, p
 	_, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewDir(ctx, dir, perms)
 	})
-	// TODO: Support updating status times, as those should be
+	// TODO(nlacasse): Support updating status times, as those should be
 	// updated by links.
 	return err
 }

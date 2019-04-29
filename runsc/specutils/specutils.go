@@ -90,7 +90,7 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
 	}
 
-	// TODO: Apply seccomp to application inside sandbox.
+	// TODO(b/72226747): Apply seccomp to application inside sandbox.
 	if spec.Linux != nil && spec.Linux.Seccomp != nil {
 		log.Warningf("Seccomp spec is being ignored")
 	}
@@ -220,7 +220,7 @@ func Capabilities(enableRaw bool, specCaps *specs.LinuxCapabilities) (*auth.Task
 		if caps.PermittedCaps, err = capsFromNames(specCaps.Permitted, skipSet); err != nil {
 			return nil, err
 		}
-		// TODO: Support ambient capabilities.
+		// TODO(nlacasse): Support ambient capabilities.
 	}
 	return &caps, nil
 }

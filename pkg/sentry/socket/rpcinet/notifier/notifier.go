@@ -64,7 +64,7 @@ func NewRPCNotifier(cn *conn.RPCConnection) (*Notifier, error) {
 		fdMap:   make(map[uint32]*fdInfo),
 	}
 
-	go w.waitAndNotify() // S/R-FIXME
+	go w.waitAndNotify() // S/R-FIXME(b/77962828)
 
 	return w, nil
 }
@@ -166,7 +166,7 @@ func (n *Notifier) waitAndNotify() error {
 		res := n.rpcConn.Request(id).Result.(*pb.SyscallResponse_EpollWait).EpollWait.Result
 		if e, ok := res.(*pb.EpollWaitResponse_ErrorNumber); ok {
 			err := syscall.Errno(e.ErrorNumber)
-			// NOTE: I don't think epoll_wait can return EAGAIN but I'm being
+			// NOTE(magi): I don't think epoll_wait can return EAGAIN but I'm being
 			// conseratively careful here since exiting the notification thread
 			// would be really bad.
 			if err == syscall.EINTR || err == syscall.EAGAIN {

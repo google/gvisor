@@ -80,11 +80,11 @@ constexpr int kExitCode = 42;
 TEST(Syscall32Bit, Int80) {
   switch (GvisorPlatform()) {
     case Platform::kKVM:
-      // TODO: 32-bit segments are broken (but not explictly
+      // TODO(b/111805002): 32-bit segments are broken (but not explictly
       // disabled).
       return;
     case Platform::kPtrace:
-      // TODO: The ptrace platform does not have a
+      // TODO(gvisor.dev/issue/167): The ptrace platform does not have a
       // consistent story here.
       return;
     case Platform::kNative:
@@ -99,10 +99,10 @@ TEST(Syscall32Bit, Int80) {
 TEST(Syscall32Bit, Sysenter) {
   switch (GvisorPlatform()) {
     case Platform::kKVM:
-      // TODO: See above.
+      // TODO(b/111805002): See above.
       return;
     case Platform::kPtrace:
-      // TODO: See above.
+      // TODO(gvisor.dev/issue/167): See above.
       return;
     case Platform::kNative:
       break;
@@ -123,10 +123,10 @@ TEST(Syscall32Bit, Sysenter) {
 TEST(Syscall32Bit, Syscall) {
   switch (GvisorPlatform()) {
     case Platform::kKVM:
-      // TODO: See above.
+      // TODO(b/111805002): See above.
       return;
     case Platform::kPtrace:
-      // TODO: See above.
+      // TODO(gvisor.dev/issue/167): See above.
       return;
     case Platform::kNative:
       break;
@@ -207,7 +207,7 @@ void FarCall32() {
 TEST(Call32Bit, Disallowed) {
   switch (GvisorPlatform()) {
     case Platform::kKVM:
-      // TODO: See above.
+      // TODO(b/111805002): See above.
       return;
     case Platform::kPtrace:
       // The ptrace platform cannot prevent switching to compatibility mode.

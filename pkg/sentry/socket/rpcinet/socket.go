@@ -288,7 +288,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if blocking && se == syserr.ErrTryAgain {
 		// Register for notifications.
 		e, ch := waiter.NewChannelEntry(nil)
-		// FIXME: This waiter.EventHUp is a partial
+		// FIXME(b/119878986): This waiter.EventHUp is a partial
 		// measure, need to figure out how to translate linux events to
 		// internal events.
 		s.EventRegister(&e, waiter.EventIn|waiter.EventHUp)
@@ -370,7 +370,7 @@ func (s *socketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 	// We save the shutdown state because of strange differences on linux
 	// related to recvs on blocking vs. non-blocking sockets after a SHUT_RD.
 	// We need to emulate that behavior on the blocking side.
-	// TODO: There is a possible race that can exist with loopback,
+	// TODO(b/120096741): There is a possible race that can exist with loopback,
 	// where data could possibly be lost.
 	s.setShutdownFlags(how)
 
@@ -771,7 +771,7 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		return 0, syserr.FromError(err)
 	}
 
-	// TODO: this needs to change to map directly to a SendMsg syscall
+	// TODO(bgeffon): this needs to change to map directly to a SendMsg syscall
 	// in the RPC.
 	totalWritten := 0
 	n, err := rpcSendMsg(t, &pb.SyscallRequest_Sendmsg{&pb.SendmsgRequest{

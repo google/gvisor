@@ -43,7 +43,7 @@ const (
 	// These statements assume that the host clock does not change. Actual
 	// error will depend upon host clock changes.
 	//
-	// TODO: make error correction more robust to delayed
+	// TODO(b/68779214): make error correction more robust to delayed
 	// updates.
 	ApproxUpdateInterval = 1 * time.Second
 

@@ -32,7 +32,7 @@ namespace {
 static int tkill(pid_t tid, int sig) {
   int ret;
   do {
-    // NOTE: tkill(2) could return EAGAIN for RT signals.
+    // NOTE(b/25434735): tkill(2) could return EAGAIN for RT signals.
     ret = syscall(SYS_tkill, tid, sig);
   } while (ret == -1 && errno == EAGAIN);
   return ret;

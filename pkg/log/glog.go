@@ -144,7 +144,7 @@ func (g GoogleEmitter) Emit(level Level, timestamp time.Time, format string, arg
 	b.writeAll(pid)
 	b.write(' ')
 
-	// FIXME: The caller, fabricated. This really sucks, but it
+	// FIXME(b/73383460): The caller, fabricated. This really sucks, but it
 	// is unacceptable to put runtime.Callers() in the hot path.
 	b.writeAll(caller)
 	b.write(']')

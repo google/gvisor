@@ -78,7 +78,7 @@ func TestTakeFeatureIntersection(t *testing.T) {
 	}
 }
 
-// TODO: Run this test on a very old platform, and make sure more
+// TODO(b/73346484): Run this test on a very old platform, and make sure more
 // bits are enabled than just FPU and PAE. This test currently may not detect
 // if HostFeatureSet gives back junk bits.
 func TestHostFeatureSet(t *testing.T) {

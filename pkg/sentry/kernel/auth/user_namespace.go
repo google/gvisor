@@ -49,7 +49,7 @@ type UserNamespace struct {
 	gidMapFromParent idMapSet
 	gidMapToParent   idMapSet
 
-	// TODO: Support disabling setgroups(2).
+	// TODO(b/27454212): Support disabling setgroups(2).
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a

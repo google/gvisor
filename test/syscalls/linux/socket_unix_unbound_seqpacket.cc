@@ -42,7 +42,7 @@ TEST_P(UnboundUnixSeqpacketSocketPairTest, SendtoWithoutConnect) {
 }
 
 TEST_P(UnboundUnixSeqpacketSocketPairTest, SendtoWithoutConnectIgnoresAddr) {
-  // FIXME: gVisor tries to find /foo/bar and thus returns ENOENT.
+  // FIXME(b/68223466): gVisor tries to find /foo/bar and thus returns ENOENT.
   if (IsRunningOnGvisor()) {
     return;
   }

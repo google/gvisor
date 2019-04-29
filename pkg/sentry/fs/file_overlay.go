@@ -160,7 +160,7 @@ func (f *overlayFileOperations) Seek(ctx context.Context, file *File, whence See
 	// If this was a seek on a directory, we must update the cursor.
 	if seekDir && whence == SeekSet && offset == 0 {
 		// Currently only seeking to 0 on a directory is supported.
-		// FIXME: Lift directory seeking limitations.
+		// FIXME(b/33075855): Lift directory seeking limitations.
 		f.dirCursor = ""
 	}
 	return n, nil
@@ -329,7 +329,7 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 	if !o.isMappableLocked() {
 		return syserror.ENODEV
 	}
-	// FIXME: This is a copy/paste of fsutil.GenericConfigureMMap,
+	// FIXME(jamieliu): This is a copy/paste of fsutil.GenericConfigureMMap,
 	// which we can't use because the overlay implementation is in package fs,
 	// so depending on fs/fsutil would create a circular dependency. Move
 	// overlay to fs/overlay.

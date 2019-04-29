@@ -93,10 +93,10 @@ func (i *Inode) DecRef() {
 
 // destroy releases the Inode and releases the msrc reference taken.
 func (i *Inode) destroy() {
-	// FIXME: Context is not plumbed here.
+	// FIXME(b/38173783): Context is not plumbed here.
 	ctx := context.Background()
 	if err := i.WriteOut(ctx); err != nil {
-		// FIXME: Mark as warning again once noatime is
+		// FIXME(b/65209558): Mark as warning again once noatime is
 		// properly supported.
 		log.Debugf("Inode %+v, failed to sync all metadata: %v", i.StableAttr, err)
 	}
@@ -359,7 +359,7 @@ func (i *Inode) Getlink(ctx context.Context) (*Dirent, error) {
 // AddLink calls i.InodeOperations.AddLink.
 func (i *Inode) AddLink() {
 	if i.overlay != nil {
-		// FIXME: Remove this from InodeOperations altogether.
+		// FIXME(b/63117438): Remove this from InodeOperations altogether.
 		//
 		// This interface is only used by ramfs to update metadata of
 		// children. These filesystems should _never_ have overlay

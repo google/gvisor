@@ -125,7 +125,7 @@ func NewUserCredentials(kuid KUID, kgid KGID, extraKGIDs []KGID, capabilities *T
 		creds.EffectiveCaps = capabilities.EffectiveCaps
 		creds.BoundingCaps = capabilities.BoundingCaps
 		creds.InheritableCaps = capabilities.InheritableCaps
-		// TODO: Support ambient capabilities.
+		// TODO(nlacasse): Support ambient capabilities.
 	} else {
 		// If no capabilities are specified, grant capabilities consistent with
 		// setresuid + setresgid from NewRootCredentials to the given uid and

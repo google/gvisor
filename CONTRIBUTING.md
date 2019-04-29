@@ -126,6 +126,13 @@ change.
 When approved, the change will be submitted by a team member and automatically
 merged into the repository.
 
+### Bug IDs
+
+Some TODOs and NOTEs sprinkled throughout the code have associated IDs of the
+form b/1234. These correspond to bugs in our internal bug tracker. Eventually
+these bugs will be moved to the GitHub Issues, but until then they can simply be
+ignored.
+
 ### The small print
 
 Contributions made by corporations are covered by a different agreement than the

@@ -110,7 +110,7 @@ func (t *Task) doStop() {
 		return
 	}
 	t.Deactivate()
-	// NOTE: t.Activate() must be called without any locks held, so
+	// NOTE(b/30316266): t.Activate() must be called without any locks held, so
 	// this defer must precede the defer for unlocking the signal mutex.
 	defer t.Activate()
 	t.accountTaskGoroutineEnter(TaskGoroutineStopped)

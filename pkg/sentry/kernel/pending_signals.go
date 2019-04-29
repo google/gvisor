@@ -30,7 +30,7 @@ const (
 	// rtSignalCap is the maximum number of instances of a given realtime
 	// signal that may be pending.
 	//
-	// TODO: In Linux, the minimum signal queue size is
+	// TODO(igudger): In Linux, the minimum signal queue size is
 	// RLIMIT_SIGPENDING, which is by default max_threads/2.
 	rtSignalCap = 32
 )

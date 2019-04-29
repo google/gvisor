@@ -47,7 +47,7 @@ TEST_P(UnixNonStreamSocketPairTest, RecvMsgTooLarge) {
   const int ret = RetryEINTR(write)(sockets->second_fd(), write_buf.data(),
                                     write_buf.size());
   if (ret < 0 && errno == ENOBUFS) {
-    // NOTE: Linux may stall the write for a long time and
+    // NOTE(b/116636318): Linux may stall the write for a long time and
     // ultimately return ENOBUFS. Allow this error, since a retry will likely
     // result in the same error.
     return;
@@ -136,7 +136,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
     // N.B. At minimum, the socketpair gofer should provide a socket that is
     // already the correct size.
     //
-    // TODO: When internal UDS support SO_SNDBUF, we can assert that
+    // TODO(b/35921550): When internal UDS support SO_SNDBUF, we can assert that
     // we always get the right SO_SNDBUF on gVisor.
     GTEST_SKIP() << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf;
   }
@@ -156,7 +156,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
 
-  // NOTE: Linux has poor behavior in the presence of
+  // NOTE(b/116636318,b/115833655): Linux has poor behavior in the presence of
   // physical memory fragmentation. As a result, this may stall for a long time
   // and ultimately return ENOBUFS. Allow this error, since it means that we
   // made it to the host kernel and started the sendmsg.
@@ -192,7 +192,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
     // N.B. At minimum, the socketpair gofer should provide a socket that is
     // already the correct size.
     //
-    // TODO: When internal UDS support SO_SNDBUF, we can assert that
+    // TODO(b/35921550): When internal UDS support SO_SNDBUF, we can assert that
     // we always get the right SO_SNDBUF on gVisor.
     GTEST_SKIP() << "SO_SNDBUF = " << actual_sndbuf << ", want " << sndbuf;
   }
@@ -201,7 +201,7 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
   const int ret = RetryEINTR(write)(sockets->first_fd(), write_buf.data(),
                                     write_buf.size());
   if (ret < 0 && errno == ENOBUFS) {
-    // NOTE: Linux may stall the write for a long time and
+    // NOTE(b/116636318): Linux may stall the write for a long time and
     // ultimately return ENOBUFS. Allow this error, since a retry will likely
     // result in the same error.
     return;

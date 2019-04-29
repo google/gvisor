@@ -286,7 +286,7 @@ INSTANTIATE_TEST_SUITE_P(
         []() {
           SendtoTestParam param = {};
           param.description = "connected IPv6 sendto IPv4 mapped IPv6";
-          // TODO: Determine if this inconsistent behavior is worth
+          // TODO(igudger): Determine if this inconsistent behavior is worth
           // implementing.
           param.skip_on_gvisor = true;
           param.send_domain = AF_INET6;
@@ -299,7 +299,7 @@ INSTANTIATE_TEST_SUITE_P(
         []() {
           SendtoTestParam param = {};
           param.description = "connected IPv6 sendto IPv4";
-          // TODO: Determine if this inconsistent behavior is worth
+          // TODO(igudger): Determine if this inconsistent behavior is worth
           // implementing.
           param.skip_on_gvisor = true;
           param.send_domain = AF_INET6;

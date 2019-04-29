@@ -56,7 +56,7 @@ SECTIONS {
   .altinstr_replacement  : { *(.altinstr_replacement) }
 
   /*
-   * TODO: Remove this alignment? Then the VDSO would fit
+   * TODO(gvisor.dev/issue/157): Remove this alignment? Then the VDSO would fit
    * in a single page.
    */
   . = ALIGN(0x1000);

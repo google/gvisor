@@ -114,7 +114,7 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 		// (4) Root: the pathname of the directory in the filesystem
 		// which forms the root of this mount.
 		//
-		// NOTE: This will always be "/" until we implement
+		// NOTE(b/78135857): This will always be "/" until we implement
 		// bind mounts.
 		fmt.Fprintf(&buf, "/ ")
 

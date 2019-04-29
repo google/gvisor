@@ -83,7 +83,7 @@ func (s *statData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 
 	var buf bytes.Buffer
 
-	// TODO: We currently export only zero CPU stats. We could
+	// TODO(b/37226836): We currently export only zero CPU stats. We could
 	// at least provide some aggregate stats.
 	var cpu cpuStats
 	fmt.Fprintf(&buf, "cpu  %s\n", cpu)
@@ -100,7 +100,7 @@ func (s *statData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 	const numInterrupts = 256
 
 	// The Kernel doesn't handle real interrupts, so report all zeroes.
-	// TODO: We could count page faults as #PF.
+	// TODO(b/37226836): We could count page faults as #PF.
 	fmt.Fprintf(&buf, "intr 0") // total
 	for i := 0; i < numInterrupts; i++ {
 		fmt.Fprintf(&buf, " 0")
@@ -108,22 +108,22 @@ func (s *statData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]
 	fmt.Fprintf(&buf, "\n")
 
 	// Total number of context switches.
-	// TODO: Count this.
+	// TODO(b/37226836): Count this.
 	fmt.Fprintf(&buf, "ctxt 0\n")
 
 	// CLOCK_REALTIME timestamp from boot, in seconds.
 	fmt.Fprintf(&buf, "btime %d\n", s.k.Timekeeper().BootTime().Seconds())
 
 	// Total number of clones.
-	// TODO: Count this.
+	// TODO(b/37226836): Count this.
 	fmt.Fprintf(&buf, "processes 0\n")
 
 	// Number of runnable tasks.
-	// TODO: Count this.
+	// TODO(b/37226836): Count this.
 	fmt.Fprintf(&buf, "procs_running 0\n")
 
 	// Number of tasks waiting on IO.
-	// TODO: Count this.
+	// TODO(b/37226836): Count this.
 	fmt.Fprintf(&buf, "procs_blocked 0\n")
 
 	// Number of each softirq handled.

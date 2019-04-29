@@ -136,7 +136,7 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 
 	// Walk from parent to child again.
 	//
-	// TODO: If we have a directory FD in the parent
+	// TODO(b/112031682): If we have a directory FD in the parent
 	// inodeOperations, then we can use fstatat(2) to get the inode
 	// attributes instead of making this RPC.
 	qids, _, mask, attr, err := parentIops.fileState.file.walkGetAttr(ctx, []string{name})
@@ -171,7 +171,7 @@ func (cp cachePolicy) keep(d *fs.Dirent) bool {
 		return false
 	}
 	sattr := d.Inode.StableAttr
-	// NOTE: Only cache files, directories, and symlinks.
+	// NOTE(b/31979197): Only cache files, directories, and symlinks.
 	return fs.IsFile(sattr) || fs.IsDir(sattr) || fs.IsSymlink(sattr)
 }
 

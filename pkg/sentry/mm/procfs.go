@@ -69,7 +69,7 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 		start = *handle.(*usermem.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME: If we use a usermem.Addr for the handle, we get
+		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
 		// "panic: autosave error: type usermem.Addr is not registered".
 		vmaAddr := vseg.End()
 		data = append(data, seqfile.SeqData{
@@ -88,7 +88,7 @@ func (mm *MemoryManager) ReadMapsSeqFileData(ctx context.Context, handle seqfile
 	//
 	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
 	if start != vsyscallEnd {
-		// FIXME: Can't get a pointer to constant vsyscallEnd.
+		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		vmaAddr := vsyscallEnd
 		data = append(data, seqfile.SeqData{
 			Buf:    []byte(vsyscallMapsEntry),
@@ -134,7 +134,7 @@ func (mm *MemoryManager) appendVMAMapsEntryLocked(ctx context.Context, vseg vmaI
 	if vma.hint != "" {
 		s = vma.hint
 	} else if vma.id != nil {
-		// FIXME: We are holding mm.mappingMu here, which is
+		// FIXME(jamieliu): We are holding mm.mappingMu here, which is
 		// consistent with Linux's holding mmap_sem in
 		// fs/proc/task_mmu.c:show_map_vma() => fs/seq_file.c:seq_file_path().
 		// However, it's not clear that fs.File.MappedName() is actually
@@ -162,7 +162,7 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 		start = *handle.(*usermem.Addr)
 	}
 	for vseg := mm.vmas.LowerBoundSegment(start); vseg.Ok(); vseg = vseg.NextSegment() {
-		// FIXME: If we use a usermem.Addr for the handle, we get
+		// FIXME(b/30793614): If we use a usermem.Addr for the handle, we get
 		// "panic: autosave error: type usermem.Addr is not registered".
 		vmaAddr := vseg.End()
 		data = append(data, seqfile.SeqData{
@@ -174,7 +174,7 @@ func (mm *MemoryManager) ReadSmapsSeqFileData(ctx context.Context, handle seqfil
 	// We always emulate vsyscall, so advertise it here. See
 	// ReadMapsSeqFileData for additional commentary.
 	if start != vsyscallEnd {
-		// FIXME: Can't get a pointer to constant vsyscallEnd.
+		// FIXME(b/30793614): Can't get a pointer to constant vsyscallEnd.
 		vmaAddr := vsyscallEnd
 		data = append(data, seqfile.SeqData{
 			Buf:    []byte(vsyscallSmapsEntry),

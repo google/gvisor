@@ -258,7 +258,7 @@ func newFdInfoDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 // Lookup loads an fd in /proc/TID/fdinfo into a Dirent.
 func (fdid *fdInfoDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent, error) {
 	inode, err := walkDescriptors(fdid.t, p, func(file *fs.File, fdFlags kernel.FDFlags) *fs.Inode {
-		// TODO: Using a static inode here means that the
+		// TODO(b/121266871): Using a static inode here means that the
 		// data can be out-of-date if, for instance, the flags on the
 		// FD change before we read this file. We should switch to
 		// generating the data on Read(). Also, we should include pos,

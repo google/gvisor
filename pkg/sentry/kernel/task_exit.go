@@ -339,7 +339,7 @@ func (t *Task) exitChildren() {
 			}, true /* group */)
 			other.signalHandlers.mu.Unlock()
 		}
-		// TODO: The init process waits for all processes in the
+		// TODO(b/37722272): The init process waits for all processes in the
 		// namespace to exit before completing its own exit
 		// (kernel/pid_namespace.c:zap_pid_ns_processes()). Stop until all
 		// other tasks in the namespace are dead, except possibly for this
@@ -692,7 +692,7 @@ func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *arch.Si
 		info.Code = arch.CLD_EXITED
 		info.SetStatus(int32(t.exitStatus.Code))
 	}
-	// TODO: Set utime, stime.
+	// TODO(b/72102453): Set utime, stime.
 	return info
 }
 

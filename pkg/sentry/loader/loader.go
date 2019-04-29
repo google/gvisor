@@ -70,7 +70,7 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 	defer d.DecRef()
 
 	perms := fs.PermMask{
-		// TODO: Linux requires only execute
+		// TODO(gvisor.dev/issue/160): Linux requires only execute
 		// permission, not read. However, our backing filesystems may
 		// prevent us from reading the file without read permission.
 		//

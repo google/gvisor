@@ -509,7 +509,7 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	if t.stop != nil {
 		return false
 	}
-	// - TODO: No special case for when t is also the sending task,
+	// - TODO(b/38173783): No special case for when t is also the sending task,
 	// because the identity of the sender is unknown.
 	// - Do not choose tasks that have already been interrupted, as they may be
 	// busy handling another signal.
@@ -895,7 +895,7 @@ func (t *Task) signalStop(target *Task, code int32, status int32) {
 		sigchld.SetPid(int32(t.tg.pidns.tids[target]))
 		sigchld.SetUid(int32(target.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
 		sigchld.SetStatus(status)
-		// TODO: Set utime, stime.
+		// TODO(b/72102453): Set utime, stime.
 		t.sendSignalLocked(sigchld, true /* group */)
 	}
 }

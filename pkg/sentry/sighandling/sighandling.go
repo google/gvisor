@@ -86,7 +86,7 @@ func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), start,
 			//
 			// Otherwise ignore the signal.
 			//
-			// TODO: Drop in Go 1.12, which uses tgkill
+			// TODO(b/114489875): Drop in Go 1.12, which uses tgkill
 			// in runtime.raise.
 			switch signal {
 			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:

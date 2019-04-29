@@ -350,7 +350,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 	si.SetPid(int32(wr.TID))
 	si.SetUid(int32(wr.UID))
-	// TODO: convert kernel.ExitStatus to functions and make
+	// TODO(b/73541790): convert kernel.ExitStatus to functions and make
 	// WaitResult.Status a linux.WaitStatus
 	s := syscall.WaitStatus(wr.Status)
 	switch {

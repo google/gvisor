@@ -479,7 +479,7 @@ func (c *CachingInodeOperations) Read(ctx context.Context, file *fs.File, dst us
 	// common: getting a return value of 0 from a read syscall is the only way
 	// to detect EOF.
 	//
-	// TODO: Separate out c.attr.Size and use atomics instead of
+	// TODO(jamieliu): Separate out c.attr.Size and use atomics instead of
 	// c.dataMu.
 	c.dataMu.RLock()
 	size := c.attr.Size
@@ -776,7 +776,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 	var translatedEnd uint64
 	for seg := c.cache.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
 		segMR := seg.Range().Intersect(optional)
-		// TODO: Make Translations writable even if writability is
+		// TODO(jamieliu): Make Translations writable even if writability is
 		// not required if already kept-dirty by another writable translation.
 		perms := usermem.AccessType{
 			Read:    true,

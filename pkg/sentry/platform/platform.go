@@ -181,7 +181,7 @@ var (
 // this signal both to Contexts and to the sentry itself, under the assumption
 // that they originate from races with Context.Interrupt().
 //
-// NOTE: The Go runtime only guarantees that a small subset
+// NOTE(b/23420492): The Go runtime only guarantees that a small subset
 // of signals will be always be unblocked on all threads, one of which
 // is SIGCHLD.
 const SignalInterrupt = linux.SIGCHLD

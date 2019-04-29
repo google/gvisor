@@ -242,10 +242,10 @@ func configs(opts ...configOption) []*boot.Config {
 		case overlay:
 			c.Overlay = true
 		case kvm:
-			// TODO: KVM tests are flaky. Disable until fixed.
+			// TODO(b/112165693): KVM tests are flaky. Disable until fixed.
 			continue
 
-			// TODO: KVM doesn't work with --race.
+			// TODO(b/68787993): KVM doesn't work with --race.
 			if testutil.RaceEnabled {
 				continue
 			}

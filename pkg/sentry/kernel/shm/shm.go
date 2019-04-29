@@ -427,7 +427,7 @@ func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.A
 func (s *Shm) RemoveMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.AddrRange, _ uint64, _ bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// TODO: RemoveMapping may be called during task exit, when ctx
+	// TODO(b/38173783): RemoveMapping may be called during task exit, when ctx
 	// is context.Background. Gracefully handle missing clocks. Failing to
 	// update the detach time in these cases is ok, since no one can observe the
 	// omission.

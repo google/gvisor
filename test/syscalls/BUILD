@@ -277,7 +277,7 @@ syscall_test(test = "//test/syscalls/linux:sendfile_test")
 
 syscall_test(test = "//test/syscalls/linux:sigaction_test")
 
-# TODO: Enable once the test passes in runsc.
+# TODO(b/119826902): Enable once the test passes in runsc.
 # syscall_test(test = "//test/syscalls/linux:sigaltstack_test")
 
 syscall_test(test = "//test/syscalls/linux:sigiret_test")
@@ -414,7 +414,7 @@ syscall_test(
 )
 
 syscall_test(
-    # NOTE: Large sendmsg may stall a long time.
+    # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
 )
@@ -437,7 +437,7 @@ syscall_test(
 )
 
 syscall_test(
-    # NOTE: Large sendmsg may stall a long time.
+    # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
 )

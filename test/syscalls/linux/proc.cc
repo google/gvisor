@@ -61,7 +61,7 @@
 #include "test/util/thread_util.h"
 #include "test/util/timer_util.h"
 
-// NOTE: No, this isn't really a syscall but this is a really simple
+// NOTE(magi): No, this isn't really a syscall but this is a really simple
 // way to get it tested on both gVisor, PTrace and Linux.
 
 using ::testing::AllOf;
@@ -489,7 +489,7 @@ TEST(ProcSelfMaps, Map1) {
 }
 
 TEST(ProcSelfMaps, Map2) {
-  // NOTE: The permissions must be different or the pages will get merged.
+  // NOTE(magi): The permissions must be different or the pages will get merged.
   Mapping map1 = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_EXEC, MAP_PRIVATE));
   Mapping map2 =
@@ -564,7 +564,7 @@ TEST(ProcSelfMaps, MapUnmap) {
 }
 
 TEST(ProcSelfMaps, Mprotect) {
-  // FIXME: Linux's mprotect() sometimes fails to merge VMAs in this
+  // FIXME(jamieliu): Linux's mprotect() sometimes fails to merge VMAs in this
   // case.
   SKIP_IF(!IsRunningOnGvisor());
 
@@ -977,7 +977,7 @@ void MapPopulateRSS(int prot, uint64_t* before, uint64_t* after) {
   *after = ASSERT_NO_ERRNO_AND_VALUE(CurrentRSS());
 }
 
-// TODO: Test for PROT_READ + MAP_POPULATE anonymous mappings. Their
+// TODO(b/73896574): Test for PROT_READ + MAP_POPULATE anonymous mappings. Their
 // semantics are more subtle:
 //
 // Small pages -> Zero page mapped, not counted in RSS
@@ -1140,7 +1140,7 @@ TEST(ProcPidStatusTest, ValuesAreTabDelimited) {
 
 // Threads properly counts running threads.
 //
-// TODO: Test zombied threads while the thread group leader is still
+// TODO(mpratt): Test zombied threads while the thread group leader is still
 // running with generalized fork and clone children from the wait test.
 TEST(ProcPidStatusTest, Threads) {
   char buf[4096] = {};
@@ -1274,7 +1274,7 @@ TEST(ProcPidSymlink, SubprocessRunning) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
-// FIXME: Inconsistent behavior between gVisor and linux
+// FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
 // on proc files.
 TEST(ProcPidSymlink, SubprocessZombied) {
   ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
@@ -1298,13 +1298,13 @@ TEST(ProcPidSymlink, SubprocessZombied) {
                 SyscallFailsWithErrno(want));
   }
 
-  // FIXME: Inconsistent behavior between gVisor and linux
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
   // 4.17 & gVisor: Syscall succeeds and returns 1
   // EXPECT_THAT(ReadlinkWhileZombied("ns/pid", buf, sizeof(buf)),
   //            SyscallFailsWithErrno(EACCES));
 
-  // FIXME: Inconsistent behavior between gVisor and linux
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
   // 4.17 &  gVisor: Syscall succeeds and returns 1.
   // EXPECT_THAT(ReadlinkWhileZombied("ns/user", buf, sizeof(buf)),
@@ -1313,7 +1313,7 @@ TEST(ProcPidSymlink, SubprocessZombied) {
 
 // Test whether /proc/PID/ symlinks can be read for an exited process.
 TEST(ProcPidSymlink, SubprocessExited) {
-  // FIXME: These all succeed on gVisor.
+  // FIXME(gvisor.dev/issue/164): These all succeed on gVisor.
   SKIP_IF(IsRunningOnGvisor());
 
   char buf[1];
@@ -1404,7 +1404,7 @@ TEST(ProcPidFile, SubprocessZombie) {
   EXPECT_THAT(ReadWhileZombied("uid_map", buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
-  // FIXME: Inconsistent behavior between gVisor and linux
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between gVisor and linux
   // on proc files.
   // gVisor & 4.17: Succeeds and returns 1.
   // EXPECT_THAT(ReadWhileZombied("io", buf, sizeof(buf)),
@@ -1415,7 +1415,7 @@ TEST(ProcPidFile, SubprocessZombie) {
 TEST(ProcPidFile, SubprocessExited) {
   char buf[1];
 
-  // FIXME: Inconsistent behavior between kernels
+  // FIXME(gvisor.dev/issue/164): Inconsistent behavior between kernels
   // gVisor: Fails with ESRCH.
   // 4.17: Succeeds and returns 1.
   // EXPECT_THAT(ReadWhileExited("auxv", buf, sizeof(buf)),
@@ -1425,7 +1425,7 @@ TEST(ProcPidFile, SubprocessExited) {
               SyscallFailsWithErrno(ESRCH));
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Succeeds on gVisor.
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
     EXPECT_THAT(ReadWhileExited("comm", buf, sizeof(buf)),
                 SyscallFailsWithErrno(ESRCH));
   }
@@ -1434,25 +1434,25 @@ TEST(ProcPidFile, SubprocessExited) {
               SyscallSucceedsWithValue(sizeof(buf)));
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Succeeds on gVisor.
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
     EXPECT_THAT(ReadWhileExited("io", buf, sizeof(buf)),
                 SyscallFailsWithErrno(ESRCH));
   }
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Returns EOF on gVisor.
+    // FIXME(gvisor.dev/issue/164): Returns EOF on gVisor.
     EXPECT_THAT(ReadWhileExited("maps", buf, sizeof(buf)),
                 SyscallFailsWithErrno(ESRCH));
   }
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Succeeds on gVisor.
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
     EXPECT_THAT(ReadWhileExited("stat", buf, sizeof(buf)),
                 SyscallFailsWithErrno(ESRCH));
   }
 
   if (!IsRunningOnGvisor()) {
-    // FIXME: Succeeds on gVisor.
+    // FIXME(gvisor.dev/issue/164): Succeeds on gVisor.
     EXPECT_THAT(ReadWhileExited("status", buf, sizeof(buf)),
                 SyscallFailsWithErrno(ESRCH));
   }

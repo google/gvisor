@@ -309,7 +309,7 @@ func (f *fileInodeOperations) read(ctx context.Context, file *fs.File, dst userm
 	// common: getting a return value of 0 from a read syscall is the only way
 	// to detect EOF.
 	//
-	// TODO: Separate out f.attr.Size and use atomics instead of
+	// TODO(jamieliu): Separate out f.attr.Size and use atomics instead of
 	// f.dataMu.
 	f.dataMu.RLock()
 	size := f.attr.Size

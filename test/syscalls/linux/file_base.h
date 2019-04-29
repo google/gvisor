@@ -52,7 +52,7 @@ class FileTest : public ::testing::Test {
     test_file_fd_ = ASSERT_NO_ERRNO_AND_VALUE(
         Open(test_file_name_, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR));
 
-    // FIXME: enable when mknod syscall is supported.
+    // FIXME(edahlgren): enable when mknod syscall is supported.
     // test_fifo_name_ = NewTempAbsPath();
     // ASSERT_THAT(mknod(test_fifo_name_.c_str()), S_IFIFO|0644, 0,
     //             SyscallSucceeds());
@@ -97,7 +97,7 @@ class FileTest : public ::testing::Test {
     UnlinkFile();
     ClosePipes();
 
-    // FIXME: enable when mknod syscall is supported.
+    // FIXME(edahlgren): enable when mknod syscall is supported.
     // close(test_fifo_[0]);
     // close(test_fifo_[1]);
     // unlink(test_fifo_name_.c_str());

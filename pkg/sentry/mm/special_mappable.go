@@ -136,7 +136,7 @@ func (m *SpecialMappable) Length() uint64 {
 // NewSharedAnonMappable returns a SpecialMappable that implements the
 // semantics of mmap(MAP_SHARED|MAP_ANONYMOUS) and mappings of /dev/zero.
 //
-// TODO: The use of SpecialMappable is a lazy code reuse hack. Linux
+// TODO(jamieliu): The use of SpecialMappable is a lazy code reuse hack. Linux
 // uses an ephemeral file created by mm/shmem.c:shmem_zero_setup(); we should
 // do the same to get non-zero device and inode IDs.
 func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {

@@ -529,7 +529,7 @@ func (c *Container) WaitPID(pid int32, clearStatus bool) (syscall.WaitStatus, er
 // SignalContainer sends the signal to the container. If all is true and signal
 // is SIGKILL, then waits for all processes to exit before returning.
 // SignalContainer returns an error if the container is already stopped.
-// TODO: Distinguish different error types.
+// TODO(b/113680494): Distinguish different error types.
 func (c *Container) SignalContainer(sig syscall.Signal, all bool) error {
 	log.Debugf("Signal container %q: %v", c.ID, sig)
 	// Signaling container in Stopped state is allowed. When all=false,
