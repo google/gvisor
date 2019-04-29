@@ -5,21 +5,19 @@ NPM := npm
 GCLOUD := gcloud
 GCP_PROJECT := gvisor-website
 
-# Source Go files. example: main.go foo/bar.go
-GO_SOURCE = $(shell find cmd/gvisor-website -type f -name "*.go" | sed 's/ /\\ /g')
-# Target Go files. example: public/main.go public/foo/bar.go
-GO_TARGET = $(shell cd cmd/gvisor-website && find . -type f -name "*.go" | sed 's/ /\\ /g' | sed 's/^.\//public\//')
+# Source Go files, example: main.go, foo/bar.go.
+APP_SOURCE = $(wildcard cmd/gvisor-website/*)
+# Target Go files, example: public/main.go, public/foo/bar.go.
+APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
 
 default: website
 .PHONY: default
 
-website: all-upstream public/app.yaml $(GO_TARGET) public/static
+website: all-upstream $(APP_TARGET) public/static
 .PHONY: website
 
 public:
 	mkdir -p public
-public/app.yaml: public
-	cp -vr cmd/gvisor-website/app.yaml public/
 
 # Load repositories.
 upstream:
@@ -39,8 +37,8 @@ content/docs/community/sigs: upstream/community $(wildcard upstream/community/si
 		cat upstream/community/sigs/$$file.md |grep -v -E '^# ' >> content/docs/community/sigs/$$file.md; \
 	done
 
-$(GO_TARGET): public $(GO_SOURCE)
-	cd cmd/gvisor-website && find . -name "*.go" -exec cp --parents \{\} ../../public \;
+$(APP_TARGET): public $(APP_SOURCE)
+	cp -a cmd/gvisor-website/$(patsubst public/%,%,$@) public/
 
 public/static: node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	HUGO_ENV="production" $(HUGO)
@@ -56,7 +54,7 @@ server: all-upstream
 .PHONY: server
 
 # Deploy the website to App Engine.
-deploy: public/app.yaml
+deploy: $(APP_TARGET)
 	cd public && $(GCLOUD) app deploy
 .PHONY: deploy
 
