@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
@@ -41,6 +42,9 @@ import (
 // MemoryFile is a platform.File whose pages may be allocated to arbitrary
 // users.
 type MemoryFile struct {
+	// opts holds options passed to NewMemoryFile. opts is immutable.
+	opts MemoryFileOpts
+
 	// MemoryFile owns a single backing file, which is modeled as follows:
 	//
 	// Each page in the file can be committed or uncommitted. A page is
@@ -115,6 +119,24 @@ type MemoryFile struct {
 	// fileSize is protected by mu.
 	fileSize int64
 
+	// Pages from the backing file are mapped into the local address space on
+	// the granularity of large pieces called chunks. mappings is a []uintptr
+	// that stores, for each chunk, the start address of a mapping of that
+	// chunk in the current process' address space, or 0 if no such mapping
+	// exists. Once a chunk is mapped, it is never remapped or unmapped until
+	// the MemoryFile is destroyed.
+	//
+	// Mutating the mappings slice or its contents requires both holding
+	// mappingsMu and using atomic memory operations. (The slice is mutated
+	// whenever the file is expanded. Per the above, the only permitted
+	// mutation of the slice's contents is the assignment of a mapping to a
+	// chunk that was previously unmapped.) Reading the slice or its contents
+	// only requires *either* holding mappingsMu or using atomic memory
+	// operations. This allows MemoryFile.MapInternal to avoid locking in the
+	// common case where chunk mappings already exist.
+	mappingsMu sync.Mutex
+	mappings   atomic.Value
+
 	// destroyed is set by Destroy to instruct the reclaimer goroutine to
 	// release resources and exit. destroyed is protected by mu.
 	destroyed bool
@@ -133,26 +155,44 @@ type MemoryFile struct {
 	// transitions from false to true.
 	reclaimCond sync.Cond
 
-	// Pages from the backing file are mapped into the local address space on
-	// the granularity of large pieces called chunks. mappings is a []uintptr
-	// that stores, for each chunk, the start address of a mapping of that
-	// chunk in the current process' address space, or 0 if no such mapping
-	// exists. Once a chunk is mapped, it is never remapped or unmapped until
-	// the MemoryFile is destroyed.
+	// evictable maps EvictableMemoryUsers to eviction state.
 	//
-	// Mutating the mappings slice or its contents requires both holding
-	// mappingsMu and using atomic memory operations. (The slice is mutated
-	// whenever the file is expanded. Per the above, the only permitted
-	// mutation of the slice's contents is the assignment of a mapping to a
-	// chunk that was previously unmapped.) Reading the slice or its contents
-	// only requires *either* holding mappingsMu or using atomic memory
-	// operations. This allows MemoryFile.MapInternal to avoid locking in the
-	// common case where chunk mappings already exist.
-	mappingsMu sync.Mutex
-	mappings   atomic.Value
+	// evictable is protected by mu.
+	evictable map[EvictableMemoryUser]*evictableMemoryUserInfo
+
+	// evictionWG counts the number of goroutines currently performing evictions.
+	evictionWG sync.WaitGroup
 }
 
-// usage tracks usage information.
+// MemoryFileOpts provides options to NewMemoryFile.
+type MemoryFileOpts struct {
+	// DelayedEviction controls the extent to which the MemoryFile may delay
+	// eviction of evictable allocations.
+	DelayedEviction DelayedEvictionType
+}
+
+// DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
+type DelayedEvictionType int
+
+const (
+	// DelayedEvictionDefault has unspecified behavior.
+	DelayedEvictionDefault DelayedEvictionType = iota
+
+	// DelayedEvictionDisabled requires that evictable allocations are evicted
+	// as soon as possible.
+	DelayedEvictionDisabled
+
+	// DelayedEvictionEnabled requests that the MemoryFile delay eviction of
+	// evictable allocations until doing so is considered necessary to avoid
+	// performance degradation due to host memory pressure, or OOM kills.
+	//
+	// As of this writing, DelayedEvictionEnabled delays evictions until the
+	// reclaimer goroutine is out of work (pages to reclaim), then evicts all
+	// pending evictable allocations immediately.
+	DelayedEvictionEnabled
+)
+
+// usageInfo tracks usage information.
 //
 // +stateify savable
 type usageInfo struct {
@@ -164,6 +204,46 @@ type usageInfo struct {
 	knownCommitted bool
 
 	refs uint64
+}
+
+// An EvictableMemoryUser represents a user of MemoryFile-allocated memory that
+// may be asked to deallocate that memory in the presence of memory pressure.
+type EvictableMemoryUser interface {
+	// Evict requests that the EvictableMemoryUser deallocate memory used by
+	// er, which was registered as evictable by a previous call to
+	// MemoryFile.MarkEvictable.
+	//
+	// Evict is not required to deallocate memory. In particular, since pgalloc
+	// must call Evict without holding locks to avoid circular lock ordering,
+	// it is possible that the passed range has already been marked as
+	// unevictable by a racing call to MemoryFile.MarkUnevictable.
+	// Implementations of EvictableMemoryUser must detect such races and handle
+	// them by making Evict have no effect on unevictable ranges.
+	//
+	// After a call to Evict, the MemoryFile will consider the evicted range
+	// unevictable (i.e. it will not call Evict on the same range again) until
+	// informed otherwise by a subsequent call to MarkEvictable.
+	Evict(ctx context.Context, er EvictableRange)
+}
+
+// An EvictableRange represents a range of uint64 offsets in an
+// EvictableMemoryUser.
+//
+// In practice, most EvictableMemoryUsers will probably be implementations of
+// memmap.Mappable, and EvictableRange therefore corresponds to
+// memmap.MappableRange. However, this package cannot depend on the memmap
+// package, since doing so would create a circular dependency.
+//
+// type EvictableRange <generated using go_generics>
+
+// evictableMemoryUserInfo is the value type of MemoryFile.evictable.
+type evictableMemoryUserInfo struct {
+	// ranges tracks all evictable ranges for the given user.
+	ranges evictableRangeSet
+
+	// If evicting is true, there is a goroutine currently evicting all
+	// evictable ranges for this user.
+	evicting bool
 }
 
 const (
@@ -180,7 +260,15 @@ const (
 // NewMemoryFile creates a MemoryFile backed by the given file. If
 // NewMemoryFile succeeds, ownership of file is transferred to the returned
 // MemoryFile.
-func NewMemoryFile(file *os.File) (*MemoryFile, error) {
+func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
+	switch opts.DelayedEviction {
+	case DelayedEvictionDefault:
+		opts.DelayedEviction = DelayedEvictionEnabled
+	case DelayedEvictionDisabled, DelayedEvictionEnabled:
+	default:
+		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
+	}
+
 	// Truncate the file to 0 bytes first to ensure that it's empty.
 	if err := file.Truncate(0); err != nil {
 		return nil, err
@@ -189,14 +277,16 @@ func NewMemoryFile(file *os.File) (*MemoryFile, error) {
 		return nil, err
 	}
 	f := &MemoryFile{
+		opts:     opts,
 		fileSize: initialSize,
 		file:     file,
 		// No pages are reclaimable. DecRef will always be able to
 		// decrease minReclaimablePage from this point.
 		minReclaimablePage: maxPage,
+		evictable:          make(map[EvictableMemoryUser]*evictableMemoryUserInfo),
 	}
-	f.reclaimCond.L = &f.mu
 	f.mappings.Store(make([]uintptr, initialSize/chunkSize))
+	f.reclaimCond.L = &f.mu
 	go f.runReclaim() // S/R-SAFE: f.mu
 
 	// The Linux kernel contains an optional feature called "Integrity
@@ -434,113 +524,6 @@ func (f *MemoryFile) markDecommitted(fr platform.FileRange) {
 	f.usage.MergeRange(fr)
 }
 
-// runReclaim implements the reclaimer goroutine, which continuously decommits
-// reclaimable pages in order to reduce memory usage and make them available
-// for allocation.
-func (f *MemoryFile) runReclaim() {
-	for {
-		fr, ok := f.findReclaimable()
-		if !ok {
-			break
-		}
-
-		if err := f.Decommit(fr); err != nil {
-			log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
-			// Zero the pages manually. This won't reduce memory usage, but at
-			// least ensures that the pages will be zero when reallocated.
-			f.forEachMappingSlice(fr, func(bs []byte) {
-				for i := range bs {
-					bs[i] = 0
-				}
-			})
-			// Pretend the pages were decommitted even though they weren't,
-			// since the memory accounting implementation has no idea how to
-			// deal with this.
-			f.markDecommitted(fr)
-		}
-		f.markReclaimed(fr)
-	}
-	// We only get here if findReclaimable finds f.destroyed set and returns
-	// false.
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !f.destroyed {
-		panic("findReclaimable broke out of reclaim loop, but destroyed is no longer set")
-	}
-	f.file.Close()
-	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
-	// that has possibly been reassigned.
-	f.file = nil
-	mappings := f.mappings.Load().([]uintptr)
-	for i, m := range mappings {
-		if m != 0 {
-			_, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m, chunkSize, 0)
-			if errno != 0 {
-				log.Warningf("Failed to unmap mapping %#x for MemoryFile chunk %d: %v", m, i, errno)
-			}
-		}
-	}
-	// Similarly, invalidate f.mappings. (atomic.Value.Store(nil) panics.)
-	f.mappings.Store([]uintptr{})
-}
-
-func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for {
-		for {
-			if f.destroyed {
-				return platform.FileRange{}, false
-			}
-			if f.reclaimable {
-				break
-			}
-			f.reclaimCond.Wait()
-		}
-		// Allocate returns the first usable range in offset order and is
-		// currently a linear scan, so reclaiming from the beginning of the
-		// file minimizes the expected latency of Allocate.
-		for seg := f.usage.LowerBoundSegment(f.minReclaimablePage); seg.Ok(); seg = seg.NextSegment() {
-			if seg.ValuePtr().refs == 0 {
-				f.minReclaimablePage = seg.End()
-				return seg.Range(), true
-			}
-		}
-		// No pages are reclaimable.
-		f.reclaimable = false
-		f.minReclaimablePage = maxPage
-	}
-}
-
-func (f *MemoryFile) markReclaimed(fr platform.FileRange) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	seg := f.usage.FindSegment(fr.Start)
-	// All of fr should be mapped to a single uncommitted reclaimable segment
-	// accounted to System.
-	if !seg.Ok() {
-		panic(fmt.Sprintf("reclaimed pages %v include unreferenced pages:\n%v", fr, &f.usage))
-	}
-	if !seg.Range().IsSupersetOf(fr) {
-		panic(fmt.Sprintf("reclaimed pages %v are not entirely contained in segment %v with state %v:\n%v", fr, seg.Range(), seg.Value(), &f.usage))
-	}
-	if got, want := seg.Value(), (usageInfo{
-		kind:           usage.System,
-		knownCommitted: false,
-		refs:           0,
-	}); got != want {
-		panic(fmt.Sprintf("reclaimed pages %v in segment %v has incorrect state %v, wanted %v:\n%v", fr, seg.Range(), got, want, &f.usage))
-	}
-	// Deallocate reclaimed pages. Even though all of seg is reclaimable, the
-	// caller of markReclaimed may not have decommitted it, so we can only mark
-	// fr as reclaimed.
-	f.usage.Remove(f.usage.Isolate(seg, fr))
-	if fr.Start < f.minUnallocatedPage {
-		// We've deallocated at least one lower page.
-		f.minUnallocatedPage = fr.Start
-	}
-}
-
 // IncRef implements platform.File.IncRef.
 func (f *MemoryFile) IncRef(fr platform.FileRange) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%usermem.PageSize != 0 || fr.End%usermem.PageSize != 0 {
@@ -677,9 +660,82 @@ func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 	return mappings, m, nil
 }
 
-// FD implements platform.File.FD.
-func (f *MemoryFile) FD() int {
-	return int(f.file.Fd())
+// MarkEvictable allows f to request memory deallocation by calling
+// user.Evict(er) in the future.
+//
+// Redundantly marking an already-evictable range as evictable has no effect.
+func (f *MemoryFile) MarkEvictable(user EvictableMemoryUser, er EvictableRange) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	info, ok := f.evictable[user]
+	if !ok {
+		info = &evictableMemoryUserInfo{}
+		f.evictable[user] = info
+	}
+	gap := info.ranges.LowerBoundGap(er.Start)
+	for gap.Ok() && gap.Start() < er.End {
+		gapER := gap.Range().Intersect(er)
+		if gapER.Length() == 0 {
+			gap = gap.NextGap()
+			continue
+		}
+		gap = info.ranges.Insert(gap, gapER, evictableRangeSetValue{}).NextGap()
+	}
+	if !info.evicting {
+		switch f.opts.DelayedEviction {
+		case DelayedEvictionDisabled:
+			// Kick off eviction immediately.
+			f.startEvictionGoroutineLocked(user, info)
+		case DelayedEvictionEnabled:
+			// Ensure that the reclaimer goroutine is running, so that it can
+			// start eviction when necessary.
+			f.reclaimCond.Signal()
+		}
+	}
+}
+
+// MarkUnevictable informs f that user no longer considers er to be evictable,
+// so the MemoryFile should no longer call user.Evict(er). Note that, per
+// EvictableMemoryUser.Evict's documentation, user.Evict(er) may still be
+// called even after MarkUnevictable returns due to race conditions, and
+// implementations of EvictableMemoryUser must handle this possibility.
+//
+// Redundantly marking an already-unevictable range as unevictable has no
+// effect.
+func (f *MemoryFile) MarkUnevictable(user EvictableMemoryUser, er EvictableRange) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	info, ok := f.evictable[user]
+	if !ok {
+		return
+	}
+	seg := info.ranges.LowerBoundSegment(er.Start)
+	for seg.Ok() && seg.Start() < er.End {
+		seg = info.ranges.Isolate(seg, er)
+		seg = info.ranges.Remove(seg).NextSegment()
+	}
+	// We can only remove info if there's no eviction goroutine running on its
+	// behalf.
+	if !info.evicting && info.ranges.IsEmpty() {
+		delete(f.evictable, user)
+	}
+}
+
+// MarkAllUnevictable informs f that user no longer considers any offsets to be
+// evictable. It otherwise has the same semantics as MarkUnevictable.
+func (f *MemoryFile) MarkAllUnevictable(user EvictableMemoryUser) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	info, ok := f.evictable[user]
+	if !ok {
+		return
+	}
+	info.ranges.RemoveAll()
+	// We can only remove info if there's no eviction goroutine running on its
+	// behalf.
+	if !info.evicting {
+		delete(f.evictable, user)
+	}
 }
 
 // UpdateUsage ensures that the memory usage statistics in
@@ -889,6 +945,11 @@ func (f *MemoryFile) File() *os.File {
 	return f.file
 }
 
+// FD implements platform.File.FD.
+func (f *MemoryFile) FD() int {
+	return int(f.file.Fd())
+}
+
 // String implements fmt.Stringer.String.
 //
 // Note that because f.String locks f.mu, calling f.String internally
@@ -898,6 +959,167 @@ func (f *MemoryFile) String() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.usage.String()
+}
+
+// runReclaim implements the reclaimer goroutine, which continuously decommits
+// reclaimable pages in order to reduce memory usage and make them available
+// for allocation.
+func (f *MemoryFile) runReclaim() {
+	for {
+		fr, ok := f.findReclaimable()
+		if !ok {
+			break
+		}
+
+		if err := f.Decommit(fr); err != nil {
+			log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
+			// Zero the pages manually. This won't reduce memory usage, but at
+			// least ensures that the pages will be zero when reallocated.
+			f.forEachMappingSlice(fr, func(bs []byte) {
+				for i := range bs {
+					bs[i] = 0
+				}
+			})
+			// Pretend the pages were decommitted even though they weren't,
+			// since the memory accounting implementation has no idea how to
+			// deal with this.
+			f.markDecommitted(fr)
+		}
+		f.markReclaimed(fr)
+	}
+	// We only get here if findReclaimable finds f.destroyed set and returns
+	// false.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.destroyed {
+		panic("findReclaimable broke out of reclaim loop, but destroyed is no longer set")
+	}
+	f.file.Close()
+	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
+	// that has possibly been reassigned.
+	f.file = nil
+	f.mappingsMu.Lock()
+	defer f.mappingsMu.Unlock()
+	mappings := f.mappings.Load().([]uintptr)
+	for i, m := range mappings {
+		if m != 0 {
+			_, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m, chunkSize, 0)
+			if errno != 0 {
+				log.Warningf("Failed to unmap mapping %#x for MemoryFile chunk %d: %v", m, i, errno)
+			}
+		}
+	}
+	// Similarly, invalidate f.mappings. (atomic.Value.Store(nil) panics.)
+	f.mappings.Store([]uintptr{})
+}
+
+func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for {
+		for {
+			if f.destroyed {
+				return platform.FileRange{}, false
+			}
+			if f.reclaimable {
+				break
+			}
+			if f.opts.DelayedEviction == DelayedEvictionEnabled {
+				// No work to do. Evict any pending evictable allocations to
+				// get more reclaimable pages before going to sleep.
+				f.startEvictionsLocked()
+			}
+			f.reclaimCond.Wait()
+		}
+		// Allocate returns the first usable range in offset order and is
+		// currently a linear scan, so reclaiming from the beginning of the
+		// file minimizes the expected latency of Allocate.
+		for seg := f.usage.LowerBoundSegment(f.minReclaimablePage); seg.Ok(); seg = seg.NextSegment() {
+			if seg.ValuePtr().refs == 0 {
+				f.minReclaimablePage = seg.End()
+				return seg.Range(), true
+			}
+		}
+		// No pages are reclaimable.
+		f.reclaimable = false
+		f.minReclaimablePage = maxPage
+	}
+}
+
+func (f *MemoryFile) markReclaimed(fr platform.FileRange) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seg := f.usage.FindSegment(fr.Start)
+	// All of fr should be mapped to a single uncommitted reclaimable segment
+	// accounted to System.
+	if !seg.Ok() {
+		panic(fmt.Sprintf("reclaimed pages %v include unreferenced pages:\n%v", fr, &f.usage))
+	}
+	if !seg.Range().IsSupersetOf(fr) {
+		panic(fmt.Sprintf("reclaimed pages %v are not entirely contained in segment %v with state %v:\n%v", fr, seg.Range(), seg.Value(), &f.usage))
+	}
+	if got, want := seg.Value(), (usageInfo{
+		kind:           usage.System,
+		knownCommitted: false,
+		refs:           0,
+	}); got != want {
+		panic(fmt.Sprintf("reclaimed pages %v in segment %v has incorrect state %v, wanted %v:\n%v", fr, seg.Range(), got, want, &f.usage))
+	}
+	// Deallocate reclaimed pages. Even though all of seg is reclaimable, the
+	// caller of markReclaimed may not have decommitted it, so we can only mark
+	// fr as reclaimed.
+	f.usage.Remove(f.usage.Isolate(seg, fr))
+	if fr.Start < f.minUnallocatedPage {
+		// We've deallocated at least one lower page.
+		f.minUnallocatedPage = fr.Start
+	}
+}
+
+// Preconditions: f.mu must be locked.
+func (f *MemoryFile) startEvictionsLocked() {
+	for user, info := range f.evictable {
+		// Don't start multiple goroutines to evict the same user's
+		// allocations.
+		if !info.evicting {
+			f.startEvictionGoroutineLocked(user, info)
+		}
+	}
+}
+
+// Preconditions: info == f.evictable[user]. !info.evicting. f.mu must be
+// locked.
+func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
+	info.evicting = true
+	f.evictionWG.Add(1)
+	go func() { // S/R-SAFE: f.evictionWG
+		defer f.evictionWG.Done()
+		for {
+			f.mu.Lock()
+			info, ok := f.evictable[user]
+			if !ok {
+				// This shouldn't happen: only this goroutine is permitted
+				// to delete this entry.
+				f.mu.Unlock()
+				panic(fmt.Sprintf("evictableMemoryUserInfo for EvictableMemoryUser %v deleted while eviction goroutine running", user))
+			}
+			if info.ranges.IsEmpty() {
+				delete(f.evictable, user)
+				f.mu.Unlock()
+				return
+			}
+			// Evict from the end of info.ranges, under the assumption that
+			// if ranges in user start being used again (and are
+			// consequently marked unevictable), such uses are more likely
+			// to start from the beginning of user.
+			seg := info.ranges.LastSegment()
+			er := seg.Range()
+			info.ranges.Remove(seg)
+			// user.Evict() must be called without holding f.mu to avoid
+			// circular lock ordering.
+			f.mu.Unlock()
+			user.Evict(context.Background(), er)
+		}
+	}()
 }
 
 type usageSetFunctions struct{}
@@ -919,4 +1141,28 @@ func (usageSetFunctions) Merge(_ platform.FileRange, val1 usageInfo, _ platform.
 
 func (usageSetFunctions) Split(_ platform.FileRange, val usageInfo, _ uint64) (usageInfo, usageInfo) {
 	return val, val
+}
+
+// evictableRangeSetValue is the value type of evictableRangeSet.
+type evictableRangeSetValue struct{}
+
+type evictableRangeSetFunctions struct{}
+
+func (evictableRangeSetFunctions) MinKey() uint64 {
+	return 0
+}
+
+func (evictableRangeSetFunctions) MaxKey() uint64 {
+	return math.MaxUint64
+}
+
+func (evictableRangeSetFunctions) ClearValue(val *evictableRangeSetValue) {
+}
+
+func (evictableRangeSetFunctions) Merge(_ EvictableRange, _ evictableRangeSetValue, _ EvictableRange, _ evictableRangeSetValue) (evictableRangeSetValue, bool) {
+	return evictableRangeSetValue{}, true
+}
+
+func (evictableRangeSetFunctions) Split(_ EvictableRange, _ evictableRangeSetValue, _ uint64) (evictableRangeSetValue, evictableRangeSetValue) {
+	return evictableRangeSetValue{}, evictableRangeSetValue{}
 }

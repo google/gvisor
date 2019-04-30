@@ -107,6 +107,7 @@ func (ds *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
 	var changedAny bool
 	defer func() {
 		if changedAny {
+			// Merge segments split by Isolate to reduce cost of iteration.
 			ds.MergeRange(mr)
 		}
 	}()
@@ -132,6 +133,26 @@ func (ds *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
 	}
 }
 
+// AllowClean allows MarkClean to mark offsets in mr as not dirty, ending the
+// effect of a previous call to KeepDirty. (It does not itself mark those
+// offsets as not dirty.)
+func (ds *DirtySet) AllowClean(mr memmap.MappableRange) {
+	var changedAny bool
+	defer func() {
+		if changedAny {
+			// Merge segments split by Isolate to reduce cost of iteration.
+			ds.MergeRange(mr)
+		}
+	}()
+	for seg := ds.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
+		if seg.Value().Keep {
+			changedAny = true
+			seg = ds.Isolate(seg, mr)
+			seg.ValuePtr().Keep = false
+		}
+	}
+}
+
 // SyncDirty passes pages in the range mr that are stored in cache and
 // identified as dirty to writeAt, updating dirty to reflect successful writes.
 // If writeAt returns a successful partial write, SyncDirty will call it
@@ -142,6 +163,7 @@ func SyncDirty(ctx context.Context, mr memmap.MappableRange, cache *FileRangeSet
 	var changedDirty bool
 	defer func() {
 		if changedDirty {
+			// Merge segments split by Isolate to reduce cost of iteration.
 			dirty.MergeRange(mr)
 		}
 	}()

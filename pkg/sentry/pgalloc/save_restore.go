@@ -28,6 +28,15 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/state"
 )
 
+// FlushEvictions blocks until f has finished evicting all evictable
+// allocations.
+func (f *MemoryFile) FlushEvictions() {
+	f.mu.Lock()
+	f.startEvictionsLocked()
+	f.mu.Unlock()
+	f.evictionWG.Wait()
+}
+
 // SaveTo writes f's state to the given stream.
 func (f *MemoryFile) SaveTo(w io.Writer) error {
 	// Wait for reclaim.
@@ -38,6 +47,11 @@ func (f *MemoryFile) SaveTo(w io.Writer) error {
 		f.mu.Unlock()
 		runtime.Gosched()
 		f.mu.Lock()
+	}
+
+	// Ensure that there are no pending evictions.
+	if len(f.evictable) != 0 {
+		panic(fmt.Sprintf("evictions still pending for %d users; call FlushEvictions before SaveTo", len(f.evictable)))
 	}
 
 	// Ensure that all pages that contain data have knownCommitted set, since

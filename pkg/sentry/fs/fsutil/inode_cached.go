@@ -175,11 +175,22 @@ func (c *CachingInodeOperations) Release() {
 	defer c.mapsMu.Unlock()
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
-	// The cache should be empty (something has gone terribly wrong if we're
-	// releasing an inode that is still memory-mapped).
-	if !c.mappings.IsEmpty() || !c.cache.IsEmpty() || !c.dirty.IsEmpty() {
-		panic(fmt.Sprintf("Releasing CachingInodeOperations with mappings:\n%s\ncache contents:\n%s\ndirty segments:\n%s", &c.mappings, &c.cache, &c.dirty))
+
+	// Something has gone terribly wrong if we're releasing an inode that is
+	// still memory-mapped.
+	if !c.mappings.IsEmpty() {
+		panic(fmt.Sprintf("Releasing CachingInodeOperations with mappings:\n%s", &c.mappings))
 	}
+
+	// Drop any cached pages that are still awaiting MemoryFile eviction. (This
+	// means that MemoryFile no longer needs to evict them.)
+	mf := c.mfp.MemoryFile()
+	mf.MarkAllUnevictable(c)
+	if err := SyncDirtyAll(context.Background(), &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
+		panic(fmt.Sprintf("Failed to writeback cached data: %v", err))
+	}
+	c.cache.DropAll(mf)
+	c.dirty.RemoveAll()
 }
 
 // UnstableAttr implements fs.InodeOperations.UnstableAttr.
@@ -679,6 +690,13 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 	return done, nil
 }
 
+// useHostPageCache returns true if c uses c.backingFile.FD() for all file I/O
+// and memory mappings, and false if c.cache may contain data cached from
+// c.backingFile.
+func (c *CachingInodeOperations) useHostPageCache() bool {
+	return !c.forcePageCache && c.backingFile.FD() >= 0
+}
+
 // AddMapping implements memmap.Mappable.AddMapping.
 func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar usermem.AddrRange, offset uint64, writable bool) error {
 	// Hot path. Avoid defers.
@@ -689,7 +707,15 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 	for _, r := range mapped {
 		c.hostFileMapper.IncRefOn(r)
 	}
-	if !usage.IncrementalMappedAccounting && !c.forcePageCache && c.backingFile.FD() >= 0 {
+	if !c.useHostPageCache() {
+		// c.Evict() will refuse to evict memory-mapped pages, so tell the
+		// MemoryFile to not bother trying.
+		mf := c.mfp.MemoryFile()
+		for _, r := range mapped {
+			mf.MarkUnevictable(c, pgalloc.EvictableRange{r.Start, r.End})
+		}
+	}
+	if c.useHostPageCache() && !usage.IncrementalMappedAccounting {
 		for _, r := range mapped {
 			usage.MemoryAccounting.Inc(r.Length(), usage.Mapped)
 		}
@@ -706,7 +732,7 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 	for _, r := range unmapped {
 		c.hostFileMapper.DecRefOn(r)
 	}
-	if !c.forcePageCache && c.backingFile.FD() >= 0 {
+	if c.useHostPageCache() {
 		if !usage.IncrementalMappedAccounting {
 			for _, r := range unmapped {
 				usage.MemoryAccounting.Dec(r.Length(), usage.Mapped)
@@ -716,17 +742,16 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 		return
 	}
 
-	// Writeback dirty mapped memory now that there are no longer any
-	// mappings that reference it. This is our naive memory eviction
-	// strategy.
+	// Pages that are no longer referenced by any application memory mappings
+	// are now considered unused; allow MemoryFile to evict them when
+	// necessary.
 	mf := c.mfp.MemoryFile()
 	c.dataMu.Lock()
 	for _, r := range unmapped {
-		if err := SyncDirty(ctx, r, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
-			log.Warningf("Failed to writeback cached data %v: %v", r, err)
-		}
-		c.cache.Drop(r, mf)
-		c.dirty.KeepClean(r)
+		// Since these pages are no longer mapped, they are no longer
+		// concurrently dirtyable by a writable memory mapping.
+		c.dirty.AllowClean(r)
+		mf.MarkEvictable(c, pgalloc.EvictableRange{r.Start, r.End})
 	}
 	c.dataMu.Unlock()
 	c.mapsMu.Unlock()
@@ -740,7 +765,7 @@ func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.Mapp
 // Translate implements memmap.Mappable.Translate.
 func (c *CachingInodeOperations) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	// Hot path. Avoid defer.
-	if !c.forcePageCache && c.backingFile.FD() >= 0 {
+	if c.useHostPageCache() {
 		return []memmap.Translation{
 			{
 				Source: optional,
@@ -851,6 +876,29 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 	c.dirty.RemoveAll()
 
 	return nil
+}
+
+// Evict implements pgalloc.EvictableMemoryUser.Evict.
+func (c *CachingInodeOperations) Evict(ctx context.Context, er pgalloc.EvictableRange) {
+	c.mapsMu.Lock()
+	defer c.mapsMu.Unlock()
+	c.dataMu.Lock()
+	defer c.dataMu.Unlock()
+
+	mr := memmap.MappableRange{er.Start, er.End}
+	mf := c.mfp.MemoryFile()
+	// Only allow pages that are no longer memory-mapped to be evicted.
+	for mgap := c.mappings.LowerBoundGap(mr.Start); mgap.Ok() && mgap.Start() < mr.End; mgap = mgap.NextGap() {
+		mgapMR := mgap.Range().Intersect(mr)
+		if mgapMR.Length() == 0 {
+			continue
+		}
+		if err := SyncDirty(ctx, mgapMR, &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
+			log.Warningf("Failed to writeback cached data %v: %v", mgapMR, err)
+		}
+		c.cache.Drop(mgapMR, mf)
+		c.dirty.KeepClean(mgapMR)
+	}
 }
 
 // IncRef implements platform.File.IncRef. This is used when we directly map an

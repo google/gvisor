@@ -311,12 +311,10 @@ func TestRead(t *testing.T) {
 		t.Errorf("Read back bytes %v, want %v", rbuf, buf)
 	}
 
-	// Delete the memory mapping and expect it to cause the cached page to be
-	// uncached.
+	// Delete the memory mapping before iops.Release(). The cached page will
+	// either be evicted by ctx's pgalloc.MemoryFile, or dropped by
+	// iops.Release().
 	iops.RemoveMapping(ctx, ms, ar, usermem.PageSize, true)
-	if cached := iops.cache.Span(); cached != 0 {
-		t.Fatalf("Span got %d, want 0", cached)
-	}
 }
 
 func TestWrite(t *testing.T) {
