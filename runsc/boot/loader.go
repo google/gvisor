@@ -138,6 +138,9 @@ type execProcess struct {
 
 	// tty will be nil if the process is not attached to a terminal.
 	tty *host.TTYFileOperations
+
+	// pidnsPath is the pid namespace path in spec
+	pidnsPath string
 }
 
 func init() {
@@ -298,7 +301,7 @@ func New(args Args) (*Loader, error) {
 	// Create a watchdog.
 	dog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
 
-	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
+	procArgs, err := newProcess(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %v", err)
 	}
@@ -376,7 +379,7 @@ func New(args Args) (*Loader, error) {
 }
 
 // newProcess creates a process that can be run with kernel.CreateProcess.
-func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel) (kernel.CreateProcessArgs, error) {
+func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
 	ls, err := createLimitSet(spec)
 	if err != nil {
@@ -396,7 +399,9 @@ func newProcess(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.
 		IPCNamespace:            k.RootIPCNamespace(),
 		AbstractSocketNamespace: k.RootAbstractSocketNamespace(),
 		ContainerID:             id,
+		PIDNamespace:            pidns,
 	}
+
 	return procArgs, nil
 }
 
@@ -559,6 +564,9 @@ func (l *Loader) run() error {
 	}
 
 	ep.tg = l.k.GlobalInit()
+	if ns, ok := specutils.GetNS(specs.PIDNamespace, l.spec); ok {
+		ep.pidnsPath = ns.Path
+	}
 	if l.console {
 		ttyFile, _ := l.rootProcArgs.FDTable.Get(0)
 		defer ttyFile.DecRef()
@@ -627,7 +635,24 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 		caps,
 		l.k.RootUserNamespace())
 
-	procArgs, err := newProcess(cid, spec, creds, l.k)
+	var pidns *kernel.PIDNamespace
+	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok {
+		if ns.Path != "" {
+			for _, p := range l.processes {
+				if ns.Path == p.pidnsPath {
+					pidns = p.tg.PIDNamespace()
+					break
+				}
+			}
+		}
+		if pidns == nil {
+			pidns = l.k.RootPIDNamespace().NewChild(l.k.RootUserNamespace())
+		}
+		l.processes[eid].pidnsPath = ns.Path
+	} else {
+		pidns = l.k.RootPIDNamespace()
+	}
+	procArgs, err := newProcess(cid, spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %v", err)
 	}
@@ -749,6 +774,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
+	args.PIDNamespace = tg.PIDNamespace()
 	newTG, tgid, ttyFile, err := control.ExecAsync(&proc, args)
 	if err != nil {
 		return 0, err

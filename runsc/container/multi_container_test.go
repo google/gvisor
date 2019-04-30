@@ -165,6 +165,104 @@ func TestMultiContainerSanity(t *testing.T) {
 	}
 }
 
+// TestMultiPIDNS checks that it is possible to run 2 dead-simple
+// containers in the same sandbox with different pidns.
+func TestMultiPIDNS(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		testSpecs, ids := createSpecs(sleep, sleep)
+		testSpecs[1].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{
+					Type: "pid",
+				},
+			},
+		}
+
+		containers, cleanup, err := startContainers(conf, testSpecs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		// Check via ps that multiple processes are running.
+		expectedPL := []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+		expectedPL = []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[1], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+	}
+}
+
+// TestMultiPIDNSPath checks the pidns path.
+func TestMultiPIDNSPath(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		testSpecs, ids := createSpecs(sleep, sleep, sleep)
+		testSpecs[0].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{
+					Type: "pid",
+					Path: "/proc/1/ns/pid",
+				},
+			},
+		}
+		testSpecs[1].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{
+					Type: "pid",
+					Path: "/proc/1/ns/pid",
+				},
+			},
+		}
+		testSpecs[2].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{
+				{
+					Type: "pid",
+					Path: "/proc/2/ns/pid",
+				},
+			},
+		}
+
+		containers, cleanup, err := startContainers(conf, testSpecs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		// Check via ps that multiple processes are running.
+		expectedPL := []*control.Process{
+			{PID: 1, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+		if err := waitForProcessList(containers[2], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+
+		expectedPL = []*control.Process{
+			{PID: 2, Cmd: "sleep"},
+		}
+		if err := waitForProcessList(containers[1], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+	}
+}
+
 func TestMultiContainerWait(t *testing.T) {
 	// The first container should run the entire duration of the test.
 	cmd1 := []string{"sleep", "100"}
