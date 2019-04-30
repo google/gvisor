@@ -73,8 +73,8 @@ func (c *CollectEntriesSerializer) Written() int {
 	return len(c.Entries)
 }
 
-// DirCtx is used by node.Readdir to emit directory entries.  It is not
-// thread-safe.
+// DirCtx is used in FileOperations.IterateDir to emit directory entries. It is
+// not thread-safe.
 type DirCtx struct {
 	// Serializer is used to serialize the node attributes.
 	Serializer DentrySerializer
