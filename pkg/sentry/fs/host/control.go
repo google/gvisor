@@ -32,17 +32,20 @@ func newSCMRights(fds []int) control.SCMRights {
 }
 
 // Files implements control.SCMRights.Files.
-func (c *scmRights) Files(ctx context.Context, max int) control.RightsFiles {
+func (c *scmRights) Files(ctx context.Context, max int) (control.RightsFiles, bool) {
 	n := max
+	var trunc bool
 	if l := len(c.fds); n > l {
 		n = l
+	} else if n < l {
+		trunc = true
 	}
 
 	rf := control.RightsFiles(fdsToFiles(ctx, c.fds[:n]))
 
 	// Only consume converted FDs (fdsToFiles may convert fewer than n FDs).
 	c.fds = c.fds[len(rf):]
-	return rf
+	return rf, trunc
 }
 
 // Clone implements transport.RightsControlMessage.Clone.

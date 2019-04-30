@@ -746,7 +746,10 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 		if err != nil {
 			return 0, syserror.ConvertIntr(err.ToError(), kernel.ERESTARTSYS)
 		}
-		cms.Unix.Release()
+		if !cms.Unix.Empty() {
+			mflags |= linux.MSG_CTRUNC
+			cms.Unix.Release()
+		}
 
 		if int(msg.Flags) != mflags {
 			// Copy out the flags to the caller.
@@ -771,7 +774,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 
 	if cr, ok := s.(transport.Credentialer); ok && cr.Passcred() {
 		creds, _ := cms.Unix.Credentials.(control.SCMCredentials)
-		controlData = control.PackCredentials(t, creds, controlData)
+		controlData, mflags = control.PackCredentials(t, creds, controlData, mflags)
 	}
 
 	if cms.IP.HasTimestamp {
@@ -779,7 +782,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr usermem.Addr, flags i
 	}
 
 	if cms.Unix.Rights != nil {
-		controlData = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData)
+		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}
 
 	// Copy the address to the caller.

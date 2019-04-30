@@ -45,7 +45,10 @@ type SCMRights interface {
 	transport.RightsControlMessage
 
 	// Files returns up to max RightsFiles.
-	Files(ctx context.Context, max int) RightsFiles
+	//
+	// Returned files are consumed and ownership is transferred to the caller.
+	// Subsequent calls to Files will return the next files.
+	Files(ctx context.Context, max int) (rf RightsFiles, truncated bool)
 }
 
 // RightsFiles represents a SCM_RIGHTS socket control message. A reference is
@@ -71,14 +74,17 @@ func NewSCMRights(t *kernel.Task, fds []int32) (SCMRights, error) {
 }
 
 // Files implements SCMRights.Files.
-func (fs *RightsFiles) Files(ctx context.Context, max int) RightsFiles {
+func (fs *RightsFiles) Files(ctx context.Context, max int) (RightsFiles, bool) {
 	n := max
+	var trunc bool
 	if l := len(*fs); n > l {
 		n = l
+	} else if n < l {
+		trunc = true
 	}
 	rf := (*fs)[:n]
 	*fs = (*fs)[n:]
-	return rf
+	return rf, trunc
 }
 
 // Clone implements transport.RightsControlMessage.Clone.
@@ -99,8 +105,8 @@ func (fs *RightsFiles) Release() {
 }
 
 // rightsFDs gets up to the specified maximum number of FDs.
-func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) []int32 {
-	files := rights.Files(t, max)
+func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32, bool) {
+	files, trunc := rights.Files(t, max)
 	fds := make([]int32, 0, len(files))
 	for i := 0; i < max && len(files) > 0; i++ {
 		fd, err := t.FDMap().NewFDFrom(0, files[0], kernel.FDFlags{cloexec}, t.ThreadGroup().Limits())
@@ -114,19 +120,23 @@ func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) []int32 
 
 		fds = append(fds, int32(fd))
 	}
-	return fds
+	return fds, trunc
 }
 
 // PackRights packs as many FDs as will fit into the unused capacity of buf.
-func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte) []byte {
+func PackRights(t *kernel.Task, rights SCMRights, cloexec bool, buf []byte, flags int) ([]byte, int) {
 	maxFDs := (cap(buf) - len(buf) - linux.SizeOfControlMessageHeader) / 4
 	// Linux does not return any FDs if none fit.
 	if maxFDs <= 0 {
-		return buf
+		flags |= linux.MSG_CTRUNC
+		return buf, flags
 	}
-	fds := rightsFDs(t, rights, cloexec, maxFDs)
+	fds, trunc := rightsFDs(t, rights, cloexec, maxFDs)
+	if trunc {
+		flags |= linux.MSG_CTRUNC
+	}
 	align := t.Arch().Width()
-	return putCmsg(buf, linux.SCM_RIGHTS, align, fds)
+	return putCmsg(buf, flags, linux.SCM_RIGHTS, align, fds)
 }
 
 // scmCredentials represents an SCM_CREDENTIALS socket control message.
@@ -176,7 +186,7 @@ func putUint32(buf []byte, n uint32) []byte {
 
 // putCmsg writes a control message header and as much data as will fit into
 // the unused capacity of a buffer.
-func putCmsg(buf []byte, msgType uint32, align uint, data []int32) []byte {
+func putCmsg(buf []byte, flags int, msgType uint32, align uint, data []int32) ([]byte, int) {
 	space := AlignDown(cap(buf)-len(buf), 4)
 
 	// We can't write to space that doesn't exist, so if we are going to align
@@ -193,7 +203,8 @@ func putCmsg(buf []byte, msgType uint32, align uint, data []int32) []byte {
 	// a partial int32, so the length of the message will be
 	// min(aligned length, header + datas).
 	if space < linux.SizeOfControlMessageHeader {
-		return buf
+		flags |= linux.MSG_CTRUNC
+		return buf, flags
 	}
 
 	length := 4*len(data) + linux.SizeOfControlMessageHeader
@@ -205,11 +216,12 @@ func putCmsg(buf []byte, msgType uint32, align uint, data []int32) []byte {
 	buf = putUint32(buf, msgType)
 	for _, d := range data {
 		if len(buf)+4 > cap(buf) {
+			flags |= linux.MSG_CTRUNC
 			break
 		}
 		buf = putUint32(buf, uint32(d))
 	}
-	return alignSlice(buf, align)
+	return alignSlice(buf, align), flags
 }
 
 func putCmsgStruct(buf []byte, msgType uint32, align uint, data interface{}) []byte {
@@ -253,7 +265,7 @@ func (c *scmCredentials) Credentials(t *kernel.Task) (kernel.ThreadID, auth.UID,
 
 // PackCredentials packs the credentials in the control message (or default
 // credentials if none) into a buffer.
-func PackCredentials(t *kernel.Task, creds SCMCredentials, buf []byte) []byte {
+func PackCredentials(t *kernel.Task, creds SCMCredentials, buf []byte, flags int) ([]byte, int) {
 	align := t.Arch().Width()
 
 	// Default credentials if none are available.
@@ -265,7 +277,7 @@ func PackCredentials(t *kernel.Task, creds SCMCredentials, buf []byte) []byte {
 		pid, uid, gid = creds.Credentials(t)
 	}
 	c := []int32{int32(pid), int32(uid), int32(gid)}
-	return putCmsg(buf, linux.SCM_CREDENTIALS, align, c)
+	return putCmsg(buf, flags, linux.SCM_CREDENTIALS, align, c)
 }
 
 // AlignUp rounds a length up to an alignment. align must be a power of 2.

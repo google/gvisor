@@ -207,7 +207,7 @@ func TestSend(t *testing.T) {
 
 func TestRecv(t *testing.T) {
 	e := ConnectedEndpoint{readClosed: true}
-	if _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != syserr.ErrClosedForReceive {
+	if _, _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != syserr.ErrClosedForReceive {
 		t.Errorf("Got %#v.Recv() = %v, want = %v", e, err, syserr.ErrClosedForReceive)
 	}
 }

@@ -282,11 +282,11 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, tcpip.FullAddress, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.readClosed {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.ErrClosedForReceive
+		return 0, 0, transport.ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.ErrClosedForReceive
 	}
 
 	var cm unet.ControlMessage
@@ -296,7 +296,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
-	rl, ml, cl, err := fdReadVec(c.file.FD(), data, []byte(cm), peek, c.sndbuf)
+	rl, ml, cl, cTrunc, err := fdReadVec(c.file.FD(), data, []byte(cm), peek, c.sndbuf)
 	if rl > 0 && err != nil {
 		// We got some data, so all we need to do on error is return
 		// the data that we got. Short reads are fine, no need to
@@ -304,7 +304,7 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 		err = nil
 	}
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.FromError(err)
+		return 0, 0, transport.ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	// There is no need for the callee to call RecvNotify because fdReadVec uses
@@ -317,18 +317,18 @@ func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, p
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, transport.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 	}
 
 	fds, err := cm.ExtractFDs()
 	if err != nil {
-		return 0, 0, transport.ControlMessages{}, tcpip.FullAddress{}, false, syserr.FromError(err)
+		return 0, 0, transport.ControlMessages{}, false, tcpip.FullAddress{}, false, syserr.FromError(err)
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, transport.ControlMessages{}, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+		return rl, ml, transport.ControlMessages{}, cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 	}
-	return rl, ml, control.New(nil, nil, newSCMRights(fds)), tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
+	return rl, ml, control.New(nil, nil, newSCMRights(fds)), cTrunc, tcpip.FullAddress{Addr: tcpip.Address(c.path)}, false, nil
 }
 
 // close releases all resources related to the endpoint.

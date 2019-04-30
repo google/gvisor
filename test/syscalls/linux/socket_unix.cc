@@ -186,9 +186,6 @@ TEST_P(UnixSocketPairTest, BasicFDPassNoSpace) {
 // BasicFDPassNoSpaceMsgCtrunc sends an FD, but does not provide any space to
 // receive it. It then verifies that the MSG_CTRUNC flag is set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicFDPassNoSpaceMsgCtrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
@@ -259,9 +256,6 @@ TEST_P(UnixSocketPairTest, BasicFDPassNullControlMsgCtrunc) {
 // space to receive it. It then verifies that the MSG_CTRUNC flag is set in the
 // msghdr.
 TEST_P(UnixSocketPairTest, BasicFDPassNotEnoughSpaceMsgCtrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
@@ -296,9 +290,6 @@ TEST_P(UnixSocketPairTest, BasicFDPassNotEnoughSpaceMsgCtrunc) {
 // space to receive two of them. It then verifies that the MSG_CTRUNC flag is
 // set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicThreeFDPassTruncationMsgCtrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
@@ -408,9 +399,6 @@ TEST_P(UnixSocketPairTest, BasicFDPassUnalignedRecvNoMsgTrunc) {
 // provides enough space to receive one of them. It then verifies that the
 // MSG_CTRUNC flag is set in the msghdr.
 TEST_P(UnixSocketPairTest, BasicTwoFDPassUnalignedRecvTruncationMsgTrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
@@ -1010,9 +998,6 @@ TEST_P(UnixSocketPairTest, CredPassNoMsgCtrunc) {
 // the data without providing space for any credentials and verifies that
 // MSG_CTRUNC is set in the msghdr.
 TEST_P(UnixSocketPairTest, CredPassNoSpaceMsgCtrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];
@@ -1061,9 +1046,6 @@ TEST_P(UnixSocketPairTest, CredPassNoSpaceMsgCtrunc) {
 // the data while providing enough space for only the first field of the
 // credentials and verifies that MSG_CTRUNC is set in the msghdr.
 TEST_P(UnixSocketPairTest, CredPassTruncatedMsgCtrunc) {
-  // FIXME(gvisor.dev/issue/206): Support MSG_CTRUNC.
-  SKIP_IF(IsRunningOnGvisor());
-
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   char sent_data[20];

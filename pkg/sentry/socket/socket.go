@@ -87,6 +87,11 @@ type Socket interface {
 	// senderAddrLen is the address length to be returned to the application,
 	// not necessarily the actual length of the address.
 	//
+	// flags control how RecvMsg should be completed. msgFlags indicate how
+	// the RecvMsg call was completed. Note that control message truncation
+	// may still be required even if the MSG_CTRUNC bit is not set in
+	// msgFlags. In that case, the caller should set MSG_CTRUNC appropriately.
+	//
 	// If err != nil, the recv was not successful.
 	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr interface{}, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
 

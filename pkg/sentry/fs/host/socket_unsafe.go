@@ -23,7 +23,7 @@ import (
 //
 // If the total length of bufs is > maxlen, fdReadVec will do a partial read
 // and err will indicate why the message was truncated.
-func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (readLen uintptr, msgLen uintptr, controlLen uint64, err error) {
+func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (readLen uintptr, msgLen uintptr, controlLen uint64, controlTrunc bool, err error) {
 	flags := uintptr(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC)
 	if peek {
 		flags |= syscall.MSG_PEEK
@@ -34,7 +34,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (re
 	length, iovecs, intermediate, err := buildIovec(bufs, maxlen, true)
 	if err != nil && len(iovecs) == 0 {
 		// No partial write to do, return error immediately.
-		return 0, 0, 0, err
+		return 0, 0, 0, false, err
 	}
 
 	var msg syscall.Msghdr
@@ -51,7 +51,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (re
 	n, _, e := syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
 	if e != 0 {
 		// N.B. prioritize the syscall error over the buildIovec error.
-		return 0, 0, 0, e
+		return 0, 0, 0, false, e
 	}
 
 	// Copy data back to bufs.
@@ -59,11 +59,13 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (re
 		copyToMulti(bufs, intermediate)
 	}
 
+	controlTrunc = msg.Flags&syscall.MSG_CTRUNC == syscall.MSG_CTRUNC
+
 	if n > length {
-		return length, n, msg.Controllen, err
+		return length, n, msg.Controllen, controlTrunc, err
 	}
 
-	return n, n, msg.Controllen, err
+	return n, n, msg.Controllen, controlTrunc, err
 }
 
 // fdWriteVec sends from bufs to fd.

@@ -490,6 +490,9 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	if s.Passcred() {
 		// Credentials take priority if they are enabled and there is space.
 		wantCreds = rightsLen > 0
+		if !wantCreds {
+			msgFlags |= linux.MSG_CTRUNC
+		}
 		credLen := syscall.CmsgSpace(syscall.SizeofUcred)
 		rightsLen -= credLen
 	}
@@ -514,6 +517,10 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		var fromLen uint32
 		if r.From != nil {
 			from, fromLen = epsocket.ConvertAddress(linux.AF_UNIX, *r.From)
+		}
+
+		if r.ControlTrunc {
+			msgFlags |= linux.MSG_CTRUNC
 		}
 
 		if err != nil || dontWait || !waitAll || s.isPacket || n >= dst.NumBytes() {
@@ -546,12 +553,18 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			if r.From != nil {
 				from, fromLen = epsocket.ConvertAddress(linux.AF_UNIX, *r.From)
 			}
+
+			if r.ControlTrunc {
+				msgFlags |= linux.MSG_CTRUNC
+			}
+
 			if trunc {
 				// n and r.MsgSize are the same for streams.
 				total += int64(r.MsgSize)
 			} else {
 				total += n
 			}
+
 			if err != nil || !waitAll || s.isPacket || n >= dst.NumBytes() {
 				if total > 0 {
 					err = nil

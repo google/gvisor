@@ -72,13 +72,18 @@ type EndpointReader struct {
 
 	// Control contains the received control messages.
 	Control transport.ControlMessages
+
+	// ControlTrunc indicates that SCM_RIGHTS FDs were discarded based on
+	// the value of NumRights.
+	ControlTrunc bool
 }
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *EndpointReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	return safemem.FromVecReaderFunc{func(bufs [][]byte) (int64, error) {
-		n, ms, c, err := r.Endpoint.RecvMsg(bufs, r.Creds, r.NumRights, r.Peek, r.From)
+		n, ms, c, ct, err := r.Endpoint.RecvMsg(bufs, r.Creds, r.NumRights, r.Peek, r.From)
 		r.Control = c
+		r.ControlTrunc = ct
 		r.MsgSize = ms
 		if err != nil {
 			return int64(n), err.ToError()
