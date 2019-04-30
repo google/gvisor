@@ -714,6 +714,16 @@ func TestKillPid(t *testing.T) {
 		if err := waitForProcessCount(cont, nProcs-1); err != nil {
 			t.Fatal(err)
 		}
+
+		procs, err = cont.Processes()
+		if err != nil {
+			t.Fatalf("failed to get process list: %v", err)
+		}
+		for _, p := range procs {
+			if pid == int32(p.PID) {
+				t.Fatalf("pid %d is still alive, which should be killed", pid)
+			}
+		}
 	}
 }
 
