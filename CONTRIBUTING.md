@@ -144,5 +144,5 @@ one above, the
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [gerrit]: https://gvisor-review.googlesource.com
 [gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
-[repo]: https://gvisor.googlesource.com
+[repo]: https://gvisor.googlesource.com/?format=HTML
 [teststyle]: ./test/
