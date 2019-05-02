@@ -205,13 +205,13 @@ through the [Gofer](../) as a result of our [security model](../security/), but
 in most cases are dominated by **implementation costs**, due to an internal
 [Virtual File System][vfs] (VFS) implementation the needs improvement.
 
-{{< graph id="fio-bw" url="/performance/fio.csv" title="perf.py fio --engine=sync --runtime=runc --runtime=runsc" >}}
+{{< graph id="fio-bw" url="/performance/fio.csv" title="perf.py fio --engine=sync --runtime=runc --runtime=runsc" log="true" >}}
 
 The above figures demonstrate the results of `fio` for reads and writes to and
 from the disk. In this case, the disk quickly becomes the bottleneck and
 dominates other costs.
 
-{{< graph id="fio-tmpfs-bw" url="/performance/fio-tmpfs.csv" title="perf.py fio --engine=sync --runtime=runc --tmpfs=True --runtime=runsc" >}}
+{{< graph id="fio-tmpfs-bw" url="/performance/fio-tmpfs.csv" title="perf.py fio --engine=sync --runtime=runc --tmpfs=True --runtime=runsc" log="true" >}}
 
 The above figure shows the raw I/O performance of using a `tmpfs` mount which is
 sandbox-internal in the case of `runsc`. Generally these operations are
