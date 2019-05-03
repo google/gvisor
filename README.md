@@ -70,12 +70,27 @@ bazel build runsc
 sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 ```
 
+If you don't want to install bazel on your system, you can build runsc in a
+Docker container:
+
+```
+make runsc
+sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
+```
+
 ### Testing
 
 The test suite can be run with Bazel:
 
 ```
 bazel test ...
+```
+
+or in a Docker container:
+
+```
+make unit-tests
+make tests
 ```
 
 ### Using remote execution

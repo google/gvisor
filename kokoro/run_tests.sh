@@ -197,6 +197,16 @@ finish() {
   exit ${exit_code}
 }
 
+# Run bazel in a docker container
+build_in_docker() {
+  cd ${WORKSPACE_DIR}
+  bazel clean
+  bazel shutdown
+  make
+  make runsc
+  make bazel-shutdown
+}
+
 ########
 # MAIN #
 ########
@@ -220,6 +230,7 @@ main() {
   # Build other flavors too.
   build_everything dbg
 
+  build_in_docker
   # No need to call "finish" here, it will happen at exit.
 }
 
