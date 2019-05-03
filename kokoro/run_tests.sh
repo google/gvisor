@@ -183,6 +183,9 @@ upload_test_artifacts() {
   find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
     tar --create --files-from - --transform 's/test\./sponge_log./' |
     tar --extract --directory ${KOKORO_ARTIFACTS_DIR}
+  if [[ -d "/tmp/${RUNTIME}/logs" ]]; then
+    tar --create --gzip "--file=${KOKORO_ARTIFACTS_DIR}/runsc-logs.tar.gz" -C /tmp/ ${RUNTIME}/logs
+  fi
 }
 
 # Finish runs at exit, even in the event of an error, and uploads all test

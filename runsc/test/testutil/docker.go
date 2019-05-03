@@ -120,7 +120,7 @@ func getLocalPath(file string) string {
 
 // do executes docker command.
 func do(args ...string) (string, error) {
-	fmt.Printf("Running: docker %s\n", args)
+	log.Printf("Running: docker %s\n", args)
 	cmd := exec.Command("docker", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -131,7 +131,7 @@ func do(args ...string) (string, error) {
 
 // doWithPty executes docker command with stdio attached to a pty.
 func doWithPty(args ...string) (*exec.Cmd, *os.File, error) {
-	fmt.Printf("Running with pty: docker %s\n", args)
+	log.Printf("Running with pty: docker %s\n", args)
 	cmd := exec.Command("docker", args...)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -160,11 +160,23 @@ func MakeDocker(namePrefix string) Docker {
 	return Docker{Name: RandomName(namePrefix), Runtime: getRuntime()}
 }
 
+// logDockerID logs a container id, which is needed to find container runsc logs.
+func (d *Docker) logDockerID() {
+	id, err := d.ID()
+	if err != nil {
+		log.Printf("%v\n", err)
+	}
+	log.Printf("Name: %s ID: %v\n", d.Name, id)
+}
+
 // Create calls 'docker create' with the arguments provided.
 func (d *Docker) Create(args ...string) error {
 	a := []string{"create", "--runtime", d.Runtime, "--name", d.Name}
 	a = append(a, args...)
 	_, err := do(a...)
+	if err == nil {
+		d.logDockerID()
+	}
 	return err
 }
 
@@ -190,6 +202,9 @@ func (d *Docker) Run(args ...string) error {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
 	a = append(a, args...)
 	_, err := do(a...)
+	if err == nil {
+		d.logDockerID()
+	}
 	return err
 }
 
@@ -206,6 +221,9 @@ func (d *Docker) RunFg(args ...string) (string, error) {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name}
 	a = append(a, args...)
 	out, err := do(a...)
+	if err == nil {
+		d.logDockerID()
+	}
 	return string(out), err
 }
 
@@ -255,6 +273,7 @@ func (d *Docker) Remove() error {
 
 // CleanUp kills and deletes the container (best effort).
 func (d *Docker) CleanUp() {
+	d.logDockerID()
 	if _, err := do("kill", d.Name); err != nil {
 		log.Printf("error killing container %q: %v", d.Name, err)
 	}
