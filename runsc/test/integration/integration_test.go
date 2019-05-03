@@ -68,7 +68,7 @@ func TestLifeCycle(t *testing.T) {
 	if err != nil {
 		t.Fatal("docker.FindPort(80) failed: ", err)
 	}
-	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
 		t.Fatal("WaitForHTTP() timeout:", err)
 	}
 	client := http.Client{Timeout: time.Duration(2 * time.Second)}

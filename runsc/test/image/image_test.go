@@ -103,7 +103,7 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
@@ -137,7 +137,7 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 5*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 
