@@ -569,7 +569,7 @@ func TestKillPid(t *testing.T) {
 	for _, conf := range configs(overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 
-		app, err := testutil.FindFile("runsc/container/test_app")
+		app, err := testutil.FindFile("runsc/container/test_app/test_app")
 		if err != nil {
 			t.Fatal("error finding test_app:", err)
 		}
@@ -792,7 +792,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		}
 		defer outputFile.Close()
 
-		app, err := testutil.FindFile("runsc/container/test_app")
+		app, err := testutil.FindFile("runsc/container/test_app/test_app")
 		if err != nil {
 			t.Fatal("error finding test_app:", err)
 		}
@@ -1471,7 +1471,7 @@ func TestRootNotMount(t *testing.T) {
 		t.Skip("race makes test_app not statically linked")
 	}
 
-	appSym, err := testutil.FindFile("runsc/container/test_app")
+	appSym, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}
@@ -1497,7 +1497,7 @@ func TestRootNotMount(t *testing.T) {
 }
 
 func TestUserLog(t *testing.T) {
-	app, err := testutil.FindFile("runsc/container/test_app")
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}

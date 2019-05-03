@@ -403,7 +403,7 @@ func TestMultiContainerSignal(t *testing.T) {
 // TestMultiContainerDestroy checks that container are properly cleaned-up when
 // they are destroyed.
 func TestMultiContainerDestroy(t *testing.T) {
-	app, err := testutil.FindFile("runsc/container/test_app")
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}
@@ -533,7 +533,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 		{killContainer: true},
 		{killContainer: false},
 	} {
-		app, err := testutil.FindFile("runsc/container/test_app")
+		app, err := testutil.FindFile("runsc/container/test_app/test_app")
 		if err != nil {
 			t.Fatal("error finding test_app:", err)
 		}
@@ -734,7 +734,7 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 // TestMultiContainerGoferStop tests that IO operations continue to work after
 // containers have been stopped and gofers killed.
 func TestMultiContainerGoferStop(t *testing.T) {
-	app, err := testutil.FindFile("runsc/container/test_app")
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}
