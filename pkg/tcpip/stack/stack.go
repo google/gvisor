@@ -102,6 +102,18 @@ type TCPFastRecoveryState struct {
 	// MaxCwnd is the maximum value we are permitted to grow the congestion
 	// window during recovery. This is set at the time we enter recovery.
 	MaxCwnd int
+
+	// HighRxt is the highest sequence number which has been retransmitted
+	// during the current loss recovery phase.
+	// See: RFC 6675 Section 2 for details.
+	HighRxt seqnum.Value
+
+	// RescueRxt is the highest sequence number which has been
+	// optimistically retransmitted to prevent stalling of the ACK clock
+	// when there is loss at the end of the window and no new data is
+	// available for transmission.
+	// See: RFC 6675 Section 2 for details.
+	RescueRxt seqnum.Value
 }
 
 // TCPReceiverState holds a copy of the internal state of the receiver for
@@ -1024,7 +1036,7 @@ func (s *Stack) TransportProtocolInstance(num tcpip.TransportProtocolNumber) Tra
 
 // AddTCPProbe installs a probe function that will be invoked on every segment
 // received by a given TCP endpoint. The probe function is passed a copy of the
-// TCP endpoint state.
+// TCP endpoint state before and after processing of the segment.
 //
 // NOTE: TCPProbe is added only to endpoints created after this call. Endpoints
 // created prior to this call will not call the probe function.

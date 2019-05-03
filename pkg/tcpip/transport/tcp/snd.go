@@ -172,6 +172,18 @@ type fastRecovery struct {
 	// receiver intentionally sends duplicate acks to artificially inflate
 	// the sender's cwnd.
 	maxCwnd int
+
+	// highRxt is the highest sequence number which has been retransmitted
+	// during the current loss recovery phase.
+	// See: RFC 6675 Section 2 for details.
+	highRxt seqnum.Value
+
+	// rescueRxt is the highest sequence number which has been
+	// optimistically retransmitted to prevent stalling of the ACK clock
+	// when there is loss at the end of the window and no new data is
+	// available for transmission.
+	// See: RFC 6675 Section 2 for details.
+	rescueRxt seqnum.Value
 }
 
 func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
@@ -195,7 +207,9 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		maxSentAck:       irs + 1,
 		fr: fastRecovery{
 			// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
-			last: iss,
+			last:      iss,
+			highRxt:   iss,
+			rescueRxt: iss,
 		},
 		gso: ep.gso != nil,
 	}
@@ -212,11 +226,14 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		s.sndWndScale = uint8(sndWndScale)
 	}
 
-	// Initialize SACK Scoreboard.
-	s.ep.scoreboard = NewSACKScoreboard(mss, iss)
 	s.resendTimer.init(&s.resendWaker)
 
 	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
+
+	// Initialize SACK Scoreboard after updating max payload size as we use
+	// the maxPayloadSize as the smss when determining if a segment is lost
+	// etc.
+	s.ep.scoreboard = NewSACKScoreboard(uint16(s.maxPayloadSize), iss)
 
 	return s
 }
@@ -256,6 +273,16 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		s.ep.gso.MSS = uint16(m)
 	}
 
+	if count == 0 {
+		// updateMaxPayloadSize is also called when the sender is created.
+		// and there is no data to send in such cases. Return immediately.
+		return
+	}
+
+	// Update the scoreboard's smss to reflect the new lowered
+	// maxPayloadSize.
+	s.ep.scoreboard.smss = uint16(m)
+
 	s.outstanding -= count
 	if s.outstanding < 0 {
 		s.outstanding = 0
@@ -285,7 +312,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 
 // sendAck sends an ACK segment.
 func (s *sender) sendAck() {
-	s.sendSegment(buffer.VectorisedView{}, header.TCPFlagAck, s.sndNxt)
+	s.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, s.sndNxt)
 }
 
 // updateRTO updates the retransmit timeout when a new roud-trip time is
@@ -350,17 +377,20 @@ func (s *sender) resendSegment() {
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
 		if seg.data.Size() > s.maxPayloadSize {
-			available := s.maxPayloadSize
-			// Split this segment up.
-			nSeg := seg.clone()
-			nSeg.data.TrimFront(available)
-			nSeg.sequenceNumber.UpdateForward(seqnum.Size(available))
-			s.writeList.InsertAfter(seg, nSeg)
-			seg.data.CapLength(available)
+			s.splitSeg(seg, s.maxPayloadSize)
 		}
-		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
+
+		// See: RFC 6675 section 5 Step 4.3
+		//
+		// To prevent retransmission, set both the HighRXT and RescueRXT
+		// to the highest sequence number in the retransmitted segment.
+		s.fr.highRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
+		s.fr.rescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
+		s.sendSegment(seg)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
-		s.ep.stack.Stats().TCP.Retransmits.Increment()
+
+		// Run SetPipe() as per RFC 6675 section 5 Step 4.4
+		s.SetPipe()
 	}
 }
 
@@ -386,17 +416,20 @@ func (s *sender) retransmitTimerExpired() bool {
 	// below.
 	s.rto *= 2
 
+	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
+	//
+	// Retransmit timeouts:
+	//     After a retransmit timeout, record the highest sequence number
+	//     transmitted in the variable recover, and exit the fast recovery
+	//     procedure if applicable.
+	s.fr.last = s.sndNxt - 1
+
 	if s.fr.active {
 		// We were attempting fast recovery but were not successful.
 		// Leave the state. We don't need to update ssthresh because it
 		// has already been updated when entered fast-recovery.
 		s.leaveFastRecovery()
 	}
-
-	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
-	// We store the highest sequence number transmitted in cases where
-	// we were not in fast recovery.
-	s.fr.last = s.sndNxt - 1
 
 	s.cc.HandleRTOExpired()
 
@@ -439,6 +472,276 @@ func (s *sender) pCount(seg *segment) int {
 	return (size-1)/s.maxPayloadSize + 1
 }
 
+// splitSeg splits a given segment at the size specified and inserts the
+// remainder as a new segment after the current one in the write list.
+func (s *sender) splitSeg(seg *segment, size int) {
+	if seg.data.Size() <= size {
+		return
+	}
+	// Split this segment up.
+	nSeg := seg.clone()
+	nSeg.data.TrimFront(size)
+	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
+	s.writeList.InsertAfter(seg, nSeg)
+	seg.data.CapLength(size)
+}
+
+// NextSeg implements the RFC6675 NextSeg() operation. It returns segments that
+// match rule 1, 3 and 4 of the NextSeg() operation defined in RFC6675. Rule 2
+// is handled by the normal send logic.
+func (s *sender) NextSeg() (nextSeg1, nextSeg3, nextSeg4 *segment) {
+	var s3 *segment
+	var s4 *segment
+	smss := s.ep.scoreboard.SMSS()
+	// Step 1.
+	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+		if !s.isAssignedSequenceNumber(seg) {
+			break
+		}
+		segSeq := seg.sequenceNumber
+		if seg.data.Size() > int(smss) {
+			s.splitSeg(seg, int(smss))
+		}
+		// See RFC 6675 Section 4
+		//
+		//     1. If there exists a smallest unSACKED sequence number
+		//     'S2' that meets the following 3 criteria for determinig
+		//     loss, the sequence range of one segment of up to SMSS
+		//     octects starting with S2 MUST be returned.
+		if !s.ep.scoreboard.IsSACKED(header.SACKBlock{segSeq, segSeq.Add(1)}) {
+			// NextSeg():
+			//
+			//    (1.a) S2 is greater than HighRxt
+			//    (1.b) S2 is less than highest octect covered by
+			//    any received SACK.
+			if s.fr.highRxt.LessThan(segSeq) && segSeq.LessThan(s.ep.scoreboard.maxSACKED) {
+				// NextSeg():
+				//     (1.c) IsLost(S2) returns true.
+				if s.ep.scoreboard.IsLost(segSeq) {
+					return seg, s3, s4
+				}
+				// NextSeg():
+				//
+				// (3): If the conditions for rules (1) and (2)
+				// fail, but there exists an unSACKed sequence
+				// number S3 that meets the criteria for
+				// detecting loss given in steps 1.a and 1.b
+				// above (specifically excluding (1.c)) then one
+				// segment of upto SMSS octets starting with S3
+				// SHOULD be returned.
+				if s3 == nil {
+					s3 = seg
+				}
+			}
+			// NextSeg():
+			//
+			//     (4) If the conditions for (1), (2) and (3) fail,
+			//     but there exists outstanding unSACKED data, we
+			//     provide the opportunity for a single "rescue"
+			//     retransmission per entry into loss recovery. If
+			//     HighACK is greater than RescueRxt, the one
+			//     segment of upto SMSS octects that MUST include
+			//     the highest outstanding unSACKed sequence number
+			//     SHOULD be returned.
+			if s.fr.rescueRxt.LessThan(s.sndUna - 1) {
+				if s4 != nil {
+					if s4.sequenceNumber.LessThan(segSeq) {
+						s4 = seg
+					}
+				} else {
+					s4 = seg
+				}
+				s.fr.rescueRxt = s.fr.last
+			}
+		}
+	}
+
+	return nil, s3, s4
+}
+
+// maybeSendSegment tries to send the specified segment and either coalesces
+// other segments into this one or splits the specified segment based on the
+// lower of the specified limit value or the receivers window size specified by
+// end.
+func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
+	// We abuse the flags field to determine if we have already
+	// assigned a sequence number to this segment.
+	if !s.isAssignedSequenceNumber(seg) {
+		// Merge segments if allowed.
+		if seg.data.Size() != 0 {
+			available := int(seg.sequenceNumber.Size(end))
+			if available > limit {
+				available = limit
+			}
+
+			// nextTooBig indicates that the next segment was too
+			// large to entirely fit in the current segment. It
+			// would be possible to split the next segment and merge
+			// the portion that fits, but unexpectedly splitting
+			// segments can have user visible side-effects which can
+			// break applications. For example, RFC 7766 section 8
+			// says that the length and data of a DNS response
+			// should be sent in the same TCP segment to avoid
+			// triggering bugs in poorly written DNS
+			// implementations.
+			var nextTooBig bool
+			for seg.Next() != nil && seg.Next().data.Size() != 0 {
+				if seg.data.Size()+seg.Next().data.Size() > available {
+					nextTooBig = true
+					break
+				}
+				seg.data.Append(seg.Next().data)
+
+				// Consume the segment that we just merged in.
+				s.writeList.Remove(seg.Next())
+			}
+			if !nextTooBig && seg.data.Size() < available {
+				// Segment is not full.
+				if s.outstanding > 0 && atomic.LoadUint32(&s.ep.delay) != 0 {
+					// Nagle's algorithm. From Wikipedia:
+					//   Nagle's algorithm works by
+					//   combining a number of small
+					//   outgoing messages and sending them
+					//   all at once. Specifically, as long
+					//   as there is a sent packet for which
+					//   the sender has received no
+					//   acknowledgment, the sender should
+					//   keep buffering its output until it
+					//   has a full packet's worth of
+					//   output, thus allowing output to be
+					//   sent all at once.
+					return false
+				}
+				if atomic.LoadUint32(&s.ep.cork) != 0 {
+					// Hold back the segment until full.
+					return false
+				}
+			}
+		}
+
+		// Assign flags. We don't do it above so that we can merge
+		// additional data if Nagle holds the segment.
+		seg.sequenceNumber = s.sndNxt
+		seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+	}
+
+	var segEnd seqnum.Value
+	if seg.data.Size() == 0 {
+		if s.writeList.Back() != seg {
+			panic("FIN segments must be the final segment in the write list.")
+		}
+		seg.flags = header.TCPFlagAck | header.TCPFlagFin
+		segEnd = seg.sequenceNumber.Add(1)
+	} else {
+		// We're sending a non-FIN segment.
+		if seg.flags&header.TCPFlagFin != 0 {
+			panic("Netstack queues FIN segments without data.")
+		}
+
+		if !seg.sequenceNumber.LessThan(end) {
+			return false
+		}
+
+		available := int(seg.sequenceNumber.Size(end))
+		if available == 0 {
+			return false
+		}
+		if available > limit {
+			available = limit
+		}
+
+		if seg.data.Size() > available {
+			s.splitSeg(seg, available)
+		}
+
+		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
+	}
+
+	s.sendSegment(seg)
+
+	// Update sndNxt if we actually sent new data (as opposed to
+	// retransmitting some previously sent data).
+	if s.sndNxt.LessThan(segEnd) {
+		s.sndNxt = segEnd
+	}
+
+	return true
+}
+
+// handleSACKRecovery implements the loss recovery phase as described in RFC6675
+// section 5, step C.
+func (s *sender) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool) {
+	s.SetPipe()
+	for s.outstanding < s.sndCwnd {
+		nextSeg, s3, s4 := s.NextSeg()
+		if nextSeg == nil {
+			// NextSeg():
+			//
+			// Step (2): "If no sequence number 'S2' per rule (1)
+			// exists but there exists available unsent data and the
+			// receiver's advertised window allows, the sequence
+			// range of one segment of up to SMSS octets of
+			// previously unsent data starting with sequence number
+			// HighData+1 MUST be returned."
+			for seg := s.writeNext; seg != nil; seg = seg.Next() {
+				if s.isAssignedSequenceNumber(seg) && seg.sequenceNumber.LessThan(s.sndNxt) {
+					continue
+				}
+				// Step C.3 described below is handled by
+				// maybeSendSegment which increments sndNxt when
+				// a segment is transmitted.
+				//
+				// Step C.3 "If any of the data octets sent in
+				// (C.1) are above HighData, HighData must be
+				// updated to reflect the transmission of
+				// previously unsent data."
+				if sent := s.maybeSendSegment(seg, limit, end); !sent {
+					break
+				}
+				dataSent = true
+				s.outstanding++
+				s.writeNext = seg.Next()
+				nextSeg = seg
+				break
+			}
+			if nextSeg != nil {
+				continue
+			}
+		}
+		rescueRtx := false
+		if nextSeg == nil && s3 != nil {
+			nextSeg = s3
+		}
+		if nextSeg == nil && s4 != nil {
+			nextSeg = s4
+			rescueRtx = true
+		}
+		if nextSeg == nil {
+			break
+		}
+		segEnd := nextSeg.sequenceNumber.Add(nextSeg.logicalLen())
+		if !rescueRtx && nextSeg.sequenceNumber.LessThan(s.sndNxt) {
+			// RFC 6675, Step C.2
+			//
+			// "If any of the data octets sent in (C.1) are below
+			// HighData, HighRxt MUST be set to the highest sequence
+			// number of the retransmitted segment unless NextSeg ()
+			// rule (4) was invoked for this retransmission."
+			s.fr.highRxt = segEnd - 1
+		}
+
+		// RFC 6675, Step C.4.
+		//
+		// "The estimate of the amount of data outstanding in the network
+		// must be updated by incrementing pipe by the number of octets
+		// transmitted in (C.1)."
+		s.outstanding++
+		dataSent = true
+		s.sendSegment(nextSeg)
+	}
+	return dataSent
+}
+
 // sendData sends new data segments. It is called when data becomes available or
 // when the send window opens up.
 func (s *sender) sendData() {
@@ -446,6 +749,8 @@ func (s *sender) sendData() {
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
 	}
+	end := s.sndUna.Add(s.sndWnd)
+
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
@@ -456,135 +761,34 @@ func (s *sender) sendData() {
 		}
 	}
 
-	seg := s.writeNext
-	end := s.sndUna.Add(s.sndWnd)
 	var dataSent bool
-	for ; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
-		cwndLimit := (s.sndCwnd - s.outstanding) * s.maxPayloadSize
-		if cwndLimit < limit {
-			limit = cwndLimit
-		}
-		// We abuse the flags field to determine if we have already
-		// assigned a sequence number to this segment.
-		if seg.flags == 0 {
-			// Merge segments if allowed.
-			if seg.data.Size() != 0 {
-				available := int(s.sndNxt.Size(end))
-				if available > limit {
-					available = limit
-				}
 
-				// nextTooBig indicates that the next segment was too
-				// large to entirely fit in the current segment. It would
-				// be possible to split the next segment and merge the
-				// portion that fits, but unexpectedly splitting segments
-				// can have user visible side-effects which can break
-				// applications. For example, RFC 7766 section 8 says
-				// that the length and data of a DNS response should be
-				// sent in the same TCP segment to avoid triggering bugs
-				// in poorly written DNS implementations.
-				var nextTooBig bool
-
-				for seg.Next() != nil && seg.Next().data.Size() != 0 {
-					if seg.data.Size()+seg.Next().data.Size() > available {
-						nextTooBig = true
-						break
-					}
-
-					seg.data.Append(seg.Next().data)
-
-					// Consume the segment that we just merged in.
-					s.writeList.Remove(seg.Next())
-				}
-
-				if !nextTooBig && seg.data.Size() < available {
-					// Segment is not full.
-					if s.outstanding > 0 && atomic.LoadUint32(&s.ep.delay) != 0 {
-						// Nagle's algorithm. From Wikipedia:
-						//   Nagle's algorithm works by combining a number of
-						//   small outgoing messages and sending them all at
-						//   once. Specifically, as long as there is a sent
-						//   packet for which the sender has received no
-						//   acknowledgment, the sender should keep buffering
-						//   its output until it has a full packet's worth of
-						//   output, thus allowing output to be sent all at
-						//   once.
-						break
-					}
-					if atomic.LoadUint32(&s.ep.cork) != 0 {
-						// Hold back the segment until full.
-						break
-					}
-				}
+	// RFC 6675 recovery algorithm step C 1-5.
+	if s.fr.active && s.ep.sackPermitted {
+		dataSent = s.handleSACKRecovery(s.maxPayloadSize, end)
+	} else {
+		for seg := s.writeNext; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
+			cwndLimit := (s.sndCwnd - s.outstanding) * s.maxPayloadSize
+			if cwndLimit < limit {
+				limit = cwndLimit
 			}
-
-			// Assign flags. We don't do it above so that we can merge
-			// additional data if Nagle holds the segment.
-			seg.sequenceNumber = s.sndNxt
-			seg.flags = header.TCPFlagAck | header.TCPFlagPsh
-		}
-
-		var segEnd seqnum.Value
-		if seg.data.Size() == 0 {
-			if s.writeList.Back() != seg {
-				panic("FIN segments must be the final segment in the write list.")
+			if s.isAssignedSequenceNumber(seg) && s.ep.sackPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+				continue
 			}
-			seg.flags = header.TCPFlagAck | header.TCPFlagFin
-			segEnd = seg.sequenceNumber.Add(1)
-		} else {
-			// We're sending a non-FIN segment.
-			if seg.flags&header.TCPFlagFin != 0 {
-				panic("Netstack queues FIN segments without data.")
-			}
-
-			if !seg.sequenceNumber.LessThan(end) {
+			if sent := s.maybeSendSegment(seg, limit, end); !sent {
 				break
 			}
-
-			available := int(seg.sequenceNumber.Size(end))
-			if available > limit {
-				available = limit
-			}
-
-			if seg.data.Size() > available {
-				// Split this segment up.
-				nSeg := seg.clone()
-				nSeg.data.TrimFront(available)
-				nSeg.sequenceNumber.UpdateForward(seqnum.Size(available))
-				s.writeList.InsertAfter(seg, nSeg)
-				seg.data.CapLength(available)
-			}
-
-			s.outstanding += s.pCount(seg)
-			segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
-		}
-
-		if !dataSent {
 			dataSent = true
-			// We are sending data, so we should stop the keepalive timer to
-			// ensure that no keepalives are sent while there is pending data.
-			s.ep.disableKeepaliveTimer()
-		}
-
-		if !seg.xmitTime.IsZero() {
-			s.ep.stack.Stats().TCP.Retransmits.Increment()
-			if s.sndCwnd < s.sndSsthresh {
-				s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
-			}
-		}
-
-		seg.xmitTime = time.Now()
-		s.sendSegment(seg.data, seg.flags, seg.sequenceNumber)
-
-		// Update sndNxt if we actually sent new data (as opposed to
-		// retransmitting some previously sent data).
-		if s.sndNxt.LessThan(segEnd) {
-			s.sndNxt = segEnd
+			s.outstanding++
+			s.writeNext = seg.Next()
 		}
 	}
 
-	// Remember the next segment we'll write.
-	s.writeNext = seg
+	if dataSent {
+		// We sent data, so we should stop the keepalive timer to ensure
+		// that no keepalives are sent while there is pending data.
+		s.ep.disableKeepaliveTimer()
+	}
 
 	// Enable the timer if we have pending data and it's not enabled yet.
 	if !s.resendTimer.enabled() && s.sndUna != s.sndNxt {
@@ -599,30 +803,143 @@ func (s *sender) sendData() {
 func (s *sender) enterFastRecovery() {
 	s.fr.active = true
 	// Save state to reflect we're now in fast recovery.
+	//
 	// See : https://tools.ietf.org/html/rfc5681#section-3.2 Step 3.
-	// We inflat the cwnd by 3 to account for the 3 packets which triggered
+	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
 	s.sndCwnd = s.sndSsthresh + 3
 	s.fr.first = s.sndUna
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
+	if s.ep.sackPermitted {
+		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
+		return
+	}
 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
 
 func (s *sender) leaveFastRecovery() {
 	s.fr.active = false
-	s.fr.first = 0
-	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = 0
 	s.dupAckCount = 0
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.sndCwnd = s.sndSsthresh
 
-	// As recovery is now complete, delete all SACK information for acked
-	// data.
-	s.ep.scoreboard.Delete(s.sndUna)
 	s.cc.PostRecovery()
+}
+
+func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
+	ack := seg.ackNumber
+	// We are in fast recovery mode. Ignore the ack if it's out of
+	// range.
+	if !ack.InRange(s.sndUna, s.sndNxt+1) {
+		return false
+	}
+
+	// Leave fast recovery if it acknowledges all the data covered by
+	// this fast recovery session.
+	if s.fr.last.LessThan(ack) {
+		s.leaveFastRecovery()
+		return false
+	}
+
+	if s.ep.sackPermitted {
+		// When SACK is enabled we let retransmission be governed by
+		// the SACK logic.
+		return false
+	}
+
+	// Don't count this as a duplicate if it is carrying data or
+	// updating the window.
+	if seg.logicalLen() != 0 || s.sndWnd != seg.window {
+		return false
+	}
+
+	// Inflate the congestion window if we're getting duplicate acks
+	// for the packet we retransmitted.
+	if ack == s.fr.first {
+		// We received a dup, inflate the congestion window by 1 packet
+		// if we're not at the max yet. Only inflate the window if
+		// regular FastRecovery is in use, RFC6675 does not require
+		// inflating cwnd on duplicate ACKs.
+		if s.sndCwnd < s.fr.maxCwnd {
+			s.sndCwnd++
+		}
+		return false
+	}
+
+	// A partial ack was received. Retransmit this packet and
+	// remember it so that we don't retransmit it again. We don't
+	// inflate the window because we're putting the same packet back
+	// onto the wire.
+	//
+	// N.B. The retransmit timer will be reset by the caller.
+	s.fr.first = ack
+	s.dupAckCount = 0
+	return true
+}
+
+// isAssignedSequenceNumber relies on the fact that we only set flags once a
+// sequencenumber is assigned and that is only done right before we send the
+// segment. As a result any segment that has a non-zero flag has a valid
+// sequence number assigned to it.
+func (s *sender) isAssignedSequenceNumber(seg *segment) bool {
+	return seg.flags != 0
+}
+
+// SetPipe implements the SetPipe() function described in RFC6675. Netstack
+// maintains the congestion window in number of packets and not bytes, so
+// SetPipe() here measures number of outstanding packets rather than actual
+// outstanding bytes in the network.
+func (s *sender) SetPipe() {
+	// If SACK isn't permitted or it is permitted but recovery is not active
+	// then ignore pipe calculations.
+	if !s.ep.sackPermitted || !s.fr.active {
+		return
+	}
+	pipe := 0
+	smss := seqnum.Size(s.ep.scoreboard.SMSS())
+	for s1 := s.writeList.Front(); s1 != nil && s1.data.Size() != 0 && s.isAssignedSequenceNumber(s1); s1 = s1.Next() {
+		// With GSO each segment can be much larger than SMSS. So check the segment
+		// in SMSS sized ranges.
+		segEnd := s1.sequenceNumber.Add(seqnum.Size(s1.data.Size()))
+		for startSeq := s1.sequenceNumber; startSeq.LessThan(segEnd); startSeq = startSeq.Add(smss) {
+			endSeq := startSeq.Add(smss)
+			if segEnd.LessThan(endSeq) {
+				endSeq = segEnd
+			}
+			sb := header.SACKBlock{startSeq, endSeq}
+			// SetPipe():
+			//
+			// After initializing pipe to zero, the following steps are
+			// taken for each octet 'S1' in the sequence space between
+			// HighACK and HighData that has not been SACKed:
+			if !s1.sequenceNumber.LessThan(s.sndNxt) {
+				break
+			}
+			if s.ep.scoreboard.IsSACKED(sb) {
+				continue
+			}
+
+			// SetPipe():
+			//
+			//    (a) If IsLost(S1) returns false, Pipe is incremened by 1.
+			//
+			// NOTE: here we mark the whole segment as lost. We do not try
+			// and test every byte in our write buffer as we maintain our
+			// pipe in terms of oustanding packets and not bytes.
+			if !s.ep.scoreboard.IsRangeLost(sb) {
+				pipe++
+			}
+			// SetPipe():
+			//    (b) If S1 <= HighRxt, Pipe is incremented by 1.
+			if s1.sequenceNumber.LessThanEq(s.fr.highRxt) {
+				pipe++
+			}
+		}
+	}
+	s.outstanding = pipe
 }
 
 // checkDuplicateAck is called when an ack is received. It manages the state
@@ -631,59 +948,31 @@ func (s *sender) leaveFastRecovery() {
 func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	ack := seg.ackNumber
 	if s.fr.active {
-		// We are in fast recovery mode. Ignore the ack if it's out of
-		// range.
-		if !ack.InRange(s.sndUna, s.sndNxt+1) {
-			return false
-		}
-
-		// Leave fast recovery if it acknowledges all the data covered by
-		// this fast recovery session.
-		if s.fr.last.LessThan(ack) {
-			s.leaveFastRecovery()
-			return false
-		}
-
-		// Don't count this as a duplicate if it is carrying data or
-		// updating the window.
-		if seg.logicalLen() != 0 || s.sndWnd != seg.window {
-			return false
-		}
-
-		// Inflate the congestion window if we're getting duplicate acks
-		// for the packet we retransmitted.
-		if ack == s.fr.first {
-			// We received a dup, inflate the congestion window by 1
-			// packet if we're not at the max yet.
-			if s.sndCwnd < s.fr.maxCwnd {
-				s.sndCwnd++
-			}
-			return false
-		}
-
-		// A partial ack was received. Retransmit this packet and
-		// remember it so that we don't retransmit it again. We don't
-		// inflate the window because we're putting the same packet back
-		// onto the wire.
-		//
-		// N.B. The retransmit timer will be reset by the caller.
-		s.fr.first = ack
-		s.dupAckCount = 0
-		return true
+		return s.handleFastRecovery(seg)
 	}
 
 	// We're not in fast recovery yet. A segment is considered a duplicate
 	// only if it doesn't carry any data and doesn't update the send window,
 	// because if it does, it wasn't sent in response to an out-of-order
-	// segment.
+	// segment. If SACK is enabled then we have an additional check to see
+	// if the segment carries new SACK information. If it does then it is
+	// considered a duplicate ACK as per RFC6675.
 	if ack != s.sndUna || seg.logicalLen() != 0 || s.sndWnd != seg.window || ack == s.sndNxt {
-		s.dupAckCount = 0
-		return false
+		if !s.ep.sackPermitted || !seg.hasNewSACKInfo {
+			s.dupAckCount = 0
+			return false
+		}
 	}
 
 	s.dupAckCount++
-	// Do not enter fast recovery until we reach nDupAckThreshold.
-	if s.dupAckCount < nDupAckThreshold {
+
+	// Do not enter fast recovery until we reach nDupAckThreshold or the
+	// first unacknowledged byte is considered lost as per SACK scoreboard.
+	if s.dupAckCount < nDupAckThreshold || (s.ep.sackPermitted && !s.ep.scoreboard.IsLost(s.sndUna)) {
+		// RFC 6675 Step 3.
+		s.fr.highRxt = s.sndUna - 1
+		// Do run SetPipe() to calculate the outstanding segments.
+		s.SetPipe()
 		return false
 	}
 
@@ -696,7 +985,6 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 		s.dupAckCount = 0
 		return false
 	}
-
 	s.cc.HandleNDupAcks()
 	s.enterFastRecovery()
 	s.dupAckCount = 0
@@ -737,6 +1025,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 				seg.hasNewSACKInfo = true
 			}
 		}
+		s.SetPipe()
 	}
 
 	// Count the duplicates and do the fast retransmit if needed.
@@ -749,9 +1038,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	ack := seg.ackNumber
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
 		s.dupAckCount = 0
-		// When an ack is received we must reset the timer. We stop it
-		// here and it will be restarted later if needed.
-		s.resendTimer.disable()
 
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
 		// Specifically we should only update the RTO using TSEcr if the
@@ -767,6 +1053,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
 			s.updateRTO(elapsed)
 		}
+
+		// When an ack is received we must rearm the timer.
+		// RFC 6298 5.2
+		s.resendTimer.enable(s.rto)
+
 		// Remove all acknowledged data from the write list.
 		acked := s.sndUna.Size(ack)
 		s.sndUna = ack
@@ -792,7 +1083,13 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 				s.writeNext = seg.Next()
 			}
 			s.writeList.Remove(seg)
-			s.outstanding -= s.pCount(seg)
+
+			// if SACK is enabled then Only reduce outstanding if
+			// the segment was not previously SACKED as these have
+			// already been accounted for in SetPipe().
+			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
+				s.outstanding -= s.pCount(seg)
+			}
 			seg.decRef()
 			ackLeft -= datalen
 		}
@@ -815,8 +1112,16 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		if s.outstanding < 0 {
 			s.outstanding = 0
 		}
-	}
 
+		s.SetPipe()
+
+		// If all outstanding data was acknowledged the disable the timer.
+		// RFC 6298 Rule 5.3
+		if s.sndUna == s.sndNxt {
+			s.outstanding = 0
+			s.resendTimer.disable()
+		}
+	}
 	// Now that we've popped all acknowledged data from the retransmit
 	// queue, retransmit if needed.
 	if rtx {
@@ -827,12 +1132,26 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	s.sendData()
+	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
+		s.sendData()
+	}
 }
 
-// sendSegment sends a new segment containing the given payload, flags and
-// sequence number.
-func (s *sender) sendSegment(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
+// sendSegment sends the specified segment.
+func (s *sender) sendSegment(seg *segment) *tcpip.Error {
+	if !seg.xmitTime.IsZero() {
+		s.ep.stack.Stats().TCP.Retransmits.Increment()
+		if s.sndCwnd < s.sndSsthresh {
+			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
+		}
+	}
+	seg.xmitTime = time.Now()
+	return s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
+}
+
+// sendSegmentFromView sends a new segment containing the given payload, flags
+// and sequence number.
+func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
 	s.lastSendTime = time.Now()
 	if seq == s.rttMeasureSeqNum {
 		s.rttMeasureTime = s.lastSendTime
@@ -842,6 +1161,20 @@ func (s *sender) sendSegment(data buffer.VectorisedView, flags byte, seq seqnum.
 
 	// Remember the max sent ack.
 	s.maxSentAck = rcvNxt
+
+	// Every time a packet containing data is sent (including a
+	// retransmission), if SACK is enabled then use the conservative timer
+	// described in RFC6675 Section 4.0, otherwise follow the standard time
+	// described in RFC6298 Section 5.2.
+	if data.Size() != 0 {
+		if s.ep.sackPermitted {
+			s.resendTimer.enable(s.rto)
+		} else {
+			if !s.resendTimer.enabled() {
+				s.resendTimer.enable(s.rto)
+			}
+		}
+	}
 
 	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
 }

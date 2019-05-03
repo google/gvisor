@@ -38,6 +38,13 @@ const (
 //
 // +stateify savable
 type SACKScoreboard struct {
+	// smss is defined in RFC5681 as following:
+	//
+	//    The SMSS is the size of the largest segment that the sender can
+	//    transmit.  This value can be based on the maximum transmission unit
+	//    of the network, the path MTU discovery [RFC1191, RFC4821] algorithm,
+	//    RMSS (see next item), or other factors.  The size does not include
+	//    the TCP/IP headers and options.
 	smss      uint16
 	maxSACKED seqnum.Value
 	sacked    seqnum.Size  `state:"nosave"`
@@ -138,6 +145,10 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 // IsSACKED returns true if the a given range of sequence numbers denoted by r
 // are already covered by SACK information in the scoreboard.
 func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
+	if s.Empty() {
+		return false
+	}
+
 	found := false
 	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
 		sacked := i.(header.SACKBlock)
@@ -205,17 +216,46 @@ func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, maxSACKED seqnum
 	return sackBlocks, s.maxSACKED
 }
 
-// IsLost implements the IsLost(SeqNum) operation defined in RFC 3517 section 4.
-//
-// This routine returns whether the given sequence number is considered to be
-// lost. The routine returns true when either nDupAckThreshold discontiguous
-// SACKed sequences have arrived above 'SeqNum' or (nDupAckThreshold * SMSS)
-// bytes with sequence numbers greater than 'SeqNum' have been SACKed.
-// Otherwise, the routine returns false.
-func (s *SACKScoreboard) IsLost(r header.SACKBlock) bool {
+// IsRangeLost implements the IsLost(SeqNum) operation defined in RFC 6675
+// section 4 but operates on a range of sequence numbers and returns true if
+// there are at least nDupAckThreshold SACK blocks greater than the range being
+// checked or if at least (nDupAckThreshold-1)*s.smss bytes have been SACKED
+// with sequence numbers greater than the block being checked.
+func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
+	if s.Empty() {
+		return false
+	}
 	nDupSACK := 0
 	nDupSACKBytes := seqnum.Size(0)
 	isLost := false
+
+	// We need to check if the immediate lower (if any) sacked
+	// range contains or partially overlaps with r.
+	searchMore := true
+	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
+		sacked := i.(header.SACKBlock)
+		if sacked.Contains(r) {
+			searchMore = false
+			return false
+		}
+		if sacked.End.LessThanEq(r.Start) {
+			// all sequence numbers covered by sacked are below
+			// r so we continue searching.
+			return false
+		}
+		// There is a partial overlap. In this case we r.Start is
+		// between sacked.Start & sacked.End and r.End extends beyond
+		// sacked.End.
+		// Move r.Start to sacked.End and continuing searching blocks
+		// above r.Start.
+		r.Start = sacked.End
+		return false
+	})
+
+	if !searchMore {
+		return isLost
+	}
+
 	s.ranges.AscendGreaterOrEqual(r, func(i btree.Item) bool {
 		sacked := i.(header.SACKBlock)
 		if sacked.Contains(r) {
@@ -232,6 +272,18 @@ func (s *SACKScoreboard) IsLost(r header.SACKBlock) bool {
 	return isLost
 }
 
+// IsLost implements the IsLost(SeqNum) operation defined in RFC3517 section
+// 4.
+//
+// This routine returns whether the given sequence number is considered to be
+// lost. The routine returns true when either nDupAckThreshold discontiguous
+// SACKed sequences have arrived above 'SeqNum' or (nDupAckThreshold * SMSS)
+// bytes with sequence numbers greater than 'SeqNum' have been SACKed.
+// Otherwise, the routine returns false.
+func (s *SACKScoreboard) IsLost(seq seqnum.Value) bool {
+	return s.IsRangeLost(header.SACKBlock{seq, seq.Add(1)})
+}
+
 // Empty returns true if the SACK scoreboard has no entries, false otherwise.
 func (s *SACKScoreboard) Empty() bool {
 	return s.ranges.Len() == 0
@@ -246,4 +298,9 @@ func (s *SACKScoreboard) Sacked() seqnum.Size {
 // scoreboard.
 func (s *SACKScoreboard) MaxSACKED() seqnum.Value {
 	return s.maxSACKED
+}
+
+// SMSS returns the sender's MSS as held by the SACK scoreboard.
+func (s *SACKScoreboard) SMSS() uint16 {
+	return s.smss
 }

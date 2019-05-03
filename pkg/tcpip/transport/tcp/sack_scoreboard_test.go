@@ -97,31 +97,120 @@ func TestSACKScoreboardIsSACKED(t *testing.T) {
 	}
 }
 
-func TestSACKScoreboardIsLost(t *testing.T) {
+func TestSACKScoreboardIsRangeLost(t *testing.T) {
 	s := tcp.NewSACKScoreboard(10, 0)
-	s.Insert(header.SACKBlock{1, 50})
+	s.Insert(header.SACKBlock{1, 25})
+	s.Insert(header.SACKBlock{25, 50})
 	s.Insert(header.SACKBlock{51, 100})
 	s.Insert(header.SACKBlock{111, 120})
 	s.Insert(header.SACKBlock{101, 110})
 	s.Insert(header.SACKBlock{121, 141})
+	s.Insert(header.SACKBlock{145, 146})
+	s.Insert(header.SACKBlock{147, 148})
+	s.Insert(header.SACKBlock{149, 150})
+	s.Insert(header.SACKBlock{153, 154})
+	s.Insert(header.SACKBlock{155, 156})
 	testCases := []struct {
 		block header.SACKBlock
 		lost  bool
 	}{
+		// Block not covered by SACK block and has more than
+		// nDupAckThreshold discontiguous SACK blocks after it as well
+		// as (nDupAckThreshold -1) * 10 (smss) bytes that have been
+		// SACKED above the sequence number covered by this block.
 		{block: header.SACKBlock{0, 1}, lost: true},
+
+		// These blocks have all been SACKed and should not be
+		// considered lost.
 		{block: header.SACKBlock{1, 2}, lost: false},
+		{block: header.SACKBlock{25, 26}, lost: false},
 		{block: header.SACKBlock{1, 45}, lost: false},
+
+		// Same as the first case above.
 		{block: header.SACKBlock{50, 51}, lost: true},
-		// This one should return true because there are
-		// > (nDupAckThreshold - 1) * 10 (smss) bytes that have been sacked above
-		// this sequence number.
-		{block: header.SACKBlock{119, 120}, lost: true},
+
+		// This block has been SACKed and should not be considered lost.
+		{block: header.SACKBlock{119, 120}, lost: false},
+
+		// This one should return true because there are >
+		// (nDupAckThreshold - 1) * 10 (smss) bytes that have been
+		// sacked above this sequence number.
 		{block: header.SACKBlock{120, 121}, lost: true},
+
+		// This block has been SACKed and should not be considered lost.
 		{block: header.SACKBlock{125, 126}, lost: false},
+
+		// This block has not been SACKed and there are nDupAckThreshold
+		// number of SACKed blocks after it.
+		{block: header.SACKBlock{141, 145}, lost: true},
+
+		// This block has not been SACKed and there are less than
+		// nDupAckThreshold SACKed sequences after it.
+		{block: header.SACKBlock{151, 152}, lost: false},
 	}
 	for _, tc := range testCases {
-		if want, got := tc.lost, s.IsLost(tc.block); got != want {
-			t.Errorf("s.IsLost(%v) = %v, want %v", tc.block, got, want)
+		if want, got := tc.lost, s.IsRangeLost(tc.block); got != want {
+			t.Errorf("s.IsRangeLost(%v) = %v, want %v", tc.block, got, want)
+		}
+	}
+}
+
+func TestSACKScoreboardIsLost(t *testing.T) {
+	s := tcp.NewSACKScoreboard(10, 0)
+	s.Insert(header.SACKBlock{1, 25})
+	s.Insert(header.SACKBlock{25, 50})
+	s.Insert(header.SACKBlock{51, 100})
+	s.Insert(header.SACKBlock{111, 120})
+	s.Insert(header.SACKBlock{101, 110})
+	s.Insert(header.SACKBlock{121, 141})
+	s.Insert(header.SACKBlock{121, 141})
+	s.Insert(header.SACKBlock{145, 146})
+	s.Insert(header.SACKBlock{147, 148})
+	s.Insert(header.SACKBlock{149, 150})
+	s.Insert(header.SACKBlock{153, 154})
+	s.Insert(header.SACKBlock{155, 156})
+	testCases := []struct {
+		seq  seqnum.Value
+		lost bool
+	}{
+		// Sequence number not covered by SACK block and has more than
+		// nDupAckThreshold discontiguous SACK blocks after it as well
+		// as (nDupAckThreshold -1) * 10 (smss) bytes that have been
+		// SACKED above the sequence number.
+		{seq: 0, lost: true},
+
+		// These sequence numbers have all been SACKed and should not be
+		// considered lost.
+		{seq: 1, lost: false},
+		{seq: 25, lost: false},
+		{seq: 45, lost: false},
+
+		// Same as first case above.
+		{seq: 50, lost: true},
+
+		// This block has been SACKed and should not be considered lost.
+		{seq: 119, lost: false},
+
+		// This one should return true because there are >
+		// (nDupAckThreshold - 1) * 10 (smss) bytes that have been
+		// sacked above this sequence number.
+		{seq: 120, lost: true},
+
+		// This sequence number has been SACKed and should not be
+		// considered lost.
+		{seq: 125, lost: false},
+
+		// This sequence number has not been SACKed and there are
+		// nDupAckThreshold number of SACKed blocks after it.
+		{seq: 141, lost: true},
+
+		// This sequence number has not been SACKed and there are less
+		// than nDupAckThreshold SACKed sequences after it.
+		{seq: 151, lost: false},
+	}
+	for _, tc := range testCases {
+		if want, got := tc.lost, s.IsLost(tc.seq); got != want {
+			t.Errorf("s.IsLost(%v) = %v, want %v", tc.seq, got, want)
 		}
 	}
 }

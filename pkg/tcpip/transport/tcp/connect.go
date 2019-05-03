@@ -790,7 +790,7 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 	// seg.seq = snd.nxt-1.
 	e.keepalive.unacked++
 	e.keepalive.Unlock()
-	e.snd.sendSegment(buffer.VectorisedView{}, header.TCPFlagAck, e.snd.sndNxt-1)
+	e.snd.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, e.snd.sndNxt-1)
 	e.resetKeepaliveTimer(false)
 	return nil
 }

@@ -1792,12 +1792,12 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 
 	// Receive SYN packet.
 	b := c.GetPacket()
-
+	mss := uint16(mtu - header.IPv4MinimumSize - header.TCPMinimumSize)
 	checker.IPv4(t, b,
 		checker.TCP(
 			checker.DstPort(context.TestPort),
 			checker.TCPFlags(header.TCPFlagSyn),
-			checker.TCPSynOptions(header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize, WS: wndScale}),
+			checker.TCPSynOptions(header.TCPSynOptions{MSS: mss, WS: wndScale}),
 		),
 	)
 
@@ -1812,7 +1812,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 			checker.TCPFlags(header.TCPFlagSyn),
 			checker.SrcPort(tcp.SourcePort()),
 			checker.SeqNum(tcp.SequenceNumber()),
-			checker.TCPSynOptions(header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize, WS: wndScale}),
+			checker.TCPSynOptions(header.TCPSynOptions{MSS: mss, WS: wndScale}),
 		),
 	)
 
@@ -2737,7 +2737,8 @@ func TestFastRecovery(t *testing.T) {
 	// A partial ACK during recovery should reduce congestion window by the
 	// number acked. Since we had "expected" packets outstanding before sending
 	// partial ack and we acked expected/2 , the cwnd and outstanding should
-	// be expected/2 + 7. Which means the sender should not send any more packets
+	// be expected/2 + 10 (7 dupAcks + 3 for the original 3 dupacks that triggered
+	// fast recovery). Which means the sender should not send any more packets
 	// till we ack this one.
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after partial ack for this cwnd.",
 		50*time.Millisecond)
@@ -2843,7 +2844,7 @@ func TestRetransmit(t *testing.T) {
 	}
 
 	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(1); got != want {
-		t.Errorf("got stats.TCP.Retransmit.Value = %v, want = %v", got, want)
+		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
 	}
 
 	if got, want := c.Stack().Stats().TCP.SlowStartRetransmits.Value(), uint64(1); got != want {
