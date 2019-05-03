@@ -1,6 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_deb", "pkg_tar")
 
 go_binary(
     name = "runsc",
@@ -51,4 +52,48 @@ go_binary(
         "//runsc/specutils",
         "@com_github_google_subcommands//:go_default_library",
     ],
+)
+
+pkg_tar(
+    name = "runsc-bin",
+    srcs = [":runsc"],
+    mode = "0755",
+    package_dir = "/usr/bin",
+    strip_prefix = "/runsc/linux_amd64_pure_stripped",
+)
+
+pkg_tar(
+    name = "runsc-tools",
+    srcs = ["//runsc/tools/dockercfg"],
+    mode = "0755",
+    package_dir = "/usr/libexec/runsc",
+    strip_prefix = "/runsc/tools/dockercfg/linux_amd64_stripped",
+)
+
+pkg_tar(
+    name = "debian-data",
+    extension = "tar.gz",
+    deps = [
+        ":runsc-bin",
+        ":runsc-tools",
+    ],
+)
+
+genrule(
+    name = "deb-version",
+    outs = ["version.txt"],
+    cmd = "cat bazel-out/volatile-status.txt | grep VERSION | sed 's/^[^0-9]*//' >$@",
+    stamp = 1,
+)
+
+pkg_deb(
+    name = "runsc-debian",
+    architecture = "amd64",
+    data = ":debian-data",
+    description_file = "debian/description",
+    homepage = "https://gvisor.dev/",
+    maintainer = "The gVisor Authors <gvisor-dev@googlegroups.com>",
+    package = "runsc",
+    postinst = "debian/postinst.sh",
+    version_file = ":version.txt",
 )

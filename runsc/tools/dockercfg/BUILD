@@ -5,8 +5,6 @@ package(licenses = ["notice"])
 go_binary(
     name = "dockercfg",
     srcs = ["dockercfg.go"],
-    visibility = [
-        "//runsc/test:__subpackages__",
-    ],
+    visibility = ["//visibility:public"],
     deps = ["@com_github_google_subcommands//:go_default_library"],
 )
