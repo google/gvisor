@@ -601,7 +601,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)
 	log.Debugf("SysProcAttr: %+v", cmd.SysProcAttr)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return err
+		return fmt.Errorf("Sandbox: %v", err)
 	}
 	s.child = true
 	s.Pid = cmd.Process.Pid
