@@ -32,6 +32,7 @@ go_library(
         "linux.go",
         "mm.go",
         "netdevice.go",
+        "netfilter.go",
         "netlink.go",
         "netlink_route.go",
         "poll.go",
