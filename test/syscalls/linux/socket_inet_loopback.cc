@@ -1040,6 +1040,40 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, PortReuseTwoSockets) {
   }
 }
 
+// Check that when a socket was bound to an address with REUSEPORT and then
+// closed, we can bind a different socket to the same address without needing
+// REUSEPORT.
+TEST_P(SocketMultiProtocolInetLoopbackTest, NoReusePortFollowingReusePort) {
+  auto const& param = GetParam();
+  TestAddress const& test_addr = V4Loopback();
+  sockaddr_storage addr = test_addr.addr;
+
+  auto s = ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  int fd = s.get();
+  socklen_t addrlen = test_addr.addr_len;
+  int portreuse = 1;
+  ASSERT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &portreuse, sizeof(portreuse)),
+      SyscallSucceeds());
+  ASSERT_THAT(bind(fd, reinterpret_cast<sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+              SyscallSucceeds());
+  ASSERT_EQ(addrlen, test_addr.addr_len);
+
+  s.reset();
+
+  // Open a new socket and bind to the same address, but w/o REUSEPORT.
+  s = ASSERT_NO_ERRNO_AND_VALUE(Socket(test_addr.family(), param.type, 0));
+  fd = s.get();
+  portreuse = 0;
+  ASSERT_THAT(
+      setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &portreuse, sizeof(portreuse)),
+      SyscallSucceeds());
+  ASSERT_THAT(bind(fd, reinterpret_cast<sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllFamlies, SocketMultiProtocolInetLoopbackTest,
     ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},

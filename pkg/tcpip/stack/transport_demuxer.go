@@ -171,7 +171,7 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint) {
 	// A new endpoint is added into endpointsArr and its index there is
 	// saved in endpointsMap. This will allows to remove endpoint from
 	// the array fast.
-	ep.endpointsMap[ep] = len(ep.endpointsArr)
+	ep.endpointsMap[t] = len(ep.endpointsArr)
 	ep.endpointsArr = append(ep.endpointsArr, t)
 }
 
