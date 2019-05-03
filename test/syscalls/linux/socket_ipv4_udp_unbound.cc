@@ -1207,5 +1207,224 @@ TEST_P(IPv4UDPUnboundSocketPairTest, TestJoinGroupInvalidIf) {
               SyscallFailsWithErrno(ENODEV));
 }
 
+// Check that multiple memberships are not allowed on the same socket.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestMultipleJoinsOnSingleSocket) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  auto fd = sockets->first_fd();
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+
+  EXPECT_THAT(
+      setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)),
+      SyscallSucceeds());
+
+  EXPECT_THAT(
+      setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &group, sizeof(group)),
+      SyscallFailsWithErrno(EADDRINUSE));
+}
+
+// Check that two sockets can join the same multicast group at the same time.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestTwoSocketsJoinSameMulticastGroup) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+
+  // Drop the membership twice on each socket, the second call for each socket
+  // should fail.
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_DROP_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_DROP_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
+  EXPECT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_DROP_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_DROP_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
+}
+
+// Check that two sockets can join the same multicast group at the same time,
+// and both will receive data on it.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestMcastReceptionOnTwoSockets) {
+  std::unique_ptr<SocketPair> socket_pairs[2] = {
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair()),
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair())};
+
+  ip_mreq iface = {}, group = {};
+  iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  auto receiver_addr = V4Any();
+  int bound_port = 0;
+
+  // Create two socketpairs with the exact same configuration.
+  for (auto& sockets : socket_pairs) {
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF,
+                           &iface, sizeof(iface)),
+                SyscallSucceeds());
+    ASSERT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_REUSEPORT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    ASSERT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    ASSERT_THAT(bind(sockets->second_fd(),
+                     reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                     receiver_addr.addr_len),
+                SyscallSucceeds());
+    // Get the port assigned.
+    socklen_t receiver_addr_len = receiver_addr.addr_len;
+    ASSERT_THAT(getsockname(sockets->second_fd(),
+                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                            &receiver_addr_len),
+                SyscallSucceeds());
+    EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+    // On the first iteration, save the port we are bound to. On the second
+    // iteration, verify the port is the same as the one from the first
+    // iteration. In other words, both sockets listen on the same port.
+    if (bound_port == 0) {
+      bound_port =
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+    } else {
+      EXPECT_EQ(bound_port,
+                reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port);
+    }
+  }
+
+  // Send a multicast packet to the group from two different sockets and verify
+  // it is received by both sockets that joined that group.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
+  for (auto& sockets : socket_pairs) {
+    char send_buf[200];
+    RandomizeBuffer(send_buf, sizeof(send_buf));
+    ASSERT_THAT(
+        RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                           reinterpret_cast<sockaddr*>(&send_addr.addr),
+                           send_addr.addr_len),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+
+    // Check that we received the multicast packet on both sockets.
+    for (auto& sockets : socket_pairs) {
+      char recv_buf[sizeof(send_buf)] = {};
+      ASSERT_THAT(
+          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
+          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+    }
+  }
+}
+
+// Check that on two sockets that joined a group and listen on ANY, dropping
+// memberships one by one will continue to deliver packets to both sockets until
+// both memberships have been dropped.
+TEST_P(IPv4UDPUnboundSocketPairTest,
+       TestMcastReceptionWhenDroppingMemberships) {
+  std::unique_ptr<SocketPair> socket_pairs[2] = {
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair()),
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair())};
+
+  ip_mreq iface = {}, group = {};
+  iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  auto receiver_addr = V4Any();
+  int bound_port = 0;
+
+  // Create two socketpairs with the exact same configuration.
+  for (auto& sockets : socket_pairs) {
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF,
+                           &iface, sizeof(iface)),
+                SyscallSucceeds());
+    ASSERT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_REUSEPORT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    ASSERT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+    ASSERT_THAT(bind(sockets->second_fd(),
+                     reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                     receiver_addr.addr_len),
+                SyscallSucceeds());
+    // Get the port assigned.
+    socklen_t receiver_addr_len = receiver_addr.addr_len;
+    ASSERT_THAT(getsockname(sockets->second_fd(),
+                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                            &receiver_addr_len),
+                SyscallSucceeds());
+    EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+    // On the first iteration, save the port we are bound to. On the second
+    // iteration, verify the port is the same as the one from the first
+    // iteration. In other words, both sockets listen on the same port.
+    if (bound_port == 0) {
+      bound_port =
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+    } else {
+      EXPECT_EQ(bound_port,
+                reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port);
+    }
+  }
+
+  // Drop the membership of the first socket pair and verify data is still
+  // received.
+  ASSERT_THAT(setsockopt(socket_pairs[0]->second_fd(), IPPROTO_IP,
+                         IP_DROP_MEMBERSHIP, &group, sizeof(group)),
+              SyscallSucceeds());
+  // Send a packet from each socket_pair.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
+  for (auto& sockets : socket_pairs) {
+    char send_buf[200];
+    RandomizeBuffer(send_buf, sizeof(send_buf));
+    ASSERT_THAT(
+        RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                           reinterpret_cast<sockaddr*>(&send_addr.addr),
+                           send_addr.addr_len),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+
+    // Check that we received the multicast packet on both sockets.
+    for (auto& sockets : socket_pairs) {
+      char recv_buf[sizeof(send_buf)] = {};
+      ASSERT_THAT(
+          RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf), 0),
+          SyscallSucceedsWithValue(sizeof(recv_buf)));
+      EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+    }
+  }
+
+  // Drop the membership of the second socket pair and verify data stops being
+  // received.
+  ASSERT_THAT(setsockopt(socket_pairs[1]->second_fd(), IPPROTO_IP,
+                         IP_DROP_MEMBERSHIP, &group, sizeof(group)),
+              SyscallSucceeds());
+  // Send a packet from each socket_pair.
+  for (auto& sockets : socket_pairs) {
+    char send_buf[200];
+    ASSERT_THAT(
+        RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                           reinterpret_cast<sockaddr*>(&send_addr.addr),
+                           send_addr.addr_len),
+        SyscallSucceedsWithValue(sizeof(send_buf)));
+
+    char recv_buf[sizeof(send_buf)] = {};
+    for (auto& sockets : socket_pairs) {
+      ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf,
+                                   sizeof(recv_buf), MSG_DONTWAIT),
+                  SyscallFailsWithErrno(EAGAIN));
+    }
+  }
+}
+
 }  // namespace testing
 }  // namespace gvisor

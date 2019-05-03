@@ -141,9 +141,9 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID) TransportEnd
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
-	// If this is a broadcast datagram, deliver the datagram to all endpoints
-	// managed by ep.
-	if id.LocalAddress == header.IPv4Broadcast {
+	// If this is a broadcast or multicast datagram, deliver the datagram to all
+	// endpoints managed by ep.
+	if id.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(id.LocalAddress) || header.IsV6MulticastAddress(id.LocalAddress) {
 		for i, endpoint := range ep.endpointsArr {
 			// HandlePacket modifies vv, so each endpoint needs its own copy.
 			if i == len(ep.endpointsArr)-1 {

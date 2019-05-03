@@ -66,6 +66,12 @@ func (e *endpoint) loadRcvBufSizeMax(max int) {
 func (e *endpoint) afterLoad() {
 	e.stack = stack.StackFromEnv
 
+	for _, m := range e.multicastMemberships {
+		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
+			panic(err)
+		}
+	}
+
 	if e.state != stateBound && e.state != stateConnected {
 		return
 	}
@@ -102,11 +108,5 @@ func (e *endpoint) afterLoad() {
 	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
 	if err != nil {
 		panic(*err)
-	}
-
-	for _, m := range e.multicastMemberships {
-		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
-			panic(err)
-		}
 	}
 }
