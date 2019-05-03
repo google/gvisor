@@ -28,11 +28,13 @@ go_test(
     srcs = ["ipv4_test.go"],
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
     ],

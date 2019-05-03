@@ -52,6 +52,16 @@ func (p Prependable) UsedLength() int {
 	return len(p.buf) - p.usedIdx
 }
 
+// AvailableLength returns the number of bytes used so far.
+func (p Prependable) AvailableLength() int {
+	return p.usedIdx
+}
+
+// TrimBack removes size bytes from the end.
+func (p *Prependable) TrimBack(size int) {
+	p.buf = p.buf[:len(p.buf)-size]
+}
+
 // Prepend reserves the requested space in front of the buffer, returning a
 // slice that represents the reserved space.
 func (p *Prependable) Prepend(size int) []byte {
