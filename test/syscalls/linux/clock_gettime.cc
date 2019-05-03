@@ -56,8 +56,9 @@ void spin_ns(int64_t ns) {
 // Test that CLOCK_PROCESS_CPUTIME_ID is a superset of CLOCK_THREAD_CPUTIME_ID.
 TEST(ClockGettime, CputimeId) {
   // TODO(b/128871825,golang.org/issue/10958): Test times out when there is a
-  // single core because one goroutine starves the others.
-  SKIP_IF(std::thread::hardware_concurrency() == 1);
+  // small number of core because one goroutine starves the others.
+  printf("CPUS: %d\n", std::thread::hardware_concurrency());
+  SKIP_IF(std::thread::hardware_concurrency() <= 2);
 
   constexpr int kNumThreads = 13;  // arbitrary
 
