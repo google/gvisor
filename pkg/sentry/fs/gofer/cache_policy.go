@@ -139,11 +139,12 @@ func (cp cachePolicy) revalidate(ctx context.Context, name string, parent, child
 	// TODO(b/112031682): If we have a directory FD in the parent
 	// inodeOperations, then we can use fstatat(2) to get the inode
 	// attributes instead of making this RPC.
-	qids, _, mask, attr, err := parentIops.fileState.file.walkGetAttr(ctx, []string{name})
+	qids, f, mask, attr, err := parentIops.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		// Can't look up the name. Trigger reload.
 		return true
 	}
+	f.close(ctx)
 
 	// If the Path has changed, then we are not looking at the file file.
 	// We must reload.

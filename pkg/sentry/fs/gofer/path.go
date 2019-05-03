@@ -109,6 +109,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	hostFile, err := newFile.create(ctx, name, openFlags, p9.FileMode(perm.LinuxMode()), p9.UID(owner.UID), p9.GID(owner.GID))
 	if err != nil {
 		// Could not create the file.
+		newFile.close(ctx)
 		return nil, err
 	}
 
@@ -120,11 +121,14 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	qids, unopened, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		newFile.close(ctx)
+		hostFile.Close()
 		return nil, err
 	}
 	if len(qids) != 1 {
 		log.Warningf("WalkGetAttr(%s) succeeded, but returned %d QIDs (%v), wanted 1", name, len(qids), qids)
 		newFile.close(ctx)
+		hostFile.Close()
+		unopened.close(ctx)
 		return nil, syserror.EIO
 	}
 	qid := qids[0]

@@ -502,6 +502,9 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	last := l
 	for _, name := range names {
 		f, path, err := openAnyFileFromParent(last, name)
+		if last != l {
+			last.Close()
+		}
 		if err != nil {
 			return nil, nil, extractErrno(err)
 		}
