@@ -38,8 +38,15 @@ namespace {
 // The header sys/memfd.h isn't available on all systems, so redefining some of
 // the constants here.
 #define F_LINUX_SPECIFIC_BASE 1024
+
+#ifndef F_ADD_SEALS
 #define F_ADD_SEALS (F_LINUX_SPECIFIC_BASE + 9)
+#endif /* F_ADD_SEALS */
+
+#ifndef F_GET_SEALS
 #define F_GET_SEALS (F_LINUX_SPECIFIC_BASE + 10)
+#endif /* F_GET_SEALS */
+
 #define F_SEAL_SEAL 0x0001
 #define F_SEAL_SHRINK 0x0002
 #define F_SEAL_GROW 0x0004
