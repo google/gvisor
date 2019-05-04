@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
-
 package seccomp
 
 import (
@@ -65,9 +63,6 @@ func isKillProcessAvailable() (bool, error) {
 //
 //go:nosplit
 func seccomp(op, flags uint32, ptr unsafe.Pointer) syscall.Errno {
-	// SYS_SECCOMP is not available in syscall package.
-	const SYS_SECCOMP = 317
-
 	if _, _, errno := syscall.RawSyscall(SYS_SECCOMP, uintptr(op), uintptr(flags), uintptr(ptr)); errno != 0 {
 		return errno
 	}

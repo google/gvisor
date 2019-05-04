@@ -22,6 +22,8 @@ go_library(
     name = "seccomp",
     srcs = [
         "seccomp.go",
+        "seccomp_amd64.go",
+        "seccomp_arm64.go",
         "seccomp_rules.go",
         "seccomp_unsafe.go",
     ],

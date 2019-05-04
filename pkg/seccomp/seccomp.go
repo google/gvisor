@@ -123,11 +123,11 @@ func BuildProgram(rules []RuleSet, defaultAction linux.BPFAction) ([]linux.BPFIn
 	// Be paranoid and check that syscall is done in the expected architecture.
 	//
 	// A = seccomp_data.arch
-	// if (A != AUDIT_ARCH_X86_64) goto defaultAction.
+	// if (A != AUDIT_ARCH) goto defaultAction.
 	program.AddStmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArch)
 	// defaultLabel is at the bottom of the program. The size of program
 	// may exceeds 255 lines, which is the limit of a condition jump.
-	program.AddJump(bpf.Jmp|bpf.Jeq|bpf.K, linux.AUDIT_ARCH_X86_64, skipOneInst, 0)
+	program.AddJump(bpf.Jmp|bpf.Jeq|bpf.K, LINUX_AUDIT_ARCH, skipOneInst, 0)
 	program.AddDirectJumpLabel(defaultLabel)
 	if err := buildIndex(rules, program); err != nil {
 		return nil, err
