@@ -33,6 +33,9 @@ type Restore struct {
 
 	// imagePath is the path to the saved container image
 	imagePath string
+
+	// detach indicates that runsc has to start a process and exit without waiting it.
+	detach bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -55,10 +58,9 @@ func (*Restore) Usage() string {
 func (r *Restore) SetFlags(f *flag.FlagSet) {
 	r.Create.SetFlags(f)
 	f.StringVar(&r.imagePath, "image-path", "", "directory path to saved container image")
+	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 
 	// Unimplemented flags necessary for compatibility with docker.
-	var d bool
-	f.BoolVar(&d, "detach", false, "ignored")
 
 	var nsr bool
 	f.BoolVar(&nsr, "no-subreaper", false, "ignored")
@@ -92,17 +94,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 		Fatalf("image-path flag must be provided")
 	}
 
-	restoreFile := filepath.Join(r.imagePath, checkpointFileName)
+	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
 
-	c, err := container.Load(conf.RootDir, id)
-	if err != nil {
-		Fatalf("loading container: %v", err)
-	}
-	if err := c.Restore(spec, conf, restoreFile); err != nil {
-		Fatalf("restoring container: %v", err)
-	}
-
-	ws, err := c.Wait()
+	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog, r.detach)
 	if err != nil {
 		Fatalf("running container: %v", err)
 	}

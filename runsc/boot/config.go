@@ -213,6 +213,9 @@ type Config struct {
 	// ProfileEnable is set to prepare the sandbox to be profiled.
 	ProfileEnable bool
 
+	// RestoreFile is the path to the saved container image
+	RestoreFile string
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

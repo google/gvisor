@@ -263,6 +263,22 @@ func (d *Docker) Unpause() error {
 	return nil
 }
 
+// Checkpoint calls 'docker checkpoint'.
+func (d *Docker) Checkpoint(name string) error {
+	if _, err := do("checkpoint", "create", d.Name, name); err != nil {
+		return fmt.Errorf("error pausing container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
+// Restore calls 'docker start --checkname [name]'.
+func (d *Docker) Restore(name string) error {
+	if _, err := do("start", "--checkpoint", name, d.Name); err != nil {
+		return fmt.Errorf("error starting container %q: %v", d.Name, err)
+	}
+	return nil
+}
+
 // Remove calls 'docker rm'.
 func (d *Docker) Remove() error {
 	if _, err := do("rm", d.Name); err != nil {

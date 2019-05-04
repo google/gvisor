@@ -144,7 +144,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		Fatalf("Error write spec: %v", err)
 	}
 
-	ws, err := container.Run(cid, spec, conf, tmpDir, "", "", "")
+	ws, err := container.Run(cid, spec, conf, tmpDir, "", "", "", false)
 	if err != nil {
 		Fatalf("running container: %v", err)
 	}

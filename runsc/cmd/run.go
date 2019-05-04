@@ -29,6 +29,9 @@ import (
 type Run struct {
 	// Run flags are a super-set of those for Create.
 	Create
+
+	// detach indicates that runsc has to start a process and exit without waiting it.
+	detach bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -49,6 +52,7 @@ func (*Run) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Run) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	r.Create.SetFlags(f)
 }
 
@@ -73,7 +77,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	}
 	specutils.LogSpec(spec)
 
-	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog)
+	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog, r.detach)
 	if err != nil {
 		Fatalf("running container: %v", err)
 	}

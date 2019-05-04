@@ -187,7 +187,7 @@ func compileMounts(spec *specs.Spec) []specs.Mount {
 // createRootMount creates the root filesystem.
 func createRootMount(ctx context.Context, spec *specs.Spec, conf *Config, fds *fdDispenser, mounts []specs.Mount) (*fs.Inode, error) {
 	// First construct the filesystem from the spec.Root.
-	mf := fs.MountSourceFlags{ReadOnly: spec.Root.Readonly}
+	mf := fs.MountSourceFlags{ReadOnly: spec.Root.Readonly || conf.Overlay}
 
 	var (
 		rootInode *fs.Inode
@@ -419,7 +419,7 @@ func mountDevice(m specs.Mount) string {
 // addRestoreMount adds a mount to the MountSources map used for restoring a
 // checkpointed container.
 func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, fds *fdDispenser) error {
-	fsName, opts, _, err := getMountNameAndOptions(conf, m, fds)
+	fsName, opts, useOverlay, err := getMountNameAndOptions(conf, m, fds)
 
 	// Return the error or nil that corresponds to the default case in getMountNameAndOptions.
 	if err != nil {
@@ -435,6 +435,9 @@ func addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount, f
 		Dev:        mountDevice(m),
 		Flags:      mountFlags(m.Options),
 		DataString: strings.Join(opts, ","),
+	}
+	if useOverlay {
+		newMount.Flags.ReadOnly = true
 	}
 	renv.MountSources[fsName] = append(renv.MountSources[fsName], newMount)
 	log.Infof("Added mount at %q: %+v", fsName, newMount)
@@ -453,7 +456,7 @@ func createRestoreEnvironment(spec *specs.Spec, conf *Config, fds *fdDispenser) 
 	opts := p9MountOptions(fd, conf.FileAccess)
 
 	mf := fs.MountSourceFlags{}
-	if spec.Root.Readonly {
+	if spec.Root.Readonly || conf.Overlay {
 		mf.ReadOnly = true
 	}
 

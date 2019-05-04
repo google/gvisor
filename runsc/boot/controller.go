@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/control/server"
@@ -304,12 +305,17 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
-	var specFile, deviceFile *os.File
+	var specFile *os.File
+	deviceFD := -1
 	switch numFiles := len(o.FilePayload.Files); numFiles {
 	case 2:
-		// The device file is donated to the platform, so don't Close
-		// it here.
-		deviceFile = o.FilePayload.Files[1]
+		var err error
+		// The device file is donated to the platform.
+		// Can't take ownership away from os.File. dup them to get a new FD.
+		deviceFD, err = syscall.Dup(int(o.FilePayload.Files[1].Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to dup file: %v", err)
+		}
 		fallthrough
 	case 1:
 		specFile = o.FilePayload.Files[0]
@@ -320,11 +326,12 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("at most two files may be passed to Restore")
 	}
 
+	networkStack := cm.l.k.NetworkStack()
 	// Destroy the old kernel and create a new kernel.
 	cm.l.k.Pause()
 	cm.l.k.Destroy()
 
-	p, err := createPlatform(cm.l.conf, int(deviceFile.Fd()))
+	p, err := createPlatform(cm.l.conf, deviceFD)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -347,10 +354,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	fs.SetRestoreEnvironment(*renv)
 
 	// Prepare to load from the state file.
-	networkStack, err := newEmptyNetworkStack(cm.l.conf, k)
-	if err != nil {
-		return fmt.Errorf("creating network: %v", err)
-	}
 	if eps, ok := networkStack.(*epsocket.Stack); ok {
 		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
 	}

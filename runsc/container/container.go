@@ -445,6 +445,14 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 		return err
 	}
 
+	// "If any prestart hook fails, the runtime MUST generate an error,
+	// stop and destroy the container" -OCI spec.
+	if c.Spec.Hooks != nil {
+		if err := executeHooks(c.Spec.Hooks.Prestart, c.State()); err != nil {
+			return err
+		}
+	}
+
 	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
 		return err
 	}
@@ -453,7 +461,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 }
 
 // Run is a helper that calls Create + Start + Wait.
-func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string) (syscall.WaitStatus, error) {
+func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string, detach bool) (syscall.WaitStatus, error) {
 	log.Debugf("Run container %q in root dir: %s", id, conf.RootDir)
 	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile, userLog)
 	if err != nil {
@@ -461,10 +469,24 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	}
 	// Clean up partially created container if an error ocurrs.
 	// Any errors returned by Destroy() itself are ignored.
-	defer c.Destroy()
+	cu := specutils.MakeCleanup(func() {
+		c.Destroy()
+	})
+	defer cu.Clean()
 
-	if err := c.Start(conf); err != nil {
-		return 0, fmt.Errorf("starting container: %v", err)
+	if conf.RestoreFile != "" {
+		log.Debugf("Restore: %v", conf.RestoreFile)
+		if err := c.Restore(spec, conf, conf.RestoreFile); err != nil {
+			return 0, fmt.Errorf("starting container: %v", err)
+		}
+	} else {
+		if err := c.Start(conf); err != nil {
+			return 0, fmt.Errorf("starting container: %v", err)
+		}
+	}
+	if detach {
+		cu.Release()
+		return 0, nil
 	}
 	return c.Wait()
 }

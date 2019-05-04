@@ -76,7 +76,8 @@ if [[ ${uninstall} == 0 ]]; then
   sudo -n chmod a+wx "${logdir}"
 
   declare -r args="--debug-log '${logdir}/' --debug --strace --log-packets"
-  sudo -n "${dockercfg}" runtime-add "${runtime}" "${runsc}" ${args}
+  # experimental is needed to checkpoint/restore.
+  sudo -n "${dockercfg}" --experimental=true runtime-add "${runtime}" "${runsc}" ${args}
   sudo -n "${dockercfg}" runtime-add "${runtime}"-kvm "${runsc}" --platform=kvm ${args}
   sudo -n "${dockercfg}" runtime-add "${runtime}"-hostnet "${runsc}" --network=host ${args}
   sudo -n "${dockercfg}" runtime-add "${runtime}"-overlay "${runsc}" --overlay ${args}

@@ -210,7 +210,7 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "", false)
 	if err != nil {
 		return fmt.Errorf("running container: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestExePath(t *testing.T) {
 				t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
 			}
 
-			ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+			ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "", false)
 
 			os.RemoveAll(rootDir)
 			os.RemoveAll(bundleDir)
@@ -449,7 +449,7 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	ws, err := Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "", "")
+	ws, err := Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "", "", false)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = Run(testutil.UniqueContainerID(), errSpec, conf, bundleDir2, "", "", "")
+	ws, err = Run(testutil.UniqueContainerID(), errSpec, conf, bundleDir2, "", "", "", false)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -1519,7 +1519,7 @@ func TestUserLog(t *testing.T) {
 	userLog := filepath.Join(dir, "user.log")
 
 	// Create, start and wait for the container.
-	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", userLog)
+	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", userLog, false)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}

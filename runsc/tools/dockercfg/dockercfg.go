@@ -28,7 +28,8 @@ import (
 )
 
 var (
-	configFile = flag.String("config_file", "/etc/docker/daemon.json", "path to Docker daemon config file")
+	configFile   = flag.String("config_file", "/etc/docker/daemon.json", "path to Docker daemon config file")
+	experimental = flag.Bool("experimental", false, "enable experimental features")
 )
 
 func main() {
@@ -95,6 +96,9 @@ func (r *runtimeAdd) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 	} else {
 		rts = make(map[string]interface{})
 		c["runtimes"] = rts
+	}
+	if *experimental {
+		c["experimental"] = true
 	}
 	rts[name] = runtime{Path: path, RuntimeArgs: runtimeArgs}
 
