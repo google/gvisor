@@ -187,6 +187,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		"--network=none",
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
+		"--net-raw=true",
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")

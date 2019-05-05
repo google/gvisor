@@ -72,7 +72,24 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			received.Invalid.Increment()
 			return
 		}
+
+		// Only send a reply if the checksum is valid.
+		wantChecksum := h.Checksum()
+		// Reset the checksum field to 0 to can calculate the proper
+		// checksum. We'll have to reset this before we hand the packet
+		// off.
+		h.SetChecksum(0)
+		gotChecksum := ^header.ChecksumVV(vv, 0 /* initial */)
+		if gotChecksum != wantChecksum {
+			// It's possible that a raw socket expects to receive this.
+			h.SetChecksum(wantChecksum)
+			e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
+			received.Invalid.Increment()
+			return
+		}
+
 		// It's possible that a raw socket expects to receive this.
+		h.SetChecksum(wantChecksum)
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 		vv := vv.Clone(nil)

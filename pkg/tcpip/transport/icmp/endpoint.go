@@ -661,6 +661,22 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) {
+	// Only accept echo replies.
+	switch e.netProto {
+	case header.IPv4ProtocolNumber:
+		h := header.ICMPv4(vv.First())
+		if h.Type() != header.ICMPv4EchoReply {
+			e.stack.Stats().DroppedPackets.Increment()
+			return
+		}
+	case header.IPv6ProtocolNumber:
+		h := header.ICMPv6(vv.First())
+		if h.Type() != header.ICMPv6EchoReply {
+			e.stack.Stats().DroppedPackets.Increment()
+			return
+		}
+	}
+
 	e.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.

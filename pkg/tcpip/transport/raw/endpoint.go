@@ -80,11 +80,9 @@ type endpoint struct {
 	// The following fields are protected by mu.
 	mu         sync.RWMutex `state:"nosave"`
 	sndBufSize int
-	// shutdownFlags represent the current shutdown state of the endpoint.
-	shutdownFlags tcpip.ShutdownFlags
-	closed        bool
-	connected     bool
-	bound         bool
+	closed     bool
+	connected  bool
+	bound      bool
 	// registeredNIC is the NIC to which th endpoint is explicitly
 	// registered. Is set when Connect or Bind are used to specify a NIC.
 	registeredNIC tcpip.NICID
@@ -192,12 +190,6 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 		return 0, nil, tcpip.ErrInvalidEndpointState
 	}
 
-	// Check whether we've shutdown writing.
-	if ep.shutdownFlags&tcpip.ShutdownWrite != 0 {
-		ep.mu.RUnlock()
-		return 0, nil, tcpip.ErrClosedForSend
-	}
-
 	// Did the user caller provide a destination? If not, use the connected
 	// destination.
 	if opts.To == nil {
@@ -205,7 +197,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 		// connected to another address.
 		if !ep.connected {
 			ep.mu.RUnlock()
-			return 0, nil, tcpip.ErrNotConnected
+			return 0, nil, tcpip.ErrDestinationRequired
 		}
 
 		if ep.route.IsResolutionRequired() {
@@ -355,7 +347,7 @@ func (ep *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	return nil
 }
 
-// Shutdown implements tcpip.Endpoint.Shutdown.
+// Shutdown implements tcpip.Endpoint.Shutdown. It's a noop for raw sockets.
 func (ep *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -363,20 +355,6 @@ func (ep *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	if !ep.connected {
 		return tcpip.ErrNotConnected
 	}
-
-	ep.shutdownFlags |= flags
-
-	if flags&tcpip.ShutdownRead != 0 {
-		ep.rcvMu.Lock()
-		wasClosed := ep.rcvClosed
-		ep.rcvClosed = true
-		ep.rcvMu.Unlock()
-
-		if !wasClosed {
-			ep.waiterQueue.Notify(waiter.EventIn)
-		}
-	}
-
 	return nil
 }
 
@@ -427,17 +405,8 @@ func (ep *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 
 // GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress.
 func (ep *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
-	ep.mu.RLock()
-	defer ep.mu.RUnlock()
-
-	if !ep.connected {
-		return tcpip.FullAddress{}, tcpip.ErrNotConnected
-	}
-
-	return tcpip.FullAddress{
-		NIC:  ep.registeredNIC,
-		Addr: ep.route.RemoteAddress,
-	}, nil
+	// Even a connected socket doesn't return a remote address.
+	return tcpip.FullAddress{}, tcpip.ErrNotConnected
 }
 
 // Readiness implements tcpip.Endpoint.Readiness.
