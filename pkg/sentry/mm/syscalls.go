@@ -694,8 +694,9 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 	// Can't defer mm.mappingMu.Unlock(); see below.
 
 	if addr < mm.brk.Start {
+		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return mm.brk.End, syserror.EINVAL
+		return addr, syserror.EINVAL
 	}
 
 	// TODO(gvisor.dev/issue/156): This enforces RLIMIT_DATA, but is
@@ -704,22 +705,20 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 	// size of heap + data + bss. The segment sizes need to be plumbed from
 	// the loader package to fully enforce RLIMIT_DATA.
 	if uint64(addr-mm.brk.Start) > limits.FromContext(ctx).Get(limits.Data).Cur {
+		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return mm.brk.End, syserror.ENOMEM
+		return addr, syserror.ENOMEM
 	}
 
 	oldbrkpg, _ := mm.brk.End.RoundUp()
 	newbrkpg, ok := addr.RoundUp()
 	if !ok {
+		addr = mm.brk.End
 		mm.mappingMu.Unlock()
-		return mm.brk.End, syserror.EFAULT
+		return addr, syserror.EFAULT
 	}
 
 	switch {
-	case newbrkpg < oldbrkpg:
-		mm.unmapLocked(ctx, usermem.AddrRange{newbrkpg, oldbrkpg})
-		mm.mappingMu.Unlock()
-
 	case oldbrkpg < newbrkpg:
 		vseg, ar, err := mm.createVMALocked(ctx, memmap.MMapOpts{
 			Length: uint64(newbrkpg - oldbrkpg),
@@ -736,21 +735,26 @@ func (mm *MemoryManager) Brk(ctx context.Context, addr usermem.Addr) (usermem.Ad
 			Hint:      "[heap]",
 		})
 		if err != nil {
+			addr = mm.brk.End
 			mm.mappingMu.Unlock()
-			return mm.brk.End, err
+			return addr, err
 		}
+		mm.brk.End = addr
 		if mm.defMLockMode == memmap.MLockEager {
 			mm.populateVMAAndUnlock(ctx, vseg, ar, true)
 		} else {
 			mm.mappingMu.Unlock()
 		}
 
+	case newbrkpg < oldbrkpg:
+		mm.unmapLocked(ctx, usermem.AddrRange{newbrkpg, oldbrkpg})
+		fallthrough
+
 	default:
-		// Nothing to do.
+		mm.brk.End = addr
 		mm.mappingMu.Unlock()
 	}
 
-	mm.brk.End = addr
 	return addr, nil
 }
 
