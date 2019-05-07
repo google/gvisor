@@ -16,6 +16,7 @@
 package gonet
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
@@ -495,6 +496,12 @@ func fullToUDPAddr(addr tcpip.FullAddress) *net.UDPAddr {
 
 // DialTCP creates a new TCP Conn connected to the specified address.
 func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*Conn, error) {
+	return DialContextTCP(context.Background(), s, addr, network)
+}
+
+// DialContextTCP creates a new TCP Conn connected to the specified address
+// with the option of adding cancellation and timeouts.
+func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*Conn, error) {
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -509,9 +516,21 @@ func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtoc
 	wq.EventRegister(&waitEntry, waiter.EventOut)
 	defer wq.EventUnregister(&waitEntry)
 
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	err = ep.Connect(addr)
 	if err == tcpip.ErrConnectStarted {
-		<-notifyCh
+		select {
+		case <-ctx.Done():
+			ep.Close()
+			return nil, ctx.Err()
+		case <-notifyCh:
+		}
+
 		err = ep.GetSockOpt(tcpip.ErrorOption{})
 	}
 	if err != nil {

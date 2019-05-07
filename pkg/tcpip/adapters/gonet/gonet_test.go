@@ -15,6 +15,7 @@
 package gonet
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -592,6 +593,48 @@ func TestTCPDialError(t *testing.T) {
 	want := tcpip.ErrNoRoute
 	if !ok || got.Err.Error() != want.String() {
 		t.Errorf("Got DialTCP() = %v, want = %v", err, tcpip.ErrNoRoute)
+	}
+}
+
+func TestDialContextTCPCanceled(t *testing.T) {
+	s, err := newLoopbackStack()
+	if err != nil {
+		t.Fatalf("newLoopbackStack() = %v", err)
+	}
+
+	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
+	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
+
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := DialContextTCP(ctx, s, addr, ipv4.ProtocolNumber); err != context.Canceled {
+		t.Errorf("got DialContextTCP(...) = %v, want = %v", err, context.Canceled)
+	}
+}
+
+func TestDialContextTCPTimeout(t *testing.T) {
+	s, err := newLoopbackStack()
+	if err != nil {
+		t.Fatalf("newLoopbackStack() = %v", err)
+	}
+
+	addr := tcpip.FullAddress{NICID, tcpip.Address(net.IPv4(169, 254, 10, 1).To4()), 11211}
+	s.AddAddress(NICID, ipv4.ProtocolNumber, addr.Addr)
+
+	fwd := tcp.NewForwarder(s, 30000, 10, func(r *tcp.ForwarderRequest) {
+		time.Sleep(time.Second)
+		r.Complete(true)
+	})
+	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
+
+	ctx := context.Background()
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(100*time.Millisecond))
+	defer cancel()
+
+	if _, err := DialContextTCP(ctx, s, addr, ipv4.ProtocolNumber); err != context.DeadlineExceeded {
+		t.Errorf("got DialContextTCP(...) = %v, want = %v", err, context.DeadlineExceeded)
 	}
 }
 
