@@ -4,9 +4,9 @@ weight = 30
 +++
 gVisor is designed to provide a secure, virtualized environment while preserving
 key benefits of containerization, such as small fixed overheads and a dynamic
-resource footprint. For containerized infrastructure, this can provide an "easy
-button" for sandboxing untrusted workloads: there are no changes to the
-fundamental resource model.
+resource footprint. For containerized infrastructure, this can provide a
+turn-key solution for sandboxing untrusted workloads: there are no changes to
+the fundamental resource model.
 
 gVisor imposes runtime costs over native containers. These costs come in two
 forms: additional cycles and memory usage, which may manifest as increased
@@ -34,9 +34,9 @@ improvements are possible and not possible.
 
 While we include a variety of workloads here, it’s worth emphasizing that gVisor
 may not be an appropriate solution for every workload, for reasons other than
-performance. For example, a sandbox is likely to provide minimal benefit for
-your database, since *all your user data would already be inside the sandbox*
-and there is no need for an attacker to break out in the first place.
+performance. For example, a sandbox may provide minimal benefit for a trusted
+database, since *user data would already be inside the sandbox* and there is no
+need for an attacker to break out in the first place.
 
 ## Methodology
 
@@ -65,7 +65,7 @@ platforms.**
 ## Memory access
 
 gVisor does not introduce any additional costs with respect to raw memory
-accesses. Page faults are other Operating System (OS) mechanisms are translated
+accesses. Page faults and other Operating System (OS) mechanisms are translated
 through the Sentry, but once mappings are installed and available to the
 application, there is no additional overhead.
 
@@ -100,7 +100,8 @@ the difference by the number of containers.
 The first application is an instance of `sleep`: a trivial application that does
 nothing. The second application is a synthetic `node` application which imports
 a number of modules and listens for requests. The third application is a similar
-synthetic `ruby` application which does the same.
+synthetic `ruby` application which does the same. In all cases, the sandbox
+itself is responsible for a small, mostly fixed amount of memory overhead.
 
 ## CPU performance
 
@@ -150,7 +151,7 @@ For example, `redis` is an application that performs relatively little work in
 userspace: in general it reads from a connected socket, reads or modifies some
 data, and writes a result back to the socket. The above figure shows the results
 of running [comprehensive set of benchmarks][redis-benchmark]. We can see that
-small operations impose a large operation, while larger operations, such as
+small operations impose a large overhead, while larger operations, such as
 `LRANGE`, where more work is done in the application, have a smaller relative
 overhead.
 
