@@ -92,6 +92,11 @@ This test is the result of running many instances of a container (typically 50)
 and calculating available memory on the host before and afterwards, and dividing
 the difference by the number of containers.
 
+> Note: the above technique is used for measuring memory usage over the
+> `usage_in_bytes` value of the container cgroup because we found that some
+> container runtimes, other than `runc` and `runsc` do not use an individual
+> container cgroup.
+
 The first application is an instance of `sleep`: a trivial application that does
 nothing. The second application is a synthetic `node` application which imports
 a number of modules and listens for requests. The third application is a similar
@@ -107,8 +112,8 @@ imposed for CPU operations.
 
 The above figure demonstrates the `sysbench` measurement of CPU events per
 second. Events per second is based on a CPU-bound loop that calculates all prime
-numbers in a specified range. We note that `runsc` does not impose substantial
-degradation, as the code is executing natively in both cases.
+numbers in a specified range. We note that `runsc` does not impose a performance
+penalty, as the code is executing natively in both cases.
 
 This has important consequences for classes of workloads that are often
 CPU-bound, such as data processing or machine learning. In these cases, `runsc`
@@ -168,6 +173,11 @@ loads a number of modules and binds an HTTP server. The time is measured by a
 successful request to the bound port. Finally, a `ruby` application that
 similarly loads a number of modules and binds an HTTP server.
 
+> Note: most of the time overhead above is associated Docker itself. This is
+> evident with the empty `runc` benchmark. To avoid these costs with `runsc`,
+> you may also consider using `runsc do` mode or invoking the [OCI
+> runtime](../../user_guide/oci) directly.
+
 ## Network
 
 Networking is mostly bound by **implementation costs**, and gVisor's network stack
@@ -225,8 +235,8 @@ such operations in the hot path for serviing requests, for example. The above
 figure shows the result of using gVisor to serve small pieces of static content
 with predictably poor results. This workload represents `apache` serving a
 single file sized 100k to a client running [ApacheBench][ab] with varying levels
-of concurrency. The high overhead comes principles from a VFS implementation
-needs improvement, with several internal serialization points (since all
+of concurrency. The high overhead comes principally from the VFS implementation
+that needs improvement, with several internal serialization points (since all
 requests are reading the same file). Note that some of some of network stack
 performance issues also impact this benchmark.
 
