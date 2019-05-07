@@ -220,7 +220,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	if loop&stack.PacketOut == 0 {
 		return nil
 	}
-	if hdr.UsedLength()+payload.Size() > int(e.linkEP.MTU()) && gso.Type == stack.GSONone {
+	if hdr.UsedLength()+payload.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
 		return e.writePacketFragments(r, gso, hdr, payload, int(e.linkEP.MTU()))
 	}
 	if err := e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber); err != nil {

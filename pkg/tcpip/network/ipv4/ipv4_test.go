@@ -272,19 +272,21 @@ func TestFragmentation(t *testing.T) {
 	fragTests := []struct {
 		description       string
 		mtu               uint32
+		gso               *stack.GSO
 		hdrLength         int
 		extraLength       int
 		payloadViewsSizes []int
 		expectedFrags     int
 	}{
-		{"NoFragmentation", 2000, 0, header.IPv4MinimumSize, []int{1000}, 1},
-		{"NoFragmentationWithBigHeader", 2000, 16, header.IPv4MinimumSize, []int{1000}, 1},
-		{"Fragmented", 800, 0, header.IPv4MinimumSize, []int{1000}, 2},
-		{"FragmentedWithManyViews", 300, 0, header.IPv4MinimumSize, manyPayloadViewsSizes[:], 25},
-		{"FragmentedWithManyViewsAndPrependableBytes", 300, 0, header.IPv4MinimumSize + 55, manyPayloadViewsSizes[:], 25},
-		{"FragmentedWithBigHeader", 800, 20, header.IPv4MinimumSize, []int{1000}, 2},
-		{"FragmentedWithBigHeaderAndPrependableBytes", 800, 20, header.IPv4MinimumSize + 66, []int{1000}, 2},
-		{"FragmentedWithMTUSmallerThanHeaderAndPrependableBytes", 300, 1000, header.IPv4MinimumSize + 77, []int{500}, 6},
+		{"NoFragmentation", 2000, &stack.GSO{}, 0, header.IPv4MinimumSize, []int{1000}, 1},
+		{"NoFragmentationWithBigHeader", 2000, &stack.GSO{}, 16, header.IPv4MinimumSize, []int{1000}, 1},
+		{"Fragmented", 800, &stack.GSO{}, 0, header.IPv4MinimumSize, []int{1000}, 2},
+		{"FragmentedWithGsoNil", 800, nil, 0, header.IPv4MinimumSize, []int{1000}, 2},
+		{"FragmentedWithManyViews", 300, &stack.GSO{}, 0, header.IPv4MinimumSize, manyPayloadViewsSizes[:], 25},
+		{"FragmentedWithManyViewsAndPrependableBytes", 300, &stack.GSO{}, 0, header.IPv4MinimumSize + 55, manyPayloadViewsSizes[:], 25},
+		{"FragmentedWithBigHeader", 800, &stack.GSO{}, 20, header.IPv4MinimumSize, []int{1000}, 2},
+		{"FragmentedWithBigHeaderAndPrependableBytes", 800, &stack.GSO{}, 20, header.IPv4MinimumSize + 66, []int{1000}, 2},
+		{"FragmentedWithMTUSmallerThanHeaderAndPrependableBytes", 300, &stack.GSO{}, 1000, header.IPv4MinimumSize + 77, []int{500}, 6},
 	}
 
 	for _, ft := range fragTests {
@@ -296,7 +298,7 @@ func TestFragmentation(t *testing.T) {
 				Payload: payload.Clone([]buffer.View{}),
 			}
 			c := buildContext(t, nil, ft.mtu)
-			err := c.Route.WritePacket(&stack.GSO{}, hdr, payload, tcp.ProtocolNumber, 42)
+			err := c.Route.WritePacket(ft.gso, hdr, payload, tcp.ProtocolNumber, 42)
 			if err != nil {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
