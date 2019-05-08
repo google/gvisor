@@ -1,4 +1,6 @@
-package(licenses = ["notice"])  # Apache 2.0
+package(
+    licenses = ["notice"],  # Apache 2.0
+)
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_deb", "pkg_tar")

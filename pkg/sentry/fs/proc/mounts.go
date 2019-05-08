@@ -139,11 +139,7 @@ func (mif *mountInfoFile) ReadSeqFileData(ctx context.Context, handle seqfile.Se
 		fmt.Fprintf(&buf, "- ")
 
 		// (9) Filesystem type.
-		name := "none"
-		if m.Filesystem != nil {
-			name = m.Filesystem.Name()
-		}
-		fmt.Fprintf(&buf, "%s ", name)
+		fmt.Fprintf(&buf, "%s ", m.FilesystemType)
 
 		// (10) Mount source: filesystem-specific information or "none".
 		fmt.Fprintf(&buf, "none ")
@@ -190,11 +186,7 @@ func (mf *mountsFile) ReadSeqFileData(ctx context.Context, handle seqfile.SeqHan
 		if m.Flags.ReadOnly {
 			opts = "ro"
 		}
-		name := "none"
-		if m.Filesystem != nil {
-			name = m.Filesystem.Name()
-		}
-		fmt.Fprintf(&buf, "%s %s %s %s %d %d\n", "none", mountPath, name, opts, 0, 0)
+		fmt.Fprintf(&buf, "%s %s %s %s %d %d\n", "none", mountPath, m.FilesystemType, opts, 0, 0)
 	})
 
 	return []seqfile.SeqData{{Buf: buf.Bytes(), Handle: (*mountsFile)(nil)}}, 0

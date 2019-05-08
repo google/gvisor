@@ -110,9 +110,8 @@ type MountSource struct {
 	// MountSourceOperations defines filesystem specific behavior.
 	MountSourceOperations
 
-	// Filesystem is the filesystem backing the mount. Can be nil if there
-	// is no filesystem backing the mount.
-	Filesystem Filesystem
+	// FilesystemType is the type of the filesystem backing this mount.
+	FilesystemType string
 
 	// Flags are the flags that this filesystem was mounted with.
 	Flags MountSourceFlags
@@ -158,10 +157,14 @@ const DefaultDirentCacheSize uint64 = 1000
 // NewMountSource returns a new MountSource. Filesystem may be nil if there is no
 // filesystem backing the mount.
 func NewMountSource(mops MountSourceOperations, filesystem Filesystem, flags MountSourceFlags) *MountSource {
+	fsType := "none"
+	if filesystem != nil {
+		fsType = filesystem.Name()
+	}
 	return &MountSource{
 		MountSourceOperations: mops,
 		Flags:                 flags,
-		Filesystem:            filesystem,
+		FilesystemType:        fsType,
 		fscache:               NewDirentCache(DefaultDirentCacheSize),
 		children:              make(map[*MountSource]struct{}),
 	}
