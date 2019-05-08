@@ -22,4 +22,4 @@ collaborate.
 [gvisor-dev]: https://groups.google.com/forum/#!forum/gvisor-dev
 [gvisor-users]: https://groups.google.com/forum/#!forum/gvisor-users
 [codeofconduct]: https://gvisor.googlesource.com/community/+/refs/heads/master/CODE_OF_CONDUCT.md
-[repositories]: https://gvisor.googlesource.com/
+[repositories]: https://gvisor.googlesource.com/?format=HTML
