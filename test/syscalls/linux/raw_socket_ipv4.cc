@@ -175,7 +175,7 @@ TEST_F(RawSocketTest, MultipleSocketReceive) {
 
   // Receive on socket 1.
   constexpr int kBufSize = sizeof(icmp) + sizeof(struct iphdr);
-  std::vector<char[kBufSize]> recv_buf1(2);
+  std::array<char[kBufSize], 2> recv_buf1;
   struct sockaddr_in src;
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1[i],
@@ -185,7 +185,7 @@ TEST_F(RawSocketTest, MultipleSocketReceive) {
   }
 
   // Receive on socket 2.
-  std::vector<char[kBufSize]> recv_buf2(2);
+  std::array<char[kBufSize], 2> recv_buf2;
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(
         ReceiveICMPFrom(recv_buf2[i], ABSL_ARRAYSIZE(recv_buf2[i]),
@@ -234,7 +234,7 @@ TEST_F(RawSocketTest, RawAndPingSockets) {
   // Receive on socket 1, which receives the echo request and reply in
   // indeterminate order.
   constexpr int kBufSize = sizeof(icmp) + sizeof(struct iphdr);
-  std::vector<char[kBufSize]> recv_buf1(2);
+  std::array<char[kBufSize], 2> recv_buf1;
   struct sockaddr_in src;
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(
