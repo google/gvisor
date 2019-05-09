@@ -59,6 +59,13 @@ func (c *contextFile) setAttr(ctx context.Context, valid p9.SetAttrMask, attr p9
 	return err
 }
 
+func (c *contextFile) allocate(ctx context.Context, mode p9.AllocateMode, offset, length uint64) error {
+	ctx.UninterruptibleSleepStart(false)
+	err := c.file.Allocate(mode, offset, length)
+	ctx.UninterruptibleSleepFinish(false)
+	return err
+}
+
 func (c *contextFile) rename(ctx context.Context, directory contextFile, name string) error {
 	ctx.UninterruptibleSleepStart(false)
 	err := c.file.Rename(directory.file, name)

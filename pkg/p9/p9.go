@@ -22,6 +22,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 // OpenFlags is the mode passed to Open and Create operations.
@@ -374,6 +376,8 @@ const (
 	MsgRusymlink            = 135
 	MsgTlconnect            = 136
 	MsgRlconnect            = 137
+	MsgTallocate            = 138
+	MsgRallocate            = 139
 )
 
 // QIDType represents the file type for QIDs.
@@ -1057,4 +1061,81 @@ func (d *Dirent) Encode(b *buffer) {
 	b.Write64(d.Offset)
 	b.WriteQIDType(d.Type)
 	b.WriteString(d.Name)
+}
+
+// AllocateMode are possible modes to p9.File.Allocate().
+type AllocateMode struct {
+	KeepSize      bool
+	PunchHole     bool
+	NoHideStale   bool
+	CollapseRange bool
+	ZeroRange     bool
+	InsertRange   bool
+	Unshare       bool
+}
+
+// ToLinux converts to a value compatible with fallocate(2)'s mode.
+func (a *AllocateMode) ToLinux() uint32 {
+	rv := uint32(0)
+	if a.KeepSize {
+		rv |= unix.FALLOC_FL_KEEP_SIZE
+	}
+	if a.PunchHole {
+		rv |= unix.FALLOC_FL_PUNCH_HOLE
+	}
+	if a.NoHideStale {
+		rv |= unix.FALLOC_FL_NO_HIDE_STALE
+	}
+	if a.CollapseRange {
+		rv |= unix.FALLOC_FL_COLLAPSE_RANGE
+	}
+	if a.ZeroRange {
+		rv |= unix.FALLOC_FL_ZERO_RANGE
+	}
+	if a.InsertRange {
+		rv |= unix.FALLOC_FL_INSERT_RANGE
+	}
+	if a.Unshare {
+		rv |= unix.FALLOC_FL_UNSHARE_RANGE
+	}
+	return rv
+}
+
+// Decode implements encoder.Decode.
+func (a *AllocateMode) Decode(b *buffer) {
+	mask := b.Read32()
+	a.KeepSize = mask&0x01 != 0
+	a.PunchHole = mask&0x02 != 0
+	a.NoHideStale = mask&0x04 != 0
+	a.CollapseRange = mask&0x08 != 0
+	a.ZeroRange = mask&0x10 != 0
+	a.InsertRange = mask&0x20 != 0
+	a.Unshare = mask&0x40 != 0
+}
+
+// Encode implements encoder.Encode.
+func (a *AllocateMode) Encode(b *buffer) {
+	mask := uint32(0)
+	if a.KeepSize {
+		mask |= 0x01
+	}
+	if a.PunchHole {
+		mask |= 0x02
+	}
+	if a.NoHideStale {
+		mask |= 0x04
+	}
+	if a.CollapseRange {
+		mask |= 0x08
+	}
+	if a.ZeroRange {
+		mask |= 0x10
+	}
+	if a.InsertRange {
+		mask |= 0x20
+	}
+	if a.Unshare {
+		mask |= 0x40
+	}
+	b.Write32(mask)
 }

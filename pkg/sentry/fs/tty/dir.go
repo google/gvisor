@@ -53,13 +53,14 @@ import (
 // +stateify savable
 type dirInodeOperations struct {
 	fsutil.InodeGenericChecker       `state:"nosave"`
+	fsutil.InodeIsDirAllocate        `state:"nosave"`
+	fsutil.InodeIsDirTruncate        `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`
 	fsutil.InodeNotMappable          `state:"nosave"`
 	fsutil.InodeNotRenameable        `state:"nosave"`
-	fsutil.InodeNotSymlink           `state:"nosave"`
 	fsutil.InodeNotSocket            `state:"nosave"`
-	fsutil.InodeNotTruncatable       `state:"nosave"`
+	fsutil.InodeNotSymlink           `state:"nosave"`
 	fsutil.InodeVirtual              `state:"nosave"`
 
 	fsutil.InodeSimpleAttributes

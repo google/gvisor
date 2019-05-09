@@ -50,6 +50,7 @@ type CreateOps struct {
 // +stateify savable
 type Dir struct {
 	fsutil.InodeGenericChecker `state:"nosave"`
+	fsutil.InodeIsDirAllocate  `state:"nosave"`
 	fsutil.InodeIsDirTruncate  `state:"nosave"`
 	fsutil.InodeNoopRelease    `state:"nosave"`
 	fsutil.InodeNoopWriteOut   `state:"nosave"`

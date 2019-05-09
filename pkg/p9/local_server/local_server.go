@@ -323,6 +323,11 @@ func (l *local) Renamed(parent p9.File, newName string) {
 	l.path = path.Join(parent.(*local).path, newName)
 }
 
+// Allocate implements p9.File.Allocate.
+func (l *local) Allocate(mode p9.AllocateMode, offset, length uint64) error {
+	return syscall.Fallocate(int(l.file.Fd()), mode.ToLinux(), int64(offset), int64(length))
+}
+
 func main() {
 	log.SetLevel(log.Debug)
 

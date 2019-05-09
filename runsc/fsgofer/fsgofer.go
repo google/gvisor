@@ -731,6 +731,18 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	return err
 }
 
+// Allocate implements p9.File.
+func (l *localFile) Allocate(mode p9.AllocateMode, offset, length uint64) error {
+	if !l.isOpen() {
+		return syscall.EBADF
+	}
+
+	if err := syscall.Fallocate(l.file.FD(), mode.ToLinux(), int64(offset), int64(length)); err != nil {
+		return extractErrno(err)
+	}
+	return nil
+}
+
 // Rename implements p9.File; this should never be called.
 func (l *localFile) Rename(p9.File, string) error {
 	panic("rename called directly")

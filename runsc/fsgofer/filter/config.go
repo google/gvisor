@@ -62,8 +62,14 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	syscall.SYS_EXIT:       {},
 	syscall.SYS_EXIT_GROUP: {},
-	syscall.SYS_FCHMOD:     {},
-	syscall.SYS_FCHOWNAT:   {},
+	syscall.SYS_FALLOCATE: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0),
+		},
+	},
+	syscall.SYS_FCHMOD:   {},
+	syscall.SYS_FCHOWNAT: {},
 	syscall.SYS_FCNTL: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},

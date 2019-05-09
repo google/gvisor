@@ -150,6 +150,11 @@ func (n *MockInodeOperations) Truncate(ctx context.Context, inode *Inode, size i
 	return nil
 }
 
+// Allocate implements fs.InodeOperations.Allocate.
+func (n *MockInodeOperations) Allocate(ctx context.Context, inode *Inode, offset, length int64) error {
+	return nil
+}
+
 // Remove implements fs.InodeOperations.Remove.
 func (n *MockInodeOperations) Remove(context.Context, *Inode, string) error {
 	return nil

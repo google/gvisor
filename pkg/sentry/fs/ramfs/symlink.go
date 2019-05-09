@@ -29,10 +29,11 @@ type Symlink struct {
 	fsutil.InodeGenericChecker `state:"nosave"`
 	fsutil.InodeNoopRelease    `state:"nosave"`
 	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotAllocatable `state:"nosave"`
 	fsutil.InodeNotDirectory   `state:"nosave"`
 	fsutil.InodeNotMappable    `state:"nosave"`
-	fsutil.InodeNotTruncatable `state:"nosave"`
 	fsutil.InodeNotSocket      `state:"nosave"`
+	fsutil.InodeNotTruncatable `state:"nosave"`
 	fsutil.InodeVirtual        `state:"nosave"`
 
 	fsutil.InodeSimpleAttributes
@@ -88,7 +89,6 @@ func (s *Symlink) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileF
 
 // +stateify savable
 type symlinkFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
@@ -99,6 +99,7 @@ type symlinkFileOperations struct {
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileNoWrite              `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*symlinkFileOperations)(nil)

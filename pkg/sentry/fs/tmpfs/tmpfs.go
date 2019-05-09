@@ -242,9 +242,14 @@ func (d *Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, n
 	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
-// StatFS implments fs.InodeOperations.StatFS.
+// StatFS implements fs.InodeOperations.StatFS.
 func (*Dir) StatFS(context.Context) (fs.Info, error) {
 	return fsInfo, nil
+}
+
+// Allocate implements fs.InodeOperations.Allocate.
+func (d *Dir) Allocate(ctx context.Context, node *fs.Inode, offset, length int64) error {
+	return d.ramfsDir.Allocate(ctx, node, offset, length)
 }
 
 // Symlink is a symlink.
@@ -281,6 +286,7 @@ func (s *Symlink) StatFS(context.Context) (fs.Info, error) {
 type Socket struct {
 	ramfs.Socket
 	fsutil.InodeNotTruncatable `state:"nosave"`
+	fsutil.InodeNotAllocatable `state:"nosave"`
 }
 
 // NewSocket returns a new socket with the provided permissions.

@@ -171,6 +171,18 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 	return c.client.sendRecv(&Tsetattr{FID: c.fid, Valid: valid, SetAttr: attr}, &Rsetattr{})
 }
 
+// Allocate implements File.Allocate.
+func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
+	if atomic.LoadUint32(&c.closed) != 0 {
+		return syscall.EBADF
+	}
+	if !versionSupportsTallocate(c.client.version) {
+		return syscall.EOPNOTSUPP
+	}
+
+	return c.client.sendRecv(&Tallocate{FID: c.fid, Mode: mode, Offset: offset, Length: length}, &Rallocate{})
+}
+
 // Remove implements File.Remove.
 //
 // N.B. This method is no longer part of the file interface and should be

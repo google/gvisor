@@ -93,6 +93,7 @@ type SeqFile struct {
 	fsutil.InodeGenericChecker `state:"nosave"`
 	fsutil.InodeNoopRelease    `state:"nosave"`
 	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotAllocatable `state:"nosave"`
 	fsutil.InodeNotDirectory   `state:"nosave"`
 	fsutil.InodeNotMappable    `state:"nosave"`
 	fsutil.InodeNotSocket      `state:"nosave"`
@@ -183,7 +184,6 @@ func (s *SeqFile) updateSourceLocked(ctx context.Context, record int) {
 //
 // +stateify savable
 type seqFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
@@ -192,6 +192,7 @@ type seqFileOperations struct {
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	seqFile *SeqFile
 }

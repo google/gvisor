@@ -223,6 +223,10 @@ type InodeOperations interface {
 	// Implementations need not check that length >= 0.
 	Truncate(ctx context.Context, inode *Inode, size int64) error
 
+	// Allocate allows the caller to reserve disk space for the inode.
+	// It's equivalent to fallocate(2) with 'mode=0'.
+	Allocate(ctx context.Context, inode *Inode, offset int64, length int64) error
+
 	// WriteOut writes cached Inode state to a backing filesystem in a
 	// synchronous manner.
 	//

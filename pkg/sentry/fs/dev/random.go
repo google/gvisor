@@ -29,6 +29,7 @@ import (
 type randomDevice struct {
 	fsutil.InodeGenericChecker       `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopAllocate         `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopTruncate         `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`
@@ -57,16 +58,16 @@ func (*randomDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.Fi
 
 // +stateify savable
 type randomFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
-	fsutil.FileNotDirReaddir        `state:"nosave"`
-	fsutil.FileNoMMap               `state:"nosave"`
-	fsutil.FileNoopFsync            `state:"nosave"`
-	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNoopWrite            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*randomFileOperations)(nil)

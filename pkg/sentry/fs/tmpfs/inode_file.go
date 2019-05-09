@@ -259,6 +259,33 @@ func (f *fileInodeOperations) Truncate(ctx context.Context, _ *fs.Inode, size in
 	return nil
 }
 
+// Allocate implements fs.InodeOperations.Allocate.
+func (f *fileInodeOperations) Allocate(ctx context.Context, _ *fs.Inode, offset, length int64) error {
+	newSize := offset + length
+
+	f.attrMu.Lock()
+	defer f.attrMu.Unlock()
+	f.dataMu.Lock()
+	defer f.dataMu.Unlock()
+
+	if newSize <= f.attr.Size {
+		return nil
+	}
+
+	// Check if current seals allow growth.
+	if f.seals&linux.F_SEAL_GROW != 0 {
+		return syserror.EPERM
+	}
+
+	f.attr.Size = newSize
+
+	now := ktime.NowFromContext(ctx)
+	f.attr.ModificationTime = now
+	f.attr.StatusChangeTime = now
+
+	return nil
+}
+
 // AddLink implements fs.InodeOperations.AddLink.
 func (f *fileInodeOperations) AddLink() {
 	f.attrMu.Lock()

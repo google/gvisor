@@ -191,3 +191,7 @@ func (*inodeOperations) newHandleLocked(wakeupChan *chan struct{}) {
 		*wakeupChan = nil
 	}
 }
+
+func (*inodeOperations) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
+	return syserror.EPIPE
+}

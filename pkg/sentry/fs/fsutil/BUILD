@@ -113,5 +113,6 @@ go_test(
         "//pkg/sentry/memmap",
         "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
+        "//pkg/syserror",
     ],
 )

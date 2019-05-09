@@ -34,6 +34,7 @@ type SimpleFileInode struct {
 	InodeNoExtendedAttributes `state:"nosave"`
 	InodeNoopRelease          `state:"nosave"`
 	InodeNoopWriteOut         `state:"nosave"`
+	InodeNotAllocatable       `state:"nosave"`
 	InodeNotDirectory         `state:"nosave"`
 	InodeNotMappable          `state:"nosave"`
 	InodeNotOpenable          `state:"nosave"`
@@ -61,6 +62,7 @@ type NoReadWriteFileInode struct {
 	InodeNoExtendedAttributes `state:"nosave"`
 	InodeNoopRelease          `state:"nosave"`
 	InodeNoopWriteOut         `state:"nosave"`
+	InodeNotAllocatable       `state:"nosave"`
 	InodeNotDirectory         `state:"nosave"`
 	InodeNotMappable          `state:"nosave"`
 	InodeNotSocket            `state:"nosave"`
@@ -464,4 +466,27 @@ func (InodeDenyWriteChecker) Check(ctx context.Context, inode *fs.Inode, p fs.Pe
 		return false
 	}
 	return fs.ContextCanAccessFile(ctx, inode, p)
+}
+
+//InodeNotAllocatable can be used by Inodes that do not support Allocate().
+type InodeNotAllocatable struct{}
+
+func (InodeNotAllocatable) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
+	return syserror.EOPNOTSUPP
+}
+
+// InodeNoopAllocate implements fs.InodeOperations.Allocate as a noop.
+type InodeNoopAllocate struct{}
+
+// Allocate implements fs.InodeOperations.Allocate.
+func (InodeNoopAllocate) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
+	return nil
+}
+
+// InodeIsDirAllocate implements fs.InodeOperations.Allocate for directories.
+type InodeIsDirAllocate struct{}
+
+// Allocate implements fs.InodeOperations.Allocate.
+func (InodeIsDirAllocate) Allocate(_ context.Context, _ *fs.Inode, _, _ int64) error {
+	return syserror.EISDIR
 }

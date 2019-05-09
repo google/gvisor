@@ -649,6 +649,8 @@ cc_binary(
     srcs = ["fallocate.cc"],
     linkstatic = 1,
     deps = [
+        ":file_base",
+        "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:temp_path",
         "//test/util:test_main",

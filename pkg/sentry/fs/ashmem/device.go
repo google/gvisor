@@ -29,6 +29,7 @@ import (
 type Device struct {
 	fsutil.InodeGenericChecker       `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopAllocate         `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopTruncate         `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`

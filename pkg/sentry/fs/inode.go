@@ -340,6 +340,13 @@ func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
 	return i.InodeOperations.Truncate(ctx, i, size)
 }
 
+func (i *Inode) Allocate(ctx context.Context, d *Dirent, offset int64, length int64) error {
+	if i.overlay != nil {
+		return overlayAllocate(ctx, i.overlay, d, offset, length)
+	}
+	return i.InodeOperations.Allocate(ctx, i, offset, length)
+}
+
 // Readlink calls i.InodeOperations.Readlnk with i as the Inode.
 func (i *Inode) Readlink(ctx context.Context) (string, error) {
 	if i.overlay != nil {

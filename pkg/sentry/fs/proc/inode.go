@@ -55,6 +55,7 @@ func (i *taskOwnedInodeOps) UnstableAttr(ctx context.Context, inode *fs.Inode) (
 type staticFileInodeOps struct {
 	fsutil.InodeDenyWriteChecker     `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopAllocate         `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopTruncate         `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`

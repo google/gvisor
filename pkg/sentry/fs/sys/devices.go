@@ -30,12 +30,13 @@ type cpunum struct {
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`
+	fsutil.InodeNotAllocatable       `state:"nosave"`
 	fsutil.InodeNotDirectory         `state:"nosave"`
 	fsutil.InodeNotMappable          `state:"nosave"`
 	fsutil.InodeNotSocket            `state:"nosave"`
 	fsutil.InodeNotSymlink           `state:"nosave"`
-	fsutil.InodeNotVirtual           `state:"nosave"`
 	fsutil.InodeNotTruncatable       `state:"nosave"`
+	fsutil.InodeNotVirtual           `state:"nosave"`
 
 	fsutil.InodeSimpleAttributes
 	fsutil.InodeStaticFileGetter

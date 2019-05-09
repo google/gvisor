@@ -1900,9 +1900,9 @@ func Renameat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Fallocate implements linux system call fallocate(2).
-// (well, not really, but at least we return the expected error codes)
 func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := kdefs.FD(args[0].Int())
+	mode := args[1].Int64()
 	offset := args[2].Int64()
 	length := args[3].Int64()
 
@@ -1915,8 +1915,42 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if offset < 0 || length <= 0 {
 		return 0, nil, syserror.EINVAL
 	}
+	if mode != 0 {
+		t.Kernel().EmitUnimplementedEvent(t)
+		return 0, nil, syserror.ENOTSUP
+	}
+	if !file.Flags().Write {
+		return 0, nil, syserror.EBADF
+	}
+	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
+		return 0, nil, syserror.ESPIPE
+	}
+	if fs.IsDir(file.Dirent.Inode.StableAttr) {
+		return 0, nil, syserror.EISDIR
+	}
+	if !fs.IsRegular(file.Dirent.Inode.StableAttr) {
+		return 0, nil, syserror.ENODEV
+	}
+	size := offset + length
+	if size < 0 {
+		return 0, nil, syserror.EFBIG
+	}
+	if uint64(size) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
+		t.SendSignal(&arch.SignalInfo{
+			Signo: int32(syscall.SIGXFSZ),
+			Code:  arch.SignalInfoUser,
+		})
+		return 0, nil, syserror.EFBIG
+	}
 
-	return 0, nil, syserror.EOPNOTSUPP
+	if err := file.Dirent.Inode.Allocate(t, file.Dirent, offset, length); err != nil {
+		return 0, nil, err
+	}
+
+	// File length modified, generate notification.
+	file.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
+
+	return 0, nil, nil
 }
 
 // Flock implements linux syscall flock(2).

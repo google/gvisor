@@ -30,6 +30,7 @@ type Socket struct {
 	fsutil.InodeGenericChecker `state:"nosave"`
 	fsutil.InodeNoopRelease    `state:"nosave"`
 	fsutil.InodeNoopWriteOut   `state:"nosave"`
+	fsutil.InodeNotAllocatable `state:"nosave"`
 	fsutil.InodeNotDirectory   `state:"nosave"`
 	fsutil.InodeNotMappable    `state:"nosave"`
 	fsutil.InodeNotSymlink     `state:"nosave"`
@@ -67,7 +68,6 @@ func (s *Socket) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFl
 
 // +stateify savable
 type socketFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
@@ -78,6 +78,7 @@ type socketFileOperations struct {
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileNoWrite              `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*socketFileOperations)(nil)

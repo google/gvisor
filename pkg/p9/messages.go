@@ -1424,6 +1424,63 @@ func (r *Rsetattr) String() string {
 	return fmt.Sprintf("Rsetattr{}")
 }
 
+// Tallocate is an allocate request. This is an extension to 9P protocol, not
+// present in the 9P2000.L standard.
+type Tallocate struct {
+	FID    FID
+	Mode   AllocateMode
+	Offset uint64
+	Length uint64
+}
+
+// Decode implements encoder.Decode.
+func (t *Tallocate) Decode(b *buffer) {
+	t.FID = b.ReadFID()
+	t.Mode.Decode(b)
+	t.Offset = b.Read64()
+	t.Length = b.Read64()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tallocate) Encode(b *buffer) {
+	b.WriteFID(t.FID)
+	t.Mode.Encode(b)
+	b.Write64(t.Offset)
+	b.Write64(t.Length)
+}
+
+// Type implements message.Type.
+func (*Tallocate) Type() MsgType {
+	return MsgTallocate
+}
+
+// String implements fmt.Stringer.
+func (t *Tallocate) String() string {
+	return fmt.Sprintf("Tallocate{FID: %d, Offset: %d, Length: %d}", t.FID, t.Offset, t.Length)
+}
+
+// Rallocate is an allocate response.
+type Rallocate struct {
+}
+
+// Decode implements encoder.Decode.
+func (*Rallocate) Decode(b *buffer) {
+}
+
+// Encode implements encoder.Encode.
+func (*Rallocate) Encode(b *buffer) {
+}
+
+// Type implements message.Type.
+func (*Rallocate) Type() MsgType {
+	return MsgRallocate
+}
+
+// String implements fmt.Stringer.
+func (r *Rallocate) String() string {
+	return fmt.Sprintf("Rallocate{}")
+}
+
 // Txattrwalk walks extended attributes.
 type Txattrwalk struct {
 	// FID is the FID to check for attributes.
@@ -2297,4 +2354,6 @@ func init() {
 	msgRegistry.register(MsgRusymlink, func() message { return &Rusymlink{} })
 	msgRegistry.register(MsgTlconnect, func() message { return &Tlconnect{} })
 	msgRegistry.register(MsgRlconnect, func() message { return &Rlconnect{} })
+	msgRegistry.register(MsgTallocate, func() message { return &Tallocate{} })
+	msgRegistry.register(MsgRallocate, func() message { return &Rallocate{} })
 }

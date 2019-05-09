@@ -99,7 +99,7 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 			// args: cmd, ...
 			tr = newArgsTracker(0)
 
-		case syscall.SYS_IOCTL, syscall.SYS_EPOLL_CTL, syscall.SYS_SHMCTL, syscall.SYS_FUTEX:
+		case syscall.SYS_IOCTL, syscall.SYS_EPOLL_CTL, syscall.SYS_SHMCTL, syscall.SYS_FUTEX, syscall.SYS_FALLOCATE:
 			// args: fd/addr, cmd, ...
 			tr = newArgsTracker(1)
 

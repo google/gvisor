@@ -582,6 +582,13 @@ func overlayTruncate(ctx context.Context, o *overlayEntry, d *Dirent, size int64
 	return o.upper.InodeOperations.Truncate(ctx, o.upper, size)
 }
 
+func overlayAllocate(ctx context.Context, o *overlayEntry, d *Dirent, offset, length int64) error {
+	if err := copyUp(ctx, d); err != nil {
+		return err
+	}
+	return o.upper.InodeOperations.Allocate(ctx, o.upper, offset, length)
+}
+
 func overlayReadlink(ctx context.Context, o *overlayEntry) (string, error) {
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()

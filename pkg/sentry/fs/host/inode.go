@@ -163,6 +163,11 @@ func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, err
 	return unstableAttr(i.mops, &s), nil
 }
 
+// SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
+func (i *inodeFileState) Allocate(_ context.Context, offset, length int64) error {
+	return syscall.Fallocate(i.FD(), 0, offset, length)
+}
+
 // inodeOperations implements fs.InodeOperations.
 var _ fs.InodeOperations = (*inodeOperations)(nil)
 
@@ -395,6 +400,19 @@ func (i *inodeOperations) Truncate(ctx context.Context, inode *fs.Inode, size in
 	// Otherwise we need to go through cachingInodeOps, even if the host page
 	// cache is in use, to invalidate private copies of truncated pages.
 	return i.cachingInodeOps.Truncate(ctx, inode, size)
+}
+
+// Allocate implements fs.InodeOperations.Allocate.
+func (i *inodeOperations) Allocate(ctx context.Context, inode *fs.Inode, offset, length int64) error {
+	// Is the file not memory-mappable?
+	if !canMap(inode) {
+		// Then just send the call to the FD, the host will synchronize the metadata
+		// update with any host inode and page cache.
+		return i.fileState.Allocate(ctx, offset, length)
+	}
+	// Otherwise we need to go through cachingInodeOps, even if the host page
+	// cache is in use, to invalidate private copies of truncated pages.
+	return i.cachingInodeOps.Allocate(ctx, offset, length)
 }
 
 // WriteOut implements fs.InodeOperations.WriteOut.

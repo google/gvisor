@@ -135,6 +135,10 @@ type CachedFileObject interface {
 	// the file was opened.
 	SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error
 
+	// Allocate allows the caller to reserve disk space for the inode.
+	// It's equivalent to fallocate(2) with 'mode=0'.
+	Allocate(ctx context.Context, offset int64, length int64) error
+
 	// Sync instructs the remote filesystem to sync the file to stable storage.
 	Sync(ctx context.Context) error
 
@@ -333,6 +337,30 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	c.cache.Truncate(uint64(size), c.mfp.MemoryFile())
 	c.dirty.KeepClean(memmap.MappableRange{uint64(size), oldpgend})
 
+	return nil
+}
+
+// Allocate implements fs.InodeOperations.Allocate.
+func (c *CachingInodeOperations) Allocate(ctx context.Context, offset, length int64) error {
+	newSize := offset + length
+
+	// c.attr.Size is protected by both c.attrMu and c.dataMu.
+	c.attrMu.Lock()
+	defer c.attrMu.Unlock()
+	c.dataMu.Lock()
+	defer c.dataMu.Unlock()
+
+	if newSize <= c.attr.Size {
+		return nil
+	}
+
+	now := ktime.NowFromContext(ctx)
+	if err := c.backingFile.Allocate(ctx, offset, length); err != nil {
+		return err
+	}
+
+	c.attr.Size = newSize
+	c.touchModificationTimeLocked(now)
 	return nil
 }
 

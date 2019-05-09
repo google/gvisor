@@ -30,6 +30,7 @@ import (
 type fullDevice struct {
 	fsutil.InodeGenericChecker       `state:"nosave"`
 	fsutil.InodeNoExtendedAttributes `state:"nosave"`
+	fsutil.InodeNoopAllocate         `state:"nosave"`
 	fsutil.InodeNoopRelease          `state:"nosave"`
 	fsutil.InodeNoopTruncate         `state:"nosave"`
 	fsutil.InodeNoopWriteOut         `state:"nosave"`
@@ -59,7 +60,6 @@ func (f *fullDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.Fi
 
 // +stateify savable
 type fullFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
@@ -69,6 +69,7 @@ type fullFileOperations struct {
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	readZeros                       `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*fullFileOperations)(nil)

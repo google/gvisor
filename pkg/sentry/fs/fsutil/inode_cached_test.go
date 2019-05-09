@@ -26,6 +26,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
 type noopBackingFile struct{}
@@ -48,6 +49,10 @@ func (noopBackingFile) Sync(context.Context) error {
 
 func (noopBackingFile) FD() int {
 	return -1
+}
+
+func (noopBackingFile) Allocate(ctx context.Context, offset int64, length int64) error {
+	return nil
 }
 
 func TestSetPermissions(t *testing.T) {
@@ -235,6 +240,10 @@ func (*sliceBackingFile) Sync(context.Context) error {
 
 func (*sliceBackingFile) FD() int {
 	return -1
+}
+
+func (f *sliceBackingFile) Allocate(ctx context.Context, offset int64, length int64) error {
+	return syserror.EOPNOTSUPP
 }
 
 type noopMappingSpace struct{}
