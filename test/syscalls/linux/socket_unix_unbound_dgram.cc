@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <stdio.h>
+#include <sys/socket.h>
 #include <sys/un.h>
+
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -140,6 +142,28 @@ TEST_P(UnboundDgramUnixSocketPairTest, SendtoWithoutConnect) {
       RetryEINTR(sendto)(sockets->second_fd(), &data, sizeof(data), 0,
                          sockets->first_addr(), sockets->first_addr_size()),
       SyscallSucceedsWithValue(sizeof(data)));
+}
+
+TEST_P(UnboundDgramUnixSocketPairTest, SendtoWithoutConnectPassCreds) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  SetSoPassCred(sockets->first_fd());
+  char data = 'a';
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->second_fd(), &data, sizeof(data), 0,
+                         sockets->first_addr(), sockets->first_addr_size()),
+      SyscallSucceedsWithValue(sizeof(data)));
+  ucred creds;
+  creds.pid = -1;
+  char buf[sizeof(data) + 1];
+  ASSERT_NO_FATAL_FAILURE(
+      RecvCreds(sockets->first_fd(), &creds, buf, sizeof(buf), sizeof(data)));
+  EXPECT_EQ(0, memcmp(&data, buf, sizeof(data)));
+  EXPECT_THAT(getpid(), SyscallSucceedsWithValue(creds.pid));
 }
 
 INSTANTIATE_TEST_SUITE_P(
