@@ -190,6 +190,11 @@ const (
 	// reclaimer goroutine is out of work (pages to reclaim), then evicts all
 	// pending evictable allocations immediately.
 	DelayedEvictionEnabled
+
+	// DelayedEvictionManual requires that evictable allocations are only
+	// evicted when MemoryFile.StartEvictions() is called. This is extremely
+	// dangerous outside of tests.
+	DelayedEvictionManual
 )
 
 // usageInfo tracks usage information.
@@ -264,7 +269,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	switch opts.DelayedEviction {
 	case DelayedEvictionDefault:
 		opts.DelayedEviction = DelayedEvictionEnabled
-	case DelayedEvictionDisabled, DelayedEvictionEnabled:
+	case DelayedEvictionDisabled, DelayedEvictionEnabled, DelayedEvictionManual:
 	default:
 		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
 	}
@@ -1075,6 +1080,14 @@ func (f *MemoryFile) markReclaimed(fr platform.FileRange) {
 	}
 }
 
+// StartEvictions requests that f evict all evictable allocations. It does not
+// wait for eviction to complete; for this, see MemoryFile.WaitForEvictions.
+func (f *MemoryFile) StartEvictions() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.startEvictionsLocked()
+}
+
 // Preconditions: f.mu must be locked.
 func (f *MemoryFile) startEvictionsLocked() {
 	for user, info := range f.evictable {
@@ -1120,6 +1133,12 @@ func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info
 			user.Evict(context.Background(), er)
 		}
 	}()
+}
+
+// WaitForEvictions blocks until f is no longer evicting any evictable
+// allocations.
+func (f *MemoryFile) WaitForEvictions() {
+	f.evictionWG.Wait()
 }
 
 type usageSetFunctions struct{}

@@ -304,10 +304,11 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 	defer k.resumeTimeLocked()
 
 	// Evict all evictable MemoryFile allocations.
-	k.mf.FlushEvictions()
+	k.mf.StartEvictions()
+	k.mf.WaitForEvictions()
 
 	// Flush write operations on open files so data reaches backing storage.
-	// This must come after k.mf.FlushEvictions() since eviction may cause file
+	// This must come after MemoryFile eviction since eviction may cause file
 	// writes.
 	if err := k.tasks.flushWritesToFiles(ctx); err != nil {
 		return err
