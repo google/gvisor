@@ -21,6 +21,7 @@ import (
 	"context"
 
 	"github.com/containerd/console"
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/runtime/proc"
 	"github.com/pkg/errors"
 )
@@ -38,10 +39,12 @@ func (s *deletedState) Start(ctx context.Context) error {
 
 func (s *deletedState) Delete(ctx context.Context) error {
 	return errors.Errorf("cannot delete a deleted process")
+	return errors.Wrap(errdefs.ErrNotFound, "cannot delete a deleted process")
 }
 
 func (s *deletedState) Kill(ctx context.Context, sig uint32, all bool) error {
 	return errors.Errorf("cannot kill a deleted process")
+	return errors.Wrap(errdefs.ErrNotFound, "cannot kill a deleted process")
 }
 
 func (s *deletedState) SetExited(status int) {

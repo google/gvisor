@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"unsafe"
 
 	winio "github.com/Microsoft/go-winio"
@@ -38,10 +37,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/windows"
-)
-
-const (
-	errorConnectionAborted syscall.Errno = 1236
 )
 
 // setupSignals creates a new signal handler for all signals
@@ -113,12 +108,11 @@ func serveListener(path string) (net.Listener, error) {
 
 func handleSignals(logger *logrus.Entry, signals chan os.Signal) error {
 	logger.Info("starting signal loop")
+
 	for {
-		select {
-		case s := <-signals:
+		for s := range signals {
 			switch s {
 			case os.Interrupt:
-				break
 			}
 		}
 	}
@@ -209,7 +203,7 @@ func (dswl *deferredShimWriteLogger) beginAccept() {
 	dswl.mu.Unlock()
 
 	c, err := dswl.l.Accept()
-	if err == errorConnectionAborted {
+	if err == winio.ErrPipeListenerClosed {
 		dswl.mu.Lock()
 		dswl.aborted = true
 		dswl.l.Close()
