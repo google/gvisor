@@ -1028,6 +1028,7 @@ cc_binary(
     srcs = ["mknod.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:file_descriptor",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",

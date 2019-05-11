@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -31,20 +32,22 @@ namespace testing {
 namespace {
 
 TEST(MknodTest, RegularFile) {
-  std::string const node0 = NewTempAbsPathInDir("/tmp");
-  std::string const node1 = NewTempAbsPathInDir("/tmp");
-  ASSERT_THAT(mknod(node0.c_str(), S_IFREG, 0), SyscallSucceeds());
-  ASSERT_THAT(mknod(node1.c_str(), 0, 0), SyscallSucceeds());
+  const std::string node0 = NewTempAbsPath();
+  EXPECT_THAT(mknod(node0.c_str(), S_IFREG, 0), SyscallSucceeds());
+
+  const std::string node1 = NewTempAbsPath();
+  EXPECT_THAT(mknod(node1.c_str(), 0, 0), SyscallSucceeds());
 }
 
 TEST(MknodTest, MknodAtRegularFile) {
-  std::string const fifo_relpath = NewTempRelPath();
-  std::string const fifo = JoinPath("/tmp", fifo_relpath);
-  int dirfd;
-  ASSERT_THAT(dirfd = open("/tmp", O_RDONLY), SyscallSucceeds());
-  ASSERT_THAT(mknodat(dirfd, fifo_relpath.c_str(), S_IFIFO | S_IRUSR, 0),
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string fifo_relpath = NewTempRelPath();
+  const std::string fifo = JoinPath(dir.path(), fifo_relpath);
+
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path().c_str(), O_RDONLY));
+  ASSERT_THAT(mknodat(dirfd.get(), fifo_relpath.c_str(), S_IFIFO | S_IRUSR, 0),
               SyscallSucceeds());
-  EXPECT_THAT(close(dirfd), SyscallSucceeds());
 
   struct stat st;
   ASSERT_THAT(stat(fifo.c_str(), &st), SyscallSucceeds());
@@ -52,33 +55,34 @@ TEST(MknodTest, MknodAtRegularFile) {
 }
 
 TEST(MknodTest, MknodOnExistingPathFails) {
-  std::string const file = NewTempAbsPathInDir("/tmp");
-  std::string const slink = NewTempAbsPathInDir("/tmp");
-  int fd;
-  ASSERT_THAT(fd = open(file.c_str(), O_CREAT | O_RDWR, S_IRUSR | S_IWUSR),
-              SyscallSucceeds());
-  EXPECT_THAT(close(fd), SyscallSucceeds());
-  ASSERT_THAT(symlink(file.c_str(), slink.c_str()), SyscallSucceeds());
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath slink = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(GetAbsoluteTestTmpdir(), file.path()));
 
-  EXPECT_THAT(mknod(file.c_str(), S_IFREG, 0), SyscallFailsWithErrno(EEXIST));
-  EXPECT_THAT(mknod(file.c_str(), S_IFIFO, 0), SyscallFailsWithErrno(EEXIST));
-  EXPECT_THAT(mknod(slink.c_str(), S_IFREG, 0), SyscallFailsWithErrno(EEXIST));
-  EXPECT_THAT(mknod(slink.c_str(), S_IFIFO, 0), SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(mknod(file.path().c_str(), S_IFREG, 0),
+              SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(mknod(file.path().c_str(), S_IFIFO, 0),
+              SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(mknod(slink.path().c_str(), S_IFREG, 0),
+              SyscallFailsWithErrno(EEXIST));
+  EXPECT_THAT(mknod(slink.path().c_str(), S_IFIFO, 0),
+              SyscallFailsWithErrno(EEXIST));
 }
 
 TEST(MknodTest, UnimplementedTypesReturnError) {
+  const std::string path = NewTempAbsPath();
+
   if (IsRunningOnGvisor()) {
-    ASSERT_THAT(mknod("/tmp/a_socket", S_IFSOCK, 0),
+    ASSERT_THAT(mknod(path.c_str(), S_IFSOCK, 0),
                 SyscallFailsWithErrno(EOPNOTSUPP));
   }
   // These will fail on linux as well since we don't have CAP_MKNOD.
-  ASSERT_THAT(mknod("/tmp/a_chardev", S_IFCHR, 0),
-              SyscallFailsWithErrno(EPERM));
-  ASSERT_THAT(mknod("/tmp/a_blkdev", S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
+  ASSERT_THAT(mknod(path.c_str(), S_IFCHR, 0), SyscallFailsWithErrno(EPERM));
+  ASSERT_THAT(mknod(path.c_str(), S_IFBLK, 0), SyscallFailsWithErrno(EPERM));
 }
 
 TEST(MknodTest, Fifo) {
-  std::string const fifo = NewTempAbsPathInDir("/tmp");
+  const std::string fifo = NewTempAbsPath();
   ASSERT_THAT(mknod(fifo.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
               SyscallSucceeds());
 
@@ -91,24 +95,20 @@ TEST(MknodTest, Fifo) {
 
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    int fd;
-    ASSERT_THAT(fd = open(fifo.c_str(), O_RDONLY), SyscallSucceeds());
-    EXPECT_THAT(read(fd, buf.data(), buf.size()),
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
-    EXPECT_THAT(close(fd), SyscallSucceeds());
   });
 
   // Write-end of the pipe.
-  int wfd;
-  ASSERT_THAT(wfd = open(fifo.c_str(), O_WRONLY), SyscallSucceeds());
-  EXPECT_THAT(write(wfd, msg.c_str(), msg.length()),
+  FileDescriptor wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY));
+  EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
-  EXPECT_THAT(close(wfd), SyscallSucceeds());
 }
 
 TEST(MknodTest, FifoOtrunc) {
-  std::string const fifo = NewTempAbsPathInDir("/tmp");
+  const std::string fifo = NewTempAbsPath();
   ASSERT_THAT(mknod(fifo.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
               SyscallSucceeds());
 
@@ -120,23 +120,21 @@ TEST(MknodTest, FifoOtrunc) {
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    int fd;
-    ASSERT_THAT(fd = open(fifo.c_str(), O_RDONLY), SyscallSucceeds());
-    EXPECT_THAT(read(fd, buf.data(), buf.size()),
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
-    EXPECT_THAT(close(fd), SyscallSucceeds());
   });
 
-  int wfd;
-  ASSERT_THAT(wfd = open(fifo.c_str(), O_TRUNC | O_WRONLY), SyscallSucceeds());
-  EXPECT_THAT(write(wfd, msg.c_str(), msg.length()),
+  // Write-end of the pipe.
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY | O_TRUNC));
+  EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
-  EXPECT_THAT(close(wfd), SyscallSucceeds());
 }
 
 TEST(MknodTest, FifoTruncNoOp) {
-  std::string const fifo = NewTempAbsPathInDir("/tmp");
+  const std::string fifo = NewTempAbsPath();
   ASSERT_THAT(mknod(fifo.c_str(), S_IFIFO | S_IRUSR | S_IWUSR, 0),
               SyscallSucceeds());
 
@@ -150,21 +148,18 @@ TEST(MknodTest, FifoTruncNoOp) {
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
-    int rfd = 0;
-    ASSERT_THAT(rfd = open(fifo.c_str(), O_RDONLY), SyscallSucceeds());
-    EXPECT_THAT(ReadFd(rfd, buf.data(), buf.size()),
+    FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_RDONLY));
+    EXPECT_THAT(ReadFd(fd.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(msg.length()));
     EXPECT_EQ(msg, std::string(buf.data()));
-    EXPECT_THAT(close(rfd), SyscallSucceeds());
   });
 
-  int wfd = 0;
-  ASSERT_THAT(wfd = open(fifo.c_str(), O_TRUNC | O_WRONLY), SyscallSucceeds());
-  EXPECT_THAT(ftruncate(wfd, 0), SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(WriteFd(wfd, msg.c_str(), msg.length()),
+  FileDescriptor wfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(fifo.c_str(), O_WRONLY | O_TRUNC));
+  EXPECT_THAT(ftruncate(wfd.get(), 0), SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(WriteFd(wfd.get(), msg.c_str(), msg.length()),
               SyscallSucceedsWithValue(msg.length()));
-  EXPECT_THAT(ftruncate(wfd, 0), SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(close(wfd), SyscallSucceeds());
+  EXPECT_THAT(ftruncate(wfd.get(), 0), SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace
