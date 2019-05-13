@@ -88,12 +88,12 @@ therefore important to achieve high densities for efficiency.
 {{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000" >}}
 
 The above figure demonstrates these costs based on three sample applications.
-This test is the result of running many instances of a container (typically 50)
-and calculating available memory on the host before and afterwards, and dividing
-the difference by the number of containers. This technique is used for measuring
-memory usage over the `usage_in_bytes` value of the container cgroup because we
-found that some container runtimes, other than `runc` and `runsc`, do not use an
-individual container cgroup.
+This test is the result of running many instances of a container (50, or 5 in
+the case of redis) and calculating available memory on the host before and
+afterwards, and dividing the difference by the number of containers. This
+technique is used for measuring memory usage over the `usage_in_bytes` value of
+the container cgroup because we found that some container runtimes, other than
+`runc` and `runsc`, do not use an individual container cgroup.
 
 The first application is an instance of `sleep`: a trivial application that does
 nothing. The second application is a synthetic `node` application which imports
