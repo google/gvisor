@@ -85,22 +85,21 @@ For many use cases, fixed memory overheads are a primary concern. This may be
 because sandboxed containers handle a low volume of requests, and it is
 therefore important to achieve high densities for efficiency.
 
-{{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000">}}
+{{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000" >}}
 
 The above figure demonstrates these costs based on three sample applications.
 This test is the result of running many instances of a container (typically 50)
 and calculating available memory on the host before and afterwards, and dividing
-the difference by the number of containers.
-
-> Note: the above technique is used for measuring memory usage over the
-> `usage_in_bytes` value of the container cgroup because we found that some
-> container runtimes, other than `runc` and `runsc` do not use an individual
-> container cgroup.
+the difference by the number of containers. This technique is used for measuring
+memory usage over the `usage_in_bytes` value of the container cgroup because we
+found that some container runtimes, other than `runc` and `runsc`, do not use an
+individual container cgroup.
 
 The first application is an instance of `sleep`: a trivial application that does
 nothing. The second application is a synthetic `node` application which imports
 a number of modules and listens for requests. The third application is a similar
-synthetic `ruby` application which does the same. In all cases, the sandbox
+synthetic `ruby` application which does the same. Finally, we include an
+instance of `redis` storing approximately 1GB of data. In all cases, the sandbox
 itself is responsible for a small, mostly fixed amount of memory overhead.
 
 ## CPU performance
