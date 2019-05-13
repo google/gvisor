@@ -104,6 +104,10 @@ d3.csv("{{ .Get "url" }}", function(d, i, columns) {
         y_min = 1;
     }
 
+    if ({{ .Get "y_min" | default false }}) {
+        y_min = "{{ .Get "y_min" }}";
+    }    
+
     var svg = d3.select("#{{ .Get "id" }}"),
         margin = {top: 20, right: 20, bottom: 30 + margin_bottom_pad, left: 50},
         width = +svg.attr("width") - margin.left - margin.right,

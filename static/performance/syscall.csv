@@ -1,4 +1,5 @@
 runtime,metric,result
-runc,syscall_time_ns,1929.0
-runsc,syscall_time_ns,36011.0
-runsc-kvm,syscall_time_ns,754.0
+runc,syscall_time_ns,1939.0
+runsc,syscall_time_ns,38219.0
+runsc-kvm,syscall_time_ns,763.0
+runsc-kvm-bare,syscall_time_ns,455.0

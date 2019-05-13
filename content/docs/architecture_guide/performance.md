@@ -85,7 +85,7 @@ For many use cases, fixed memory overheads are a primary concern. This may be
 because sandboxed containers handle a low volume of requests, and it is
 therefore important to achieve high densities for efficiency.
 
-{{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" >}}
+{{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000">}}
 
 The above figure demonstrates these costs based on three sample applications.
 This test is the result of running many instances of a container (typically 50)
@@ -134,7 +134,7 @@ supports a variety of platforms. These platforms present distinct performance,
 compatibility and security trade-offs. For example, the KVM platform has low
 overhead system call interception but runs poorly with nested virtualization.
 
-{{< graph id="syscall" url="/performance/syscall.csv" title="perf.py syscall --runtime=runc --runtime=runsc-ptrace --runtime=runsc-kvm" log="true" >}}
+{{< graph id="syscall" url="/performance/syscall.csv" title="perf.py syscall --runtime=runc --runtime=runsc-ptrace --runtime=runsc-kvm" y_min="100" log="true" >}}
 
 The above figure demonstrates the time required for a raw system call on various
 platforms. The test is implemented by a custom binary which performs a large
