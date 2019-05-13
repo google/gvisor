@@ -235,17 +235,18 @@ The high costs of VFS operations can manifest in benchmarks that execute many
 such operations in the hot path for serviing requests, for example. The above
 figure shows the result of using gVisor to serve small pieces of static content
 with predictably poor results. This workload represents `apache` serving a
-single file sized 100k to a client running [ApacheBench][ab] with varying levels
-of concurrency. The high overhead comes principally from the VFS implementation
-that needs improvement, with several internal serialization points (since all
-requests are reading the same file). Note that some of some of network stack
-performance issues also impact this benchmark.
+single file sized 100k from the container image to a client running
+[ApacheBench][ab] with varying levels of concurrency. The high overhead comes
+principally from the VFS implementation that needs improvement, with several
+internal serialization points (since all requests are reading the same file).
+Note that some of some of network stack performance issues also impact this
+benchmark.
 
 {{< graph id="ffmpeg" url="/performance/ffmpeg.csv" title="perf.py media.ffmpeg --runtime=runc --runtime=runsc" >}}
 
 For benchmarks that are bound by raw disk I/O and a mix of compute, file system
 operations are less of an issue. The above figure shows the total time required
-for an `ffmpeg` container to start, load and transcode an input video.
+for an `ffmpeg` container to start, load and transcode a 27MB input video.
 
 [ab]: https://en.wikipedia.org/wiki/ApacheBench
 [benchmark-tools]: https://gvisor.googlesource.com/benchmark-tools
