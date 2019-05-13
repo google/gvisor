@@ -150,6 +150,7 @@ run_docker_tests() {
     bazel test \
       "${BAZEL_BUILD_FLAGS[@]}" \
       --test_env=RUNSC_RUNTIME="${RUNTIME}${v}" \
+      --test_output=all \
       //runsc/test/image:image_test \
       //runsc/test/integration:integration_test
   done

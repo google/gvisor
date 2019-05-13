@@ -24,6 +24,7 @@ package image
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestHelloWorld(t *testing.T) {
 	}
 }
 
-func testHTTPServer(port int) error {
+func runHTTPRequest(port int) error {
 	url := fmt.Sprintf("http://localhost:%d/not-found", port)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -78,6 +79,26 @@ func testHTTPServer(port int) error {
 	return nil
 }
 
+func testHTTPServer(t *testing.T, port int) {
+	const requests = 10
+	ch := make(chan error, requests)
+	for i := 0; i < requests; i++ {
+		go func() {
+			start := time.Now()
+			err := runHTTPRequest(port)
+			log.Printf("Response time %v: %v", time.Since(start).String(), err)
+			ch <- err
+		}()
+	}
+
+	for i := 0; i < requests; i++ {
+		err := <-ch
+		if err != nil {
+			t.Errorf("testHTTPServer(%d) failed: %v", port, err)
+		}
+	}
+}
+
 func TestHttpd(t *testing.T) {
 	if err := testutil.Pull("httpd"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
@@ -103,13 +124,11 @@ func TestHttpd(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
-	if err := testHTTPServer(port); err != nil {
-		t.Fatalf("testHTTPServer(%d) failed: %v", port, err)
-	}
+	testHTTPServer(t, port)
 }
 
 func TestNginx(t *testing.T) {
@@ -137,13 +156,11 @@ func TestNginx(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
+		t.Errorf("WaitForHTTP() timeout: %v", err)
 	}
 
-	if err := testHTTPServer(port); err != nil {
-		t.Fatalf("testHTTPServer(%d) failed: %v", port, err)
-	}
+	testHTTPServer(t, port)
 }
 
 func TestMysql(t *testing.T) {
@@ -240,7 +257,7 @@ func TestTomcat(t *testing.T) {
 	}
 
 	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(port, 10*time.Second); err != nil {
+	if err := testutil.WaitForHTTP(port, 30*time.Second); err != nil {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 

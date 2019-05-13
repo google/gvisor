@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -266,8 +267,14 @@ func Poll(cb func() error, timeout time.Duration) error {
 // WaitForHTTP tries GET requests on a port until the call succeeds or timeout.
 func WaitForHTTP(port int, timeout time.Duration) error {
 	cb := func() error {
-		resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", port))
+		c := &http.Client{
+			// Calculate timeout to be able to do minimum 5 attempts.
+			Timeout: timeout / 5,
+		}
+		url := fmt.Sprintf("http://localhost:%d/", port)
+		resp, err := c.Get(url)
 		if err != nil {
+			log.Printf("Waiting %s: %v", url, err)
 			return err
 		}
 		resp.Body.Close()
