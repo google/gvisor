@@ -74,3 +74,28 @@ func epollWait(epfd int, events []syscall.EpollEvent, msec int) (int, error) {
 	}
 	return int(r), nil
 }
+
+func eventFDCreate() (int, error) {
+	eventFD, _, err := syscall.RawSyscall(syscall.SYS_EVENTFD2, 0, 0, 0)
+	if err != 0 {
+		return -1, err
+	}
+	return int(eventFD), nil
+}
+
+func eventFDWrite(eventFD int, v uint64) error {
+	if _, _, err := syscall.RawSyscall(syscall.SYS_WRITE, uintptr(eventFD), uintptr(unsafe.Pointer(&v)), 8); err != 0 {
+		return err
+	}
+
+	return nil
+}
+
+func eventFDRead(eventFD int) (uint64, error) {
+	var v uint64
+	if _, _, err := syscall.RawSyscall(syscall.SYS_READ, uintptr(eventFD), uintptr(unsafe.Pointer(&v)), 8); err != 0 {
+		return 0, err
+	}
+
+	return v, nil
+}

@@ -40,6 +40,10 @@ type notifier struct {
 	// notifications.
 	epFD int
 
+	// eventFD is used to restart epoll_wait in waitAndNotify after
+	// reconfiguring epFD.
+	eventFD int
+
 	// mu protects fdMap.
 	mu sync.Mutex
 
@@ -55,9 +59,20 @@ func newNotifier() (*notifier, error) {
 		return nil, err
 	}
 
+	eventFD, err := eventFDCreate()
+	if err != nil {
+		syscall.Close(epfd)
+		return nil, err
+	}
+
 	w := &notifier{
-		epFD:  epfd,
-		fdMap: make(map[int32]*fdInfo),
+		epFD:    epfd,
+		eventFD: eventFD,
+		fdMap:   make(map[int32]*fdInfo),
+	}
+
+	if err := w.waitFD(int32(w.eventFD), &fdInfo{}, waiter.EventIn); err != nil {
+		return nil, err
 	}
 
 	go w.waitAndNotify() // S/R-SAFE: no waiter exists during save / load.
@@ -89,6 +104,11 @@ func (n *notifier) waitFD(fd int32, fi *fdInfo, mask waiter.EventMask) error {
 		if err := syscall.EpollCtl(n.epFD, syscall.EPOLL_CTL_MOD, int(fd), &e); err != nil {
 			return err
 		}
+	}
+
+	// Restart epoll_wait in waitAndNotify.
+	if err := eventFDWrite(n.eventFD, 1); err != nil {
+		return err
 	}
 
 	return nil
@@ -156,6 +176,12 @@ func (n *notifier) waitAndNotify() error {
 
 		n.mu.Lock()
 		for i := 0; i < v; i++ {
+			if e[i].Fd == int32(n.eventFD) {
+				if _, err := eventFDRead(n.eventFD); err != nil {
+					return err
+				}
+				continue
+			}
 			if fi, ok := n.fdMap[e[i].Fd]; ok {
 				fi.queue.Notify(waiter.EventMaskFromLinux(e[i].Events))
 			}
