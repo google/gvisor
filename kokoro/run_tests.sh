@@ -142,10 +142,21 @@ EOF
 run_docker_tests() {
   cd ${WORKSPACE_DIR}
 
+  # Run tests with a default runtime (runc).
+  bazel test \
+    "${BAZEL_BUILD_FLAGS[@]}" \
+    --test_env=RUNSC_RUNTIME="" \
+    --test_output=all \
+    //runsc/test/image:image_test
+
   # These names are used to exclude tests not supported in certain
   # configuration, e.g. save/restore not supported with hostnet.
   declare -a variations=("" "-kvm" "-hostnet" "-overlay")
   for v in "${variations[@]}"; do
+    # FIXME(b/132073574): we need to flush arp tables, otherwise tests fail with
+    # timeout.
+    sudo ip neigh show
+    sudo ip neigh flush dev docker0
     # Run runsc tests with docker that are tagged manual.
     bazel test \
       "${BAZEL_BUILD_FLAGS[@]}" \

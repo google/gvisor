@@ -31,8 +31,8 @@ import (
 )
 
 func getRuntime() string {
-	r := os.Getenv("RUNSC_RUNTIME")
-	if r == "" {
+	r, ok := os.LookupEnv("RUNSC_RUNTIME")
+	if !ok {
 		return "runsc-test"
 	}
 	return r
