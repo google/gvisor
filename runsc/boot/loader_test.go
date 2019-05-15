@@ -115,7 +115,6 @@ func createLoader() (*Loader, func(), error) {
 		Spec:         spec,
 		Conf:         conf,
 		ControllerFD: fd,
-		DeviceFD:     -1,
 		GoferFDs:     []int{sandEnd},
 		StdioFDs:     stdio,
 	}

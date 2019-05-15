@@ -211,12 +211,6 @@ type StartArgs struct {
 func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Start: %+v", args)
 
-	defer func() {
-		for _, f := range args.FilePayload.Files {
-			f.Close()
-		}
-	}()
-
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")
@@ -305,21 +299,19 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
-	var specFile *os.File
-	deviceFD := -1
+	var specFile, deviceFile *os.File
 	switch numFiles := len(o.FilePayload.Files); numFiles {
 	case 2:
-		var err error
 		// The device file is donated to the platform.
 		// Can't take ownership away from os.File. dup them to get a new FD.
-		deviceFD, err = syscall.Dup(int(o.FilePayload.Files[1].Fd()))
+		fd, err := syscall.Dup(int(o.FilePayload.Files[1].Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
+		deviceFile = os.NewFile(uintptr(fd), "platform device")
 		fallthrough
 	case 1:
 		specFile = o.FilePayload.Files[0]
-		defer specFile.Close()
 	case 0:
 		return fmt.Errorf("at least one file must be passed to Restore")
 	default:
@@ -331,7 +323,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k.Pause()
 	cm.l.k.Destroy()
 
-	p, err := createPlatform(cm.l.conf, deviceFD)
+	p, err := createPlatform(cm.l.conf, deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
@@ -357,7 +349,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	if eps, ok := networkStack.(*epsocket.Stack); ok {
 		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
 	}
-	info, err := o.FilePayload.Files[0].Stat()
+	info, err := specFile.Stat()
 	if err != nil {
 		return err
 	}
@@ -366,9 +358,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 
 	// Load the state.
-	loadOpts := state.LoadOpts{
-		Source: o.FilePayload.Files[0],
-	}
+	loadOpts := state.LoadOpts{Source: specFile}
 	if err := loadOpts.Load(k, networkStack); err != nil {
 		return err
 	}

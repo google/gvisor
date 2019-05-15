@@ -152,8 +152,8 @@ type Args struct {
 	Conf *Config
 	// ControllerFD is the FD to the URPC controller.
 	ControllerFD int
-	// DeviceFD is an optional argument that is passed to the platform.
-	DeviceFD int
+	// Device is an optional argument that is passed to the platform.
+	Device *os.File
 	// GoferFDs is an array of FDs used to connect with the Gofer.
 	GoferFDs []int
 	// StdioFDs is the stdio for the application.
@@ -183,7 +183,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create kernel and platform.
-	p, err := createPlatform(args.Conf, args.DeviceFD)
+	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
@@ -401,17 +401,17 @@ func (l *Loader) Destroy() {
 	l.watchdog.Stop()
 }
 
-func createPlatform(conf *Config, deviceFD int) (platform.Platform, error) {
+func createPlatform(conf *Config, deviceFile *os.File) (platform.Platform, error) {
 	switch conf.Platform {
 	case PlatformPtrace:
 		log.Infof("Platform: ptrace")
 		return ptrace.New()
 	case PlatformKVM:
 		log.Infof("Platform: kvm")
-		if deviceFD < 0 {
-			return nil, fmt.Errorf("kvm device FD must be provided")
+		if deviceFile == nil {
+			return nil, fmt.Errorf("kvm device file must be provided")
 		}
-		return kvm.New(os.NewFile(uintptr(deviceFD), "kvm device"))
+		return kvm.New(deviceFile)
 	default:
 		return nil, fmt.Errorf("invalid platform %v", conf.Platform)
 	}
@@ -590,18 +590,22 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		return fmt.Errorf("creating new process: %v", err)
 	}
 
+	// setupContainerFS() dups stdioFDs, so we don't need to dup them here.
+	var stdioFDs []int
+	for _, f := range files[:3] {
+		stdioFDs = append(stdioFDs, int(f.Fd()))
+	}
+
 	// Can't take ownership away from os.File. dup them to get a new FDs.
-	var ioFDs []int
-	for _, f := range files {
+	var goferFDs []int
+	for _, f := range files[3:] {
 		fd, err := syscall.Dup(int(f.Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
-		ioFDs = append(ioFDs, fd)
+		goferFDs = append(goferFDs, fd)
 	}
 
-	stdioFDs := ioFDs[:3]
-	goferFDs := ioFDs[3:]
 	if err := setupContainerFS(
 		&procArgs,
 		spec,
@@ -614,13 +618,6 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		k,
 		cid); err != nil {
 		return fmt.Errorf("configuring container FS: %v", err)
-	}
-
-	// setFileSystemForProcess dup'd stdioFDs, so we can close them.
-	for i, fd := range stdioFDs {
-		if err := syscall.Close(fd); err != nil {
-			return fmt.Errorf("closing stdio FD #%d: %v", i, fd)
-		}
 	}
 
 	ctx := procArgs.NewContext(l.k)

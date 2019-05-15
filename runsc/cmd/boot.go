@@ -213,7 +213,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Spec:         spec,
 		Conf:         conf,
 		ControllerFD: b.controllerFD,
-		DeviceFD:     b.deviceFD,
+		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:     b.ioFDs.GetArray(),
 		StdioFDs:     b.stdioFDs.GetArray(),
 		Console:      b.console,
