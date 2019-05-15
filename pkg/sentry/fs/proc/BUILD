@@ -5,6 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 go_library(
     name = "proc",
     srcs = [
+        "cgroup.go",
         "cpuinfo.go",
         "exec_args.go",
         "fds.go",

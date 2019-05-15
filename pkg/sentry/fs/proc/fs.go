@@ -57,7 +57,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 }
 
 // Mount returns the root of a procfs that can be positioned in the vfs.
-func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
+func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, cgroupsInt interface{}) (*fs.Inode, error) {
 	// device is always ignored.
 
 	// Parse generic comma-separated key=value options, this file system expects them.
@@ -70,7 +70,12 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 		return nil, fmt.Errorf("unsupported mount options: %v", options)
 	}
 
+	var cgroups map[string]string
+	if cgroupsInt != nil {
+		cgroups = cgroupsInt.(map[string]string)
+	}
+
 	// Construct the procfs root. Since procfs files are all virtual, we
 	// never want them cached.
-	return New(ctx, fs.NewNonCachingMountSource(f, flags))
+	return New(ctx, fs.NewNonCachingMountSource(f, flags), cgroups)
 }

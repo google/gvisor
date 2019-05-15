@@ -67,7 +67,7 @@ type taskDir struct {
 var _ fs.InodeOperations = (*taskDir)(nil)
 
 // newTaskDir creates a new proc task entry.
-func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace, showSubtasks bool) *fs.Inode {
+func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, showSubtasks bool) *fs.Inode {
 	contents := map[string]*fs.Inode{
 		"auxv":    newAuxvec(t, msrc),
 		"cmdline": newExecArgInode(t, msrc, cmdlineExecArg),
@@ -84,20 +84,22 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 		"mounts":    seqfile.NewSeqFileInode(t, &mountsFile{t: t}, msrc),
 		"ns":        newNamespaceDir(t, msrc),
 		"smaps":     newSmaps(t, msrc),
-		"stat":      newTaskStat(t, msrc, showSubtasks, pidns),
+		"stat":      newTaskStat(t, msrc, showSubtasks, p.pidns),
 		"statm":     newStatm(t, msrc),
-		"status":    newStatus(t, msrc, pidns),
+		"status":    newStatus(t, msrc, p.pidns),
 		"uid_map":   newUIDMap(t, msrc),
 	}
 	if showSubtasks {
-		contents["task"] = newSubtasks(t, msrc, pidns)
+		contents["task"] = p.newSubtasks(t, msrc)
+	}
+	if len(p.cgroupControllers) > 0 {
+		contents["cgroup"] = newCGroupInode(t, msrc, p.cgroupControllers)
 	}
 
 	// TODO(b/31916171): Set EUID/EGID based on dumpability.
 	d := &taskDir{
-		Dir:   *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
-		t:     t,
-		pidns: pidns,
+		Dir: *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		t:   t,
 	}
 	return newProcInode(d, msrc, fs.SpecialDirectory, t)
 }
@@ -108,17 +110,17 @@ func newTaskDir(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace
 type subtasks struct {
 	ramfs.Dir
 
-	t     *kernel.Task
-	pidns *kernel.PIDNamespace
+	t *kernel.Task
+	p *proc
 }
 
 var _ fs.InodeOperations = (*subtasks)(nil)
 
-func newSubtasks(t *kernel.Task, msrc *fs.MountSource, pidns *kernel.PIDNamespace) *fs.Inode {
+func (p *proc) newSubtasks(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 	s := &subtasks{
-		Dir:   *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0555)),
-		t:     t,
-		pidns: pidns,
+		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		t:   t,
+		p:   p,
 	}
 	return newProcInode(s, msrc, fs.SpecialDirectory, t)
 }
@@ -137,7 +139,7 @@ func (s *subtasks) UnstableAttr(ctx context.Context, inode *fs.Inode) (fs.Unstab
 
 // GetFile implements fs.InodeOperations.GetFile.
 func (s *subtasks) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	return fs.NewFile(ctx, dirent, flags, &subtasksFile{t: s.t, pidns: s.pidns}), nil
+	return fs.NewFile(ctx, dirent, flags, &subtasksFile{t: s.t, pidns: s.p.pidns}), nil
 }
 
 // +stateify savable
@@ -212,7 +214,7 @@ func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dir
 		return nil, syserror.ENOENT
 	}
 
-	task := s.pidns.TaskWithID(kernel.ThreadID(tid))
+	task := s.p.pidns.TaskWithID(kernel.ThreadID(tid))
 	if task == nil {
 		return nil, syserror.ENOENT
 	}
@@ -220,7 +222,7 @@ func (s *subtasks) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dir
 		return nil, syserror.ENOENT
 	}
 
-	td := newTaskDir(task, dir.MountSource, s.pidns, false)
+	td := s.p.newTaskDir(task, dir.MountSource, false)
 	return fs.NewDirent(td, p), nil
 }
 

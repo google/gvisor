@@ -43,10 +43,15 @@ type proc struct {
 	// pidns is the PID namespace of the task that mounted the proc filesystem
 	// that this node represents.
 	pidns *kernel.PIDNamespace
+
+	// cgroupControllers is a map of controller name to directory in the
+	// cgroup hierarchy. These controllers are immutable and will be listed
+	// in /proc/pid/cgroup if not nil.
+	cgroupControllers map[string]string
 }
 
 // New returns the root node of a partial simple procfs.
-func New(ctx context.Context, msrc *fs.MountSource) (*fs.Inode, error) {
+func New(ctx context.Context, msrc *fs.MountSource, cgroupControllers map[string]string) (*fs.Inode, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("procfs requires a kernel")
@@ -73,9 +78,10 @@ func New(ctx context.Context, msrc *fs.MountSource) (*fs.Inode, error) {
 
 	// Construct the proc InodeOperations.
 	p := &proc{
-		Dir:   *ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
-		k:     k,
-		pidns: pidns,
+		Dir:               *ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
+		k:                 k,
+		pidns:             pidns,
+		cgroupControllers: cgroupControllers,
 	}
 
 	// Add more contents that need proc to be initialized.
@@ -178,7 +184,7 @@ func (p *proc) Lookup(ctx context.Context, dir *fs.Inode, name string) (*fs.Dire
 	}
 
 	// Wrap it in a taskDir.
-	td := newTaskDir(otherTask, dir.MountSource, p.pidns, true)
+	td := p.newTaskDir(otherTask, dir.MountSource, true)
 	return fs.NewDirent(td, name), nil
 }
 
