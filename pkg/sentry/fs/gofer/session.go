@@ -101,7 +101,7 @@ type session struct {
 	// version is the value of the version mount option, see fs/gofer/fs.go.
 	version string `state:"wait"`
 
-	// cachePolicy is the cache policy. It may be either cacheAll or cacheNone.
+	// cachePolicy is the cache policy.
 	cachePolicy cachePolicy `state:"wait"`
 
 	// aname is the value of the aname mount option, see fs/gofer/fs.go.
