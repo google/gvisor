@@ -246,6 +246,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		if err != nil {
 			return fmt.Errorf("getting link for interface %q: %v", iface.Name, err)
 		}
+		link.LinkAddress = []byte(ifaceLink.Attrs().HardwareAddr)
 
 		if enableGSO {
 			gso, err := isGSOEnabled(fd, iface.Name)

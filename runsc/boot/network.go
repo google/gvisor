@@ -16,7 +16,6 @@ package boot
 
 import (
 	"fmt"
-	"math/rand"
 	"net"
 	"syscall"
 
@@ -52,11 +51,12 @@ type DefaultRoute struct {
 
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
-	Name       string
-	MTU        int
-	Addresses  []net.IP
-	Routes     []Route
-	GSOMaxSize uint32
+	Name        string
+	MTU         int
+	Addresses   []net.IP
+	Routes      []Route
+	GSOMaxSize  uint32
+	LinkAddress []byte
 }
 
 // LoopbackLink configures a loopback li nk.
@@ -134,7 +134,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
 		}
 
-		mac := tcpip.LinkAddress(generateRndMac())
+		mac := tcpip.LinkAddress(link.LinkAddress)
 		linkEP, err := fdbased.New(&fdbased.Options{
 			FD:                 newFD,
 			MTU:                uint32(link.MTU),
@@ -219,14 +219,4 @@ func ipToAddress(ip net.IP) tcpip.Address {
 func ipToAddressMask(ip net.IP) tcpip.AddressMask {
 	_, addr := ipToAddressAndProto(ip)
 	return tcpip.AddressMask(addr)
-}
-
-// generateRndMac returns a random local MAC address.
-// Copied from eth_random_addr() (include/linux/etherdevice.h)
-func generateRndMac() net.HardwareAddr {
-	mac := make(net.HardwareAddr, 6)
-	rand.Read(mac)
-	mac[0] &^= 0x1 // clear multicast bit
-	mac[0] |= 0x2  // set local assignment bit (IEEE802)
-	return mac
 }
