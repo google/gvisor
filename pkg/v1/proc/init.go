@@ -225,21 +225,21 @@ func (p *Init) Start(ctx context.Context) error {
 	return p.initState.Start(ctx)
 }
 
-func (p *Init) start(context context.Context) error {
+func (p *Init) start(ctx context.Context) error {
 	var cio runc.IO
 	if !p.Sandbox {
 		cio = p.io
 	}
-	if err := p.runtime.Start(context, p.id, cio); err != nil {
+	if err := p.runtime.Start(ctx, p.id, cio); err != nil {
 		return p.runtimeError(err, "OCI runtime start failed")
 	}
 	go func() {
-		status, err := p.runtime.Wait(context, p.id)
+		status, err := p.runtime.Wait(context.Background(), p.id)
 		if err != nil {
-			log.G(context).WithError(err).Errorf("Failed to wait for container %q", p.id)
+			log.G(ctx).WithError(err).Errorf("Failed to wait for container %q", p.id)
 			// TODO(random-liu): Handle runsc kill error.
-			if err := p.killAll(context); err != nil {
-				log.G(context).WithError(err).Errorf("Failed to kill container %q", p.id)
+			if err := p.killAll(ctx); err != nil {
+				log.G(ctx).WithError(err).Errorf("Failed to kill container %q", p.id)
 			}
 			status = internalErrorCode
 		}
