@@ -85,7 +85,7 @@ PosixErrorOr<TempPath> TempPath::CreateFileWith(absl::string_view const parent,
                                                 absl::string_view const content,
                                                 mode_t const mode) {
   return CreateIn(parent, [=](absl::string_view path) -> PosixError {
-    // SetContents will call open(O_WRONLY) with the given mode. If the
+    // CreateWithContents will call open(O_WRONLY) with the given mode. If the
     // mode is not user-writable, save/restore cannot preserve the fd. Hence
     // the little permission dance that's done here.
     auto res = CreateWithContents(path, content, mode | 0200);
