@@ -214,6 +214,8 @@ syscall_test(test = "//test/syscalls/linux:priority_test")
 
 syscall_test(
     size = "medium",
+    # We don't want our proc changing out from under us.
+    parallel = False,
     test = "//test/syscalls/linux:proc_test",
 )
 

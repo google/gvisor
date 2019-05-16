@@ -33,9 +33,12 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1838,6 +1841,47 @@ TEST(ProcSelfMounts, RequiredFieldsArePresent) {
                   // Root mount.
                   ContainsRegex(R"(\S+ /proc \S+ rw\S* [0-9]+ [0-9]+\s)")));
 }
+
+void CheckDuplicatesRecursively(std::string path) {
+  errno = 0;
+  DIR* dir = opendir(path.c_str());
+  if (dir == nullptr) {
+    ASSERT_THAT(errno, ::testing::AnyOf(EPERM, EACCES)) << path;
+    return;
+  }
+  auto dir_closer = Cleanup([&dir]() { closedir(dir); });
+  std::unordered_set<std::string> children;
+  while (true) {
+    // Readdir(3): If the end of the directory stream is reached, NULL is
+    // returned and errno is not changed.  If an error occurs, NULL is returned
+    // and errno is set appropriately.  To distinguish end of stream and from an
+    // error, set errno to zero before calling readdir() and then check the
+    // value of errno if NULL is returned.
+    errno = 0;
+    struct dirent* dp = readdir(dir);
+    if (dp == nullptr) {
+      ASSERT_EQ(errno, 0) << path;
+      break;  // We're done.
+    }
+
+    if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0) {
+      continue;
+    }
+
+    ASSERT_EQ(children.find(std::string(dp->d_name)), children.end()) << dp->d_name;
+    children.insert(std::string(dp->d_name));
+
+    ASSERT_NE(dp->d_type, DT_UNKNOWN);
+
+    if (dp->d_type != DT_DIR) {
+      continue;
+    }
+    CheckDuplicatesRecursively(absl::StrCat(path, "/", dp->d_name));
+  }
+}
+
+TEST(Proc, NoDuplicates) { CheckDuplicatesRecursively("/proc"); }
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
