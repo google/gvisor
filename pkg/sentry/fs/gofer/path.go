@@ -121,13 +121,17 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	qids, unopened, mask, p9attr, err := i.fileState.file.walkGetAttr(ctx, []string{name})
 	if err != nil {
 		newFile.close(ctx)
-		hostFile.Close()
+		if hostFile != nil {
+			hostFile.Close()
+		}
 		return nil, err
 	}
 	if len(qids) != 1 {
 		log.Warningf("WalkGetAttr(%s) succeeded, but returned %d QIDs (%v), wanted 1", name, len(qids), qids)
 		newFile.close(ctx)
-		hostFile.Close()
+		if hostFile != nil {
+			hostFile.Close()
+		}
 		unopened.close(ctx)
 		return nil, syserror.EIO
 	}
