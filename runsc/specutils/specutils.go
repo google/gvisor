@@ -149,7 +149,7 @@ func OpenSpec(bundleDir string) (*os.File, error) {
 func ReadSpec(bundleDir string) (*specs.Spec, error) {
 	specFile, err := OpenSpec(bundleDir)
 	if err != nil {
-		return nil, fmt.Errorf("error opening spec file %q: %v", specFile.Name(), err)
+		return nil, fmt.Errorf("error opening spec file %q: %v", filepath.Join(bundleDir, "config.json"), err)
 	}
 	defer specFile.Close()
 	return ReadSpecFromFile(bundleDir, specFile)
