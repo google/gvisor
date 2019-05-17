@@ -287,7 +287,7 @@ func (*inodeOperations) CreateHardLink(context.Context, *fs.Inode, *fs.Inode, st
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.
 func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syserror.EOPNOTSUPP
+	return syserror.EPERM
 }
 
 // Remove implements fs.InodeOperations.Remove.

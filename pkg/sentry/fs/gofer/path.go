@@ -281,9 +281,9 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo. Gofer nodes do not support the
-// creation of fifos and always returns EOPNOTSUPP.
+// creation of fifos and always returns EPERM.
 func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syscall.EOPNOTSUPP
+	return syscall.EPERM
 }
 
 // Remove implements InodeOperations.Remove.

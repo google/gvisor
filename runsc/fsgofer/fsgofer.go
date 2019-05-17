@@ -860,7 +860,10 @@ func (l *localFile) Link(target p9.File, newName string) error {
 //
 // Not implemented.
 func (*localFile) Mknod(_ string, _ p9.FileMode, _ uint32, _ uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	return p9.QID{}, syscall.ENOSYS
+	// From mknod(2) man page:
+	// "EPERM: [...] if the filesystem containing pathname does not support
+	// the type of node requested."
+	return p9.QID{}, syscall.EPERM
 }
 
 // UnlinkAt implements p9.File.
