@@ -389,7 +389,7 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		return err
 	}
 	oldName := renamed.name
-	if err := o.upper.InodeOperations.Rename(ctx, oldParent.Inode.overlay.upper, oldName, newParent.Inode.overlay.upper, newName, replacement); err != nil {
+	if err := o.upper.InodeOperations.Rename(ctx, renamed.Inode.overlay.upper, oldParent.Inode.overlay.upper, oldName, newParent.Inode.overlay.upper, newName, replacement); err != nil {
 		return err
 	}
 	if renamed.Inode.overlay.lowerExists {

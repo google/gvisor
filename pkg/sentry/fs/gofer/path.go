@@ -344,7 +344,7 @@ func (i *inodeOperations) RemoveDirectory(ctx context.Context, dir *fs.Inode, na
 }
 
 // Rename renames this node.
-func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	if len(newName) > maxFilenameLen {
 		return syserror.ENAMETOOLONG
 	}
@@ -388,6 +388,11 @@ func (i *inodeOperations) Rename(ctx context.Context, oldParent *fs.Inode, oldNa
 			// Mark new directory dirty.
 			newParentInodeOperations.markDirectoryDirty()
 		}
+	}
+
+	// Rename always updates ctime.
+	if i.session().cachePolicy.cacheUAttrs(inode) {
+		i.cachingInodeOps.TouchStatusChangeTime(ctx)
 	}
 	return nil
 }

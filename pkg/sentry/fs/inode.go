@@ -216,7 +216,7 @@ func (i *Inode) Rename(ctx context.Context, oldParent *Dirent, renamed *Dirent, 
 	if i.overlay != nil {
 		return overlayRename(ctx, i.overlay, oldParent, renamed, newParent, newName, replacement)
 	}
-	return i.InodeOperations.Rename(ctx, oldParent.Inode, renamed.name, newParent.Inode, newName, replacement)
+	return i.InodeOperations.Rename(ctx, renamed.Inode, oldParent.Inode, renamed.name, newParent.Inode, newName, replacement)
 }
 
 // Bind calls i.InodeOperations.Bind with i as the directory.

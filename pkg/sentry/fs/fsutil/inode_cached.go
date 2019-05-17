@@ -451,6 +451,14 @@ func (c *CachingInodeOperations) touchModificationTimeLocked(now time.Time) {
 	c.dirtyAttr.StatusChangeTime = true
 }
 
+// TouchStatusChangeTime updates the cached status change time in-place to the
+// current time.
+func (c *CachingInodeOperations) TouchStatusChangeTime(ctx context.Context) {
+	c.attrMu.Lock()
+	c.touchStatusChangeTimeLocked(ktime.NowFromContext(ctx))
+	c.attrMu.Unlock()
+}
+
 // touchStatusChangeTimeLocked updates the cached status change time
 // in-place to the current time.
 //

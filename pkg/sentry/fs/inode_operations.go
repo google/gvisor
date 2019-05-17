@@ -131,14 +131,15 @@ type InodeOperations interface {
 	RemoveDirectory(ctx context.Context, dir *Inode, name string) error
 
 	// Rename atomically renames oldName under oldParent to newName under
-	// newParent where oldParent and newParent are directories.
+	// newParent where oldParent and newParent are directories. inode is
+	// the Inode of this InodeOperations.
 	//
 	// If replacement is true, then newName already exists and this call
 	// will replace it with oldName.
 	//
 	// Implementations are responsible for rejecting renames that replace
 	// non-empty directories.
-	Rename(ctx context.Context, oldParent *Inode, oldName string, newParent *Inode, newName string, replacement bool) error
+	Rename(ctx context.Context, inode *Inode, oldParent *Inode, oldName string, newParent *Inode, newName string, replacement bool) error
 
 	// Bind binds a new socket under dir at the given name.
 	//

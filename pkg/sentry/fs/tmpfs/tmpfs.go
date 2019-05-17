@@ -238,7 +238,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (d *Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (d *Dir) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
@@ -271,7 +271,7 @@ func NewSymlink(ctx context.Context, target string, owner fs.FileOwner, msrc *fs
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (s *Symlink) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (s *Symlink) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
@@ -301,7 +301,7 @@ func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.Fil
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (s *Socket) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (s *Socket) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 
@@ -338,7 +338,7 @@ func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, 
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (f *Fifo) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (f *Fifo) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	return rename(ctx, oldParent, oldName, newParent, newName, replacement)
 }
 

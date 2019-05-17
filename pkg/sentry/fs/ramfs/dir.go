@@ -401,7 +401,7 @@ func (d *Dir) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags
 }
 
 // Rename implements fs.InodeOperations.Rename.
-func (*Dir) Rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
+func (*Dir) Rename(ctx context.Context, inode *fs.Inode, oldParent *fs.Inode, oldName string, newParent *fs.Inode, newName string, replacement bool) error {
 	return Rename(ctx, oldParent.InodeOperations, oldName, newParent.InodeOperations, newName, replacement)
 }
 

@@ -33,23 +33,88 @@ namespace {
 using ::testing::IsEmpty;
 using ::testing::Not;
 
-class StatTimesTest : public ::testing::Test {
- protected:
-  std::tuple<absl::Time, absl::Time, absl::Time> GetTime(const TempPath& file) {
-    struct stat statbuf = {};
-    EXPECT_THAT(stat(file.path().c_str(), &statbuf), SyscallSucceeds());
+std::tuple<absl::Time, absl::Time, absl::Time> GetTime(const TempPath& file) {
+  struct stat statbuf = {};
+  EXPECT_THAT(stat(file.path().c_str(), &statbuf), SyscallSucceeds());
 
-    const auto atime = absl::TimeFromTimespec(statbuf.st_atim);
-    const auto mtime = absl::TimeFromTimespec(statbuf.st_mtim);
-    const auto ctime = absl::TimeFromTimespec(statbuf.st_ctim);
-    return std::make_tuple(atime, mtime, ctime);
-  }
+  const auto atime = absl::TimeFromTimespec(statbuf.st_atim);
+  const auto mtime = absl::TimeFromTimespec(statbuf.st_mtim);
+  const auto ctime = absl::TimeFromTimespec(statbuf.st_ctim);
+  return std::make_tuple(atime, mtime, ctime);
+}
+
+enum class AtimeEffect {
+  Unchanged,
+  Changed,
 };
 
-TEST_F(StatTimesTest, FileCreationTimes) {
+enum class MtimeEffect {
+  Unchanged,
+  Changed,
+};
+
+enum class CtimeEffect {
+  Unchanged,
+  Changed,
+};
+
+// Tests that fn modifies the atime/mtime/ctime of path as specified.
+void CheckTimes(const TempPath& path, std::function<void()> fn,
+                AtimeEffect atime_effect, MtimeEffect mtime_effect,
+                CtimeEffect ctime_effect) {
+  absl::Time atime, mtime, ctime;
+  std::tie(atime, mtime, ctime) = GetTime(path);
+
+  // FIXME(b/132819225): gVisor filesystem timestamps inconsistently use the
+  // internal or host clock, which may diverge slightly. Allow some slack on
+  // times to account for the difference.
+  //
+  // Here we sleep for 1s so that initial creation of path doesn't fall within
+  // the before slack window.
+  absl::SleepFor(absl::Seconds(1));
+
+  const absl::Time before = absl::Now() - absl::Seconds(1);
+
+  // Perform the op.
+  fn();
+
+  const absl::Time after = absl::Now() + absl::Seconds(1);
+
+  absl::Time atime2, mtime2, ctime2;
+  std::tie(atime2, mtime2, ctime2) = GetTime(path);
+
+  if (atime_effect == AtimeEffect::Changed) {
+    EXPECT_LE(before, atime2);
+    EXPECT_GE(after, atime2);
+    EXPECT_GT(atime2, atime);
+  } else {
+    EXPECT_EQ(atime2, atime);
+  }
+
+  if (mtime_effect == MtimeEffect::Changed) {
+    EXPECT_LE(before, mtime2);
+    EXPECT_GE(after, mtime2);
+    EXPECT_GT(mtime2, mtime);
+  } else {
+    EXPECT_EQ(mtime2, mtime);
+  }
+
+  if (ctime_effect == CtimeEffect::Changed) {
+    EXPECT_LE(before, ctime2);
+    EXPECT_GE(after, ctime2);
+    EXPECT_GT(ctime2, ctime);
+  } else {
+    EXPECT_EQ(ctime2, ctime);
+  }
+}
+
+// File creation time is reflected in atime, mtime, and ctime.
+TEST(StatTimesTest, FileCreation) {
   const DisableSave ds;  // Timing-related test.
 
   // Get a time for when the file is created.
+  //
+  // FIXME(b/132819225): See above.
   const absl::Time before = absl::Now() - absl::Seconds(1);
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const absl::Time after = absl::Now() + absl::Seconds(1);
@@ -65,153 +130,137 @@ TEST_F(StatTimesTest, FileCreationTimes) {
   EXPECT_GE(after, ctime);
 }
 
-TEST_F(StatTimesTest, FileCtimeChanges) {
-  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+// Calling chmod on a file changes ctime.
+TEST(StatTimesTest, FileChmod) {
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
-
-  absl::Time atime, mtime, ctime;
-  std::tie(atime, mtime, ctime) = GetTime(file);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  // Chmod should only change ctime.
-  EXPECT_THAT(chmod(file.path().c_str(), 0666), SyscallSucceeds());
-
-  absl::Time atime2, mtime2, ctime2;
-  std::tie(atime2, mtime2, ctime2) = GetTime(file);
-  EXPECT_EQ(atime2, atime);
-  EXPECT_EQ(mtime2, mtime);
-  EXPECT_GT(ctime2, ctime);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  // Rename should only change ctime.
-  const auto newpath = NewTempAbsPath();
-  EXPECT_THAT(rename(file.path().c_str(), newpath.c_str()), SyscallSucceeds());
-  file.reset(newpath);
-
-  std::tie(atime, mtime, ctime) = GetTime(file);
-  EXPECT_EQ(atime, atime2);
-  EXPECT_EQ(mtime, mtime2);
-  EXPECT_GT(ctime, ctime2);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  // Utimes should only change ctime and the time that we ask to change (atime
-  // to now in this case).
-  const absl::Time before = absl::Now() - absl::Seconds(1);
-  const struct timespec ts[2] = {{0, UTIME_NOW}, {0, UTIME_OMIT}};
-  ASSERT_THAT(utimensat(AT_FDCWD, file.path().c_str(), ts, 0),
-              SyscallSucceeds());
-  const absl::Time after = absl::Now() + absl::Seconds(1);
-
-  std::tie(atime2, mtime2, ctime2) = GetTime(file);
-  EXPECT_LE(before, atime2);
-  EXPECT_GE(after, atime2);
-  EXPECT_EQ(mtime2, mtime);
-  EXPECT_GT(ctime2, ctime);
+  auto fn = [&] {
+    EXPECT_THAT(chmod(file.path().c_str(), 0666), SyscallSucceeds());
+  };
+  CheckTimes(file, fn, AtimeEffect::Unchanged, MtimeEffect::Unchanged,
+             CtimeEffect::Changed);
 }
 
-TEST_F(StatTimesTest, FileMtimeChanges) {
-  const auto file = ASSERT_NO_ERRNO_AND_VALUE(
+// Renaming a file changes ctime.
+TEST(StatTimesTest, FileRename) {
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  const std::string newpath = NewTempAbsPath();
+
+  auto fn = [&] {
+    ASSERT_THAT(rename(file.release().c_str(), newpath.c_str()),
+                SyscallSucceeds());
+    file.reset(newpath);
+  };
+  CheckTimes(file, fn, AtimeEffect::Unchanged, MtimeEffect::Unchanged,
+             CtimeEffect::Changed);
+}
+
+// Renaming a file changes ctime, even with an open FD.
+//
+// NOTE(b/132732387): This is a regression test for fs/gofer failing to update
+// cached ctime.
+TEST(StatTimesTest, FileRenameOpenFD) {
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  // Holding an FD shouldn't affect behavior.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+  const std::string newpath = NewTempAbsPath();
+
+  // FIXME(b/132814682): Restore fails with an uncached gofer and an open FD
+  // across rename.
+  //
+  // N.B. The logic here looks backwards because it isn't possible to
+  // conditionally disable save, only conditionally re-enable it.
+  DisableSave ds;
+  if (!getenv("GVISOR_GOFER_UNCACHED")) {
+    ds.reset();
+  }
+
+  auto fn = [&] {
+    ASSERT_THAT(rename(file.release().c_str(), newpath.c_str()),
+                SyscallSucceeds());
+    file.reset(newpath);
+  };
+  CheckTimes(file, fn, AtimeEffect::Unchanged, MtimeEffect::Unchanged,
+             CtimeEffect::Changed);
+}
+
+// Calling utimes on a file changes ctime and the time that we ask to change
+// (atime to now in this case).
+TEST(StatTimesTest, FileUtimes) {
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+
+  auto fn = [&] {
+    const struct timespec ts[2] = {{0, UTIME_NOW}, {0, UTIME_OMIT}};
+    ASSERT_THAT(utimensat(AT_FDCWD, file.path().c_str(), ts, 0),
+                SyscallSucceeds());
+  };
+  CheckTimes(file, fn, AtimeEffect::Changed, MtimeEffect::Unchanged,
+             CtimeEffect::Changed);
+}
+
+// Truncating a file changes mtime and ctime.
+TEST(StatTimesTest, FileTruncate) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "yaaass", 0666));
 
-  absl::Time atime, mtime, ctime;
-  std::tie(atime, mtime, ctime) = GetTime(file);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  // Truncate should only change mtime and ctime.
-  EXPECT_THAT(truncate(file.path().c_str(), 0), SyscallSucceeds());
-
-  absl::Time atime2, mtime2, ctime2;
-  std::tie(atime2, mtime2, ctime2) = GetTime(file);
-  EXPECT_EQ(atime2, atime);
-  EXPECT_GT(mtime2, mtime);
-  EXPECT_GT(ctime2, ctime);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  // Write should only change mtime and ctime.
-  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0));
-  const std::string contents = "all the single dollars";
-  EXPECT_THAT(write(fd.get(), contents.data(), contents.size()),
-              SyscallSucceeds());
-
-  std::tie(atime, mtime, ctime) = GetTime(file);
-  EXPECT_EQ(atime, atime2);
-  EXPECT_GT(mtime, mtime2);
-  EXPECT_GT(ctime, ctime2);
+  auto fn = [&] {
+    EXPECT_THAT(truncate(file.path().c_str(), 0), SyscallSucceeds());
+  };
+  CheckTimes(file, fn, AtimeEffect::Unchanged, MtimeEffect::Changed,
+             CtimeEffect::Changed);
 }
 
-TEST_F(StatTimesTest, FileAtimeChanges) {
+// Writing a file changes mtime and ctime.
+TEST(StatTimesTest, FileWrite) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "yaaass", 0666));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0));
+
+  auto fn = [&] {
+    const std::string contents = "all the single dollars";
+    EXPECT_THAT(WriteFd(fd.get(), contents.data(), contents.size()),
+                SyscallSucceeds());
+  };
+  CheckTimes(file, fn, AtimeEffect::Unchanged, MtimeEffect::Changed,
+             CtimeEffect::Changed);
+}
+
+// Reading a file changes atime.
+TEST(StatTimesTest, FileRead) {
   const std::string contents = "bills bills bills";
-  const auto file = ASSERT_NO_ERRNO_AND_VALUE(
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), contents, 0666));
 
-  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY, 0));
 
-  absl::Time atime, mtime, ctime;
-  std::tie(atime, mtime, ctime) = GetTime(file);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY, 0));
-
-  // Read should only change atime.
-  char buf[20];
-  const absl::Time before = absl::Now() - absl::Seconds(1);
-  int read_result;
-  ASSERT_THAT(read_result = read(fd.get(), buf, sizeof(buf)),
-              SyscallSucceeds());
-  const absl::Time after = absl::Now() + absl::Seconds(1);
-
-  EXPECT_EQ(std::string(buf, read_result), contents);
-
-  absl::Time atime2, mtime2, ctime2;
-  std::tie(atime2, mtime2, ctime2) = GetTime(file);
-
-  EXPECT_LE(before, atime2);
-  EXPECT_GE(after, atime2);
-  EXPECT_GT(atime2, atime);
-  EXPECT_EQ(mtime2, mtime);
-  EXPECT_EQ(ctime2, ctime);
+  auto fn = [&] {
+    char buf[20];
+    ASSERT_THAT(ReadFd(fd.get(), buf, sizeof(buf)),
+                SyscallSucceedsWithValue(contents.size()));
+  };
+  CheckTimes(file, fn, AtimeEffect::Changed, MtimeEffect::Unchanged,
+             CtimeEffect::Unchanged);
 }
 
-TEST_F(StatTimesTest, DirAtimeChanges) {
-  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const auto file =
+// Listing files in a directory changes atime.
+TEST(StatTimesTest, DirList) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
 
-  MaybeSave();  // FIXME(b/69865927): ctime is inconsistent.
-
-  absl::Time atime, mtime, ctime;
-  std::tie(atime, mtime, ctime) = GetTime(dir);
-
-  absl::SleepFor(absl::Seconds(1));
-
-  const absl::Time before = absl::Now() - absl::Seconds(1);
-
-  // NOTE(b/37756234): Keep an fd open. This ensures that the inode backing the
-  // directory won't be destroyed before the final GetTime to avoid writing out
-  // timestamps and causing side effects.
-  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY, 0));
-
-  // Listing the directory contents should only change atime.
-  auto contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dir.path(), false));
-  EXPECT_THAT(contents, Not(IsEmpty()));
-
-  const absl::Time after = absl::Now() + absl::Seconds(1);
-
-  absl::Time atime2, mtime2, ctime2;
-  std::tie(atime2, mtime2, ctime2) = GetTime(dir);
-
-  EXPECT_LE(before, atime2);
-  EXPECT_GE(after, atime2);
-  EXPECT_GT(atime2, atime);
-  EXPECT_EQ(mtime2, mtime);
-  EXPECT_EQ(ctime2, ctime);
+  auto fn = [&] {
+    const auto contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dir.path(), false));
+    EXPECT_THAT(contents, Not(IsEmpty()));
+  };
+  CheckTimes(dir, fn, AtimeEffect::Changed, MtimeEffect::Unchanged,
+             CtimeEffect::Unchanged);
 }
 
 }  // namespace
