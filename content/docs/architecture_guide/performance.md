@@ -231,7 +231,7 @@ the cost of VFS operations.
 {{< graph id="httpd100k" metric="transfer_rate" url="/performance/httpd100k.csv" title="perf.py http.httpd --connections=1 --connections=5 --connections=10 --connections=25 --runtime=runc --runtime=runsc" >}}
 
 The high costs of VFS operations can manifest in benchmarks that execute many
-such operations in the hot path for serviing requests, for example. The above
+such operations in the hot path for serving requests, for example. The above
 figure shows the result of using gVisor to serve small pieces of static content
 with predictably poor results. This workload represents `apache` serving a
 single file sized 100k from the container image to a client running
