@@ -15,11 +15,14 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 
 #include "absl/strings/str_split.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -184,10 +187,30 @@ TEST(ProcNetSnmp, TcpEstab) {
   EXPECT_EQ(oldPassiveOpens, newPassiveOpens - 1);
   EXPECT_EQ(oldCurrEstab, newCurrEstab - 2);
 
+  // Send 1 byte from client to server.
   ASSERT_THAT(send(s_connect.get(), "a", 1, 0), SyscallSucceedsWithValue(1));
 
+  constexpr int kPollTimeoutMs = 20000;  // Wait up to 20 seconds for the data.
+
+  // Wait until server-side fd sees the data on its side but don't read it.
+  struct pollfd poll_fd = {s_accept.get(), POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  // Now close server-side fd without reading the data which leads to a RST
+  // packet sent to client side.
   s_accept.reset(-1);
+
+  // Wait until client-side fd sees RST packet.
+  struct pollfd poll_fd1 = {s_connect.get(), POLLIN, 0};
+  ASSERT_THAT(RetryEINTR(poll)(&poll_fd1, 1, kPollTimeoutMs),
+              SyscallSucceedsWithValue(1));
+
+  // Now close client-side fd.
   s_connect.reset(-1);
+
+  // Wait until the process of the netstack.
+  absl::SleepFor(absl::Seconds(1.0));
 
   snmp = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/net/snmp"));
   newCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));

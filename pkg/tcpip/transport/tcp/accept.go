@@ -297,10 +297,8 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		return nil, err
 	}
 	ep.mu.Lock()
-	if ep.state != StateEstablished {
-		ep.stack.Stats().TCP.CurrentEstablished.Increment()
-		ep.state = StateEstablished
-	}
+	ep.stack.Stats().TCP.CurrentEstablished.Increment()
+	ep.state = StateEstablished
 	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
