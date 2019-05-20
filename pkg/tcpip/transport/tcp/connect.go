@@ -928,10 +928,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			e.lastErrorMu.Unlock()
 
 			e.mu.Lock()
-			if e.state == StateEstablished || e.state == StateCloseWait {
-				e.stack.Stats().TCP.EstablishedResets.Increment()
-				e.stack.Stats().TCP.CurrentEstablished.Decrement()
-			}
+			e.stack.Stats().TCP.EstablishedResets.Increment()
+			e.stack.Stats().TCP.CurrentEstablished.Decrement()
 			e.state = StateError
 			e.HardError = err
 
@@ -1126,10 +1124,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// Mark endpoint as closed.
 	e.mu.Lock()
 	if e.state != StateError {
-		if e.state == StateEstablished || e.state == StateCloseWait {
-			e.stack.Stats().TCP.EstablishedResets.Increment()
-			e.stack.Stats().TCP.CurrentEstablished.Decrement()
-		}
+		e.stack.Stats().TCP.EstablishedResets.Increment()
+		e.stack.Stats().TCP.CurrentEstablished.Decrement()
 		e.state = StateClose
 	}
 	// Lock released below.
