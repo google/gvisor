@@ -192,6 +192,16 @@ func (i *InodeSimpleAttributes) NotifyStatusChange(ctx context.Context) {
 	i.mu.Unlock()
 }
 
+// NotifyModificationAndStatusChange updates the modification and status change
+// times.
+func (i *InodeSimpleAttributes) NotifyModificationAndStatusChange(ctx context.Context) {
+	i.mu.Lock()
+	now := ktime.NowFromContext(ctx)
+	i.unstable.ModificationTime = now
+	i.unstable.StatusChangeTime = now
+	i.mu.Unlock()
+}
+
 // InodeSimpleExtendedAttributes implements
 // fs.InodeOperations.{Get,Set,List}xattr.
 //

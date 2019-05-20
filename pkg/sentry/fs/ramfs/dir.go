@@ -112,7 +112,7 @@ func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwn
 }
 
 // addChildLocked add the child inode, inheriting its reference.
-func (d *Dir) addChildLocked(name string, inode *fs.Inode) {
+func (d *Dir) addChildLocked(ctx context.Context, name string, inode *fs.Inode) {
 	d.children[name] = inode
 	d.dentryMap.Add(name, fs.DentAttr{
 		Type:    inode.StableAttr.Type,
@@ -123,18 +123,25 @@ func (d *Dir) addChildLocked(name string, inode *fs.Inode) {
 	// corresponding to '..' from the subdirectory.
 	if fs.IsDir(inode.StableAttr) {
 		d.AddLink()
+		// ctime updated below.
 	}
 
 	// Given we're now adding this inode to the directory we must also
-	// increase its link count. Similarly we decremented it in removeChildLocked.
+	// increase its link count. Similarly we decrement it in removeChildLocked.
+	//
+	// Changing link count updates ctime.
 	inode.AddLink()
+	inode.InodeOperations.NotifyStatusChange(ctx)
+
+	// We've change the directory. This always updates our mtime and ctime.
+	d.NotifyModificationAndStatusChange(ctx)
 }
 
 // AddChild adds a child to this dir.
 func (d *Dir) AddChild(ctx context.Context, name string, inode *fs.Inode) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.addChildLocked(name, inode)
+	d.addChildLocked(ctx, name, inode)
 }
 
 // FindChild returns (child, true) if the directory contains name.
@@ -179,14 +186,18 @@ func (d *Dir) removeChildLocked(ctx context.Context, name string) (*fs.Inode, er
 	// link count which was the child's ".." directory entry.
 	if fs.IsDir(inode.StableAttr) {
 		d.DropLink()
+		// ctime changed below.
 	}
-
-	// Update ctime.
-	inode.InodeOperations.NotifyStatusChange(ctx)
 
 	// Given we're now removing this inode to the directory we must also
 	// decrease its link count. Similarly it is increased in addChildLocked.
+	//
+	// Changing link count updates ctime.
 	inode.DropLink()
+	inode.InodeOperations.NotifyStatusChange(ctx)
+
+	// We've change the directory. This always updates our mtime and ctime.
+	d.NotifyModificationAndStatusChange(ctx)
 
 	return inode, nil
 }
@@ -263,8 +274,6 @@ func (d *Dir) Lookup(ctx context.Context, _ *fs.Inode, p string) (*fs.Dirent, er
 
 // walkLocked must be called with d.mu held.
 func (d *Dir) walkLocked(ctx context.Context, p string) (*fs.Inode, error) {
-	d.NotifyAccess(ctx)
-
 	// Lookup a child node.
 	if inode, ok := d.children[p]; ok {
 		return inode, nil
@@ -290,8 +299,7 @@ func (d *Dir) createInodeOperationsCommon(ctx context.Context, name string, make
 		return nil, err
 	}
 
-	d.addChildLocked(name, inode)
-	d.NotifyModification(ctx)
+	d.addChildLocked(ctx, name, inode)
 
 	return inode, nil
 }
@@ -342,11 +350,7 @@ func (d *Dir) CreateHardLink(ctx context.Context, dir *fs.Inode, target *fs.Inod
 	target.IncRef()
 
 	// The link count will be incremented in addChildLocked.
-	d.addChildLocked(name, target)
-	d.NotifyModification(ctx)
-
-	// Update ctime.
-	target.InodeOperations.NotifyStatusChange(ctx)
+	d.addChildLocked(ctx, name, target)
 
 	return nil
 }
@@ -359,8 +363,6 @@ func (d *Dir) CreateDirectory(ctx context.Context, dir *fs.Inode, name string, p
 	_, err := d.createInodeOperationsCommon(ctx, name, func() (*fs.Inode, error) {
 		return d.NewDir(ctx, dir, perms)
 	})
-	// TODO(nlacasse): Support updating status times, as those should be
-	// updated by links.
 	return err
 }
 
@@ -526,10 +528,7 @@ func Rename(ctx context.Context, oldParent fs.InodeOperations, oldName string, n
 	// Do the swap.
 	n := op.children[oldName]
 	op.removeChildLocked(ctx, oldName)
-	np.addChildLocked(newName, n)
-
-	// Update ctime.
-	n.InodeOperations.NotifyStatusChange(ctx)
+	np.addChildLocked(ctx, newName, n)
 
 	return nil
 }

@@ -263,6 +263,40 @@ TEST(StatTimesTest, DirList) {
              CtimeEffect::Unchanged);
 }
 
+// Creating a file in a directory changes mtime and ctime.
+TEST(StatTimesTest, DirCreateFile) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  TempPath file;
+  auto fn = [&] {
+    file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  };
+  CheckTimes(dir, fn, AtimeEffect::Unchanged, MtimeEffect::Changed,
+             CtimeEffect::Changed);
+}
+
+// Creating a directory in a directory changes mtime and ctime.
+TEST(StatTimesTest, DirCreateDir) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  TempPath dir2;
+  auto fn = [&] {
+    dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  };
+  CheckTimes(dir, fn, AtimeEffect::Unchanged, MtimeEffect::Changed,
+             CtimeEffect::Changed);
+}
+
+// Removing a file from a directory changes mtime and ctime.
+TEST(StatTimesTest, DirRemoveFile) {
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  auto fn = [&] { file.reset(); };
+  CheckTimes(dir, fn, AtimeEffect::Unchanged, MtimeEffect::Changed,
+             CtimeEffect::Changed);
+}
+
 }  // namespace
 
 }  // namespace testing

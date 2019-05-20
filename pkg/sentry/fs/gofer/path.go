@@ -113,7 +113,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		return nil, err
 	}
 
-	i.touchModificationTime(ctx, dir)
+	i.touchModificationAndStatusChangeTime(ctx, dir)
 
 	// Get an unopened p9.File for the file we created so that it can be cloned
 	// and re-opened multiple times after creation, while also getting its
@@ -167,7 +167,7 @@ func (i *inodeOperations) CreateLink(ctx context.Context, dir *fs.Inode, oldname
 	if _, err := i.fileState.file.symlink(ctx, oldname, newname, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
 		return err
 	}
-	i.touchModificationTime(ctx, dir)
+	i.touchModificationAndStatusChangeTime(ctx, dir)
 	return nil
 }
 
@@ -189,7 +189,7 @@ func (i *inodeOperations) CreateHardLink(ctx context.Context, inode *fs.Inode, t
 		// Increase link count.
 		targetOpts.cachingInodeOps.IncLinks(ctx)
 	}
-	i.touchModificationTime(ctx, inode)
+	i.touchModificationAndStatusChangeTime(ctx, inode)
 	return nil
 }
 
@@ -205,6 +205,8 @@ func (i *inodeOperations) CreateDirectory(ctx context.Context, dir *fs.Inode, s 
 	}
 	if i.session().cachePolicy.cacheUAttrs(dir) {
 		// Increase link count.
+		//
+		// N.B. This will update the modification time.
 		i.cachingInodeOps.IncLinks(ctx)
 	}
 	if i.session().cachePolicy.cacheReaddir() {
@@ -246,7 +248,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	// We're not going to use this file.
 	hostFile.Close()
 
-	i.touchModificationTime(ctx, dir)
+	i.touchModificationAndStatusChangeTime(ctx, dir)
 
 	// Get the attributes of the file to create inode key.
 	qid, mask, attr, err := getattr(ctx, newFile)
@@ -317,7 +319,7 @@ func (i *inodeOperations) Remove(ctx context.Context, dir *fs.Inode, name string
 	if removeSocket {
 		i.session().endpoints.remove(key)
 	}
-	i.touchModificationTime(ctx, dir)
+	i.touchModificationAndStatusChangeTime(ctx, dir)
 
 	return nil
 }
@@ -397,9 +399,9 @@ func (i *inodeOperations) Rename(ctx context.Context, inode *fs.Inode, oldParent
 	return nil
 }
 
-func (i *inodeOperations) touchModificationTime(ctx context.Context, inode *fs.Inode) {
+func (i *inodeOperations) touchModificationAndStatusChangeTime(ctx context.Context, inode *fs.Inode) {
 	if i.session().cachePolicy.cacheUAttrs(inode) {
-		i.cachingInodeOps.TouchModificationTime(ctx)
+		i.cachingInodeOps.TouchModificationAndStatusChangeTime(ctx)
 	}
 	if i.session().cachePolicy.cacheReaddir() {
 		// Invalidate readdir cache.

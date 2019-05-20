@@ -299,7 +299,7 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	}
 	oldSize := c.attr.Size
 	c.attr.Size = size
-	c.touchModificationTimeLocked(now)
+	c.touchModificationAndStatusChangeTimeLocked(now)
 
 	// We drop c.dataMu here so that we can lock c.mapsMu and invalidate
 	// mappings below. This allows concurrent calls to Read/Translate/etc.
@@ -360,7 +360,7 @@ func (c *CachingInodeOperations) Allocate(ctx context.Context, offset, length in
 	}
 
 	c.attr.Size = newSize
-	c.touchModificationTimeLocked(now)
+	c.touchModificationAndStatusChangeTimeLocked(now)
 	return nil
 }
 
@@ -394,19 +394,19 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 	return c.backingFile.Sync(ctx)
 }
 
-// IncLinks increases the link count and updates cached access time.
+// IncLinks increases the link count and updates cached modification time.
 func (c *CachingInodeOperations) IncLinks(ctx context.Context) {
 	c.attrMu.Lock()
 	c.attr.Links++
-	c.touchModificationTimeLocked(ktime.NowFromContext(ctx))
+	c.touchModificationAndStatusChangeTimeLocked(ktime.NowFromContext(ctx))
 	c.attrMu.Unlock()
 }
 
-// DecLinks decreases the link count and updates cached access time.
+// DecLinks decreases the link count and updates cached modification time.
 func (c *CachingInodeOperations) DecLinks(ctx context.Context) {
 	c.attrMu.Lock()
 	c.attr.Links--
-	c.touchModificationTimeLocked(ktime.NowFromContext(ctx))
+	c.touchModificationAndStatusChangeTimeLocked(ktime.NowFromContext(ctx))
 	c.attrMu.Unlock()
 }
 
@@ -432,19 +432,19 @@ func (c *CachingInodeOperations) touchAccessTimeLocked(now time.Time) {
 	c.dirtyAttr.AccessTime = true
 }
 
-// TouchModificationTime updates the cached modification and status change time
-// in-place to the current time.
-func (c *CachingInodeOperations) TouchModificationTime(ctx context.Context) {
+// TouchModificationAndStatusChangeTime updates the cached modification and
+// status change times in-place to the current time.
+func (c *CachingInodeOperations) TouchModificationAndStatusChangeTime(ctx context.Context) {
 	c.attrMu.Lock()
-	c.touchModificationTimeLocked(ktime.NowFromContext(ctx))
+	c.touchModificationAndStatusChangeTimeLocked(ktime.NowFromContext(ctx))
 	c.attrMu.Unlock()
 }
 
-// touchModificationTimeLocked updates the cached modification and status
-// change time in-place to the current time.
+// touchModificationAndStatusChangeTimeLocked updates the cached modification
+// and status change times in-place to the current time.
 //
 // Preconditions: c.attrMu is locked for writing.
-func (c *CachingInodeOperations) touchModificationTimeLocked(now time.Time) {
+func (c *CachingInodeOperations) touchModificationAndStatusChangeTimeLocked(now time.Time) {
 	c.attr.ModificationTime = now
 	c.dirtyAttr.ModificationTime = true
 	c.attr.StatusChangeTime = now
@@ -554,7 +554,7 @@ func (c *CachingInodeOperations) Write(ctx context.Context, src usermem.IOSequen
 
 	c.attrMu.Lock()
 	// Compare Linux's mm/filemap.c:__generic_file_write_iter() => file_update_time().
-	c.touchModificationTimeLocked(ktime.NowFromContext(ctx))
+	c.touchModificationAndStatusChangeTimeLocked(ktime.NowFromContext(ctx))
 	n, err := src.CopyInTo(ctx, &inodeReadWriter{ctx, c, offset})
 	c.attrMu.Unlock()
 	return n, err
