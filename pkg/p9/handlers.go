@@ -768,7 +768,7 @@ func (t *Tmknod) do(cs *connState, uid UID) (*Rmknod, error) {
 		}
 
 		// Do the mknod.
-		qid, err = ref.file.Mknod(t.Name, t.Permissions, t.Major, t.Minor, uid, t.GID)
+		qid, err = ref.file.Mknod(t.Name, t.Mode, t.Major, t.Minor, uid, t.GID)
 		return err
 	}); err != nil {
 		return nil, err

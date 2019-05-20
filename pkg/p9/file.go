@@ -170,7 +170,7 @@ type File interface {
 	// Mknod makes a new device node.
 	//
 	// On the server, Mknod has a write concurrency guarantee.
-	Mknod(name string, permissions FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error)
+	Mknod(name string, mode FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error)
 
 	// Rename renames the file.
 	//

@@ -533,18 +533,18 @@ func (c *clientFile) Link(target File, newname string) error {
 }
 
 // Mknod implements File.Mknod.
-func (c *clientFile) Mknod(name string, permissions FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error) {
+func (c *clientFile) Mknod(name string, mode FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error) {
 	if atomic.LoadUint32(&c.closed) != 0 {
 		return QID{}, syscall.EBADF
 	}
 
 	msg := Tmknod{
-		Directory:   c.fid,
-		Name:        name,
-		Permissions: permissions,
-		Major:       major,
-		Minor:       minor,
-		GID:         NoGID,
+		Directory: c.fid,
+		Name:      name,
+		Mode:      mode,
+		Major:     major,
+		Minor:     minor,
+		GID:       NoGID,
 	}
 
 	if versionSupportsTucreation(c.client.version) {

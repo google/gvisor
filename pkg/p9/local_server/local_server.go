@@ -252,7 +252,7 @@ func (l *local) Link(target p9.File, newname string) error {
 // Mknod implements p9.File.Mknod.
 //
 // Not implemented.
-func (l *local) Mknod(name string, permissions p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
+func (l *local) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
 	return p9.QID{}, syscall.ENOSYS
 }
 

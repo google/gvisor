@@ -282,10 +282,22 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	return childDir, nil
 }
 
-// CreateFifo implements fs.InodeOperations.CreateFifo. Gofer nodes do not support the
-// creation of fifos and always returns EPERM.
-func (*inodeOperations) CreateFifo(context.Context, *fs.Inode, string, fs.FilePermissions) error {
-	return syscall.EPERM
+// CreateFifo implements fs.InodeOperations.CreateFifo.
+func (i *inodeOperations) CreateFifo(ctx context.Context, dir *fs.Inode, name string, perm fs.FilePermissions) error {
+	if len(name) > maxFilenameLen {
+		return syserror.ENAMETOOLONG
+	}
+
+	owner := fs.FileOwnerFromContext(ctx)
+	mode := p9.FileMode(perm.LinuxMode()) | p9.ModeNamedPipe
+
+	// N.B. FIFOs use major/minor numbers 0.
+	if _, err := i.fileState.file.mknod(ctx, name, mode, 0, 0, p9.UID(owner.UID), p9.GID(owner.GID)); err != nil {
+		return err
+	}
+
+	i.touchModificationAndStatusChangeTime(ctx, dir)
+	return nil
 }
 
 // Remove implements InodeOperations.Remove.

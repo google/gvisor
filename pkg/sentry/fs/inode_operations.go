@@ -161,7 +161,9 @@ type InodeOperations interface {
 	BoundEndpoint(inode *Inode, path string) transport.BoundEndpoint
 
 	// GetFile returns a new open File backed by a Dirent and FileFlags.
-	// It may block as long as it is done with ctx.
+	//
+	// Special Inode types may block using ctx.Sleeper. RegularFiles,
+	// Directories, and Symlinks must not block (see doCopyUp).
 	//
 	// The returned File will uniquely back an application fd.
 	GetFile(ctx context.Context, d *Dirent, flags FileFlags) (*File, error)

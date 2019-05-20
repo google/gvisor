@@ -1163,8 +1163,8 @@ type Tmknod struct {
 	// Name is the device name.
 	Name string
 
-	// Permissions are the device permissions.
-	Permissions FileMode
+	// Mode is the device mode and permissions.
+	Mode FileMode
 
 	// Major is the device major number.
 	Major uint32
@@ -1180,7 +1180,7 @@ type Tmknod struct {
 func (t *Tmknod) Decode(b *buffer) {
 	t.Directory = b.ReadFID()
 	t.Name = b.ReadString()
-	t.Permissions = b.ReadPermissions()
+	t.Mode = b.ReadFileMode()
 	t.Major = b.Read32()
 	t.Minor = b.Read32()
 	t.GID = b.ReadGID()
@@ -1190,7 +1190,7 @@ func (t *Tmknod) Decode(b *buffer) {
 func (t *Tmknod) Encode(b *buffer) {
 	b.WriteFID(t.Directory)
 	b.WriteString(t.Name)
-	b.WritePermissions(t.Permissions)
+	b.WriteFileMode(t.Mode)
 	b.Write32(t.Major)
 	b.Write32(t.Minor)
 	b.WriteGID(t.GID)
@@ -1203,7 +1203,7 @@ func (*Tmknod) Type() MsgType {
 
 // String implements fmt.Stringer.
 func (t *Tmknod) String() string {
-	return fmt.Sprintf("Tmknod{DirectoryFID: %d, Name: %s, Permissions: 0o%o, Major: %d, Minor: %d, GID: %d}", t.Directory, t.Name, t.Permissions, t.Major, t.Minor, t.GID)
+	return fmt.Sprintf("Tmknod{DirectoryFID: %d, Name: %s, Mode: 0o%o, Major: %d, Minor: %d, GID: %d}", t.Directory, t.Name, t.Mode, t.Major, t.Minor, t.GID)
 }
 
 // Rmknod is a mknod response.

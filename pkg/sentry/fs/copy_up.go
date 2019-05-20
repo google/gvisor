@@ -113,13 +113,13 @@ func copyUpLockedForRename(ctx context.Context, d *Dirent) error {
 		// Did we race with another copy up or does there
 		// already exist something in the upper filesystem
 		// for d?
-		d.Inode.overlay.copyMu.Lock()
+		d.Inode.overlay.copyMu.RLock()
 		if d.Inode.overlay.upper != nil {
-			d.Inode.overlay.copyMu.Unlock()
+			d.Inode.overlay.copyMu.RUnlock()
 			// Done, d is in the upper filesystem.
 			return nil
 		}
-		d.Inode.overlay.copyMu.Unlock()
+		d.Inode.overlay.copyMu.RUnlock()
 
 		// Find the next component to copy up. We will work our way
 		// down to the last component of d and finally copy it.
@@ -155,6 +155,14 @@ func findNextCopyUp(ctx context.Context, d *Dirent) *Dirent {
 }
 
 func doCopyUp(ctx context.Context, d *Dirent) error {
+	// Fail fast on Inode types we won't be able to copy up anyways. These
+	// Inodes may block in GetFile while holding copyMu for reading. If we
+	// then try to take copyMu for writing here, we'd deadlock.
+	t := d.Inode.overlay.lower.StableAttr.Type
+	if t != RegularFile && t != Directory && t != Symlink {
+		return syserror.EINVAL
+	}
+
 	// Wait to get exclusive access to the upper Inode.
 	d.Inode.overlay.copyMu.Lock()
 	defer d.Inode.overlay.copyMu.Unlock()
@@ -177,6 +185,8 @@ func doCopyUp(ctx context.Context, d *Dirent) error {
 // - parent.Inode.overlay.upper must be non-nil.
 // - next.Inode.overlay.copyMu must be locked writable.
 // - next.Inode.overlay.lower must be non-nil.
+// - next.Inode.overlay.lower.StableAttr.Type must be RegularFile, Directory,
+//   or Symlink.
 // - upper filesystem must support setting file ownership and timestamps.
 func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 	// Extract the attributes of the file we wish to copy.
@@ -239,7 +249,7 @@ func copyUpLocked(ctx context.Context, parent *Dirent, next *Dirent) error {
 		childUpperInode = childUpper.Inode
 
 	default:
-		return syserror.EINVAL
+		panic(fmt.Sprintf("copy up of invalid type %v on %+v", next.Inode.StableAttr.Type, next))
 	}
 
 	// Bring file attributes up to date. This does not include size, which will be
