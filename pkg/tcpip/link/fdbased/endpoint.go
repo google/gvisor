@@ -34,18 +34,11 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
 )
 
-const (
-	// MaxMsgsPerRecv is the maximum number of packets we want to retrieve
-	// in a single RecvMMsg call.
-	MaxMsgsPerRecv = 8
-)
-
-// BufConfig defines the shape of the vectorised view used to read packets from the NIC.
-var BufConfig = []int{128, 256, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}
-
 // linkDispatcher reads packets from the link FD and dispatches them to the
 // NetworkDispatcher.
-type linkDispatcher func() (bool, *tcpip.Error)
+type linkDispatcher interface {
+	dispatch() (bool, *tcpip.Error)
+}
 
 // PacketDispatchMode are the various supported methods of receiving and
 // dispatching packets from the underlying FD.
@@ -92,25 +85,12 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(*tcpip.Error)
 
-	views  [][]buffer.View
-	iovecs [][]syscall.Iovec
-	// msgHdrs is only used by the RecvMMsg dispatcher.
-	msgHdrs []rawfile.MMsgHdr
-
 	inboundDispatcher linkDispatcher
 	dispatcher        stack.NetworkDispatcher
 
 	// packetDispatchMode controls the packet dispatcher used by this
 	// endpoint.
 	packetDispatchMode PacketDispatchMode
-
-	// ringBuffer is only used when PacketMMap dispatcher is used and points
-	// to the start of the mmapped PACKET_RX_RING buffer.
-	ringBuffer []byte
-
-	// ringOffset is the current offset into the ring buffer where the next
-	// inbound packet will be placed by the kernel.
-	ringOffset int
 
 	// gsoMaxSize is the maximum GSO packet size. It is zero if GSO is
 	// disabled.
@@ -174,11 +154,7 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 		packetDispatchMode: opts.PacketDispatchMode,
 	}
 
-	// For non-socket FDs we read one packet a time (e.g. TAP devices).
-	msgsPerRecv := 1
-	e.inboundDispatcher = e.dispatch
-
-	isSocket, err := isSocketFD(opts.FD)
+	isSocket, err := isSocketFD(e.fd)
 	if err != nil {
 		return 0, err
 	}
@@ -187,44 +163,41 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 			e.caps |= stack.CapabilityGSO
 			e.gsoMaxSize = opts.GSOMaxSize
 		}
+	}
+	e.inboundDispatcher, err = createInboundDispatcher(e, isSocket)
+	if err != nil {
+		return 0, fmt.Errorf("createInboundDispatcher(...) = %v", err)
+	}
 
+	return stack.RegisterLinkEndpoint(e), nil
+}
+
+func createInboundDispatcher(e *endpoint, isSocket bool) (linkDispatcher, error) {
+	// By default use the readv() dispatcher as it works with all kinds of
+	// FDs (tap/tun/unix domain sockets and af_packet).
+	inboundDispatcher, err := newReadVDispatcher(e.fd, e)
+	if err != nil {
+		return nil, fmt.Errorf("newReadVDispatcher(%d, %+v) = %v", e.fd, e, err)
+	}
+
+	if isSocket {
 		switch e.packetDispatchMode {
 		case PacketMMap:
-			if err := e.setupPacketRXRing(); err != nil {
-				return 0, fmt.Errorf("e.setupPacketRXRing failed: %v", err)
+			inboundDispatcher, err = newPacketMMapDispatcher(e.fd, e)
+			if err != nil {
+				return nil, fmt.Errorf("newPacketMMapDispatcher(%d, %+v) = %v", e.fd, e, err)
 			}
-			e.inboundDispatcher = e.packetMMapDispatch
-			return stack.RegisterLinkEndpoint(e), nil
-
 		case RecvMMsg:
 			// If the provided FD is a socket then we optimize
 			// packet reads by using recvmmsg() instead of read() to
 			// read packets in a batch.
-			e.inboundDispatcher = e.recvMMsgDispatch
-			msgsPerRecv = MaxMsgsPerRecv
+			inboundDispatcher, err = newRecvMMsgDispatcher(e.fd, e)
+			if err != nil {
+				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", e.fd, e, err)
+			}
 		}
 	}
-
-	e.views = make([][]buffer.View, msgsPerRecv)
-	for i := range e.views {
-		e.views[i] = make([]buffer.View, len(BufConfig))
-	}
-	e.iovecs = make([][]syscall.Iovec, msgsPerRecv)
-	iovLen := len(BufConfig)
-	if e.Capabilities()&stack.CapabilityGSO != 0 {
-		// virtioNetHdr is prepended before each packet.
-		iovLen++
-	}
-	for i := range e.iovecs {
-		e.iovecs[i] = make([]syscall.Iovec, iovLen)
-	}
-	e.msgHdrs = make([]rawfile.MMsgHdr, msgsPerRecv)
-	for i := range e.msgHdrs {
-		e.msgHdrs[i].Msg.Iov = &e.iovecs[i][0]
-		e.msgHdrs[i].Msg.Iovlen = uint64(iovLen)
-	}
-
-	return stack.RegisterLinkEndpoint(e), nil
+	return inboundDispatcher, nil
 }
 
 func isSocketFD(fd int) (bool, error) {
@@ -347,163 +320,11 @@ func (e *endpoint) WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Erro
 	return rawfile.NonBlockingWrite(e.fd, packet)
 }
 
-func (e *endpoint) capViews(k, n int, buffers []int) int {
-	c := 0
-	for i, s := range buffers {
-		c += s
-		if c >= n {
-			e.views[k][i].CapLength(s - (c - n))
-			return i + 1
-		}
-	}
-	return len(buffers)
-}
-
-func (e *endpoint) allocateViews(bufConfig []int) {
-	for k := 0; k < len(e.views); k++ {
-		var vnetHdr [virtioNetHdrSize]byte
-		vnetHdrOff := 0
-		if e.Capabilities()&stack.CapabilityGSO != 0 {
-			// The kernel adds virtioNetHdr before each packet, but
-			// we don't use it, so so we allocate a buffer for it,
-			// add it in iovecs but don't add it in a view.
-			e.iovecs[k][0] = syscall.Iovec{
-				Base: &vnetHdr[0],
-				Len:  uint64(virtioNetHdrSize),
-			}
-			vnetHdrOff++
-		}
-		for i := 0; i < len(bufConfig); i++ {
-			if e.views[k][i] != nil {
-				break
-			}
-			b := buffer.NewView(bufConfig[i])
-			e.views[k][i] = b
-			e.iovecs[k][i+vnetHdrOff] = syscall.Iovec{
-				Base: &b[0],
-				Len:  uint64(len(b)),
-			}
-		}
-	}
-}
-
-// dispatch reads one packet from the file descriptor and dispatches it.
-func (e *endpoint) dispatch() (bool, *tcpip.Error) {
-	e.allocateViews(BufConfig)
-
-	n, err := rawfile.BlockingReadv(e.fd, e.iovecs[0])
-	if err != nil {
-		return false, err
-	}
-	if e.Capabilities()&stack.CapabilityGSO != 0 {
-		// Skip virtioNetHdr which is added before each packet, it
-		// isn't used and it isn't in a view.
-		n -= virtioNetHdrSize
-	}
-	if n <= e.hdrSize {
-		return false, nil
-	}
-
-	var (
-		p             tcpip.NetworkProtocolNumber
-		remote, local tcpip.LinkAddress
-	)
-	if e.hdrSize > 0 {
-		eth := header.Ethernet(e.views[0][0])
-		p = eth.Type()
-		remote = eth.SourceAddress()
-		local = eth.DestinationAddress()
-	} else {
-		// We don't get any indication of what the packet is, so try to guess
-		// if it's an IPv4 or IPv6 packet.
-		switch header.IPVersion(e.views[0][0]) {
-		case header.IPv4Version:
-			p = header.IPv4ProtocolNumber
-		case header.IPv6Version:
-			p = header.IPv6ProtocolNumber
-		default:
-			return true, nil
-		}
-	}
-
-	used := e.capViews(0, n, BufConfig)
-	vv := buffer.NewVectorisedView(n, e.views[0][:used])
-	vv.TrimFront(e.hdrSize)
-
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, p, vv)
-
-	// Prepare e.views for another packet: release used views.
-	for i := 0; i < used; i++ {
-		e.views[0][i] = nil
-	}
-
-	return true, nil
-}
-
-// recvMMsgDispatch reads more than one packet at a time from the file
-// descriptor and dispatches it.
-func (e *endpoint) recvMMsgDispatch() (bool, *tcpip.Error) {
-	e.allocateViews(BufConfig)
-
-	nMsgs, err := rawfile.BlockingRecvMMsg(e.fd, e.msgHdrs)
-	if err != nil {
-		return false, err
-	}
-	// Process each of received packets.
-	for k := 0; k < nMsgs; k++ {
-		n := int(e.msgHdrs[k].Len)
-		if e.Capabilities()&stack.CapabilityGSO != 0 {
-			n -= virtioNetHdrSize
-		}
-		if n <= e.hdrSize {
-			return false, nil
-		}
-
-		var (
-			p             tcpip.NetworkProtocolNumber
-			remote, local tcpip.LinkAddress
-		)
-		if e.hdrSize > 0 {
-			eth := header.Ethernet(e.views[k][0])
-			p = eth.Type()
-			remote = eth.SourceAddress()
-			local = eth.DestinationAddress()
-		} else {
-			// We don't get any indication of what the packet is, so try to guess
-			// if it's an IPv4 or IPv6 packet.
-			switch header.IPVersion(e.views[k][0]) {
-			case header.IPv4Version:
-				p = header.IPv4ProtocolNumber
-			case header.IPv6Version:
-				p = header.IPv6ProtocolNumber
-			default:
-				return true, nil
-			}
-		}
-
-		used := e.capViews(k, int(n), BufConfig)
-		vv := buffer.NewVectorisedView(int(n), e.views[k][:used])
-		vv.TrimFront(e.hdrSize)
-		e.dispatcher.DeliverNetworkPacket(e, remote, local, p, vv)
-
-		// Prepare e.views for another packet: release used views.
-		for i := 0; i < used; i++ {
-			e.views[k][i] = nil
-		}
-	}
-
-	for k := 0; k < nMsgs; k++ {
-		e.msgHdrs[k].Len = 0
-	}
-
-	return true, nil
-}
-
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
 // them to the network stack.
 func (e *endpoint) dispatchLoop() *tcpip.Error {
 	for {
-		cont, err := e.inboundDispatcher()
+		cont, err := e.inboundDispatcher.dispatch()
 		if err != nil || !cont {
 			if e.closed != nil {
 				e.closed(err)

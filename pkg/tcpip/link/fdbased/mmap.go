@@ -18,16 +18,8 @@ package fdbased
 
 import "gvisor.googlesource.com/gvisor/pkg/tcpip"
 
-// Stubbed out versions for non-linux/non-amd64 platforms.
+// Stubbed out version for non-linux/non-amd64 platforms.
 
-func (e *endpoint) setupPacketRXRing() error {
-	return nil
-}
-
-func (e *endpoint) readMMappedPacket() ([]byte, *tcpip.Error) {
+func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, *tcpip.Error) {
 	return nil, nil
-}
-
-func (e *endpoint) packetMMapDispatch() (bool, *tcpip.Error) {
-	return false, nil
 }

@@ -357,28 +357,6 @@ func TestBufConfigFirst(t *testing.T) {
 	}
 }
 
-func build(bufConfig []int) *endpoint {
-	e := &endpoint{
-		views:   make([][]buffer.View, MaxMsgsPerRecv),
-		iovecs:  make([][]syscall.Iovec, MaxMsgsPerRecv),
-		msgHdrs: make([]rawfile.MMsgHdr, MaxMsgsPerRecv),
-	}
-
-	for i, _ := range e.views {
-		e.views[i] = make([]buffer.View, len(bufConfig))
-	}
-	for i := range e.iovecs {
-		e.iovecs[i] = make([]syscall.Iovec, len(bufConfig))
-	}
-	for k, msgHdr := range e.msgHdrs {
-		msgHdr.Msg.Iov = &e.iovecs[k][0]
-		msgHdr.Msg.Iovlen = uint64(len(bufConfig))
-	}
-
-	e.allocateViews(bufConfig)
-	return e
-}
-
 var capLengthTestCases = []struct {
 	comment     string
 	config      []int
@@ -416,19 +394,61 @@ var capLengthTestCases = []struct {
 	},
 }
 
-func TestCapLength(t *testing.T) {
+func TestReadVDispatcherCapLength(t *testing.T) {
 	for _, c := range capLengthTestCases {
-		e := build(c.config)
-		used := e.capViews(0, c.n, c.config)
+		// fd does not matter for this test.
+		d := readVDispatcher{fd: -1, e: &endpoint{}}
+		d.views = make([]buffer.View, len(c.config))
+		d.iovecs = make([]syscall.Iovec, len(c.config))
+		d.allocateViews(c.config)
+
+		used := d.capViews(c.n, c.config)
 		if used != c.wantUsed {
-			t.Errorf("Test \"%s\" failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
+			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
 		}
-		lengths := make([]int, len(e.views[0]))
-		for i, v := range e.views[0] {
+		lengths := make([]int, len(d.views))
+		for i, v := range d.views {
 			lengths[i] = len(v)
 		}
 		if !reflect.DeepEqual(lengths, c.wantLengths) {
-			t.Errorf("Test \"%s\" failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
+			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
+		}
+	}
+}
+
+func TestRecvMMsgDispatcherCapLength(t *testing.T) {
+	for _, c := range capLengthTestCases {
+		d := recvMMsgDispatcher{
+			fd:      -1, // fd does not matter for this test.
+			e:       &endpoint{},
+			views:   make([][]buffer.View, 1),
+			iovecs:  make([][]syscall.Iovec, 1),
+			msgHdrs: make([]rawfile.MMsgHdr, 1),
+		}
+
+		for i, _ := range d.views {
+			d.views[i] = make([]buffer.View, len(c.config))
+		}
+		for i := range d.iovecs {
+			d.iovecs[i] = make([]syscall.Iovec, len(c.config))
+		}
+		for k, msgHdr := range d.msgHdrs {
+			msgHdr.Msg.Iov = &d.iovecs[k][0]
+			msgHdr.Msg.Iovlen = uint64(len(c.config))
+		}
+
+		d.allocateViews(c.config)
+
+		used := d.capViews(0, c.n, c.config)
+		if used != c.wantUsed {
+			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %d. Want %d", c.comment, c.n, c.config, used, c.wantUsed)
+		}
+		lengths := make([]int, len(d.views[0]))
+		for i, v := range d.views[0] {
+			lengths[i] = len(v)
+		}
+		if !reflect.DeepEqual(lengths, c.wantLengths) {
+			t.Errorf("Test %q failed when calling capViews(%d, %v). Got %v. Want %v", c.comment, c.n, c.config, lengths, c.wantLengths)
 		}
 
 	}

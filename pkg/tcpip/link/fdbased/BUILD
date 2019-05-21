@@ -8,7 +8,9 @@ go_library(
         "endpoint.go",
         "endpoint_unsafe.go",
         "mmap.go",
+        "mmap_amd64.go",
         "mmap_amd64_unsafe.go",
+        "packet_dispatchers.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/fdbased",
     visibility = [
