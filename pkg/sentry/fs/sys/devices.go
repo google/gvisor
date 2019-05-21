@@ -40,9 +40,6 @@ type cpunum struct {
 
 	fsutil.InodeSimpleAttributes
 	fsutil.InodeStaticFileGetter
-
-	// k is the system kernel.
-	k *kernel.Kernel
 }
 
 var _ fs.InodeOperations = (*cpunum)(nil)
