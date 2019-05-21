@@ -69,7 +69,7 @@ anchor = "smart"
 
 [params]
 copyright = "Google LLC"
-#privacy_policy = "https://policies.google.com/privacy"
+privacy_policy = "https://policies.google.com/privacy"
 github_repo = "https://github.com/google/gvisor-website"
 
 # Google Custom Search Engine ID. Remove or comment out to disable search.
