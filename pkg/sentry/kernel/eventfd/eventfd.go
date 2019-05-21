@@ -42,9 +42,10 @@ type EventOperations struct {
 	fsutil.FilePipeSeek             `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileNoFsync              `state:"nosave"`
-	fsutil.FileNoopFlush            `state:"nosave"`
-	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 
 	// Mutex that protects accesses to the fields of this event.

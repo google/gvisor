@@ -46,8 +46,9 @@ var (
 //
 // +stateify savable
 type fileOperations struct {
-	fsutil.FileNoIoctl `state:"nosave"`
-	waiter.AlwaysReady `state:"nosave"`
+	fsutil.FileNoIoctl  `state:"nosave"`
+	fsutil.FileNoSplice `state:"nosplice"`
+	waiter.AlwaysReady  `state:"nosave"`
 
 	// inodeOperations is the inodeOperations backing the file. It is protected
 	// by a reference held by File.Dirent.Inode which is stable until

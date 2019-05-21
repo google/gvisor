@@ -223,6 +223,20 @@ func (FileNoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallAr
 	return 0, syserror.ENOTTY
 }
 
+// FileNoSplice implements fs.FileOperations.ReadFrom and
+// fs.FileOperations.WriteTo for files that don't support splice.
+type FileNoSplice struct{}
+
+// WriteTo implements fs.FileOperations.WriteTo.
+func (FileNoSplice) WriteTo(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
+}
+
+// ReadFrom implements fs.FileOperations.ReadFrom.
+func (FileNoSplice) ReadFrom(context.Context, *fs.File, *fs.File, fs.SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
+}
+
 // DirFileOperations implements most of fs.FileOperations for directories,
 // except for Readdir and UnstableAttr which the embedding type must implement.
 type DirFileOperations struct {
@@ -233,6 +247,7 @@ type DirFileOperations struct {
 	FileNoopFlush
 	FileNoopFsync
 	FileNoopRelease
+	FileNoSplice
 }
 
 // Read implements fs.FileOperations.Read
@@ -303,6 +318,7 @@ type NoReadWriteFile struct {
 	FileNoWrite              `state:"nosave"`
 	FileNotDirReaddir        `state:"nosave"`
 	FileUseInodeUnstableAttr `state:"nosave"`
+	FileNoSplice             `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*NoReadWriteFile)(nil)

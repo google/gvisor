@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fs
+package linux
 
-import "io"
-
-var (
-	_ = io.Reader(&FileReader{})
-	_ = io.ReaderAt(&FileReader{})
-	_ = io.Writer(&FileWriter{})
-	_ = io.WriterAt(&FileWriter{})
+// Constants for splice(2), sendfile(2) and tee(2).
+const (
+	SPLICE_F_MOVE = 1 << iota
+	SPLICE_F_NONBLOCK
+	SPLICE_F_MORE
+	SPLICE_F_GIFT
 )

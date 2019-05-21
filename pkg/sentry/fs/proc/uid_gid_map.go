@@ -85,6 +85,7 @@ type idMapFileOperations struct {
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`

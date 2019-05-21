@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"gvisor.googlesource.com/gvisor/pkg/amutex"
-	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/metric"
 	"gvisor.googlesource.com/gvisor/pkg/refs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
@@ -35,8 +34,13 @@ import (
 )
 
 var (
-	// RecordWaitTime controls writing metrics for filesystem reads. Enabling this comes at a small
-	// CPU cost due to performing two monotonic clock reads per read call.
+	// RecordWaitTime controls writing metrics for filesystem reads.
+	// Enabling this comes at a small CPU cost due to performing two
+	// monotonic clock reads per read call.
+	//
+	// Note that this is only performed in the direct read path, and may
+	// not be consistently applied for other forms of reads, such as
+	// splice.
 	RecordWaitTime = false
 
 	reads    = metric.MustCreateNewUint64Metric("/fs/reads", false /* sync */, "Number of file reads.")
@@ -306,14 +310,28 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 		return 0, syserror.ErrInterrupted
 	}
 
-	offset, err := f.checkWriteLocked(ctx, &src, f.offset)
-	if err != nil {
-		f.mu.Unlock()
-		return 0, err
+	// Handle append mode.
+	if f.Flags().Append {
+		if err := f.offsetForAppend(ctx, &f.offset); err != nil {
+			f.mu.Unlock()
+			return 0, err
+		}
 	}
-	n, err := f.FileOperations.Write(ctx, f, src, offset)
+
+	// Enforce file limits.
+	limit, ok := f.checkLimit(ctx, f.offset)
+	switch {
+	case ok && limit == 0:
+		f.mu.Unlock()
+		return 0, syserror.ErrExceedsFileSizeLimit
+	case ok:
+		src = src.TakeFirst64(limit)
+	}
+
+	// We must hold the lock during the write.
+	n, err := f.FileOperations.Write(ctx, f, src, f.offset)
 	if n >= 0 {
-		atomic.StoreInt64(&f.offset, offset+n)
+		atomic.StoreInt64(&f.offset, f.offset+n)
 	}
 	f.mu.Unlock()
 	return n, err
@@ -325,51 +343,67 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 //
 // Otherwise same as Writev.
 func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
-	if !f.mu.Lock(ctx) {
-		return 0, syserror.ErrInterrupted
+	// "POSIX requires that opening a file with the O_APPEND flag should
+	// have no effect on the location at which pwrite() writes data.
+	// However, on Linux, if a file is opened with O_APPEND,  pwrite()
+	// appends data to the end of the file, regardless of the value of
+	// offset."
+	if f.Flags().Append {
+		if !f.mu.Lock(ctx) {
+			return 0, syserror.ErrInterrupted
+		}
+		defer f.mu.Unlock()
+		if err := f.offsetForAppend(ctx, &offset); err != nil {
+			f.mu.Unlock()
+			return 0, err
+		}
 	}
 
-	offset, err := f.checkWriteLocked(ctx, &src, offset)
-	if err != nil {
-		f.mu.Unlock()
-		return 0, err
+	// Enforce file limits.
+	limit, ok := f.checkLimit(ctx, offset)
+	switch {
+	case ok && limit == 0:
+		return 0, syserror.ErrExceedsFileSizeLimit
+	case ok:
+		src = src.TakeFirst64(limit)
 	}
-	n, err := f.FileOperations.Write(ctx, f, src, offset)
-	f.mu.Unlock()
-	return n, err
+
+	return f.FileOperations.Write(ctx, f, src, offset)
 }
 
-// checkWriteLocked returns the offset to write at or an error if the write
-// would not succeed. May update src to fit a write operation into a file
-// size limit.
-func (f *File) checkWriteLocked(ctx context.Context, src *usermem.IOSequence, offset int64) (int64, error) {
-	// Handle append only files. Note that this is still racy for network
-	// filesystems.
-	if f.Flags().Append {
-		uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
-		if err != nil {
-			// This is an odd error, most likely it is evidence
-			// that something is terribly wrong with the filesystem.
-			// Return a generic EIO error.
-			log.Warningf("Failed to check write of inode %#v: %v", f.Dirent.Inode.StableAttr, err)
-			return offset, syserror.EIO
-		}
-		offset = uattr.Size
+// offsetForAppend sets the given offset to the end of the file.
+//
+// Precondition: the underlying file mutex should be held.
+func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
+	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
+	if err != nil {
+		// This is an odd error, we treat it as evidence that
+		// something is terribly wrong with the filesystem.
+		return syserror.EIO
 	}
 
-	// Is this a regular file?
+	// Update the offset.
+	*offset = uattr.Size
+
+	return nil
+}
+
+// checkLimit checks the offset that the write will be performed at. The
+// returned boolean indicates that the write must be limited. The returned
+// integer indicates the new maximum write length.
+func (f *File) checkLimit(ctx context.Context, offset int64) (int64, bool) {
 	if IsRegular(f.Dirent.Inode.StableAttr) {
 		// Enforce size limits.
 		fileSizeLimit := limits.FromContext(ctx).Get(limits.FileSize).Cur
 		if fileSizeLimit <= math.MaxInt64 {
 			if offset >= int64(fileSizeLimit) {
-				return offset, syserror.ErrExceedsFileSizeLimit
+				return 0, true
 			}
-			*src = src.TakeFirst64(int64(fileSizeLimit) - offset)
+			return int64(fileSizeLimit) - offset, true
 		}
 	}
 
-	return offset, nil
+	return 0, false
 }
 
 // Fsync calls f.FileOperations.Fsync with f as the File.
@@ -466,8 +500,13 @@ func (f *File) Async(newAsync func() FileAsync) FileAsync {
 	return f.async
 }
 
-// FileReader implements io.Reader and io.ReaderAt.
-type FileReader struct {
+// lockedReader implements io.Reader and io.ReaderAt.
+//
+// Note this reads the underlying file using the file operations directly. It
+// is the responsibility of the caller to ensure that locks are appropriately
+// held and offsets updated if required. This should be used only by internal
+// functions that perform these operations and checks at other times.
+type lockedReader struct {
 	// Ctx is the context for the file reader.
 	Ctx context.Context
 
@@ -476,19 +515,21 @@ type FileReader struct {
 }
 
 // Read implements io.Reader.Read.
-func (r *FileReader) Read(buf []byte) (int, error) {
-	n, err := r.File.Readv(r.Ctx, usermem.BytesIOSequence(buf))
+func (r *lockedReader) Read(buf []byte) (int, error) {
+	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), r.File.offset)
 	return int(n), err
 }
 
 // ReadAt implements io.Reader.ReadAt.
-func (r *FileReader) ReadAt(buf []byte, offset int64) (int, error) {
-	n, err := r.File.Preadv(r.Ctx, usermem.BytesIOSequence(buf), offset)
+func (r *lockedReader) ReadAt(buf []byte, offset int64) (int, error) {
+	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), offset)
 	return int(n), err
 }
 
-// FileWriter implements io.Writer and io.WriterAt.
-type FileWriter struct {
+// lockedWriter implements io.Writer and io.WriterAt.
+//
+// The same constraints as lockedReader apply; see above.
+type lockedWriter struct {
 	// Ctx is the context for the file writer.
 	Ctx context.Context
 
@@ -497,13 +538,13 @@ type FileWriter struct {
 }
 
 // Write implements io.Writer.Write.
-func (w *FileWriter) Write(buf []byte) (int, error) {
-	n, err := w.File.Writev(w.Ctx, usermem.BytesIOSequence(buf))
+func (w *lockedWriter) Write(buf []byte) (int, error) {
+	n, err := w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf), w.File.offset)
 	return int(n), err
 }
 
 // WriteAt implements io.Writer.WriteAt.
-func (w *FileWriter) WriteAt(buf []byte, offset int64) (int, error) {
-	n, err := w.File.Pwritev(w.Ctx, usermem.BytesIOSequence(buf), offset)
+func (w *lockedWriter) WriteAt(buf []byte, offset int64) (int, error) {
+	n, err := w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf), offset)
 	return int(n), err
 }

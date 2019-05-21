@@ -77,16 +77,17 @@ func (i *execArgInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.
 
 // +stateify savable
 type execArgFile struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopWrite            `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	// arg is the type of exec argument this file contains.
 	arg execArgType

@@ -40,6 +40,7 @@ go_library(
         "restore.go",
         "save.go",
         "seek.go",
+        "splice.go",
         "sync.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs",
@@ -51,6 +52,7 @@ go_library(
         "//pkg/metric",
         "//pkg/p9",
         "//pkg/refs",
+        "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/device",
@@ -66,7 +68,6 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/state",
         "//pkg/syserror",
-        "//pkg/tcpip",
         "//pkg/waiter",
     ],
 )
@@ -122,7 +123,6 @@ go_test(
     srcs = [
         "dirent_cache_test.go",
         "dirent_refs_test.go",
-        "file_test.go",
         "mount_test.go",
         "path_test.go",
     ],

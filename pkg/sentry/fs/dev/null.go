@@ -64,6 +64,7 @@ type nullFileOperations struct {
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopRead             `state:"nosave"`
@@ -104,14 +105,15 @@ func (zd *zeroDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.F
 type zeroFileOperations struct {
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNoopWrite            `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
-	readZeros                       `state:"nosave"`
 	waiter.AlwaysReady              `state:"nosave"`
+	readZeros                       `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*zeroFileOperations)(nil)

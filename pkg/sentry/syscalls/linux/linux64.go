@@ -407,7 +407,7 @@ var AMD64 = &kernel.SyscallTable{
 		273: syscalls.Error(syscall.ENOSYS),
 		// @Syscall(GetRobustList, note:Obsolete)
 		274: syscalls.Error(syscall.ENOSYS),
-		//     275: @Syscall(Splice), TODO(b/29354098)
+		275: Splice,
 		//     276: @Syscall(Tee), TODO(b/29354098)
 		277: SyncFileRange,
 		//     278: @Syscall(Vmsplice), TODO(b/29354098)

@@ -60,6 +60,7 @@ func (f *fullDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.Fi
 
 // +stateify savable
 type fullFileOperations struct {
+	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
@@ -68,8 +69,8 @@ type fullFileOperations struct {
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	readZeros                       `state:"nosave"`
-	waiter.AlwaysReady              `state:"nosave"`
 }
 
 var _ fs.FileOperations = (*fullFileOperations)(nil)

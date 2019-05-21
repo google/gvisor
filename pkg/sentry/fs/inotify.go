@@ -171,9 +171,19 @@ func (i *Inotify) Read(ctx context.Context, _ *File, dst usermem.IOSequence, _ i
 	return writeLen, nil
 }
 
+// WriteTo implements FileOperations.WriteTo.
+func (*Inotify) WriteTo(context.Context, *File, *File, SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
+}
+
 // Fsync implements FileOperations.Fsync.
 func (*Inotify) Fsync(context.Context, *File, int64, int64, SyncType) error {
 	return syserror.EINVAL
+}
+
+// ReadFrom implements FileOperations.ReadFrom.
+func (*Inotify) ReadFrom(context.Context, *File, *File, SpliceOpts) (int64, error) {
+	return 0, syserror.ENOSYS
 }
 
 // Flush implements FileOperations.Flush.

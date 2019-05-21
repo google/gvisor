@@ -37,6 +37,7 @@ import (
 // +stateify savable
 type fileOperations struct {
 	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosplice"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 

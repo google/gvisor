@@ -286,14 +286,15 @@ func (d *dirInodeOperations) masterClose(t *Terminal) {
 //
 // +stateify savable
 type dirFileOperations struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoFsync              `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	// di is the inode operations.
 	di *dirInodeOperations

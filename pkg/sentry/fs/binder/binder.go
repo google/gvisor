@@ -86,10 +86,11 @@ func (bd *Device) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags)
 //
 // +stateify savable
 type Proc struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileNoFsync              `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	bd   *Device
 	task *kernel.Task

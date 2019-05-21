@@ -277,6 +277,8 @@ syscall_test(test = "//test/syscalls/linux:sendfile_socket_test")
 
 syscall_test(test = "//test/syscalls/linux:sendfile_test")
 
+syscall_test(test = "//test/syscalls/linux:splice_test")
+
 syscall_test(test = "//test/syscalls/linux:sigaction_test")
 
 # TODO(b/119826902): Enable once the test passes in runsc.

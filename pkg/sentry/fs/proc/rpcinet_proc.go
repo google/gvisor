@@ -60,15 +60,16 @@ func (i *rpcInetInode) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.
 
 // rpcInetFile implements fs.FileOperations as RPCs.
 type rpcInetFile struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileGenericSeek          `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopFsync            `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	inode *rpcInetInode
 }

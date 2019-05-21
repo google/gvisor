@@ -52,15 +52,16 @@ func (f *fileContext) Value(key interface{}) interface{} {
 
 // byteReader implements fs.FileOperations for reading from a []byte source.
 type byteReader struct {
-	waiter.AlwaysReady              `state:"nosave"`
 	fsutil.FileNoFsync              `state:"nosave"`
 	fsutil.FileNoIoctl              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoopRelease          `state:"nosave"`
 	fsutil.FileNotDirReaddir        `state:"nosave"`
 	fsutil.FilePipeSeek             `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
 
 	data []byte
 }
