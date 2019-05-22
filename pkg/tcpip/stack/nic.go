@@ -593,6 +593,14 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	}
 
 	transProto := state.proto
+
+	// Raw socket packets are delivered based solely on the transport
+	// protocol number. We do not inspect the payload to ensure it's
+	// validly formed.
+	if !n.demux.deliverRawPacket(r, protocol, netHeader, vv) {
+		n.stack.demux.deliverRawPacket(r, protocol, netHeader, vv)
+	}
+
 	if len(vv.First()) < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return

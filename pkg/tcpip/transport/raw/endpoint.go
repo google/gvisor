@@ -280,7 +280,7 @@ func (ep *endpoint) finishWrite(payload tcpip.Payload, route *stack.Route) (uint
 	switch ep.netProto {
 	case header.IPv4ProtocolNumber:
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), header.ICMPv4ProtocolNumber, route.DefaultTTL()); err != nil {
+		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), ep.transProto, route.DefaultTTL()); err != nil {
 			return 0, nil, err
 		}
 

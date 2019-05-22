@@ -25,6 +25,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -48,10 +49,10 @@ func (*protocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolN
 	return newEndpoint(stack, netProto, waiterQueue), nil
 }
 
-// NewRawEndpoint creates a new raw UDP endpoint. Raw UDP sockets are currently
-// unsupported. It implements stack.TransportProtocol.NewRawEndpoint.
+// NewRawEndpoint creates a new raw UDP endpoint. It implements
+// stack.TransportProtocol.NewRawEndpoint.
 func (p *protocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return nil, tcpip.ErrUnknownProtocol
+	return raw.NewEndpoint(stack, netProto, header.UDPProtocolNumber, waiterQueue)
 }
 
 // MinimumPacketSize returns the minimum valid udp packet size.

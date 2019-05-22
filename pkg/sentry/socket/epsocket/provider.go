@@ -70,6 +70,10 @@ func getTransportProtocol(ctx context.Context, stype transport.SockType, protoco
 		switch protocol {
 		case syscall.IPPROTO_ICMP:
 			return header.ICMPv4ProtocolNumber, nil
+		case syscall.IPPROTO_UDP:
+			return header.UDPProtocolNumber, nil
+		case syscall.IPPROTO_TCP:
+			return header.TCPProtocolNumber, nil
 		}
 	}
 	return 0, syserr.ErrInvalidArgument

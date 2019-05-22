@@ -51,6 +51,8 @@ const (
 // have concurrent goroutines make calls into the endpoint, they are properly
 // synchronized.
 //
+// It implements tcpip.Endpoint.
+//
 // +stateify savable
 type endpoint struct {
 	// The following fields are initialized at creation time and do not

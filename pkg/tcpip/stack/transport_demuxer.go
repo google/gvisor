@@ -286,20 +286,10 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 		destEps = append(destEps, ep)
 	}
 
-	// As in net/ipv4/ip_input.c:ip_local_deliver, attempt to deliver via
-	// raw endpoint first. If there are multipe raw endpoints, they all
-	// receive the packet.
-	foundRaw := false
-	for _, rawEP := range eps.rawEndpoints {
-		// Each endpoint gets its own copy of the packet for the sake
-		// of save/restore.
-		rawEP.HandlePacket(r, buffer.NewViewFromBytes(netHeader), vv.ToView().ToVectorisedView())
-		foundRaw = true
-	}
 	eps.mu.RUnlock()
 
 	// Fail if we didn't find at least one matching transport endpoint.
-	if len(destEps) == 0 && !foundRaw {
+	if len(destEps) == 0 {
 		// UDP packet could not be delivered to an unknown destination port.
 		if protocol == header.UDPProtocolNumber {
 			r.Stats().UDP.UnknownPortErrors.Increment()
@@ -313,6 +303,30 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 	}
 
 	return true
+}
+
+// deliverRawPacket attempts to deliver the given packet and returns whether it
+// was delivered successfully.
+func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView) bool {
+	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
+	if !ok {
+		return false
+	}
+
+	// As in net/ipv4/ip_input.c:ip_local_deliver, attempt to deliver via
+	// raw endpoint first. If there are multiple raw endpoints, they all
+	// receive the packet.
+	foundRaw := false
+	eps.mu.RLock()
+	for _, rawEP := range eps.rawEndpoints {
+		// Each endpoint gets its own copy of the packet for the sake
+		// of save/restore.
+		rawEP.HandlePacket(r, buffer.NewViewFromBytes(netHeader), vv.ToView().ToVectorisedView())
+		foundRaw = true
+	}
+	eps.mu.RUnlock()
+
+	return foundRaw
 }
 
 // deliverControlPacket attempts to deliver the given control packet. Returns
