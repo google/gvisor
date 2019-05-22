@@ -42,10 +42,6 @@ type DirentOperations interface {
 
 // MountSourceOperations contains filesystem specific operations.
 type MountSourceOperations interface {
-	// TODO(b/67778729): Add:
-	// BlockSize() int64
-	// FS() Filesystem
-
 	// DirentOperations provide optional extra management of Dirents.
 	DirentOperations
 
