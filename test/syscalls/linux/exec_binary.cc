@@ -401,6 +401,141 @@ TEST(ElfTest, DataSegment) {
              })));
 }
 
+// Additonal pages beyond filesz are always RW.
+//
+// N.B. Linux uses set_brk -> vm_brk to additional pages beyond filesz (even
+// though start_brk itself will always be beyond memsz). As a result, the
+// segment permissions don't apply; the mapping is always RW.
+TEST(ElfTest, ExtraMemPages) {
+  ElfBinary<64> elf = StandardElf();
+
+  // Create a standard ELF, but extend to 1.5 pages. The second page will be the
+  // beginning of a multi-page data + bss segment.
+  elf.data.resize(kPageSize + kPageSize / 2);
+
+  decltype(elf)::ElfPhdr phdr = {};
+  phdr.p_type = PT_LOAD;
+  // RWX segment. The extra anon page will be RW anyways.
+  //
+  // N.B. Linux uses clear_user to clear the end of the file-mapped page, which
+  // respects the mapping protections. Thus if we map this RO with memsz >
+  // (unaligned) filesz, then execve will fail with EFAULT. See padzero(elf_bss)
+  // in fs/binfmt_elf.c:load_elf_binary.
+  //
+  // N.N.B.B. The above only applies to the last segment. For earlier segments,
+  // the clear_user error is ignored.
+  phdr.p_flags = PF_R | PF_W | PF_X;
+  phdr.p_offset = kPageSize;
+  phdr.p_vaddr = 0x41000;
+  phdr.p_filesz = kPageSize / 2;
+  // The header is going to push vaddr up by a few hundred bytes. Keep p_memsz a
+  // bit less than 2 pages so this mapping doesn't extend beyond 0x43000.
+  phdr.p_memsz = 2 * kPageSize - kPageSize / 2;
+  elf.phdrs.push_back(phdr);
+
+  elf.UpdateOffsets();
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  ASSERT_NO_ERRNO(WaitStopped(child));
+
+  EXPECT_THAT(child,
+              ContainsMappings(std::vector<ProcMapsEntry>({
+                  // text page.
+                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
+                   file.path().c_str()},
+                  // data + bss page from file.
+                  {0x41000, 0x42000, true, true, true, true, kPageSize, 0, 0, 0,
+                   file.path().c_str()},
+                  // extra page from anon.
+                  {0x42000, 0x43000, true, true, false, true, 0, 0, 0, 0, ""},
+              })));
+}
+
+// An aligned segment with filesz == 0, memsz > 0 is anon-only.
+TEST(ElfTest, AnonOnlySegment) {
+  ElfBinary<64> elf = StandardElf();
+
+  decltype(elf)::ElfPhdr phdr = {};
+  phdr.p_type = PT_LOAD;
+  // RO segment. The extra anon page will be RW anyways.
+  phdr.p_flags = PF_R;
+  phdr.p_offset = 0;
+  phdr.p_vaddr = 0x41000;
+  phdr.p_filesz = 0;
+  phdr.p_memsz = kPageSize - 0xe8;
+  elf.phdrs.push_back(phdr);
+
+  elf.UpdateOffsets();
+
+  // UpdateOffsets adjusts p_vaddr and p_offset by the header size, but we need
+  // a page-aligned p_vaddr to get a truly anon-only page.
+  elf.phdrs[2].p_vaddr = 0x41000;
+  // N.B. p_offset is now unaligned, but Linux doesn't care since this is
+  // anon-only.
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  ASSERT_NO_ERRNO(WaitStopped(child));
+
+  EXPECT_THAT(child,
+              ContainsMappings(std::vector<ProcMapsEntry>({
+                  // text page.
+                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
+                   file.path().c_str()},
+                  // anon page.
+                  {0x41000, 0x42000, true, true, false, true, 0, 0, 0, 0, ""},
+              })));
+}
+
+// p_offset must have the same alignment as p_vaddr.
+TEST(ElfTest, UnalignedOffset) {
+  ElfBinary<64> elf = StandardElf();
+
+  // Unaligned offset.
+  elf.phdrs[1].p_offset += 1;
+
+  elf.UpdateOffsets();
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+
+  // execve(2) return EINVAL, but behavior varies between Linux and gVisor.
+  //
+  // On Linux, the new mm is committed before attempting to map into it. By the
+  // time we hit EINVAL in the segment mmap, the old mm is gone. Linux returns
+  // to an empty mm, which immediately segfaults.
+  //
+  // OTOH, gVisor maps into the new mm before committing it. Thus when it hits
+  // failure, the caller is still intact to receive the error.
+  if (IsRunningOnGvisor()) {
+    ASSERT_EQ(execve_errno, EINVAL);
+  } else {
+    ASSERT_EQ(execve_errno, 0);
+
+    int status;
+    ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+                SyscallSucceedsWithValue(child));
+    EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) << status;
+  }
+}
+
 // Linux will allow PT_LOAD segments to overlap.
 TEST(ElfTest, DirectlyOverlappingSegments) {
   // NOTE(b/37289926): see PIEOutOfOrderSegments.

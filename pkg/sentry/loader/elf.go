@@ -223,13 +223,8 @@ func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
 // mapSegment maps a phdr into the Task. offset is the offset to apply to
 // phdr.Vaddr.
 func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.ProgHeader, offset usermem.Addr) error {
-	// Alignment of vaddr and offset must match. We'll need to map on the
-	// page boundary.
+	// We must make a page-aligned mapping.
 	adjust := usermem.Addr(phdr.Vaddr).PageOffset()
-	if adjust != usermem.Addr(phdr.Off).PageOffset() {
-		ctx.Infof("Alignment of vaddr %#x != off %#x", phdr.Vaddr, phdr.Off)
-		return syserror.ENOEXEC
-	}
 
 	addr, ok := offset.AddLength(phdr.Vaddr)
 	if !ok {
@@ -239,15 +234,9 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 	}
 	addr -= usermem.Addr(adjust)
 
-	fileOffset := phdr.Off - adjust
 	fileSize := phdr.Filesz + adjust
 	if fileSize < phdr.Filesz {
 		ctx.Infof("Computed segment file size overflows: %#x + %#x", phdr.Filesz, adjust)
-		return syserror.ENOEXEC
-	}
-	memSize := phdr.Memsz + adjust
-	if memSize < phdr.Memsz {
-		ctx.Infof("Computed segment mem size overflows: %#x + %#x", phdr.Memsz, adjust)
 		return syserror.ENOEXEC
 	}
 	ms, ok := usermem.Addr(fileSize).RoundUp()
@@ -257,51 +246,64 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 	}
 	mapSize := uint64(ms)
 
-	prot := progFlagsAsPerms(phdr.Flags)
-	mopts := memmap.MMapOpts{
-		Length: mapSize,
-		Offset: fileOffset,
-		Addr:   addr,
-		Fixed:  true,
-		// Linux will happily allow conflicting segments to map over
-		// one another.
-		Unmap:    true,
-		Private:  true,
-		Perms:    prot,
-		MaxPerms: usermem.AnyAccess,
-	}
-	defer func() {
-		if mopts.MappingIdentity != nil {
-			mopts.MappingIdentity.DecRef()
-		}
-	}()
-	if err := f.ConfigureMMap(ctx, &mopts); err != nil {
-		ctx.Infof("File is not memory-mappable: %v", err)
-		return err
-	}
-	if _, err := m.MMap(ctx, mopts); err != nil {
-		ctx.Infof("Error mapping PT_LOAD segment %+v at %#x: %v", phdr, addr, err)
-		return err
-	}
+	if mapSize > 0 {
+		// This must result in a page-aligned offset. i.e., the original
+		// phdr.Off must have the same alignment as phdr.Vaddr. If that is not
+		// true, MMap will reject the mapping.
+		fileOffset := phdr.Off - adjust
 
-	// We need to clear the end of the last page that exceeds fileSize so
-	// we don't map part of the file beyond fileSize.
-	//
-	// Note that Linux *does not* clear the portion of the first page
-	// before phdr.Off.
-	if mapSize > fileSize {
-		zeroAddr, ok := addr.AddLength(fileSize)
-		if !ok {
-			panic(fmt.Sprintf("successfully mmaped address overflows? %#x + %#x", addr, fileSize))
+		prot := progFlagsAsPerms(phdr.Flags)
+		mopts := memmap.MMapOpts{
+			Length: mapSize,
+			Offset: fileOffset,
+			Addr:   addr,
+			Fixed:  true,
+			// Linux will happily allow conflicting segments to map over
+			// one another.
+			Unmap:    true,
+			Private:  true,
+			Perms:    prot,
+			MaxPerms: usermem.AnyAccess,
 		}
-		zeroSize := int64(mapSize - fileSize)
-		if zeroSize < 0 {
-			panic(fmt.Sprintf("zeroSize too big? %#x", uint64(zeroSize)))
-		}
-		if _, err := m.ZeroOut(ctx, zeroAddr, zeroSize, usermem.IOOpts{IgnorePermissions: true}); err != nil {
-			ctx.Warningf("Failed to zero end of page [%#x, %#x): %v", zeroAddr, zeroAddr+usermem.Addr(zeroSize), err)
+		defer func() {
+			if mopts.MappingIdentity != nil {
+				mopts.MappingIdentity.DecRef()
+			}
+		}()
+		if err := f.ConfigureMMap(ctx, &mopts); err != nil {
+			ctx.Infof("File is not memory-mappable: %v", err)
 			return err
 		}
+		if _, err := m.MMap(ctx, mopts); err != nil {
+			ctx.Infof("Error mapping PT_LOAD segment %+v at %#x: %v", phdr, addr, err)
+			return err
+		}
+
+		// We need to clear the end of the last page that exceeds fileSize so
+		// we don't map part of the file beyond fileSize.
+		//
+		// Note that Linux *does not* clear the portion of the first page
+		// before phdr.Off.
+		if mapSize > fileSize {
+			zeroAddr, ok := addr.AddLength(fileSize)
+			if !ok {
+				panic(fmt.Sprintf("successfully mmaped address overflows? %#x + %#x", addr, fileSize))
+			}
+			zeroSize := int64(mapSize - fileSize)
+			if zeroSize < 0 {
+				panic(fmt.Sprintf("zeroSize too big? %#x", uint64(zeroSize)))
+			}
+			if _, err := m.ZeroOut(ctx, zeroAddr, zeroSize, usermem.IOOpts{IgnorePermissions: true}); err != nil {
+				ctx.Warningf("Failed to zero end of page [%#x, %#x): %v", zeroAddr, zeroAddr+usermem.Addr(zeroSize), err)
+				return err
+			}
+		}
+	}
+
+	memSize := phdr.Memsz + adjust
+	if memSize < phdr.Memsz {
+		ctx.Infof("Computed segment mem size overflows: %#x + %#x", phdr.Memsz, adjust)
+		return syserror.ENOEXEC
 	}
 
 	// Allocate more anonymous pages if necessary.
@@ -321,9 +323,13 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 			Addr:   anonAddr,
 			// Fixed without Unmap will fail the mmap if something is
 			// already at addr.
-			Fixed:    true,
-			Private:  true,
-			Perms:    progFlagsAsPerms(phdr.Flags),
+			Fixed:   true,
+			Private: true,
+			// N.B. Linux uses vm_brk to map these pages, ignoring
+			// the segment protections, instead always mapping RW.
+			// These pages are not included in the final brk
+			// region.
+			Perms:    usermem.ReadWrite,
 			MaxPerms: usermem.AnyAccess,
 		}); err != nil {
 			ctx.Infof("Error mapping PT_LOAD segment %v anonymous memory: %v", phdr, err)
