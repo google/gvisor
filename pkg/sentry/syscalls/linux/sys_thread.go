@@ -183,7 +183,7 @@ func Vfork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // wait4 waits for the given child process to exit.
 func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusageAddr usermem.Addr) (uintptr, error) {
-	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WALL|linux.WCLONE) != 0 {
+	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
 		return 0, syscall.EINVAL
 	}
 	wopts := kernel.WaitOptions{
@@ -226,6 +226,9 @@ func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusage
 	}
 	if options&linux.WNOHANG == 0 {
 		wopts.BlockInterruptErr = kernel.ERESTARTSYS
+	}
+	if options&linux.WNOTHREAD == 0 {
+		wopts.SiblingChildren = true
 	}
 
 	wr, err := t.Wait(&wopts)
@@ -278,7 +281,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	options := int(args[3].Uint())
 	rusageAddr := args[4].Pointer()
 
-	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT) != 0 {
+	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT|linux.WNOTHREAD) != 0 {
 		return 0, nil, syscall.EINVAL
 	}
 	if options&(linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED) == 0 {
@@ -309,6 +312,9 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 	if options&linux.WNOHANG == 0 {
 		wopts.BlockInterruptErr = kernel.ERESTARTSYS
+	}
+	if options&linux.WNOTHREAD == 0 {
+		wopts.SiblingChildren = true
 	}
 
 	wr, err := t.Wait(&wopts)
