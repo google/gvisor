@@ -67,7 +67,6 @@ func NewInodeOperations(ctx context.Context, perms fs.FilePermissions, p *Pipe) 
 		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), perms, linux.PIPEFS_MAGIC),
 		p:                     p,
 	}
-
 }
 
 // GetFile implements fs.InodeOperations.GetFile. Named pipes have special blocking
@@ -87,7 +86,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 	switch {
 	case flags.Read && !flags.Write: // O_RDONLY.
-		r := i.p.ROpen(ctx)
+		r := i.p.Open(ctx, flags)
 		i.newHandleLocked(&i.rWakeup)
 
 		if i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
@@ -103,7 +102,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 		return r, nil
 
 	case flags.Write && !flags.Read: // O_WRONLY.
-		w := i.p.WOpen(ctx)
+		w := i.p.Open(ctx, flags)
 		i.newHandleLocked(&i.wWakeup)
 
 		if i.p.isNamed && !i.p.HasReaders() {
@@ -123,7 +122,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 	case flags.Read && flags.Write: // O_RDWR.
 		// Pipes opened for read-write always succeeds without blocking.
-		rw := i.p.RWOpen(ctx)
+		rw := i.p.Open(ctx, flags)
 		i.newHandleLocked(&i.rWakeup)
 		i.newHandleLocked(&i.wWakeup)
 		return rw, nil

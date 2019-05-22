@@ -191,7 +191,11 @@ syscall_test(test = "//test/syscalls/linux:partial_bad_buffer_test")
 
 syscall_test(test = "//test/syscalls/linux:pause_test")
 
-syscall_test(test = "//test/syscalls/linux:pipe_test")
+syscall_test(
+    size = "large",
+    shard_count = 5,
+    test = "//test/syscalls/linux:pipe_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:poll_test")
 

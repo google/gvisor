@@ -58,15 +58,16 @@ func TestPipeReadBlock(t *testing.T) {
 
 func TestPipeWriteBlock(t *testing.T) {
 	const atomicIOBytes = 2
+	const capacity = MinimumPipeSize
 
 	ctx := contexttest.Context(t)
-	r, w := NewConnectedPipe(ctx, 10, atomicIOBytes)
+	r, w := NewConnectedPipe(ctx, capacity, atomicIOBytes)
 	defer r.DecRef()
 	defer w.DecRef()
 
-	msg := []byte("here's some bytes")
+	msg := make([]byte, capacity+1)
 	n, err := w.Writev(ctx, usermem.BytesIOSequence(msg))
-	if wantN, wantErr := int64(atomicIOBytes), syserror.ErrWouldBlock; n != wantN || err != wantErr {
+	if wantN, wantErr := int64(capacity), syserror.ErrWouldBlock; n != wantN || err != wantErr {
 		t.Fatalf("Writev: got (%d, %v), wanted (%d, %v)", n, err, wantN, wantErr)
 	}
 }

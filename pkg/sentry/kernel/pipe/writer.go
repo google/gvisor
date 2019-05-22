@@ -27,8 +27,11 @@ type Writer struct {
 }
 
 // Release implements fs.FileOperations.Release.
+//
+// This overrides ReaderWriter.Release.
 func (w *Writer) Release() {
 	w.Pipe.wClose()
+
 	// Wake up readers.
 	w.Pipe.Notify(waiter.EventHUp)
 }

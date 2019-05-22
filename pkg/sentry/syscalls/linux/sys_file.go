@@ -27,6 +27,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/fasync"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
@@ -943,6 +944,19 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		err := tmpfs.AddSeals(file.Dirent.Inode, args[2].Uint())
 		return 0, nil, err
+	case linux.F_GETPIPE_SZ:
+		sz, ok := file.FileOperations.(pipe.Sizer)
+		if !ok {
+			return 0, nil, syserror.EINVAL
+		}
+		return uintptr(sz.PipeSize()), nil, nil
+	case linux.F_SETPIPE_SZ:
+		sz, ok := file.FileOperations.(pipe.Sizer)
+		if !ok {
+			return 0, nil, syserror.EINVAL
+		}
+		n, err := sz.SetPipeSize(int64(args[2].Int()))
+		return uintptr(n), nil, err
 	default:
 		// Everything else is not yet supported.
 		return 0, nil, syserror.EINVAL

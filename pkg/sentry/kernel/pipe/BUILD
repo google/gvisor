@@ -10,16 +10,16 @@ go_template_instance(
     prefix = "buffer",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*Buffer",
-        "Linker": "*Buffer",
+        "Element": "*buffer",
+        "Linker": "*buffer",
     },
 )
 
 go_library(
     name = "pipe",
     srcs = [
+        "buffer.go",
         "buffer_list.go",
-        "buffers.go",
         "device.go",
         "node.go",
         "pipe.go",
@@ -37,6 +37,7 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
         "//pkg/syserror",
         "//pkg/waiter",
@@ -47,6 +48,7 @@ go_test(
     name = "pipe_test",
     size = "small",
     srcs = [
+        "buffer_test.go",
         "node_test.go",
         "pipe_test.go",
     ],

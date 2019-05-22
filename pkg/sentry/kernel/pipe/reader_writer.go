@@ -15,7 +15,6 @@
 package pipe
 
 import (
-	"fmt"
 	"math"
 	"syscall"
 
@@ -49,6 +48,7 @@ type ReaderWriter struct {
 func (rw *ReaderWriter) Release() {
 	rw.Pipe.rClose()
 	rw.Pipe.wClose()
+
 	// Wake up readers and writers.
 	rw.Pipe.Notify(waiter.EventIn | waiter.EventOut)
 }
@@ -81,9 +81,9 @@ func (rw *ReaderWriter) Ioctl(ctx context.Context, io usermem.IO, args arch.Sysc
 	// Switch on ioctl request.
 	switch int(args[1].Int()) {
 	case linux.FIONREAD:
-		v := rw.queuedSize()
+		v := rw.queued()
 		if v > math.MaxInt32 {
-			panic(fmt.Sprintf("Impossibly large pipe queued size: %d", v))
+			v = math.MaxInt32 // Silently truncate.
 		}
 		// Copy result to user-space.
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{

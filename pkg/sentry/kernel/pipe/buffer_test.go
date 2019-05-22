@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package linux
+package pipe
 
-// Comands from linux/fcntl.h.
-const (
-	F_DUPFD         = 0
-	F_GETFD         = 1
-	F_GETFL         = 3
-	F_GETOWN        = 9
-	F_SETFD         = 2
-	F_SETFL         = 4
-	F_SETLK         = 6
-	F_SETLKW        = 7
-	F_SETOWN        = 8
-	F_DUPFD_CLOEXEC = 1024 + 6
-	F_SETPIPE_SZ    = 1024 + 7
-	F_GETPIPE_SZ    = 1024 + 8
+import (
+	"testing"
+	"unsafe"
+
+	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
-// Flags for fcntl.
-const (
-	FD_CLOEXEC = 00000001
-)
+func TestBufferSize(t *testing.T) {
+	bufferSize := unsafe.Sizeof(buffer{})
+	if bufferSize < usermem.PageSize {
+		t.Errorf("buffer is less than a page")
+	}
+	if bufferSize > (2 * usermem.PageSize) {
+		t.Errorf("buffer is greater than two pages")
+	}
+}
