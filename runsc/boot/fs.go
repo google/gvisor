@@ -290,7 +290,7 @@ func mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace, r
 		}
 	}
 
-	if err := mountTmp(ctx, conf, mns, root, fds, mounts); err != nil {
+	if err := mountTmp(ctx, conf, mns, root, mounts); err != nil {
 		return fmt.Errorf("mount submount %q: %v", "tmp", err)
 	}
 
@@ -551,9 +551,8 @@ func subtargets(root string, mnts []specs.Mount) []string {
 func setupContainerFS(procArgs *kernel.CreateProcessArgs, spec *specs.Spec, conf *Config, stdioFDs, goferFDs []int, console bool, creds *auth.Credentials, ls *limits.LimitSet, k *kernel.Kernel, cid string) error {
 	ctx := procArgs.NewContext(k)
 
-	// Create the FD map, which will set stdin, stdout, and stderr.  If
-	// console is true, then ioctl calls will be passed through to the host
-	// fd.
+	// Create the FD map, which will set stdin, stdout, and stderr.  If console
+	// is true, then ioctl calls will be passed through to the host fd.
 	fdm, err := createFDMap(ctx, k, ls, console, stdioFDs)
 	if err != nil {
 		return fmt.Errorf("importing fds: %v", err)
@@ -725,7 +724,7 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
-func mountTmp(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent, fds *fdDispenser, mounts []specs.Mount) error {
+func mountTmp(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent, mounts []specs.Mount) error {
 	for _, m := range mounts {
 		if filepath.Clean(m.Destination) == "/tmp" {
 			log.Debugf("Explict %q mount found, skipping internal tmpfs, mount: %+v", "/tmp", m)
@@ -763,8 +762,11 @@ func mountTmp(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *f
 		tmpMount := specs.Mount{
 			Type:        tmpfs,
 			Destination: "/tmp",
+			// Sticky bit is added to prevent accidental deletion of files from
+			// another user. This is normally done for /tmp.
+			Options: []string{"mode=1777"},
 		}
-		return mountSubmount(ctx, conf, mns, root, fds, tmpMount, mounts)
+		return mountSubmount(ctx, conf, mns, root, nil, tmpMount, mounts)
 
 	default:
 		return err
