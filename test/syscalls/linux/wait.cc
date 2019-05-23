@@ -233,18 +233,14 @@ TEST_P(WaitAnyChildTest, ForkAndClone) {
 
 // Return immediately if no child has exited.
 TEST_P(WaitAnyChildTest, WaitWNOHANG) {
-  EXPECT_THAT(
-      WaitAnyWithOptions(0, WNOHANG),
-      PosixErrorIs(ECHILD, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitAnyWithOptions(0, WNOHANG),
+              PosixErrorIs(ECHILD, ::testing::_));
 }
 
 // Bad options passed
 TEST_P(WaitAnyChildTest, BadOption) {
-  EXPECT_THAT(
-      WaitAnyWithOptions(0, 123456),
-      PosixErrorIs(EINVAL, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitAnyWithOptions(0, 123456),
+              PosixErrorIs(EINVAL, ::testing::_));
 }
 
 TEST_P(WaitAnyChildTest, WaitedChildRusage) {
@@ -295,9 +291,7 @@ TEST_P(WaitAnyChildTest, IgnoredChildRusage) {
   pid_t child;
   ASSERT_THAT(child = ForkSpinAndExit(0, absl::ToInt64Seconds(kSpin)),
               SyscallSucceeds());
-  ASSERT_THAT(WaitAny(0), PosixErrorIs(ECHILD, ::testing::AnyOf(
-                                                   ::testing::StrEq("waitid"),
-                                                   ::testing::StrEq("wait4"))));
+  ASSERT_THAT(WaitAny(0), PosixErrorIs(ECHILD, ::testing::_));
   const absl::Duration end =
       absl::Nanoseconds(clock_gettime_nsecs(CLOCK_MONOTONIC));
   EXPECT_GE(end - start, kSpin - kSpinGrace);
@@ -501,10 +495,8 @@ TEST_P(WaitSpecificChildTest, SiblingChildrenWNOTHREAD) {
   mu.Await(absl::Condition(&ready));
 
   // This thread can't wait on child.
-  EXPECT_THAT(
-      WaitForWithOptions(child, __WNOTHREAD, 0),
-      PosixErrorIs(ECHILD, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitForWithOptions(child, __WNOTHREAD, 0),
+              PosixErrorIs(ECHILD, ::testing::_));
 
   // Keep the sibling alive until after we've waited so the child isn't
   // reparented.
@@ -538,10 +530,7 @@ TEST_P(WaitSpecificChildTest, CloneNoSIGCHLD) {
   int child;
   ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());
 
-  EXPECT_THAT(
-      WaitFor(child, 0),
-      PosixErrorIs(ECHILD, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitFor(child, 0), PosixErrorIs(ECHILD, ::testing::_));
 }
 
 // Waiting after the child has already exited returns immediately.
@@ -571,10 +560,7 @@ TEST_P(WaitSpecificChildTest, CloneThread) {
   ASSERT_THAT(child = CloneAndExit(15, stack, CLONE_THREAD), SyscallSucceeds());
   auto start = absl::Now();
 
-  EXPECT_THAT(
-      WaitFor(child, 0),
-      PosixErrorIs(ECHILD, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitFor(child, 0), PosixErrorIs(ECHILD, ::testing::_));
 
   // Ensure wait4 didn't block.
   EXPECT_LE(absl::Now() - start, absl::Seconds(10));
@@ -584,12 +570,81 @@ TEST_P(WaitSpecificChildTest, CloneThread) {
   absl::SleepFor(absl::Seconds(5));
 }
 
+// A child that does not send a SIGCHLD on exit may be waited on with
+// the __WCLONE flag.
+TEST_P(WaitSpecificChildTest, CloneWCLONE) {
+  // Linux added WCLONE support to waitid(2) in
+  // 91c4e8ea8f05916df0c8a6f383508ac7c9e10dba ("wait: allow sys_waitid() to
+  // accept __WNOTHREAD/__WCLONE/__WALL"). i.e., Linux 4.7.
+  //
+  // Skip the test if it isn't supported yet.
+  if (Sysno() == SYS_waitid) {
+    int ret = waitid(P_ALL, 0, nullptr, WEXITED | WNOHANG | __WCLONE);
+    SKIP_IF(ret < 0 && errno == EINVAL);
+  }
+
+  uintptr_t stack;
+  ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+
+  int child;
+  ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());
+
+  EXPECT_NO_ERRNO(WaitForWithOptions(child, __WCLONE, 0));
+}
+
+// A forked child cannot be waited on with WCLONE.
+TEST_P(WaitSpecificChildTest, ForkWCLONE) {
+  // Linux added WCLONE support to waitid(2) in
+  // 91c4e8ea8f05916df0c8a6f383508ac7c9e10dba ("wait: allow sys_waitid() to
+  // accept __WNOTHREAD/__WCLONE/__WALL"). i.e., Linux 4.7.
+  //
+  // Skip the test if it isn't supported yet.
+  if (Sysno() == SYS_waitid) {
+    int ret = waitid(P_ALL, 0, nullptr, WEXITED | WNOHANG | __WCLONE);
+    SKIP_IF(ret < 0 && errno == EINVAL);
+  }
+
+  pid_t child;
+  ASSERT_THAT(child = ForkAndExit(0, 0), SyscallSucceeds());
+
+  EXPECT_THAT(WaitForWithOptions(child, WNOHANG | __WCLONE, 0),
+              PosixErrorIs(ECHILD, ::testing::_));
+
+  EXPECT_NO_ERRNO(WaitFor(child, 0));
+}
+
+// Any type of child can be waited on with WALL.
+TEST_P(WaitSpecificChildTest, WALL) {
+  // Linux added WALL support to waitid(2) in
+  // 91c4e8ea8f05916df0c8a6f383508ac7c9e10dba ("wait: allow sys_waitid() to
+  // accept __WNOTHREAD/__WCLONE/__WALL"). i.e., Linux 4.7.
+  //
+  // Skip the test if it isn't supported yet.
+  if (Sysno() == SYS_waitid) {
+    int ret = waitid(P_ALL, 0, nullptr, WEXITED | WNOHANG | __WALL);
+    SKIP_IF(ret < 0 && errno == EINVAL);
+  }
+
+  pid_t child;
+  ASSERT_THAT(child = ForkAndExit(0, 0), SyscallSucceeds());
+
+  EXPECT_NO_ERRNO(WaitForWithOptions(child, __WALL, 0));
+
+  uintptr_t stack;
+  ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
+  auto free =
+      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
+
+  ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());
+
+  EXPECT_NO_ERRNO(WaitForWithOptions(child, __WALL, 0));
+}
+
 // Return ECHILD for bad child.
 TEST_P(WaitSpecificChildTest, BadChild) {
-  EXPECT_THAT(
-      WaitFor(42, 0),
-      PosixErrorIs(ECHILD, ::testing::AnyOf(::testing::StrEq("waitid"),
-                                            ::testing::StrEq("wait4"))));
+  EXPECT_THAT(WaitFor(42, 0), PosixErrorIs(ECHILD, ::testing::_));
 }
 
 // Wait for a child process that only exits after calling execve(2) from a
@@ -692,21 +747,6 @@ TEST(WaitTest, SignalExit) {
   EXPECT_FALSE(WIFEXITED(status));
   EXPECT_TRUE(WIFSIGNALED(status));
   EXPECT_EQ(SIGKILL, WTERMSIG(status));
-}
-
-// A child that does not send a SIGCHLD on exit may be waited on with
-// the __WCLONE flag.
-TEST(WaitTest, CloneWCLONE) {
-  uintptr_t stack;
-  ASSERT_THAT(stack = AllocStack(), SyscallSucceeds());
-  auto free =
-      Cleanup([stack] { ASSERT_THAT(FreeStack(stack), SyscallSucceeds()); });
-
-  int child;
-  ASSERT_THAT(child = CloneAndExit(0, stack, 0), SyscallSucceeds());
-
-  EXPECT_THAT(Wait4(child, nullptr, __WCLONE, nullptr),
-              SyscallSucceedsWithValue(child));
 }
 
 // waitid requires at least one option.

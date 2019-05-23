@@ -181,6 +181,32 @@ func Vfork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return clone(t, syscall.CLONE_VM|syscall.CLONE_VFORK|int(syscall.SIGCHLD), 0, 0, 0, 0)
 }
 
+// parseCommonWaitOptions applies the options common to wait4 and waitid to
+// wopts.
+func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
+	switch options & (linux.WCLONE | linux.WALL) {
+	case 0:
+		wopts.NonCloneTasks = true
+	case linux.WCLONE:
+		wopts.CloneTasks = true
+	case linux.WALL:
+		wopts.NonCloneTasks = true
+		wopts.CloneTasks = true
+	default:
+		return syscall.EINVAL
+	}
+	if options&linux.WCONTINUED != 0 {
+		wopts.Events |= kernel.EventGroupContinue
+	}
+	if options&linux.WNOHANG == 0 {
+		wopts.BlockInterruptErr = kernel.ERESTARTSYS
+	}
+	if options&linux.WNOTHREAD == 0 {
+		wopts.SiblingChildren = true
+	}
+	return nil
+}
+
 // wait4 waits for the given child process to exit.
 func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusageAddr usermem.Addr) (uintptr, error) {
 	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
@@ -207,28 +233,11 @@ func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusage
 		wopts.SpecificTID = kernel.ThreadID(pid)
 	}
 
-	switch options & (linux.WCLONE | linux.WALL) {
-	case 0:
-		wopts.NonCloneTasks = true
-	case linux.WCLONE:
-		wopts.CloneTasks = true
-	case linux.WALL:
-		wopts.NonCloneTasks = true
-		wopts.CloneTasks = true
-	default:
-		return 0, syscall.EINVAL
+	if err := parseCommonWaitOptions(&wopts, options); err != nil {
+		return 0, err
 	}
 	if options&linux.WUNTRACED != 0 {
 		wopts.Events |= kernel.EventChildGroupStop
-	}
-	if options&linux.WCONTINUED != 0 {
-		wopts.Events |= kernel.EventGroupContinue
-	}
-	if options&linux.WNOHANG == 0 {
-		wopts.BlockInterruptErr = kernel.ERESTARTSYS
-	}
-	if options&linux.WNOTHREAD == 0 {
-		wopts.SiblingChildren = true
 	}
 
 	wr, err := t.Wait(&wopts)
@@ -281,16 +290,15 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	options := int(args[3].Uint())
 	rusageAddr := args[4].Pointer()
 
-	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT|linux.WNOTHREAD) != 0 {
+	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
 		return 0, nil, syscall.EINVAL
 	}
 	if options&(linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED) == 0 {
 		return 0, nil, syscall.EINVAL
 	}
 	wopts := kernel.WaitOptions{
-		NonCloneTasks: true,
-		Events:        kernel.EventTraceeStop,
-		ConsumeEvent:  options&linux.WNOWAIT == 0,
+		Events:       kernel.EventTraceeStop,
+		ConsumeEvent: options&linux.WNOWAIT == 0,
 	}
 	switch idtype {
 	case linux.P_ALL:
@@ -301,20 +309,15 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	default:
 		return 0, nil, syscall.EINVAL
 	}
+
+	if err := parseCommonWaitOptions(&wopts, options); err != nil {
+		return 0, nil, err
+	}
 	if options&linux.WEXITED != 0 {
 		wopts.Events |= kernel.EventExit
 	}
 	if options&linux.WSTOPPED != 0 {
 		wopts.Events |= kernel.EventChildGroupStop
-	}
-	if options&linux.WCONTINUED != 0 {
-		wopts.Events |= kernel.EventGroupContinue
-	}
-	if options&linux.WNOHANG == 0 {
-		wopts.BlockInterruptErr = kernel.ERESTARTSYS
-	}
-	if options&linux.WNOTHREAD == 0 {
-		wopts.SiblingChildren = true
 	}
 
 	wr, err := t.Wait(&wopts)
