@@ -26,7 +26,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
 // A taskRunState is a reified state in the task state machine. See README.md
@@ -267,13 +266,8 @@ func (*runApp) execute(t *Task) taskRunState {
 				}
 			}
 
-			// The JVM will trigger these errors constantly, so don't
-			// spam logs with this error.
-			if err == syserror.EFAULT || err == syserror.EPERM {
-				t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
-			} else {
-				t.Warningf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
-			}
+			// Faults are common, log only at debug level.
+			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
 			t.DebugDumpState()
 
 			// Continue to signal handling.
