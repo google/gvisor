@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build go1.11
+// +build !go1.13
+
 // Package sleep allows goroutines to efficiently sleep on multiple sources of
 // notifications (wakers). It offers O(1) complexity, which is different from
 // multi-channel selects which have O(n) complexity (where n is the number of
@@ -85,7 +88,7 @@ var (
 )
 
 //go:linkname gopark runtime.gopark
-func gopark(unlockf func(uintptr, *uintptr) bool, wg *uintptr, reason string, traceEv byte, traceskip int)
+func gopark(unlockf func(uintptr, *uintptr) bool, wg *uintptr, reason uint8, traceEv byte, traceskip int)
 
 //go:linkname goready runtime.goready
 func goready(g uintptr, traceskip int)
@@ -179,7 +182,10 @@ func (s *Sleeper) nextWaker(block bool) *Waker {
 			// commitSleep to decide whether to immediately
 			// wake the caller up or to leave it sleeping.
 			const traceEvGoBlockSelect = 24
-			gopark(commitSleep, &s.waitingG, "sleeper", traceEvGoBlockSelect, 0)
+			// See:runtime2.go in the go runtime package for
+			// the values to pass as the waitReason here.
+			const waitReasonSelect = 9
+			gopark(commitSleep, &s.waitingG, waitReasonSelect, traceEvGoBlockSelect, 0)
 		}
 
 		// Pull the shared list out and reverse it in the local
