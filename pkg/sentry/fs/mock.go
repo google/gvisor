@@ -62,7 +62,6 @@ func NewMockMountSource(cache *DirentCache) *MountSource {
 	return &MountSource{
 		MountSourceOperations: &MockMountSourceOps{keep: keep},
 		fscache:               cache,
-		children:              make(map[*MountSource]struct{}),
 	}
 }
 

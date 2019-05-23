@@ -685,25 +685,19 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 
 	// Iterate through all submounts and unmount them. We unmount lazily by
 	// setting detach=true, so we can unmount in any order.
-	for _, m := range containerRootDirent.Inode.MountSource.Submounts() {
+	mnt := mns.FindMount(containerRootDirent)
+	for _, m := range mns.AllMountsUnder(mnt) {
 		root := m.Root()
 		defer root.DecRef()
 
 		// Do a best-effort unmount by flushing the refs and unmount
 		// with "detach only = true". Unmount returns EINVAL when the mount point
 		// doesn't exist, i.e. it has already been unmounted.
-		log.Debugf("Unmounting container submount %q", root.BaseName())
-		m.FlushDirentRefs()
+		log.Debugf("Unmounting container mount %q", root.BaseName())
+		root.Inode.MountSource.FlushDirentRefs()
 		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil && err != syserror.EINVAL {
-			return fmt.Errorf("unmounting container submount %q: %v", root.BaseName(), err)
+			return fmt.Errorf("unmounting container mount %q: %v", root.BaseName(), err)
 		}
-	}
-
-	// Unmount the container root itself.
-	log.Debugf("Unmounting container root %q", containerRoot)
-	containerRootDirent.Inode.MountSource.FlushDirentRefs()
-	if err := mns.Unmount(ctx, containerRootDirent, true /* detach only */); err != nil {
-		return fmt.Errorf("unmounting container root mount %q: %v", containerRootDirent.BaseName(), err)
 	}
 
 	// Get a reference to the parent directory and remove the root

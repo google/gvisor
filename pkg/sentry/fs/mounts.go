@@ -16,6 +16,7 @@ package fs
 
 import (
 	"fmt"
+	"math"
 	"path"
 	"strings"
 	"sync"
@@ -34,6 +35,94 @@ import (
 // individual syscall implementations, but for internal functions this will be
 // sane.
 const DefaultTraversalLimit = 10
+
+const invalidMountID = math.MaxUint64
+
+// Mount represents a mount in the file system. It holds the root dirent for the
+// mount. It also points back to the dirent or mount where it was mounted over,
+// so that it can be restored when unmounted. The chained mount can be either:
+//   - Mount: when it's mounted on top of another mount point.
+//   - Dirent: when it's mounted on top of a dirent. In this case the mount is
+//     called an "undo" mount and only 'root' is set. All other fields are
+//     either invalid or nil.
+//
+// +stateify savable
+type Mount struct {
+	// ID is a unique id for this mount. It may be invalidMountID if this is
+	// used to cache a dirent that was mounted over.
+	ID uint64
+
+	// ParentID is the parent's mount unique id. It may be invalidMountID if this
+	// is the root mount or if this is used to cache a dirent that was mounted
+	// over.
+	ParentID uint64
+
+	// root is the root Dirent of this mount. A reference on this Dirent must be
+	// held through the lifetime of the Mount which contains it.
+	root *Dirent
+
+	// previous is the existing dirent or mount that this object was mounted over.
+	// It's nil for the root mount and for the last entry in the chain (always an
+	// "undo" mount).
+	previous *Mount
+}
+
+// newMount creates a new mount, taking a reference on 'root'. Caller must
+// release the reference when it's done with the mount.
+func newMount(id, pid uint64, root *Dirent) *Mount {
+	root.IncRef()
+	return &Mount{
+		ID:       id,
+		ParentID: pid,
+		root:     root,
+	}
+}
+
+// newRootMount creates a new root mount (no parent), taking a reference on
+// 'root'. Caller must release the reference when it's done with the mount.
+func newRootMount(id uint64, root *Dirent) *Mount {
+	root.IncRef()
+	return &Mount{
+		ID:       id,
+		ParentID: invalidMountID,
+		root:     root,
+	}
+}
+
+// newUndoMount creates a new undo mount, taking a reference on 'd'. Caller must
+// release the reference when it's done with the mount.
+func newUndoMount(d *Dirent) *Mount {
+	d.IncRef()
+	return &Mount{
+		ID:       invalidMountID,
+		ParentID: invalidMountID,
+		root:     d,
+	}
+}
+
+// Root returns the root dirent of this mount. Callers must call DecRef on the
+// returned dirent.
+func (m *Mount) Root() *Dirent {
+	m.root.IncRef()
+	return m.root
+}
+
+// IsRoot returns true if the mount has no parent.
+func (m *Mount) IsRoot() bool {
+	return !m.IsUndo() && m.ParentID == invalidMountID
+}
+
+// IsUndo returns true if 'm' is an undo mount that should be used to restore
+// the original dirent during unmount only and it's not a valid mount.
+func (m *Mount) IsUndo() bool {
+	if m.ID == invalidMountID {
+		if m.ParentID != invalidMountID {
+			panic(fmt.Sprintf("Undo mount with valid parentID: %+v", m))
+		}
+		return true
+	}
+	return false
+}
 
 // MountNamespace defines a collection of mounts.
 //
@@ -55,13 +144,16 @@ type MountNamespace struct {
 	// mu protects mounts and mountID counter.
 	mu sync.Mutex `state:"nosave"`
 
-	// mounts is a map of the last mounted Dirent -> stack of old Dirents
-	// that were mounted over, with the oldest mounted Dirent first and
-	// more recent mounted Dirents at the end of the slice.
-	//
-	// A reference to all Dirents in mounts (keys and values) must be held
-	// to ensure the Dirents are recoverable when unmounting.
-	mounts map[*Dirent][]*Dirent
+	// mounts is a map of mounted Dirent -> Mount object. There are three
+	// possible cases:
+	//   - Dirent is mounted over a mount point: the stored Mount object will be
+	//     the Mount for that mount point.
+	//   - Dirent is mounted over a regular (non-mount point) Dirent: the stored
+	//     Mount object will be an "undo" mount containing the mounted-over
+	//     Dirent.
+	//   - Dirent is the root mount: the stored Mount object will be a root mount
+	//     containing the Dirent itself.
+	mounts map[*Dirent]*Mount
 
 	// mountID is the next mount id to assign.
 	mountID uint64
@@ -72,18 +164,18 @@ type MountNamespace struct {
 func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error) {
 	creds := auth.CredentialsFromContext(ctx)
 
-	root.MountSource.mu.Lock()
-	defer root.MountSource.mu.Unlock()
-
-	// Set the root dirent and id on the root mount.
+	// Set the root dirent and id on the root mount. The reference returned from
+	// NewDirent will be donated to the MountNamespace constructed below.
 	d := NewDirent(root, "/")
-	root.MountSource.root = d
-	root.MountSource.id = 1
+
+	mnts := map[*Dirent]*Mount{
+		d: newRootMount(1, d),
+	}
 
 	return &MountNamespace{
 		userns:  creds.UserNamespace,
 		root:    d,
-		mounts:  make(map[*Dirent][]*Dirent),
+		mounts:  mnts,
 		mountID: 2,
 	}, nil
 }
@@ -110,10 +202,9 @@ func (mns *MountNamespace) FlushMountSourceRefs() {
 
 func (mns *MountNamespace) flushMountSourceRefsLocked() {
 	// Flush mounts' MountSource references.
-	for current, stack := range mns.mounts {
-		current.Inode.MountSource.FlushDirentRefs()
-		for _, prev := range stack {
-			prev.Inode.MountSource.FlushDirentRefs()
+	for _, mp := range mns.mounts {
+		for ; mp != nil; mp = mp.previous {
+			mp.root.Inode.MountSource.FlushDirentRefs()
 		}
 	}
 
@@ -136,12 +227,11 @@ func (mns *MountNamespace) destroy() {
 	mns.flushMountSourceRefsLocked()
 
 	// Teardown mounts.
-	for current, mp := range mns.mounts {
+	for _, mp := range mns.mounts {
 		// Drop the mount reference on all mounted dirents.
-		for _, d := range mp {
-			d.DecRef()
+		for ; mp != nil; mp = mp.previous {
+			mp.root.DecRef()
 		}
-		current.DecRef()
 	}
 	mns.mounts = nil
 
@@ -208,46 +298,34 @@ func (mns *MountNamespace) withMountLocked(node *Dirent, fn func() error) error 
 }
 
 // Mount mounts a `inode` over the subtree at `node`.
-func (mns *MountNamespace) Mount(ctx context.Context, node *Dirent, inode *Inode) error {
-	return mns.withMountLocked(node, func() error {
-		// replacement already has one reference taken; this is the mount
-		// reference.
-		replacement, err := node.mount(ctx, inode)
+func (mns *MountNamespace) Mount(ctx context.Context, mountPoint *Dirent, inode *Inode) error {
+	return mns.withMountLocked(mountPoint, func() error {
+		replacement, err := mountPoint.mount(ctx, inode)
 		if err != nil {
 			return err
 		}
-
-		// Set child/parent dirent relationship.
-		parentMountSource := node.Inode.MountSource
-		childMountSource := inode.MountSource
-		parentMountSource.mu.Lock()
-		defer parentMountSource.mu.Unlock()
-		childMountSource.mu.Lock()
-		defer childMountSource.mu.Unlock()
-
-		parentMountSource.children[childMountSource] = struct{}{}
-		childMountSource.parent = parentMountSource
+		defer replacement.DecRef()
 
 		// Set the mount's root dirent and id.
-		childMountSource.root = replacement
-		childMountSource.id = mns.mountID
+		parentMnt := mns.findMountLocked(mountPoint)
+		childMnt := newMount(mns.mountID, parentMnt.ID, replacement)
 		mns.mountID++
 
-		// Drop node from its dirent cache.
-		node.dropExtendedReference()
+		// Drop mountPoint from its dirent cache.
+		mountPoint.dropExtendedReference()
 
-		// If node is already a mount point, push node on the stack so it can
+		// If mountPoint is already a mount, push mountPoint on the stack so it can
 		// be recovered on unmount.
-		if stack, ok := mns.mounts[node]; ok {
-			mns.mounts[replacement] = append(stack, node)
-			delete(mns.mounts, node)
+		if prev := mns.mounts[mountPoint]; prev != nil {
+			childMnt.previous = prev
+			mns.mounts[replacement] = childMnt
+			delete(mns.mounts, mountPoint)
 			return nil
 		}
 
 		// Was not already mounted, just add another mount point.
-		// Take a reference on node so it can be recovered on unmount.
-		node.IncRef()
-		mns.mounts[replacement] = []*Dirent{node}
+		childMnt.previous = newUndoMount(mountPoint)
+		mns.mounts[replacement] = childMnt
 		return nil
 	})
 }
@@ -268,13 +346,13 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 	// This takes locks to prevent further walks to Dirents in this mount
 	// under the assumption that `node` is the root of the mount.
 	return mns.withMountLocked(node, func() error {
-		origs, ok := mns.mounts[node]
+		orig, ok := mns.mounts[node]
 		if !ok {
 			// node is not a mount point.
 			return syserror.EINVAL
 		}
 
-		if len(origs) == 0 {
+		if orig.previous == nil {
 			panic("cannot unmount initial dirent")
 		}
 
@@ -298,44 +376,62 @@ func (mns *MountNamespace) Unmount(ctx context.Context, node *Dirent, detachOnly
 			}
 		}
 
-		// Lock the parent MountSource first, if it exists. We are
-		// holding mns.Lock, so the parent can not change out
-		// from under us.
-		parent := m.Parent()
-		if parent != nil {
-			parent.mu.Lock()
-			defer parent.mu.Unlock()
-		}
-
-		// Lock the mount that is being unmounted.
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		if m.parent != nil {
-			// Sanity check.
-			if _, ok := m.parent.children[m]; !ok {
-				panic(fmt.Sprintf("mount %+v is not a child of parent %+v", m, m.parent))
-			}
-			delete(m.parent.children, m)
-		}
-
-		original := origs[len(origs)-1]
-		if err := node.unmount(ctx, original); err != nil {
+		prev := orig.previous
+		if err := node.unmount(ctx, prev.root); err != nil {
 			return err
 		}
 
-		switch {
-		case len(origs) > 1:
-			mns.mounts[original] = origs[:len(origs)-1]
-		case len(origs) == 1:
-			// Drop mount reference taken at the end of
-			// MountNamespace.Mount.
-			original.DecRef()
+		if prev.previous == nil {
+			if !prev.IsUndo() {
+				panic(fmt.Sprintf("Last mount in the chain must be a undo mount: %+v", prev))
+			}
+			// Drop mount reference taken at the end of MountNamespace.Mount.
+			prev.root.DecRef()
+		} else {
+			mns.mounts[prev.root] = prev
 		}
-
 		delete(mns.mounts, node)
+
 		return nil
 	})
+}
+
+// FindMount returns the mount that 'd' belongs to. It walks the dirent back
+// until a mount is found. It may return nil if no mount was found.
+func (mns *MountNamespace) FindMount(d *Dirent) *Mount {
+	mns.mu.Lock()
+	defer mns.mu.Unlock()
+	renameMu.Lock()
+	defer renameMu.Unlock()
+
+	return mns.findMountLocked(d)
+}
+
+func (mns *MountNamespace) findMountLocked(d *Dirent) *Mount {
+	for {
+		if mnt := mns.mounts[d]; mnt != nil {
+			return mnt
+		}
+		if d.parent == nil {
+			return nil
+		}
+		d = d.parent
+	}
+}
+
+// AllMountsUnder returns a slice of all mounts under the parent, including
+// itself.
+func (mns *MountNamespace) AllMountsUnder(parent *Mount) []*Mount {
+	mns.mu.Lock()
+	defer mns.mu.Unlock()
+
+	var rv []*Mount
+	for _, mp := range mns.mounts {
+		if !mp.IsUndo() && mp.root.descendantOf(parent.root) {
+			rv = append(rv, mp)
+		}
+	}
+	return rv
 }
 
 // FindLink returns an Dirent from a given node, which may be a symlink.
