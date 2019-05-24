@@ -117,9 +117,6 @@ type InodeOperations interface {
 	// Remove removes the given named non-directory under dir.
 	//
 	// The caller must ensure that this operation is permitted.
-	//
-	// TODO(b/67778723): merge Remove and RemoveDirectory, Remove
-	// just needs a type flag.
 	Remove(ctx context.Context, dir *Inode, name string) error
 
 	// RemoveDirectory removes the given named directory under dir.
