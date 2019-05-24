@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"fmt"
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
@@ -23,6 +24,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 )
 
 // Prctl implements linux syscall prctl(2).
@@ -43,6 +45,33 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_GET_PDEATHSIG:
 		_, err := t.CopyOut(args[1].Pointer(), int32(t.ParentDeathSignal()))
 		return 0, nil, err
+
+	case linux.PR_GET_DUMPABLE:
+		d := t.MemoryManager().Dumpability()
+		switch d {
+		case mm.NotDumpable:
+			return linux.SUID_DUMP_DISABLE, nil, nil
+		case mm.UserDumpable:
+			return linux.SUID_DUMP_USER, nil, nil
+		case mm.RootDumpable:
+			return linux.SUID_DUMP_ROOT, nil, nil
+		default:
+			panic(fmt.Sprintf("Unknown dumpability %v", d))
+		}
+
+	case linux.PR_SET_DUMPABLE:
+		var d mm.Dumpability
+		switch args[1].Int() {
+		case linux.SUID_DUMP_DISABLE:
+			d = mm.NotDumpable
+		case linux.SUID_DUMP_USER:
+			d = mm.UserDumpable
+		default:
+			// N.B. Userspace may not pass SUID_DUMP_ROOT.
+			return 0, nil, syscall.EINVAL
+		}
+		t.MemoryManager().SetDumpability(d)
+		return 0, nil, nil
 
 	case linux.PR_GET_KEEPCAPS:
 		if t.Credentials().KeepCaps {
@@ -171,9 +200,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		}
 		return 0, nil, t.DropBoundingCapability(cp)
 
-	case linux.PR_GET_DUMPABLE,
-		linux.PR_SET_DUMPABLE,
-		linux.PR_GET_TIMING,
+	case linux.PR_GET_TIMING,
 		linux.PR_SET_TIMING,
 		linux.PR_GET_TSC,
 		linux.PR_SET_TSC,

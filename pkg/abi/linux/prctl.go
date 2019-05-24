@@ -155,3 +155,10 @@ const (
 	ARCH_GET_GS    = 0x1004
 	ARCH_SET_CPUID = 0x1012
 )
+
+// Flags for prctl(PR_SET_DUMPABLE), defined in include/linux/sched/coredump.h.
+const (
+	SUID_DUMP_DISABLE = 0
+	SUID_DUMP_USER    = 1
+	SUID_DUMP_ROOT    = 2
+)

@@ -17,6 +17,7 @@ package kernel
 import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -206,8 +207,17 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 	// (filesystem UIDs aren't implemented, nor are any of the capabilities in
 	// question)
 
-	// Not documented, but compare Linux's kernel/cred.c:commit_creds().
 	if oldE != newE {
+		// "[dumpability] is reset to the current value contained in
+		// the file /proc/sys/fs/suid_dumpable (which by default has
+		// the value 0), in the following circumstances: The process's
+		// effective user or group ID is changed." - prctl(2)
+		//
+		// (suid_dumpable isn't implemented, so we just use the
+		// default.
+		t.MemoryManager().SetDumpability(mm.NotDumpable)
+
+		// Not documented, but compare Linux's kernel/cred.c:commit_creds().
 		t.parentDeathSignal = 0
 	}
 }
@@ -303,8 +313,18 @@ func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
 	t.creds = t.creds.Fork() // See doc for creds.
 	t.creds.RealKGID, t.creds.EffectiveKGID, t.creds.SavedKGID = newR, newE, newS
 
-	// Not documented, but compare Linux's kernel/cred.c:commit_creds().
 	if oldE != newE {
+		// "[dumpability] is reset to the current value contained in
+		// the file /proc/sys/fs/suid_dumpable (which by default has
+		// the value 0), in the following circumstances: The process's
+		// effective user or group ID is changed." - prctl(2)
+		//
+		// (suid_dumpable isn't implemented, so we just use the
+		// default.
+		t.MemoryManager().SetDumpability(mm.NotDumpable)
+
+		// Not documented, but compare Linux's
+		// kernel/cred.c:commit_creds().
 		t.parentDeathSignal = 0
 	}
 }

@@ -219,6 +219,12 @@ type MemoryManager struct {
 	// executable is protected by metadataMu.
 	executable *fs.Dirent
 
+	// dumpability describes if and how this MemoryManager may be dumped to
+	// userspace.
+	//
+	// dumpability is protected by metadataMu.
+	dumpability Dumpability
+
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
