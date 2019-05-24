@@ -19,6 +19,7 @@
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
+#include "test/util/time_util.h"
 
 namespace gvisor {
 namespace testing {

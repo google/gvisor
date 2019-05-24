@@ -738,9 +738,6 @@ inline PosixErrorOr<float> Atof(absl::string_view str) {
 std::vector<std::vector<struct iovec>> GenerateIovecs(uint64_t total_size,
                                                       void* buf, size_t buflen);
 
-// Sleep for at least the specified duration. Avoids glibc.
-void SleepSafe(absl::Duration duration);
-
 // Returns bytes in 'n' megabytes. Used for readability.
 uint64_t Megabytes(uint64_t n);
 

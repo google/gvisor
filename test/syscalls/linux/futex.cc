@@ -36,6 +36,7 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/time_util.h"
 #include "test/util/timer_util.h"
 
 namespace gvisor {

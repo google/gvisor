@@ -62,6 +62,7 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/time_util.h"
 #include "test/util/timer_util.h"
 
 // NOTE(magi): No, this isn't really a syscall but this is a really simple

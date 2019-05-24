@@ -18,7 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <sys/utsname.h>
@@ -209,21 +208,6 @@ std::vector<std::vector<struct iovec>> GenerateIovecs(uint64_t total_size,
   }
 
   return result;
-}
-
-void SleepSafe(absl::Duration duration) {
-  if (duration == absl::ZeroDuration()) {
-    return;
-  }
-
-  struct timespec ts = absl::ToTimespec(duration);
-  int ret;
-  while (1) {
-    ret = syscall(__NR_nanosleep, &ts, &ts);
-    if (ret == 0 || (ret <= 0 && errno != EINTR)) {
-      break;
-    }
-  }
 }
 
 uint64_t Megabytes(uint64_t n) {

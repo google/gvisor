@@ -26,6 +26,7 @@
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/test_util.h"
+#include "test/util/time_util.h"
 
 DEFINE_bool(vfork_test_child, false,
             "If true, run the VforkTest child workload.");

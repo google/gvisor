@@ -238,6 +238,16 @@ cc_library(
 )
 
 cc_library(
+    name = "time_util",
+    testonly = 1,
+    srcs = ["time_util.cc"],
+    hdrs = ["time_util.h"],
+    deps = [
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_library(
     name = "timer_util",
     testonly = 1,
     srcs = ["timer_util.cc"],

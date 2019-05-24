@@ -37,6 +37,7 @@
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 #include "test/util/test_util.h"
+#include "test/util/time_util.h"
 
 namespace gvisor {
 namespace testing {
