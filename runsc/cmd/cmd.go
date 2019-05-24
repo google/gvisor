@@ -22,19 +22,26 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
-// Fatalf logs to stderr and exits with a failure status code.
-func Fatalf(s string, args ...interface{}) {
+// Errorf logs to stderr and returns subcommands.ExitFailure.
+func Errorf(s string, args ...interface{}) subcommands.ExitStatus {
 	// If runsc is being invoked by docker or cri-o, then we might not have
 	// access to stderr, so we log a serious-looking warning in addition to
 	// writing to stderr.
 	log.Warningf("FATAL ERROR: "+s, args...)
 	fmt.Fprintf(os.Stderr, s+"\n", args...)
 	// Return an error that is unlikely to be used by the application.
+	return subcommands.ExitFailure
+}
+
+// Fatalf logs to stderr and exits with a failure status code.
+func Fatalf(s string, args ...interface{}) {
+	Errorf(s, args...)
 	os.Exit(128)
 }
 

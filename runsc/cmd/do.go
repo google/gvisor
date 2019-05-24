@@ -89,16 +89,16 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		Fatalf("Error to retrieve hostname: %v", err)
+		return Errorf("Error to retrieve hostname: %v", err)
 	}
 
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
-		Fatalf("Error resolving root: %v", err)
+		return Errorf("Error resolving root: %v", err)
 	}
 	absCwd, err := resolvePath(c.cwd)
 	if err != nil {
-		Fatalf("Error resolving current directory: %v", err)
+		return Errorf("Error resolving current directory: %v", err)
 	}
 
 	spec := &specs.Spec{
@@ -121,18 +121,18 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	if conf.Network != boot.NetworkNone {
 		clean, err := c.setupNet(cid, spec)
 		if err != nil {
-			Fatalf("Error setting up network: %v", err)
+			return Errorf("Error setting up network: %v", err)
 		}
 		defer clean()
 	}
 
 	out, err := json.Marshal(spec)
 	if err != nil {
-		Fatalf("Error to marshal spec: %v", err)
+		return Errorf("Error to marshal spec: %v", err)
 	}
 	tmpDir, err := ioutil.TempDir("", "runsc-do")
 	if err != nil {
-		Fatalf("Error to create tmp dir: %v", err)
+		return Errorf("Error to create tmp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
@@ -141,12 +141,12 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	cfgPath := filepath.Join(tmpDir, "config.json")
 	if err := ioutil.WriteFile(cfgPath, out, 0755); err != nil {
-		Fatalf("Error write spec: %v", err)
+		return Errorf("Error write spec: %v", err)
 	}
 
 	ws, err := container.Run(cid, spec, conf, tmpDir, "", "", "", false)
 	if err != nil {
-		Fatalf("running container: %v", err)
+		return Errorf("running container: %v", err)
 	}
 
 	*waitStatus = ws
