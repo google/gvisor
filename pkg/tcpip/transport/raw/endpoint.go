@@ -29,7 +29,6 @@ package raw
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/sleep"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
@@ -259,13 +258,8 @@ func (ep *endpoint) finishWrite(payload tcpip.Payload, route *stack.Route) (uint
 	// network address). If that requires blocking (e.g. to use ARP),
 	// return a channel on which the caller can wait.
 	if route.IsResolutionRequired() {
-		waker := &sleep.Waker{}
-		if ch, err := route.Resolve(waker); err != nil {
+		if ch, err := route.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
-				// Link address needs to be resolved.
-				// Resolution was triggered the background.
-				// Better luck next time.
-				route.RemoveWaker(waker)
 				return 0, ch, tcpip.ErrNoLinkAddress
 			}
 			return 0, nil, err

@@ -138,8 +138,10 @@ func (e *linkAddrEntry) changeState(ns entryState) {
 	e.s = ns
 }
 
-func (e *linkAddrEntry) addWaker(w *sleep.Waker) {
-	e.wakers[w] = struct{}{}
+func (e *linkAddrEntry) maybeAddWaker(w *sleep.Waker) {
+	if w != nil {
+		e.wakers[w] = struct{}{}
+	}
 }
 
 func (e *linkAddrEntry) removeWaker(w *sleep.Waker) {
@@ -217,7 +219,7 @@ func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, lo
 			return "", nil, tcpip.ErrNoLinkAddress
 		case incomplete:
 			// Address resolution is still in progress.
-			entry.addWaker(waker)
+			entry.maybeAddWaker(waker)
 			return "", entry.done, tcpip.ErrWouldBlock
 		default:
 			panic(fmt.Sprintf("invalid cache entry state: %s", s))
@@ -230,7 +232,7 @@ func (c *linkAddrCache) get(k tcpip.FullAddress, linkRes LinkAddressResolver, lo
 
 	// Add 'incomplete' entry in the cache to mark that resolution is in progress.
 	e := c.makeAndAddEntry(k, "")
-	e.addWaker(waker)
+	e.maybeAddWaker(waker)
 
 	go c.startAddressResolution(k, linkRes, localAddr, linkEP, e.done) // S/R-SAFE: link non-savable; wakers dropped synchronously.
 
