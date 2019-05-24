@@ -31,6 +31,10 @@ func (s *sleeper) SleepStart() <-chan struct{} {
 func (*sleeper) SleepFinish(bool) {
 }
 
+func (s *sleeper) Interrupted() bool {
+	return len(s.ch) != 0
+}
+
 func TestMutualExclusion(t *testing.T) {
 	var m AbortableMutex
 	m.Init()

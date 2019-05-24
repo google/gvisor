@@ -158,6 +158,11 @@ func (t *Task) SleepFinish(success bool) {
 	t.Activate()
 }
 
+// Interrupted implements amutex.Sleeper.Interrupted
+func (t *Task) Interrupted() bool {
+	return len(t.interruptChan) != 0
+}
+
 // UninterruptibleSleepStart implements context.Context.UninterruptibleSleepStart.
 func (t *Task) UninterruptibleSleepStart(deactivate bool) {
 	if deactivate {

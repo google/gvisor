@@ -48,6 +48,10 @@ func (s *sleeper) Cancel() {
 	s.ch <- struct{}{}
 }
 
+func (s *sleeper) Interrupted() bool {
+	return len(s.ch) != 0
+}
+
 type openResult struct {
 	*fs.File
 	error

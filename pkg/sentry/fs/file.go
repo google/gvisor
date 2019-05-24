@@ -516,12 +516,18 @@ type lockedReader struct {
 
 // Read implements io.Reader.Read.
 func (r *lockedReader) Read(buf []byte) (int, error) {
+	if r.Ctx.Interrupted() {
+		return 0, syserror.ErrInterrupted
+	}
 	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), r.File.offset)
 	return int(n), err
 }
 
 // ReadAt implements io.Reader.ReadAt.
 func (r *lockedReader) ReadAt(buf []byte, offset int64) (int, error) {
+	if r.Ctx.Interrupted() {
+		return 0, syserror.ErrInterrupted
+	}
 	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), offset)
 	return int(n), err
 }
