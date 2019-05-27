@@ -89,7 +89,7 @@ the options available:
 For example:
 
 ```bash
-docker run --runtime=runsc-prof --rm -d alpine sleep 1000
+docker run --runtime=runsc-prof --rm -d alpine sh -c "while true; do echo running; sleep .1; done"
 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
 
 sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-heap=/tmp/heap.prof 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
