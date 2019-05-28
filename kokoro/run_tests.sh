@@ -182,6 +182,17 @@ run_syscall_tests() {
     --test_tag_filters=runsc_ptrace //test/syscalls/...
 }
 
+run_runsc_do_tests() {
+  local runsc=$(find bazel-bin/runsc -type f -executable -name "runsc" | head -n1)
+
+  # run runsc do without root privileges.
+  unshare -Ur ${runsc} --network=none --TESTONLY-unsafe-nonroot do true
+  unshare -Ur ${runsc} --TESTONLY-unsafe-nonroot --network=host do --netns=false true
+
+  # run runsc do with root privileges.
+  sudo -n -E ${runsc} do true
+}
+
 # Find and rename all test xml and log files so that Sponge can pick them up.
 # XML files must be named sponge_log.xml, and log files must be named
 # sponge_log.log. We move all such files into KOKORO_ARTIFACTS_DIR, in a
@@ -234,6 +245,7 @@ main() {
   run_root_tests
 
   run_syscall_tests
+  run_runsc_do_tests
 
   # Build other flavors too.
   build_everything dbg
