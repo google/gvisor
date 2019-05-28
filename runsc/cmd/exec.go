@@ -40,6 +40,8 @@ import (
 	"gvisor.googlesource.com/gvisor/runsc/specutils"
 )
 
+const privateClearStatusFlag = "private-clear-status"
+
 // Exec implements subcommands.Command for the "exec" command.
 type Exec struct {
 	cwd string
@@ -102,8 +104,9 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 
-	// clear-status is expected to only be set when we fork due to --detach being set.
-	f.BoolVar(&ex.clearStatus, "clear-status", true, "clear the status of the exec'd process upon completion")
+	// This flag clears the status of the exec'd process upon completion. It is
+	// only used when we fork due to --detach being set on the parent.
+	f.BoolVar(&ex.clearStatus, privateClearStatusFlag, true, "private flag, do not use")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -210,10 +213,10 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 	// Add the rest of the args, excluding the "detach" flag.
 	for _, a := range os.Args[1:] {
 		if strings.Contains(a, "detach") {
-			// Replace with the "clear-status" flag, which tells
+			// Replace with the "private-clear-status" flag, which tells
 			// the new process it's a detached child and shouldn't
 			// clear the exit status of the sentry process.
-			args = append(args, "--clear-status=false")
+			args = append(args, fmt.Sprintf("--%s=false", privateClearStatusFlag))
 		} else {
 			args = append(args, a)
 		}
