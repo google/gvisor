@@ -69,6 +69,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		users:       1,
 		brk:         mm.brk,
 		usageAS:     mm.usageAS,
+		dataAS:      mm.dataAS,
 		// "The child does not inherit its parent's memory locks (mlock(2),
 		// mlockall(2))." - fork(2). So lockedAS is 0 and defMLockMode is
 		// MLockNone, both of which are zero values. vma.mlockMode is reset

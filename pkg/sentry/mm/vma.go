@@ -98,7 +98,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 	}
 
 	// Finally insert the vma.
-	vseg := mm.vmas.Insert(vgap, ar, vma{
+	v := vma{
 		mappable:       opts.Mappable,
 		off:            opts.Offset,
 		realPerms:      opts.Perms,
@@ -109,8 +109,13 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		mlockMode:      opts.MLockMode,
 		id:             opts.MappingIdentity,
 		hint:           opts.Hint,
-	})
+	}
+
+	vseg := mm.vmas.Insert(vgap, ar, v)
 	mm.usageAS += opts.Length
+	if v.isPrivateDataLocked() {
+		mm.dataAS += opts.Length
+	}
 	if opts.MLockMode != memmap.MLockNone {
 		mm.lockedAS += opts.Length
 	}
@@ -374,6 +379,9 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 			vma.id.DecRef()
 		}
 		mm.usageAS -= uint64(vmaAR.Length())
+		if vma.isPrivateDataLocked() {
+			mm.dataAS -= uint64(vmaAR.Length())
+		}
 		if vma.mlockMode != memmap.MLockNone {
 			mm.lockedAS -= uint64(vmaAR.Length())
 		}
@@ -394,6 +402,13 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 // Preconditions: mm.mappingMu must be locked.
 func (vma *vma) canWriteMappableLocked() bool {
 	return !vma.private && vma.maxPerms.Write
+}
+
+// isPrivateDataLocked identify the data segments - private, writable, not stack
+//
+// Preconditions: mm.mappingMu must be locked.
+func (vma *vma) isPrivateDataLocked() bool {
+	return vma.realPerms.Write && vma.private && !vma.growsDown
 }
 
 // vmaSetFunctions implements segment.Functions for vmaSet.

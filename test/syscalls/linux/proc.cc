@@ -1180,7 +1180,7 @@ bool IsDigits(absl::string_view s) {
   return std::all_of(s.begin(), s.end(), absl::ascii_isdigit);
 }
 
-TEST(ProcPidStatTest, VSSRSS) {
+TEST(ProcPidStatTest, VmStats) {
   std::string status_str =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/status"));
   ASSERT_FALSE(status_str.empty());
@@ -1211,6 +1211,19 @@ TEST(ProcPidStatTest, VSSRSS) {
   EXPECT_TRUE(IsDigits(rss_str.substr(0, rss_str.length() - 3))) << rss_str;
   // ... which is not 0.
   EXPECT_NE('0', rss_str[0]);
+
+  const auto data_it = status.find("VmData");
+  ASSERT_NE(data_it, status.end());
+
+  absl::string_view data_str(data_it->second);
+
+  // Room for the " kB" suffix plus at least one digit.
+  ASSERT_GT(data_str.length(), 3);
+  EXPECT_TRUE(absl::EndsWith(data_str, " kB"));
+  // Everything else is part of a number.
+  EXPECT_TRUE(IsDigits(data_str.substr(0, data_str.length() - 3))) << data_str;
+  // ... which is not 0.
+  EXPECT_NE('0', data_str[0]);
 }
 
 // Parse an array of NUL-terminated char* arrays, returning a vector of strings.

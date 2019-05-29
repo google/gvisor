@@ -527,6 +527,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 		}
 		vseg := mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), newAR, vma)
 		mm.usageAS += uint64(newAR.Length())
+		if vma.isPrivateDataLocked() {
+			mm.dataAS += uint64(newAR.Length())
+		}
 		if vma.mlockMode != memmap.MLockNone {
 			mm.lockedAS += uint64(newAR.Length())
 			if vma.mlockMode == memmap.MLockEager {
@@ -556,6 +559,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	mm.vmas.Remove(vseg)
 	vseg = mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), newAR, vma)
 	mm.usageAS = mm.usageAS - uint64(oldAR.Length()) + uint64(newAR.Length())
+	if vma.isPrivateDataLocked() {
+		mm.dataAS = mm.dataAS - uint64(oldAR.Length()) + uint64(newAR.Length())
+	}
 	if vma.mlockMode != memmap.MLockNone {
 		mm.lockedAS = mm.lockedAS - uint64(oldAR.Length()) + uint64(newAR.Length())
 	}
@@ -643,8 +649,16 @@ func (mm *MemoryManager) MProtect(addr usermem.Addr, length uint64, realPerms us
 
 		// Update vma permissions.
 		vma := vseg.ValuePtr()
+		vmaLength := vseg.Range().Length()
+		if vma.isPrivateDataLocked() {
+			mm.dataAS -= uint64(vmaLength)
+		}
+
 		vma.realPerms = realPerms
 		vma.effectivePerms = effectivePerms
+		if vma.isPrivateDataLocked() {
+			mm.dataAS += uint64(vmaLength)
+		}
 
 		// Propagate vma permission changes to pmas.
 		for pseg.Ok() && pseg.Start() < vseg.End() {
@@ -1150,7 +1164,7 @@ func (mm *MemoryManager) GetSharedFutexKey(ctx context.Context, addr usermem.Add
 func (mm *MemoryManager) VirtualMemorySize() uint64 {
 	mm.mappingMu.RLock()
 	defer mm.mappingMu.RUnlock()
-	return uint64(mm.usageAS)
+	return mm.usageAS
 }
 
 // VirtualMemorySizeRange returns the combined length in bytes of all mappings
@@ -1165,12 +1179,19 @@ func (mm *MemoryManager) VirtualMemorySizeRange(ar usermem.AddrRange) uint64 {
 func (mm *MemoryManager) ResidentSetSize() uint64 {
 	mm.activeMu.RLock()
 	defer mm.activeMu.RUnlock()
-	return uint64(mm.curRSS)
+	return mm.curRSS
 }
 
 // MaxResidentSetSize returns the value advertised as mm's max RSS in bytes.
 func (mm *MemoryManager) MaxResidentSetSize() uint64 {
 	mm.activeMu.RLock()
 	defer mm.activeMu.RUnlock()
-	return uint64(mm.maxRSS)
+	return mm.maxRSS
+}
+
+// VirtualDataSize returns the size of private data segments in mm.
+func (mm *MemoryManager) VirtualDataSize() uint64 {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	return mm.dataAS
 }

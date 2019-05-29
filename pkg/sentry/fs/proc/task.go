@@ -578,7 +578,7 @@ func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) (
 	}
 	fmt.Fprintf(&buf, "TracerPid:\t%d\n", tpid)
 	var fds int
-	var vss, rss uint64
+	var vss, rss, data uint64
 	s.t.WithMuLocked(func(t *kernel.Task) {
 		if fdm := t.FDMap(); fdm != nil {
 			fds = fdm.Size()
@@ -586,11 +586,13 @@ func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) (
 		if mm := t.MemoryManager(); mm != nil {
 			vss = mm.VirtualMemorySize()
 			rss = mm.ResidentSetSize()
+			data = mm.VirtualDataSize()
 		}
 	})
 	fmt.Fprintf(&buf, "FDSize:\t%d\n", fds)
 	fmt.Fprintf(&buf, "VmSize:\t%d kB\n", vss>>10)
 	fmt.Fprintf(&buf, "VmRSS:\t%d kB\n", rss>>10)
+	fmt.Fprintf(&buf, "VmData:\t%d kB\n", data>>10)
 	fmt.Fprintf(&buf, "Threads:\t%d\n", s.t.ThreadGroup().Count())
 	creds := s.t.Credentials()
 	fmt.Fprintf(&buf, "CapInh:\t%016x\n", creds.InheritableCaps)
