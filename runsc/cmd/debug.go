@@ -35,6 +35,7 @@ type Debug struct {
 	profileHeap  string
 	profileCPU   string
 	profileDelay int
+	trace        string
 }
 
 // Name implements subcommands.Command.
@@ -59,6 +60,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.profileHeap, "profile-heap", "", "writes heap profile to the given file.")
 	f.StringVar(&d.profileCPU, "profile-cpu", "", "writes CPU profile to the given file.")
 	f.IntVar(&d.profileDelay, "profile-delay", 5, "amount of time to wait before stoping CPU profile")
+	f.StringVar(&d.trace, "trace", "", "writes an execution trace to the given file.")
 	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
 }
 
@@ -122,24 +124,6 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 		log.Infof("     *** Stack dump ***\n%s", stacks)
 	}
-	if d.profileCPU != "" {
-		f, err := os.Create(d.profileCPU)
-		if err != nil {
-			Fatalf(err.Error())
-		}
-		defer f.Close()
-
-		if err := c.Sandbox.StartCPUProfile(f); err != nil {
-			Fatalf(err.Error())
-		}
-		log.Infof("CPU profile started for %d sec, writing to %q", d.profileDelay, d.profileCPU)
-		time.Sleep(time.Duration(d.profileDelay) * time.Second)
-
-		if err := c.Sandbox.StopCPUProfile(); err != nil {
-			Fatalf(err.Error())
-		}
-		log.Infof("CPU profile written to %q", d.profileCPU)
-	}
 	if d.profileHeap != "" {
 		f, err := os.Create(d.profileHeap)
 		if err != nil {
@@ -152,5 +136,50 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		}
 		log.Infof("Heap profile written to %q", d.profileHeap)
 	}
+
+	delay := false
+	if d.profileCPU != "" {
+		delay = true
+		f, err := os.Create(d.profileCPU)
+		if err != nil {
+			Fatalf(err.Error())
+		}
+		defer func() {
+			f.Close()
+			if err := c.Sandbox.StopCPUProfile(); err != nil {
+				Fatalf(err.Error())
+			}
+			log.Infof("CPU profile written to %q", d.profileCPU)
+		}()
+		if err := c.Sandbox.StartCPUProfile(f); err != nil {
+			Fatalf(err.Error())
+		}
+		log.Infof("CPU profile started for %d sec, writing to %q", d.profileDelay, d.profileCPU)
+	}
+	if d.trace != "" {
+		delay = true
+		f, err := os.Create(d.trace)
+		if err != nil {
+			Fatalf(err.Error())
+		}
+		defer func() {
+			f.Close()
+			if err := c.Sandbox.StopTrace(); err != nil {
+				Fatalf(err.Error())
+			}
+			log.Infof("Trace written to %q", d.trace)
+		}()
+		if err := c.Sandbox.StartTrace(f); err != nil {
+			Fatalf(err.Error())
+		}
+		log.Infof("Tracing started for %d sec, writing to %q", d.profileDelay, d.trace)
+
+	}
+
+	if delay {
+		time.Sleep(time.Duration(d.profileDelay) * time.Second)
+
+	}
+
 	return subcommands.ExitSuccess
 }

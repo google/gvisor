@@ -18,6 +18,7 @@ import (
 	"errors"
 	"runtime"
 	"runtime/pprof"
+	"runtime/trace"
 	"sync"
 
 	"gvisor.googlesource.com/gvisor/pkg/fd"
@@ -52,6 +53,9 @@ type Profile struct {
 
 	// cpuFile is the current CPU profile output file.
 	cpuFile *fd.FD
+
+	// traceFile is the current execution trace output file.
+	traceFile *fd.FD
 }
 
 // StartCPUProfile is an RPC stub which starts recording the CPU profile in a
@@ -120,5 +124,45 @@ func (p *Profile) Goroutine(o *ProfileOpts, _ *struct{}) error {
 	if err := pprof.Lookup("goroutine").WriteTo(output, 2); err != nil {
 		return err
 	}
+	return nil
+}
+
+// StartTrace is an RPC stub which starts collection of an execution trace.
+func (p *Profile) StartTrace(o *ProfileOpts, _ *struct{}) error {
+	if len(o.FilePayload.Files) < 1 {
+		return errNoOutput
+	}
+
+	output, err := fd.NewFromFile(o.FilePayload.Files[0])
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Returns an error if profiling is already started.
+	if err := trace.Start(output); err != nil {
+		output.Close()
+		return err
+	}
+
+	p.traceFile = output
+	return nil
+}
+
+// StopTrace is an RPC stub which stops collection of an ongoing execution
+// trace and flushes the trace data. It takes no argument.
+func (p *Profile) StopTrace(_, _ *struct{}) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.traceFile == nil {
+		return errors.New("Execution tracing not start")
+	}
+
+	trace.Stop()
+	p.traceFile.Close()
+	p.traceFile = nil
 	return nil
 }

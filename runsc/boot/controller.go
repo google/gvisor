@@ -101,6 +101,8 @@ const (
 	StartCPUProfile = "Profile.StartCPUProfile"
 	StopCPUProfile  = "Profile.StopCPUProfile"
 	HeapProfile     = "Profile.HeapProfile"
+	StartTrace      = "Profile.StartTrace"
+	StopTrace       = "Profile.StopTrace"
 )
 
 // ControlSocketAddr generates an abstract unix socket name for the given ID.
