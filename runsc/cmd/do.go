@@ -105,8 +105,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	spec := &specs.Spec{
 		Root: &specs.Root{
-			Path:     absRoot,
-			Readonly: true,
+			Path: absRoot,
 		},
 		Process: &specs.Process{
 			Cwd:          absCwd,
