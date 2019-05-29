@@ -116,6 +116,11 @@ no = 'Sorry to hear that. Please <a href="https://github.com/USERNAME/REPOSITORY
     icon = "fa fa-book"
     desc = "Read our documentation to understand gVisor, its architecture and trade-offs, and how to use it."
 [[params.links.user]]
+    name = "Chat"
+    url = "https://gitter.im/gvisor/community"
+    icon = "fa fa-comment"
+    desc = "Get support and chat about how to use gVisor"
+[[params.links.user]]
     name = "User mailing list"
     url = "https://groups.google.com/forum/#!forum/gvisor-users"
     icon = "fa fa-envelope"
