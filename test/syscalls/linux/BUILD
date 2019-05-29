@@ -313,6 +313,19 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_test",
+    testonly = 1,
+    srcs = ["socket.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "brk_test",
     testonly = 1,
     srcs = ["brk.cc"],

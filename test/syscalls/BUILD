@@ -35,6 +35,8 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:brk_test")
 
+syscall_test(test = "//test/syscalls/linux:socket_test")
+
 syscall_test(test = "//test/syscalls/linux:chdir_test")
 
 syscall_test(test = "//test/syscalls/linux:chmod_test")

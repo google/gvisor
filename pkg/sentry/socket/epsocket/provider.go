@@ -76,7 +76,7 @@ func getTransportProtocol(ctx context.Context, stype transport.SockType, protoco
 			return header.TCPProtocolNumber, nil
 		}
 	}
-	return 0, syserr.ErrInvalidArgument
+	return 0, syserr.ErrProtocolNotSupported
 }
 
 // Socket creates a new socket object for the AF_INET or AF_INET6 family.

@@ -1567,15 +1567,14 @@ TEST_P(UnixSocketPairTest, TIOCOUTQSucceeds) {
 }
 
 TEST_P(UnixSocketPairTest, NetdeviceIoctlsSucceed) {
-  FileDescriptor sock =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // Prepare the request.
   struct ifreq ifr;
   snprintf(ifr.ifr_name, IFNAMSIZ, "lo");
 
   // Check that the ioctl either succeeds or fails with ENODEV.
-  int err = ioctl(sock.get(), SIOCGIFINDEX, &ifr);
+  int err = ioctl(sockets->first_fd(), SIOCGIFINDEX, &ifr);
   if (err < 0) {
     ASSERT_EQ(errno, ENODEV);
   }
