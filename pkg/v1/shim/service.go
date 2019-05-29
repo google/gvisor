@@ -125,6 +125,11 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 		})
 	}
 
+	rootfs := filepath.Join(r.Bundle, "rootfs")
+	if err := os.Mkdir(rootfs, 0711); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
 	config := &proc.CreateConfig{
 		ID:       r.ID,
 		Bundle:   r.Bundle,
@@ -136,7 +141,6 @@ func (s *Service) Create(ctx context.Context, r *shimapi.CreateTaskRequest) (_ *
 		Stderr:   r.Stderr,
 		Options:  r.Options,
 	}
-	rootfs := filepath.Join(r.Bundle, "rootfs")
 	defer func() {
 		if err != nil {
 			if err2 := mount.UnmountAll(rootfs, 0); err2 != nil {

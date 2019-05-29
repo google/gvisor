@@ -287,6 +287,12 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 			Options: m.Options,
 		})
 	}
+
+	rootfs := filepath.Join(r.Bundle, "rootfs")
+	if err := os.Mkdir(rootfs, 0711); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+
 	config := &proc.CreateConfig{
 		ID:       r.ID,
 		Bundle:   r.Bundle,
@@ -301,7 +307,6 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 	if err := s.writeRuntime(r.Bundle, opts.BinaryName); err != nil {
 		return nil, err
 	}
-	rootfs := filepath.Join(r.Bundle, "rootfs")
 	defer func() {
 		if err != nil {
 			if err2 := mount.UnmountAll(rootfs, 0); err2 != nil {
@@ -327,6 +332,7 @@ func (s *service) Create(ctx context.Context, r *taskAPI.CreateTaskRequest) (_ *
 		s.platform,
 		config,
 		&opts,
+		rootfs,
 	)
 	if err != nil {
 		return nil, errdefs.ToGRPC(err)
@@ -698,13 +704,12 @@ func getTopic(e interface{}) string {
 	return runtime.TaskUnknownTopic
 }
 
-func newInit(ctx context.Context, path, workDir, namespace string, platform rproc.Platform, r *proc.CreateConfig, options *options.Options) (*proc.Init, error) {
+func newInit(ctx context.Context, path, workDir, namespace string, platform rproc.Platform, r *proc.CreateConfig, options *options.Options, rootfs string) (*proc.Init, error) {
 	spec, err := utils.ReadSpec(r.Bundle)
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
 	runsc.FormatLogPath(r.ID, options.RunscConfig)
-	rootfs := filepath.Join(path, "rootfs")
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
 	p := proc.New(r.ID, runtime, rproc.Stdio{
 		Stdin:    r.Stdin,
