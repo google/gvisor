@@ -3179,6 +3179,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
+        "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",

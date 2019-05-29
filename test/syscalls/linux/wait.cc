@@ -14,6 +14,7 @@
 
 #include <signal.h>
 #include <sys/mman.h>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -31,6 +32,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -859,6 +861,50 @@ TEST(WaitTest, WaitidRusage) {
   EXPECT_EQ(si.si_pid, child);
 
   EXPECT_GE(RusageCpuTime(rusage), kSpin);
+}
+
+// After bf959931ddb88c4e4366e96dd22e68fa0db9527c ("wait/ptrace: assume __WALL
+// if the child is traced") (Linux 4.7), tracees are always eligible for
+// waiting, regardless of type.
+TEST(WaitTest, TraceeWALL) {
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  FileDescriptor rfd(fds[0]);
+  FileDescriptor wfd(fds[1]);
+
+  pid_t child = fork();
+  if (child == 0) {
+    // Child.
+    rfd.reset();
+
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == 0);
+
+    // Notify parent that we're now a tracee.
+    wfd.reset();
+
+    _exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  wfd.reset();
+
+  // Wait for child to become tracee.
+  char c;
+  EXPECT_THAT(ReadFd(rfd.get(), &c, sizeof(c)), SyscallSucceedsWithValue(0));
+
+  // We can wait on the fork child with WCLONE, as it is a tracee.
+  int status;
+  if (IsRunningOnGvisor()) {
+    ASSERT_THAT(Wait4(child, &status, __WCLONE, nullptr),
+                SyscallSucceedsWithValue(child));
+
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+  } else {
+    // On older versions of Linux, we may get ECHILD.
+    ASSERT_THAT(Wait4(child, &status, __WCLONE, nullptr),
+                ::testing::AnyOf(SyscallSucceedsWithValue(child),
+                                 SyscallFailsWithErrno(ECHILD)));
+  }
 }
 
 }  // namespace
