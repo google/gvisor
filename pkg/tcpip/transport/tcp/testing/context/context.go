@@ -989,3 +989,9 @@ func (c *Context) SACKEnabled() bool {
 func (c *Context) SetGSOEnabled(enable bool) {
 	c.linkEP.GSO = enable
 }
+
+// MSSWithoutOptions returns the value for the MSS used by the stack when no
+// options are in use.
+func (c *Context) MSSWithoutOptions() uint16 {
+	return uint16(c.linkEP.MTU() - header.IPv4MinimumSize - header.TCPMinimumSize)
+}
