@@ -246,6 +246,10 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	syscall.SYS_SETITIMER: {},
 	syscall.SYS_SHUTDOWN: []seccomp.Rule{
+		// Used by fs/host to shutdown host sockets.
+		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RD)},
+		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_WR)},
+		// Used by unet to shutdown connections.
 		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK:     {},

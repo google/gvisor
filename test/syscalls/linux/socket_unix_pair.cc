@@ -16,6 +16,7 @@
 
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/socket_unix.h"
+#include "test/syscalls/linux/socket_unix_cmsg.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 
@@ -31,6 +32,10 @@ std::vector<SocketPairKind> GetSocketPairs() {
 
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, UnixSocketPairTest,
+    ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
+
+INSTANTIATE_TEST_SUITE_P(
+    AllUnixDomainSockets, UnixSocketPairCmsgTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing
