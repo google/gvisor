@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build go1.12
+// +build !go1.14
+
+// Check go:linkname function signatures when updating Go version.
+
 package kvm
 
 import (

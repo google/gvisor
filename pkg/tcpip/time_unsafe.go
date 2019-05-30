@@ -13,7 +13,9 @@
 // limitations under the License.
 
 // +build go1.9
-// +build !go1.13
+// +build !go1.14
+
+// Check go:linkname function signatures when updating Go version.
 
 package tcpip
 

@@ -5,6 +5,8 @@ package(
     licenses = ["notice"],
 )
 
+exports_files(["LICENSE"])
+
 load("//tools/go_generics:defs.bzl", "go_template")
 
 go_template(
@@ -29,6 +31,8 @@ go_template(
 go_library(
     name = "gvsync",
     srcs = [
+        "downgradable_rwmutex_1_12_unsafe.go",
+        "downgradable_rwmutex_1_13_unsafe.go",
         "downgradable_rwmutex_unsafe.go",
         "gvsync.go",
         "memmove_unsafe.go",

@@ -13,7 +13,9 @@
 // limitations under the License.
 
 // +build go1.11
-// +build !go1.13
+// +build !go1.14
+
+// Check go:linkname function signatures when updating Go version.
 
 // Package sleep allows goroutines to efficiently sleep on multiple sources of
 // notifications (wakers). It offers O(1) complexity, which is different from

@@ -3,6 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// +build go1.12
+// +build !go1.14
+
+// Check go:linkname function signatures when updating Go version.
+
 // This is mostly copied from the standard library's sync/rwmutex.go.
 //
 // Happens-before relationships indicated to the race detector:
@@ -18,6 +23,9 @@ import (
 	"sync/atomic"
 	"unsafe"
 )
+
+//go:linkname runtimeSemacquire sync.runtime_Semacquire
+func runtimeSemacquire(s *uint32)
 
 // DowngradableRWMutex is identical to sync.RWMutex, but adds the DowngradeLock
 // method.
@@ -62,7 +70,7 @@ func (rw *DowngradableRWMutex) RUnlock() {
 		// A writer is pending.
 		if atomic.AddInt32(&rw.readerWait, -1) == 0 {
 			// The last reader unblocks the writer.
-			runtimeSemrelease(&rw.writerSem, false)
+			runtimeSemrelease(&rw.writerSem, false, 0)
 		}
 	}
 	if RaceEnabled {
@@ -103,7 +111,7 @@ func (rw *DowngradableRWMutex) Unlock() {
 	}
 	// Unblock blocked readers, if any.
 	for i := 0; i < int(r); i++ {
-		runtimeSemrelease(&rw.readerSem, false)
+		runtimeSemrelease(&rw.readerSem, false, 0)
 	}
 	// Allow other writers to proceed.
 	rw.w.Unlock()
@@ -126,7 +134,7 @@ func (rw *DowngradableRWMutex) DowngradeLock() {
 	// Unblock blocked readers, if any. Note that this loop starts as 1 since r
 	// includes this goroutine.
 	for i := 1; i < int(r); i++ {
-		runtimeSemrelease(&rw.readerSem, false)
+		runtimeSemrelease(&rw.readerSem, false, 0)
 	}
 	// Allow other writers to proceed to rw.w.Lock(). Note that they will still
 	// block on rw.writerSem since at least this reader exists, such that
@@ -136,9 +144,3 @@ func (rw *DowngradableRWMutex) DowngradeLock() {
 		RaceEnable()
 	}
 }
-
-//go:linkname runtimeSemacquire sync.runtime_Semacquire
-func runtimeSemacquire(s *uint32)
-
-//go:linkname runtimeSemrelease sync.runtime_Semrelease
-func runtimeSemrelease(s *uint32, handoff bool)

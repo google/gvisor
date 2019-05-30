@@ -13,9 +13,10 @@
 // limitations under the License.
 
 // +build linux,amd64
-// +build !go1.13
+// +build go1.12
+// +build !go1.14
 
-// This must be validated with Go 1.13 and future releases.
+// Check go:linkname function signatures when updating Go version.
 
 package rawfile
 
