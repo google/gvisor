@@ -1841,7 +1841,7 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
 	}
-	ws, err := cont.WaitPID(pid, true /* clearStatus */)
+	ws, err := cont.WaitPID(pid)
 	if err != nil {
 		return 0, fmt.Errorf("error waiting: %v", err)
 	}
