@@ -60,11 +60,12 @@ const (
 
 // handshake holds the state used during a TCP 3-way handshake.
 type handshake struct {
-	ep     *endpoint
-	state  handshakeState
-	active bool
-	flags  uint8
-	ackNum seqnum.Value
+	ep       *endpoint
+	listenEP *endpoint // only non nil when doing passive connects.
+	state    handshakeState
+	active   bool
+	flags    uint8
+	ackNum   seqnum.Value
 
 	// iss is the initial send sequence number, as defined in RFC 793.
 	iss seqnum.Value
@@ -141,7 +142,7 @@ func (h *handshake) effectiveRcvWndScale() uint8 {
 
 // resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
 // state.
-func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions) {
+func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions, listenEP *endpoint) {
 	h.active = false
 	h.state = handshakeSynRcvd
 	h.flags = header.TCPFlagSyn | header.TCPFlagAck
@@ -149,6 +150,7 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 	h.ackNum = irs + 1
 	h.mss = opts.MSS
 	h.sndWndScale = opts.WS
+	h.listenEP = listenEP
 }
 
 // checkAck checks if the ACK number, if present, of a segment received during
@@ -279,7 +281,18 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 	// We have previously received (and acknowledged) the peer's SYN. If the
 	// peer acknowledges our SYN, the handshake is completed.
 	if s.flagIsSet(header.TCPFlagAck) {
-
+		// listenContext is also used by a tcp.Forwarder and in that
+		// context we do not have a listening endpoint to check the
+		// backlog. So skip this check if listenEP is nil.
+		if h.listenEP != nil && len(h.listenEP.acceptedChan) == cap(h.listenEP.acceptedChan) {
+			// If there is no space in the accept queue to accept
+			// this endpoint then silently drop this ACK. The peer
+			// will anyway resend the ack and we can complete the
+			// connection the next time it's retransmitted.
+			h.ep.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+			h.ep.stack.Stats().DroppedPackets.Increment()
+			return nil
+		}
 		// If the timestamp option is negotiated and the segment does
 		// not carry a timestamp option then the segment must be dropped
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.

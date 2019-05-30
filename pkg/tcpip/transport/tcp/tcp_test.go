@@ -124,50 +124,6 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 	}
 }
 
-func TestPassiveConnectionAttemptIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
-	defer c.Cleanup()
-
-	stats := c.Stack().Stats()
-	want := stats.TCP.PassiveConnectionOpenings.Value() + 1
-	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
-
-	if err := ep.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
-		t.Fatalf("Bind failed: %v", err)
-	}
-	if err := ep.Listen(1); err != nil {
-		t.Fatalf("Listen failed: %v", err)
-	}
-
-	if got := stats.TCP.PassiveConnectionOpenings.Value(); got != want {
-		t.Errorf("got stats.TCP.PassiveConnectionOpenings.Value() = %v, want = %v", got, want)
-	}
-}
-
-func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
-	c := context.New(t, defaultMTU)
-	defer c.Cleanup()
-
-	stats := c.Stack().Stats()
-	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
-	if err != nil {
-		t.Fatalf("NewEndpoint failed: %v", err)
-	}
-	c.EP = ep
-	want := stats.TCP.FailedConnectionAttempts.Value() + 1
-
-	if err := ep.Listen(1); err != tcpip.ErrInvalidEndpointState {
-		t.Errorf("got ep.Listen(1) = %v, want = %v", err, tcpip.ErrInvalidEndpointState)
-	}
-
-	if got := stats.TCP.FailedConnectionAttempts.Value(); got != want {
-		t.Errorf("got stats.TCP.FailedConnectionAttempts.Value() = %v, want = %v", got, want)
-	}
-}
-
 func TestTCPSegmentsSentIncrement(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -3898,5 +3854,460 @@ func TestKeepalive(t *testing.T) {
 
 	if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrConnectionReset)
+	}
+}
+
+func executeHandshake(t *testing.T, c *context.Context, srcPort uint16, synCookieInUse bool) (irs, iss seqnum.Value) {
+	// Send a SYN request.
+	irs = seqnum.Value(789)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: srcPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  irs,
+		RcvWnd:  30000,
+	})
+
+	// Receive the SYN-ACK reply.
+	b := c.GetPacket()
+	tcp := header.TCP(header.IPv4(b).Payload())
+	iss = seqnum.Value(tcp.SequenceNumber())
+	tcpCheckers := []checker.TransportChecker{
+		checker.SrcPort(context.StackPort),
+		checker.DstPort(srcPort),
+		checker.TCPFlags(header.TCPFlagAck | header.TCPFlagSyn),
+		checker.AckNum(uint32(irs) + 1),
+	}
+
+	if synCookieInUse {
+		// When cookies are in use window scaling is disabled.
+		tcpCheckers = append(tcpCheckers, checker.TCPSynOptions(header.TCPSynOptions{
+			WS:  -1,
+			MSS: c.MSSWithoutOptions(),
+		}))
+	}
+
+	checker.IPv4(t, b, checker.TCP(tcpCheckers...))
+
+	// Send ACK.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: srcPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+		RcvWnd:  30000,
+	})
+	return irs, iss
+}
+
+// TestListenBacklogFull tests that netstack does not complete handshakes if the
+// listen backlog for the endpoint is full.
+func TestListenBacklogFull(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test acceptance.
+	// Start listening.
+	listenBacklog := 2
+	if err := c.EP.Listen(listenBacklog); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	for i := 0; i < listenBacklog; i++ {
+		executeHandshake(t, c, context.TestPort+uint16(i), false /*synCookieInUse */)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Now execute one more handshake. This should not be completed and
+	// delivered on an Accept() call as the backlog is full at this point.
+	irs, iss := executeHandshake(t, c, context.TestPort+uint16(listenBacklog), false /* synCookieInUse */)
+
+	time.Sleep(50 * time.Millisecond)
+	// Try to accept the connection.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.EventIn)
+	defer c.WQ.EventUnregister(&we)
+
+	for i := 0; i < listenBacklog; i++ {
+		_, _, err = c.EP.Accept()
+		if err == tcpip.ErrWouldBlock {
+			// Wait for connection to be established.
+			select {
+			case <-ch:
+				_, _, err = c.EP.Accept()
+				if err != nil {
+					t.Fatalf("Accept failed: %v", err)
+				}
+
+			case <-time.After(1 * time.Second):
+				t.Fatalf("Timed out waiting for accept")
+			}
+		}
+	}
+
+	// Now verify that there are no more connections that can be accepted.
+	_, _, err = c.EP.Accept()
+	if err != tcpip.ErrWouldBlock {
+		select {
+		case <-ch:
+			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
+		case <-time.After(1 * time.Second):
+		}
+	}
+
+	// Now craft the ACK again and verify that the connection is now ready
+	// to be accepted.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort + uint16(listenBacklog),
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+		RcvWnd:  30000,
+	})
+
+	newEP, _, err := c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			newEP, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+	// Now verify that the TCP socket is usable and in a connected state.
+	data := "Don't panic"
+	newEP.Write(tcpip.SlicePayload(buffer.NewViewFromBytes([]byte(data))), tcpip.WriteOptions{})
+	b := c.GetPacket()
+	tcp := header.TCP(header.IPv4(b).Payload())
+	if string(tcp.Payload()) != data {
+		t.Fatalf("Unexpected data: got %v, want %v", string(tcp.Payload()), data)
+	}
+}
+
+func TestListenBacklogFullSynCookieInUse(t *testing.T) {
+	saved := tcp.SynRcvdCountThreshold
+	defer func() {
+		tcp.SynRcvdCountThreshold = saved
+	}()
+	tcp.SynRcvdCountThreshold = 1
+
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test acceptance.
+	// Start listening.
+	listenBacklog := 1
+	portOffset := uint16(0)
+	if err := c.EP.Listen(listenBacklog); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	executeHandshake(t, c, context.TestPort+portOffset, false)
+	portOffset++
+	// Wait for this to be delivered to the accept queue.
+	time.Sleep(50 * time.Millisecond)
+
+	nonCookieIRS, nonCookieISS := executeHandshake(t, c, context.TestPort+portOffset, false)
+
+	// Since the backlog is full at this point this connection will not
+	// transition out of handshake and ignore the ACK.
+	//
+	// At this point there should be 1 completed connection in the backlog
+	// and one incomplete one pending for a final ACK and hence not ready to be
+	// delivered to the endpoint.
+	//
+	// Now execute one more handshake. This should not be completed and
+	// delivered on an Accept() call as the backlog is full at this point
+	// and there is already 1 pending endpoint.
+	//
+	// This one should use a SYN cookie as the synRcvdCount is equal to the
+	// SynRcvdCountThreshold.
+	time.Sleep(50 * time.Millisecond)
+	portOffset++
+	irs, iss := executeHandshake(t, c, context.TestPort+portOffset, true)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify that there is only one acceptable connection at this point.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.EventIn)
+	defer c.WQ.EventUnregister(&we)
+
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			_, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now verify that there are no more connections that can be accepted.
+	_, _, err = c.EP.Accept()
+	if err != tcpip.ErrWouldBlock {
+		select {
+		case <-ch:
+			t.Fatalf("unexpected endpoint delivered on Accept: %+v", c.EP)
+		case <-time.After(1 * time.Second):
+		}
+	}
+
+	// Now send an ACK for the half completed connection
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort + portOffset - 1,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  nonCookieIRS + 1,
+		AckNum:  nonCookieISS + 1,
+		RcvWnd:  30000,
+	})
+
+	// Verify that the connection is now delivered to the backlog.
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			_, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Finally send an ACK for the connection that used a cookie and verify that
+	// it's also completed and delivered.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort + portOffset,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs,
+		AckNum:  iss,
+		RcvWnd:  30000,
+	})
+
+	time.Sleep(50 * time.Millisecond)
+	newEP, _, err := c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			newEP, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now verify that the TCP socket is usable and in a connected state.
+	data := "Don't panic"
+	newEP.Write(tcpip.SlicePayload(buffer.NewViewFromBytes([]byte(data))), tcpip.WriteOptions{})
+	b := c.GetPacket()
+	tcp := header.TCP(header.IPv4(b).Payload())
+	if string(tcp.Payload()) != data {
+		t.Fatalf("Unexpected data: got %v, want %v", string(tcp.Payload()), data)
+	}
+}
+
+func TestPassiveConnectionAttemptIncrement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+	c.EP = ep
+	if err := ep.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+	if err := c.EP.Listen(1); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	stats := c.Stack().Stats()
+	want := stats.TCP.PassiveConnectionOpenings.Value() + 1
+
+	srcPort := uint16(context.TestPort)
+	executeHandshake(t, c, srcPort+1, false)
+
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.EventIn)
+	defer c.WQ.EventUnregister(&we)
+
+	// Verify that there is only one acceptable connection at this point.
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			_, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	if got := stats.TCP.PassiveConnectionOpenings.Value(); got != want {
+		t.Errorf("got stats.TCP.PassiveConnectionOpenings.Value() = %v, want = %v", got, want)
+	}
+}
+
+func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	stats := c.Stack().Stats()
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+	c.EP = ep
+	if err := c.EP.Bind(tcpip.FullAddress{Addr: context.StackAddr, Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+	if err := c.EP.Listen(1); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	srcPort := uint16(context.TestPort)
+	// Now attempt 3 handshakes, the first two will fill up the accept and the SYN-RCVD
+	// queue for the endpoint.
+	executeHandshake(t, c, srcPort, false)
+
+	// Give time for the final ACK to be processed as otherwise the next handshake could
+	// get accepted before the previous one based on goroutine scheduling.
+	time.Sleep(50 * time.Millisecond)
+	irs, iss := executeHandshake(t, c, srcPort+1, false)
+
+	// Wait for a short while for the accepted connection to be delivered to
+	// the channel before trying to send the 3rd SYN.
+	time.Sleep(40 * time.Millisecond)
+
+	want := stats.TCP.ListenOverflowSynDrop.Value() + 1
+
+	// Now we will send one more SYN and this one should get dropped
+	// Send a SYN request.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: srcPort + 2,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  seqnum.Value(789),
+		RcvWnd:  30000,
+	})
+
+	time.Sleep(50 * time.Millisecond)
+	if got := stats.TCP.ListenOverflowSynDrop.Value(); got != want {
+		t.Errorf("got stats.TCP.ListenOverflowSynDrop.Value() = %v, want = %v", got, want)
+	}
+
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.EventIn)
+	defer c.WQ.EventUnregister(&we)
+
+	// Now check that there is one acceptable connections.
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			_, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Now complete the next connection in SYN-RCVD state as it should
+	// have dropped the final ACK to the handshake due to accept queue
+	// being full.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: srcPort + 1,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  irs + 1,
+		AckNum:  iss + 1,
+		RcvWnd:  30000,
+	})
+
+	// Now check that there is one more acceptable connections.
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			_, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(1 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+
+	// Try and accept a 3rd one this should fail.
+	_, _, err = c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			ep, _, err = c.EP.Accept()
+			if err == nil {
+				t.Fatalf("Accept succeeded when it should have failed got: %+v", ep)
+			}
+
+		case <-time.After(1 * time.Second):
+		}
 	}
 }

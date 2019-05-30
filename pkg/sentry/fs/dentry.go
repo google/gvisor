@@ -83,9 +83,6 @@ type DirCtx struct {
 	attrs map[string]DentAttr
 
 	// DirCursor is the directory cursor.
-	// TODO(b/67778717): Once Handles are removed this can just live in the
-	// respective FileOperations implementations and not need to get
-	// plumbed everywhere.
 	DirCursor *string
 }
 

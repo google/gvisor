@@ -39,9 +39,10 @@ import (
 // Do implements subcommands.Command for the "do" command. It sets up a simple
 // sandbox and executes the command inside it. See Usage() for more details.
 type Do struct {
-	root string
-	cwd  string
-	ip   string
+	root             string
+	cwd              string
+	ip               string
+	networkNamespace bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -71,6 +72,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
 	f.StringVar(&c.cwd, "cwd", ".", "path to the current directory, defaults to the current directory")
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
+	f.BoolVar(&c.networkNamespace, "netns", true, "run in a new network namespace")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -103,8 +105,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	spec := &specs.Spec{
 		Root: &specs.Root{
-			Path:     absRoot,
-			Readonly: true,
+			Path: absRoot,
 		},
 		Process: &specs.Process{
 			Cwd:          absCwd,
@@ -118,7 +119,11 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	specutils.LogSpec(spec)
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
-	if conf.Network != boot.NetworkNone {
+	if !c.networkNamespace {
+		if conf.Network != boot.NetworkHost {
+			Fatalf("The current network namespace can be used only if --network=host is set", nil)
+		}
+	} else if conf.Network != boot.NetworkNone {
 		clean, err := c.setupNet(cid, spec)
 		if err != nil {
 			return Errorf("Error setting up network: %v", err)

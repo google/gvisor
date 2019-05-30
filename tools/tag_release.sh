@@ -18,7 +18,7 @@
 # validate a provided release name, create a tag and push it. It must be
 # run manually when a release is created.
 
-set -euxo pipefail
+set -xeu
 
 # Check arguments.
 if [ "$#" -ne 2 ]; then
@@ -26,28 +26,43 @@ if [ "$#" -ne 2 ]; then
   exit 1
 fi
 
-commit=$1
-release=$2
+declare -r target_commit="$1"
+declare -r release="$2"
+
+closest_commit() {
+  while read line; do
+    if [[ "$line" =~ "commit " ]]; then
+        current_commit="${line#commit }"
+        continue
+    elif [[ "$line" =~ "PiperOrigin-RevId: " ]]; then
+        revid="${line#PiperOrigin-RevId: }"
+        [[ "${revid}" -le "$1" ]] && break
+    fi
+  done
+  echo "${current_commit}"
+}
 
 # Is the passed identifier a sha commit?
-if ! git show "${commit}" &> /dev/null; then
+if ! git show "${target_commit}" &> /dev/null; then
   # Extract the commit given a piper ID.
-  commit=$(git log|grep -E "(^commit |^    PiperOrigin-RevId:)" |grep -B1 "RevId: ${commit}"| head -n1|cut -d" " -f2)
+  declare -r commit="$(git log | closest_commit "${target_commit}")"
+else
+  declare -r commit="${target_commit}"
 fi
 if ! git show "${commit}" &> /dev/null; then
-  echo "unknown commit: ${commit}"
+  echo "unknown commit: ${target_commit}"
   exit 1
 fi
 
 # Is the release name sane? Must be a date with patch/rc.
 if ! [[ "${release}" =~ ^20[0-9]{6}\.[0-9]+$ ]]; then
-  expected=$(date +%Y%m%d.0) # Use today's date.
+  declare -r expected="$(date +%Y%m%d.0)" # Use today's date.
   echo "unexpected release format: ${release}"
   echo "  ... expected like ${expected}"
   exit 1
 fi
 
-# Tag the given commit.
-tag="release-${release}"
-(git tag "${tag}" "${commit}" && git push origin tag "${tag}") || \
+# Tag the given commit (annotated, to record the committer).
+declare -r tag="release-${release}"
+(git tag -a "${tag}" "${commit}" && git push origin tag "${tag}") || \
   (git tag -d "${tag}" && false)

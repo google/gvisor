@@ -198,6 +198,10 @@ type endpoint struct {
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
 
+	// synRcvdCount is the number of connections for this endpoint that are
+	// in SYN-RCVD state.
+	synRcvdCount int
+
 	// The following fields are used to manage the send buffer. When
 	// segments are ready to be sent, they are added to sndQueue and the
 	// protocol goroutine is signaled via sndWaker.
@@ -1302,7 +1306,6 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	}
 	e.workerRunning = true
 
-	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 	go e.protocolListenLoop( // S/R-SAFE: drained on save.
 		seqnum.Size(e.receiveBufferAvailable()))
 
@@ -1339,6 +1342,7 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	// Start the protocol goroutine.
 	wq := &waiter.Queue{}
 	n.startAcceptedLoop(wq)
+	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
 	return n, wq, nil
 }

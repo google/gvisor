@@ -111,6 +111,12 @@ type MemoryManager struct {
 	// lockedAS is protected by mappingMu.
 	lockedAS uint64
 
+	// dataAS is the size of private data segments, like mm_struct->data_vm.
+	// It means the vma which is private, writable, not stack.
+	//
+	// dataAS is protected by mappingMu.
+	dataAS uint64
+
 	// New VMAs created by MMap use whichever of memmap.MMapOpts.MLockMode or
 	// defMLockMode is greater.
 	//

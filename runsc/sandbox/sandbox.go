@@ -883,6 +883,41 @@ func (s *Sandbox) StopCPUProfile() error {
 	return nil
 }
 
+// StartTrace start trace  writing to the given file.
+func (s *Sandbox) StartTrace(f *os.File) error {
+	log.Debugf("Trace start %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	opts := control.ProfileOpts{
+		FilePayload: urpc.FilePayload{
+			Files: []*os.File{f},
+		},
+	}
+	if err := conn.Call(boot.StartTrace, &opts, nil); err != nil {
+		return fmt.Errorf("starting sandbox %q trace: %v", s.ID, err)
+	}
+	return nil
+}
+
+// StopTrace stops a previously started trace..
+func (s *Sandbox) StopTrace() error {
+	log.Debugf("Trace stop %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.StopTrace, nil, nil); err != nil {
+		return fmt.Errorf("stopping sandbox %q trace: %v", s.ID, err)
+	}
+	return nil
+}
+
 // DestroyContainer destroys the given container. If it is the root container,
 // then the entire sandbox is destroyed.
 func (s *Sandbox) DestroyContainer(cid string) error {

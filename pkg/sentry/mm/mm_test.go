@@ -68,6 +68,60 @@ func TestUsageASUpdates(t *testing.T) {
 	}
 }
 
+func (mm *MemoryManager) realDataAS() uint64 {
+	var sz uint64
+	for seg := mm.vmas.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		vma := seg.Value()
+		if vma.isPrivateDataLocked() {
+			sz += uint64(seg.Range().Length())
+		}
+	}
+	return sz
+}
+
+func TestDataASUpdates(t *testing.T) {
+	ctx := contexttest.Context(t)
+	mm := testMemoryManager(ctx)
+	defer mm.DecUsers(ctx)
+
+	addr, err := mm.MMap(ctx, memmap.MMapOpts{
+		Length:   3 * usermem.PageSize,
+		Private:  true,
+		Perms:    usermem.Write,
+		MaxPerms: usermem.AnyAccess,
+	})
+	if err != nil {
+		t.Fatalf("MMap got err %v want nil", err)
+	}
+	if mm.dataAS == 0 {
+		t.Fatalf("dataAS is 0, wanted not 0")
+	}
+	realDataAS := mm.realDataAS()
+	if mm.dataAS != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	}
+
+	mm.MUnmap(ctx, addr, usermem.PageSize)
+	realDataAS = mm.realDataAS()
+	if mm.dataAS != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	}
+
+	mm.MProtect(addr+usermem.PageSize, usermem.PageSize, usermem.Read, false)
+	realDataAS = mm.realDataAS()
+	if mm.dataAS != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	}
+
+	mm.MRemap(ctx, addr+2*usermem.PageSize, usermem.PageSize, 2*usermem.PageSize, MRemapOpts{
+		Move: MRemapMayMove,
+	})
+	realDataAS = mm.realDataAS()
+	if mm.dataAS != realDataAS {
+		t.Fatalf("dataAS believes %v bytes are mapped; %v bytes are actually mapped", mm.dataAS, realDataAS)
+	}
+}
+
 func TestBrkDataLimitUpdates(t *testing.T) {
 	limitSet := limits.NewLimitSet()
 	limitSet.Set(limits.Data, limits.Limit{}, true /* privileged */) // zero RLIMIT_DATA

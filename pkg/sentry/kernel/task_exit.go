@@ -803,12 +803,16 @@ type WaitOptions struct {
 }
 
 // Preconditions: The TaskSet mutex must be locked (for reading or writing).
-func (o *WaitOptions) matchesTask(t *Task, pidns *PIDNamespace) bool {
+func (o *WaitOptions) matchesTask(t *Task, pidns *PIDNamespace, tracee bool) bool {
 	if o.SpecificTID != 0 && o.SpecificTID != pidns.tids[t] {
 		return false
 	}
 	if o.SpecificPGID != 0 && o.SpecificPGID != pidns.pgids[t.tg.processGroup] {
 		return false
+	}
+	// Tracees are always eligible.
+	if tracee {
+		return true
 	}
 	if t == t.tg.leader && t.tg.terminationSignal == linux.SIGCHLD {
 		return o.NonCloneTasks
@@ -903,7 +907,7 @@ func (t *Task) waitParentLocked(opts *WaitOptions, parent *Task) (*WaitResult, b
 	anyWaitableTasks := false
 
 	for child := range parent.children {
-		if !opts.matchesTask(child, parent.tg.pidns) {
+		if !opts.matchesTask(child, parent.tg.pidns, false) {
 			continue
 		}
 		// Non-leaders don't notify parents on exit and aren't eligible to
@@ -946,7 +950,7 @@ func (t *Task) waitParentLocked(opts *WaitOptions, parent *Task) (*WaitResult, b
 		}
 	}
 	for tracee := range parent.ptraceTracees {
-		if !opts.matchesTask(tracee, parent.tg.pidns) {
+		if !opts.matchesTask(tracee, parent.tg.pidns, true) {
 			continue
 		}
 		// Non-leaders do notify tracers on exit.

@@ -760,6 +760,25 @@ type TCPStats struct {
 	// successfully via Listen.
 	PassiveConnectionOpenings *StatCounter
 
+	// ListenOverflowSynDrop is the number of times the listen queue overflowed
+	// and a SYN was dropped.
+	ListenOverflowSynDrop *StatCounter
+
+	// ListenOverflowAckDrop is the number of times the final ACK
+	// in the handshake was dropped due to overflow.
+	ListenOverflowAckDrop *StatCounter
+
+	// ListenOverflowCookieSent is the number of times a SYN cookie was sent.
+	ListenOverflowSynCookieSent *StatCounter
+
+	// ListenOverflowSynCookieRcvd is the number of times a valid SYN
+	// cookie was received.
+	ListenOverflowSynCookieRcvd *StatCounter
+
+	// ListenOverflowInvalidSynCookieRcvd is the number of times an invalid SYN cookie
+	// was received.
+	ListenOverflowInvalidSynCookieRcvd *StatCounter
+
 	// FailedConnectionAttempts is the number of calls to Connect or Listen
 	// (active and passive openings, respectively) that end in an error.
 	FailedConnectionAttempts *StatCounter
