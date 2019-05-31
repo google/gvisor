@@ -70,6 +70,7 @@ go_test(
     srcs = [
         "dual_stack_test.go",
         "sack_scoreboard_test.go",
+        "tcp_noracedetector_test.go",
         "tcp_sack_test.go",
         "tcp_test.go",
         "tcp_timestamp_test.go",
