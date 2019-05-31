@@ -25,7 +25,7 @@ set -eux
 readonly WORKSPACE_DIR="${PWD}/git/repo"
 
 # Used to configure RBE.
-readonly CLOUD_PROJECT_ID="copybara-shentu"
+readonly CLOUD_PROJECT_ID="gvisor-rbe"
 readonly RBE_PROJECT_ID="projects/${CLOUD_PROJECT_ID}/instances/default_instance"
 
 # Random runtime name to avoid collisions.
