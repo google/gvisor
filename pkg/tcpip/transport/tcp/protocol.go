@@ -48,6 +48,10 @@ const (
 
 	// MaxBufferSize is the largest size a receive and send buffer can grow to.
 	maxBufferSize = 4 << 20 // 4MB
+
+	// MaxUnprocessedSegments is the maximum number of unprocessed segments
+	// that can be queued for a given endpoint.
+	MaxUnprocessedSegments = 300
 )
 
 // SACKEnabled option can be used to enable SACK support in the TCP

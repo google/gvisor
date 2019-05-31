@@ -163,7 +163,7 @@ func (e *endpoint) loadState(state endpointState) {
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
 	e.stack = stack.StackFromEnv
-	e.segmentQueue.setLimit(2 * e.rcvBufSize)
+	e.segmentQueue.setLimit(MaxUnprocessedSegments)
 	e.workMu.Init()
 
 	state := e.state

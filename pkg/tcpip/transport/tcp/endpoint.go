@@ -335,7 +335,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		e.probe = p
 	}
 
-	e.segmentQueue.setLimit(2 * e.rcvBufSize)
+	e.segmentQueue.setLimit(MaxUnprocessedSegments)
 	e.workMu.Init()
 	e.workMu.Lock()
 	e.tsOffset = timeStampOffset()
@@ -756,8 +756,6 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			mask |= notifyNonZeroReceiveWindow
 		}
 		e.rcvListMu.Unlock()
-
-		e.segmentQueue.setLimit(2 * size)
 
 		e.notifyProtocolGoroutine(mask)
 		return nil
