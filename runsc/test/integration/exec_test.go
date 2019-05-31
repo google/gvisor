@@ -29,6 +29,7 @@ package integration
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -134,5 +135,27 @@ func TestExecJobControl(t *testing.T) {
 	}
 	if got, want := ws.ExitStatus(), 140; got != want {
 		t.Errorf("ws.ExitedStatus got %d, want %d", got, want)
+	}
+}
+
+// Test that failure to exec returns proper error message.
+func TestExecError(t *testing.T) {
+	if err := testutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := testutil.MakeDocker("exec-error-test")
+
+	// Start the container.
+	if err := d.Run("alpine", "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	_, err := d.Exec("no_can_find")
+	if err == nil {
+		t.Fatalf("docker exec didn't fail")
+	}
+	if want := `error finding executable "no_can_find" in PATH`; !strings.Contains(err.Error(), want) {
+		t.Fatalf("docker exec wrong error, got: %s, want: .*%s.*", err.Error(), want)
 	}
 }

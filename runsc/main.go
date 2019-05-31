@@ -117,6 +117,22 @@ func main() {
 		os.Exit(0)
 	}
 
+	var errorLogger io.Writer
+	if *logFD > -1 {
+		errorLogger = os.NewFile(uintptr(*logFD), "error log file")
+
+	} else if *logFilename != "" {
+		// We must set O_APPEND and not O_TRUNC because Docker passes
+		// the same log file for all commands (and also parses these
+		// log files), so we can't destroy them on each command.
+		var err error
+		errorLogger, err = os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
+		}
+	}
+	cmd.ErrorLogger = errorLogger
+
 	platformType, err := boot.MakePlatformType(*platform)
 	if err != nil {
 		cmd.Fatalf("%v", err)
@@ -174,24 +190,7 @@ func main() {
 
 	subcommand := flag.CommandLine.Arg(0)
 
-	var logFile io.Writer = os.Stderr
-	if *logFD > -1 {
-		logFile = os.NewFile(uintptr(*logFD), "log file")
-	} else if *logFilename != "" {
-		// We must set O_APPEND and not O_TRUNC because Docker passes
-		// the same log file for all commands (and also parses these
-		// log files), so we can't destroy them on each command.
-		f, err := os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
-		}
-		logFile = f
-	} else if subcommand == "do" {
-		logFile = ioutil.Discard
-	}
-
-	e := newEmitter(*logFormat, logFile)
-
+	var e log.Emitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
@@ -201,28 +200,27 @@ func main() {
 			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
 		}
 
-		// If we are the boot process, then we own our stdio FDs and
-		// can do what we want with them. Since Docker and Containerd
-		// both eat boot's stderr, we dup our stderr to the provided
-		// log FD so that panics will appear in the logs, rather than
-		// just disappear.
+		// If we are the boot process, then we own our stdio FDs and can do what we
+		// want with them. Since Docker and Containerd both eat boot's stderr, we
+		// dup our stderr to the provided log FD so that panics will appear in the
+		// logs, rather than just disappear.
 		if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
-		if logFile == os.Stderr {
-			// Suppress logging to stderr when debug log is enabled. Otherwise all
-			// messages will be duplicated in the debug log (see Dup2() call above).
-			e = newEmitter(*debugLogFormat, f)
-		} else {
-			e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
-		}
+		e = newEmitter(*debugLogFormat, f)
+
 	} else if *debugLog != "" {
 		f, err := specutils.DebugLogFile(*debugLog, subcommand)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}
-		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
+		e = newEmitter(*debugLogFormat, f)
+
+	} else {
+		// Stderr is reserved for the application, just discard the logs if no debug
+		// log is specified.
+		e = newEmitter("text", ioutil.Discard)
 	}
 
 	log.SetTarget(e)
