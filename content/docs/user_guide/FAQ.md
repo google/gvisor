@@ -35,6 +35,13 @@ If you’re having problems running a container with `runsc` it’s most likely 
 to a compatibility issue or a missing feature in gVisor. See
 [Debugging](../debugging/).
 
+### When I run my container, docker fails with `open /run/containerd/.../<containerid>/log.json: no such file or directory`.
+
+You are using an older version of Linux which doesn't support `memfd_create`.
+gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
+
+[comment]: # (TODO[gvisor.dev/issue/268] remove when better error messages are implemented.)
+
 ### When I run my container, docker fails with: `flag provided but not defined: -console`
 
 You're using an old version of Docker. See [Docker Quick Start](../docker/).
