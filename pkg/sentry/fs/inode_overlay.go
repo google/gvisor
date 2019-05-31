@@ -433,12 +433,7 @@ func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint 
 		return o.upper.InodeOperations.BoundEndpoint(o.upper, path)
 	}
 
-	// If the lower is itself an overlay, recurse.
-	if o.lower.overlay != nil {
-		return overlayBoundEndpoint(o.lower.overlay, path)
-	}
-	// Lower is not an overlay. Call BoundEndpoint directly.
-	return o.lower.InodeOperations.BoundEndpoint(o.lower, path)
+	return o.lower.BoundEndpoint(path)
 }
 
 func overlayGetFile(ctx context.Context, o *overlayEntry, d *Dirent, flags FileFlags) (*File, error) {
