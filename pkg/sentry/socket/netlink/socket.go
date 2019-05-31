@@ -23,7 +23,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/binary"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
@@ -52,9 +51,6 @@ const (
 	// maxBufferSize is the largest size a send buffer can grow to.
 	maxSendBufferSize = 4 << 20 // 4MB
 )
-
-// netlinkSocketDevice is the netlink socket virtual device.
-var netlinkSocketDevice = device.NewAnonDevice()
 
 // Socket is the base socket type for netlink sockets.
 //

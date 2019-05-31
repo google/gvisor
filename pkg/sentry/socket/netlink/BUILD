@@ -5,6 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 go_library(
     name = "netlink",
     srcs = [
+        "device.go",
         "message.go",
         "provider.go",
         "socket.go",

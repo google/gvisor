@@ -5,6 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 go_library(
     name = "tty",
     srcs = [
+        "device.go",
         "dir.go",
         "fs.go",
         "line_discipline.go",

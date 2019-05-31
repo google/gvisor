@@ -16,13 +16,9 @@ package tty
 
 import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
-
-// ptsDevice is the pseudo-filesystem device.
-var ptsDevice = device.NewAnonDevice()
 
 // filesystem is a devpts filesystem.
 //
