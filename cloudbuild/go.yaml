@@ -1,0 +1,9 @@
+steps:
+- name: gcr.io/cloud-builders/git
+  args: ['fetch', '--unshallow']
+- name: gcr.io/cloud-builders/bazel
+  args: ['build', ':gopath']
+- name: gcr.io/cloud-builders/git
+  cmd:  ['tools/go_branch.sh']
+- name: gcr.io/cloud-builders/git
+  args: ['push', 'origin', 'go:go']

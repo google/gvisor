@@ -44,7 +44,7 @@ use_bazel.sh latest
 which bazel
 bazel version
 
-# Load the kvm module
+# Load the kvm module.
 sudo -n -E modprobe kvm
 
 # General Bazel build/test flags.
@@ -67,6 +67,12 @@ BAZEL_BUILD_RBE_FLAGS=(
 ####################
 # Helper Functions #
 ####################
+
+sanity_checks() {
+  cd ${WORKSPACE_DIR}
+  bazel run //:gazelle -- update-repos -from_file=go.mod
+  git diff --exit-code WORKSPACE
+}
 
 build_everything() {
   FLAVOR="${1}"
@@ -235,6 +241,7 @@ main() {
   trap finish EXIT
 
   # Build and run the simple tests.
+  sanity_checks
   build_everything opt
   run_simple_tests
 
