@@ -175,12 +175,12 @@ func TestMultiContainerWait(t *testing.T) {
 		go func(c *Container) {
 			defer wg.Done()
 			const pid = 2
-			if ws, err := c.WaitPID(pid, true /* clearStatus */); err != nil {
+			if ws, err := c.WaitPID(pid); err != nil {
 				t.Errorf("failed to wait for PID %d: %v", pid, err)
 			} else if es := ws.ExitStatus(); es != 0 {
 				t.Errorf("PID %d exited with non-zero status %d", pid, es)
 			}
-			if _, err := c.WaitPID(pid, true /* clearStatus */); err == nil {
+			if _, err := c.WaitPID(pid); err == nil {
 				t.Errorf("wait for stopped PID %d should fail", pid)
 			}
 		}(containers[1])
@@ -263,12 +263,12 @@ func TestExecWait(t *testing.T) {
 	}
 
 	// Get the exit status from the exec'd process.
-	if ws, err := containers[0].WaitPID(pid, true /* clearStatus */); err != nil {
+	if ws, err := containers[0].WaitPID(pid); err != nil {
 		t.Fatalf("failed to wait for process %+v with pid %d: %v", args, pid, err)
 	} else if es := ws.ExitStatus(); es != 0 {
 		t.Fatalf("process %+v exited with non-zero status %d", args, es)
 	}
-	if _, err := containers[0].WaitPID(pid, true /* clearStatus */); err == nil {
+	if _, err := containers[0].WaitPID(pid); err == nil {
 		t.Fatalf("wait for stopped process %+v should fail", args)
 	}
 }

@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"context"
-
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
