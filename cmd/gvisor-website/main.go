@@ -49,7 +49,28 @@ var prefixHelpers = map[string]string{
 	"c/linux/amd64": "/docs/user_guide/compatibility/amd64/#%s",
 }
 
-var validId = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
+var (
+	validId     = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
+	goGetHeader = `<meta name="go-import" content="gvisor.dev git https://github.com/google/gvisor">`
+	goGetHTML5  = `<!doctype html><html><head><meta charset=utf-8>` + goGetHeader + `<title>Go-get</title></head><body></html>`
+)
+
+// wrappedHandler wraps an http.Handler.
+//
+// If the query parameters include go-get=1, then we redirect to a single
+// static page that allows us to serve arbitrary Go packages.
+func wrappedHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gg, ok := r.URL.Query()["go-get"]
+		if ok && len(gg) == 1 && gg[0] == "1" {
+			// Serve a trivial html page.
+			w.Write([]byte(goGetHTML5))
+			return
+		}
+		// Fallthrough.
+		h.ServeHTTP(w, r)
+	})
+}
 
 // redirectWithQuery redirects to the given target url preserving query parameters.
 func redirectWithQuery(w http.ResponseWriter, r *http.Request, target string) {
@@ -107,11 +128,11 @@ func registerRedirects(mux *http.ServeMux) {
 
 	for prefix, baseURL := range prefixHelpers {
 		p := "/" + prefix + "/"
-		mux.Handle(p, hostRedirectHandler(prefixRedirectHandler(p, baseURL)))
+		mux.Handle(p, hostRedirectHandler(wrappedHandler(prefixRedirectHandler(p, baseURL))))
 	}
 
 	for path, redirect := range redirects {
-		mux.Handle(path, hostRedirectHandler(redirectHandler(redirect)))
+		mux.Handle(path, hostRedirectHandler(wrappedHandler(redirectHandler(redirect))))
 	}
 }
 
@@ -120,7 +141,7 @@ func registerStatic(mux *http.ServeMux, staticDir string) {
 	if mux == nil {
 		mux = http.DefaultServeMux
 	}
-	mux.Handle("/", hostRedirectHandler(http.FileServer(http.Dir(staticDir))))
+	mux.Handle("/", hostRedirectHandler(wrappedHandler(http.FileServer(http.Dir(staticDir)))))
 }
 
 // registerRebuild registers the rebuild handler.
@@ -129,7 +150,7 @@ func registerRebuild(mux *http.ServeMux) {
 		mux = http.DefaultServeMux
 	}
 
-	mux.Handle("/rebuild", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/rebuild", wrappedHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.Background()
 		credentials, err := google.FindDefaultCredentials(ctx, cloudbuild.CloudPlatformScope)
 		if err != nil {
@@ -170,7 +191,7 @@ func registerRebuild(mux *http.ServeMux) {
 			http.Error(w, "run error: "+err.Error(), 500)
 			return
 		}
-	}))
+	})))
 }
 
 func envFlagString(name, def string) string {
