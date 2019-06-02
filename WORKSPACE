@@ -6,6 +6,7 @@ http_archive(
     sha256 = "a82a352bffae6bee4e95f68a8d80a70e87f42c4741e6a448bec11998fcc82329",
     url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.5/rules_go-0.18.5.tar.gz",
 )
+
 http_archive(
     name = "bazel_gazelle",
     sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
@@ -37,86 +38,116 @@ http_archive(
 # External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
-    commit = "66e726b43552c0bab0539b28e640b89fd6862115",
     importpath = "github.com/cenkalti/backoff",
+    tag = "v2.1.1",
 )
 
 go_repository(
     name = "com_github_gofrs_flock",
-    commit = "886344bea0798d02ff3fae16a922be5f6b26cee0",
+    commit = "886344bea079",
     importpath = "github.com/gofrs/flock",
 )
 
 go_repository(
     name = "com_github_golang_mock",
-    commit = "600781dde9cca80734169b9e969d9054ccc57937",
     importpath = "github.com/golang/mock",
+    tag = "v1.3.1",
 )
 
 go_repository(
     name = "com_github_google_go-cmp",
-    commit = "3af367b6b30c263d47e8895973edcca9a49cf029",
     importpath = "github.com/google/go-cmp",
+    tag = "v0.2.0",
 )
 
 go_repository(
     name = "com_github_google_subcommands",
-    commit = "ce3d4cfc062faac7115d44e5befec8b5a08c3faa",
+    commit = "ce3d4cfc062f",
     importpath = "github.com/google/subcommands",
 )
 
 go_repository(
     name = "com_github_google_uuid",
-    commit = "dec09d789f3dba190787f8b4454c7d3c936fed9e",
+    commit = "dec09d789f3d",
     importpath = "github.com/google/uuid",
 )
 
 go_repository(
     name = "com_github_kr_pty",
-    commit = "282ce0e5322c82529687d609ee670fac7c7d917c",
     importpath = "github.com/kr/pty",
+    tag = "v1.1.1",
 )
 
 go_repository(
     name = "com_github_opencontainers_runtime-spec",
-    commit = "b2d941ef6a780da2d9982c1fb28d77ad97f54fc7",
+    commit = "b2d941ef6a78",
     importpath = "github.com/opencontainers/runtime-spec",
 )
 
 go_repository(
     name = "com_github_syndtr_gocapability",
-    commit = "d98352740cb2c55f81556b63d4a1ec64c5a319c2",
+    commit = "d98352740cb2",
     importpath = "github.com/syndtr/gocapability",
 )
 
 go_repository(
     name = "com_github_vishvananda_netlink",
-    commit = "adb577d4a45e341da53c4d9196ad4222c9a23e69",
+    commit = "adb577d4a45e",
     importpath = "github.com/vishvananda/netlink",
 )
 
 go_repository(
     name = "com_github_vishvananda_netns",
-    commit = "be1fbeda19366dea804f00efff2dd73a1642fdcc",
+    commit = "be1fbeda1936",
     importpath = "github.com/vishvananda/netns",
 )
 
 go_repository(
+    name = "org_golang_x_crypto",
+    commit = "c2843e01d9a2",
+    importpath = "golang.org/x/crypto",
+)
+
+go_repository(
     name = "org_golang_x_net",
-    commit = "b3c676e531a6dc479fa1b35ac961c13f5e2b4d2e",
+    commit = "d8887717615a",
     importpath = "golang.org/x/net",
 )
 
 go_repository(
+    name = "org_golang_x_text",
+    importpath = "golang.org/x/text",
+    tag = "v0.3.0",
+)
+
+go_repository(
+    name = "org_golang_x_tools",
+    commit = "36563e24a262",
+    importpath = "golang.org/x/tools",
+)
+
+go_repository(
+    name = "org_golang_x_sync",
+    commit = "112230192c58",
+    importpath = "golang.org/x/sync",
+)
+
+go_repository(
     name = "org_golang_x_sys",
-    commit = "0dd5e194bbf5eb84a39666eb4c98a4d007e4203a",
+    commit = "d0b11bdaac8a",
     importpath = "golang.org/x/sys",
 )
 
 go_repository(
     name = "com_github_google_btree",
-    commit = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306",
     importpath = "github.com/google/btree",
+    tag = "v1.0.0",
+)
+
+go_repository(
+    name = "com_github_golang_protobuf",
+    importpath = "github.com/golang/protobuf",
+    tag = "v1.3.1",
 )
 
 # System Call test dependencies.
