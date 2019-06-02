@@ -1,0 +1,27 @@
+// Copyright 2019 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package usermem
+
+import (
+	"unsafe"
+)
+
+// stringFromImmutableBytes is equivalent to string(bs), except that it never
+// copies even if escape analysis can't prove that bs does not escape. This is
+// only valid if bs is never mutated after stringFromImmutableBytes returns.
+func stringFromImmutableBytes(bs []byte) string {
+	// Compare strings.Builder.String().
+	return *(*string)(unsafe.Pointer(&bs))
+}
