@@ -418,12 +418,6 @@ syscall_test(
 )
 
 syscall_test(
-    size = "large",
-    shard_count = 10,
-    test = "//test/syscalls/linux:socket_unix_abstract_test",
-)
-
-syscall_test(
     # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
@@ -432,12 +426,6 @@ syscall_test(
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:socket_unix_dgram_non_blocking_test",
-)
-
-syscall_test(
-    size = "large",
-    shard_count = 10,
-    test = "//test/syscalls/linux:socket_unix_filesystem_test",
 )
 
 syscall_test(
