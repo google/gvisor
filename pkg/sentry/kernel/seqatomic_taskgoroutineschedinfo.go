@@ -1,11 +1,11 @@
 package kernel
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"unsafe"
 
-	"fmt"
 	"gvisor.googlesource.com/gvisor/third_party/gvsync"
 )
 
