@@ -470,6 +470,16 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			return 0, syserror.EINVAL
 		}
 
+		// Check that the new region is valid.
+		_, err := mm.findAvailableLocked(newSize, findAvailableOpts{
+			Addr:  newAddr,
+			Fixed: true,
+			Unmap: true,
+		})
+		if err != nil {
+			return 0, err
+		}
+
 		// Unmap any mappings at the destination.
 		mm.unmapLocked(ctx, newAR)
 
