@@ -156,6 +156,8 @@ var cycleMu sync.Mutex
 func NewEventPoll(ctx context.Context) *fs.File {
 	// name matches fs/eventpoll.c:epoll_create1.
 	dirent := fs.NewDirent(anon.NewInode(ctx), fmt.Sprintf("anon_inode:[eventpoll]"))
+	// Release the initial dirent reference after NewFile takes a reference.
+	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{}, &EventPoll{
 		files: make(map[FileIdentifier]*pollEntry),
 	})
