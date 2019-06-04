@@ -17,6 +17,6 @@ steps:
   entrypoint: 'bash'
   args:
     - '-c'
-    - 'if [[ "$BRANCH_NAME" == "master" ]]; then git push "${_ORIGIN}" go:go; fi'
+    - 'if [[ "$BRANCH_NAME" == "master" ]]; then git push --no-thin "${_ORIGIN}" go:go; fi'
 substitutions:
     _ORIGIN: origin
