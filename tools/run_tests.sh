@@ -21,8 +21,10 @@ set -eux
 # GLOBAL ENV VARS #
 ###################
 
-if [[ -v KOKORO_GIT_COMMIT ]]; then
+if [[ -v KOKORO_GIT_COMMIT ]] && [[ -d git/repo ]]; then
   readonly WORKSPACE_DIR="${PWD}/git/repo"
+elif [[ -v KOKORO_GIT_COMMIT ]] && [[ -d github/repo ]]; then
+  readonly WORKSPACE_DIR="${PWD}/github/repo"
 else
   readonly WORKSPACE_DIR="${PWD}"
 fi
@@ -45,11 +47,6 @@ readonly TEST_PACKAGES=("//pkg/..." "//runsc/..." "//tools/...")
 # Install the latest version of Bazel and log the version.
 (which use_bazel.sh && use_bazel.sh latest) || which bazel
 bazel version
-
-# Checkout the appropriate commit.
-if [[ -v KOKORO_GIT_COMMIT ]]; then
-  (cd "${WORKSPACE_DIR}" && git checkout "${KOKORO_GIT_COMMIT}")
-fi
 
 # Load the kvm module.
 sudo -n -E modprobe kvm

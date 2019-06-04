@@ -23,9 +23,11 @@ set -x
 (which use_bazel.sh && use_bazel.sh latest) || which bazel
 bazel version
 
-# Switch into the workspace and checkout the appropriate commit.
-if [[ -v KOKORO_GIT_COMMIT ]]; then
-  cd git/repo && git checkout "${KOKORO_GIT_COMMIT}"
+# Switch into the workspace.
+if [[ -v KOKORO_GIT_COMMIT ]] && [[ -d git/repo ]]; then
+  cd git/repo
+elif [[ -v KOKORO_GIT_COMMIT ]] && [[ -d github/repo ]]; then
+  cd github/repo
 fi
 
 # Build runsc.
