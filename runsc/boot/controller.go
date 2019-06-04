@@ -237,7 +237,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
 	}
 
-	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
+	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
 		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
 		return err
@@ -340,8 +340,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	fds := &fdDispenser{fds: cm.l.goferFDs}
-	renv, err := createRestoreEnvironment(cm.l.spec, cm.l.conf, fds)
+	mntr := newContainerMounter(cm.l.spec, "", cm.l.goferFDs, cm.l.k)
+	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
@@ -369,11 +369,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	k.Timekeeper().SetClocks(time.NewCalibratedClocks())
 
 	// Since we have a new kernel we also must make a new watchdog.
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
+	dog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
 
 	// Change the loader fields to reflect the changes made when restoring.
 	cm.l.k = k
-	cm.l.watchdog = watchdog
+	cm.l.watchdog = dog
 	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
