@@ -406,10 +406,18 @@ func makeCreds(t *kernel.Task, socketOrEndpoint interface{}) SCMCredentials {
 		return nil
 	}
 	if cr, ok := socketOrEndpoint.(transport.Credentialer); ok && (cr.Passcred() || cr.ConnectedPasscred()) {
-		tcred := t.Credentials()
-		return &scmCredentials{t, tcred.EffectiveKUID, tcred.EffectiveKGID}
+		return MakeCreds(t)
 	}
 	return nil
+}
+
+// MakeCreds creates default SCMCredentials.
+func MakeCreds(t *kernel.Task) SCMCredentials {
+	if t == nil {
+		return nil
+	}
+	tcred := t.Credentials()
+	return &scmCredentials{t, tcred.EffectiveKUID, tcred.EffectiveKGID}
 }
 
 // New creates default control messages if needed.

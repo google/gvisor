@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
-	"log"
 	"sync"
 	"time"
 
@@ -307,7 +306,6 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 
 func (e *endpoint) incSynRcvdCount() bool {
 	e.mu.Lock()
-	log.Printf("l: %d, c: %d, e.synRcvdCount: %d", len(e.acceptedChan), cap(e.acceptedChan), e.synRcvdCount)
 	if l, c := len(e.acceptedChan), cap(e.acceptedChan); l == c && e.synRcvdCount >= c {
 		e.mu.Unlock()
 		return false
@@ -333,17 +331,14 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// Drop the SYN if the listen endpoint's accept queue is
 			// overflowing.
 			if e.incSynRcvdCount() {
-				log.Printf("processing syn packet")
 				s.incRef()
 				go e.handleSynSegment(ctx, s, &opts) // S/R-SAFE: synRcvdCount is the barrier.
 				return
 			}
-			log.Printf("dropping syn packet")
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		} else {
-			// TODO(bhaskerh): Increment syncookie sent stat.
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 			// Send SYN with window scaling because we currently
 			// dont't encode this information in the cookie.

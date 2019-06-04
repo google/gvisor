@@ -649,7 +649,7 @@ func (s *Sandbox) Wait(cid string) (syscall.WaitStatus, error) {
 
 // WaitPID waits for process 'pid' in the container's sandbox and returns its
 // WaitStatus.
-func (s *Sandbox) WaitPID(cid string, pid int32, clearStatus bool) (syscall.WaitStatus, error) {
+func (s *Sandbox) WaitPID(cid string, pid int32) (syscall.WaitStatus, error) {
 	log.Debugf("Waiting for PID %d in sandbox %q", pid, s.ID)
 	var ws syscall.WaitStatus
 	conn, err := s.sandboxConnect()
@@ -659,9 +659,8 @@ func (s *Sandbox) WaitPID(cid string, pid int32, clearStatus bool) (syscall.Wait
 	defer conn.Close()
 
 	args := &boot.WaitPIDArgs{
-		PID:         pid,
-		CID:         cid,
-		ClearStatus: clearStatus,
+		PID: pid,
+		CID: cid,
 	}
 	if err := conn.Call(boot.ContainerWaitPID, args, &ws); err != nil {
 		return ws, fmt.Errorf("waiting on PID %d in sandbox %q: %v", pid, s.ID, err)
