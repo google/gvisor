@@ -724,7 +724,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	return nil
 }
 
-func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, waitStatus *uint32) error {
+func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
 	if tgid <= 0 {
 		return fmt.Errorf("PID (%d) must be positive", tgid)
 	}
@@ -736,13 +736,10 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 		ws := l.wait(execTG)
 		*waitStatus = ws
 
-		// Remove tg from the cache if caller requested it.
-		if clearStatus {
-			l.mu.Lock()
-			delete(l.processes, eid)
-			log.Debugf("updated processes (removal): %v", l.processes)
-			l.mu.Unlock()
-		}
+		l.mu.Lock()
+		delete(l.processes, eid)
+		log.Debugf("updated processes (removal): %v", l.processes)
+		l.mu.Unlock()
 		return nil
 	}
 

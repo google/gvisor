@@ -258,7 +258,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	}
 
 	// Make sure the process indicates it was killed by a SIGKILL.
-	ws, err := c.WaitPID(pid, true)
+	ws, err := c.WaitPID(pid)
 	if err != nil {
 		t.Errorf("waiting on container failed: %v", err)
 	}
