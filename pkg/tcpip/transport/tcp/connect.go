@@ -284,14 +284,19 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		// listenContext is also used by a tcp.Forwarder and in that
 		// context we do not have a listening endpoint to check the
 		// backlog. So skip this check if listenEP is nil.
-		if h.listenEP != nil && len(h.listenEP.acceptedChan) == cap(h.listenEP.acceptedChan) {
-			// If there is no space in the accept queue to accept
-			// this endpoint then silently drop this ACK. The peer
-			// will anyway resend the ack and we can complete the
-			// connection the next time it's retransmitted.
-			h.ep.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
-			h.ep.stack.Stats().DroppedPackets.Increment()
-			return nil
+		if h.listenEP != nil {
+			h.listenEP.mu.Lock()
+			if len(h.listenEP.acceptedChan) == cap(h.listenEP.acceptedChan) {
+				h.listenEP.mu.Unlock()
+				// If there is no space in the accept queue to accept
+				// this endpoint then silently drop this ACK. The peer
+				// will anyway resend the ack and we can complete the
+				// connection the next time it's retransmitted.
+				h.ep.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+				h.ep.stack.Stats().DroppedPackets.Increment()
+				return nil
+			}
+			h.listenEP.mu.Unlock()
 		}
 		// If the timestamp option is negotiated and the segment does
 		// not carry a timestamp option then the segment must be dropped
