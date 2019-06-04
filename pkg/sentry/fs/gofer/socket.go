@@ -139,3 +139,8 @@ func (e *endpoint) UnidirectionalConnect() (transport.ConnectedEndpoint, *syserr
 func (e *endpoint) Release() {
 	e.inode.DecRef()
 }
+
+// Passcred implements transport.BoundEndpoint.Passcred.
+func (e *endpoint) Passcred() bool {
+	return false
+}

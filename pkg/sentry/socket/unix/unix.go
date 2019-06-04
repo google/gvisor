@@ -385,6 +385,10 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		}
 		defer ep.Release()
 		w.To = ep
+
+		if ep.Passcred() && w.Control.Credentials == nil {
+			w.Control.Credentials = control.MakeCreds(t)
+		}
 	}
 
 	n, err := src.CopyInTo(t, &w)
@@ -516,7 +520,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	if n, err := dst.CopyOutFrom(t, &r); err != syserror.ErrWouldBlock || dontWait {
 		var from interface{}
 		var fromLen uint32
-		if r.From != nil {
+		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
 			from, fromLen = epsocket.ConvertAddress(linux.AF_UNIX, *r.From)
 		}
 

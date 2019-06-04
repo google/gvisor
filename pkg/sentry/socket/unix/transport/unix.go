@@ -237,6 +237,10 @@ type BoundEndpoint interface {
 	// endpoint.
 	UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error)
 
+	// Passcred returns whether or not the SO_PASSCRED socket option is
+	// enabled on this end.
+	Passcred() bool
+
 	// Release releases any resources held by the BoundEndpoint. It must be
 	// called before dropping all references to a BoundEndpoint returned by a
 	// function.
