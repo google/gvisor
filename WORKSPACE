@@ -38,8 +38,8 @@ http_archive(
 # External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
+    commit = "2146c9339422",
     importpath = "github.com/cenkalti/backoff",
-    tag = "v2.1.1",
 )
 
 go_repository(
