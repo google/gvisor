@@ -17,10 +17,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
 #include <string>
 
 #include "gtest/gtest.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
@@ -34,6 +36,16 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+#ifndef SUID_DUMP_DISABLE
+#define SUID_DUMP_DISABLE 0
+#endif /* SUID_DUMP_DISABLE */
+#ifndef SUID_DUMP_USER
+#define SUID_DUMP_USER 1
+#endif /* SUID_DUMP_USER */
+#ifndef SUID_DUMP_ROOT
+#define SUID_DUMP_ROOT 2
+#endif /* SUID_DUMP_ROOT */
 
 TEST(PrctlTest, NameInitialized) {
   const size_t name_length = 20;
@@ -176,6 +188,28 @@ TEST(PrctlTest, InvalidPrSetMM) {
                                   false));  // Drop capability to test below.
   }
   ASSERT_THAT(prctl(PR_SET_MM, 0, 0, 0, 0), SyscallFailsWithErrno(EPERM));
+}
+
+// Sanity check that dumpability is remembered.
+TEST(PrctlTest, SetGetDumpability) {
+  int before;
+  ASSERT_THAT(before = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+  auto cleanup = Cleanup([before] {
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, before), SyscallSucceeds());
+  });
+
+  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_DISABLE), SyscallSucceeds());
+  EXPECT_THAT(prctl(PR_GET_DUMPABLE),
+              SyscallSucceedsWithValue(SUID_DUMP_DISABLE));
+
+  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+  EXPECT_THAT(prctl(PR_GET_DUMPABLE), SyscallSucceedsWithValue(SUID_DUMP_USER));
+}
+
+// SUID_DUMP_ROOT cannot be set via PR_SET_DUMPABLE.
+TEST(PrctlTest, RootDumpability) {
+  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_ROOT),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

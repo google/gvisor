@@ -69,9 +69,11 @@
 // way to get it tested on both gVisor, PTrace and Linux.
 
 using ::testing::AllOf;
+using ::testing::AnyOf;
 using ::testing::ContainerEq;
 using ::testing::Contains;
 using ::testing::ContainsRegex;
+using ::testing::Eq;
 using ::testing::Gt;
 using ::testing::HasSubstr;
 using ::testing::IsSupersetOf;
@@ -85,6 +87,16 @@ extern char** environ;
 namespace gvisor {
 namespace testing {
 namespace {
+
+#ifndef SUID_DUMP_DISABLE
+#define SUID_DUMP_DISABLE 0
+#endif /* SUID_DUMP_DISABLE */
+#ifndef SUID_DUMP_USER
+#define SUID_DUMP_USER 1
+#endif /* SUID_DUMP_USER */
+#ifndef SUID_DUMP_ROOT
+#define SUID_DUMP_ROOT 2
+#endif /* SUID_DUMP_ROOT */
 
 // O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
 // because "it isn't needed", even though Linux can return it via F_GETFL.
@@ -1895,6 +1907,51 @@ void CheckDuplicatesRecursively(std::string path) {
 }
 
 TEST(Proc, NoDuplicates) { CheckDuplicatesRecursively("/proc"); }
+
+// Most /proc/PID files are owned by the task user with SUID_DUMP_USER.
+TEST(ProcPid, UserDumpableOwner) {
+  int before;
+  ASSERT_THAT(before = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+  auto cleanup = Cleanup([before] {
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, before), SyscallSucceeds());
+  });
+
+  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_USER), SyscallSucceeds());
+
+  // This applies to the task directory itself and files inside.
+  struct stat st;
+  ASSERT_THAT(stat("/proc/self/", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_uid, geteuid());
+  EXPECT_EQ(st.st_gid, getegid());
+
+  ASSERT_THAT(stat("/proc/self/stat", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_uid, geteuid());
+  EXPECT_EQ(st.st_gid, getegid());
+}
+
+// /proc/PID files are owned by root with SUID_DUMP_DISABLE.
+TEST(ProcPid, RootDumpableOwner) {
+  int before;
+  ASSERT_THAT(before = prctl(PR_GET_DUMPABLE), SyscallSucceeds());
+  auto cleanup = Cleanup([before] {
+    ASSERT_THAT(prctl(PR_SET_DUMPABLE, before), SyscallSucceeds());
+  });
+
+  EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_DISABLE), SyscallSucceeds());
+
+  // This *does not* applies to the task directory itself (or other 0555
+  // directories), but does to files inside.
+  struct stat st;
+  ASSERT_THAT(stat("/proc/self/", &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_uid, geteuid());
+  EXPECT_EQ(st.st_gid, getegid());
+
+  // This file is owned by root. Also allow nobody in case this test is running
+  // in a userns without root mapped.
+  ASSERT_THAT(stat("/proc/self/stat", &st), SyscallSucceeds());
+  EXPECT_THAT(st.st_uid, AnyOf(Eq(0), Eq(65534)));
+  EXPECT_THAT(st.st_gid, AnyOf(Eq(0), Eq(65534)));
+}
 
 }  // namespace
 }  // namespace testing
