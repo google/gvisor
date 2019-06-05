@@ -28,7 +28,7 @@ std::vector<SocketKind> GetSockets() {
       AllBitwiseCombinations(List<int>{0, SOCK_NONBLOCK}));
 }
 
-INSTANTIATE_TEST_SUITE_P(IPv4TCPSockets,
+INSTANTIATE_TEST_SUITE_P(IPv4TCPUnboundSockets,
                          IPv4TCPUnboundExternalNetworkingSocketTest,
                          ::testing::ValuesIn(GetSockets()));
 }  // namespace testing

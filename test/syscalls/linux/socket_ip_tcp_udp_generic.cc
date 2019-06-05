@@ -69,7 +69,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllTCPSockets, TcpUdpSocketPairTest,
+    AllIPSockets, TcpUdpSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace

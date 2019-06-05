@@ -31,11 +31,11 @@ std::vector<SocketPairKind> GetSocketPairs() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, AllSocketPairTest,
+    FilesystemUnixSockets, AllSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, UnixSocketPairTest,
+    FilesystemUnixSockets, UnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing
