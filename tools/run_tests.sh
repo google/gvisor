@@ -106,18 +106,31 @@ install_runtime() {
   sudo -n ${WORKSPACE_DIR}/runsc/test/install.sh --runtime ${RUNTIME}
 }
 
+install_helper() {
+  PACKAGE="${1}"
+  TAG="${2}"
+  GOPATH="${3}"
+
+  # Clone the repository.
+  mkdir -p "${GOPATH}"/src/$(dirname "${PACKAGE}") && \
+     git clone https://"${PACKAGE}" "${GOPATH}"/src/"${PACKAGE}"
+
+  # Checkout and build the repository.
+  (cd "${GOPATH}"/src/"${PACKAGE}" && \
+      git checkout "${TAG}" && \
+      GOPATH="${GOPATH}" make && \
+      sudo -n -E env GOPATH="${GOPATH}" make install)
+}
+
 # Install dependencies for the crictl tests.
 install_crictl_test_deps() {
   sudo -n -E apt-get update
   sudo -n -E apt-get install -y btrfs-tools libseccomp-dev
 
-  # Install containerd.
-  [[ -d containerd ]] || git clone https://github.com/containerd/containerd
-  (cd containerd && git checkout v1.2.2 && make && sudo -n -E make install)
-
-  # Install crictl.
-  [[ -d cri-tools ]] || git clone https://github.com/kubernetes-sigs/cri-tools
-  (cd cri-tools && git checkout tags/v1.11.0 && make && sudo -n -E make install)
+  # Install containerd & cri-tools.
+  GOPATH=$(mktemp -d --tmpdir gopathXXXXX)
+  install_helper github.com/containerd/containerd v1.2.2 "${GOPATH}"
+  install_helper github.com/kubernetes-sigs/cri-tools v1.11.0 "${GOPATH}"
 
   # Install gvisor-containerd-shim.
   local latest=/tmp/gvisor-containerd-shim-latest
@@ -143,7 +156,8 @@ EOF
   sudo mv ${shim_config_tmp_path} ${shim_config_path}
 
   # Configure CNI.
-  sudo -n -E env PATH=${PATH} containerd/script/setup/install-cni
+  (cd "${GOPATH}" && sudo -n -E env PATH="${PATH}" GOPATH="${GOPATH}" \
+      src/github.com/containerd/containerd/script/setup/install-cni)
 }
 
 # Run the tests that require docker.
