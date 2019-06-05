@@ -779,7 +779,7 @@ func (s *sender) sendData() {
 				break
 			}
 			dataSent = true
-			s.outstanding++
+			s.outstanding += s.pCount(seg)
 			s.writeNext = seg.Next()
 		}
 	}
