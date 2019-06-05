@@ -173,10 +173,10 @@ http_archive(
 
 http_archive(
     name = "com_google_googletest",
-    sha256 = "574e884a41f0a9b76f849a5cdd89c393651e7537e5daa725cf12511232cbd74b",
-    strip_prefix = "googletest-61cdca569b1f7e4629f8b949f0a9606c28281a6b",
+    sha256 = "db657310d3c5ca2d3f674e3a4b79718d1d39da70604568ee0568ba8e39065ef4",
+    strip_prefix = "googletest-31200def0dec8a624c861f919e86e4444e6e6ee7",
     urls = [
-        "https://mirror.bazel.build/github.com/google/googletest/archive/61cdca569b1f7e4629f8b949f0a9606c28281a6b.tar.gz",
-        "https://github.com/google/googletest/archive/61cdca569b1f7e4629f8b949f0a9606c28281a6b.tar.gz",
+        "https://mirror.bazel.build/github.com/google/googletest/archive/31200def0dec8a624c861f919e86e4444e6e6ee7.tar.gz",
+        "https://github.com/google/googletest/archive/31200def0dec8a624c861f919e86e4444e6e6ee7.tar.gz",
     ],
 )
