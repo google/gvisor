@@ -108,7 +108,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		views[0] = hdr.View()
 		views = append(views, payload.Views()...)
 		vv := buffer.NewVectorisedView(len(views[0])+payload.Size(), views)
-		e.HandlePacket(r, vv)
+		loopedR := r.MakeLoopedRoute()
+		e.HandlePacket(&loopedR, vv)
+		loopedR.Release()
 	}
 	if loop&stack.PacketOut == 0 {
 		return nil
