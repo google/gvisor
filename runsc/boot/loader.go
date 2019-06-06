@@ -424,6 +424,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
+	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
+	// there are memory cgroups specified, because at this point we're already
+	// in a mount namespace in which the relevant cgroupfs is not visible.
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		memfile.Close()

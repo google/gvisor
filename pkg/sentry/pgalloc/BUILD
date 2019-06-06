@@ -65,6 +65,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
+        "//pkg/sentry/hostmm",
         "//pkg/sentry/memutil",
         "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
