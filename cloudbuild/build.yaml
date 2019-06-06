@@ -1,0 +1,17 @@
+steps:
+
+# Build remotely.
+- name: 'gcr.io/cloud-builders/bazel'
+  args:
+    - 'build'
+    - '--show_timestamps'
+    - '--test_output=errors'
+    - '--keep_going'
+    - '--verbose_failures=true'
+    - '--config=remote'
+    - '--project_id=${_RBE_PROJECT_ID}'
+    - '--remote_instance_name=projects/${_RBE_PROJECT_ID}/instances/default_instance'
+    - '//...'
+
+substitutions:
+    _RBE_PROJECT_ID: 'gvisor-rbe'

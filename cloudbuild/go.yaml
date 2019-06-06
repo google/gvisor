@@ -1,6 +1,14 @@
 steps:
 - name: 'gcr.io/cloud-builders/git'
   args: ['fetch', '--all', '--unshallow']
+
+# Validate the gazelle configuration.
+- name: 'gcr.io/cloud-builders/bazel'
+  args: ['run', '//:gazelle', '--', 'update-repos', '-from_file=go.mod']
+- name: 'gcr.io/cloud-builders/git'
+  args: ['diff', '--exit-code', 'WORKSPACE']
+
+# Build the Go branch.
 - name: 'gcr.io/cloud-builders/bazel'
   args: ['build', ':gopath']
 - name: 'gcr.io/cloud-builders/docker'
@@ -11,12 +19,21 @@ steps:
   args: ['checkout', 'go']
 - name: 'gcr.io/cloud-builders/git'
   args: ['clean', '-f']
+
+# Validate.
 - name: 'golang'
   args: ['go', 'build', './...']
+
+# Ensure that go.mod and go.sum don't change.
+- name: 'gcr.io/cloud-builders/git'
+  args: ['diff', '--exit-code', 'go.mod', 'go.sum']
+
+# Push if necessary.
 - name: 'gcr.io/cloud-builders/git'
   entrypoint: 'bash'
   args:
     - '-c'
     - 'if [[ "$BRANCH_NAME" == "master" ]]; then git push "${_ORIGIN}" go:go; fi'
+
 substitutions:
-    _ORIGIN: origin
+    _ORIGIN: 'origin'
