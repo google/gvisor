@@ -67,7 +67,7 @@ func newContext(t *testing.T, opt *Options) *context {
 		done <- struct{}{}
 	}
 
-	opt.FD = fds[1]
+	opt.FDs = []int{fds[1]}
 	epID, err := New(opt)
 	if err != nil {
 		t.Fatalf("Failed to create FD endpoint: %v", err)

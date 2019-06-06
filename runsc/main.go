@@ -60,16 +60,16 @@ var (
 	straceLogSize  = flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs")
 
 	// Flags that control sandbox runtime behavior.
-	platform       = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
-	network        = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
-	gso            = flag.Bool("gso", true, "enable generic segmenation offload")
-	fileAccess     = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
-	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
-	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
-	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
-	profile        = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
-	netRaw         = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-
+	platform                                   = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
+	network                                    = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
+	gso                                        = flag.Bool("gso", true, "enable generic segmenation offload")
+	fileAccess                                 = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
+	overlay                                    = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
+	watchdogAction                             = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
+	panicSignal                                = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
+	profile                                    = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
+	netRaw                                     = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
+	numNetworkChannels                         = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 )
 
@@ -141,6 +141,10 @@ func main() {
 		cmd.Fatalf("%v", err)
 	}
 
+	if *numNetworkChannels <= 0 {
+		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
+	}
+
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:        *rootDir,
@@ -162,6 +166,7 @@ func main() {
 		ProfileEnable:  *profile,
 		EnableRaw:      *netRaw,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
+		NumNetworkChannels:                         *numNetworkChannels,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")

@@ -136,6 +136,7 @@ func TestConfig() *boot.Config {
 		Strace:     true,
 		FileAccess: boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
+		NumNetworkChannels:                         1,
 	}
 }
 
