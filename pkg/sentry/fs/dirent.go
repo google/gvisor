@@ -805,7 +805,7 @@ func (d *Dirent) Bind(ctx context.Context, root *Dirent, name string, data trans
 	var childDir *Dirent
 	err := d.genericCreate(ctx, root, name, func() error {
 		var e error
-		childDir, e = d.Inode.Bind(ctx, name, data, perms)
+		childDir, e = d.Inode.Bind(ctx, d, name, data, perms)
 		if e != nil {
 			return e
 		}
