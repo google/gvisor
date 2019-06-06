@@ -84,7 +84,8 @@ pkg_tar(
 genrule(
     name = "deb-version",
     outs = ["version.txt"],
-    cmd = "cat bazel-out/volatile-status.txt | grep VERSION | sed 's/^[^0-9]*//' >$@",
+    cmd = "$(location :runsc) -version | head -n 1 | cut -d' ' -f3 >$@",
+    tools = [":runsc"],
     stamp = 1,
 )
 
