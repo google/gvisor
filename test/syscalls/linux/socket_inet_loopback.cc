@@ -198,7 +198,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
         SyscallSucceeds());
-    ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
+    ASSERT_THAT(listen(fd, 512), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (i != 0) {
