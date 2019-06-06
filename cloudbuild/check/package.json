@@ -1,0 +1,7 @@
+{
+  "name": "check",
+  "version": "0.0.1",
+  "dependencies": {
+    "@octokit/rest": "^15.2.6"
+  }
+}

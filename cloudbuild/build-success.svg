@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="124.6875"
+   height="20.659721"
+   version="1.1"
+   id="svg25"
+   sodipodi:docname="build-success.svg"
+   inkscape:version="0.92.3 (2405546, 2018-03-11)">
+  <metadata
+     id="metadata31">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <defs
+     id="defs29">
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#a"
+       id="linearGradient35"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="scale(2.496873,0.4137119)"
+       x1="0"
+       y1="0"
+       x2="0"
+       y2="49.937462" />
+  </defs>
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1218"
+     inkscape:window-height="682"
+     id="namedview27"
+     showgrid="false"
+     fit-margin-top="0"
+     fit-margin-left="0"
+     fit-margin-right="0"
+     fit-margin-bottom="0"
+     inkscape:zoom="4.2873001"
+     inkscape:cx="68.484036"
+     inkscape:cy="4.7327065"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg25" />
+  <linearGradient
+     id="a"
+     x2="0"
+     y2="49.937462"
+     gradientTransform="scale(2.496873,0.4137119)"
+     x1="0"
+     y1="0"
+     gradientUnits="userSpaceOnUse">
+    <stop
+       offset="0"
+       stop-color="#bbb"
+       stop-opacity=".1"
+       id="stop2" />
+    <stop
+       offset="1"
+       stop-opacity=".1"
+       id="stop4" />
+  </linearGradient>
+  <rect
+     rx="4.9270835"
+     width="124.6875"
+     height="20"
+     id="rect7"
+     x="0"
+     y="0"
+     style="fill:#555555;stroke-width:1.14564395" />
+  <rect
+     rx="4.78125"
+     x="45"
+     width="79.6875"
+     height="20"
+     id="rect9"
+     y="0"
+     style="fill:#44aa00;stroke-width:1.26243806" />
+  <path
+     d="m 45,0 h 4 v 20 h -4 z"
+     id="path11"
+     inkscape:connector-curvature="0"
+     style="fill:#44aa00" />
+  <rect
+     rx="3"
+     width="124.6875"
+     height="20.659721"
+     id="rect13"
+     x="0"
+     y="0"
+     style="fill:url(#linearGradient35);stroke-width:1.01635921" />
+  <g
+     font-size="11"
+     id="g23"
+     transform="translate(1.8190913,-0.73809417)"
+     style="font-size:11px;font-family:'DejaVu Sans', Verdana, Geneva, sans-serif;text-anchor:middle;fill:#ffffff">
+    <text
+       x="22"
+       y="15"
+       id="text15"
+       style="fill:#010101;fill-opacity:0.3">build</text>
+    <text
+       x="22"
+       y="14"
+       id="text17">build</text>
+    <text
+       x="82.128845"
+       y="14.766753"
+       id="text19"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11px;font-family:'DejaVu Sans', Verdana, Geneva, sans-serif;-inkscape-font-specification:'DejaVu Sans, Verdana, Geneva, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;writing-mode:lr-tb;text-anchor:middle;fill:#010101;fill-opacity:0.3">
+      <tspan
+         sodipodi:role="line"
+         id="tspan37"
+         x="82.128845"
+         y="14.766753">awesome</tspan>
+    </text>
+    <text
+       x="82.595337"
+       y="13.766754"
+       id="text21"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:11px;font-family:'DejaVu Sans', Verdana, Geneva, sans-serif;-inkscape-font-specification:'DejaVu Sans, Verdana, Geneva, sans-serif, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:center;writing-mode:lr-tb;text-anchor:middle">
+      <tspan
+         sodipodi:role="line"
+         id="tspan33"
+         x="82.595337"
+         y="13.766754">awesome</tspan>
+    </text>
+  </g>
+</svg>

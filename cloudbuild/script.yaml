@@ -1,0 +1,12 @@
+steps:
+
+# Execute the script remotely.
+- name: 'gcr.io/cloud-builders/gcloud'
+  entrypoint: 'bash'
+  args: ['-c', 'RBE_PROJECT_ID=${_RBE_PROJECT_ID} tools/image_execute.sh ${_SCRIPT}']
+
+substitutions:
+    _RBE_PROJECT_ID: 'gvisor-rbe'
+    _SCRIPT: 'false'
+
+timeout: 3600s

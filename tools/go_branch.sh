@@ -41,7 +41,7 @@ trap finish EXIT
 declare -r head=$(git describe --always)
 
 # We expect to have an existing go branch that we will use as the basis for
-# this commit. That branch may be empty, but it must exist.
+# this commit.
 declare -r go_branch=$(git show-ref --hash origin/go)
 
 # Clone the current repository to the temporary directory, and check out the
@@ -54,12 +54,19 @@ cd "${repo_new}"
 # Setup the repository and checkout the branch.
 git config user.email "gvisor-bot@google.com"
 git config user.name "gVisor bot"
-git fetch origin "${go_branch}"
-git checkout -b go "${go_branch}"
 
-# Start working on a merge commit that combines the previous history with the
-# current history. Note that we don't actually want any changes yet.
-git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
+# Use the go_branch if valid.
+if ! [[ -z "${go_branch}" ]]; then
+  git fetch origin "${go_branch}"
+  git checkout -b go "${go_branch}"
+
+  # Start working on a merge commit that combines the previous history with the
+  # current history. Note that we don't actually want any changes yet.
+  git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
+else
+  # Just checkout the Go branch from the previous commit.
+  git checkout -b go "${head}"
+fi
 
 # Sync the entire gopath_dir and go.mod.
 rsync --recursive --verbose --delete --exclude .git --exclude README.md -L "${gopath_dir}/" .

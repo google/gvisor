@@ -1,0 +1,32 @@
+steps:
+
+# Build remotely.
+- name: 'gcr.io/cloud-builders/bazel'
+  entrypoint: 'bash'
+  args: ['-c', 'bazel --config=remote --project_id=${_RBE_PROJECT_ID} --remote_instance_name=projects/${_RBE_PROJECT_ID}/instances/default_instance build //...; echo $? > .status']
+
+# Generate the link.
+- name: 'ubuntu'
+  args: ['-c', 'echo "<meta http-equiv=\"refresh\" content=\"0; url=https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${PROJECT_ID}\" />" > build.html']
+
+# Upload a badge to gcs.
+- name: 'gcr.io/cloud-builders/gsutil'
+  entrypoint: 'bash'
+  args:
+    - '-c'
+    - >
+      [[ -z "${_BUCKET}" ]] && exit 0;
+      gsutil cp build.html gs://${_BUCKET}/build.html;
+      if [[ "$(cat .status)" -eq 0 ]]; then
+        gsutil cp cloudbuild/badge-success.svg gs://${_BUCKET}/build.svg;
+      else
+        gsutil cp cloudbuild/badge-failure.svg gs://${_BUCKET}/build.svg;
+
+# Exit with appropriate code.
+- name: 'ubuntu'
+  args:
+    - ['-c', 'exit $(cat .status)']
+
+substitutions:
+    _RBE_PROJECT_ID: 'gvisor-rbe'
+    _BUCKET: 'gvisor-build-badges'
