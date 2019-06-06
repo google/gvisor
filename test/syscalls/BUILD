@@ -669,12 +669,7 @@ syscall_test(
     test = "//test/syscalls/linux:write_test",
 )
 
-syscall_test(
-    test = "//test/syscalls/linux:proc_net_unix_test",
-    # Unix domain socket creation isn't supported on all file systems. The
-    # sentry-internal tmpfs is known to support it.
-    use_tmpfs = True,
-)
+syscall_test(test = "//test/syscalls/linux:proc_net_unix_test")
 
 go_binary(
     name = "syscall_test_runner",
