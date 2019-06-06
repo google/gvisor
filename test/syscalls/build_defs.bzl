@@ -7,6 +7,7 @@ def syscall_test(
         shard_count = 1,
         size = "small",
         use_tmpfs = False,
+        add_overlay = False,
         tags = None,
         parallel = True):
     _syscall_test(
@@ -39,6 +40,18 @@ def syscall_test(
         parallel = parallel,
     )
 
+    if add_overlay:
+        _syscall_test(
+            test = test,
+            shard_count = shard_count,
+            size = size,
+            platform = "ptrace",
+            use_tmpfs = False,  # overlay is adding a writable tmpfs on top of root.
+            tags = tags,
+            parallel = parallel,
+            overlay = True,
+        )
+
     if not use_tmpfs:
         # Also test shared gofer access.
         _syscall_test(
@@ -60,7 +73,8 @@ def _syscall_test(
         use_tmpfs,
         tags,
         parallel,
-        file_access = "exclusive"):
+        file_access = "exclusive",
+        overlay = False):
     test_name = test.split(":")[1]
 
     # Prepend "runsc" to non-native platform names.
@@ -69,6 +83,8 @@ def _syscall_test(
     name = test_name + "_" + full_platform
     if file_access == "shared":
         name += "_shared"
+    if overlay:
+        name += "_overlay"
 
     if tags == None:
         tags = []
@@ -92,6 +108,7 @@ def _syscall_test(
         "--platform=" + platform,
         "--use-tmpfs=" + str(use_tmpfs),
         "--file-access=" + file_access,
+        "--overlay=" + str(overlay),
     ]
 
     if parallel:

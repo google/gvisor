@@ -13,11 +13,17 @@ syscall_test(
     test = "//test/syscalls/linux:accept_bind_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:access_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:access_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:affinity_test")
 
-syscall_test(test = "//test/syscalls/linux:aio_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:aio_test",
+)
 
 syscall_test(
     size = "medium",
@@ -30,6 +36,7 @@ syscall_test(test = "//test/syscalls/linux:bad_test")
 
 syscall_test(
     size = "large",
+    add_overlay = True,
     test = "//test/syscalls/linux:bind_test",
 )
 
@@ -37,17 +44,27 @@ syscall_test(test = "//test/syscalls/linux:brk_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_test")
 
-syscall_test(test = "//test/syscalls/linux:chdir_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:chdir_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:chmod_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:chmod_test",
+)
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:chown_test",
     use_tmpfs = True,  # chwon tests require gofer to be running as root.
 )
 
-syscall_test(test = "//test/syscalls/linux:chroot_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:chroot_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:clock_getres_test")
 
@@ -60,11 +77,17 @@ syscall_test(test = "//test/syscalls/linux:clock_nanosleep_test")
 
 syscall_test(test = "//test/syscalls/linux:concurrency_test")
 
-syscall_test(test = "//test/syscalls/linux:creat_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:creat_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:dev_test")
 
-syscall_test(test = "//test/syscalls/linux:dup_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:dup_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:epoll_test")
 
@@ -74,23 +97,34 @@ syscall_test(test = "//test/syscalls/linux:exceptions_test")
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:exec_test",
 )
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:exec_binary_test",
 )
 
 syscall_test(test = "//test/syscalls/linux:exit_test")
 
-syscall_test(test = "//test/syscalls/linux:fadvise64_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:fadvise64_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:fallocate_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:fallocate_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:fault_test")
 
-syscall_test(test = "//test/syscalls/linux:fchdir_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:fchdir_test",
+)
 
 syscall_test(
     size = "medium",
@@ -99,6 +133,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:flock_test",
 )
 
@@ -108,7 +143,10 @@ syscall_test(test = "//test/syscalls/linux:fpsig_fork_test")
 
 syscall_test(test = "//test/syscalls/linux:fpsig_nested_test")
 
-syscall_test(test = "//test/syscalls/linux:fsync_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:fsync_test",
+)
 
 syscall_test(
     size = "medium",
@@ -120,7 +158,10 @@ syscall_test(test = "//test/syscalls/linux:getcpu_host_test")
 
 syscall_test(test = "//test/syscalls/linux:getcpu_test")
 
-syscall_test(test = "//test/syscalls/linux:getdents_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:getdents_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:getrandom_test")
 
@@ -128,11 +169,13 @@ syscall_test(test = "//test/syscalls/linux:getrusage_test")
 
 syscall_test(
     size = "medium",
+    add_overlay = False,  # TODO(gvisor.dev/issue/317): enable when fixed.
     test = "//test/syscalls/linux:inotify_test",
 )
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:ioctl_test",
 )
 
@@ -144,11 +187,15 @@ syscall_test(
 syscall_test(test = "//test/syscalls/linux:kill_test")
 
 syscall_test(
+    add_overlay = True,
     test = "//test/syscalls/linux:link_test",
     use_tmpfs = True,  # gofer needs CAP_DAC_READ_SEARCH to use AT_EMPTY_PATH with linkat(2)
 )
 
-syscall_test(test = "//test/syscalls/linux:lseek_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:lseek_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:madvise_test")
 
@@ -158,9 +205,13 @@ syscall_test(test = "//test/syscalls/linux:mempolicy_test")
 
 syscall_test(test = "//test/syscalls/linux:mincore_test")
 
-syscall_test(test = "//test/syscalls/linux:mkdir_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:mkdir_test",
+)
 
 syscall_test(
+    add_overlay = True,
     test = "//test/syscalls/linux:mknod_test",
     use_tmpfs = True,  # mknod is not supported over gofer.
 )
@@ -171,7 +222,10 @@ syscall_test(
     test = "//test/syscalls/linux:mmap_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:mount_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:mount_test",
+)
 
 syscall_test(
     size = "medium",
@@ -185,9 +239,15 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:munmap_test")
 
-syscall_test(test = "//test/syscalls/linux:open_create_test")
+syscall_test(
+    add_overlay = False,  # TODO(gvisor.dev/issue/316): enable when fixed.
+    test = "//test/syscalls/linux:open_create_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:open_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:open_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:partial_bad_buffer_test")
 
@@ -195,6 +255,7 @@ syscall_test(test = "//test/syscalls/linux:pause_test")
 
 syscall_test(
     size = "large",
+    add_overlay = False,  # TODO(gvisor.dev/issue/318): enable when fixed.
     shard_count = 5,
     test = "//test/syscalls/linux:pipe_test",
 )
@@ -210,11 +271,20 @@ syscall_test(test = "//test/syscalls/linux:prctl_setuid_test")
 
 syscall_test(test = "//test/syscalls/linux:prctl_test")
 
-syscall_test(test = "//test/syscalls/linux:pread64_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:pread64_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:preadv_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:preadv_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:preadv2_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:preadv2_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:priority_test")
 
@@ -239,13 +309,22 @@ syscall_test(
     test = "//test/syscalls/linux:pty_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:pwritev2_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:pwritev2_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:pwrite64_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:pwrite64_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:raw_socket_ipv4_test")
 
-syscall_test(test = "//test/syscalls/linux:read_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:read_test",
+)
 
 syscall_test(
     size = "medium",
@@ -254,11 +333,13 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:readv_test",
 )
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:rename_test",
 )
 
@@ -279,11 +360,20 @@ syscall_test(
     test = "//test/syscalls/linux:semaphore_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:sendfile_socket_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:sendfile_socket_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:sendfile_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:sendfile_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:splice_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:splice_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:sigaction_test")
 
@@ -330,11 +420,13 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_overlay = True,
     test = "//test/syscalls/linux:socket_filesystem_non_blocking_test",
 )
 
 syscall_test(
     size = "large",
+    add_overlay = True,
     shard_count = 10,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
@@ -430,6 +522,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_overlay = True,
     shard_count = 10,
     test = "//test/syscalls/linux:socket_unix_pair_test",
 )
@@ -472,19 +565,40 @@ syscall_test(
     test = "//test/syscalls/linux:socket_unix_unbound_stream_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:statfs_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:statfs_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:stat_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:stat_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:stat_times_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:stat_times_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:sticky_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:sticky_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:symlink_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:symlink_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:sync_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:sync_test",
+)
 
-syscall_test(test = "//test/syscalls/linux:sync_file_range_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:sync_file_range_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:sysinfo_test")
 
@@ -508,7 +622,10 @@ syscall_test(test = "//test/syscalls/linux:time_test")
 
 syscall_test(test = "//test/syscalls/linux:tkill_test")
 
-syscall_test(test = "//test/syscalls/linux:truncate_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:truncate_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:udp_bind_test")
 
@@ -522,7 +639,10 @@ syscall_test(test = "//test/syscalls/linux:uidgid_test")
 
 syscall_test(test = "//test/syscalls/linux:uname_test")
 
-syscall_test(test = "//test/syscalls/linux:unlink_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:unlink_test",
+)
 
 syscall_test(test = "//test/syscalls/linux:unshare_test")
 
@@ -544,7 +664,10 @@ syscall_test(
     test = "//test/syscalls/linux:wait_test",
 )
 
-syscall_test(test = "//test/syscalls/linux:write_test")
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:write_test",
+)
 
 syscall_test(
     test = "//test/syscalls/linux:proc_net_unix_test",

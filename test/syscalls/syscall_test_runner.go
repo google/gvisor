@@ -47,6 +47,7 @@ var (
 	platform   = flag.String("platform", "ptrace", "platform to run on")
 	useTmpfs   = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
 	fileAccess = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
+	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
 )
@@ -184,10 +185,13 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		"-platform", *platform,
 		"-root", rootDir,
 		"-file-access", *fileAccess,
-		"--network=none",
+		"-network=none",
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
-		"--net-raw=true",
+		"-net-raw=true",
+	}
+	if *overlay {
+		args = append(args, "-overlay")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")
