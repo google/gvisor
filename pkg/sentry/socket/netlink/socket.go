@@ -616,3 +616,8 @@ func (s *Socket) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, 
 	n, err := s.sendMsg(ctx, src, nil, 0, socket.ControlMessages{})
 	return int64(n), err.ToError()
 }
+
+// State implements socket.Socket.State.
+func (s *Socket) State() uint32 {
+	return s.ep.State()
+}

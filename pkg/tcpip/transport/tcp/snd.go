@@ -632,6 +632,10 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		}
 		seg.flags = header.TCPFlagAck | header.TCPFlagFin
 		segEnd = seg.sequenceNumber.Add(1)
+		// Transition to FIN-WAIT1 state since we're initiating an active close.
+		s.ep.mu.Lock()
+		s.ep.state = StateFinWait1
+		s.ep.mu.Unlock()
 	} else {
 		// We're sending a non-FIN segment.
 		if seg.flags&header.TCPFlagFin != 0 {

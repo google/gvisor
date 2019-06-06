@@ -226,7 +226,6 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	}
 
 	n.isRegistered = true
-	n.state = stateConnecting
 
 	// Create sender and receiver.
 	//
@@ -258,8 +257,9 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		ep.Close()
 		return nil, err
 	}
-
-	ep.state = stateConnected
+	ep.mu.Lock()
+	ep.state = StateEstablished
+	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
 	// handshake because it's possible that the peer doesn't support window
@@ -276,7 +276,7 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 	e.mu.RLock()
 	state := e.state
 	e.mu.RUnlock()
-	if state == stateListen {
+	if state == StateListen {
 		e.acceptedChan <- n
 		e.waiterQueue.Notify(waiter.EventIn)
 	} else {
@@ -406,7 +406,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.tsOffset = 0
 
 		// Switch state to connected.
-		n.state = stateConnected
+		n.state = StateEstablished
 
 		// Do the delivery in a separate goroutine so
 		// that we don't block the listen loop in case
@@ -429,7 +429,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 		// handleSynSegment() from attempting to queue new connections
 		// to the endpoint.
 		e.mu.Lock()
-		e.state = stateClosed
+		e.state = StateClose
 
 		// Do cleanup if needed.
 		e.completeWorkerLocked()

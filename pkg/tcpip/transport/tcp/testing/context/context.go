@@ -532,6 +532,9 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 	if err != nil {
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateInitial; got != want {
+		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
 	if epRcvBuf != nil {
 		if err := c.EP.SetSockOpt(*epRcvBuf); err != nil {
@@ -557,13 +560,16 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 			checker.TCPFlags(header.TCPFlagSyn),
 		),
 	)
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
-	tcp := header.TCP(header.IPv4(b).Payload())
-	c.IRS = seqnum.Value(tcp.SequenceNumber())
+	tcpHdr := header.TCP(header.IPv4(b).Payload())
+	c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
 
 	c.SendPacket(nil, &Headers{
-		SrcPort: tcp.DestinationPort(),
-		DstPort: tcp.SourcePort(),
+		SrcPort: tcpHdr.DestinationPort(),
+		DstPort: tcpHdr.SourcePort(),
 		Flags:   header.TCPFlagSyn | header.TCPFlagAck,
 		SeqNum:  iss,
 		AckNum:  c.IRS.Add(1),
@@ -591,8 +597,11 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")
 	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
-	c.Port = tcp.SourcePort()
+	c.Port = tcpHdr.SourcePort()
 }
 
 // RawEndpoint is just a small wrapper around a TCP endpoint's state to make
@@ -690,6 +699,9 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	if err != nil {
 		c.t.Fatalf("c.s.NewEndpoint(tcp, ipv4...) = %v", err)
 	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateInitial; got != want {
+		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
 	// Start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
@@ -719,6 +731,10 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 			}),
 		),
 	)
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
 	tcpSeg := header.TCP(header.IPv4(b).Payload())
 	synOptions := header.ParseSynOptions(tcpSeg.Options(), false)
 
@@ -782,6 +798,9 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	case <-time.After(1 * time.Second):
 		c.t.Fatalf("Timed out waiting for connection")
 	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		c.t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
 	// Store the source port in use by the endpoint.
 	c.Port = tcpSeg.SourcePort()
@@ -821,9 +840,15 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 	if err := ep.Bind(tcpip.FullAddress{Port: StackPort}); err != nil {
 		c.t.Fatalf("Bind failed: %v", err)
 	}
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateBound; got != want {
+		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
 
 	if err := ep.Listen(10); err != nil {
 		c.t.Fatalf("Listen failed: %v", err)
+	}
+	if got, want := tcp.EndpointState(ep.State()), tcp.StateListen; got != want {
+		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
 	rep := c.PassiveConnectWithOptions(100, wndScale, synOptions)
@@ -847,6 +872,10 @@ func (c *Context) AcceptWithOptions(wndScale int, synOptions header.TCPSynOption
 			c.t.Fatalf("Timed out waiting for accept")
 		}
 	}
+	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateEstablished; got != want {
+		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
 	return rep
 }
 

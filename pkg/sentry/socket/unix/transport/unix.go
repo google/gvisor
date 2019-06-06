@@ -191,6 +191,10 @@ type Endpoint interface {
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
+
+	// State returns the current state of the socket, as represented by Linux in
+	// procfs.
+	State() uint32
 }
 
 // A Credentialer is a socket or endpoint that supports the SO_PASSCRED socket

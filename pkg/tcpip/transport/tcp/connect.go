@@ -151,6 +151,9 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 	h.mss = opts.MSS
 	h.sndWndScale = opts.WS
 	h.listenEP = listenEP
+	h.ep.mu.Lock()
+	h.ep.state = StateSynRecv
+	h.ep.mu.Unlock()
 }
 
 // checkAck checks if the ACK number, if present, of a segment received during
@@ -219,6 +222,9 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	// but resend our own SYN and wait for it to be acknowledged in the
 	// SYN-RCVD state.
 	h.state = handshakeSynRcvd
+	h.ep.mu.Lock()
+	h.ep.state = StateSynRecv
+	h.ep.mu.Unlock()
 	synOpts := header.TCPSynOptions{
 		WS:    h.rcvWndScale,
 		TS:    rcvSynOpts.TS,
@@ -668,7 +674,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 // sendRaw sends a TCP segment to the endpoint's peer.
 func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size) *tcpip.Error {
 	var sackBlocks []header.SACKBlock
-	if e.state == stateConnected && e.rcv.pendingBufSize > 0 && (flags&header.TCPFlagAck != 0) {
+	if e.state == StateEstablished && e.rcv.pendingBufSize > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
@@ -719,8 +725,7 @@ func (e *endpoint) handleClose() *tcpip.Error {
 // protocol goroutine.
 func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
 	e.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck|header.TCPFlagRst, e.snd.sndUna, e.rcv.rcvNxt, 0)
-
-	e.state = stateError
+	e.state = StateError
 	e.hardError = err
 }
 
@@ -876,14 +881,19 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		// handshake, and then inform potential waiters about its
 		// completion.
 		h := newHandshake(e, seqnum.Size(e.receiveBufferAvailable()))
+		e.mu.Lock()
+		h.ep.state = StateSynSent
+		e.mu.Unlock()
+
 		if err := h.execute(); err != nil {
 			e.lastErrorMu.Lock()
 			e.lastError = err
 			e.lastErrorMu.Unlock()
 
 			e.mu.Lock()
-			e.state = stateError
+			e.state = StateError
 			e.hardError = err
+
 			// Lock released below.
 			epilogue()
 
@@ -905,7 +915,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	// Tell waiters that the endpoint is connected and writable.
 	e.mu.Lock()
-	e.state = stateConnected
+	e.state = StateEstablished
 	drained := e.drainDone != nil
 	e.mu.Unlock()
 	if drained {
@@ -1005,7 +1015,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 							return err
 						}
 					}
-					if e.state != stateError {
+					if e.state != StateError {
 						close(e.drainDone)
 						<-e.undrain
 					}
@@ -1061,8 +1071,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	// Mark endpoint as closed.
 	e.mu.Lock()
-	if e.state != stateError {
-		e.state = stateClosed
+	if e.state != StateError {
+		e.state = StateClose
 	}
 	// Lock released below.
 	epilogue()

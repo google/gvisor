@@ -134,6 +134,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	// sequence numbers that have been consumed.
 	TrimSACKBlockList(&r.ep.sack, r.rcvNxt)
 
+	// Handle FIN or FIN-ACK.
 	if s.flagIsSet(header.TCPFlagFin) {
 		r.rcvNxt++
 
@@ -143,6 +144,25 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		// Tell any readers that no more data will come.
 		r.closed = true
 		r.ep.readyToRead(nil)
+
+		// We just received a FIN, our next state depends on whether we sent a
+		// FIN already or not.
+		r.ep.mu.Lock()
+		switch r.ep.state {
+		case StateEstablished:
+			r.ep.state = StateCloseWait
+		case StateFinWait1:
+			if s.flagIsSet(header.TCPFlagAck) {
+				// FIN-ACK, transition to TIME-WAIT.
+				r.ep.state = StateTimeWait
+			} else {
+				// Simultaneous close, expecting a final ACK.
+				r.ep.state = StateClosing
+			}
+		case StateFinWait2:
+			r.ep.state = StateTimeWait
+		}
+		r.ep.mu.Unlock()
 
 		// Flush out any pending segments, except the very first one if
 		// it happens to be the one we're handling now because the
@@ -156,6 +176,23 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 			r.pendingRcvdSegments[i].decRef()
 		}
 		r.pendingRcvdSegments = r.pendingRcvdSegments[:first]
+
+		return true
+	}
+
+	// Handle ACK (not FIN-ACK, which we handled above) during one of the
+	// shutdown states.
+	if s.flagIsSet(header.TCPFlagAck) {
+		r.ep.mu.Lock()
+		switch r.ep.state {
+		case StateFinWait1:
+			r.ep.state = StateFinWait2
+		case StateClosing:
+			r.ep.state = StateTimeWait
+		case StateLastAck:
+			r.ep.state = StateClose
+		}
+		r.ep.mu.Unlock()
 	}
 
 	return true

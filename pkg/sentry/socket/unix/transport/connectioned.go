@@ -17,6 +17,7 @@ package transport
 import (
 	"sync"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -457,4 +458,12 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 	}
 
 	return ready
+}
+
+// State implements socket.Socket.State.
+func (e *connectionedEndpoint) State() uint32 {
+	if e.Connected() {
+		return linux.SS_CONNECTED
+	}
+	return linux.SS_UNCONNECTED
 }

@@ -19,7 +19,9 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.googlesource.com/gvisor/pkg/binary"
 	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
@@ -517,6 +519,28 @@ func translateIOSyscallError(err error) error {
 		return syserror.ErrWouldBlock
 	}
 	return err
+}
+
+// State implements socket.Socket.State.
+func (s *socketOperations) State() uint32 {
+	info := linux.TCPInfo{}
+	buf, err := getsockopt(s.fd, syscall.SOL_TCP, syscall.TCP_INFO, linux.SizeOfTCPInfo)
+	if err != nil {
+		if err != syscall.ENOPROTOOPT {
+			log.Warningf("Failed to get TCP socket info from %+v: %v", s, err)
+		}
+		// For non-TCP sockets, silently ignore the failure.
+		return 0
+	}
+	if len(buf) != linux.SizeOfTCPInfo {
+		// Unmarshal below will panic if getsockopt returns a buffer of
+		// unexpected size.
+		log.Warningf("Failed to get TCP socket info from %+v: getsockopt(2) returned %d bytes, expecting %d bytes.", s, len(buf), linux.SizeOfTCPInfo)
+		return 0
+	}
+
+	binary.Unmarshal(buf, usermem.ByteOrder, &info)
+	return uint32(info.State)
 }
 
 type socketProvider struct {

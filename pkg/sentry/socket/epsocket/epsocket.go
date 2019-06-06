@@ -52,6 +52,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
 )
 
@@ -2280,4 +2281,47 @@ func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 		rv |= linux.IFF_LOOPBACK
 	}
 	return rv
+}
+
+// State implements socket.Socket.State. State translates the internal state
+// returned by netstack to values defined by Linux.
+func (s *SocketOperations) State() uint32 {
+	if s.family != linux.AF_INET && s.family != linux.AF_INET6 {
+		// States not implemented for this socket's family.
+		return 0
+	}
+
+	if !s.isPacketBased() {
+		// TCP socket.
+		switch tcp.EndpointState(s.Endpoint.State()) {
+		case tcp.StateEstablished:
+			return linux.TCP_ESTABLISHED
+		case tcp.StateSynSent:
+			return linux.TCP_SYN_SENT
+		case tcp.StateSynRecv:
+			return linux.TCP_SYN_RECV
+		case tcp.StateFinWait1:
+			return linux.TCP_FIN_WAIT1
+		case tcp.StateFinWait2:
+			return linux.TCP_FIN_WAIT2
+		case tcp.StateTimeWait:
+			return linux.TCP_TIME_WAIT
+		case tcp.StateClose, tcp.StateInitial, tcp.StateBound, tcp.StateConnecting, tcp.StateError:
+			return linux.TCP_CLOSE
+		case tcp.StateCloseWait:
+			return linux.TCP_CLOSE_WAIT
+		case tcp.StateLastAck:
+			return linux.TCP_LAST_ACK
+		case tcp.StateListen:
+			return linux.TCP_LISTEN
+		case tcp.StateClosing:
+			return linux.TCP_CLOSING
+		default:
+			// Internal or unknown state.
+			return 0
+		}
+	}
+
+	// TODO(b/112063468): Export states for UDP, ICMP, and raw sockets.
+	return 0
 }

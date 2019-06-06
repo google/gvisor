@@ -830,6 +830,12 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	}
 }
 
+// State implements socket.Socket.State.
+func (s *socketOperations) State() uint32 {
+	// TODO(b/127845868): Define a new rpc to query the socket state.
+	return 0
+}
+
 type socketProvider struct {
 	family int
 }

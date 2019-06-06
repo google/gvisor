@@ -240,24 +240,6 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 			}
 		}
 
-		var sockState int
-		switch sops.Endpoint().Type() {
-		case linux.SOCK_DGRAM:
-			sockState = linux.SS_CONNECTING
-			// Unlike Linux, we don't have unbound connection-less sockets,
-			// so no SS_DISCONNECTING.
-
-		case linux.SOCK_SEQPACKET:
-			fallthrough
-		case linux.SOCK_STREAM:
-			// Connectioned.
-			if sops.Endpoint().(transport.ConnectingEndpoint).Connected() {
-				sockState = linux.SS_CONNECTED
-			} else {
-				sockState = linux.SS_UNCONNECTED
-			}
-		}
-
 		// In the socket entry below, the value for the 'Num' field requires
 		// some consideration. Linux prints the address to the struct
 		// unix_sock representing a socket in the kernel, but may redact the
@@ -282,7 +264,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 			0,                             // Protocol, always 0 for UDS.
 			sockFlags,                     // Flags.
 			sops.Endpoint().Type(),        // Type.
-			sockState,                     // State.
+			sops.State(),                  // State.
 			sfile.InodeID(),               // Inode.
 		)
 

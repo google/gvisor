@@ -596,6 +596,11 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	}
 }
 
+// State implements socket.Socket.State.
+func (s *SocketOperations) State() uint32 {
+	return s.ep.State()
+}
+
 // provider is a unix domain socket provider.
 type provider struct{}
 

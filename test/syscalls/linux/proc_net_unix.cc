@@ -34,6 +34,16 @@ using absl::StrFormat;
 constexpr char kProcNetUnixHeader[] =
     "Num       RefCount Protocol Flags    Type St Inode Path";
 
+// Possible values of the "st" field in a /proc/net/unix entry. Source: Linux
+// kernel, include/uapi/linux/net.h.
+enum {
+  SS_FREE = 0,      // Not allocated
+  SS_UNCONNECTED,   // Unconnected to any socket
+  SS_CONNECTING,    // In process of connecting
+  SS_CONNECTED,     // Connected to socket
+  SS_DISCONNECTING  // In process of disconnecting
+};
+
 // UnixEntry represents a single entry from /proc/net/unix.
 struct UnixEntry {
   uintptr_t addr;
@@ -71,7 +81,12 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
   bool skipped_header = false;
   std::vector<UnixEntry> entries;
   std::vector<std::string> lines = absl::StrSplit(content, absl::ByAnyChar("\n"));
+  std::cerr << "<contents of /proc/net/unix>" << std::endl;
   for (std::string line : lines) {
+    // Emit the proc entry to the test output to provide context for the test
+    // results.
+    std::cerr << line << std::endl;
+
     if (!skipped_header) {
       EXPECT_EQ(line, kProcNetUnixHeader);
       skipped_header = true;
@@ -139,6 +154,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
 
     entries.push_back(entry);
   }
+  std::cerr << "<end of /proc/net/unix>" << std::endl;
 
   return entries;
 }
@@ -239,6 +255,168 @@ TEST(ProcNetUnix, SocketPair) {
 
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
   EXPECT_EQ(entries.size(), 2);
+}
+
+TEST(ProcNetUnix, StreamSocketStateUnconnectedOnBind) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(
+      AbstractUnboundUnixDomainSocketPair(SOCK_STREAM).Create());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  std::vector<UnixEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+
+  const std::string address = ExtractPath(sockets->first_addr());
+  UnixEntry bind_entry;
+  ASSERT_TRUE(FindByPath(entries, &bind_entry, address));
+  EXPECT_EQ(bind_entry.state, SS_UNCONNECTED);
+}
+
+TEST(ProcNetUnix, StreamSocketStateStateUnconnectedOnListen) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(
+      AbstractUnboundUnixDomainSocketPair(SOCK_STREAM).Create());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  std::vector<UnixEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+
+  const std::string address = ExtractPath(sockets->first_addr());
+  UnixEntry bind_entry;
+  ASSERT_TRUE(FindByPath(entries, &bind_entry, address));
+  EXPECT_EQ(bind_entry.state, SS_UNCONNECTED);
+
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+  UnixEntry listen_entry;
+  ASSERT_TRUE(
+      FindByPath(entries, &listen_entry, ExtractPath(sockets->first_addr())));
+  EXPECT_EQ(listen_entry.state, SS_UNCONNECTED);
+  // The bind and listen entries should refer to the same socket.
+  EXPECT_EQ(listen_entry.inode, bind_entry.inode);
+}
+
+TEST(ProcNetUnix, StreamSocketStateStateConnectedOnAccept) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(
+      AbstractUnboundUnixDomainSocketPair(SOCK_STREAM).Create());
+  const std::string address = ExtractPath(sockets->first_addr());
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+  std::vector<UnixEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+  UnixEntry listen_entry;
+  ASSERT_TRUE(
+      FindByPath(entries, &listen_entry, ExtractPath(sockets->first_addr())));
+
+  ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
+                      sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  int clientfd;
+  ASSERT_THAT(clientfd = accept(sockets->first_fd(), nullptr, nullptr),
+              SyscallSucceeds());
+
+  // Find the entry for the accepted socket. UDS proc entries don't have a
+  // remote address, so we distinguish the accepted socket from the listen
+  // socket by checking for a different inode.
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+  UnixEntry accept_entry;
+  ASSERT_TRUE(FindBy(
+      entries, &accept_entry, [address, listen_entry](const UnixEntry& e) {
+        return e.path == address && e.inode != listen_entry.inode;
+      }));
+  EXPECT_EQ(accept_entry.state, SS_CONNECTED);
+  // Listen entry should still be in SS_UNCONNECTED state.
+  ASSERT_TRUE(FindBy(entries, &listen_entry,
+                     [&sockets, listen_entry](const UnixEntry& e) {
+                       return e.path == ExtractPath(sockets->first_addr()) &&
+                              e.inode == listen_entry.inode;
+                     }));
+  EXPECT_EQ(listen_entry.state, SS_UNCONNECTED);
+}
+
+TEST(ProcNetUnix, DgramSocketStateDisconnectingOnBind) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(
+      AbstractUnboundUnixDomainSocketPair(SOCK_DGRAM).Create());
+
+  std::vector<UnixEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+
+  // On gVisor, the only two UDS on the system are the ones we just created and
+  // we rely on this to locate the test socket entries in the remainder of the
+  // test. On a generic Linux system, we have no easy way to locate the
+  // corresponding entries, as they don't have an address yet.
+  if (IsRunningOnGvisor()) {
+    ASSERT_EQ(entries.size(), 2);
+    for (auto e : entries) {
+      ASSERT_EQ(e.state, SS_DISCONNECTING);
+    }
+  }
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+  const std::string address = ExtractPath(sockets->first_addr());
+  UnixEntry bind_entry;
+  ASSERT_TRUE(FindByPath(entries, &bind_entry, address));
+  EXPECT_EQ(bind_entry.state, SS_UNCONNECTED);
+}
+
+TEST(ProcNetUnix, DgramSocketStateConnectingOnConnect) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(
+      AbstractUnboundUnixDomainSocketPair(SOCK_DGRAM).Create());
+
+  std::vector<UnixEntry> entries =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+
+  // On gVisor, the only two UDS on the system are the ones we just created and
+  // we rely on this to locate the test socket entries in the remainder of the
+  // test. On a generic Linux system, we have no easy way to locate the
+  // corresponding entries, as they don't have an address yet.
+  if (IsRunningOnGvisor()) {
+    ASSERT_EQ(entries.size(), 2);
+    for (auto e : entries) {
+      ASSERT_EQ(e.state, SS_DISCONNECTING);
+    }
+  }
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+  const std::string address = ExtractPath(sockets->first_addr());
+  UnixEntry bind_entry;
+  ASSERT_TRUE(FindByPath(entries, &bind_entry, address));
+
+  ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
+                      sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
+
+  // Once again, we have no easy way to identify the connecting socket as it has
+  // no listed address. We can only identify the entry as the "non-bind socket
+  // entry" on gVisor, where we're guaranteed to have only the two entries we
+  // create during this test.
+  if (IsRunningOnGvisor()) {
+    ASSERT_EQ(entries.size(), 2);
+    UnixEntry connect_entry;
+    ASSERT_TRUE(
+        FindBy(entries, &connect_entry, [bind_entry](const UnixEntry& e) {
+          return e.inode != bind_entry.inode;
+        }));
+    EXPECT_EQ(connect_entry.state, SS_CONNECTING);
+  }
 }
 
 }  // namespace

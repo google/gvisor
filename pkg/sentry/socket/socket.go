@@ -116,6 +116,10 @@ type Socket interface {
 	// SendTimeout gets the current timeout (in ns) for send operations. Zero
 	// means no timeout, and negative means DONTWAIT.
 	SendTimeout() int64
+
+	// State returns the current state of the socket, as represented by Linux in
+	// procfs. The returned state value is protocol-specific.
+	State() uint32
 }
 
 // Provider is the interface implemented by providers of sockets for specific
