@@ -114,3 +114,12 @@ const (
 
 	MPOL_MODE_FLAGS = (MPOL_F_STATIC_NODES | MPOL_F_RELATIVE_NODES)
 )
+
+// Flags for mbind(2).
+const (
+	MPOL_MF_STRICT   = 1 << 0
+	MPOL_MF_MOVE     = 1 << 1
+	MPOL_MF_MOVE_ALL = 1 << 2
+
+	MPOL_MF_VALID = MPOL_MF_STRICT | MPOL_MF_MOVE | MPOL_MF_MOVE_ALL
+)

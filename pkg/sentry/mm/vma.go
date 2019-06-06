@@ -107,6 +107,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		private:        opts.Private,
 		growsDown:      opts.GrowsDown,
 		mlockMode:      opts.MLockMode,
+		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
 		hint:           opts.Hint,
 	}
@@ -436,6 +437,8 @@ func (vmaSetFunctions) Merge(ar1 usermem.AddrRange, vma1 vma, ar2 usermem.AddrRa
 		vma1.private != vma2.private ||
 		vma1.growsDown != vma2.growsDown ||
 		vma1.mlockMode != vma2.mlockMode ||
+		vma1.numaPolicy != vma2.numaPolicy ||
+		vma1.numaNodemask != vma2.numaNodemask ||
 		vma1.id != vma2.id ||
 		vma1.hint != vma2.hint {
 		return vma{}, false

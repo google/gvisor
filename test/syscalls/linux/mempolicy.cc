@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/util/cleanup.h"
+#include "test/util/memory_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -34,7 +35,7 @@ namespace {
 #define MPOL_PREFERRED 1
 #define MPOL_BIND 2
 #define MPOL_INTERLEAVE 3
-#define MPOL_MAX MPOL_INTERLEAVE
+#define MPOL_LOCAL 4
 #define MPOL_F_NODE (1 << 0)
 #define MPOL_F_ADDR (1 << 1)
 #define MPOL_F_MEMS_ALLOWED (1 << 2)
@@ -44,11 +45,17 @@ namespace {
 
 int get_mempolicy(int *policy, uint64_t *nmask, uint64_t maxnode, void *addr,
                   int flags) {
-  return syscall(__NR_get_mempolicy, policy, nmask, maxnode, addr, flags);
+  return syscall(SYS_get_mempolicy, policy, nmask, maxnode, addr, flags);
 }
 
 int set_mempolicy(int mode, uint64_t *nmask, uint64_t maxnode) {
-  return syscall(__NR_set_mempolicy, mode, nmask, maxnode);
+  return syscall(SYS_set_mempolicy, mode, nmask, maxnode);
+}
+
+int mbind(void *addr, unsigned long len, int mode,
+          const unsigned long *nodemask, unsigned long maxnode,
+          unsigned flags) {
+  return syscall(SYS_mbind, addr, len, mode, nodemask, maxnode, flags);
 }
 
 // Creates a cleanup object that resets the calling thread's mempolicy to the
@@ -250,6 +257,30 @@ TEST(MempolicyTest, GetMempolicyNextInterleaveNode) {
   ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, nullptr, MPOL_F_NODE),
               SyscallSucceeds());
   EXPECT_EQ(0, mode);
+}
+
+TEST(MempolicyTest, Mbind) {
+  // Temporarily set the thread policy to MPOL_PREFERRED.
+  const auto cleanup_thread_policy =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSetMempolicy(MPOL_PREFERRED, nullptr, 0));
+
+  const auto mapping = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS));
+
+  // vmas default to MPOL_DEFAULT irrespective of the thread policy (currently
+  // MPOL_PREFERRED).
+  int mode;
+  ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, mapping.ptr(), MPOL_F_ADDR),
+              SyscallSucceeds());
+  EXPECT_EQ(mode, MPOL_DEFAULT);
+
+  // Set MPOL_PREFERRED for the vma and read it back.
+  ASSERT_THAT(
+      mbind(mapping.ptr(), mapping.len(), MPOL_PREFERRED, nullptr, 0, 0),
+      SyscallSucceeds());
+  ASSERT_THAT(get_mempolicy(&mode, nullptr, 0, mapping.ptr(), MPOL_F_ADDR),
+              SyscallSucceeds());
+  EXPECT_EQ(mode, MPOL_PREFERRED);
 }
 
 }  // namespace

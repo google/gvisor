@@ -999,6 +999,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:cleanup",
+        "//test/util:memory_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",

@@ -276,6 +276,12 @@ type vma struct {
 
 	mlockMode memmap.MLockMode
 
+	// numaPolicy is the NUMA policy for this vma set by mbind().
+	numaPolicy int32
+
+	// numaNodemask is the NUMA nodemask for this vma set by mbind().
+	numaNodemask uint64
+
 	// If id is not nil, it controls the lifecycle of mappable and provides vma
 	// metadata shown in /proc/[pid]/maps, and the vma holds a reference.
 	id memmap.MappingIdentity

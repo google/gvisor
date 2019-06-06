@@ -19,6 +19,7 @@ go_library(
         "sys_identity.go",
         "sys_inotify.go",
         "sys_lseek.go",
+        "sys_mempolicy.go",
         "sys_mmap.go",
         "sys_mount.go",
         "sys_pipe.go",
