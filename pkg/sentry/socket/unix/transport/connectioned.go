@@ -45,7 +45,7 @@ type ConnectingEndpoint interface {
 	// Type returns the socket type, typically either SockStream or
 	// SockSeqpacket. The connection attempt must be aborted if this
 	// value doesn't match the ConnectableEndpoint's type.
-	Type() SockType
+	Type() linux.SockType
 
 	// GetLocalAddress returns the bound path.
 	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
@@ -101,7 +101,7 @@ type connectionedEndpoint struct {
 	// stype is used by connecting sockets to ensure that they are the
 	// same type. The value is typically either tcpip.SockSeqpacket or
 	// tcpip.SockStream.
-	stype SockType
+	stype linux.SockType
 
 	// acceptedChan is per the TCP endpoint implementation. Note that the
 	// sockets in this channel are _already in the connected state_, and
@@ -112,7 +112,7 @@ type connectionedEndpoint struct {
 }
 
 // NewConnectioned creates a new unbound connectionedEndpoint.
-func NewConnectioned(stype SockType, uid UniqueIDProvider) Endpoint {
+func NewConnectioned(stype linux.SockType, uid UniqueIDProvider) Endpoint {
 	return &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
@@ -122,7 +122,7 @@ func NewConnectioned(stype SockType, uid UniqueIDProvider) Endpoint {
 }
 
 // NewPair allocates a new pair of connected unix-domain connectionedEndpoints.
-func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
+func NewPair(stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 	a := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
@@ -139,7 +139,7 @@ func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
 	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: initialLimit}
 
-	if stype == SockStream {
+	if stype == linux.SOCK_STREAM {
 		a.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q1}}
 		b.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q2}}
 	} else {
@@ -163,7 +163,7 @@ func NewPair(stype SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 
 // NewExternal creates a new externally backed Endpoint. It behaves like a
 // socketpair.
-func NewExternal(stype SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
+func NewExternal(stype linux.SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
 	return &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
 		id:           uid.UniqueID(),
@@ -178,7 +178,7 @@ func (e *connectionedEndpoint) ID() uint64 {
 }
 
 // Type implements ConnectingEndpoint.Type and Endpoint.Type.
-func (e *connectionedEndpoint) Type() SockType {
+func (e *connectionedEndpoint) Type() linux.SockType {
 	return e.stype
 }
 
@@ -294,7 +294,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 	}
 
 	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: initialLimit}
-	if e.stype == SockStream {
+	if e.stype == linux.SOCK_STREAM {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
 	} else {
 		ne.receiver = &queueReceiver{readQueue: writeQueue}
@@ -309,7 +309,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 			writeQueue: writeQueue,
 		}
 		readQueue.IncRef()
-		if e.stype == SockStream {
+		if e.stype == linux.SOCK_STREAM {
 			returnConnect(&streamQueueReceiver{queueReceiver: queueReceiver{readQueue: readQueue}}, connected)
 		} else {
 			returnConnect(&queueReceiver{readQueue: readQueue}, connected)
@@ -429,7 +429,7 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *syser
 func (e *connectionedEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	// Stream sockets do not support specifying the endpoint. Seqpacket
 	// sockets ignore the passed endpoint.
-	if e.stype == SockStream && to != nil {
+	if e.stype == linux.SOCK_STREAM && to != nil {
 		return 0, syserr.ErrNotSupported
 	}
 	return e.baseEndpoint.SendMsg(data, c, to)

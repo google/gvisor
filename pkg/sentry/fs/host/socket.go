@@ -19,6 +19,7 @@ import (
 	"sync"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/fd"
 	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
 	"gvisor.googlesource.com/gvisor/pkg/log"
@@ -56,7 +57,7 @@ type ConnectedEndpoint struct {
 	srfd int `state:"wait"`
 
 	// stype is the type of Unix socket.
-	stype transport.SockType
+	stype linux.SockType
 
 	// sndbuf is the size of the send buffer.
 	//
@@ -105,7 +106,7 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 		return syserr.ErrInvalidEndpointState
 	}
 
-	c.stype = transport.SockType(stype)
+	c.stype = linux.SockType(stype)
 	c.sndbuf = sndbuf
 
 	return nil
@@ -163,7 +164,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 
 	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
-	return unixsocket.NewWithDirent(ctx, d, ep, e.stype != transport.SockStream, flags), nil
+	return unixsocket.NewWithDirent(ctx, d, ep, e.stype != linux.SOCK_STREAM, flags), nil
 }
 
 // newSocket allocates a new unix socket with host endpoint.
@@ -195,7 +196,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 
 	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
-	return unixsocket.New(ctx, ep, e.stype != transport.SockStream), nil
+	return unixsocket.New(ctx, ep, e.stype != linux.SOCK_STREAM), nil
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
@@ -209,7 +210,7 @@ func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.Contro
 
 	// Since stream sockets don't preserve message boundaries, we can write
 	// only as much of the message as fits in the send buffer.
-	truncate := c.stype == transport.SockStream
+	truncate := c.stype == linux.SOCK_STREAM
 
 	n, totalLen, err := fdWriteVec(c.file.FD(), data, c.sndbuf, truncate)
 	if n < totalLen && err == nil {

@@ -30,7 +30,6 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
-        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",

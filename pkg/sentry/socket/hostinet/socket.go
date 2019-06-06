@@ -30,7 +30,6 @@ import (
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
@@ -548,7 +547,7 @@ type socketProvider struct {
 }
 
 // Socket implements socket.Provider.Socket.
-func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Check that we are using the host network stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -590,7 +589,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, p
 }
 
 // Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	// Not supported by AF_INET/AF_INET6.
 	return nil, nil, nil
 }

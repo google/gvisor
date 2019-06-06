@@ -119,8 +119,8 @@ func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to Bo
 }
 
 // Type implements Endpoint.Type.
-func (e *connectionlessEndpoint) Type() SockType {
-	return SockDgram
+func (e *connectionlessEndpoint) Type() linux.SockType {
+	return linux.SOCK_DGRAM
 }
 
 // Connect attempts to connect directly to server.

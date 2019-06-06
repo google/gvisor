@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
@@ -27,21 +28,6 @@ import (
 
 // initialLimit is the starting limit for the socket buffers.
 const initialLimit = 16 * 1024
-
-// A SockType is a type (as opposed to family) of sockets. These are enumerated
-// in the syscall package as syscall.SOCK_* constants.
-type SockType int
-
-const (
-	// SockStream corresponds to syscall.SOCK_STREAM.
-	SockStream SockType = 1
-	// SockDgram corresponds to syscall.SOCK_DGRAM.
-	SockDgram SockType = 2
-	// SockRaw corresponds to syscall.SOCK_RAW.
-	SockRaw SockType = 3
-	// SockSeqpacket corresponds to syscall.SOCK_SEQPACKET.
-	SockSeqpacket SockType = 5
-)
 
 // A RightsControlMessage is a control message containing FDs.
 type RightsControlMessage interface {
@@ -175,7 +161,7 @@ type Endpoint interface {
 
 	// Type return the socket type, typically either SockStream, SockDgram
 	// or SockSeqpacket.
-	Type() SockType
+	Type() linux.SockType
 
 	// GetLocalAddress returns the address to which the endpoint is bound.
 	GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
@@ -629,7 +615,7 @@ type connectedEndpoint struct {
 		GetLocalAddress() (tcpip.FullAddress, *tcpip.Error)
 
 		// Type implements Endpoint.Type.
-		Type() SockType
+		Type() linux.SockType
 	}
 
 	writeQueue *queue
@@ -653,7 +639,7 @@ func (e *connectedEndpoint) Send(data [][]byte, controlMessages ControlMessages,
 	}
 
 	truncate := false
-	if e.endpoint.Type() == SockStream {
+	if e.endpoint.Type() == linux.SOCK_STREAM {
 		// Since stream sockets don't preserve message boundaries, we
 		// can write only as much of the message as fits in the queue.
 		truncate = true

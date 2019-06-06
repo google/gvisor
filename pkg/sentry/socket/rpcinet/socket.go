@@ -32,7 +32,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/conn"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/notifier"
 	pb "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
@@ -70,7 +69,7 @@ type socketOperations struct {
 var _ = socket.Socket(&socketOperations{})
 
 // New creates a new RPC socket.
-func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, protocol int) (*fs.File, *syserr.Error) {
+func newSocketFile(ctx context.Context, stack *Stack, family int, skType linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Socket{&pb.SocketRequest{Family: int64(family), Type: int64(skType | syscall.SOCK_NONBLOCK), Protocol: int64(protocol)}}}, false /* ignoreResult */)
 	<-c
 
@@ -841,7 +840,7 @@ type socketProvider struct {
 }
 
 // Socket implements socket.Provider.Socket.
-func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Check that we are using the RPC network stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -857,7 +856,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, p
 	//
 	// Try to restrict the flags we will accept to minimize backwards
 	// incompatibility with netstack.
-	stype := int(stypeflags) & linux.SOCK_TYPE_MASK
+	stype := stypeflags & linux.SOCK_TYPE_MASK
 	switch stype {
 	case syscall.SOCK_STREAM:
 		switch protocol {
@@ -881,7 +880,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, p
 }
 
 // Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	// Not supported by AF_INET/AF_INET6.
 	return nil, nil, nil
 }

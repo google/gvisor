@@ -605,7 +605,7 @@ func (s *SocketOperations) State() uint32 {
 type provider struct{}
 
 // Socket returns a new unix domain socket.
-func (*provider) Socket(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (*provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Check arguments.
 	if protocol != 0 && protocol != linux.AF_UNIX /* PF_UNIX */ {
 		return nil, syserr.ErrProtocolNotSupported
@@ -631,7 +631,7 @@ func (*provider) Socket(t *kernel.Task, stype transport.SockType, protocol int) 
 }
 
 // Pair creates a new pair of AF_UNIX connected sockets.
-func (*provider) Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	// Check arguments.
 	if protocol != 0 && protocol != linux.AF_UNIX /* PF_UNIX */ {
 		return nil, nil, syserr.ErrProtocolNotSupported

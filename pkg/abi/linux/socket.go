@@ -102,15 +102,19 @@ const (
 	SOL_NETLINK = 270
 )
 
+// A SockType is a type (as opposed to family) of sockets. These are enumerated
+// below as SOCK_* constants.
+type SockType int
+
 // Socket types, from linux/net.h.
 const (
-	SOCK_STREAM    = 1
-	SOCK_DGRAM     = 2
-	SOCK_RAW       = 3
-	SOCK_RDM       = 4
-	SOCK_SEQPACKET = 5
-	SOCK_DCCP      = 6
-	SOCK_PACKET    = 10
+	SOCK_STREAM    SockType = 1
+	SOCK_DGRAM              = 2
+	SOCK_RAW                = 3
+	SOCK_RDM                = 4
+	SOCK_SEQPACKET          = 5
+	SOCK_DCCP               = 6
+	SOCK_PACKET             = 10
 )
 
 // SOCK_TYPE_MASK covers all of the above socket types. The remaining bits are
