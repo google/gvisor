@@ -55,7 +55,7 @@ class PipeTest : public ::testing::TestWithParam<PipeCreator> {
   FileDescriptor wfd;
 
  public:
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     // Tests intentionally generate SIGPIPE.
     TEST_PCHECK(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
   }
@@ -82,7 +82,7 @@ class PipeTest : public ::testing::TestWithParam<PipeCreator> {
     return s1;
   }
 
-  static void TearDownTestCase() {
+  static void TearDownTestSuite() {
     TEST_PCHECK(signal(SIGPIPE, SIG_DFL) != SIG_ERR);
   }
 
