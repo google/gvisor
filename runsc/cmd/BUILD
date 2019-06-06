@@ -14,6 +14,7 @@ go_library(
         "debug.go",
         "delete.go",
         "do.go",
+        "error.go",
         "events.go",
         "exec.go",
         "gofer.go",
