@@ -2096,6 +2096,7 @@ cc_binary(
     deps = [
         ":socket_generic_test_cases",
         ":socket_test_util",
+        ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
         "//test/util:test_main",
@@ -2369,6 +2370,7 @@ cc_binary(
     deps = [
         ":socket_generic_test_cases",
         ":socket_test_util",
+        ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
         "//test/util:test_main",
@@ -2478,6 +2480,26 @@ cc_library(
     ],
     hdrs = [
         "socket_unix.h",
+    ],
+    deps = [
+        ":socket_test_util",
+        ":unix_domain_socket_test_util",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "socket_unix_cmsg_test_cases",
+    testonly = 1,
+    srcs = [
+        "socket_unix_cmsg.cc",
+    ],
+    hdrs = [
+        "socket_unix_cmsg.h",
     ],
     deps = [
         ":socket_test_util",
@@ -2733,6 +2755,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_test_util",
+        ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
         ":unix_domain_socket_test_util",
         "//test/util:test_main",

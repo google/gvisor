@@ -17,6 +17,7 @@
 #include "test/syscalls/linux/socket_generic.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/socket_unix.h"
+#include "test/syscalls/linux/socket_unix_cmsg.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
 
@@ -36,6 +37,10 @@ INSTANTIATE_TEST_SUITE_P(
 
 INSTANTIATE_TEST_SUITE_P(
     AbstractUnixSockets, UnixSocketPairTest,
+    ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
+
+INSTANTIATE_TEST_SUITE_P(
+    AbstractUnixSockets, UnixSocketPairCmsgTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing
