@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build linux
+
+// Package memutil provides a wrapper for the memfd_create() system call.
 package memutil
 
 import (
