@@ -1,8 +1,4 @@
-# gVisor is a general-purpose sandbox.
-
-package(licenses = ["notice"])
-
-exports_files(["LICENSE"])
+package(licenses = ["notice"])  # Apache 2.0
 
 # We need to define a bazel platform and toolchain to specify dockerPrivileged
 # and dockerRunAsRoot options, they are required to run tests on the RBE

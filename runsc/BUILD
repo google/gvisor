@@ -1,6 +1,4 @@
-package(
-    licenses = ["notice"],  # Apache 2.0
-)
+package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_deb", "pkg_tar")
@@ -84,8 +82,9 @@ pkg_tar(
 genrule(
     name = "deb-version",
     outs = ["version.txt"],
-    cmd = "cat bazel-out/volatile-status.txt | grep VERSION | sed 's/^[^0-9]*//' >$@",
+    cmd = "$(location :runsc) -version | head -n 1 | sed 's/^[^0-9]*//' > $@",
     stamp = 1,
+    tools = [":runsc"],
 )
 
 pkg_deb(
@@ -98,4 +97,7 @@ pkg_deb(
     package = "runsc",
     postinst = "debian/postinst.sh",
     version_file = ":version.txt",
+    visibility = [
+        "//visibility:public",
+    ],
 )
