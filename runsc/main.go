@@ -48,11 +48,12 @@ var (
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	debugLog       = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-	logPackets     = flag.Bool("log-packets", false, "enable network packet logging")
-	logFD          = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD     = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
-	debugLogFormat = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s")
+	debugLog        = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	logPackets      = flag.Bool("log-packets", false, "enable network packet logging")
+	logFD           = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD      = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	debugLogFormat  = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s")
+	alsoLogToStderr = flag.Bool("alsologtostderr", false, "send log messages to stderr")
 
 	// Debugging flags: strace related
 	strace         = flag.Bool("strace", false, "enable strace")
@@ -226,6 +227,10 @@ func main() {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
 		e = newEmitter("text", ioutil.Discard)
+	}
+
+	if *alsoLogToStderr {
+		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
 	}
 
 	log.SetTarget(e)
