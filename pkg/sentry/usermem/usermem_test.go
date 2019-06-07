@@ -192,6 +192,7 @@ func TestCopyObject(t *testing.T) {
 }
 
 func TestCopyStringInShort(t *testing.T) {
+	// Tests for string length <= copyStringIncrement.
 	want := strings.Repeat("A", copyStringIncrement-2)
 	mem := want + "\x00"
 	if got, err := CopyStringIn(newContext(), newBytesIOString(mem), 0, 2*copyStringIncrement, IOOpts{}); got != want || err != nil {
@@ -200,9 +201,21 @@ func TestCopyStringInShort(t *testing.T) {
 }
 
 func TestCopyStringInLong(t *testing.T) {
-	want := strings.Repeat("A", copyStringIncrement+1)
+	// Tests for copyStringIncrement < string length <= copyStringMaxInitBufLen
+	// (requiring multiple calls to IO.CopyIn()).
+	want := strings.Repeat("A", copyStringIncrement*3/4) + strings.Repeat("B", copyStringIncrement*3/4)
 	mem := want + "\x00"
 	if got, err := CopyStringIn(newContext(), newBytesIOString(mem), 0, 2*copyStringIncrement, IOOpts{}); got != want || err != nil {
+		t.Errorf("CopyStringIn: got (%q, %v), wanted (%q, nil)", got, err, want)
+	}
+}
+
+func TestCopyStringInVeryLong(t *testing.T) {
+	// Tests for string length > copyStringMaxInitBufLen (requiring buffer
+	// reallocation).
+	want := strings.Repeat("A", copyStringMaxInitBufLen*3/4) + strings.Repeat("B", copyStringMaxInitBufLen*3/4)
+	mem := want + "\x00"
+	if got, err := CopyStringIn(newContext(), newBytesIOString(mem), 0, 2*copyStringMaxInitBufLen, IOOpts{}); got != want || err != nil {
 		t.Errorf("CopyStringIn: got (%q, %v), wanted (%q, nil)", got, err, want)
 	}
 }
