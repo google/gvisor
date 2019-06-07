@@ -98,11 +98,11 @@ const (
 
 // IPTables holds all the tables for a netstack.
 type IPTables struct {
-	// mu protects the entire struct.
-	mu sync.RWMutex
+	// Mu protects the entire struct.
+	Mu sync.RWMutex
 
 	// Tables maps table names to tables. User tables have arbitrary names.
-	Tables map[string]*Table
+	Tables map[string]Table
 
 	// Priorities maps each hook to a list of table names. The order of the
 	// list is the order in which each table should be visited for that
@@ -118,7 +118,7 @@ type Table struct {
 	// BuiltinChains holds the un-deletable chains built into netstack. If
 	// a hook isn't present in the map, this table doesn't utilize that
 	// hook.
-	BuiltinChains map[Hook]*Chain
+	BuiltinChains map[Hook]Chain
 
 	// DefaultTargets holds a target for each hook that will be executed if
 	// chain traversal doesn't yield a verdict.
@@ -126,7 +126,7 @@ type Table struct {
 
 	// UserChains holds user-defined chains for the keyed by name. Users
 	// can give their chains arbitrary names.
-	UserChains map[string]*Chain
+	UserChains map[string]Chain
 
 	// Chains maps names to chains for both builtin and user-defined chains.
 	// Its entries point to Chains already either in BuiltinChains and
@@ -158,7 +158,7 @@ type Chain struct {
 	Name string
 
 	// Rules is the list of rules to traverse.
-	Rules []*Rule
+	Rules []Rule
 }
 
 // Rule is a packet processing rule. It consists of two pieces. First it

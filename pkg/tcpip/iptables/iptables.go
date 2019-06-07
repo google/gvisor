@@ -34,9 +34,9 @@ const (
 // all packets.
 func DefaultTables() *IPTables {
 	tables := IPTables{
-		Tables: map[string]*Table{
-			tablenameNat: &Table{
-				BuiltinChains: map[Hook]*Chain{
+		Tables: map[string]Table{
+			tablenameNat: Table{
+				BuiltinChains: map[Hook]Chain{
 					Prerouting:  unconditionalAcceptChain(chainNamePrerouting),
 					Input:       unconditionalAcceptChain(chainNameInput),
 					Output:      unconditionalAcceptChain(chainNameOutput),
@@ -48,10 +48,10 @@ func DefaultTables() *IPTables {
 					Output:      UnconditionalAcceptTarget{},
 					Postrouting: UnconditionalAcceptTarget{},
 				},
-				UserChains: map[string]*Chain{},
+				UserChains: map[string]Chain{},
 			},
-			tablenameMangle: &Table{
-				BuiltinChains: map[Hook]*Chain{
+			tablenameMangle: Table{
+				BuiltinChains: map[Hook]Chain{
 					Prerouting: unconditionalAcceptChain(chainNamePrerouting),
 					Output:     unconditionalAcceptChain(chainNameOutput),
 				},
@@ -59,7 +59,7 @@ func DefaultTables() *IPTables {
 					Prerouting: UnconditionalAcceptTarget{},
 					Output:     UnconditionalAcceptTarget{},
 				},
-				UserChains: map[string]*Chain{},
+				UserChains: map[string]Chain{},
 			},
 		},
 		Priorities: map[Hook][]string{
@@ -68,28 +68,14 @@ func DefaultTables() *IPTables {
 		},
 	}
 
-	// Initialize each table's Chains field.
-	tables.Tables[tablenameNat].Chains = map[string]*Chain{
-		chainNamePrerouting:  tables.Tables[tablenameNat].BuiltinChains[Prerouting],
-		chainNameInput:       tables.Tables[tablenameNat].BuiltinChains[Input],
-		chainNameOutput:      tables.Tables[tablenameNat].BuiltinChains[Output],
-		chainNamePostrouting: tables.Tables[tablenameNat].BuiltinChains[Postrouting],
-	}
-	tables.Tables[tablenameMangle].Chains = map[string]*Chain{
-		chainNamePrerouting:  tables.Tables[tablenameMangle].BuiltinChains[Prerouting],
-		chainNameInput:       tables.Tables[tablenameMangle].BuiltinChains[Input],
-		chainNameOutput:      tables.Tables[tablenameMangle].BuiltinChains[Output],
-		chainNamePostrouting: tables.Tables[tablenameMangle].BuiltinChains[Postrouting],
-	}
-
 	return &tables
 }
 
-func unconditionalAcceptChain(name string) *Chain {
-	return &Chain{
+func unconditionalAcceptChain(name string) Chain {
+	return Chain{
 		Name: name,
-		Rules: []*Rule{
-			&Rule{
+		Rules: []Rule{
+			Rule{
 				Target: UnconditionalAcceptTarget{},
 			},
 		},
