@@ -32,7 +32,7 @@ go_library(
         "tsc_arm64.s",
     ],
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/time",
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
         "//pkg/metric",
