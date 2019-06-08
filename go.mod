@@ -3,7 +3,7 @@ module gvisor.googlesource.com/gvisor
 go 1.12
 
 require (
-	github.com/cenkalti/backoff v2.2.0
+	github.com/cenkalti/backoff/v2 v2.2.0
 	github.com/gofrs/flock v0.6.1-0.20180915234121-886344bea079
 	github.com/golang/mock v1.3.1
 	github.com/golang/protobuf v1.3.1
