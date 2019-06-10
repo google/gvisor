@@ -22,9 +22,9 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/procid"
 	"gvisor.googlesource.com/gvisor/pkg/seccomp"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid"
 )
 
 const syscallEvent syscall.Signal = 0x80
@@ -142,7 +142,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	// down available calls only to what is needed.
 	rules := []seccomp.RuleSet{
 		// Rules for trapping vsyscall access.
-		seccomp.RuleSet{
+		{
 			Rules: seccomp.SyscallRules{
 				syscall.SYS_GETTIMEOFDAY: {},
 				syscall.SYS_TIME:         {},

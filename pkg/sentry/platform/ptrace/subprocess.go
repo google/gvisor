@@ -21,9 +21,9 @@ import (
 	"sync"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/procid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
