@@ -14,6 +14,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/socket.h>
 
@@ -144,6 +145,66 @@ TEST_P(SocketInetLoopbackTest, TCP) {
   ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
 }
 
+TEST_P(SocketInetLoopbackTest, TCPbacklog) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), 2), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+  int i = 0;
+  while (1) {
+    int ret;
+
+    // Connect to the listening socket.
+    const FileDescriptor conn_fd = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+    sockaddr_storage conn_addr = connector.addr;
+    ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+    ret = connect(conn_fd.get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                  connector.addr_len);
+    if (ret != 0) {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+      struct pollfd pfd = {
+          .fd = conn_fd.get(),
+          .events = POLLOUT,
+      };
+      ret = poll(&pfd, 1, 3000);
+      if (ret == 0) break;
+      EXPECT_THAT(ret, SyscallSucceedsWithValue(1));
+    }
+    EXPECT_THAT(RetryEINTR(send)(conn_fd.get(), &i, sizeof(i), 0),
+                SyscallSucceedsWithValue(sizeof(i)));
+    ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
+    i++;
+  }
+
+  for (; i != 0; i--) {
+    // Accept the connection.
+    //
+    // We have to assign a name to the accepted socket, as unamed temporary
+    // objects are destructed upon full evaluation of the expression it is in,
+    // potentially causing the connecting socket to fail to shutdown properly.
+    auto accepted =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(
     All, SocketInetLoopbackTest,
     ::testing::Values(
@@ -198,7 +259,7 @@ TEST_P(SocketInetReusePortTest, TcpPortReuseMultiThread) {
     ASSERT_THAT(
         bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
         SyscallSucceeds());
-    ASSERT_THAT(listen(fd, 512), SyscallSucceeds());
+    ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (i != 0) {
