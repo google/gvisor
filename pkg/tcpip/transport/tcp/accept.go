@@ -251,7 +251,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	// Perform the 3-way handshake.
 	h := newHandshake(ep, l.rcvWnd)
 
-	h.resetToSynRcvd(cookie, irs, opts, l.listenEP)
+	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
 		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		ep.Close()
@@ -294,7 +294,6 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	defer decSynRcvdCount()
 	defer e.decSynRcvdCount()
 	defer s.decRef()
-
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
@@ -306,7 +305,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 
 func (e *endpoint) incSynRcvdCount() bool {
 	e.mu.Lock()
-	if l, c := len(e.acceptedChan), cap(e.acceptedChan); l == c && e.synRcvdCount >= c {
+	if e.synRcvdCount >= cap(e.acceptedChan) {
 		e.mu.Unlock()
 		return false
 	}
@@ -321,6 +320,16 @@ func (e *endpoint) decSynRcvdCount() {
 	e.mu.Unlock()
 }
 
+func (e *endpoint) acceptQueueIsFull() bool {
+	e.mu.Lock()
+	if l, c := len(e.acceptedChan)+e.synRcvdCount, cap(e.acceptedChan); l >= c {
+		e.mu.Unlock()
+		return true
+	}
+	e.mu.Unlock()
+	return false
+}
+
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
@@ -328,17 +337,27 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 	case header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
 		if incSynRcvdCount() {
-			// Drop the SYN if the listen endpoint's accept queue is
-			// overflowing.
-			if e.incSynRcvdCount() {
+			// Only handle the syn if the following conditions hold
+			//   - accept queue is not full.
+			//   - number of connections in synRcvd state is less than the
+			//     backlog.
+			if !e.acceptQueueIsFull() && e.incSynRcvdCount() {
 				s.incRef()
 				go e.handleSynSegment(ctx, s, &opts) // S/R-SAFE: synRcvdCount is the barrier.
 				return
 			}
+			decSynRcvdCount()
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		} else {
+			// If cookies are in use but the endpoint accept queue
+			// is full then drop the syn.
+			if e.acceptQueueIsFull() {
+				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+				e.stack.Stats().DroppedPackets.Increment()
+				return
+			}
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 			// Send SYN with window scaling because we currently
 			// dont't encode this information in the cookie.
@@ -356,7 +375,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		}
 
 	case header.TCPFlagAck:
-		if len(e.acceptedChan) == cap(e.acceptedChan) {
+		if e.acceptQueueIsFull() {
 			// Silently drop the ack as the application can't accept
 			// the connection at this point. The ack will be
 			// retransmitted by the sender anyway and we can
