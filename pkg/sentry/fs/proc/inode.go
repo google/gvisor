@@ -21,11 +21,14 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 )
 
 // taskOwnedInodeOps wraps an fs.InodeOperations and overrides the UnstableAttr
-// method to return the task as the owner.
+// method to return either the task or root as the owner, depending on the
+// task's dumpability.
 //
 // +stateify savable
 type taskOwnedInodeOps struct {
@@ -41,9 +44,42 @@ func (i *taskOwnedInodeOps) UnstableAttr(ctx context.Context, inode *fs.Inode) (
 	if err != nil {
 		return fs.UnstableAttr{}, err
 	}
-	// Set the task owner as the file owner.
+
+	// By default, set the task owner as the file owner.
 	creds := i.t.Credentials()
 	uattr.Owner = fs.FileOwner{creds.EffectiveKUID, creds.EffectiveKGID}
+
+	// Linux doesn't apply dumpability adjustments to world
+	// readable/executable directories so that applications can stat
+	// /proc/PID to determine the effective UID of a process. See
+	// fs/proc/base.c:task_dump_owner.
+	if fs.IsDir(inode.StableAttr) && uattr.Perms == fs.FilePermsFromMode(0555) {
+		return uattr, nil
+	}
+
+	// If the task is not dumpable, then root (in the namespace preferred)
+	// owns the file.
+	var m *mm.MemoryManager
+	i.t.WithMuLocked(func(t *kernel.Task) {
+		m = t.MemoryManager()
+	})
+
+	if m == nil {
+		uattr.Owner.UID = auth.RootKUID
+		uattr.Owner.GID = auth.RootKGID
+	} else if m.Dumpability() != mm.UserDumpable {
+		if kuid := creds.UserNamespace.MapToKUID(auth.RootUID); kuid.Ok() {
+			uattr.Owner.UID = kuid
+		} else {
+			uattr.Owner.UID = auth.RootKUID
+		}
+		if kgid := creds.UserNamespace.MapToKGID(auth.RootGID); kgid.Ok() {
+			uattr.Owner.GID = kgid
+		} else {
+			uattr.Owner.GID = auth.RootKGID
+		}
+	}
+
 	return uattr, nil
 }
 

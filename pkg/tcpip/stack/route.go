@@ -187,3 +187,13 @@ func (r *Route) Clone() Route {
 	r.ref.incRef()
 	return *r
 }
+
+// MakeLoopedRoute duplicates the given route and tweaks it in case of multicast.
+func (r *Route) MakeLoopedRoute() Route {
+	l := r.Clone()
+	if header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress) {
+		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
+		l.RemoteLinkAddress = l.LocalLinkAddress
+	}
+	return l
+}

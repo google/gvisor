@@ -22,7 +22,7 @@ import (
 	"syscall"
 
 	"gvisor.googlesource.com/gvisor/pkg/bits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
+	"gvisor.googlesource.com/gvisor/pkg/memutil"
 )
 
 // MemoryKind represents a type of memory used by the application.

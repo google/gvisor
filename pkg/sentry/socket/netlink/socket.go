@@ -80,6 +80,10 @@ type Socket struct {
 	// protocol is the netlink protocol implementation.
 	protocol Protocol
 
+	// skType is the socket type. This is either SOCK_DGRAM or SOCK_RAW for
+	// netlink sockets.
+	skType linux.SockType
+
 	// ep is a datagram unix endpoint used to buffer messages sent from the
 	// kernel to userspace. RecvMsg reads messages from this endpoint.
 	ep transport.Endpoint
@@ -105,7 +109,7 @@ type Socket struct {
 var _ socket.Socket = (*Socket)(nil)
 
 // NewSocket creates a new Socket.
-func NewSocket(t *kernel.Task, protocol Protocol) (*Socket, *syserr.Error) {
+func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
 	// Datagram endpoint used to buffer kernel -> user messages.
 	ep := transport.NewConnectionless()
 
@@ -126,6 +130,7 @@ func NewSocket(t *kernel.Task, protocol Protocol) (*Socket, *syserr.Error) {
 	return &Socket{
 		ports:          t.Kernel().NetlinkPorts(),
 		protocol:       protocol,
+		skType:         skType,
 		ep:             ep,
 		connection:     connection,
 		sendBufferSize: defaultSendBufferSize,
@@ -615,4 +620,14 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 func (s *Socket) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	n, err := s.sendMsg(ctx, src, nil, 0, socket.ControlMessages{})
 	return int64(n), err.ToError()
+}
+
+// State implements socket.Socket.State.
+func (s *Socket) State() uint32 {
+	return s.ep.State()
+}
+
+// Type implements socket.Socket.Type.
+func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
+	return linux.AF_NETLINK, s.skType, s.protocol.Protocol()
 }

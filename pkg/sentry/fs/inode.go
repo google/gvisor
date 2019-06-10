@@ -220,9 +220,9 @@ func (i *Inode) Rename(ctx context.Context, oldParent *Dirent, renamed *Dirent, 
 }
 
 // Bind calls i.InodeOperations.Bind with i as the directory.
-func (i *Inode) Bind(ctx context.Context, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
+func (i *Inode) Bind(ctx context.Context, parent *Dirent, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
 	if i.overlay != nil {
-		return overlayBind(ctx, i.overlay, name, data, perm)
+		return overlayBind(ctx, i.overlay, parent, name, data, perm)
 	}
 	return i.InodeOperations.Bind(ctx, i, name, data, perm)
 }

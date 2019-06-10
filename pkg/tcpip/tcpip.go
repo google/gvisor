@@ -377,6 +377,10 @@ type Endpoint interface {
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// *Option types.
 	GetSockOpt(opt interface{}) *Error
+
+	// State returns a socket's lifecycle state. The returned value is
+	// protocol-specific and is primarily used for diagnostics.
+	State() uint32
 }
 
 // WriteOptions contains options for Endpoint.Write.

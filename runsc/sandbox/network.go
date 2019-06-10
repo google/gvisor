@@ -68,7 +68,7 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.GSO); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.GSO, conf.NumNetworkChannels); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case boot.NetworkHost:
@@ -138,7 +138,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO bool) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO bool, numNetworkChannels int) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
@@ -202,25 +202,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 			continue
 		}
 
-		// Create the socket.
-		const protocol = 0x0300 // htons(ETH_P_ALL)
-		fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
-		if err != nil {
-			return fmt.Errorf("unable to create raw socket: %v", err)
-		}
-		deviceFile := os.NewFile(uintptr(fd), "raw-device-fd")
-
-		// Bind to the appropriate device.
-		ll := syscall.SockaddrLinklayer{
-			Protocol: protocol,
-			Ifindex:  iface.Index,
-			Hatype:   0, // No ARP type.
-			Pkttype:  syscall.PACKET_OTHERHOST,
-		}
-		if err := syscall.Bind(fd, &ll); err != nil {
-			return fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
-		}
-
 		// Scrape the routes before removing the address, since that
 		// will remove the routes as well.
 		routes, def, err := routesForIface(iface)
@@ -236,9 +217,10 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		}
 
 		link := boot.FDBasedLink{
-			Name:   iface.Name,
-			MTU:    iface.MTU,
-			Routes: routes,
+			Name:        iface.Name,
+			MTU:         iface.MTU,
+			Routes:      routes,
+			NumChannels: numNetworkChannels,
 		}
 
 		// Get the link for the interface.
@@ -248,30 +230,23 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		}
 		link.LinkAddress = []byte(ifaceLink.Attrs().HardwareAddr)
 
-		if enableGSO {
-			gso, err := isGSOEnabled(fd, iface.Name)
+		log.Debugf("Setting up network channels")
+		// Create the socket for the device.
+		for i := 0; i < link.NumChannels; i++ {
+			log.Debugf("Creating Channel %d", i)
+			socketEntry, err := createSocket(iface, ifaceLink, enableGSO)
 			if err != nil {
-				return fmt.Errorf("getting GSO for interface %q: %v", iface.Name, err)
+				return fmt.Errorf("failed to createSocket for %s : %v", iface.Name, err)
 			}
-			if gso {
-				if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
-					return fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
-				}
-				link.GSOMaxSize = ifaceLink.Attrs().GSOMaxSize
+			if i == 0 {
+				link.GSOMaxSize = socketEntry.gsoMaxSize
 			} else {
-				log.Infof("GSO not available in host.")
+				if link.GSOMaxSize != socketEntry.gsoMaxSize {
+					return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
+						link.GSOMaxSize, socketEntry.gsoMaxSize, iface.Name)
+				}
 			}
-		}
-
-		// Use SO_RCVBUFFORCE because on linux the receive buffer for an
-		// AF_PACKET socket is capped by "net.core.rmem_max". rmem_max
-		// defaults to a unusually low value of 208KB. This is too low
-		// for gVisor to be able to receive packets at high throughputs
-		// without incurring packet drops.
-		const rcvBufSize = 4 << 20 // 4MB.
-
-		if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, rcvBufSize); err != nil {
-			return fmt.Errorf("failed to increase socket rcv buffer to %d: %v", rcvBufSize, err)
+			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 		}
 
 		// Collect the addresses for the interface, enable forwarding,
@@ -285,7 +260,6 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 			}
 		}
 
-		args.FilePayload.Files = append(args.FilePayload.Files, deviceFile)
 		args.FDBasedLinks = append(args.FDBasedLinks, link)
 	}
 
@@ -294,6 +268,61 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		return fmt.Errorf("creating links and routes: %v", err)
 	}
 	return nil
+}
+
+type socketEntry struct {
+	deviceFile *os.File
+	gsoMaxSize uint32
+}
+
+// createSocket creates an underlying AF_PACKET socket and configures it for use by
+// the sentry and returns an *os.File that wraps the underlying socket fd.
+func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (*socketEntry, error) {
+	// Create the socket.
+	const protocol = 0x0300 // htons(ETH_P_ALL)
+	fd, err := syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, protocol)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create raw socket: %v", err)
+	}
+	deviceFile := os.NewFile(uintptr(fd), "raw-device-fd")
+	// Bind to the appropriate device.
+	ll := syscall.SockaddrLinklayer{
+		Protocol: protocol,
+		Ifindex:  iface.Index,
+		Hatype:   0, // No ARP type.
+		Pkttype:  syscall.PACKET_OTHERHOST,
+	}
+	if err := syscall.Bind(fd, &ll); err != nil {
+		return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
+	}
+
+	gsoMaxSize := uint32(0)
+	if enableGSO {
+		gso, err := isGSOEnabled(fd, iface.Name)
+		if err != nil {
+			return nil, fmt.Errorf("getting GSO for interface %q: %v", iface.Name, err)
+		}
+		if gso {
+			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
+				return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+			}
+			gsoMaxSize = ifaceLink.Attrs().GSOMaxSize
+		} else {
+			log.Infof("GSO not available in host.")
+		}
+	}
+
+	// Use SO_RCVBUFFORCE because on linux the receive buffer for an
+	// AF_PACKET socket is capped by "net.core.rmem_max". rmem_max
+	// defaults to a unusually low value of 208KB. This is too low
+	// for gVisor to be able to receive packets at high throughputs
+	// without incurring packet drops.
+	const rcvBufSize = 4 << 20 // 4MB.
+
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUFFORCE, rcvBufSize); err != nil {
+		return nil, fmt.Errorf("failed to increase socket rcv buffer to %d: %v", rcvBufSize, err)
+	}
+	return &socketEntry{deviceFile, gsoMaxSize}, nil
 }
 
 // loopbackLinks collects the links for a loopback interface.

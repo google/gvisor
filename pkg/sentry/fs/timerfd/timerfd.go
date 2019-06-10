@@ -54,6 +54,8 @@ type TimerOperations struct {
 // NewFile returns a timerfd File that receives time from c.
 func NewFile(ctx context.Context, c ktime.Clock) *fs.File {
 	dirent := fs.NewDirent(anon.NewInode(ctx), "anon_inode:[timerfd]")
+	// Release the initial dirent reference after NewFile takes a reference.
+	defer dirent.DecRef()
 	tops := &TimerOperations{}
 	tops.timer = ktime.NewTimer(c, tops)
 	// Timerfds reject writes, but the Write flag must be set in order to

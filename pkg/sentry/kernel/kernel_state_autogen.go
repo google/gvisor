@@ -139,7 +139,8 @@ func (x *Kernel) save(m state.Map) {
 	m.Save("uniqueID", &x.uniqueID)
 	m.Save("nextInotifyCookie", &x.nextInotifyCookie)
 	m.Save("netlinkPorts", &x.netlinkPorts)
-	m.Save("socketTable", &x.socketTable)
+	m.Save("sockets", &x.sockets)
+	m.Save("nextSocketEntry", &x.nextSocketEntry)
 	m.Save("DirentCacheLimiter", &x.DirentCacheLimiter)
 }
 
@@ -167,25 +168,28 @@ func (x *Kernel) load(m state.Map) {
 	m.Load("uniqueID", &x.uniqueID)
 	m.Load("nextInotifyCookie", &x.nextInotifyCookie)
 	m.Load("netlinkPorts", &x.netlinkPorts)
-	m.Load("socketTable", &x.socketTable)
+	m.Load("sockets", &x.sockets)
+	m.Load("nextSocketEntry", &x.nextSocketEntry)
 	m.Load("DirentCacheLimiter", &x.DirentCacheLimiter)
 	m.LoadValue("danglingEndpoints", new([]tcpip.Endpoint), func(y interface{}) { x.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 	m.LoadValue("deviceRegistry", new(*device.Registry), func(y interface{}) { x.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
-func (x *socketEntry) beforeSave() {}
-func (x *socketEntry) save(m state.Map) {
+func (x *SocketEntry) beforeSave() {}
+func (x *SocketEntry) save(m state.Map) {
 	x.beforeSave()
+	m.Save("socketEntry", &x.socketEntry)
 	m.Save("k", &x.k)
-	m.Save("sock", &x.sock)
-	m.Save("family", &x.family)
+	m.Save("Sock", &x.Sock)
+	m.Save("ID", &x.ID)
 }
 
-func (x *socketEntry) afterLoad() {}
-func (x *socketEntry) load(m state.Map) {
+func (x *SocketEntry) afterLoad() {}
+func (x *SocketEntry) load(m state.Map) {
+	m.Load("socketEntry", &x.socketEntry)
 	m.Load("k", &x.k)
-	m.Load("sock", &x.sock)
-	m.Load("family", &x.family)
+	m.Load("Sock", &x.Sock)
+	m.Load("ID", &x.ID)
 }
 
 func (x *pendingSignals) beforeSave() {}
@@ -450,6 +454,32 @@ func (x *SignalHandlers) save(m state.Map) {
 func (x *SignalHandlers) afterLoad() {}
 func (x *SignalHandlers) load(m state.Map) {
 	m.Load("actions", &x.actions)
+}
+
+func (x *socketList) beforeSave() {}
+func (x *socketList) save(m state.Map) {
+	x.beforeSave()
+	m.Save("head", &x.head)
+	m.Save("tail", &x.tail)
+}
+
+func (x *socketList) afterLoad() {}
+func (x *socketList) load(m state.Map) {
+	m.Load("head", &x.head)
+	m.Load("tail", &x.tail)
+}
+
+func (x *socketEntry) beforeSave() {}
+func (x *socketEntry) save(m state.Map) {
+	x.beforeSave()
+	m.Save("next", &x.next)
+	m.Save("prev", &x.prev)
+}
+
+func (x *socketEntry) afterLoad() {}
+func (x *socketEntry) load(m state.Map) {
+	m.Load("next", &x.next)
+	m.Load("prev", &x.prev)
 }
 
 func (x *SyscallTable) beforeSave() {}
@@ -1090,7 +1120,7 @@ func init() {
 	state.Register("kernel.FSContext", (*FSContext)(nil), state.Fns{Save: (*FSContext).save, Load: (*FSContext).load})
 	state.Register("kernel.IPCNamespace", (*IPCNamespace)(nil), state.Fns{Save: (*IPCNamespace).save, Load: (*IPCNamespace).load})
 	state.Register("kernel.Kernel", (*Kernel)(nil), state.Fns{Save: (*Kernel).save, Load: (*Kernel).load})
-	state.Register("kernel.socketEntry", (*socketEntry)(nil), state.Fns{Save: (*socketEntry).save, Load: (*socketEntry).load})
+	state.Register("kernel.SocketEntry", (*SocketEntry)(nil), state.Fns{Save: (*SocketEntry).save, Load: (*SocketEntry).load})
 	state.Register("kernel.pendingSignals", (*pendingSignals)(nil), state.Fns{Save: (*pendingSignals).save, Load: (*pendingSignals).load})
 	state.Register("kernel.pendingSignalQueue", (*pendingSignalQueue)(nil), state.Fns{Save: (*pendingSignalQueue).save, Load: (*pendingSignalQueue).load})
 	state.Register("kernel.pendingSignal", (*pendingSignal)(nil), state.Fns{Save: (*pendingSignal).save, Load: (*pendingSignal).load})
@@ -1108,6 +1138,8 @@ func init() {
 	state.Register("kernel.Session", (*Session)(nil), state.Fns{Save: (*Session).save, Load: (*Session).load})
 	state.Register("kernel.ProcessGroup", (*ProcessGroup)(nil), state.Fns{Save: (*ProcessGroup).save, Load: (*ProcessGroup).load})
 	state.Register("kernel.SignalHandlers", (*SignalHandlers)(nil), state.Fns{Save: (*SignalHandlers).save, Load: (*SignalHandlers).load})
+	state.Register("kernel.socketList", (*socketList)(nil), state.Fns{Save: (*socketList).save, Load: (*socketList).load})
+	state.Register("kernel.socketEntry", (*socketEntry)(nil), state.Fns{Save: (*socketEntry).save, Load: (*socketEntry).load})
 	state.Register("kernel.SyscallTable", (*SyscallTable)(nil), state.Fns{Save: (*SyscallTable).save, Load: (*SyscallTable).load})
 	state.Register("kernel.syslog", (*syslog)(nil), state.Fns{Save: (*syslog).save, Load: (*syslog).load})
 	state.Register("kernel.Task", (*Task)(nil), state.Fns{Save: (*Task).save, Load: (*Task).load})

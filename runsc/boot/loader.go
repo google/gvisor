@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
@@ -37,7 +38,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
@@ -424,6 +424,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
+	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
+	// there are memory cgroups specified, because at this point we're already
+	// in a mount namespace in which the relevant cgroupfs is not visible.
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		memfile.Close()

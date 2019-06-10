@@ -71,11 +71,6 @@ type Pipe struct {
 	// This value is immutable.
 	atomicIOBytes int64
 
-	// The dirent backing this pipe. Shared by all readers and writers.
-	//
-	// This value is immutable.
-	Dirent *fs.Dirent
-
 	// The number of active readers for this pipe.
 	//
 	// Access atomically.
@@ -130,14 +125,20 @@ func NewPipe(ctx context.Context, isNamed bool, sizeBytes, atomicIOBytes int64) 
 	if atomicIOBytes > sizeBytes {
 		atomicIOBytes = sizeBytes
 	}
-	p := &Pipe{
+	return &Pipe{
 		isNamed:       isNamed,
 		max:           sizeBytes,
 		atomicIOBytes: atomicIOBytes,
 	}
+}
 
-	// Build the fs.Dirent of this pipe, shared by all fs.Files associated
-	// with this pipe.
+// NewConnectedPipe initializes a pipe and returns a pair of objects
+// representing the read and write ends of the pipe.
+func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.File, *fs.File) {
+	p := NewPipe(ctx, false /* isNamed */, sizeBytes, atomicIOBytes)
+
+	// Build an fs.Dirent for the pipe which will be shared by both
+	// returned files.
 	perms := fs.FilePermissions{
 		User: fs.PermMask{Read: true, Write: true},
 	}
@@ -150,36 +151,32 @@ func NewPipe(ctx context.Context, isNamed bool, sizeBytes, atomicIOBytes int64) 
 		BlockSize: int64(atomicIOBytes),
 	}
 	ms := fs.NewPseudoMountSource()
-	p.Dirent = fs.NewDirent(fs.NewInode(iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
-	return p
-}
-
-// NewConnectedPipe initializes a pipe and returns a pair of objects
-// representing the read and write ends of the pipe.
-func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.File, *fs.File) {
-	p := NewPipe(ctx, false /* isNamed */, sizeBytes, atomicIOBytes)
-	return p.Open(ctx, fs.FileFlags{Read: true}), p.Open(ctx, fs.FileFlags{Write: true})
+	d := fs.NewDirent(fs.NewInode(iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
+	// The p.Open calls below will each take a reference on the Dirent. We
+	// must drop the one we already have.
+	defer d.DecRef()
+	return p.Open(ctx, d, fs.FileFlags{Read: true}), p.Open(ctx, d, fs.FileFlags{Write: true})
 }
 
 // Open opens the pipe and returns a new file.
 //
 // Precondition: at least one of flags.Read or flags.Write must be set.
-func (p *Pipe) Open(ctx context.Context, flags fs.FileFlags) *fs.File {
+func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.File {
 	switch {
 	case flags.Read && flags.Write:
 		p.rOpen()
 		p.wOpen()
-		return fs.NewFile(ctx, p.Dirent, flags, &ReaderWriter{
+		return fs.NewFile(ctx, d, flags, &ReaderWriter{
 			Pipe: p,
 		})
 	case flags.Read:
 		p.rOpen()
-		return fs.NewFile(ctx, p.Dirent, flags, &Reader{
+		return fs.NewFile(ctx, d, flags, &Reader{
 			ReaderWriter: ReaderWriter{Pipe: p},
 		})
 	case flags.Write:
 		p.wOpen()
-		return fs.NewFile(ctx, p.Dirent, flags, &Writer{
+		return fs.NewFile(ctx, d, flags, &Writer{
 			ReaderWriter: ReaderWriter{Pipe: p},
 		})
 	default:

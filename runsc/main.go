@@ -48,11 +48,12 @@ var (
 	// system that are not covered by the runtime spec.
 
 	// Debugging flags.
-	debugLog       = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
-	logPackets     = flag.Bool("log-packets", false, "enable network packet logging")
-	logFD          = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
-	debugLogFD     = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
-	debugLogFormat = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s")
+	debugLog        = flag.String("debug-log", "", "additional location for logs. If it ends with '/', log files are created inside the directory with default names. The following variables are available: %TIMESTAMP%, %COMMAND%.")
+	logPackets      = flag.Bool("log-packets", false, "enable network packet logging")
+	logFD           = flag.Int("log-fd", -1, "file descriptor to log to.  If set, the 'log' flag is ignored.")
+	debugLogFD      = flag.Int("debug-log-fd", -1, "file descriptor to write debug logs to.  If set, the 'debug-log-dir' flag is ignored.")
+	debugLogFormat  = flag.String("debug-log-format", "text", "log format: text (default), json, or json-k8s")
+	alsoLogToStderr = flag.Bool("alsologtostderr", false, "send log messages to stderr")
 
 	// Debugging flags: strace related
 	strace         = flag.Bool("strace", false, "enable strace")
@@ -60,16 +61,16 @@ var (
 	straceLogSize  = flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs")
 
 	// Flags that control sandbox runtime behavior.
-	platform       = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
-	network        = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
-	gso            = flag.Bool("gso", true, "enable generic segmenation offload")
-	fileAccess     = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
-	overlay        = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
-	watchdogAction = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
-	panicSignal    = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
-	profile        = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
-	netRaw         = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
-
+	platform                                   = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
+	network                                    = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
+	gso                                        = flag.Bool("gso", true, "enable generic segmenation offload")
+	fileAccess                                 = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
+	overlay                                    = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
+	watchdogAction                             = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
+	panicSignal                                = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
+	profile                                    = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
+	netRaw                                     = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
+	numNetworkChannels                         = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 )
 
@@ -117,6 +118,22 @@ func main() {
 		os.Exit(0)
 	}
 
+	var errorLogger io.Writer
+	if *logFD > -1 {
+		errorLogger = os.NewFile(uintptr(*logFD), "error log file")
+
+	} else if *logFilename != "" {
+		// We must set O_APPEND and not O_TRUNC because Docker passes
+		// the same log file for all commands (and also parses these
+		// log files), so we can't destroy them on each command.
+		var err error
+		errorLogger, err = os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
+		}
+	}
+	cmd.ErrorLogger = errorLogger
+
 	platformType, err := boot.MakePlatformType(*platform)
 	if err != nil {
 		cmd.Fatalf("%v", err)
@@ -141,6 +158,10 @@ func main() {
 		cmd.Fatalf("%v", err)
 	}
 
+	if *numNetworkChannels <= 0 {
+		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
+	}
+
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:        *rootDir,
@@ -162,6 +183,7 @@ func main() {
 		ProfileEnable:  *profile,
 		EnableRaw:      *netRaw,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
+		NumNetworkChannels:                         *numNetworkChannels,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")
@@ -174,24 +196,7 @@ func main() {
 
 	subcommand := flag.CommandLine.Arg(0)
 
-	var logFile io.Writer = os.Stderr
-	if *logFD > -1 {
-		logFile = os.NewFile(uintptr(*logFD), "log file")
-	} else if *logFilename != "" {
-		// We must set O_APPEND and not O_TRUNC because Docker passes
-		// the same log file for all commands (and also parses these
-		// log files), so we can't destroy them on each command.
-		f, err := os.OpenFile(*logFilename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			cmd.Fatalf("error opening log file %q: %v", *logFilename, err)
-		}
-		logFile = f
-	} else if subcommand == "do" {
-		logFile = ioutil.Discard
-	}
-
-	e := newEmitter(*logFormat, logFile)
-
+	var e log.Emitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
@@ -201,28 +206,31 @@ func main() {
 			cmd.Fatalf("flag --debug-log-fd should only be passed to 'boot' and 'gofer' command, but was passed to %q", subcommand)
 		}
 
-		// If we are the boot process, then we own our stdio FDs and
-		// can do what we want with them. Since Docker and Containerd
-		// both eat boot's stderr, we dup our stderr to the provided
-		// log FD so that panics will appear in the logs, rather than
-		// just disappear.
+		// If we are the boot process, then we own our stdio FDs and can do what we
+		// want with them. Since Docker and Containerd both eat boot's stderr, we
+		// dup our stderr to the provided log FD so that panics will appear in the
+		// logs, rather than just disappear.
 		if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
-		if logFile == os.Stderr {
-			// Suppress logging to stderr when debug log is enabled. Otherwise all
-			// messages will be duplicated in the debug log (see Dup2() call above).
-			e = newEmitter(*debugLogFormat, f)
-		} else {
-			e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
-		}
+		e = newEmitter(*debugLogFormat, f)
+
 	} else if *debugLog != "" {
 		f, err := specutils.DebugLogFile(*debugLog, subcommand)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}
-		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, f)}
+		e = newEmitter(*debugLogFormat, f)
+
+	} else {
+		// Stderr is reserved for the application, just discard the logs if no debug
+		// log is specified.
+		e = newEmitter("text", ioutil.Discard)
+	}
+
+	if *alsoLogToStderr {
+		e = log.MultiEmitter{e, newEmitter(*debugLogFormat, os.Stderr)}
 	}
 
 	log.SetTarget(e)

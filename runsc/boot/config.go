@@ -221,6 +221,11 @@ type Config struct {
 	// user, and without chrooting the sandbox process. This can be
 	// necessary in test environments that have limited capabilities.
 	TestOnlyAllowRunAsCurrentUserWithoutChroot bool
+
+	// NumNetworkChannels controls the number of AF_PACKET sockets that map
+	// to the same underlying network device. This allows netstack to better
+	// scale for high throughput use cases.
+	NumNetworkChannels int
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -244,6 +249,7 @@ func (c *Config) ToFlags() []string {
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 		"--profile=" + strconv.FormatBool(c.ProfileEnable),
 		"--net-raw=" + strconv.FormatBool(c.EnableRaw),
+		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.

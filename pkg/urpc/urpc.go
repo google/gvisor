@@ -35,7 +35,7 @@ import (
 )
 
 // maxFiles determines the maximum file payload.
-const maxFiles = 16
+const maxFiles = 32
 
 // ErrTooManyFiles is returned when too many file descriptors are mapped.
 var ErrTooManyFiles = errors.New("too many files")

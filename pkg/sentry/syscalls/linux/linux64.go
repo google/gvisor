@@ -360,8 +360,7 @@ var AMD64 = &kernel.SyscallTable{
 		235: Utimes,
 		// @Syscall(Vserver, note:Not implemented by Linux)
 		236: syscalls.Error(syscall.ENOSYS), // Vserver, not implemented by Linux
-		// @Syscall(Mbind, returns:EPERM or ENOSYS, note:Returns EPERM if the process does not have cap_sys_nice; ENOSYS otherwise), TODO(b/117792295)
-		237: syscalls.CapError(linux.CAP_SYS_NICE), // may require cap_sys_nice
+		237: Mbind,
 		238: SetMempolicy,
 		239: GetMempolicy,
 		//     240: @Syscall(MqOpen), TODO(b/29354921)

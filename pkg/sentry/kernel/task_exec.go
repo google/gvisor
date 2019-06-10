@@ -68,6 +68,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
@@ -197,6 +198,12 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.fds.RemoveIf(func(file *fs.File, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
+
+	// NOTE(b/30815691): We currently do not implement privileged
+	// executables (set-user/group-ID bits and file capabilities). This
+	// allows us to unconditionally enable user dumpability on the new mm.
+	// See fs/exec.c:setup_new_exec.
+	r.tc.MemoryManager.SetDumpability(mm.UserDumpable)
 
 	// Switch to the new process.
 	t.MemoryManager().Deactivate()

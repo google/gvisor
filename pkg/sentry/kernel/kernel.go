@@ -182,9 +182,13 @@ type Kernel struct {
 	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
 	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
 
-	// socketTable is used to track all sockets on the system. Protected by
+	// sockets is the list of all network sockets the system. Protected by
 	// extMu.
-	socketTable map[int]map[*refs.WeakRef]struct{}
+	sockets socketList
+
+	// nextSocketEntry is the next entry number to use in sockets. Protected
+	// by extMu.
+	nextSocketEntry uint64
 
 	// deviceRegistry is used to save/restore device.SimpleDevices.
 	deviceRegistry struct{} `state:".(*device.Registry)"`
@@ -283,7 +287,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
-	k.socketTable = make(map[int]map[*refs.WeakRef]struct{})
 
 	return nil
 }
@@ -1137,51 +1140,43 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
 	})
 }
 
-// socketEntry represents a socket recorded in Kernel.socketTable. It implements
+// SocketEntry represents a socket recorded in Kernel.sockets. It implements
 // refs.WeakRefUser for sockets stored in the socket table.
 //
 // +stateify savable
-type socketEntry struct {
-	k      *Kernel
-	sock   *refs.WeakRef
-	family int
+type SocketEntry struct {
+	socketEntry
+	k    *Kernel
+	Sock *refs.WeakRef
+	ID   uint64 // Socket table entry number.
 }
 
 // WeakRefGone implements refs.WeakRefUser.WeakRefGone.
-func (s *socketEntry) WeakRefGone() {
+func (s *SocketEntry) WeakRefGone() {
 	s.k.extMu.Lock()
-	// k.socketTable is guaranteed to point to a valid socket table for s.family
-	// at this point, since we made sure of the fact when we created this
-	// socketEntry, and we never delete socket tables.
-	delete(s.k.socketTable[s.family], s.sock)
+	s.k.sockets.Remove(s)
 	s.k.extMu.Unlock()
 }
 
 // RecordSocket adds a socket to the system-wide socket table for tracking.
 //
 // Precondition: Caller must hold a reference to sock.
-func (k *Kernel) RecordSocket(sock *fs.File, family int) {
+func (k *Kernel) RecordSocket(sock *fs.File) {
 	k.extMu.Lock()
-	table, ok := k.socketTable[family]
-	if !ok {
-		table = make(map[*refs.WeakRef]struct{})
-		k.socketTable[family] = table
-	}
-	se := socketEntry{k: k, family: family}
-	se.sock = refs.NewWeakRef(sock, &se)
-	table[se.sock] = struct{}{}
+	id := k.nextSocketEntry
+	k.nextSocketEntry++
+	s := &SocketEntry{k: k, ID: id}
+	s.Sock = refs.NewWeakRef(sock, s)
+	k.sockets.PushBack(s)
 	k.extMu.Unlock()
 }
 
-// ListSockets returns a snapshot of all sockets of a given family.
-func (k *Kernel) ListSockets(family int) []*refs.WeakRef {
+// ListSockets returns a snapshot of all sockets.
+func (k *Kernel) ListSockets() []*SocketEntry {
 	k.extMu.Lock()
-	socks := []*refs.WeakRef{}
-	if table, ok := k.socketTable[family]; ok {
-		socks = make([]*refs.WeakRef, 0, len(table))
-		for s := range table {
-			socks = append(socks, s)
-		}
+	var socks []*SocketEntry
+	for s := k.sockets.Front(); s != nil; s = s.Next() {
+		socks = append(socks, s)
 	}
 	k.extMu.Unlock()
 	return socks

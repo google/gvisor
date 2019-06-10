@@ -67,7 +67,6 @@ func (x *Pipe) save(m state.Map) {
 	x.beforeSave()
 	m.Save("isNamed", &x.isNamed)
 	m.Save("atomicIOBytes", &x.atomicIOBytes)
-	m.Save("Dirent", &x.Dirent)
 	m.Save("readers", &x.readers)
 	m.Save("writers", &x.writers)
 	m.Save("data", &x.data)
@@ -80,7 +79,6 @@ func (x *Pipe) afterLoad() {}
 func (x *Pipe) load(m state.Map) {
 	m.Load("isNamed", &x.isNamed)
 	m.Load("atomicIOBytes", &x.atomicIOBytes)
-	m.Load("Dirent", &x.Dirent)
 	m.Load("readers", &x.readers)
 	m.Load("writers", &x.writers)
 	m.Load("data", &x.data)

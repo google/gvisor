@@ -143,13 +143,16 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// write the child's PID to the pid file. So when the container returns, the
 	// child process will also return and signal containerd.
 	if ex.detach {
-		return ex.execAndWait(waitStatus)
+		return ex.execChildAndWait(waitStatus)
 	}
+	return ex.exec(c, e, waitStatus)
+}
 
+func (ex *Exec) exec(c *container.Container, e *control.ExecArgs, waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
 	// Start the new process and get it pid.
 	pid, err := c.Execute(e)
 	if err != nil {
-		Fatalf("executing processes for container: %v", err)
+		return Errorf("executing processes for container: %v", err)
 	}
 
 	if e.StdioIsPty {
@@ -163,29 +166,29 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	if ex.internalPidFile != "" {
 		pidStr := []byte(strconv.Itoa(int(pid)))
 		if err := ioutil.WriteFile(ex.internalPidFile, pidStr, 0644); err != nil {
-			Fatalf("writing internal pid file %q: %v", ex.internalPidFile, err)
+			return Errorf("writing internal pid file %q: %v", ex.internalPidFile, err)
 		}
 	}
 
-	// Generate the pid file after the internal pid file is generated, so that users
-	// can safely assume that the internal pid file is ready after `runsc exec -d`
-	// returns.
+	// Generate the pid file after the internal pid file is generated, so that
+	// users can safely assume that the internal pid file is ready after
+	// `runsc exec -d` returns.
 	if ex.pidFile != "" {
 		if err := ioutil.WriteFile(ex.pidFile, []byte(strconv.Itoa(os.Getpid())), 0644); err != nil {
-			Fatalf("writing pid file: %v", err)
+			return Errorf("writing pid file: %v", err)
 		}
 	}
 
 	// Wait for the process to exit.
 	ws, err := c.WaitPID(pid)
 	if err != nil {
-		Fatalf("waiting on pid %d: %v", pid, err)
+		return Errorf("waiting on pid %d: %v", pid, err)
 	}
 	*waitStatus = ws
 	return subcommands.ExitSuccess
 }
 
-func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
+func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStatus {
 	var args []string
 	for _, a := range os.Args[1:] {
 		if !strings.Contains(a, "detach") {
@@ -193,7 +196,7 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 		}
 	}
 
-	// The command needs to write a pid file so that execAndWait can tell
+	// The command needs to write a pid file so that execChildAndWait can tell
 	// when it has started. If no pid-file was provided, we should use a
 	// filename in a temp directory.
 	pidFile := ex.pidFile
@@ -262,7 +265,10 @@ func (ex *Exec) execAndWait(waitStatus *syscall.WaitStatus) subcommands.ExitStat
 		return false, nil
 	}
 	if err := specutils.WaitForReady(cmd.Process.Pid, 10*time.Second, ready); err != nil {
-		Fatalf("unexpected error waiting for PID file, err: %v", err)
+		// Don't log fatal error here, otherwise it will override the error logged
+		// by the child process that has failed to start.
+		log.Warningf("Unexpected error waiting for PID file, err: %v", err)
+		return subcommands.ExitFailure
 	}
 
 	*waitStatus = 0

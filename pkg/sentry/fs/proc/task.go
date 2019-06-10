@@ -96,7 +96,7 @@ func (p *proc) newTaskDir(t *kernel.Task, msrc *fs.MountSource, showSubtasks boo
 		contents["cgroup"] = newCGroupInode(t, msrc, p.cgroupControllers)
 	}
 
-	// TODO(b/31916171): Set EUID/EGID based on dumpability.
+	// N.B. taskOwnedInodeOps enforces dumpability-based ownership.
 	d := &taskDir{
 		Dir: *ramfs.NewDir(t, contents, fs.RootOwner, fs.FilePermsFromMode(0555)),
 		t:   t,
@@ -665,6 +665,21 @@ func newComm(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 		t:               t,
 	}
 	return newProcInode(c, msrc, fs.SpecialFile, t)
+}
+
+// Check implements fs.InodeOperations.Check.
+func (c *comm) Check(ctx context.Context, inode *fs.Inode, p fs.PermMask) bool {
+	// This file can always be read or written by members of the same
+	// thread group. See fs/proc/base.c:proc_tid_comm_permission.
+	//
+	// N.B. This check is currently a no-op as we don't yet support writing
+	// and this file is world-readable anyways.
+	t := kernel.TaskFromContext(ctx)
+	if t != nil && t.ThreadGroup() == c.t.ThreadGroup() && !p.Execute {
+		return true
+	}
+
+	return fs.ContextCanAccessFile(ctx, inode, p)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

@@ -219,6 +219,12 @@ type MemoryManager struct {
 	// executable is protected by metadataMu.
 	executable *fs.Dirent
 
+	// dumpability describes if and how this MemoryManager may be dumped to
+	// userspace.
+	//
+	// dumpability is protected by metadataMu.
+	dumpability Dumpability
+
 	// aioManager keeps track of AIOContexts used for async IOs. AIOManager
 	// must be cloned when CLONE_VM is used.
 	aioManager aioManager
@@ -269,6 +275,12 @@ type vma struct {
 	growsDown bool `state:"manual"`
 
 	mlockMode memmap.MLockMode
+
+	// numaPolicy is the NUMA policy for this vma set by mbind().
+	numaPolicy int32
+
+	// numaNodemask is the NUMA nodemask for this vma set by mbind().
+	numaNodemask uint64
 
 	// If id is not nil, it controls the lifecycle of mappable and provides vma
 	// metadata shown in /proc/[pid]/maps, and the vma holds a reference.

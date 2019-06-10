@@ -398,14 +398,14 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 	return nil
 }
 
-func overlayBind(ctx context.Context, o *overlayEntry, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
+func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name string, data transport.BoundEndpoint, perm FilePermissions) (*Dirent, error) {
+	if err := copyUp(ctx, parent); err != nil {
+		return nil, err
+	}
+
 	o.copyMu.RLock()
 	defer o.copyMu.RUnlock()
-	// We do not support doing anything exciting with sockets unless there
-	// is already a directory in the upper filesystem.
-	if o.upper == nil {
-		return nil, syserror.EOPNOTSUPP
-	}
+
 	d, err := o.upper.InodeOperations.Bind(ctx, o.upper, name, data, perm)
 	if err != nil {
 		return nil, err
