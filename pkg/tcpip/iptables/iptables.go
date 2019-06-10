@@ -33,7 +33,7 @@ const (
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
 func DefaultTables() *IPTables {
-	tables := IPTables{
+	return &IPTables{
 		Tables: map[string]Table{
 			tablenameNat: Table{
 				BuiltinChains: map[Hook]Chain{
@@ -67,8 +67,6 @@ func DefaultTables() *IPTables {
 			Output:     []string{tablenameMangle, tablenameNat},
 		},
 	}
-
-	return &tables
 }
 
 func unconditionalAcceptChain(name string) Chain {
