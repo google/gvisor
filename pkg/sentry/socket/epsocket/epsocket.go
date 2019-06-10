@@ -228,6 +228,7 @@ type SocketOperations struct {
 	family   int
 	Endpoint tcpip.Endpoint
 	skType   linux.SockType
+	protocol int
 
 	// readMu protects access to the below fields.
 	readMu sync.Mutex `state:"nosave"`
@@ -252,7 +253,7 @@ type SocketOperations struct {
 }
 
 // New creates a new endpoint socket.
-func New(t *kernel.Task, family int, skType linux.SockType, queue *waiter.Queue, endpoint tcpip.Endpoint) (*fs.File, *syserr.Error) {
+func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue *waiter.Queue, endpoint tcpip.Endpoint) (*fs.File, *syserr.Error) {
 	if skType == linux.SOCK_STREAM {
 		if err := endpoint.SetSockOpt(tcpip.DelayOption(1)); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
@@ -266,6 +267,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, queue *waiter.Queue,
 		family:   family,
 		Endpoint: endpoint,
 		skType:   skType,
+		protocol: protocol,
 	}), nil
 }
 
@@ -550,7 +552,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		}
 	}
 
-	ns, err := New(t, s.family, s.skType, wq, ep)
+	ns, err := New(t, s.family, s.skType, s.protocol, wq, ep)
 	if err != nil {
 		return 0, nil, 0, err
 	}
@@ -578,7 +580,7 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	}
 	fd, e := t.FDMap().NewFDFrom(0, ns, fdFlags, t.ThreadGroup().Limits())
 
-	t.Kernel().RecordSocket(ns, s.family)
+	t.Kernel().RecordSocket(ns)
 
 	return fd, addr, addrLen, syserr.FromError(e)
 }
@@ -2323,4 +2325,9 @@ func (s *SocketOperations) State() uint32 {
 
 	// TODO(b/112063468): Export states for UDP, ICMP, and raw sockets.
 	return 0
+}
+
+// Type implements socket.Socket.Type.
+func (s *SocketOperations) Type() (family int, skType linux.SockType, protocol int) {
+	return s.family, s.skType, s.protocol
 }

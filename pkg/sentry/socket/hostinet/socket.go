@@ -56,15 +56,22 @@ type socketOperations struct {
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	socket.SendReceiveTimeout
 
-	family int // Read-only.
-	fd     int // must be O_NONBLOCK
-	queue  waiter.Queue
+	family   int            // Read-only.
+	stype    linux.SockType // Read-only.
+	protocol int            // Read-only.
+	fd       int            // must be O_NONBLOCK
+	queue    waiter.Queue
 }
 
 var _ = socket.Socket(&socketOperations{})
 
-func newSocketFile(ctx context.Context, family int, fd int, nonblock bool) (*fs.File, *syserr.Error) {
-	s := &socketOperations{family: family, fd: fd}
+func newSocketFile(ctx context.Context, family int, stype linux.SockType, protocol int, fd int, nonblock bool) (*fs.File, *syserr.Error) {
+	s := &socketOperations{
+		family:   family,
+		stype:    stype,
+		protocol: protocol,
+		fd:       fd,
+	}
 	if err := fdnotifier.AddFD(int32(fd), &s.queue); err != nil {
 		return nil, syserr.FromError(err)
 	}
@@ -222,7 +229,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		return 0, peerAddr, peerAddrlen, syserr.FromError(syscallErr)
 	}
 
-	f, err := newSocketFile(t, s.family, fd, flags&syscall.SOCK_NONBLOCK != 0)
+	f, err := newSocketFile(t, s.family, s.stype, s.protocol, fd, flags&syscall.SOCK_NONBLOCK != 0)
 	if err != nil {
 		syscall.Close(fd)
 		return 0, nil, 0, err
@@ -233,7 +240,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,
 	}
 	kfd, kerr := t.FDMap().NewFDFrom(0, f, fdFlags, t.ThreadGroup().Limits())
-	t.Kernel().RecordSocket(f, s.family)
+	t.Kernel().RecordSocket(f)
 	return kfd, peerAddr, peerAddrlen, syserr.FromError(kerr)
 }
 
@@ -542,6 +549,11 @@ func (s *socketOperations) State() uint32 {
 	return uint32(info.State)
 }
 
+// Type implements socket.Socket.Type.
+func (s *socketOperations) Type() (family int, skType linux.SockType, protocol int) {
+	return s.family, s.stype, s.protocol
+}
+
 type socketProvider struct {
 	family int
 }
@@ -558,7 +570,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 	}
 
 	// Only accept TCP and UDP.
-	stype := int(stypeflags) & linux.SOCK_TYPE_MASK
+	stype := stypeflags & linux.SOCK_TYPE_MASK
 	switch stype {
 	case syscall.SOCK_STREAM:
 		switch protocol {
@@ -581,11 +593,11 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 	// Conservatively ignore all flags specified by the application and add
 	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
 	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
-	fd, err := syscall.Socket(p.family, stype|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
+	fd, err := syscall.Socket(p.family, int(stype)|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
-	return newSocketFile(t, p.family, fd, stypeflags&syscall.SOCK_NONBLOCK != 0)
+	return newSocketFile(t, p.family, stype, protocol, fd, stypeflags&syscall.SOCK_NONBLOCK != 0)
 }
 
 // Pair implements socket.Provider.Pair.

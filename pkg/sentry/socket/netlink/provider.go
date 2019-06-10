@@ -82,7 +82,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 		return nil, err
 	}
 
-	s, err := NewSocket(t, p)
+	s, err := NewSocket(t, stype, p)
 	if err != nil {
 		return nil, err
 	}

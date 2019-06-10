@@ -164,7 +164,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 
 	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
-	return unixsocket.NewWithDirent(ctx, d, ep, e.stype != linux.SOCK_STREAM, flags), nil
+	return unixsocket.NewWithDirent(ctx, d, ep, e.stype, flags), nil
 }
 
 // newSocket allocates a new unix socket with host endpoint.
@@ -196,7 +196,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 
 	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
-	return unixsocket.New(ctx, ep, e.stype != linux.SOCK_STREAM), nil
+	return unixsocket.New(ctx, ep, e.stype), nil
 }
 
 // Send implements transport.ConnectedEndpoint.Send.

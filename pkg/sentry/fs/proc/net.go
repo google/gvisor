@@ -27,6 +27,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 )
@@ -213,17 +214,18 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 	fmt.Fprintf(&buf, "Num       RefCount Protocol Flags    Type St Inode Path\n")
 
 	// Entries
-	for _, sref := range n.k.ListSockets(linux.AF_UNIX) {
-		s := sref.Get()
+	for _, se := range n.k.ListSockets() {
+		s := se.Sock.Get()
 		if s == nil {
-			log.Debugf("Couldn't resolve weakref %v in socket table, racing with destruction?", sref)
+			log.Debugf("Couldn't resolve weakref %v in socket table, racing with destruction?", se.Sock)
 			continue
 		}
 		sfile := s.(*fs.File)
-		sops, ok := sfile.FileOperations.(*unix.SocketOperations)
-		if !ok {
-			panic(fmt.Sprintf("Found non-unix socket file in unix socket table: %+v", sfile))
+		if family, _, _ := sfile.FileOperations.(socket.Socket).Type(); family != linux.AF_UNIX {
+			// Not a unix socket.
+			continue
 		}
+		sops := sfile.FileOperations.(*unix.SocketOperations)
 
 		addr, err := sops.Endpoint().GetLocalAddress()
 		if err != nil {

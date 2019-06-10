@@ -53,7 +53,10 @@ type socketOperations struct {
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	socket.SendReceiveTimeout
 
-	family   int    // Read-only.
+	family   int            // Read-only.
+	stype    linux.SockType // Read-only.
+	protocol int            // Read-only.
+
 	fd       uint32 // must be O_NONBLOCK
 	wq       *waiter.Queue
 	rpcConn  *conn.RPCConnection
@@ -86,6 +89,8 @@ func newSocketFile(ctx context.Context, stack *Stack, family int, skType linux.S
 	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &socketOperations{
 		family:   family,
+		stype:    skType,
+		protocol: protocol,
 		wq:       &wq,
 		fd:       fd,
 		rpcConn:  stack.rpcConn,
@@ -332,7 +337,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if err != nil {
 		return 0, nil, 0, syserr.FromError(err)
 	}
-	t.Kernel().RecordSocket(file, s.family)
+	t.Kernel().RecordSocket(file)
 
 	if peerRequested {
 		return fd, payload.Address.Address, payload.Address.Length, nil
@@ -835,6 +840,11 @@ func (s *socketOperations) State() uint32 {
 	return 0
 }
 
+// Type implements socket.Socket.Type.
+func (s *socketOperations) Type() (family int, skType linux.SockType, protocol int) {
+	return s.family, s.stype, s.protocol
+}
+
 type socketProvider struct {
 	family int
 }
@@ -876,7 +886,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 		return nil, nil
 	}
 
-	return newSocketFile(t, s, p.family, stype, 0)
+	return newSocketFile(t, s, p.family, stype, protocol)
 }
 
 // Pair implements socket.Provider.Pair.

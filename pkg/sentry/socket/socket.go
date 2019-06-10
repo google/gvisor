@@ -120,6 +120,9 @@ type Socket interface {
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs. The returned state value is protocol-specific.
 	State() uint32
+
+	// Type returns the family, socket type and protocol of the socket.
+	Type() (family int, skType linux.SockType, protocol int)
 }
 
 // Provider is the interface implemented by providers of sockets for specific
@@ -156,7 +159,7 @@ func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.Fi
 			return nil, err
 		}
 		if s != nil {
-			t.Kernel().RecordSocket(s, family)
+			t.Kernel().RecordSocket(s)
 			return s, nil
 		}
 	}
@@ -179,8 +182,8 @@ func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.F
 		}
 		if s1 != nil && s2 != nil {
 			k := t.Kernel()
-			k.RecordSocket(s1, family)
-			k.RecordSocket(s2, family)
+			k.RecordSocket(s1)
+			k.RecordSocket(s2)
 			return s1, s2, nil
 		}
 	}
