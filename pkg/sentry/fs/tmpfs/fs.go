@@ -34,6 +34,16 @@ const (
 	// GID for the root directory.
 	rootGIDKey = "gid"
 
+	// cacheKey sets the caching policy for the mount.
+	cacheKey = "cache"
+
+	// cacheAll uses the virtual file system cache for everything (default).
+	cacheAll = "cache"
+
+	// cacheRevalidate allows dirents to be cached, but revalidates them on each
+	// lookup.
+	cacheRevalidate = "revalidate"
+
 	// TODO(edahlgren/mpratt): support a tmpfs size limit.
 	// size = "size"
 
@@ -122,14 +132,23 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 		delete(options, rootGIDKey)
 	}
 
+	// Construct a mount which will follow the cache options provided.
+	var msrc *fs.MountSource
+	switch options[cacheKey] {
+	case "", cacheAll:
+		msrc = fs.NewCachingMountSource(f, flags)
+	case cacheRevalidate:
+		msrc = fs.NewRevalidatingMountSource(f, flags)
+	default:
+		return nil, fmt.Errorf("invalid cache policy option %q", options[cacheKey])
+	}
+	delete(options, cacheKey)
+
 	// Fail if the caller passed us more options than we can parse. They may be
 	// expecting us to set something we can't set.
 	if len(options) > 0 {
 		return nil, fmt.Errorf("unsupported mount options: %v", options)
 	}
-
-	// Construct a mount which will cache dirents.
-	msrc := fs.NewCachingMountSource(f, flags)
 
 	// Construct the tmpfs root.
 	return NewDir(ctx, nil, owner, perms, msrc), nil
