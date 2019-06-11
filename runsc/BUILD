@@ -82,7 +82,7 @@ pkg_tar(
 genrule(
     name = "deb-version",
     outs = ["version.txt"],
-    cmd = "$(location :runsc) -version | head -n 1 | sed 's/^[^0-9]*//' > $@",
+    cmd = "$(location :runsc) -version | grep 'runsc version' | sed 's/^[^0-9]*//' > $@",
     stamp = 1,
     tools = [":runsc"],
 )
