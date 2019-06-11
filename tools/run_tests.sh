@@ -175,13 +175,17 @@ run_docker_tests() {
   # configuration, e.g. save/restore not supported with hostnet.
   declare -a variations=("" "-kvm" "-hostnet" "-overlay")
   for v in "${variations[@]}"; do
+    # Change test names otherwise each run of tests will overwrite logs and
+    # results of the previous run.
+    sed -i "s/name = \"integration_test.*\"/name = \"integration_test${v}\"/" runsc/test/integration/BUILD
+    sed -i "s/name = \"image_test.*\"/name = \"image_test${v}\"/" runsc/test/image/BUILD
     # Run runsc tests with docker that are tagged manual.
     bazel test \
       "${BAZEL_BUILD_FLAGS[@]}" \
       --test_env=RUNSC_RUNTIME="${RUNTIME}${v}" \
       --test_output=all \
-      //runsc/test/image:image_test \
-      //runsc/test/integration:integration_test
+      //runsc/test/image:image_test${v} \
+      //runsc/test/integration:integration_test${v}
   done
 }
 
