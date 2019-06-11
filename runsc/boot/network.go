@@ -56,7 +56,7 @@ type FDBasedLink struct {
 	Addresses   []net.IP
 	Routes      []Route
 	GSOMaxSize  uint32
-	LinkAddress []byte
+	LinkAddress net.HardwareAddr
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.

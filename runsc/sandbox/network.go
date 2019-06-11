@@ -228,7 +228,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		if err != nil {
 			return fmt.Errorf("getting link for interface %q: %v", iface.Name, err)
 		}
-		link.LinkAddress = []byte(ifaceLink.Attrs().HardwareAddr)
+		link.LinkAddress = ifaceLink.Attrs().HardwareAddr
 
 		log.Debugf("Setting up network channels")
 		// Create the socket for the device.
