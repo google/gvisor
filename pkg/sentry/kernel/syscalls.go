@@ -32,6 +32,51 @@ import (
 // syscall.
 const maxSyscallNum = 2000
 
+// SyscallSupportLevel is a syscall support levels.
+type SyscallSupportLevel int
+
+// String returns a human readable represetation of the support level.
+func (l SyscallSupportLevel) String() string {
+	switch l {
+	case SupportUnimplemented:
+		return "Unimplemented"
+	case SupportPartial:
+		return "Partial Support"
+	case SupportFull:
+		return "Full Support"
+	default:
+		return "Undocumented"
+	}
+}
+
+const (
+	// SupportUndocumented indicates the syscall is not documented yet.
+	SupportUndocumented = iota
+
+	// SupportUnimplemented indicates the syscall is unimplemented.
+	SupportUnimplemented
+
+	// SupportPartial indicates the syscall is partially supported.
+	SupportPartial
+
+	// SupportFull indicates the syscall is fully supported.
+	SupportFull
+)
+
+// Syscall includes the syscall implementation and compatibility information.
+type Syscall struct {
+	// Name is the syscall name.
+	Name string
+	// Fn is the implementation of the syscall.
+	Fn SyscallFn
+	// SupportLevel is the level of support implemented in gVisor.
+	SupportLevel SyscallSupportLevel
+	// Note describes the compatibility of the syscall.
+	Note string
+	// URLs is set of URLs to any relevant bugs or issues.
+	URLs []string
+}
+
 // SyscallFn is a syscall implementation.
 type SyscallFn func(t *Task, args arch.SyscallArguments) (uintptr, *SyscallControl, error)
 
@@ -83,7 +128,7 @@ type SyscallFlagsTable struct {
 // Init initializes the struct, with all syscalls in table set to enable.
 //
 // max is the largest syscall number in table.
-func (e *SyscallFlagsTable) init(table map[uintptr]SyscallFn, max uintptr) {
+func (e *SyscallFlagsTable) init(table map[uintptr]Syscall, max uintptr) {
 	e.enable = make([]uint32, max+1)
 	for num := range table {
 		e.enable[num] = syscallPresent
@@ -194,7 +239,7 @@ type SyscallTable struct {
 	AuditNumber uint32 `state:"manual"`
 
 	// Table is the collection of functions.
-	Table map[uintptr]SyscallFn `state:"manual"`
+	Table map[uintptr]Syscall `state:"manual"`
 
 	// lookup is a fixed-size array that holds the syscalls (indexed by
 	// their numbers). It is used for fast look ups.
@@ -247,7 +292,7 @@ func LookupSyscallTable(os abi.OS, a arch.Arch) (*SyscallTable, bool) {
 func RegisterSyscallTable(s *SyscallTable) {
 	if s.Table == nil {
 		// Ensure non-nil lookup table.
-		s.Table = make(map[uintptr]SyscallFn)
+		s.Table = make(map[uintptr]Syscall)
 	}
 	if s.Emulate == nil {
 		// Ensure non-nil emulate table.
@@ -268,8 +313,8 @@ func RegisterSyscallTable(s *SyscallTable) {
 	s.lookup = make([]SyscallFn, max+1)
 
 	// Initialize the fast-lookup table.
-	for num, fn := range s.Table {
-		s.lookup[num] = fn
+	for num, sc := range s.Table {
+		s.lookup[num] = sc.Fn
 	}
 
 	s.FeatureEnable.init(s.Table, max)
@@ -303,5 +348,8 @@ func (s *SyscallTable) LookupEmulate(addr usermem.Addr) (uintptr, bool) {
 // mapLookup is similar to Lookup, except that it only uses the syscall table,
 // that is, it skips the fast look array. This is available for benchmarking.
 func (s *SyscallTable) mapLookup(sysno uintptr) SyscallFn {
-	return s.Table[sysno]
+	if sc, ok := s.Table[sysno]; ok {
+		return sc.Fn
+	}
+	return nil
 }
