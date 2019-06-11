@@ -84,7 +84,7 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 The test suite can be run with Bazel:
 
 ```
-bazel test ...
+bazel test //...
 ```
 
 or in a Docker container:
