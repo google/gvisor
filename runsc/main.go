@@ -76,7 +76,9 @@ var (
 
 func main() {
 	// Help and flags commands are generated automatically.
-	subcommands.Register(subcommands.HelpCommand(), "")
+	help := cmd.NewHelp(subcommands.DefaultCommander)
+	help.Register(new(cmd.Syscalls))
+	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
 	// Register user-facing runsc commands.

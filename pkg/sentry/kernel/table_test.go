@@ -26,11 +26,13 @@ const (
 )
 
 func createSyscallTable() *SyscallTable {
-	m := make(map[uintptr]SyscallFn)
+	m := make(map[uintptr]Syscall)
 	for i := uintptr(0); i <= maxTestSyscall; i++ {
 		j := i
-		m[i] = func(*Task, arch.SyscallArguments) (uintptr, *SyscallControl, error) {
-			return j, nil, nil
+		m[i] = Syscall{
+			Fn: func(*Task, arch.SyscallArguments) (uintptr, *SyscallControl, error) {
+				return j, nil, nil
+			},
 		}
 	}
 

@@ -62,7 +62,7 @@ go_repository(
 
 go_repository(
     name = "com_github_google_subcommands",
-    commit = "ce3d4cfc062f",
+    commit = "636abe8753b8",
     importpath = "github.com/google/subcommands",
 )
 
