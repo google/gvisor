@@ -200,7 +200,11 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		args = append(args, "-strace")
 	}
 	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		debugLogDir, err := ioutil.TempDir(outDir, "runsc")
+		tdir := filepath.Join(outDir, strings.Replace(tc.FullName(), "/", "_", -1))
+		if err := os.MkdirAll(tdir, 0755); err != nil {
+			t.Fatalf("could not create test dir: %v", err)
+		}
+		debugLogDir, err := ioutil.TempDir(tdir, "runsc")
 		if err != nil {
 			t.Fatalf("could not create temp dir: %v", err)
 		}
