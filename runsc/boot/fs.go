@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,6 +50,9 @@ const (
 
 	// Device name for root mount.
 	rootDevice = "9pfs-/"
+
+	// MountPrefix is the annotation prefix for mount hints.
+	MountPrefix = "gvisor.dev/spec/mount"
 
 	// ChildContainersDir is the directory where child container root
 	// filesystems are mounted.
@@ -292,6 +296,174 @@ func (f *fdDispenser) empty() bool {
 	return len(f.fds) == 0
 }
 
+type shareType int
+
+const (
+	invalid shareType = iota
+
+	// container shareType indicates that the mount is used by a single container.
+	container
+
+	// pod shareType indicates that the mount is used by more than one container
+	// inside the pod.
+	pod
+
+	// shared shareType indicates that the mount can also be shared with a process
+	// outside the pod, e.g. NFS.
+	shared
+)
+
+func parseShare(val string) (shareType, error) {
+	switch val {
+	case "container":
+		return container, nil
+	case "pod":
+		return pod, nil
+	case "shared":
+		return shared, nil
+	default:
+		return 0, fmt.Errorf("invalid share value %q", val)
+	}
+}
+
+func (s shareType) String() string {
+	switch s {
+	case invalid:
+		return "invalid"
+	case container:
+		return "container"
+	case pod:
+		return "pod"
+	case shared:
+		return "shared"
+	default:
+		return fmt.Sprintf("invalid share value %d", s)
+	}
+}
+
+// mountHint represents extra information about mounts that are provided via
+// annotations. They can override mount type, and provide sharing information
+// so that mounts can be correctly shared inside the pod.
+type mountHint struct {
+	name  string
+	share shareType
+	mount specs.Mount
+
+	// root is the inode where the volume is mounted. For mounts with 'pod' share
+	// the volume is mounted once and then bind mounted inside the containers.
+	root *fs.Inode
+}
+
+func (m *mountHint) setField(key, val string) error {
+	switch key {
+	case "source":
+		if len(val) == 0 {
+			return fmt.Errorf("source cannot be empty")
+		}
+		m.mount.Source = val
+	case "type":
+		return m.setType(val)
+	case "share":
+		share, err := parseShare(val)
+		if err != nil {
+			return err
+		}
+		m.share = share
+	case "options":
+		return m.setOptions(val)
+	default:
+		return fmt.Errorf("invalid mount annotation: %s=%s", key, val)
+	}
+	return nil
+}
+
+func (m *mountHint) setType(val string) error {
+	switch val {
+	case "tmpfs", "bind":
+		m.mount.Type = val
+	default:
+		return fmt.Errorf("invalid type %q", val)
+	}
+	return nil
+}
+
+func (m *mountHint) setOptions(val string) error {
+	opts := strings.Split(val, ",")
+	if err := specutils.ValidateMountOptions(opts); err != nil {
+		return err
+	}
+	// Sort options so it can be compared with container mount options later on.
+	sort.Strings(opts)
+	m.mount.Options = opts
+	return nil
+}
+
+func (m *mountHint) isSupported() bool {
+	return m.mount.Type == tmpfs && m.share == pod
+}
+
+// podMountHints contains a collection of mountHints for the pod.
+type podMountHints struct {
+	mounts map[string]*mountHint
+}
+
+func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
+	mnts := make(map[string]*mountHint)
+	for k, v := range spec.Annotations {
+		// Look for 'gvisor.dev/spec/mount' annotations and parse them.
+		if strings.HasPrefix(k, MountPrefix) {
+			parts := strings.Split(k, "/")
+			if len(parts) != 5 {
+				return nil, fmt.Errorf("invalid mount annotation: %s=%s", k, v)
+			}
+			name := parts[3]
+			if len(name) == 0 || path.Clean(name) != name {
+				return nil, fmt.Errorf("invalid mount name: %s", name)
+			}
+			mnt := mnts[name]
+			if mnt == nil {
+				mnt = &mountHint{name: name}
+				mnts[name] = mnt
+			}
+			if err := mnt.setField(parts[4], v); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Validate all hints after done parsing.
+	for name, m := range mnts {
+		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v", name, m.mount.Source, m.mount.Type, m.share)
+		if m.share == invalid {
+			return nil, fmt.Errorf("share field for %q has not been set", m.name)
+		}
+		if len(m.mount.Source) == 0 {
+			return nil, fmt.Errorf("source field for %q has not been set", m.name)
+		}
+		if len(m.mount.Type) == 0 {
+			return nil, fmt.Errorf("type field for %q has not been set", m.name)
+		}
+
+		// Check for duplicate mount sources.
+		for name2, m2 := range mnts {
+			if name != name2 && m.mount.Source == m2.mount.Source {
+				return nil, fmt.Errorf("mounts %q and %q have the same mount source %q", m.name, m2.name, m.mount.Source)
+			}
+		}
+	}
+
+	return &podMountHints{mounts: mnts}, nil
+}
+
+func (p *podMountHints) findMount(mount specs.Mount) *mountHint {
+	for _, m := range p.mounts {
+		if m.mount.Source == mount.Source {
+			return m
+		}
+	}
+	return nil
+}
+
 type containerMounter struct {
 	// cid is the container ID. May be set to empty for the root container.
 	cid string
@@ -306,15 +478,18 @@ type containerMounter struct {
 	fds fdDispenser
 
 	k *kernel.Kernel
+
+	hints *podMountHints
 }
 
-func newContainerMounter(spec *specs.Spec, cid string, goferFDs []int, k *kernel.Kernel) *containerMounter {
+func newContainerMounter(spec *specs.Spec, cid string, goferFDs []int, k *kernel.Kernel, hints *podMountHints) *containerMounter {
 	return &containerMounter{
 		cid:    cid,
 		root:   spec.Root,
 		mounts: compileMounts(spec),
 		fds:    fdDispenser{fds: goferFDs},
 		k:      k,
+		hints:  hints,
 	}
 }
 
@@ -476,6 +651,15 @@ func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error
 // 'setMountNS' is called after namespace is created. It must set the mount NS
 // to 'rootCtx'.
 func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx context.Context, conf *Config, setMountNS func(*fs.MountNamespace)) error {
+	for _, hint := range c.hints.mounts {
+		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
+		inode, err := c.mountSharedMaster(rootCtx, conf, hint)
+		if err != nil {
+			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
+		}
+		hint.root = inode
+	}
+
 	// Create a tmpfs mount where we create and mount a root filesystem for
 	// each child container.
 	c.mounts = append(c.mounts, specs.Mount{
@@ -498,21 +682,57 @@ func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx c
 	return c.mountSubmounts(rootCtx, conf, mns, root)
 }
 
+// mountSharedMaster mounts the master of a volume that is shared among
+// containers in a pod. It returns the root mount's inode.
+func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *Config, hint *mountHint) (*fs.Inode, error) {
+	// Map mount type to filesystem name, and parse out the options that we are
+	// capable of dealing with.
+	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, hint.mount)
+	if err != nil {
+		return nil, err
+	}
+	if len(fsName) == 0 {
+		return nil, fmt.Errorf("mount type not supported %q", hint.mount.Type)
+	}
+
+	// Mount with revalidate because it's shared among containers.
+	opts = append(opts, "cache=revalidate")
+
+	// All filesystem names should have been mapped to something we know.
+	filesystem := mustFindFilesystem(fsName)
+
+	mf := mountFlags(hint.mount.Options)
+	if useOverlay {
+		// All writes go to upper, be paranoid and make lower readonly.
+		mf.ReadOnly = true
+	}
+
+	inode, err := filesystem.Mount(ctx, mountDevice(hint.mount), mf, strings.Join(opts, ","), nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating mount %q: %v", hint.name, err)
+	}
+
+	if useOverlay {
+		log.Debugf("Adding overlay on top of shared mount %q", hint.name)
+		inode, err = addOverlay(ctx, conf, inode, hint.mount.Type, mf)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return inode, nil
+}
+
 // createRootMount creates the root filesystem.
 func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*fs.Inode, error) {
 	// First construct the filesystem from the spec.Root.
 	mf := fs.MountSourceFlags{ReadOnly: c.root.Readonly || conf.Overlay}
 
-	var (
-		rootInode *fs.Inode
-		err       error
-	)
-
 	fd := c.fds.remove()
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	p9FS := mustFindFilesystem("9p")
 	opts := p9MountOptions(fd, conf.FileAccess)
-	rootInode, err = p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
+	rootInode, err := p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating root mount point: %v", err)
 	}
@@ -579,8 +799,14 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 
 func (c *containerMounter) mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent) error {
 	for _, m := range c.mounts {
-		if err := c.mountSubmount(ctx, conf, mns, root, m); err != nil {
-			return fmt.Errorf("mount submount %q: %v", m.Destination, err)
+		if hint := c.hints.findMount(m); hint != nil && hint.isSupported() {
+			if err := c.mountSharedSubmount(ctx, mns, root, m, hint); err != nil {
+				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, m.Destination, err)
+			}
+		} else {
+			if err := c.mountSubmount(ctx, conf, mns, root, m); err != nil {
+				return fmt.Errorf("mount submount %q: %v", m.Destination, err)
+			}
 		}
 	}
 
@@ -653,6 +879,37 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns 
 	return nil
 }
 
+// mountSharedSubmount binds mount to a previously mounted volume that is shared
+// among containers in the same pod.
+func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.MountNamespace, root *fs.Dirent, mount specs.Mount, source *mountHint) error {
+	// For now enforce that all options are the same. Once bind mount is properly
+	// supported, then we should ensure the master is less restrictive than the
+	// container, e.g. master can be 'rw' while container mounts as 'ro'.
+	if len(mount.Options) != len(source.mount.Options) {
+		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", source.mount.Options, mount.Options)
+	}
+	sort.Strings(mount.Options)
+	for i, opt := range mount.Options {
+		if opt != source.mount.Options[i] {
+			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", source.mount.Options, mount.Options)
+		}
+	}
+
+	maxTraversals := uint(0)
+	target, err := mns.FindInode(ctx, root, root, mount.Destination, &maxTraversals)
+	if err != nil {
+		return fmt.Errorf("can't find mount destination %q: %v", mount.Destination, err)
+	}
+	defer target.DecRef()
+
+	if err := mns.Mount(ctx, target, source.root); err != nil {
+		return fmt.Errorf("bind mount %q error: %v", mount.Destination, err)
+	}
+
+	log.Infof("Mounted %q type shared bind to %q", mount.Destination, source.name)
+	return nil
+}
+
 // addRestoreMount adds a mount to the MountSources map used for restoring a
 // checkpointed container.
 func (c *containerMounter) addRestoreMount(conf *Config, renv *fs.RestoreEnvironment, m specs.Mount) error {
@@ -678,8 +935,8 @@ func (c *containerMounter) addRestoreMount(conf *Config, renv *fs.RestoreEnviron
 	return nil
 }
 
-// createRestoreEnvironment builds a fs.RestoreEnvironment called renv by adding the mounts
-// to the environment.
+// createRestoreEnvironment builds a fs.RestoreEnvironment called renv by adding
+// the mounts to the environment.
 func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEnvironment, error) {
 	renv := &fs.RestoreEnvironment{
 		MountSources: make(map[string][]fs.MountArgs),
@@ -730,7 +987,7 @@ func (c *containerMounter) createRestoreEnvironment(conf *Config) (*fs.RestoreEn
 // Technically we don't have to mount tmpfs at /tmp, as we could just rely on
 // the host /tmp, but this is a nice optimization, and fixes some apps that call
 // mknod in /tmp. It's unsafe to mount tmpfs if:
-//   1. /tmp is mounted explictly: we should not override user's wish
+//   1. /tmp is mounted explicitly: we should not override user's wish
 //   2. /tmp is not empty: mounting tmpfs would hide existing files in /tmp
 //
 // Note that when there are submounts inside of '/tmp', directories for the

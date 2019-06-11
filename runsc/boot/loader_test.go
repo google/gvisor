@@ -404,7 +404,7 @@ func TestCreateMountNamespace(t *testing.T) {
 				mns = m
 				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
 			}
-			mntr := newContainerMounter(&tc.spec, "", []int{sandEnd}, nil)
+			mntr := newContainerMounter(&tc.spec, "", []int{sandEnd}, nil, &podMountHints{})
 			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
 				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 			}
@@ -610,7 +610,7 @@ func TestRestoreEnvironment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
-			mntr := newContainerMounter(tc.spec, "", tc.ioFDs, nil)
+			mntr := newContainerMounter(tc.spec, "", tc.ioFDs, nil, &podMountHints{})
 			actualRenv, err := mntr.createRestoreEnvironment(conf)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)

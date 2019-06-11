@@ -94,6 +94,7 @@ go_test(
     size = "small",
     srcs = [
         "compat_test.go",
+        "fs_test.go",
         "loader_test.go",
     ],
     embed = [":boot"],

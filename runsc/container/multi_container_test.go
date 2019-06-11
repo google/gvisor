@@ -99,6 +99,36 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 	return containers, cleanup, nil
 }
 
+type execDesc struct {
+	c    *Container
+	cmd  []string
+	want int
+	desc string
+}
+
+func execMany(execs []execDesc) error {
+	for _, exec := range execs {
+		args := &control.ExecArgs{Argv: exec.cmd}
+		if ws, err := exec.c.executeSync(args); err != nil {
+			return fmt.Errorf("error executing %+v: %v", args, err)
+		} else if ws.ExitStatus() != exec.want {
+			return fmt.Errorf("%q: exec %q got exit status: %d, want: %d", exec.desc, exec.cmd, ws.ExitStatus(), exec.want)
+		}
+	}
+	return nil
+}
+
+func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
+	for _, spec := range pod {
+		spec.Annotations[path.Join(boot.MountPrefix, name, "source")] = mount.Source
+		spec.Annotations[path.Join(boot.MountPrefix, name, "type")] = mount.Type
+		spec.Annotations[path.Join(boot.MountPrefix, name, "share")] = "pod"
+		if len(mount.Options) > 0 {
+			spec.Annotations[path.Join(boot.MountPrefix, name, "options")] = strings.Join(mount.Options, ",")
+		}
+	}
+}
+
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
@@ -825,6 +855,275 @@ func TestMultiContainerGoferStop(t *testing.T) {
 			if err := child.Destroy(); err != nil {
 				t.Fatalf("error destroying container: %v", err)
 			}
+		}
+	}
+}
+
+// Test that pod shared mounts are properly mounted in 2 containers and that
+// changes from one container is reflected in the other.
+func TestMultiContainerSharedMount(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		podSpec, ids := createSpecs(sleep, sleep)
+		mnt0 := specs.Mount{
+			Destination: "/mydir/test",
+			Source:      "/some/dir",
+			Type:        "tmpfs",
+			Options:     nil,
+		}
+		podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+		mnt1 := mnt0
+		mnt1.Destination = "/mydir2/test2"
+		podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+		createSharedMount(mnt0, "test-mount", podSpec...)
+
+		containers, cleanup, err := startContainers(conf, podSpec, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		file0 := path.Join(mnt0.Destination, "abc")
+		file1 := path.Join(mnt1.Destination, "abc")
+		execs := []execDesc{
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
+				desc: "directory is mounted in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
+				desc: "directory is mounted in container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/touch", file0},
+				desc: "create file in container0",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-f", file0},
+				desc: "file appears in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-f", file1},
+				desc: "file appears in container1",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/bin/rm", file1},
+				desc: "file removed from container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "!", "-f", file0},
+				desc: "file removed from container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "!", "-f", file1},
+				desc: "file removed from container1",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/bin/mkdir", file1},
+				desc: "create directory in container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-d", file0},
+				desc: "dir appears in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-d", file1},
+				desc: "dir appears in container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/bin/rmdir", file0},
+				desc: "create directory in container0",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "!", "-d", file0},
+				desc: "dir removed from container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "!", "-d", file1},
+				desc: "dir removed from container1",
+			},
+		}
+		if err := execMany(execs); err != nil {
+			t.Fatal(err.Error())
+		}
+	}
+}
+
+// Test that pod mounts are mounted as readonly when requested.
+func TestMultiContainerSharedMountReadonly(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		podSpec, ids := createSpecs(sleep, sleep)
+		mnt0 := specs.Mount{
+			Destination: "/mydir/test",
+			Source:      "/some/dir",
+			Type:        "tmpfs",
+			Options:     []string{"ro"},
+		}
+		podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+		mnt1 := mnt0
+		mnt1.Destination = "/mydir2/test2"
+		podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+		createSharedMount(mnt0, "test-mount", podSpec...)
+
+		containers, cleanup, err := startContainers(conf, podSpec, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		file0 := path.Join(mnt0.Destination, "abc")
+		file1 := path.Join(mnt1.Destination, "abc")
+		execs := []execDesc{
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
+				desc: "directory is mounted in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
+				desc: "directory is mounted in container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/touch", file0},
+				want: 1,
+				desc: "fails to write to container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/touch", file1},
+				want: 1,
+				desc: "fails to write to container1",
+			},
+		}
+		if err := execMany(execs); err != nil {
+			t.Fatal(err.Error())
+		}
+	}
+}
+
+// Test that shared pod mounts continue to work after container is restarted.
+func TestMultiContainerSharedMountRestart(t *testing.T) {
+	for _, conf := range configs(all...) {
+		t.Logf("Running test with conf: %+v", conf)
+
+		// Setup the containers.
+		sleep := []string{"sleep", "100"}
+		podSpec, ids := createSpecs(sleep, sleep)
+		mnt0 := specs.Mount{
+			Destination: "/mydir/test",
+			Source:      "/some/dir",
+			Type:        "tmpfs",
+			Options:     nil,
+		}
+		podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+		mnt1 := mnt0
+		mnt1.Destination = "/mydir2/test2"
+		podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+		createSharedMount(mnt0, "test-mount", podSpec...)
+
+		containers, cleanup, err := startContainers(conf, podSpec, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		file0 := path.Join(mnt0.Destination, "abc")
+		file1 := path.Join(mnt1.Destination, "abc")
+		execs := []execDesc{
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/touch", file0},
+				desc: "create file in container0",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-f", file0},
+				desc: "file appears in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-f", file1},
+				desc: "file appears in container1",
+			},
+		}
+		if err := execMany(execs); err != nil {
+			t.Fatal(err.Error())
+		}
+
+		containers[1].Destroy()
+
+		bundleDir, err := testutil.SetupBundleDir(podSpec[1])
+		if err != nil {
+			t.Fatalf("error restarting container: %v", err)
+		}
+		defer os.RemoveAll(bundleDir)
+
+		containers[1], err = Create(ids[1], podSpec[1], conf, bundleDir, "", "", "")
+		if err != nil {
+			t.Fatalf("error creating container: %v", err)
+		}
+		if err := containers[1].Start(conf); err != nil {
+			t.Fatalf("error starting container: %v", err)
+		}
+
+		execs = []execDesc{
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-f", file0},
+				desc: "file is still in container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "-f", file1},
+				desc: "file is still in container1",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/bin/rm", file1},
+				desc: "file removed from container1",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "!", "-f", file0},
+				desc: "file removed from container0",
+			},
+			{
+				c:    containers[1],
+				cmd:  []string{"/usr/bin/test", "!", "-f", file1},
+				desc: "file removed from container1",
+			},
+		}
+		if err := execMany(execs); err != nil {
+			t.Fatal(err.Error())
 		}
 	}
 }

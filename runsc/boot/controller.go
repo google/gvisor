@@ -340,7 +340,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	mntr := newContainerMounter(cm.l.spec, "", cm.l.goferFDs, cm.l.k)
+	mntr := newContainerMounter(cm.l.spec, "", cm.l.goferFDs, cm.l.k, cm.l.mountHints)
 	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)

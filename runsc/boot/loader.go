@@ -117,6 +117,10 @@ type Loader struct {
 	//
 	// processes is guardded by mu.
 	processes map[execID]*execProcess
+
+	// mountHints provides extra information about mounts for containers that
+	// apply to the entire pod.
+	mountHints *podMountHints
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -299,6 +303,11 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing compat logs: %v", err)
 	}
 
+	mountHints, err := newPodMountHints(args.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("creating pod mount hints: %v", err)
+	}
+
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
@@ -311,6 +320,7 @@ func New(args Args) (*Loader, error) {
 		rootProcArgs: procArgs,
 		sandboxID:    args.ID,
 		processes:    map[execID]*execProcess{eid: {}},
+		mountHints:   mountHints,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -502,7 +512,7 @@ func (l *Loader) run() error {
 
 		// cid for root container can be empty. Only subcontainers need it to set
 		// the mount location.
-		mntr := newContainerMounter(l.spec, "", l.goferFDs, l.k)
+		mntr := newContainerMounter(l.spec, "", l.goferFDs, l.k, l.mountHints)
 		if err := mntr.setupFS(ctx, l.conf, &l.rootProcArgs, l.rootProcArgs.Credentials); err != nil {
 			return err
 		}
@@ -623,7 +633,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 		goferFDs = append(goferFDs, fd)
 	}
 
-	mntr := newContainerMounter(spec, cid, goferFDs, l.k)
+	mntr := newContainerMounter(spec, cid, goferFDs, l.k, l.mountHints)
 	if err := mntr.setupFS(ctx, conf, &procArgs, creds); err != nil {
 		return fmt.Errorf("configuring container FS: %v", err)
 	}
