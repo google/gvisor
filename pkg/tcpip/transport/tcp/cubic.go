@@ -23,6 +23,7 @@ import (
 // control algorithm state.
 //
 // See: https://tools.ietf.org/html/rfc8312.
+// +stateify savable
 type cubicState struct {
 	// wLastMax is the previous wMax value.
 	wLastMax float64
@@ -33,7 +34,7 @@ type cubicState struct {
 
 	// t denotes the time when the current congestion avoidance
 	// was entered.
-	t time.Time
+	t time.Time `state:".(unixTime)"`
 
 	// numCongestionEvents tracks the number of congestion events since last
 	// RTO.

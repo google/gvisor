@@ -592,5 +592,109 @@ TEST_P(TCPSocketPairTest, MsgTruncMsgPeek) {
   EXPECT_EQ(0, memcmp(received_data2, sent_data, sizeof(sent_data)));
 }
 
+TEST_P(TCPSocketPairTest, SetCongestionControlSucceedsForSupported) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  // Netstack only supports reno & cubic so we only test these two values here.
+  {
+    const char kSetCC[kTcpCaNameMax] = "reno";
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &kSetCC, strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax];
+    memset(got_cc, '1', sizeof(got_cc));
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &got_cc, &optlen),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kSetCC)));
+  }
+  {
+    const char kSetCC[kTcpCaNameMax] = "cubic";
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &kSetCC, strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax];
+    memset(got_cc, '1', sizeof(got_cc));
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &got_cc, &optlen),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kSetCC)));
+  }
+}
+
+TEST_P(TCPSocketPairTest, SetGetTCPCongestionShortReadBuffer) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  {
+    // Verify that getsockopt/setsockopt work with buffers smaller than
+    // kTcpCaNameMax.
+    const char kSetCC[] = "cubic";
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &kSetCC, strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[sizeof(kSetCC)];
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &got_cc, &optlen),
+                SyscallSucceedsWithValue(0));
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(got_cc)));
+  }
+}
+
+TEST_P(TCPSocketPairTest, SetGetTCPCongestionLargeReadBuffer) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  {
+    // Verify that getsockopt works with buffers larger than
+    // kTcpCaNameMax.
+    const char kSetCC[] = "cubic";
+    ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &kSetCC, strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax + 5];
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                           &got_cc, &optlen),
+                SyscallSucceedsWithValue(0));
+    // Linux copies the minimum of kTcpCaNameMax or the length of the passed in
+    // buffer and sets optlen to the number of bytes actually copied
+    // irrespective of the actual length of the congestion control name.
+    EXPECT_EQ(kTcpCaNameMax, optlen);
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kSetCC)));
+  }
+}
+
+TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  char old_cc[kTcpCaNameMax];
+  socklen_t optlen;
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                         &old_cc, &optlen),
+              SyscallSucceedsWithValue(0));
+
+  const char kSetCC[] = "invalid_ca_cc";
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                         &kSetCC, strlen(kSetCC)),
+              SyscallFailsWithErrno(ENOENT));
+
+  char got_cc[kTcpCaNameMax];
+  ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
+                         &got_cc, &optlen),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(old_cc)));
+}
+
 }  // namespace testing
 }  // namespace gvisor

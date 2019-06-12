@@ -3205,13 +3205,14 @@ func TestTCPEndpointProbe(t *testing.T) {
 	}
 }
 
-func TestSetCongestionControl(t *testing.T) {
+func TestStackSetCongestionControl(t *testing.T) {
 	testCases := []struct {
-		cc       tcp.CongestionControlOption
-		mustPass bool
+		cc  tcpip.CongestionControlOption
+		err *tcpip.Error
 	}{
-		{"reno", true},
-		{"cubic", true},
+		{"reno", nil},
+		{"cubic", nil},
+		{"blahblah", tcpip.ErrNoSuchFile},
 	}
 
 	for _, tc := range testCases {
@@ -3221,62 +3222,135 @@ func TestSetCongestionControl(t *testing.T) {
 
 			s := c.Stack()
 
-			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != nil && tc.mustPass {
-				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want not-nil", tcp.ProtocolNumber, tc.cc, err)
+			var oldCC tcpip.CongestionControlOption
+			if err := s.TransportProtocolOption(tcp.ProtocolNumber, &oldCC); err != nil {
+				t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &oldCC, err)
 			}
 
-			var cc tcp.CongestionControlOption
+			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != tc.err {
+				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want %v", tcp.ProtocolNumber, tc.cc, err, tc.err)
+			}
+
+			var cc tcpip.CongestionControlOption
 			if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
 				t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
 			}
-			if got, want := cc, tc.cc; got != want {
+
+			got, want := cc, oldCC
+			// If SetTransportProtocolOption is expected to succeed
+			// then the returned value for congestion control should
+			// match the one specified in the
+			// SetTransportProtocolOption call above, else it should
+			// be what it was before the call to
+			// SetTransportProtocolOption.
+			if tc.err == nil {
+				want = tc.cc
+			}
+			if got != want {
 				t.Fatalf("got congestion control: %v, want: %v", got, want)
 			}
 		})
 	}
 }
 
-func TestAvailableCongestionControl(t *testing.T) {
+func TestStackAvailableCongestionControl(t *testing.T) {
 	c := context.New(t, 1500)
 	defer c.Cleanup()
 
 	s := c.Stack()
 
 	// Query permitted congestion control algorithms.
-	var aCC tcp.AvailableCongestionControlOption
+	var aCC tcpip.AvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &aCC); err != nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &aCC, err)
 	}
-	if got, want := aCC, tcp.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcp.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := aCC, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
 	}
 }
 
-func TestSetAvailableCongestionControl(t *testing.T) {
+func TestStackSetAvailableCongestionControl(t *testing.T) {
 	c := context.New(t, 1500)
 	defer c.Cleanup()
 
 	s := c.Stack()
 
 	// Setting AvailableCongestionControlOption should fail.
-	aCC := tcp.AvailableCongestionControlOption("xyz")
+	aCC := tcpip.AvailableCongestionControlOption("xyz")
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &aCC); err == nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = nil, want non-nil", tcp.ProtocolNumber, &aCC)
 	}
 
 	// Verify that we still get the expected list of congestion control options.
-	var cc tcp.AvailableCongestionControlOption
+	var cc tcpip.AvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
 	}
-	if got, want := cc, tcp.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcp.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := cc, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
+	}
+}
+
+func TestEndpointSetCongestionControl(t *testing.T) {
+	testCases := []struct {
+		cc  tcpip.CongestionControlOption
+		err *tcpip.Error
+	}{
+		{"reno", nil},
+		{"cubic", nil},
+		{"blahblah", tcpip.ErrNoSuchFile},
+	}
+
+	for _, connected := range []bool{false, true} {
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("SetSockOpt(.., %v) w/ connected = %v", tc.cc, connected), func(t *testing.T) {
+				c := context.New(t, 1500)
+				defer c.Cleanup()
+
+				// Create TCP endpoint.
+				var err *tcpip.Error
+				c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+				if err != nil {
+					t.Fatalf("NewEndpoint failed: %v", err)
+				}
+
+				var oldCC tcpip.CongestionControlOption
+				if err := c.EP.GetSockOpt(&oldCC); err != nil {
+					t.Fatalf("c.EP.SockOpt(%v) = %v", &oldCC, err)
+				}
+
+				if connected {
+					c.Connect(789 /* iss */, 32768 /* rcvWnd */, nil)
+				}
+
+				if err := c.EP.SetSockOpt(tc.cc); err != tc.err {
+					t.Fatalf("c.EP.SetSockOpt(%v) = %v, want %v", tc.cc, err, tc.err)
+				}
+
+				var cc tcpip.CongestionControlOption
+				if err := c.EP.GetSockOpt(&cc); err != nil {
+					t.Fatalf("c.EP.SockOpt(%v) = %v", &cc, err)
+				}
+
+				got, want := cc, oldCC
+				// If SetSockOpt is expected to succeed then the
+				// returned value for congestion control should match
+				// the one specified in the SetSockOpt above, else it
+				// should be what it was before the call to SetSockOpt.
+				if tc.err == nil {
+					want = tc.cc
+				}
+				if got != want {
+					t.Fatalf("got congestion control: %v, want: %v", got, want)
+				}
+			})
+		}
 	}
 }
 
 func enableCUBIC(t *testing.T, c *context.Context) {
 	t.Helper()
-	opt := tcp.CongestionControlOption("cubic")
+	opt := tcpip.CongestionControlOption("cubic")
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, opt); err != nil {
 		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, %v = %v", opt, err)
 	}
