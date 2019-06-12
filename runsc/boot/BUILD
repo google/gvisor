@@ -16,6 +16,7 @@ go_library(
         "limits.go",
         "loader.go",
         "network.go",
+        "pprof.go",
         "strace.go",
     ],
     importpath = "gvisor.googlesource.com/gvisor/runsc/boot",
