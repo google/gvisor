@@ -16,8 +16,26 @@
 package ext4
 
 import (
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.googlesource.com/gvisor/third_party/goext4"
+)
+
+const (
+	fdKey = "fd"
+)
+
+var (
+	// errNoDeviceFd is returned when there is no 'fd' option.
+	errNoDeviceFd = fmt.Errorf("ext4 device file descriptor not provided. Missing required %q option", fdKey)
+
+	// errInvalidDeviceFd is returned when the 'fd' option indicates an invalid file descriptor.
+	errInvalidDeviceFd = fmt.Errorf("ext4 Device file descriptor provided by %q option is not valid", fdKey)
 )
 
 // filesystem implements fs.Filesystem for ext4.
@@ -57,5 +75,57 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 
 // Mount returns the root inode of the ext4 fs.
 func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, cgroupsInt interface{}) (*fs.Inode, error) {
-	panic("unimplemented")
+	// Read-only flag must be set.
+	// TODO(b/134676337): Remove when write is supported.
+	if !flags.ReadOnly {
+		return nil, fmt.Errorf("ext4 must be mounted read-only")
+	}
+
+	// Parse data into a map.
+	options := fs.GenericMountSourceOptions(data)
+	sfd, ok := options[fdKey]
+	if !ok {
+		return nil, errNoDeviceFd
+	}
+
+	// Parse device fd.
+	fd, err := strconv.Atoi(sfd)
+	if err != nil {
+		return nil, fmt.Errorf("ext4 Device file descriptor %q provided by %q option is not valid: %v", sfd, fdKey, err)
+	}
+
+	if fd < 0 {
+		return nil, errInvalidDeviceFd
+	}
+
+	// Create the os.File object of the ext4 device. We do NOT close this file
+	// in this function because that would close the device fd. We need the device
+	// fd in inode and file operations to interact with the fs.
+	// TODO(b/134676337): Close the file when the sandbox exits (cleanly or a
+	//                    crash) so that the buffered changes are written and
+	//                    the fs is not corrupted.
+	deviceFile := os.NewFile(uintptr(fd), device)
+	if deviceFile == nil {
+		return nil, errInvalidDeviceFd
+	}
+
+	// Read the super block and block descriptors from device.
+	if _, err = deviceFile.Seek(goext4.Superblock0Offset, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("seek on ext4 device file failed: %v", err)
+	}
+
+	superBlock, err := goext4.NewSuperblockWithReader(deviceFile)
+	if err != nil {
+		return nil, err
+	}
+
+	bgdl, err := goext4.NewBlockGroupDescriptorListWithReadSeeker(deviceFile, superBlock)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a caching mount source and root directory inode.
+	msrc := fs.NewCachingMountSource(f, flags)
+
+	return newInode(bgdl, msrc, goext4.InodeRootDirectory, deviceFile, fs.Directory)
 }
