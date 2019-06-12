@@ -116,6 +116,6 @@ func TestCapabilities(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	testutil.RunAsRoot()
+	specutils.MaybeRunAsRoot()
 	os.Exit(m.Run())
 }

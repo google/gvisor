@@ -212,8 +212,8 @@ run_runsc_do_tests() {
   local runsc=$(find bazel-bin/runsc -type f -executable -name "runsc" | head -n1)
 
   # run runsc do without root privileges.
-  unshare -Ur ${runsc} --network=none --TESTONLY-unsafe-nonroot do true
-  unshare -Ur ${runsc} --TESTONLY-unsafe-nonroot --network=host do --netns=false true
+  ${runsc} --rootless do true
+  ${runsc} --rootless --network=none do true
 
   # run runsc do with root privileges.
   sudo -n -E ${runsc} do true

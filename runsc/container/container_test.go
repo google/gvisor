@@ -36,6 +36,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
@@ -1853,7 +1854,7 @@ func TestMain(m *testing.M) {
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
-	testutil.RunAsRoot()
+	specutils.MaybeRunAsRoot()
 
 	os.Exit(m.Run())
 }

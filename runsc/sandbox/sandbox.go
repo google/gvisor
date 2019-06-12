@@ -515,46 +515,64 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		} else if specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
 			log.Infof("Sandbox will be started in new user namespace")
 			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
-
-			// Map nobody in the new namespace to nobody in the parent namespace.
-			//
-			// A sandbox process will construct an empty
-			// root for itself, so it has to have the CAP_SYS_ADMIN
-			// capability.
-			//
-			// FIXME(b/122554829): The current implementations of
-			// os/exec doesn't allow to set ambient capabilities if
-			// a process is started in a new user namespace. As a
-			// workaround, we start the sandbox process with the 0
-			// UID and then it constructs a chroot and sets UID to
-			// nobody.  https://github.com/golang/go/issues/2315
-			const nobody = 65534
-			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
-				{
-					ContainerID: int(0),
-					HostID:      int(nobody - 1),
-					Size:        int(1),
-				},
-				{
-					ContainerID: int(nobody),
-					HostID:      int(nobody),
-					Size:        int(1),
-				},
-			}
-			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
-				{
-					ContainerID: int(nobody),
-					HostID:      int(nobody),
-					Size:        int(1),
-				},
-			}
-
-			// Set credentials to run as user and group nobody.
-			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid: 0,
-				Gid: nobody,
-			}
 			cmd.Args = append(cmd.Args, "--setup-root")
+
+			if conf.Rootless {
+				log.Infof("Rootless mode: sandbox will run as root inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
+				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      os.Getuid(),
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      os.Getgid(),
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+
+			} else {
+				// Map nobody in the new namespace to nobody in the parent namespace.
+				//
+				// A sandbox process will construct an empty
+				// root for itself, so it has to have the CAP_SYS_ADMIN
+				// capability.
+				//
+				// FIXME(b/122554829): The current implementations of
+				// os/exec doesn't allow to set ambient capabilities if
+				// a process is started in a new user namespace. As a
+				// workaround, we start the sandbox process with the 0
+				// UID and then it constructs a chroot and sets UID to
+				// nobody.  https://github.com/golang/go/issues/2315
+				const nobody = 65534
+				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      nobody - 1,
+						Size:        1,
+					},
+					{
+						ContainerID: nobody,
+						HostID:      nobody,
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: nobody,
+						HostID:      nobody,
+						Size:        1,
+					},
+				}
+
+				// Set credentials to run as user and group nobody.
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: nobody}
+			}
+
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
