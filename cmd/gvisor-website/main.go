@@ -30,28 +30,34 @@ import (
 )
 
 var redirects = map[string]string{
-	"/change":    "https://gvisor.googlesource.com/gvisor/",
-	"/cl":        "https://gvisor-review.googlesource.com/",
+	"/change":    "https://github.com/google/gvisor",
 	"/issue":     "https://github.com/google/gvisor/issues",
 	"/issue/new": "https://github.com/google/gvisor/issues/new",
+	"/pr":        "https://github.com/google/gvisor/pulls",
 
 	// Redirects to compatibility docs.
 	"/c":             "/docs/user_guide/compatibility",
 	"/c/linux/amd64": "/docs/user_guide/compatibility/amd64",
+
+	// Deprecated, but links continue to work.
+	"/cl": "https://gvisor-review.googlesource.com",
 }
 
 var prefixHelpers = map[string]string{
-	"cl":     "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
-	"change": "https://gvisor.googlesource.com/gvisor/+/%s",
+	"change": "https://github.com/google/gvisor/commit/%s",
 	"issue":  "https://github.com/google/gvisor/issues/%s",
+	"pr":     "https://github.com/google/gvisor/pull/%s",
 
 	// Redirects to compatibility docs.
 	"c/linux/amd64": "/docs/user_guide/compatibility/amd64/#%s",
+
+	// Deprecated, but links continue to work.
+	"cl": "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
 }
 
 var (
 	validId     = regexp.MustCompile(`^[A-Za-z0-9-]*/?$`)
-	goGetHeader = `<meta name="go-import" content="gvisor.dev git https://github.com/google/gvisor">`
+	goGetHeader = `<meta name="go-import" content="gvisor.dev/gvisor git https://github.com/google/gvisor">`
 	goGetHTML5  = `<!doctype html><html><head><meta charset=utf-8>` + goGetHeader + `<title>Go-get</title></head><body></html>`
 )
 
