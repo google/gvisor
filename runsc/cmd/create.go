@@ -82,13 +82,17 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	id := f.Arg(0)
 	conf := args[0].(*boot.Config)
 
+	if conf.Rootless {
+		return Errorf("Rootless mode not supported with %q", c.Name())
+	}
+
 	bundleDir := c.bundleDir
 	if bundleDir == "" {
 		bundleDir = getwdOrDie()
 	}
 	spec, err := specutils.ReadSpec(bundleDir)
 	if err != nil {
-		Fatalf("reading spec: %v", err)
+		return Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
@@ -96,7 +100,7 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
 	if _, err := container.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile, c.userLog); err != nil {
-		Fatalf("creating container: %v", err)
+		return Errorf("creating container: %v", err)
 	}
 	return subcommands.ExitSuccess
 }

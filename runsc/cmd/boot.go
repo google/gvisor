@@ -130,6 +130,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 	// Ensure that if there is a panic, all goroutine stacks are printed.
 	debug.SetTraceback("all")
 
+	conf := args[0].(*boot.Config)
+
 	if b.setUpRoot {
 		if err := setUpChroot(b.pidns); err != nil {
 			Fatalf("error setting up chroot: %v", err)
@@ -143,14 +145,16 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 					args = append(args, arg)
 				}
 			}
-			// Note that we've already read the spec from the spec FD, and
-			// we will read it again after the exec call. This works
-			// because the ReadSpecFromFile function seeks to the beginning
-			// of the file before reading.
-			if err := callSelfAsNobody(args); err != nil {
-				Fatalf("%v", err)
+			if !conf.Rootless {
+				// Note that we've already read the spec from the spec FD, and
+				// we will read it again after the exec call. This works
+				// because the ReadSpecFromFile function seeks to the beginning
+				// of the file before reading.
+				if err := callSelfAsNobody(args); err != nil {
+					Fatalf("%v", err)
+				}
+				panic("callSelfAsNobody must never return success")
 			}
-			panic("callSelfAsNobody must never return success")
 		}
 	}
 
@@ -162,9 +166,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		Fatalf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
-
-	conf := args[0].(*boot.Config)
-	waitStatus := args[1].(*syscall.WaitStatus)
 
 	if b.applyCaps {
 		caps := spec.Process.Capabilities
@@ -251,6 +252,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	ws := l.WaitExit()
 	log.Infof("application exiting with %+v", ws)
+	waitStatus := args[1].(*syscall.WaitStatus)
 	*waitStatus = syscall.WaitStatus(ws.Status())
 	l.Destroy()
 	return subcommands.ExitSuccess
