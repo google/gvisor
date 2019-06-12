@@ -21,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 
+	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/procid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
@@ -300,6 +301,18 @@ const (
 	killed
 )
 
+func (t *thread) dumpAndPanic(message string) {
+	var regs syscall.PtraceRegs
+	message += "\n"
+	if err := t.getRegs(&regs); err == nil {
+		message += dumpRegs(&regs)
+	} else {
+		log.Warningf("unable to get registers: %v", err)
+	}
+	message += fmt.Sprintf("stubStart\t = %016x\n", stubStart)
+	panic(message)
+}
+
 // wait waits for a stop event.
 //
 // Precondition: outcome is a valid waitOutcome.
@@ -320,7 +333,7 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 		switch outcome {
 		case stopped:
 			if !status.Stopped() {
-				panic(fmt.Sprintf("ptrace status unexpected: got %v, wanted stopped", status))
+				t.dumpAndPanic(fmt.Sprintf("ptrace status unexpected: got %v, wanted stopped", status))
 			}
 			stopSig := status.StopSignal()
 			if stopSig == 0 {
@@ -334,12 +347,12 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			return stopSig
 		case killed:
 			if !status.Exited() && !status.Signaled() {
-				panic(fmt.Sprintf("ptrace status unexpected: got %v, wanted exited", status))
+				t.dumpAndPanic(fmt.Sprintf("ptrace status unexpected: got %v, wanted exited", status))
 			}
 			return syscall.Signal(status.ExitStatus())
 		default:
 			// Should not happen.
-			panic(fmt.Sprintf("unknown outcome: %v", outcome))
+			t.dumpAndPanic(fmt.Sprintf("unknown outcome: %v", outcome))
 		}
 	}
 }
