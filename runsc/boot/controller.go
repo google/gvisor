@@ -359,6 +359,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("file cannot be empty")
 	}
 
+	if cm.l.conf.ProfileEnable {
+		// initializePProf opens /proc/self/maps, so has to be
+		// called before installing seccomp filters.
+		initializePProf()
+	}
+
+	// Seccomp filters have to be applied before parsing the state file.
+	if err := cm.l.installSeccompFilters(); err != nil {
+		return err
+	}
+
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
 	if err := loadOpts.Load(k, networkStack); err != nil {

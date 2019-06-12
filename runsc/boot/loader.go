@@ -445,6 +445,23 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	return mf, nil
 }
 
+func (l *Loader) installSeccompFilters() error {
+	if l.conf.DisableSeccomp {
+		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
+	} else {
+		opts := filter.Options{
+			Platform:      l.k.Platform,
+			HostNetwork:   l.conf.Network == NetworkHost,
+			ProfileEnable: l.conf.ProfileEnable,
+			ControllerFD:  l.ctrl.srv.FD(),
+		}
+		if err := filter.Install(opts); err != nil {
+			return fmt.Errorf("installing seccomp filters: %v", err)
+		}
+	}
+	return nil
+}
+
 // Run runs the root container.
 func (l *Loader) Run() error {
 	err := l.run()
@@ -480,25 +497,19 @@ func (l *Loader) run() error {
 		return fmt.Errorf("trying to start deleted container %q", l.sandboxID)
 	}
 
-	// Finally done with all configuration. Setup filters before user code
-	// is loaded.
-	if l.conf.DisableSeccomp {
-		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
-	} else {
-		opts := filter.Options{
-			Platform:      l.k.Platform,
-			HostNetwork:   l.conf.Network == NetworkHost,
-			ProfileEnable: l.conf.ProfileEnable,
-			ControllerFD:  l.ctrl.srv.FD(),
-		}
-		if err := filter.Install(opts); err != nil {
-			return fmt.Errorf("installing seccomp filters: %v", err)
-		}
-	}
-
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
+		if l.conf.ProfileEnable {
+			initializePProf()
+		}
+
+		// Finally done with all configuration. Setup filters before user code
+		// is loaded.
+		if err := l.installSeccompFilters(); err != nil {
+			return err
+		}
+
 		// Create the FD map, which will set stdin, stdout, and stderr.  If console
 		// is true, then ioctl calls will be passed through to the host fd.
 		ctx := l.rootProcArgs.NewContext(l.k)
