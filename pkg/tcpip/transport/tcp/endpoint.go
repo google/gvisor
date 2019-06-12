@@ -17,6 +17,7 @@ package tcp
 import (
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -286,7 +287,7 @@ type endpoint struct {
 
 	// cc stores the name of the Congestion Control algorithm to use for
 	// this endpoint.
-	cc CongestionControlOption
+	cc tcpip.CongestionControlOption
 
 	// The following are used when a "packet too big" control packet is
 	// received. They are protected by sndBufMu. They are used to
@@ -394,7 +395,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		e.rcvBufSize = rs.Default
 	}
 
-	var cs CongestionControlOption
+	var cs tcpip.CongestionControlOption
 	if err := stack.TransportProtocolOption(ProtocolNumber, &cs); err == nil {
 		e.cc = cs
 	}
@@ -898,6 +899,40 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.CongestionControlOption:
+		// Query the available cc algorithms in the stack and
+		// validate that the specified algorithm is actually
+		// supported in the stack.
+		var avail tcpip.AvailableCongestionControlOption
+		if err := e.stack.TransportProtocolOption(ProtocolNumber, &avail); err != nil {
+			return err
+		}
+		availCC := strings.Split(string(avail), " ")
+		for _, cc := range availCC {
+			if v == tcpip.CongestionControlOption(cc) {
+				// Acquire the work mutex as we may need to
+				// reinitialize the congestion control state.
+				e.mu.Lock()
+				state := e.state
+				e.cc = v
+				e.mu.Unlock()
+				switch state {
+				case StateEstablished:
+					e.workMu.Lock()
+					e.mu.Lock()
+					if e.state == state {
+						e.snd.cc = e.snd.initCongestionControl(e.cc)
+					}
+					e.mu.Unlock()
+					e.workMu.Unlock()
+				}
+				return nil
+			}
+		}
+
+		// Linux returns ENOENT when an invalid congestion
+		// control algorithm is specified.
+		return tcpip.ErrNoSuchFile
 	default:
 		return nil
 	}
@@ -1065,6 +1100,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		if v {
 			*o = 1
 		}
+		return nil
+
+	case *tcpip.CongestionControlOption:
+		e.mu.Lock()
+		*o = e.cc
+		e.mu.Unlock()
 		return nil
 
 	default:

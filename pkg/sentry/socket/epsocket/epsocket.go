@@ -920,6 +920,30 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 
 		t.Kernel().EmitUnimplementedEvent(t)
 
+	case linux.TCP_CONGESTION:
+		if outLen <= 0 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.CongestionControlOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		// We match linux behaviour here where it returns the lower of
+		// TCP_CA_NAME_MAX bytes or the value of the option length.
+		//
+		// This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+		const tcpCANameMax = 16
+
+		toCopy := tcpCANameMax
+		if outLen < tcpCANameMax {
+			toCopy = outLen
+		}
+		b := make([]byte, toCopy)
+		copy(b, v)
+		return b, nil
+
 	default:
 		emitUnimplementedEventTCP(t, name)
 	}
@@ -1222,6 +1246,12 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIntervalOption(time.Second * time.Duration(v))))
 
+	case linux.TCP_CONGESTION:
+		v := tcpip.CongestionControlOption(optVal)
+		if err := ep.SetSockOpt(v); err != nil {
+			return syserr.TranslateNetstackError(err)
+		}
+		return nil
 	case linux.TCP_REPAIR_OPTIONS:
 		t.Kernel().EmitUnimplementedEvent(t)
 

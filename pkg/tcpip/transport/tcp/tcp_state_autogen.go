@@ -7,6 +7,36 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 )
 
+func (x *cubicState) beforeSave() {}
+func (x *cubicState) save(m state.Map) {
+	x.beforeSave()
+	var t unixTime = x.saveT()
+	m.SaveValue("t", t)
+	m.Save("wLastMax", &x.wLastMax)
+	m.Save("wMax", &x.wMax)
+	m.Save("numCongestionEvents", &x.numCongestionEvents)
+	m.Save("c", &x.c)
+	m.Save("k", &x.k)
+	m.Save("beta", &x.beta)
+	m.Save("wC", &x.wC)
+	m.Save("wEst", &x.wEst)
+	m.Save("s", &x.s)
+}
+
+func (x *cubicState) afterLoad() {}
+func (x *cubicState) load(m state.Map) {
+	m.Load("wLastMax", &x.wLastMax)
+	m.Load("wMax", &x.wMax)
+	m.Load("numCongestionEvents", &x.numCongestionEvents)
+	m.Load("c", &x.c)
+	m.Load("k", &x.k)
+	m.Load("beta", &x.beta)
+	m.Load("wC", &x.wC)
+	m.Load("wEst", &x.wEst)
+	m.Load("s", &x.s)
+	m.LoadValue("t", new(unixTime), func(y interface{}) { x.loadT(y.(unixTime)) })
+}
+
 func (x *SACKInfo) beforeSave() {}
 func (x *SACKInfo) save(m state.Map) {
 	x.beforeSave()
@@ -383,6 +413,7 @@ func (x *segmentEntry) load(m state.Map) {
 }
 
 func init() {
+	state.Register("tcp.cubicState", (*cubicState)(nil), state.Fns{Save: (*cubicState).save, Load: (*cubicState).load})
 	state.Register("tcp.SACKInfo", (*SACKInfo)(nil), state.Fns{Save: (*SACKInfo).save, Load: (*SACKInfo).load})
 	state.Register("tcp.endpoint", (*endpoint)(nil), state.Fns{Save: (*endpoint).save, Load: (*endpoint).load})
 	state.Register("tcp.keepalive", (*keepalive)(nil), state.Fns{Save: (*keepalive).save, Load: (*keepalive).load})

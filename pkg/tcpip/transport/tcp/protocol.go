@@ -79,13 +79,6 @@ const (
 	ccCubic = "cubic"
 )
 
-// CongestionControlOption sets the current congestion control algorithm.
-type CongestionControlOption string
-
-// AvailableCongestionControlOption returns the supported congestion control
-// algorithms.
-type AvailableCongestionControlOption string
-
 type protocol struct {
 	mu                         sync.Mutex
 	sackEnabled                bool
@@ -93,7 +86,6 @@ type protocol struct {
 	recvBufferSize             ReceiveBufferSizeOption
 	congestionControl          string
 	availableCongestionControl []string
-	allowedCongestionControl   []string
 }
 
 // Number returns the tcp protocol number.
@@ -188,7 +180,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
-	case CongestionControlOption:
+	case tcpip.CongestionControlOption:
 		for _, c := range p.availableCongestionControl {
 			if string(v) == c {
 				p.mu.Lock()
@@ -197,7 +189,9 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 				return nil
 			}
 		}
-		return tcpip.ErrInvalidOptionValue
+		// linux returns ENOENT when an invalid congestion control
+		// is specified.
+		return tcpip.ErrNoSuchFile
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -223,14 +217,14 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		*v = p.recvBufferSize
 		p.mu.Unlock()
 		return nil
-	case *CongestionControlOption:
+	case *tcpip.CongestionControlOption:
 		p.mu.Lock()
-		*v = CongestionControlOption(p.congestionControl)
+		*v = tcpip.CongestionControlOption(p.congestionControl)
 		p.mu.Unlock()
 		return nil
-	case *AvailableCongestionControlOption:
+	case *tcpip.AvailableCongestionControlOption:
 		p.mu.Lock()
-		*v = AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
+		*v = tcpip.AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
 		p.mu.Unlock()
 		return nil
 	default:
