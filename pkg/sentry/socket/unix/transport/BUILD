@@ -28,6 +28,7 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport",
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/ilist",
         "//pkg/refs",
         "//pkg/syserr",

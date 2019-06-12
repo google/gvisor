@@ -188,7 +188,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Create the new socket.
-	s, e := socket.New(t, domain, transport.SockType(stype&0xf), protocol)
+	s, e := socket.New(t, domain, linux.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -227,7 +227,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	// Create the socket pair.
-	s1, s2, e := socket.Pair(t, domain, transport.SockType(stype&0xf), protocol)
+	s1, s2, e := socket.Pair(t, domain, linux.SockType(stype&0xf), protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}

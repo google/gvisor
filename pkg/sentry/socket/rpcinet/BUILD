@@ -31,7 +31,6 @@ go_library(
         "//pkg/sentry/socket/hostinet",
         "//pkg/sentry/socket/rpcinet/conn",
         "//pkg/sentry/socket/rpcinet/notifier",
-        "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/unimpl",
         "//pkg/sentry/usermem",
         "//pkg/syserr",

@@ -44,7 +44,7 @@ TEST_P(NonBlockingDgramUnixSocketPairTest, ReadOneSideClosed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, NonBlockingDgramUnixSocketPairTest,
+    NonBlockingDgramUnixSockets, NonBlockingDgramUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(std::vector<SocketPairKind>{
         UnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),
         FilesystemBoundUnixDomainSocketPair(SOCK_DGRAM | SOCK_NONBLOCK),

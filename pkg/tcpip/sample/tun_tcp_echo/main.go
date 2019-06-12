@@ -129,7 +129,7 @@ func main() {
 	}
 
 	linkID, err := fdbased.New(&fdbased.Options{
-		FD:             fd,
+		FDs:            []int{fd},
 		MTU:            mtu,
 		EthernetHeader: *tap,
 		Address:        tcpip.LinkAddress(maddr),

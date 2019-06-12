@@ -39,7 +39,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, StreamSocketPairTest,
+    StreamUnixSockets, StreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing

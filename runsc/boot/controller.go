@@ -237,7 +237,7 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
 	}
 
-	err := cm.l.startContainer(cm.l.k, args.Spec, args.Conf, args.CID, args.FilePayload.Files)
+	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
 		log.Debugf("containerManager.Start failed %q: %+v: %v", args.CID, args, err)
 		return err
@@ -340,8 +340,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	cm.l.k = k
 
 	// Set up the restore environment.
-	fds := &fdDispenser{fds: cm.l.goferFDs}
-	renv, err := createRestoreEnvironment(cm.l.spec, cm.l.conf, fds)
+	mntr := newContainerMounter(cm.l.spec, "", cm.l.goferFDs, cm.l.k, cm.l.mountHints)
+	renv, err := mntr.createRestoreEnvironment(cm.l.conf)
 	if err != nil {
 		return fmt.Errorf("creating RestoreEnvironment: %v", err)
 	}
@@ -359,6 +359,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("file cannot be empty")
 	}
 
+	if cm.l.conf.ProfileEnable {
+		// initializePProf opens /proc/self/maps, so has to be
+		// called before installing seccomp filters.
+		initializePProf()
+	}
+
+	// Seccomp filters have to be applied before parsing the state file.
+	if err := cm.l.installSeccompFilters(); err != nil {
+		return err
+	}
+
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
 	if err := loadOpts.Load(k, networkStack); err != nil {
@@ -369,11 +380,11 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	k.Timekeeper().SetClocks(time.NewCalibratedClocks())
 
 	// Since we have a new kernel we also must make a new watchdog.
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
+	dog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)
 
 	// Change the loader fields to reflect the changes made when restoring.
 	cm.l.k = k
-	cm.l.watchdog = watchdog
+	cm.l.watchdog = dog
 	cm.l.rootProcArgs = kernel.CreateProcessArgs{}
 	cm.l.restore = true
 
@@ -420,16 +431,12 @@ type WaitPIDArgs struct {
 
 	// CID is the container ID.
 	CID string
-
-	// ClearStatus determines whether the exit status of the process should
-	// be cleared when WaitPID returns.
-	ClearStatus bool
 }
 
 // WaitPID waits for the process with PID 'pid' in the sandbox.
 func (cm *containerManager) WaitPID(args *WaitPIDArgs, waitStatus *uint32) error {
 	log.Debugf("containerManager.Wait")
-	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, args.ClearStatus, waitStatus)
+	return cm.l.waitPID(kernel.ThreadID(args.PID), args.CID, waitStatus)
 }
 
 // SignalDeliveryMode enumerates different signal delivery modes.

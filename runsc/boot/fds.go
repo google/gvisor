@@ -28,11 +28,12 @@ import (
 // createFDMap creates an FD map that contains stdin, stdout, and stderr. If
 // console is true, then ioctl calls will be passed through to the host FD.
 // Upon success, createFDMap dups then closes stdioFDs.
-func createFDMap(ctx context.Context, k *kernel.Kernel, l *limits.LimitSet, console bool, stdioFDs []int) (*kernel.FDMap, error) {
+func createFDMap(ctx context.Context, l *limits.LimitSet, console bool, stdioFDs []int) (*kernel.FDMap, error) {
 	if len(stdioFDs) != 3 {
 		return nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
 
+	k := kernel.KernelFromContext(ctx)
 	fdm := k.NewFDMap()
 	defer fdm.DecRef()
 	mounter := fs.FileOwnerFromContext(ctx)

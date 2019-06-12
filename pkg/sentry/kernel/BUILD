@@ -64,6 +64,18 @@ go_template_instance(
     },
 )
 
+go_template_instance(
+    name = "socket_list",
+    out = "socket_list.go",
+    package = "kernel",
+    prefix = "socket",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*SocketEntry",
+        "Linker": "*SocketEntry",
+    },
+)
+
 proto_library(
     name = "uncaught_signal_proto",
     srcs = ["uncaught_signal.proto"],
@@ -104,6 +116,7 @@ go_library(
         "sessions.go",
         "signal.go",
         "signal_handlers.go",
+        "socket_list.go",
         "syscalls.go",
         "syscalls_state.go",
         "syslog.go",

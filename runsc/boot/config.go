@@ -221,6 +221,17 @@ type Config struct {
 	// user, and without chrooting the sandbox process. This can be
 	// necessary in test environments that have limited capabilities.
 	TestOnlyAllowRunAsCurrentUserWithoutChroot bool
+
+	// NumNetworkChannels controls the number of AF_PACKET sockets that map
+	// to the same underlying network device. This allows netstack to better
+	// scale for high throughput use cases.
+	NumNetworkChannels int
+
+	// Rootless allows the sandbox to be started with a user that is not root.
+	// Defense is depth measures are weaker with rootless. Specifically, the
+	// sandbox and Gofer process run as root inside a user namespace with root
+	// mapped to the caller's user.
+	Rootless bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -244,6 +255,8 @@ func (c *Config) ToFlags() []string {
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 		"--profile=" + strconv.FormatBool(c.ProfileEnable),
 		"--net-raw=" + strconv.FormatBool(c.EnableRaw),
+		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
+		"--rootless=" + strconv.FormatBool(c.Rootless),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.

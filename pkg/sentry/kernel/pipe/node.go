@@ -38,7 +38,11 @@ type inodeOperations struct {
 	fsutil.InodeNotMappable          `state:"nosave"`
 	fsutil.InodeNotSocket            `state:"nosave"`
 	fsutil.InodeNotSymlink           `state:"nosave"`
-	fsutil.InodeNotVirtual           `state:"nosave"`
+
+	// Marking pipe inodes as virtual allows them to be saved and restored
+	// even if they have been unlinked. We can get away with this because
+	// their state exists entirely within the sentry.
+	fsutil.InodeVirtual `state:"nosave"`
 
 	fsutil.InodeSimpleAttributes
 
@@ -86,7 +90,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 	switch {
 	case flags.Read && !flags.Write: // O_RDONLY.
-		r := i.p.Open(ctx, flags)
+		r := i.p.Open(ctx, d, flags)
 		i.newHandleLocked(&i.rWakeup)
 
 		if i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
@@ -102,7 +106,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 		return r, nil
 
 	case flags.Write && !flags.Read: // O_WRONLY.
-		w := i.p.Open(ctx, flags)
+		w := i.p.Open(ctx, d, flags)
 		i.newHandleLocked(&i.wWakeup)
 
 		if i.p.isNamed && !i.p.HasReaders() {
@@ -122,7 +126,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 	case flags.Read && flags.Write: // O_RDWR.
 		// Pipes opened for read-write always succeeds without blocking.
-		rw := i.p.Open(ctx, flags)
+		rw := i.p.Open(ctx, d, flags)
 		i.newHandleLocked(&i.rWakeup)
 		i.newHandleLocked(&i.wWakeup)
 		return rw, nil

@@ -25,37 +25,97 @@
 package syscalls
 
 import (
+	"fmt"
+	"syscall"
+
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
 
+// Supported returns a syscall that is fully supported.
+func Supported(name string, fn kernel.SyscallFn) kernel.Syscall {
+	return kernel.Syscall{
+		Name:         name,
+		Fn:           fn,
+		SupportLevel: kernel.SupportFull,
+		Note:         "Full Support",
+	}
+}
+
+// Undocumented returns a syscall that is undocumented.
+func Undocumented(name string, fn kernel.SyscallFn) kernel.Syscall {
+	return kernel.Syscall{
+		Name:         name,
+		Fn:           fn,
+		SupportLevel: kernel.SupportUndocumented,
+	}
+}
+
+// PartiallySupported returns a syscall that has a partial implementation.
+func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []string) kernel.Syscall {
+	return kernel.Syscall{
+		Name:         name,
+		Fn:           fn,
+		SupportLevel: kernel.SupportPartial,
+		Note:         note,
+		URLs:         urls,
+	}
+}
+
 // Error returns a syscall handler that will always give the passed error.
-func Error(err error) kernel.SyscallFn {
-	return func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-		return 0, nil, err
+func Error(name string, err syscall.Errno, note string, urls []string) kernel.Syscall {
+	if note != "" {
+		note = note + "; "
+	}
+	return kernel.Syscall{
+		Name: name,
+		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			return 0, nil, err
+		},
+		SupportLevel: kernel.SupportUnimplemented,
+		Note:         fmt.Sprintf("%sReturns %q", note, err.Error()),
+		URLs:         urls,
 	}
 }
 
 // ErrorWithEvent gives a syscall function that sends an unimplemented
 // syscall event via the event channel and returns the passed error.
-func ErrorWithEvent(err error) kernel.SyscallFn {
-	return func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, err
+func ErrorWithEvent(name string, err syscall.Errno, note string, urls []string) kernel.Syscall {
+	if note != "" {
+		note = note + "; "
+	}
+	return kernel.Syscall{
+		Name: name,
+		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			t.Kernel().EmitUnimplementedEvent(t)
+			return 0, nil, err
+		},
+		SupportLevel: kernel.SupportUnimplemented,
+		Note:         fmt.Sprintf("%sReturns %q", note, err.Error()),
+		URLs:         urls,
 	}
 }
 
 // CapError gives a syscall function that checks for capability c.  If the task
 // has the capability, it returns ENOSYS, otherwise EPERM. To unprivileged
 // tasks, it will seem like there is an implementation.
-func CapError(c linux.Capability) kernel.SyscallFn {
-	return func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-		if !t.HasCapability(c) {
-			return 0, nil, syserror.EPERM
-		}
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+func CapError(name string, c linux.Capability, note string, urls []string) kernel.Syscall {
+	if note != "" {
+		note = note + "; "
+	}
+	return kernel.Syscall{
+		Name: name,
+		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			if !t.HasCapability(c) {
+				return 0, nil, syserror.EPERM
+			}
+			t.Kernel().EmitUnimplementedEvent(t)
+			return 0, nil, syserror.ENOSYS
+		},
+		SupportLevel: kernel.SupportUnimplemented,
+		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise", note, syserror.EPERM, c.String(), syserror.ENOSYS),
+		URLs:         urls,
 	}
 }

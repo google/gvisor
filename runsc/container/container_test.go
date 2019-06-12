@@ -36,6 +36,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.googlesource.com/gvisor/runsc/specutils"
 	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
 )
 
@@ -1841,7 +1842,7 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 	if err != nil {
 		return 0, fmt.Errorf("error executing: %v", err)
 	}
-	ws, err := cont.WaitPID(pid, true /* clearStatus */)
+	ws, err := cont.WaitPID(pid)
 	if err != nil {
 		return 0, fmt.Errorf("error waiting: %v", err)
 	}
@@ -1853,7 +1854,7 @@ func TestMain(m *testing.M) {
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
-	testutil.RunAsRoot()
+	specutils.MaybeRunAsRoot()
 
 	os.Exit(m.Run())
 }

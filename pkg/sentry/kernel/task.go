@@ -455,12 +455,13 @@ type Task struct {
 	// single numa node, all policies are no-ops. We only track this information
 	// so that we can return reasonable values if the application calls
 	// get_mempolicy(2) after setting a non-default policy. Note that in the
-	// real syscall, nodemask can be longer than 4 bytes, but we always report a
-	// single node so never need to save more than a single bit.
+	// real syscall, nodemask can be longer than a single unsigned long, but we
+	// always report a single node so never need to save more than a single
+	// bit.
 	//
 	// numaPolicy and numaNodeMask are protected by mu.
 	numaPolicy   int32
-	numaNodeMask uint32
+	numaNodeMask uint64
 
 	// If netns is true, the task is in a non-root network namespace. Network
 	// namespaces aren't currently implemented in full; being in a network

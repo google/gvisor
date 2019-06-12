@@ -29,6 +29,7 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/cpuid"
 	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.googlesource.com/gvisor/pkg/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/rand"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
@@ -37,7 +38,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
@@ -117,6 +117,10 @@ type Loader struct {
 	//
 	// processes is guardded by mu.
 	processes map[execID]*execProcess
+
+	// mountHints provides extra information about mounts for containers that
+	// apply to the entire pod.
+	mountHints *podMountHints
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -288,7 +292,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create a watchdog.
-	watchdog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
+	dog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
 
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k)
 	if err != nil {
@@ -299,18 +303,24 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing compat logs: %v", err)
 	}
 
+	mountHints, err := newPodMountHints(args.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("creating pod mount hints: %v", err)
+	}
+
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:            k,
 		conf:         args.Conf,
 		console:      args.Console,
-		watchdog:     watchdog,
+		watchdog:     dog,
 		spec:         args.Spec,
 		goferFDs:     args.GoferFDs,
 		stdioFDs:     args.StdioFDs,
 		rootProcArgs: procArgs,
 		sandboxID:    args.ID,
 		processes:    map[execID]*execProcess{eid: {}},
+		mountHints:   mountHints,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -424,6 +434,9 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
+	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
+	// there are memory cgroups specified, because at this point we're already
+	// in a mount namespace in which the relevant cgroupfs is not visible.
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		memfile.Close()
@@ -432,7 +445,24 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	return mf, nil
 }
 
-// Run runs the root container..
+func (l *Loader) installSeccompFilters() error {
+	if l.conf.DisableSeccomp {
+		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
+	} else {
+		opts := filter.Options{
+			Platform:      l.k.Platform,
+			HostNetwork:   l.conf.Network == NetworkHost,
+			ProfileEnable: l.conf.ProfileEnable,
+			ControllerFD:  l.ctrl.srv.FD(),
+		}
+		if err := filter.Install(opts); err != nil {
+			return fmt.Errorf("installing seccomp filters: %v", err)
+		}
+	}
+	return nil
+}
+
+// Run runs the root container.
 func (l *Loader) Run() error {
 	err := l.run()
 	l.ctrl.manager.startResultChan <- err
@@ -467,36 +497,34 @@ func (l *Loader) run() error {
 		return fmt.Errorf("trying to start deleted container %q", l.sandboxID)
 	}
 
-	// Finally done with all configuration. Setup filters before user code
-	// is loaded.
-	if l.conf.DisableSeccomp {
-		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
-	} else {
-		opts := filter.Options{
-			Platform:      l.k.Platform,
-			HostNetwork:   l.conf.Network == NetworkHost,
-			ProfileEnable: l.conf.ProfileEnable,
-			ControllerFD:  l.ctrl.srv.FD(),
-		}
-		if err := filter.Install(opts); err != nil {
-			return fmt.Errorf("installing seccomp filters: %v", err)
-		}
-	}
-
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
-		if err := setupContainerFS(
-			&l.rootProcArgs,
-			l.spec,
-			l.conf,
-			l.stdioFDs,
-			l.goferFDs,
-			l.console,
-			l.rootProcArgs.Credentials,
-			l.rootProcArgs.Limits,
-			l.k,
-			"" /* CID, which isn't needed for the root container */); err != nil {
+		if l.conf.ProfileEnable {
+			initializePProf()
+		}
+
+		// Finally done with all configuration. Setup filters before user code
+		// is loaded.
+		if err := l.installSeccompFilters(); err != nil {
+			return err
+		}
+
+		// Create the FD map, which will set stdin, stdout, and stderr.  If console
+		// is true, then ioctl calls will be passed through to the host fd.
+		ctx := l.rootProcArgs.NewContext(l.k)
+		fdm, err := createFDMap(ctx, l.rootProcArgs.Limits, l.console, l.stdioFDs)
+		if err != nil {
+			return fmt.Errorf("importing fds: %v", err)
+		}
+		// CreateProcess takes a reference on FDMap if successful. We won't need
+		// ours either way.
+		l.rootProcArgs.FDMap = fdm
+
+		// cid for root container can be empty. Only subcontainers need it to set
+		// the mount location.
+		mntr := newContainerMounter(l.spec, "", l.goferFDs, l.k, l.mountHints)
+		if err := mntr.setupFS(ctx, l.conf, &l.rootProcArgs, l.rootProcArgs.Credentials); err != nil {
 			return err
 		}
 
@@ -552,7 +580,7 @@ func (l *Loader) createContainer(cid string) error {
 // startContainer starts a child container. It returns the thread group ID of
 // the newly created process. Caller owns 'files' and may close them after
 // this method returns.
-func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
+func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, files []*os.File) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -596,6 +624,16 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		stdioFDs = append(stdioFDs, int(f.Fd()))
 	}
 
+	// Create the FD map, which will set stdin, stdout, and stderr.
+	ctx := procArgs.NewContext(l.k)
+	fdm, err := createFDMap(ctx, procArgs.Limits, false, stdioFDs)
+	if err != nil {
+		return fmt.Errorf("importing fds: %v", err)
+	}
+	// CreateProcess takes a reference on FDMap if successful. We won't need ours
+	// either way.
+	procArgs.FDMap = fdm
+
 	// Can't take ownership away from os.File. dup them to get a new FDs.
 	var goferFDs []int
 	for _, f := range files[3:] {
@@ -606,22 +644,12 @@ func (l *Loader) startContainer(k *kernel.Kernel, spec *specs.Spec, conf *Config
 		goferFDs = append(goferFDs, fd)
 	}
 
-	if err := setupContainerFS(
-		&procArgs,
-		spec,
-		conf,
-		stdioFDs,
-		goferFDs,
-		false,
-		creds,
-		procArgs.Limits,
-		k,
-		cid); err != nil {
+	mntr := newContainerMounter(spec, cid, goferFDs, l.k, l.mountHints)
+	if err := mntr.setupFS(ctx, conf, &procArgs, creds); err != nil {
 		return fmt.Errorf("configuring container FS: %v", err)
 	}
 
-	ctx := procArgs.NewContext(l.k)
-	mns := k.RootMountNamespace()
+	mns := l.k.RootMountNamespace()
 	if err := setExecutablePath(ctx, mns, &procArgs); err != nil {
 		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
 	}
@@ -724,7 +752,7 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	return nil
 }
 
-func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, waitStatus *uint32) error {
+func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, waitStatus *uint32) error {
 	if tgid <= 0 {
 		return fmt.Errorf("PID (%d) must be positive", tgid)
 	}
@@ -736,13 +764,10 @@ func (l *Loader) waitPID(tgid kernel.ThreadID, cid string, clearStatus bool, wai
 		ws := l.wait(execTG)
 		*waitStatus = ws
 
-		// Remove tg from the cache if caller requested it.
-		if clearStatus {
-			l.mu.Lock()
-			delete(l.processes, eid)
-			log.Debugf("updated processes (removal): %v", l.processes)
-			l.mu.Unlock()
-		}
+		l.mu.Lock()
+		delete(l.processes, eid)
+		log.Debugf("updated processes (removal): %v", l.processes)
+		l.mu.Unlock()
 		return nil
 	}
 

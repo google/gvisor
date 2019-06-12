@@ -56,7 +56,11 @@ type FDBasedLink struct {
 	Addresses   []net.IP
 	Routes      []Route
 	GSOMaxSize  uint32
-	LinkAddress []byte
+	LinkAddress net.HardwareAddr
+
+	// NumChannels controls how many underlying FD's are to be used to
+	// create this endpoint.
+	NumChannels int
 }
 
 // LoopbackLink configures a loopback li nk.
@@ -68,8 +72,9 @@ type LoopbackLink struct {
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
 type CreateLinksAndRoutesArgs struct {
-	// FilePayload contains the fds associated with the FDBasedLinks.  The
-	// two slices must have the same length.
+	// FilePayload contains the fds associated with the FDBasedLinks. The
+	// number of fd's should match the sum of the NumChannels field of the
+	// FDBasedLink entries below.
 	urpc.FilePayload
 
 	LoopbackLinks []LoopbackLink
@@ -95,8 +100,12 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) tcpip.Route {
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should
 // only be called once.
 func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
-	if len(args.FilePayload.Files) != len(args.FDBasedLinks) {
-		return fmt.Errorf("FilePayload must be same length at FDBasedLinks")
+	wantFDs := 0
+	for _, l := range args.FDBasedLinks {
+		wantFDs += l.NumChannels
+	}
+	if got := len(args.FilePayload.Files); got != wantFDs {
+		return fmt.Errorf("args.FilePayload.Files has %d FD's but we need %d entries based on FDBasedLinks", got, wantFDs)
 	}
 
 	var nicID tcpip.NICID
@@ -123,20 +132,26 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 	}
 
-	for i, link := range args.FDBasedLinks {
+	fdOffset := 0
+	for _, link := range args.FDBasedLinks {
 		nicID++
 		nicids[link.Name] = nicID
 
-		// Copy the underlying FD.
-		oldFD := args.FilePayload.Files[i].Fd()
-		newFD, err := syscall.Dup(int(oldFD))
-		if err != nil {
-			return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
+		FDs := []int{}
+		for j := 0; j < link.NumChannels; j++ {
+			// Copy the underlying FD.
+			oldFD := args.FilePayload.Files[fdOffset].Fd()
+			newFD, err := syscall.Dup(int(oldFD))
+			if err != nil {
+				return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
+			}
+			FDs = append(FDs, newFD)
+			fdOffset++
 		}
 
 		mac := tcpip.LinkAddress(link.LinkAddress)
 		linkEP, err := fdbased.New(&fdbased.Options{
-			FD:                 newFD,
+			FDs:                FDs,
 			MTU:                uint32(link.MTU),
 			EthernetHeader:     true,
 			Address:            mac,
@@ -148,7 +163,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			return err
 		}
 
-		log.Infof("Enabling interface %q with id %d on addresses %+v (%v)", link.Name, nicID, link.Addresses, mac)
+		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses, false /* loopback */); err != nil {
 			return err
 		}

@@ -21,11 +21,11 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.googlesource.com/gvisor/pkg/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memutil"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"

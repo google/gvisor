@@ -8,6 +8,7 @@ go_test(
     srcs = [
         "exec_test.go",
         "integration_test.go",
+        "regression_test.go",
     ],
     embed = [":integration"],
     tags = [

@@ -397,14 +397,15 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 			defer cleanup()
 
-			// setupRootContainerFS needs to find root from the context after the
+			// setupRootContainer needs to find root from the context after the
 			// namespace is created.
 			var mns *fs.MountNamespace
 			setMountNS := func(m *fs.MountNamespace) {
 				mns = m
 				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
 			}
-			if err := setupRootContainerFS(ctx, ctx, &tc.spec, conf, []int{sandEnd}, setMountNS); err != nil {
+			mntr := newContainerMounter(&tc.spec, "", []int{sandEnd}, nil, &podMountHints{})
+			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
 				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
 			}
 			root := mns.Root()
@@ -609,8 +610,8 @@ func TestRestoreEnvironment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := testConfig()
-			fds := &fdDispenser{fds: tc.ioFDs}
-			actualRenv, err := createRestoreEnvironment(tc.spec, conf, fds)
+			mntr := newContainerMounter(tc.spec, "", tc.ioFDs, nil, &podMountHints{})
+			actualRenv, err := mntr.createRestoreEnvironment(conf)
 			if !tc.errorExpected && err != nil {
 				t.Fatalf("could not create restore environment for test:%s", tc.name)
 			} else if tc.errorExpected {

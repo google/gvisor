@@ -622,14 +622,14 @@ func (t *Task) SetNiceness(n int) {
 }
 
 // NumaPolicy returns t's current numa policy.
-func (t *Task) NumaPolicy() (policy int32, nodeMask uint32) {
+func (t *Task) NumaPolicy() (policy int32, nodeMask uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.numaPolicy, t.numaNodeMask
 }
 
 // SetNumaPolicy sets t's numa policy.
-func (t *Task) SetNumaPolicy(policy int32, nodeMask uint32) {
+func (t *Task) SetNumaPolicy(policy int32, nodeMask uint64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.numaPolicy = policy

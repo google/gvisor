@@ -32,7 +32,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/conn"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/notifier"
 	pb "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
@@ -54,7 +53,10 @@ type socketOperations struct {
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	socket.SendReceiveTimeout
 
-	family   int    // Read-only.
+	family   int            // Read-only.
+	stype    linux.SockType // Read-only.
+	protocol int            // Read-only.
+
 	fd       uint32 // must be O_NONBLOCK
 	wq       *waiter.Queue
 	rpcConn  *conn.RPCConnection
@@ -70,7 +72,7 @@ type socketOperations struct {
 var _ = socket.Socket(&socketOperations{})
 
 // New creates a new RPC socket.
-func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, protocol int) (*fs.File, *syserr.Error) {
+func newSocketFile(ctx context.Context, stack *Stack, family int, skType linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	id, c := stack.rpcConn.NewRequest(pb.SyscallRequest{Args: &pb.SyscallRequest_Socket{&pb.SocketRequest{Family: int64(family), Type: int64(skType | syscall.SOCK_NONBLOCK), Protocol: int64(protocol)}}}, false /* ignoreResult */)
 	<-c
 
@@ -87,6 +89,8 @@ func newSocketFile(ctx context.Context, stack *Stack, family int, skType int, pr
 	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &socketOperations{
 		family:   family,
+		stype:    skType,
+		protocol: protocol,
 		wq:       &wq,
 		fd:       fd,
 		rpcConn:  stack.rpcConn,
@@ -333,7 +337,7 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	if err != nil {
 		return 0, nil, 0, syserr.FromError(err)
 	}
-	t.Kernel().RecordSocket(file, s.family)
+	t.Kernel().RecordSocket(file)
 
 	if peerRequested {
 		return fd, payload.Address.Address, payload.Address.Length, nil
@@ -830,12 +834,23 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	}
 }
 
+// State implements socket.Socket.State.
+func (s *socketOperations) State() uint32 {
+	// TODO(b/127845868): Define a new rpc to query the socket state.
+	return 0
+}
+
+// Type implements socket.Socket.Type.
+func (s *socketOperations) Type() (family int, skType linux.SockType, protocol int) {
+	return s.family, s.stype, s.protocol
+}
+
 type socketProvider struct {
 	family int
 }
 
 // Socket implements socket.Provider.Socket.
-func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Check that we are using the RPC network stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -851,7 +866,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, p
 	//
 	// Try to restrict the flags we will accept to minimize backwards
 	// incompatibility with netstack.
-	stype := int(stypeflags) & linux.SOCK_TYPE_MASK
+	stype := stypeflags & linux.SOCK_TYPE_MASK
 	switch stype {
 	case syscall.SOCK_STREAM:
 		switch protocol {
@@ -871,11 +886,11 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags transport.SockType, p
 		return nil, nil
 	}
 
-	return newSocketFile(t, s, p.family, stype, 0)
+	return newSocketFile(t, s, p.family, stype, protocol)
 }
 
 // Pair implements socket.Provider.Pair.
-func (p *socketProvider) Pair(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func (p *socketProvider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
 	// Not supported by AF_INET/AF_INET6.
 	return nil, nil, nil
 }

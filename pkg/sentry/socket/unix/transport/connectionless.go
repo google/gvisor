@@ -15,6 +15,7 @@
 package transport
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/waiter"
@@ -118,8 +119,8 @@ func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to Bo
 }
 
 // Type implements Endpoint.Type.
-func (e *connectionlessEndpoint) Type() SockType {
-	return SockDgram
+func (e *connectionlessEndpoint) Type() linux.SockType {
+	return linux.SOCK_DGRAM
 }
 
 // Connect attempts to connect directly to server.
@@ -193,4 +194,19 @@ func (e *connectionlessEndpoint) Readiness(mask waiter.EventMask) waiter.EventMa
 	}
 
 	return ready
+}
+
+// State implements socket.Socket.State.
+func (e *connectionlessEndpoint) State() uint32 {
+	e.Lock()
+	defer e.Unlock()
+
+	switch {
+	case e.isBound():
+		return linux.SS_UNCONNECTED
+	case e.Connected():
+		return linux.SS_CONNECTING
+	default:
+		return linux.SS_DISCONNECTING
+	}
 }

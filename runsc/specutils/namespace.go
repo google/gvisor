@@ -220,3 +220,55 @@ func HasCapabilities(cs ...capability.Cap) bool {
 	}
 	return true
 }
+
+// MaybeRunAsRoot ensures the process runs with capabilities needed to create a
+// sandbox, e.g. CAP_SYS_ADMIN, CAP_SYS_CHROOT, etc. If capabilities are needed,
+// it will create a new user namespace and re-execute the process as root
+// inside the namespace with the same arguments and environment.
+//
+// This function returns immediately when no new capability is needed. If
+// another process is executed, it returns straight from here with the same exit
+// code as the child.
+func MaybeRunAsRoot() error {
+	if HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_SYS_CHROOT, capability.CAP_SETUID, capability.CAP_SETGID) {
+		return nil
+	}
+
+	// Current process doesn't have required capabilities, create user namespace
+	// and run as root inside the namespace to acquire capabilities.
+	log.Infof("*** Re-running as root in new user namespace ***")
+
+	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
+
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+		// Set current user/group as root inside the namespace. Since we may not
+		// have CAP_SETUID/CAP_SETGID, just map root to the current user/group.
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
+		Credential:                 &syscall.Credential{Uid: 0, Gid: 0},
+		GidMappingsEnableSetgroups: false,
+	}
+
+	cmd.Env = os.Environ()
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			if ws, ok := exit.Sys().(syscall.WaitStatus); ok {
+				os.Exit(ws.ExitStatus())
+			}
+			log.Warningf("No wait status provided, exiting with -1: %v", err)
+			os.Exit(-1)
+		}
+		return fmt.Errorf("re-executing self: %v", err)
+	}
+	// Child completed with success.
+	os.Exit(0)
+	panic("unreachable")
+}

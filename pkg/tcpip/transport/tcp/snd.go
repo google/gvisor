@@ -194,8 +194,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 	s := &sender{
 		ep:               ep,
-		sndCwnd:          InitialCwnd,
-		sndSsthresh:      math.MaxInt64,
 		sndWnd:           sndWnd,
 		sndUna:           iss + 1,
 		sndNxt:           iss + 1,
@@ -238,7 +236,13 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	return s
 }
 
-func (s *sender) initCongestionControl(congestionControlName CongestionControlOption) congestionControl {
+// initCongestionControl initializes the specified congestion control module and
+// returns a handle to it. It also initializes the sndCwnd and sndSsThresh to
+// their initial values.
+func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
+	s.sndCwnd = InitialCwnd
+	s.sndSsthresh = math.MaxInt64
+
 	switch congestionControlName {
 	case ccCubic:
 		return newCubicCC(s)
@@ -632,6 +636,10 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		}
 		seg.flags = header.TCPFlagAck | header.TCPFlagFin
 		segEnd = seg.sequenceNumber.Add(1)
+		// Transition to FIN-WAIT1 state since we're initiating an active close.
+		s.ep.mu.Lock()
+		s.ep.state = StateFinWait1
+		s.ep.mu.Unlock()
 	} else {
 		// We're sending a non-FIN segment.
 		if seg.flags&header.TCPFlagFin != 0 {
@@ -779,7 +787,7 @@ func (s *sender) sendData() {
 				break
 			}
 			dataSent = true
-			s.outstanding++
+			s.outstanding += s.pCount(seg)
 			s.writeNext = seg.Next()
 		}
 	}

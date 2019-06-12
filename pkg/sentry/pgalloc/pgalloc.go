@@ -32,6 +32,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/hostmm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
@@ -162,6 +163,11 @@ type MemoryFile struct {
 
 	// evictionWG counts the number of goroutines currently performing evictions.
 	evictionWG sync.WaitGroup
+
+	// stopNotifyPressure stops memory cgroup pressure level
+	// notifications used to drive eviction. stopNotifyPressure is
+	// immutable.
+	stopNotifyPressure func()
 }
 
 // MemoryFileOpts provides options to NewMemoryFile.
@@ -169,6 +175,11 @@ type MemoryFileOpts struct {
 	// DelayedEviction controls the extent to which the MemoryFile may delay
 	// eviction of evictable allocations.
 	DelayedEviction DelayedEvictionType
+
+	// If UseHostMemcgPressure is true, use host memory cgroup pressure level
+	// notifications to determine when eviction is necessary. This option has
+	// no effect unless DelayedEviction is DelayedEvictionEnabled.
+	UseHostMemcgPressure bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -186,9 +197,14 @@ const (
 	// evictable allocations until doing so is considered necessary to avoid
 	// performance degradation due to host memory pressure, or OOM kills.
 	//
-	// As of this writing, DelayedEvictionEnabled delays evictions until the
-	// reclaimer goroutine is out of work (pages to reclaim), then evicts all
-	// pending evictable allocations immediately.
+	// As of this writing, the behavior of DelayedEvictionEnabled depends on
+	// whether or not MemoryFileOpts.UseHostMemcgPressure is enabled:
+	//
+	// - If UseHostMemcgPressure is true, evictions are delayed until memory
+	// pressure is indicated.
+	//
+	// - Otherwise, evictions are only delayed until the reclaimer goroutine
+	// is out of work (pages to reclaim).
 	DelayedEvictionEnabled
 
 	// DelayedEvictionManual requires that evictable allocations are only
@@ -292,6 +308,22 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	}
 	f.mappings.Store(make([]uintptr, initialSize/chunkSize))
 	f.reclaimCond.L = &f.mu
+
+	if f.opts.DelayedEviction == DelayedEvictionEnabled && f.opts.UseHostMemcgPressure {
+		stop, err := hostmm.NotifyCurrentMemcgPressureCallback(func() {
+			f.mu.Lock()
+			startedAny := f.startEvictionsLocked()
+			f.mu.Unlock()
+			if startedAny {
+				log.Debugf("pgalloc.MemoryFile performing evictions due to memcg pressure")
+			}
+		}, "low")
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure memcg pressure level notifications: %v", err)
+		}
+		f.stopNotifyPressure = stop
+	}
+
 	go f.runReclaim() // S/R-SAFE: f.mu
 
 	// The Linux kernel contains an optional feature called "Integrity
@@ -692,9 +724,11 @@ func (f *MemoryFile) MarkEvictable(user EvictableMemoryUser, er EvictableRange) 
 			// Kick off eviction immediately.
 			f.startEvictionGoroutineLocked(user, info)
 		case DelayedEvictionEnabled:
-			// Ensure that the reclaimer goroutine is running, so that it can
-			// start eviction when necessary.
-			f.reclaimCond.Signal()
+			if !f.opts.UseHostMemcgPressure {
+				// Ensure that the reclaimer goroutine is running, so that it
+				// can start eviction when necessary.
+				f.reclaimCond.Signal()
+			}
 		}
 	}
 }
@@ -992,11 +1026,12 @@ func (f *MemoryFile) runReclaim() {
 		}
 		f.markReclaimed(fr)
 	}
+
 	// We only get here if findReclaimable finds f.destroyed set and returns
 	// false.
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if !f.destroyed {
+		f.mu.Unlock()
 		panic("findReclaimable broke out of reclaim loop, but destroyed is no longer set")
 	}
 	f.file.Close()
@@ -1016,6 +1051,13 @@ func (f *MemoryFile) runReclaim() {
 	}
 	// Similarly, invalidate f.mappings. (atomic.Value.Store(nil) panics.)
 	f.mappings.Store([]uintptr{})
+	f.mu.Unlock()
+
+	// This must be called without holding f.mu to avoid circular lock
+	// ordering.
+	if f.stopNotifyPressure != nil {
+		f.stopNotifyPressure()
+	}
 }
 
 func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
@@ -1029,7 +1071,7 @@ func (f *MemoryFile) findReclaimable() (platform.FileRange, bool) {
 			if f.reclaimable {
 				break
 			}
-			if f.opts.DelayedEviction == DelayedEvictionEnabled {
+			if f.opts.DelayedEviction == DelayedEvictionEnabled && !f.opts.UseHostMemcgPressure {
 				// No work to do. Evict any pending evictable allocations to
 				// get more reclaimable pages before going to sleep.
 				f.startEvictionsLocked()
@@ -1089,14 +1131,17 @@ func (f *MemoryFile) StartEvictions() {
 }
 
 // Preconditions: f.mu must be locked.
-func (f *MemoryFile) startEvictionsLocked() {
+func (f *MemoryFile) startEvictionsLocked() bool {
+	startedAny := false
 	for user, info := range f.evictable {
 		// Don't start multiple goroutines to evict the same user's
 		// allocations.
 		if !info.evicting {
 			f.startEvictionGoroutineLocked(user, info)
+			startedAny = true
 		}
 	}
+	return startedAny
 }
 
 // Preconditions: info == f.evictable[user]. !info.evicting. f.mu must be

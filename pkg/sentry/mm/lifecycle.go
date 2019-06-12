@@ -37,6 +37,7 @@ func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider) *Memo
 		privateRefs: &privateRefs{},
 		users:       1,
 		auxv:        arch.Auxv{},
+		dumpability: UserDumpable,
 		aioManager:  aioManager{contexts: make(map[uint64]*AIOContext)},
 	}
 }
@@ -79,8 +80,9 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		envv:                 mm.envv,
 		auxv:                 append(arch.Auxv(nil), mm.auxv...),
 		// IncRef'd below, once we know that there isn't an error.
-		executable: mm.executable,
-		aioManager: aioManager{contexts: make(map[uint64]*AIOContext)},
+		executable:  mm.executable,
+		dumpability: mm.dumpability,
+		aioManager:  aioManager{contexts: make(map[uint64]*AIOContext)},
 	}
 
 	// Copy vmas.

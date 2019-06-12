@@ -34,7 +34,7 @@ std::vector<SocketPairKind> GetSocketPairs() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, NonBlockingSocketPairTest,
+    NonBlockingTCPSockets, NonBlockingSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing

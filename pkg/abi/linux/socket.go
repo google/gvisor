@@ -102,15 +102,19 @@ const (
 	SOL_NETLINK = 270
 )
 
+// A SockType is a type (as opposed to family) of sockets. These are enumerated
+// below as SOCK_* constants.
+type SockType int
+
 // Socket types, from linux/net.h.
 const (
-	SOCK_STREAM    = 1
-	SOCK_DGRAM     = 2
-	SOCK_RAW       = 3
-	SOCK_RDM       = 4
-	SOCK_SEQPACKET = 5
-	SOCK_DCCP      = 6
-	SOCK_PACKET    = 10
+	SOCK_STREAM    SockType = 1
+	SOCK_DGRAM              = 2
+	SOCK_RAW                = 3
+	SOCK_RDM                = 4
+	SOCK_SEQPACKET          = 5
+	SOCK_DCCP               = 6
+	SOCK_PACKET             = 10
 )
 
 // SOCK_TYPE_MASK covers all of the above socket types. The remaining bits are
@@ -198,6 +202,22 @@ const (
 	SS_CONNECTING    = 2 // In process of connecting.
 	SS_CONNECTED     = 3 // Connected to socket.
 	SS_DISCONNECTING = 4 // In process of disconnecting.
+)
+
+// TCP protocol states, from include/net/tcp_states.h.
+const (
+	TCP_ESTABLISHED uint32 = iota + 1
+	TCP_SYN_SENT
+	TCP_SYN_RECV
+	TCP_FIN_WAIT1
+	TCP_FIN_WAIT2
+	TCP_TIME_WAIT
+	TCP_CLOSE
+	TCP_CLOSE_WAIT
+	TCP_LAST_ACK
+	TCP_LISTEN
+	TCP_CLOSING
+	TCP_NEW_SYN_RECV
 )
 
 // SockAddrMax is the maximum size of a struct sockaddr, from

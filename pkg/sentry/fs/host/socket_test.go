@@ -198,20 +198,6 @@ func TestListen(t *testing.T) {
 	}
 }
 
-func TestSend(t *testing.T) {
-	e := ConnectedEndpoint{writeClosed: true}
-	if _, _, err := e.Send(nil, transport.ControlMessages{}, tcpip.FullAddress{}); err != syserr.ErrClosedForSend {
-		t.Errorf("Got %#v.Send() = %v, want = %v", e, err, syserr.ErrClosedForSend)
-	}
-}
-
-func TestRecv(t *testing.T) {
-	e := ConnectedEndpoint{readClosed: true}
-	if _, _, _, _, _, _, err := e.Recv(nil, false, 0, false); err != syserr.ErrClosedForReceive {
-		t.Errorf("Got %#v.Recv() = %v, want = %v", e, err, syserr.ErrClosedForReceive)
-	}
-}
-
 func TestPasscred(t *testing.T) {
 	e := ConnectedEndpoint{}
 	if got, want := e.Passcred(), false; got != want {
@@ -244,20 +230,6 @@ func TestQueuedSize(t *testing.T) {
 	}
 }
 
-func TestReadable(t *testing.T) {
-	e := ConnectedEndpoint{readClosed: true}
-	if got, want := e.Readable(), true; got != want {
-		t.Errorf("Got %#v.Readable() = %t, want = %t", e, got, want)
-	}
-}
-
-func TestWritable(t *testing.T) {
-	e := ConnectedEndpoint{writeClosed: true}
-	if got, want := e.Writable(), true; got != want {
-		t.Errorf("Got %#v.Writable() = %t, want = %t", e, got, want)
-	}
-}
-
 func TestRelease(t *testing.T) {
 	f, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
@@ -270,133 +242,5 @@ func TestRelease(t *testing.T) {
 	c.Release()
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("got = %#v, want = %#v", c, want)
-	}
-}
-
-func TestClose(t *testing.T) {
-	type testCase struct {
-		name  string
-		cep   *ConnectedEndpoint
-		addFD bool
-		f     func()
-		want  *ConnectedEndpoint
-	}
-
-	var tests []testCase
-
-	// nil is the value used by ConnectedEndpoint to indicate a closed file.
-	// Non-nil files are used to check if the file gets closed.
-
-	f, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c := &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
-	tests = append(tests, testCase{
-		name:  "First CloseRecv",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseRecv,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
-	tests = append(tests, testCase{
-		name:  "Second CloseRecv",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseRecv,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f)}
-	tests = append(tests, testCase{
-		name:  "First CloseSend",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseSend,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
-	tests = append(tests, testCase{
-		name:  "Second CloseSend",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseSend,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, writeClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), writeClosed: true}
-	tests = append(tests, testCase{
-		name:  "CloseSend then CloseRecv",
-		cep:   c,
-		addFD: true,
-		f:     c.CloseRecv,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true}
-	tests = append(tests, testCase{
-		name:  "CloseRecv then CloseSend",
-		cep:   c,
-		addFD: true,
-		f:     c.CloseSend,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
-	tests = append(tests, testCase{
-		name:  "Full close then CloseRecv",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseRecv,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
-	})
-
-	f, err = syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_NONBLOCK|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal("Creating socket:", err)
-	}
-	c = &ConnectedEndpoint{queue: &waiter.Queue{}, file: fd.New(f), readClosed: true, writeClosed: true}
-	tests = append(tests, testCase{
-		name:  "Full close then CloseSend",
-		cep:   c,
-		addFD: false,
-		f:     c.CloseSend,
-		want:  &ConnectedEndpoint{queue: c.queue, file: c.file, readClosed: true, writeClosed: true},
-	})
-
-	for _, test := range tests {
-		if test.addFD {
-			fdnotifier.AddFD(int32(test.cep.file.FD()), nil)
-		}
-		if test.f(); !reflect.DeepEqual(test.cep, test.want) {
-			t.Errorf("%s: got = %#v, want = %#v", test.name, test.cep, test.want)
-		}
 	}
 }

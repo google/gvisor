@@ -19,6 +19,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
 	"gvisor.googlesource.com/gvisor/pkg/syserror"
 )
@@ -92,6 +93,14 @@ const (
 // ptrace(2), subsection "Ptrace access mode checking". If attach is true, it
 // checks for access mode PTRACE_MODE_ATTACH; otherwise, it checks for access
 // mode PTRACE_MODE_READ.
+//
+// NOTE(b/30815691): The result of CanTrace is immediately stale (e.g., a
+// racing setuid(2) may change traceability). This may pose a risk when a task
+// changes from traceable to not traceable. This is only problematic across
+// execve, where privileges may increase.
+//
+// We currently do not implement privileged executables (set-user/group-ID bits
+// and file capabilities), so that case is not reachable.
 func (t *Task) CanTrace(target *Task, attach bool) bool {
 	// "1. If the calling thread and the target thread are in the same thread
 	// group, access is always allowed." - ptrace(2)
@@ -162,7 +171,13 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 	if cgid := callerCreds.RealKGID; cgid != targetCreds.RealKGID || cgid != targetCreds.EffectiveKGID || cgid != targetCreds.SavedKGID {
 		return false
 	}
-	// TODO(b/31916171): dumpability check
+	var targetMM *mm.MemoryManager
+	target.WithMuLocked(func(t *Task) {
+		targetMM = t.MemoryManager()
+	})
+	if targetMM != nil && targetMM.Dumpability() != mm.UserDumpable {
+		return false
+	}
 	if callerCreds.UserNamespace != targetCreds.UserNamespace {
 		return false
 	}

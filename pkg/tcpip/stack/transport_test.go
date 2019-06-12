@@ -188,6 +188,10 @@ func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, s
 	f.proto.controlCount++
 }
 
+func (f *fakeTransportEndpoint) State() uint32 {
+	return 0
+}
+
 type fakeTransportGoodOption bool
 
 type fakeTransportBadOption bool

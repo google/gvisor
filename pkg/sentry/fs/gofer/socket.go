@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
 	"gvisor.googlesource.com/gvisor/pkg/log"
 	"gvisor.googlesource.com/gvisor/pkg/p9"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
@@ -61,13 +62,13 @@ type endpoint struct {
 	path string
 }
 
-func unixSockToP9(t transport.SockType) (p9.ConnectFlags, bool) {
+func sockTypeToP9(t linux.SockType) (p9.ConnectFlags, bool) {
 	switch t {
-	case transport.SockStream:
+	case linux.SOCK_STREAM:
 		return p9.StreamSocket, true
-	case transport.SockSeqpacket:
+	case linux.SOCK_SEQPACKET:
 		return p9.SeqpacketSocket, true
-	case transport.SockDgram:
+	case linux.SOCK_DGRAM:
 		return p9.DgramSocket, true
 	}
 	return 0, false
@@ -75,7 +76,7 @@ func unixSockToP9(t transport.SockType) (p9.ConnectFlags, bool) {
 
 // BidirectionalConnect implements ConnectableEndpoint.BidirectionalConnect.
 func (e *endpoint) BidirectionalConnect(ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
-	cf, ok := unixSockToP9(ce.Type())
+	cf, ok := sockTypeToP9(ce.Type())
 	if !ok {
 		return syserr.ErrConnectionRefused
 	}
@@ -138,4 +139,9 @@ func (e *endpoint) UnidirectionalConnect() (transport.ConnectedEndpoint, *syserr
 // Release implements transport.BoundEndpoint.Release.
 func (e *endpoint) Release() {
 	e.inode.DecRef()
+}
+
+// Passcred implements transport.BoundEndpoint.Passcred.
+func (e *endpoint) Passcred() bool {
+	return false
 }

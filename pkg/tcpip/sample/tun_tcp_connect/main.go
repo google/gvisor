@@ -137,7 +137,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	linkID, err := fdbased.New(&fdbased.Options{FD: fd, MTU: mtu})
+	linkID, err := fdbased.New(&fdbased.Options{FDs: []int{fd}, MTU: mtu})
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -118,7 +118,7 @@ func NewWithFile(lower tcpip.LinkEndpointID, file *os.File, snapLen uint32) (tcp
 // logs the packet before forwarding to the actual dispatcher.
 func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("recv", protocol, vv.First())
+		logPacket("recv", protocol, vv.First(), nil)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		vs := vv.Views()
@@ -198,7 +198,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 // the request to the lower endpoint.
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
-		logPacket("send", protocol, hdr.View())
+		logPacket("send", protocol, hdr.View(), gso)
 	}
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
 		hdrBuf := hdr.View()
@@ -240,7 +240,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
 }
 
-func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View) {
+func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8
 	src := tcpip.Address("unknown")
@@ -402,6 +402,10 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 	default:
 		log.Infof("%s %v -> %v unknown transport protocol: %d", prefix, src, dst, transProto)
 		return
+	}
+
+	if gso != nil {
+		details += fmt.Sprintf(" gso: %+v", gso)
 	}
 
 	log.Infof("%s %s %v:%v -> %v:%v len:%d id:%04x %s", prefix, transName, src, srcPort, dst, dstPort, size, id, details)

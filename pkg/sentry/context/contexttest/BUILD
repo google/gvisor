@@ -9,11 +9,11 @@ go_library(
     importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/memutil",
         "//pkg/sentry/context",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
-        "//pkg/sentry/memutil",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/ptrace",

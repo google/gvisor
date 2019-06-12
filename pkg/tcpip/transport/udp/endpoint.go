@@ -1000,3 +1000,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, vv buffer.VectorisedView) {
 }
+
+// State implements socket.Socket.State.
+func (e *endpoint) State() uint32 {
+	// TODO(b/112063468): Translate internal state to values returned by Linux.
+	return 0
+}

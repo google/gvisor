@@ -545,12 +545,28 @@ type lockedWriter struct {
 
 // Write implements io.Writer.Write.
 func (w *lockedWriter) Write(buf []byte) (int, error) {
-	n, err := w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf), w.File.offset)
-	return int(n), err
+	return w.WriteAt(buf, w.File.offset)
 }
 
 // WriteAt implements io.Writer.WriteAt.
 func (w *lockedWriter) WriteAt(buf []byte, offset int64) (int, error) {
-	n, err := w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf), offset)
-	return int(n), err
+	var (
+		written int
+		err     error
+	)
+	// The io.Writer contract requires that Write writes all available
+	// bytes and does not return short writes. This causes errors with
+	// io.Copy, since our own Write interface does not have this same
+	// contract. Enforce that here.
+	for written < len(buf) {
+		var n int64
+		n, err = w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf[written:]), offset+int64(written))
+		if n > 0 {
+			written += int(n)
+		}
+		if err != nil {
+			break
+		}
+	}
+	return written, err
 }

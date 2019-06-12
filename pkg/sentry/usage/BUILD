@@ -17,6 +17,6 @@ go_library(
     ],
     deps = [
         "//pkg/bits",
-        "//pkg/sentry/memutil",
+        "//pkg/memutil",
     ],
 )

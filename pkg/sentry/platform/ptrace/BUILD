@@ -20,11 +20,11 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",
+        "//pkg/procid",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
-        "//pkg/sentry/platform/procid",
         "//pkg/sentry/platform/safecopy",
         "//pkg/sentry/usermem",
         "@org_golang_x_sys//unix:go_default_library",

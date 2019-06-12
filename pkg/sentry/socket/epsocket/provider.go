@@ -23,7 +23,6 @@ import (
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.googlesource.com/gvisor/pkg/syserr"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
@@ -42,7 +41,7 @@ type provider struct {
 
 // getTransportProtocol figures out transport protocol. Currently only TCP,
 // UDP, and ICMP are supported.
-func getTransportProtocol(ctx context.Context, stype transport.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
+func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
 	switch stype {
 	case linux.SOCK_STREAM:
 		if protocol != 0 && protocol != syscall.IPPROTO_TCP {
@@ -80,7 +79,7 @@ func getTransportProtocol(ctx context.Context, stype transport.SockType, protoco
 }
 
 // Socket creates a new socket object for the AF_INET or AF_INET6 family.
-func (p *provider) Socket(t *kernel.Task, stype transport.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Fail right away if we don't have a stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -112,11 +111,11 @@ func (p *provider) Socket(t *kernel.Task, stype transport.SockType, protocol int
 		return nil, syserr.TranslateNetstackError(e)
 	}
 
-	return New(t, p.family, stype, wq, ep)
+	return New(t, p.family, stype, protocol, wq, ep)
 }
 
 // Pair just returns nil sockets (not supported).
-func (*provider) Pair(*kernel.Task, transport.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
+func (*provider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
 	return nil, nil, nil
 }
 

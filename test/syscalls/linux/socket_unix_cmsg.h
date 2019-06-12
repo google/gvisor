@@ -12,26 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <vector>
+#ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_UNIX_CMSG_H_
+#define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_UNIX_CMSG_H_
 
 #include "test/syscalls/linux/socket_test_util.h"
-#include "test/syscalls/linux/socket_unix.h"
-#include "test/syscalls/linux/unix_domain_socket_test_util.h"
-#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 
-std::vector<SocketPairKind> GetSocketPairs() {
-  return ApplyVec<SocketPairKind>(
-      FilesystemBoundUnixDomainSocketPair,
-      AllBitwiseCombinations(List<int>{SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET},
-                             List<int>{0, SOCK_NONBLOCK}));
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, UnixSocketPairTest,
-    ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
+// Test fixture for tests that apply to pairs of connected unix sockets about
+// control messages.
+using UnixSocketPairCmsgTest = SocketPairTest;
 
 }  // namespace testing
 }  // namespace gvisor
+
+#endif  // GVISOR_TEST_SYSCALLS_LINUX_SOCKET_UNIX_CMSG_H_

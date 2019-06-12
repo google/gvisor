@@ -1,5 +1,8 @@
 ![gVisor](g3doc/logo.png)
 
+[![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
+[![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
+
 ## What is gVisor?
 
 **gVisor** is a user-space kernel, written in Go, that implements a substantial
@@ -35,8 +38,6 @@ User documentation and technical architecture, including quick start guides, can
 be found at [gvisor.dev][gvisor-dev].
 
 ## Installing from source
-
-[![Status](https://storage.googleapis.com/gvisor-build-badges/build.svg)](https://storage.googleapis.com/gvisor-build-badges/build.html)
 
 gVisor currently requires x86\_64 Linux to build, though support for other
 architectures may become available in the future.
@@ -83,7 +84,7 @@ sudo cp ./bazel-bin/runsc/linux_amd64_pure_stripped/runsc /usr/local/bin
 The test suite can be run with Bazel:
 
 ```
-bazel test ...
+bazel test //...
 ```
 
 or in a Docker container:

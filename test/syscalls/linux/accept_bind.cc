@@ -448,19 +448,7 @@ TEST_P(AllSocketPairTest, UnboundSenderAddr) {
       RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
                            reinterpret_cast<sockaddr*>(&addr), &addr_len),
       SyscallSucceedsWithValue(sizeof(i)));
-  if (!IsRunningOnGvisor()) {
-    // Linux returns a zero length for addresses from recvfrom(2) and
-    // recvmsg(2). This differs from the behavior of getpeername(2) and
-    // getsockname(2). For simplicity, we use the getpeername(2) and
-    // getsockname(2) behavior for recvfrom(2) and recvmsg(2).
-    EXPECT_EQ(addr_len, 0);
-    return;
-  }
-  EXPECT_EQ(addr_len, 2);
-  EXPECT_EQ(
-      memcmp(&addr, sockets->second_addr(),
-             std::min((size_t)addr_len, (size_t)sockets->second_addr_len())),
-      0);
+  EXPECT_EQ(addr_len, 0);
 }
 
 TEST_P(AllSocketPairTest, BoundSenderAddr) {

@@ -377,6 +377,10 @@ type Endpoint interface {
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// *Option types.
 	GetSockOpt(opt interface{}) *Error
+
+	// State returns a socket's lifecycle state. The returned value is
+	// protocol-specific and is primarily used for diagnostics.
+	State() uint32
 }
 
 // WriteOptions contains options for Endpoint.Write.
@@ -467,6 +471,14 @@ type KeepaliveIntervalOption time.Duration
 // of un-ACKed TCP keepalives that will be sent before the connection is
 // closed.
 type KeepaliveCountOption int
+
+// CongestionControlOption is used by SetSockOpt/GetSockOpt to set/get
+// the current congestion control algorithm.
+type CongestionControlOption string
+
+// AvailableCongestionControlOption is used to query the supported congestion
+// control algorithms.
+type AvailableCongestionControlOption string
 
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.

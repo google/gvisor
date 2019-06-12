@@ -63,9 +63,10 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",
+        "//pkg/memutil",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
-        "//pkg/sentry/memutil",
+        "//pkg/sentry/hostmm",
         "//pkg/sentry/platform",
         "//pkg/sentry/safemem",
         "//pkg/sentry/usage",

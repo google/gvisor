@@ -41,15 +41,15 @@ std::vector<SocketPairKind> GetSocketPairs() {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, NonStreamSocketPairTest,
+    SeqpacketUnixSockets, NonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, SeqpacketUnixSocketPairTest,
+    SeqpacketUnixSockets, SeqpacketUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 INSTANTIATE_TEST_SUITE_P(
-    AllUnixDomainSockets, UnixNonStreamSocketPairTest,
+    SeqpacketUnixSockets, UnixNonStreamSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(GetSocketPairs())));
 
 }  // namespace testing

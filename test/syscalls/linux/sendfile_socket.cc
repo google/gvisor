@@ -33,9 +33,69 @@ namespace gvisor {
 namespace testing {
 namespace {
 
+class SendFileTest : public ::testing::TestWithParam<int> {
+ protected:
+  PosixErrorOr<std::tuple<int, int>> Sockets() {
+    // Bind a server socket.
+    int family = GetParam();
+    struct sockaddr server_addr = {};
+    switch (family) {
+      case AF_INET: {
+        struct sockaddr_in *server_addr_in =
+            reinterpret_cast<struct sockaddr_in *>(&server_addr);
+        server_addr_in->sin_family = family;
+        server_addr_in->sin_addr.s_addr = INADDR_ANY;
+        break;
+      }
+      case AF_UNIX: {
+        struct sockaddr_un *server_addr_un =
+            reinterpret_cast<struct sockaddr_un *>(&server_addr);
+        server_addr_un->sun_family = family;
+        server_addr_un->sun_path[0] = '\0';
+        break;
+      }
+      default:
+        return PosixError(EINVAL);
+    }
+    int server = socket(family, SOCK_STREAM, 0);
+    if (bind(server, &server_addr, sizeof(server_addr)) < 0) {
+      return PosixError(errno);
+    }
+    if (listen(server, 1) < 0) {
+      close(server);
+      return PosixError(errno);
+    }
+
+    // Fetch the address; both are anonymous.
+    socklen_t length = sizeof(server_addr);
+    if (getsockname(server, &server_addr, &length) < 0) {
+      close(server);
+      return PosixError(errno);
+    }
+
+    // Connect the client.
+    int client = socket(family, SOCK_STREAM, 0);
+    if (connect(client, &server_addr, length) < 0) {
+      close(server);
+      close(client);
+      return PosixError(errno);
+    }
+
+    // Accept on the server.
+    int server_client = accept(server, nullptr, 0);
+    if (server_client < 0) {
+      close(server);
+      close(client);
+      return PosixError(errno);
+    }
+    close(server);
+    return std::make_tuple(client, server_client);
+  }
+};
+
 // Sends large file to exercise the path that read and writes data multiple
 // times, esp. when more data is read than can be written.
-TEST(SendFileTest, SendMultiple) {
+TEST_P(SendFileTest, SendMultiple) {
   std::vector<char> data(5 * 1024 * 1024);
   RandomizeBuffer(data.data(), data.size());
 
@@ -45,34 +105,20 @@ TEST(SendFileTest, SendMultiple) {
       TempPath::kDefaultFileMode));
   const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  // Use a socket for target file to make the write window small.
-  const FileDescriptor server(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-  ASSERT_THAT(server.get(), SyscallSucceeds());
-
-  struct sockaddr_in server_addr = {};
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = INADDR_ANY;
-  ASSERT_THAT(
-      bind(server.get(), reinterpret_cast<struct sockaddr *>(&server_addr),
-           sizeof(server_addr)),
-      SyscallSucceeds());
-  ASSERT_THAT(listen(server.get(), 1), SyscallSucceeds());
+  // Create sockets.
+  std::tuple<int, int> fds = ASSERT_NO_ERRNO_AND_VALUE(Sockets());
+  const FileDescriptor server(std::get<0>(fds));
+  FileDescriptor client(std::get<1>(fds));  // non-const, reset is used.
 
   // Thread that reads data from socket and dumps to a file.
-  ScopedThread th([&server, &out_file, &server_addr] {
-    socklen_t addrlen = sizeof(server_addr);
-    const FileDescriptor fd(RetryEINTR(accept)(
-        server.get(), reinterpret_cast<struct sockaddr *>(&server_addr),
-        &addrlen));
-    ASSERT_THAT(fd.get(), SyscallSucceeds());
-
+  ScopedThread th([&] {
     FileDescriptor outf =
         ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
 
     // Read until socket is closed.
     char buf[10240];
     for (int cnt = 0;; cnt++) {
-      int r = RetryEINTR(read)(fd.get(), buf, sizeof(buf));
+      int r = RetryEINTR(read)(server.get(), buf, sizeof(buf));
       // We cannot afford to save on every read() call.
       if (cnt % 1000 == 0) {
         ASSERT_THAT(r, SyscallSucceeds());
@@ -99,25 +145,6 @@ TEST(SendFileTest, SendMultiple) {
   const FileDescriptor inf =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
-  FileDescriptor outf(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
-  ASSERT_THAT(outf.get(), SyscallSucceeds());
-
-  // Get the port bound by the listening socket.
-  socklen_t addrlen = sizeof(server_addr);
-  ASSERT_THAT(getsockname(server.get(),
-                          reinterpret_cast<sockaddr *>(&server_addr), &addrlen),
-              SyscallSucceeds());
-
-  struct sockaddr_in addr = {};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-  addr.sin_port = server_addr.sin_port;
-  std::cout << "Connecting on port=" << server_addr.sin_port;
-  ASSERT_THAT(
-      RetryEINTR(connect)(
-          outf.get(), reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)),
-      SyscallSucceeds());
-
   int cnt = 0;
   for (size_t sent = 0; sent < data.size(); cnt++) {
     const size_t remain = data.size() - sent;
@@ -125,7 +152,7 @@ TEST(SendFileTest, SendMultiple) {
               << ", remain=" << remain;
 
     // Send data and verify that sendfile returns the correct value.
-    int res = sendfile(outf.get(), inf.get(), nullptr, remain);
+    int res = sendfile(client.get(), inf.get(), nullptr, remain);
     // We cannot afford to save on every sendfile() call.
     if (cnt % 120 == 0) {
       MaybeSave();
@@ -142,16 +169,73 @@ TEST(SendFileTest, SendMultiple) {
   }
 
   // Close socket to stop thread.
-  outf.reset();
+  client.reset();
   th.Join();
 
   // Verify that the output file has the correct data.
-  outf = ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_RDONLY));
+  const FileDescriptor outf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_RDONLY));
   std::vector<char> actual(data.size(), '\0');
   ASSERT_THAT(RetryEINTR(read)(outf.get(), actual.data(), actual.size()),
               SyscallSucceedsWithValue(actual.size()));
   ASSERT_EQ(memcmp(data.data(), actual.data(), data.size()), 0);
 }
+
+TEST_P(SendFileTest, Shutdown) {
+  // Create a socket.
+  std::tuple<int, int> fds = ASSERT_NO_ERRNO_AND_VALUE(Sockets());
+  const FileDescriptor client(std::get<0>(fds));
+  FileDescriptor server(std::get<1>(fds));  // non-const, released below.
+
+  // If this is a TCP socket, then turn off linger.
+  if (GetParam() == AF_INET) {
+    struct linger sl;
+    sl.l_onoff = 1;
+    sl.l_linger = 0;
+    ASSERT_THAT(
+        setsockopt(server.get(), SOL_SOCKET, SO_LINGER, &sl, sizeof(sl)),
+        SyscallSucceeds());
+  }
+
+  // Create a 1m file with random data.
+  std::vector<char> data(1024 * 1024);
+  RandomizeBuffer(data.data(), data.size());
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), absl::string_view(data.data(), data.size()),
+      TempPath::kDefaultFileMode));
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Read some data, then shutdown the socket. We don't actually care about
+  // checking the contents (other tests do that), so we just re-use the same
+  // buffer as above.
+  ScopedThread t([&]() {
+    int done = 0;
+    while (done < data.size()) {
+      int n = read(server.get(), data.data(), data.size());
+      ASSERT_THAT(n, SyscallSucceeds());
+      done += n;
+    }
+    // Close the server side socket.
+    ASSERT_THAT(close(server.release()), SyscallSucceeds());
+  });
+
+  // Continuously stream from the file to the socket. Note we do not assert
+  // that a specific amount of data has been written at any time, just that some
+  // data is written. Eventually, we should get a connection reset error.
+  while (1) {
+    off_t offset = 0;  // Always read from the start.
+    int n = sendfile(client.get(), inf.get(), &offset, data.size());
+    EXPECT_THAT(n, AnyOf(SyscallFailsWithErrno(ECONNRESET),
+                         SyscallFailsWithErrno(EPIPE), SyscallSucceeds()));
+    if (n <= 0) {
+      break;
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AddressFamily, SendFileTest,
+                         ::testing::Values(AF_UNIX, AF_INET));
 
 }  // namespace
 }  // namespace testing

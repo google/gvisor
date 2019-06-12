@@ -470,6 +470,16 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			return 0, syserror.EINVAL
 		}
 
+		// Check that the new region is valid.
+		_, err := mm.findAvailableLocked(newSize, findAvailableOpts{
+			Addr:  newAddr,
+			Fixed: true,
+			Unmap: true,
+		})
+		if err != nil {
+			return 0, err
+		}
+
 		// Unmap any mappings at the destination.
 		mm.unmapLocked(ctx, newAR)
 
@@ -961,6 +971,59 @@ func (mm *MemoryManager) MLockAll(ctx context.Context, opts MLockAllOpts) error 
 		mm.mappingMu.Unlock()
 	}
 	return nil
+}
+
+// NumaPolicy implements the semantics of Linux's get_mempolicy(MPOL_F_ADDR).
+func (mm *MemoryManager) NumaPolicy(addr usermem.Addr) (int32, uint64, error) {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+	vseg := mm.vmas.FindSegment(addr)
+	if !vseg.Ok() {
+		return 0, 0, syserror.EFAULT
+	}
+	vma := vseg.ValuePtr()
+	return vma.numaPolicy, vma.numaNodemask, nil
+}
+
+// SetNumaPolicy implements the semantics of Linux's mbind().
+func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy int32, nodemask uint64) error {
+	if !addr.IsPageAligned() {
+		return syserror.EINVAL
+	}
+	// Linux allows this to overflow.
+	la, _ := usermem.Addr(length).RoundUp()
+	ar, ok := addr.ToRange(uint64(la))
+	if !ok {
+		return syserror.EINVAL
+	}
+	if ar.Length() == 0 {
+		return nil
+	}
+
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	defer func() {
+		mm.vmas.MergeRange(ar)
+		mm.vmas.MergeAdjacent(ar)
+	}()
+	vseg := mm.vmas.LowerBoundSegment(ar.Start)
+	lastEnd := ar.Start
+	for {
+		if !vseg.Ok() || lastEnd < vseg.Start() {
+			// "EFAULT: ... there was an unmapped hole in the specified memory
+			// range specified [sic] by addr and len." - mbind(2)
+			return syserror.EFAULT
+		}
+		vseg = mm.vmas.Isolate(vseg, ar)
+		vma := vseg.ValuePtr()
+		vma.numaPolicy = policy
+		vma.numaNodemask = nodemask
+		lastEnd = vseg.End()
+		if ar.End <= lastEnd {
+			return nil
+		}
+		vseg, _ = vseg.NextNonEmpty()
+	}
 }
 
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).

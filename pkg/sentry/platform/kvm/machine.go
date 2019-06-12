@@ -23,7 +23,7 @@ import (
 
 	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
 	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/procid"
+	"gvisor.googlesource.com/gvisor/pkg/procid"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
 	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"

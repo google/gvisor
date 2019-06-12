@@ -519,3 +519,8 @@ func (ep *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv b
 		ep.waiterQueue.Notify(waiter.EventIn)
 	}
 }
+
+// State implements socket.Socket.State.
+func (ep *endpoint) State() uint32 {
+	return 0
+}

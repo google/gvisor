@@ -76,13 +76,13 @@ var SocketFamily = abi.ValueSet{
 
 // SocketType are the possible socket(2) types.
 var SocketType = abi.ValueSet{
-	linux.SOCK_STREAM:    "SOCK_STREAM",
-	linux.SOCK_DGRAM:     "SOCK_DGRAM",
-	linux.SOCK_RAW:       "SOCK_RAW",
-	linux.SOCK_RDM:       "SOCK_RDM",
-	linux.SOCK_SEQPACKET: "SOCK_SEQPACKET",
-	linux.SOCK_DCCP:      "SOCK_DCCP",
-	linux.SOCK_PACKET:    "SOCK_PACKET",
+	uint64(linux.SOCK_STREAM):    "SOCK_STREAM",
+	uint64(linux.SOCK_DGRAM):     "SOCK_DGRAM",
+	uint64(linux.SOCK_RAW):       "SOCK_RAW",
+	uint64(linux.SOCK_RDM):       "SOCK_RDM",
+	uint64(linux.SOCK_SEQPACKET): "SOCK_SEQPACKET",
+	uint64(linux.SOCK_DCCP):      "SOCK_DCCP",
+	uint64(linux.SOCK_PACKET):    "SOCK_PACKET",
 }
 
 // SocketFlagSet are the possible socket(2) flags.
