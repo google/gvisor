@@ -69,11 +69,12 @@ type byteReader struct {
 var _ fs.FileOperations = (*byteReader)(nil)
 
 // newByteReaderFile creates a fake file to read data from.
-func newByteReaderFile(data []byte) *fs.File {
+func newByteReaderFile(ctx context.Context, data []byte) *fs.File {
 	// Create a fake inode.
 	inode := fs.NewInode(
+		ctx,
 		&fsutil.SimpleFileInode{},
-		fs.NewPseudoMountSource(),
+		fs.NewPseudoMountSource(ctx),
 		fs.StableAttr{
 			Type:      fs.Anonymous,
 			DeviceID:  anon.PseudoDevice.DeviceID(),
@@ -219,8 +220,8 @@ type VDSO struct {
 
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
-func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
-	vdsoFile := newByteReaderFile(vdsoBin)
+func PrepareVDSO(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
+	vdsoFile := newByteReaderFile(ctx, vdsoBin)
 
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.

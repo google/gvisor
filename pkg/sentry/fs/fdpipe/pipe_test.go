@@ -50,11 +50,11 @@ func mockPipeDirent(t *testing.T) *fs.Dirent {
 			User: fs.PermMask{Read: true, Write: true},
 		},
 	}
-	inode := fs.NewInode(node, fs.NewMockMountSource(nil), fs.StableAttr{
+	inode := fs.NewInode(ctx, node, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type:      fs.Pipe,
 		BlockSize: usermem.PageSize,
 	})
-	return fs.NewDirent(inode, "")
+	return fs.NewDirent(ctx, inode, "")
 }
 
 func TestNewPipe(t *testing.T) {
@@ -285,7 +285,7 @@ func TestPipeRequest(t *testing.T) {
 		defer p.Release()
 
 		inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Pipe})
-		file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, p)
+		file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
 		// Issue request via the appropriate function.
 		switch c := test.context.(type) {
@@ -339,7 +339,7 @@ func TestPipeReadAheadBuffer(t *testing.T) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
 	})
-	file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, p)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
 	// In total we expect to read data + buffered.
 	total := append(buffered, data...)
@@ -385,7 +385,7 @@ func TestPipeReadsAccumulate(t *testing.T) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
 	})
-	file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, p)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
 	// Write some some bytes to the pipe.
 	data := []byte("some message")
@@ -453,7 +453,7 @@ func TestPipeWritesAccumulate(t *testing.T) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
 	})
-	file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, p)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
 	// Construct a segment vec that is larger than the pipe size to trigger an EWOULDBLOCK.
 	wantBytes := 65536 * 2

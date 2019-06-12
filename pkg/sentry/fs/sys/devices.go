@@ -58,7 +58,7 @@ func newPossible(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 			Contents: contents,
 		},
 	}
-	return newFile(c, msrc)
+	return newFile(ctx, c, msrc)
 }
 
 func newCPU(ctx context.Context, msrc *fs.MountSource) *fs.Inode {

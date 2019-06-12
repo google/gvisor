@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -111,8 +112,13 @@ type connectionedEndpoint struct {
 	acceptedChan chan *connectionedEndpoint `state:".([]*connectionedEndpoint)"`
 }
 
+var (
+	_ = BoundEndpoint((*connectionedEndpoint)(nil))
+	_ = Endpoint((*connectionedEndpoint)(nil))
+)
+
 // NewConnectioned creates a new unbound connectionedEndpoint.
-func NewConnectioned(stype linux.SockType, uid UniqueIDProvider) Endpoint {
+func NewConnectioned(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) Endpoint {
 	return &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
@@ -122,7 +128,7 @@ func NewConnectioned(stype linux.SockType, uid UniqueIDProvider) Endpoint {
 }
 
 // NewPair allocates a new pair of connected unix-domain connectionedEndpoints.
-func NewPair(stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
+func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 	a := &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: &waiter.Queue{}},
 		id:           uid.UniqueID(),
@@ -163,7 +169,7 @@ func NewPair(stype linux.SockType, uid UniqueIDProvider) (Endpoint, Endpoint) {
 
 // NewExternal creates a new externally backed Endpoint. It behaves like a
 // socketpair.
-func NewExternal(stype linux.SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
+func NewExternal(ctx context.Context, stype linux.SockType, uid UniqueIDProvider, queue *waiter.Queue, receiver Receiver, connected ConnectedEndpoint) Endpoint {
 	return &connectionedEndpoint{
 		baseEndpoint: baseEndpoint{Queue: queue, receiver: receiver, connected: connected},
 		id:           uid.UniqueID(),
@@ -238,7 +244,7 @@ func (e *connectionedEndpoint) Close() {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
+func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	if ce.Type() != e.stype {
 		return syserr.ErrConnectionRefused
 	}
@@ -334,19 +340,19 @@ func (e *connectionedEndpoint) BidirectionalConnect(ce ConnectingEndpoint, retur
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionedEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionedEndpoint) UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error) {
 	return nil, syserr.ErrConnectionRefused
 }
 
 // Connect attempts to directly connect to another Endpoint.
 // Implements Endpoint.Connect.
-func (e *connectionedEndpoint) Connect(server BoundEndpoint) *syserr.Error {
+func (e *connectionedEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
 	returnConnect := func(r Receiver, ce ConnectedEndpoint) {
 		e.receiver = r
 		e.connected = ce
 	}
 
-	return server.BidirectionalConnect(e, returnConnect)
+	return server.BidirectionalConnect(ctx, e, returnConnect)
 }
 
 // Listen starts listening on the connection.
@@ -426,13 +432,13 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress, commit func() *syser
 
 // SendMsg writes data and a control message to the endpoint's peer.
 // This method does not block if the data cannot be written.
-func (e *connectionedEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
+func (e *connectionedEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	// Stream sockets do not support specifying the endpoint. Seqpacket
 	// sockets ignore the passed endpoint.
 	if e.stype == linux.SOCK_STREAM && to != nil {
 		return 0, syserr.ErrNotSupported
 	}
-	return e.baseEndpoint.SendMsg(data, c, to)
+	return e.baseEndpoint.SendMsg(ctx, data, c, to)
 }
 
 // Readiness returns the current readiness of the connectionedEndpoint. For

@@ -30,17 +30,17 @@ import (
 //   |-bar (file)
 func createMountNamespace(ctx context.Context) (*fs.MountNamespace, error) {
 	perms := fs.FilePermsFromMode(0777)
-	m := fs.NewPseudoMountSource()
+	m := fs.NewPseudoMountSource(ctx)
 
 	barFile := fsutil.NewSimpleFileInode(ctx, fs.RootOwner, perms, 0)
 	fooDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
-		"bar": fs.NewInode(barFile, m, fs.StableAttr{Type: fs.RegularFile}),
+		"bar": fs.NewInode(ctx, barFile, m, fs.StableAttr{Type: fs.RegularFile}),
 	}, fs.RootOwner, perms)
 	rootDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
-		"foo": fs.NewInode(fooDir, m, fs.StableAttr{Type: fs.Directory}),
+		"foo": fs.NewInode(ctx, fooDir, m, fs.StableAttr{Type: fs.Directory}),
 	}, fs.RootOwner, perms)
 
-	return fs.NewMountNamespace(ctx, fs.NewInode(rootDir, m, fs.StableAttr{Type: fs.Directory}))
+	return fs.NewMountNamespace(ctx, fs.NewInode(ctx, rootDir, m, fs.StableAttr{Type: fs.Directory}))
 }
 
 func TestFindLink(t *testing.T) {

@@ -64,7 +64,7 @@ func newExecArgInode(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.
 		arg:             arg,
 		t:               t,
 	}
-	return newProcInode(f, msrc, fs.SpecialFile, t)
+	return newProcInode(t, f, msrc, fs.SpecialFile, t)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

@@ -136,9 +136,9 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	var msrc *fs.MountSource
 	switch options[cacheKey] {
 	case "", cacheAll:
-		msrc = fs.NewCachingMountSource(f, flags)
+		msrc = fs.NewCachingMountSource(ctx, f, flags)
 	case cacheRevalidate:
-		msrc = fs.NewRevalidatingMountSource(f, flags)
+		msrc = fs.NewRevalidatingMountSource(ctx, f, flags)
 	default:
 		return nil, fmt.Errorf("invalid cache policy option %q", options[cacheKey])
 	}

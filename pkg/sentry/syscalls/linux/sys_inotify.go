@@ -35,7 +35,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 		return 0, nil, syscall.EINVAL
 	}
 
-	dirent := fs.NewDirent(anon.NewInode(t), "inotify")
+	dirent := fs.NewDirent(t, anon.NewInode(t), "inotify")
 	fileFlags := fs.FileFlags{
 		Read:        true,
 		Write:       true,

@@ -166,7 +166,7 @@ func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error
 
 	// Set the root dirent and id on the root mount. The reference returned from
 	// NewDirent will be donated to the MountNamespace constructed below.
-	d := NewDirent(root, "/")
+	d := NewDirent(ctx, root, "/")
 
 	mnts := map[*Dirent]*Mount{
 		d: newRootMount(1, d),

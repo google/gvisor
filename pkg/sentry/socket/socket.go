@@ -199,7 +199,7 @@ func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 			User: fs.PermMask{Read: true, Write: true},
 		}, linux.SOCKFS_MAGIC),
 	}
-	inode := fs.NewInode(iops, fs.NewPseudoMountSource(), fs.StableAttr{
+	inode := fs.NewInode(ctx, iops, fs.NewPseudoMountSource(ctx), fs.StableAttr{
 		Type:      fs.Socket,
 		DeviceID:  d.DeviceID(),
 		InodeID:   ino,
@@ -207,7 +207,7 @@ func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
 	})
 
 	// Dirent name matches net/socket.c:sockfs_dname.
-	return fs.NewDirent(inode, fmt.Sprintf("socket:[%d]", ino))
+	return fs.NewDirent(ctx, inode, fmt.Sprintf("socket:[%d]", ino))
 }
 
 // SendReceiveTimeout stores timeouts for send and receive calls.

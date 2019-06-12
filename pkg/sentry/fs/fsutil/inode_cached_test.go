@@ -253,11 +253,11 @@ func (noopMappingSpace) Invalidate(ar usermem.AddrRange, opts memmap.InvalidateO
 }
 
 func anonInode(ctx context.Context) *fs.Inode {
-	return fs.NewInode(&SimpleFileInode{
+	return fs.NewInode(ctx, &SimpleFileInode{
 		InodeSimpleAttributes: NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), fs.FilePermissions{
 			User: fs.PermMask{Read: true, Write: true},
 		}, 0),
-	}, fs.NewPseudoMountSource(), fs.StableAttr{
+	}, fs.NewPseudoMountSource(ctx), fs.StableAttr{
 		Type:      fs.Anonymous,
 		BlockSize: usermem.PageSize,
 	})
@@ -276,7 +276,7 @@ func TestRead(t *testing.T) {
 
 	// Construct a 3-page file.
 	buf := pagesOf('a', 'b', 'c')
-	file := fs.NewFile(ctx, fs.NewDirent(anonInode(ctx), "anon"), fs.FileFlags{}, nil)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, anonInode(ctx), "anon"), fs.FileFlags{}, nil)
 	uattr := fs.UnstableAttr{
 		Size: int64(len(buf)),
 	}

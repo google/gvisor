@@ -150,8 +150,8 @@ func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.
 		InodeID:   ino,
 		BlockSize: int64(atomicIOBytes),
 	}
-	ms := fs.NewPseudoMountSource()
-	d := fs.NewDirent(fs.NewInode(iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
+	ms := fs.NewPseudoMountSource(ctx)
+	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
 	// The p.Open calls below will each take a reference on the Dirent. We
 	// must drop the one we already have.
 	defer d.DecRef()

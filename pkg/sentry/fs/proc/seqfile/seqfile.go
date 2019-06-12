@@ -133,7 +133,7 @@ func NewSeqFileInode(ctx context.Context, source SeqSource, msrc *fs.MountSource
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
-	return fs.NewInode(iops, msrc, sattr)
+	return fs.NewInode(ctx, iops, msrc, sattr)
 }
 
 // UnstableAttr returns unstable attributes of the SeqFile.

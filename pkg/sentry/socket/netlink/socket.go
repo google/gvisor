@@ -111,7 +111,7 @@ var _ socket.Socket = (*Socket)(nil)
 // NewSocket creates a new Socket.
 func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
 	// Datagram endpoint used to buffer kernel -> user messages.
-	ep := transport.NewConnectionless()
+	ep := transport.NewConnectionless(t)
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
@@ -121,7 +121,7 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 	}
 
 	// Create a connection from which the kernel can write messages.
-	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect()
+	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
 		ep.Close()
 		return nil, err

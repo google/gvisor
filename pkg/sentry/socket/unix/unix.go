@@ -363,7 +363,7 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 	defer ep.Release()
 
 	// Connect the server endpoint.
-	return s.ep.Connect(ep)
+	return s.ep.Connect(t, ep)
 }
 
 // Writev implements fs.FileOperations.Write.
@@ -372,11 +372,12 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 	ctrl := control.New(t, s.ep, nil)
 
 	if src.NumBytes() == 0 {
-		nInt, err := s.ep.SendMsg([][]byte{}, ctrl, nil)
+		nInt, err := s.ep.SendMsg(ctx, [][]byte{}, ctrl, nil)
 		return int64(nInt), err.ToError()
 	}
 
 	return src.CopyInTo(ctx, &EndpointWriter{
+		Ctx:      ctx,
 		Endpoint: s.ep,
 		Control:  ctrl,
 		To:       nil,
@@ -387,6 +388,7 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 // a transport.Endpoint.
 func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	w := EndpointWriter{
+		Ctx:      t,
 		Endpoint: s.ep,
 		Control:  controlMessages.Unix,
 		To:       nil,
@@ -486,6 +488,7 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 		return 0, nil
 	}
 	return dst.CopyOutFrom(ctx, &EndpointReader{
+		Ctx:       ctx,
 		Endpoint:  s.ep,
 		NumRights: 0,
 		Peek:      false,
@@ -522,6 +525,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 	}
 
 	r := EndpointReader{
+		Ctx:       t,
 		Endpoint:  s.ep,
 		Creds:     wantCreds,
 		NumRights: uintptr(numRights),
@@ -635,9 +639,9 @@ func (*provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs
 	var ep transport.Endpoint
 	switch stype {
 	case linux.SOCK_DGRAM:
-		ep = transport.NewConnectionless()
+		ep = transport.NewConnectionless(t)
 	case linux.SOCK_SEQPACKET, linux.SOCK_STREAM:
-		ep = transport.NewConnectioned(stype, t.Kernel())
+		ep = transport.NewConnectioned(t, stype, t.Kernel())
 	default:
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -660,7 +664,7 @@ func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.F
 	}
 
 	// Create the endpoints and sockets.
-	ep1, ep2 := transport.NewPair(stype, t.Kernel())
+	ep1, ep2 := transport.NewPair(t, stype, t.Kernel())
 	s1 := New(t, ep1, stype)
 	s2 := New(t, ep2, stype)
 

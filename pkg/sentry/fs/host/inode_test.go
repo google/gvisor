@@ -56,7 +56,7 @@ func TestMultipleReaddir(t *testing.T) {
 		t.Fatalf("Failed to create inode: %v", err)
 	}
 
-	dirent := fs.NewDirent(n, "readdir")
+	dirent := fs.NewDirent(ctx, n, "readdir")
 	openFile, err := n.GetFile(ctx, dirent, fs.FileFlags{Read: true})
 	if err != nil {
 		t.Fatalf("Failed to get file: %v", err)

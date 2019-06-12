@@ -66,7 +66,7 @@ func newGIDMap(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newIDMap(t *kernel.Task, msrc *fs.MountSource, gids bool) *fs.Inode {
-	return newProcInode(&idMapInodeOperations{
+	return newProcInode(t, &idMapInodeOperations{
 		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(t, fs.RootOwner, fs.FilePermsFromMode(0644), linux.PROC_SUPER_MAGIC),
 		t:                     t,
 		gids:                  gids,

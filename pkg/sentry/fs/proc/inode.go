@@ -115,11 +115,11 @@ func newStaticProcInode(ctx context.Context, msrc *fs.MountSource, contents []by
 			Contents: contents,
 		},
 	}
-	return newProcInode(iops, msrc, fs.SpecialFile, nil)
+	return newProcInode(ctx, iops, msrc, fs.SpecialFile, nil)
 }
 
 // newProcInode creates a new inode from the given inode operations.
-func newProcInode(iops fs.InodeOperations, msrc *fs.MountSource, typ fs.InodeType, t *kernel.Task) *fs.Inode {
+func newProcInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, typ fs.InodeType, t *kernel.Task) *fs.Inode {
 	sattr := fs.StableAttr{
 		DeviceID:  device.ProcDevice.DeviceID(),
 		InodeID:   device.ProcDevice.NextIno(),
@@ -129,5 +129,5 @@ func newProcInode(iops fs.InodeOperations, msrc *fs.MountSource, typ fs.InodeTyp
 	if t != nil {
 		iops = &taskOwnedInodeOps{iops, t}
 	}
-	return fs.NewInode(iops, msrc, sattr)
+	return fs.NewInode(ctx, iops, msrc, sattr)
 }

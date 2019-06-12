@@ -31,6 +31,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/ilist",
         "//pkg/refs",
+        "//pkg/sentry/context",
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

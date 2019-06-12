@@ -15,6 +15,7 @@
 package unix
 
 import (
+	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -24,6 +25,8 @@ import (
 //
 // EndpointWriter is not thread-safe.
 type EndpointWriter struct {
+	Ctx context.Context
+
 	// Endpoint is the transport.Endpoint to write to.
 	Endpoint transport.Endpoint
 
@@ -37,7 +40,7 @@ type EndpointWriter struct {
 // WriteFromBlocks implements safemem.Writer.WriteFromBlocks.
 func (w *EndpointWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	return safemem.FromVecWriterFunc{func(bufs [][]byte) (int64, error) {
-		n, err := w.Endpoint.SendMsg(bufs, w.Control, w.To)
+		n, err := w.Endpoint.SendMsg(w.Ctx, bufs, w.Control, w.To)
 		if err != nil {
 			return int64(n), err.ToError()
 		}
@@ -50,6 +53,8 @@ func (w *EndpointWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) 
 //
 // EndpointReader is not thread-safe.
 type EndpointReader struct {
+	Ctx context.Context
+
 	// Endpoint is the transport.Endpoint to read from.
 	Endpoint transport.Endpoint
 
@@ -81,7 +86,7 @@ type EndpointReader struct {
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *EndpointReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	return safemem.FromVecReaderFunc{func(bufs [][]byte) (int64, error) {
-		n, ms, c, ct, err := r.Endpoint.RecvMsg(bufs, r.Creds, r.NumRights, r.Peek, r.From)
+		n, ms, c, ct, err := r.Endpoint.RecvMsg(r.Ctx, bufs, r.Creds, r.NumRights, r.Peek, r.From)
 		r.Control = c
 		r.ControlTrunc = ct
 		r.MsgSize = ms

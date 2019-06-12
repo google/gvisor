@@ -105,7 +105,7 @@ func newFd(t *kernel.Task, f *fs.File, msrc *fs.MountSource) *fs.Inode {
 		Symlink: *ramfs.NewSymlink(t, fs.RootOwner, ""),
 		file:    f,
 	}
-	return newProcInode(fd, msrc, fs.Symlink, t)
+	return newProcInode(t, fd, msrc, fs.Symlink, t)
 }
 
 // GetFile returns the fs.File backing this fd.  The dirent and flags
@@ -168,7 +168,7 @@ func newFdDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermissions{User: fs.PermMask{Read: true, Execute: true}}),
 		t:   t,
 	}
-	return newProcInode(f, msrc, fs.SpecialDirectory, t)
+	return newProcInode(t, f, msrc, fs.SpecialDirectory, t)
 }
 
 // Check implements InodeOperations.Check.
@@ -198,7 +198,7 @@ func (f *fdDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs.Dirent
 	if err != nil {
 		return nil, err
 	}
-	return fs.NewDirent(n, p), nil
+	return fs.NewDirent(ctx, n, p), nil
 }
 
 // GetFile implements fs.FileOperations.GetFile.
@@ -252,7 +252,7 @@ func newFdInfoDir(t *kernel.Task, msrc *fs.MountSource) *fs.Inode {
 		Dir: *ramfs.NewDir(t, nil, fs.RootOwner, fs.FilePermsFromMode(0500)),
 		t:   t,
 	}
-	return newProcInode(fdid, msrc, fs.SpecialDirectory, t)
+	return newProcInode(t, fdid, msrc, fs.SpecialDirectory, t)
 }
 
 // Lookup loads an fd in /proc/TID/fdinfo into a Dirent.
@@ -272,7 +272,7 @@ func (fdid *fdInfoDir) Lookup(ctx context.Context, dir *fs.Inode, p string) (*fs
 	if err != nil {
 		return nil, err
 	}
-	return fs.NewDirent(inode, p), nil
+	return fs.NewDirent(ctx, inode, p), nil
 }
 
 // GetFile implements fs.FileOperations.GetFile.
