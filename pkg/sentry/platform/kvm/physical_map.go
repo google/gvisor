@@ -19,9 +19,9 @@ import (
 	"sort"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 const (

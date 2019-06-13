@@ -20,7 +20,7 @@ import (
 	"strings"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // FilesystemFlags matches include/linux/fs.h:file_system_type.fs_flags.

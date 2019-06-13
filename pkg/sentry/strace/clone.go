@@ -17,7 +17,7 @@ package strace
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/abi"
 )
 
 // CloneFlagSet is the set of clone(2) flags.

@@ -55,7 +55,7 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // LockType is a type of regional file lock.

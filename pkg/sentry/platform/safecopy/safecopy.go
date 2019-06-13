@@ -22,7 +22,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SegvError is returned when a safecopy function receives SIGSEGV.

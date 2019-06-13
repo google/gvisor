@@ -1,7 +1,7 @@
 package mm
 
 import (
-	__generics_imported0 "gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 import (

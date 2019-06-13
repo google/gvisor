@@ -17,9 +17,9 @@ package gofer
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 func utimes(ctx context.Context, file contextFile, ts fs.TimeSpec) error {

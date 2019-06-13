@@ -1,7 +1,7 @@
 package fsutil
 
 import (
-	__generics_imported0 "gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
+	__generics_imported0 "gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
 import (

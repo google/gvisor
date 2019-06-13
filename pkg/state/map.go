@@ -20,7 +20,7 @@ import (
 	"sort"
 	"sync"
 
-	pb "gvisor.googlesource.com/gvisor/pkg/state/object_go_proto"
+	pb "gvisor.dev/gvisor/pkg/state/object_go_proto"
 )
 
 // entry is a single map entry.

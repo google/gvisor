@@ -1,13 +1,14 @@
 package ring0
 
 import (
-	"fmt"
-	"gvisor.googlesource.com/gvisor/pkg/cpuid"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"io"
 	"reflect"
 	"syscall"
+
+	"fmt"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 var (

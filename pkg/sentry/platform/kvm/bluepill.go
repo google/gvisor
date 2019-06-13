@@ -19,8 +19,8 @@ import (
 	"reflect"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/safecopy"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
 )
 
 // bluepill enters guest mode.

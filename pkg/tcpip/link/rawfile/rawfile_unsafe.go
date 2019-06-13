@@ -22,7 +22,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // GetMTU determines the MTU of a network interface device.

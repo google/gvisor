@@ -20,9 +20,9 @@ import (
 	"reflect"
 	"sort"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/bpf"
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 const (

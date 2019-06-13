@@ -14,7 +14,7 @@
 
 package epsocket
 
-import "gvisor.googlesource.com/gvisor/pkg/sentry/device"
+import "gvisor.dev/gvisor/pkg/sentry/device"
 
 // epsocketDevice is the endpoint socket virtual device.
 var epsocketDevice = device.NewAnonDevice()

@@ -18,13 +18,13 @@ package dev
 import (
 	"math"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ashmem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/binder"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ashmem"
+	"gvisor.dev/gvisor/pkg/sentry/fs/binder"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // Memory device numbers are from Linux's drivers/char/mem.c

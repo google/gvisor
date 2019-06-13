@@ -17,7 +17,7 @@ package header
 import (
 	"encoding/binary"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // ICMPv4 represents an ICMPv4 header stored in a byte array.

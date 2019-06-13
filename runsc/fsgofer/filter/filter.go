@@ -18,7 +18,7 @@
 package filter
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // Install installs seccomp filters.

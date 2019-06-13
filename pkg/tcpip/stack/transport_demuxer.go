@@ -19,10 +19,10 @@ import (
 	"math/rand"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/hash/jenkins"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 type protocolIDs struct {

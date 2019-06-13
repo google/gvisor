@@ -27,13 +27,13 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/fsgofer"
-	"gvisor.googlesource.com/gvisor/runsc/fsgofer/filter"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/fsgofer"
+	"gvisor.dev/gvisor/runsc/fsgofer/filter"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 var caps = []string{

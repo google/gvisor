@@ -14,7 +14,7 @@
 
 package pipe
 
-import "gvisor.googlesource.com/gvisor/pkg/sentry/device"
+import "gvisor.dev/gvisor/pkg/sentry/device"
 
 // pipeDevice is used for all pipe files.
 var pipeDevice = device.NewAnonDevice()

@@ -15,7 +15,7 @@
 package kernel
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 // +stateify savable

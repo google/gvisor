@@ -6,7 +6,7 @@ package gvisor
 import (
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	registers_go_proto "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
+	registers_go_proto "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 	math "math"
 )
 

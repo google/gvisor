@@ -15,9 +15,9 @@
 package kernel
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/hostcpu"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Restartable sequences, as described in https://lwn.net/Articles/650333/.

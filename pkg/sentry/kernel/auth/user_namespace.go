@@ -18,7 +18,7 @@ import (
 	"math"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for

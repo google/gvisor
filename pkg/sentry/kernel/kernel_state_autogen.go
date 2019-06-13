@@ -3,10 +3,10 @@
 package kernel
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/state"
-	"gvisor.googlesource.com/gvisor/pkg/bpf"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 func (x *abstractEndpoint) beforeSave() {}

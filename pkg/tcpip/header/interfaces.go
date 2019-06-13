@@ -15,7 +15,7 @@
 package header
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 const (

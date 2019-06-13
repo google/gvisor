@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/binary"
 )
 
 // Constants for open(2).

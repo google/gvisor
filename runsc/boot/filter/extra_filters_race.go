@@ -19,7 +19,7 @@ package filter
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // instrumentationFilters returns additional filters for syscalls used by TSAN.

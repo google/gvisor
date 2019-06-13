@@ -17,8 +17,8 @@ package tcp
 import (
 	"container/heap"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
 // receiver holds the state necessary to receive TCP segments and turn them

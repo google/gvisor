@@ -3,8 +3,8 @@
 package tcp
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/state"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 func (x *cubicState) beforeSave() {}

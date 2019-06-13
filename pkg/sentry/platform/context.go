@@ -15,7 +15,7 @@
 package platform
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // contextID is the auth package's type for context.Context.Value keys.

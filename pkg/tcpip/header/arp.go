@@ -14,7 +14,7 @@
 
 package header
 
-import "gvisor.googlesource.com/gvisor/pkg/tcpip"
+import "gvisor.dev/gvisor/pkg/tcpip"
 
 const (
 	// ARPProtocolNumber is the ARP network protocol number.

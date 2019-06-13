@@ -3,7 +3,7 @@
 package ilist
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func (x *List) beforeSave() {}

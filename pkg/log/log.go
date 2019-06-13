@@ -30,7 +30,7 @@ import (
 	"syscall"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/linewriter"
+	"gvisor.dev/gvisor/pkg/linewriter"
 )
 
 // Level is the log level.

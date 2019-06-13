@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race

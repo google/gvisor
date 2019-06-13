@@ -3,7 +3,7 @@
 package waiter
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/state"
+	"gvisor.dev/gvisor/pkg/state"
 )
 
 func (x *Entry) beforeSave() {}

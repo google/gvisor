@@ -19,11 +19,11 @@ import (
 	"os"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
 // InodeType enumerates types of Inodes.

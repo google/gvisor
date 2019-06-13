@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"math"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 const (

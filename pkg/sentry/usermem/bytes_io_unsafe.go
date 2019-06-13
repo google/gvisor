@@ -18,8 +18,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // SwapUint32 implements IO.SwapUint32.

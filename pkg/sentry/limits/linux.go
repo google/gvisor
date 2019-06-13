@@ -17,7 +17,7 @@ package limits
 import (
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // FromLinuxResource maps linux resources to sentry LimitTypes.

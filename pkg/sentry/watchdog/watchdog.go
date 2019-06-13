@@ -35,11 +35,11 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/metric"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
 // DefaultTimeout is a resonable timeout value for most applications.

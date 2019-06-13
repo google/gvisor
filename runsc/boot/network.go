@@ -19,16 +19,16 @@ import (
 	"net"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/fdbased"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/loopback"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/arp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 // Network exposes methods that can be used to configure a network stack.

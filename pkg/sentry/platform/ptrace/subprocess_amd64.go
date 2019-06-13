@@ -21,7 +21,7 @@ import (
 	"strings"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 const (

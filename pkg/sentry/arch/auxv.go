@@ -15,7 +15,7 @@
 package arch
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // An AuxEntry represents an entry in an ELF auxiliary vector.

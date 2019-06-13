@@ -17,7 +17,7 @@ package header
 import (
 	"encoding/binary"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // ICMPv6 represents an ICMPv6 header stored in a byte array.
