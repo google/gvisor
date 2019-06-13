@@ -20,6 +20,7 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -532,6 +533,24 @@ func (l *Loader) run() error {
 		rootMns := l.k.RootMountNamespace()
 		if err := setExecutablePath(rootCtx, rootMns, &l.rootProcArgs); err != nil {
 			return err
+		}
+
+		// Read /etc/passwd for the user's HOME directory and set the HOME
+		// environment variable as required by POSIX if it is not overridden by
+		// the user.
+		hasHomeEnvv := false
+		for _, envv := range l.rootProcArgs.Envv {
+			if strings.HasPrefix(envv, "HOME=") {
+				hasHomeEnvv = true
+			}
+		}
+		if !hasHomeEnvv {
+			homeDir, err := getExecUserHome(rootCtx, rootMns, uint32(l.rootProcArgs.Credentials.RealKUID))
+			if err != nil {
+				return fmt.Errorf("error reading exec user: %v", err)
+			}
+
+			l.rootProcArgs.Envv = append(l.rootProcArgs.Envv, "HOME="+homeDir)
 		}
 
 		// Create the root container init task. It will begin running
