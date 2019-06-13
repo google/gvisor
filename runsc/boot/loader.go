@@ -259,7 +259,7 @@ func New(args Args) (*Loader, error) {
 		// Adjust the total memory returned by the Sentry so that applications that
 		// use /proc/meminfo can make allocations based on this limit.
 		usage.MinimumTotalMemoryBytes = args.TotalMem
-		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(2^30))
+		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1 << 30))
 	}
 
 	// Initiate the Kernel object, which is required by the Context passed
