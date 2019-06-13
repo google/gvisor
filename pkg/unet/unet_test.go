@@ -691,3 +691,45 @@ func TestControlMessage(t *testing.T) {
 		}
 	}
 }
+
+func benchmarkSendRecv(b *testing.B, packet bool) {
+	server, client, err := SocketPair(packet)
+	if err != nil {
+		b.Fatalf("SocketPair: got %v, wanted nil", err)
+	}
+	defer server.Close()
+	defer client.Close()
+	go func() {
+		buf := make([]byte, 1)
+		for i := 0; i < b.N; i++ {
+			n, err := server.Read(buf)
+			if n != 1 || err != nil {
+				b.Fatalf("server.Read: got (%d, %v), wanted (1, nil)", n, err)
+			}
+			n, err = server.Write(buf)
+			if n != 1 || err != nil {
+				b.Fatalf("server.Write: got (%d, %v), wanted (1, nil)", n, err)
+			}
+		}
+	}()
+	buf := make([]byte, 1)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		n, err := client.Write(buf)
+		if n != 1 || err != nil {
+			b.Fatalf("client.Write: got (%d, %v), wanted (1, nil)", n, err)
+		}
+		n, err = client.Read(buf)
+		if n != 1 || err != nil {
+			b.Fatalf("client.Read: got (%d, %v), wanted (1, nil)", n, err)
+		}
+	}
+}
+
+func BenchmarkSendRecvStream(b *testing.B) {
+	benchmarkSendRecv(b, false)
+}
+
+func BenchmarkSendRecvPacket(b *testing.B) {
+	benchmarkSendRecv(b, true)
+}

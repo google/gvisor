@@ -179,6 +179,51 @@ func TestSendClosed(t *testing.T) {
 	}
 }
 
+func BenchmarkSendRecv(b *testing.B) {
+	server, client, err := unet.SocketPair(false)
+	if err != nil {
+		b.Fatalf("socketpair got err %v expected nil", err)
+	}
+	defer server.Close()
+	defer client.Close()
+
+	// Exchange Rflush messages since these contain no data and therefore incur
+	// no additional marshaling overhead.
+	go func() {
+		for i := 0; i < b.N; i++ {
+			tag, m, err := recv(server, maximumLength, msgRegistry.get)
+			if err != nil {
+				b.Fatalf("recv got err %v expected nil", err)
+			}
+			if tag != Tag(1) {
+				b.Fatalf("got tag %v expected 1", tag)
+			}
+			if _, ok := m.(*Rflush); !ok {
+				b.Fatalf("got message %T expected *Rflush", m)
+			}
+			if err := send(server, Tag(2), &Rflush{}); err != nil {
+				b.Fatalf("send got err %v expected nil", err)
+			}
+		}
+	}()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := send(client, Tag(1), &Rflush{}); err != nil {
+			b.Fatalf("send got err %v expected nil", err)
+		}
+		tag, m, err := recv(client, maximumLength, msgRegistry.get)
+		if err != nil {
+			b.Fatalf("recv got err %v expected nil", err)
+		}
+		if tag != Tag(2) {
+			b.Fatalf("got tag %v expected 2", tag)
+		}
+		if _, ok := m.(*Rflush); !ok {
+			b.Fatalf("got message %v expected *Rflush", m)
+		}
+	}
+}
+
 func init() {
 	msgRegistry.register(MsgTypeBadDecode, func() message { return &badDecode{} })
 }
