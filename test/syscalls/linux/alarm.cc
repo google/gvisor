@@ -62,7 +62,7 @@ TEST(AlarmTest, Interrupt_NoRandomSave) {
   ASSERT_THAT(read(read_fd.get(), &buf, 1), SyscallFailsWithErrno(EINTR));
 }
 
-/* Count of the number of SIGALARMS handled. */
+// Count of the number of SIGALARMS handled.
 static volatile int alarms_received = 0;
 
 void inc_alarms_handler(int sig, siginfo_t* siginfo, void* arg) {
