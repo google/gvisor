@@ -679,7 +679,7 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char old_cc[kTcpCaNameMax];
-  socklen_t optlen;
+  socklen_t optlen = sizeof(old_cc);
   ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
                          &old_cc, &optlen),
               SyscallSucceedsWithValue(0));
@@ -690,6 +690,7 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
               SyscallFailsWithErrno(ENOENT));
 
   char got_cc[kTcpCaNameMax];
+  optlen = sizeof(got_cc);
   ASSERT_THAT(getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CONGESTION,
                          &got_cc, &optlen),
               SyscallSucceedsWithValue(0));
