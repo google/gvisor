@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/gate"
+	"gvisor.dev/gvisor/pkg/gate"
 )
 
 func TestBasicEnter(t *testing.T) {

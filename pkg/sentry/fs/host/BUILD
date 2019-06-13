@@ -22,7 +22,7 @@ go_library(
         "util.go",
         "util_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/host",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/host",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -39,7 +39,7 @@ go_library(
         "lock_set.go",
         "lock_set_functions.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/lock",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",

@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 go_library(
     name = "eventfd",
     srcs = ["eventfd.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/eventfd",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/eventfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -10,7 +10,7 @@ go_library(
         "symlink.go",
         "tree.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/ramfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -14,7 +14,7 @@
 
 package linux
 
-import "gvisor.googlesource.com/gvisor/pkg/binary"
+import "gvisor.dev/gvisor/pkg/binary"
 
 // Address families, from linux/socket.h.
 const (

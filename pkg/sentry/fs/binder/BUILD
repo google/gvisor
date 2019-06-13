@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "binder.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/binder",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/binder",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

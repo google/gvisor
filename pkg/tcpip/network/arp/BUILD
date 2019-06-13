@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "arp",
     srcs = ["arp.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/arp",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/arp",
     visibility = [
         "//visibility:public",
     ],

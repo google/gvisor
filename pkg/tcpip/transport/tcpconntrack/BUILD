@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "tcpconntrack",
     srcs = ["tcp_conntrack.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcpconntrack",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip/header",

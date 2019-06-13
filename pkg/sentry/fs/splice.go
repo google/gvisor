@@ -18,9 +18,9 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/secio"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/secio"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Splice moves data to this file, directly from another.

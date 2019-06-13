@@ -18,7 +18,7 @@ import (
 	"encoding/binary"
 	"strings"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 const (

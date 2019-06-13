@@ -12,7 +12,7 @@ go_library(
         "socket_unsafe.go",
         "stack.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/hostinet",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/hostinet",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

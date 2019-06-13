@@ -8,7 +8,7 @@ go_library(
         "getcpu_amd64.s",
         "hostcpu.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/hostcpu",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/hostcpu",
     visibility = ["//:sandbox"],
 )
 

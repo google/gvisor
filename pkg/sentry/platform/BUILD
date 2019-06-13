@@ -22,7 +22,7 @@ go_library(
         "mmap_min_addr.go",
         "platform.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

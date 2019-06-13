@@ -10,7 +10,7 @@ go_library(
         "testutil.go",
         "testutil_race.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/test/testutil",
+    importpath = "gvisor.dev/gvisor/runsc/test/testutil",
     visibility = ["//:sandbox"],
     deps = [
         "//runsc/boot",

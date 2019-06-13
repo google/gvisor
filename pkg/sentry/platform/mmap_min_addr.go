@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // systemMMapMinAddrSource is the source file.

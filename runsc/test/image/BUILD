@@ -26,5 +26,5 @@ go_test(
 go_library(
     name = "image",
     srcs = ["image.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/test/image",
+    importpath = "gvisor.dev/gvisor/runsc/test/image",
 )

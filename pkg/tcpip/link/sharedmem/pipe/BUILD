@@ -10,7 +10,7 @@ go_library(
         "rx.go",
         "tx.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/pipe",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe",
     visibility = ["//:sandbox"],
 )
 

@@ -21,7 +21,7 @@ go_library(
         "stack.go",
         "syscalls_amd64.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/arch",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/arch",
     visibility = ["//:sandbox"],
     deps = [
         ":registers_go_proto",
@@ -44,7 +44,7 @@ proto_library(
 
 go_proto_library(
     name = "registers_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto",
     proto = ":registers_proto",
     visibility = ["//visibility:public"],
 )

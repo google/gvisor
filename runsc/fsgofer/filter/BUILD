@@ -11,7 +11,7 @@ go_library(
         "extra_filters_race.go",
         "filter.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/fsgofer/filter",
+    importpath = "gvisor.dev/gvisor/runsc/fsgofer/filter",
     visibility = [
         "//runsc:__subpackages__",
     ],

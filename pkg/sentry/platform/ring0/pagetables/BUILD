@@ -84,7 +84,7 @@ go_library(
         "walker_map.go",
         "walker_unmap.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables",
     visibility = [
         "//pkg/sentry/platform/kvm:__subpackages__",
         "//pkg/sentry/platform/ring0:__subpackages__",

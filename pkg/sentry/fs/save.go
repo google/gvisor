@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // SaveInodeMappings saves a mapping of path -> inode ID for every

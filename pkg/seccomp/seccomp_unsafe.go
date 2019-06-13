@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // sockFprog is sock_fprog taken from <linux/filter.h>.

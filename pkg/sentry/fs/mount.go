@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // DirentOperations provide file systems greater control over how long a Dirent stays pinned

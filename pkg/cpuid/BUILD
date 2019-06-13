@@ -8,7 +8,7 @@ go_library(
         "cpu_amd64.s",
         "cpuid.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/cpuid",
+    importpath = "gvisor.dev/gvisor/pkg/cpuid",
     visibility = ["//:sandbox"],
     deps = ["//pkg/log"],
 )

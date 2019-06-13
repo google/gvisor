@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // TODO(b/34161764): Move to pkg/abi/linux along with definitions in

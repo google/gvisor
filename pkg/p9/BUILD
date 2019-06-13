@@ -21,7 +21,7 @@ go_library(
         "transport.go",
         "version.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/p9",
+    importpath = "gvisor.dev/gvisor/pkg/p9",
     deps = [
         "//pkg/fd",
         "//pkg/log",

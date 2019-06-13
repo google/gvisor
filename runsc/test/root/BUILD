@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "root",
     srcs = ["root.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/test/root",
+    importpath = "gvisor.dev/gvisor/runsc/test/root",
 )
 
 go_test(

@@ -33,7 +33,7 @@ go_library(
         "syscalls.go",
         "wait.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/cmd",
+    importpath = "gvisor.dev/gvisor/runsc/cmd",
     visibility = [
         "//runsc:__subpackages__",
     ],

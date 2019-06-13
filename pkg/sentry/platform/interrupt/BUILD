@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "interrupt.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/interrupt",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/interrupt",
     visibility = ["//pkg/sentry:internal"],
 )
 

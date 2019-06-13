@@ -54,7 +54,7 @@ import (
 	"runtime"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/binary"
 )
 
 var bufPool = sync.Pool{

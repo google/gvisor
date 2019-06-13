@@ -11,7 +11,7 @@ go_library(
         "inode_file.go",
         "tmpfs.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

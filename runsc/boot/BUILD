@@ -20,7 +20,7 @@ go_library(
         "strace.go",
         "user.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/boot",
+    importpath = "gvisor.dev/gvisor/runsc/boot",
     visibility = [
         "//runsc:__subpackages__",
         "//test:__subpackages__",

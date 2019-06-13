@@ -54,7 +54,7 @@ go_library(
         "utsname.go",
         "wait.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/abi/linux",
+    importpath = "gvisor.dev/gvisor/pkg/abi/linux",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi",

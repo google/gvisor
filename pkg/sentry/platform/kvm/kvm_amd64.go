@@ -17,7 +17,7 @@
 package kvm
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
 // userMemoryRegion is a region of physical memory.

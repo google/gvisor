@@ -21,7 +21,7 @@ go_library(
         "socket.go",
         "util.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/gofer",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/gofer",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

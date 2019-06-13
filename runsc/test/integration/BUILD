@@ -25,5 +25,5 @@ go_test(
 go_library(
     name = "integration",
     srcs = ["integration.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/test/integration",
+    importpath = "gvisor.dev/gvisor/runsc/test/integration",
 )

@@ -18,7 +18,7 @@ go_template_instance(
 go_library(
     name = "seqatomic",
     srcs = ["seqatomic_int.go"],
-    importpath = "gvisor.googlesource.com/gvisor/third_party/gvsync/seqatomic",
+    importpath = "gvisor.dev/gvisor/third_party/gvsync/seqatomic",
     deps = [
         "//third_party/gvsync",
     ],

@@ -17,9 +17,9 @@ package epoll
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/filetest"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs/filetest"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestFileDestroyed(t *testing.T) {

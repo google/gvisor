@@ -8,7 +8,7 @@ go_library(
         "pcap.go",
         "sniffer.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sniffer",
     visibility = [
         "//visibility:public",
     ],

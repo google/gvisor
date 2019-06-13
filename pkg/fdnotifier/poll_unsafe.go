@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // NonBlockingPoll polls the given FD in non-blocking fashion. It is used just

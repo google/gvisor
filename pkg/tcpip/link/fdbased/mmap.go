@@ -16,7 +16,7 @@
 
 package fdbased
 
-import "gvisor.googlesource.com/gvisor/pkg/tcpip"
+import "gvisor.dev/gvisor/pkg/tcpip"
 
 // Stubbed out version for non-linux/non-amd64 platforms.
 

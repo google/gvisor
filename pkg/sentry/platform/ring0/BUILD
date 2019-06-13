@@ -43,7 +43,7 @@ go_library(
         "lib_amd64.s",
         "ring0.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ring0",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/cpuid",

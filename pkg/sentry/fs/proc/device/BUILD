@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "device",
     srcs = ["device.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc/device",
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/sentry/device"],
 )

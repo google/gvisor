@@ -17,7 +17,7 @@ package boot
 import (
 	"fmt"
 
-	rpb "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
+	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 )
 
 // reportLimit is the max number of events that should be reported per tracker.

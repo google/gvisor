@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "hash",
     srcs = ["hash.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/hash",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/hash",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/rand",

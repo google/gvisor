@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "gonet",
     srcs = ["gonet.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/adapters/gonet",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/adapters/gonet",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip",

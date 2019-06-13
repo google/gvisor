@@ -24,17 +24,17 @@ import (
 	"syscall"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/bits"
-	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
-	"gvisor.googlesource.com/gvisor/pkg/seccomp"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	pb "gvisor.googlesource.com/gvisor/pkg/sentry/strace/strace_go_proto"
-	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	pb "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto"
+	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // DefaultLogMaximumSize is the default LogMaximumSize.

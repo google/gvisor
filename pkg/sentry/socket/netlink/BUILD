@@ -9,7 +9,7 @@ go_library(
         "provider.go",
         "socket.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netlink",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

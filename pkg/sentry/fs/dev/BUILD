@@ -12,7 +12,7 @@ go_library(
         "null.go",
         "random.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/dev",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/dev",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

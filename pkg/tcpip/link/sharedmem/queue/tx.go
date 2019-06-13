@@ -17,8 +17,8 @@ package queue
 import (
 	"encoding/binary"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/pipe"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
 
 const (

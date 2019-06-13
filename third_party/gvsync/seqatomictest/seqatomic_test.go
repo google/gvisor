@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 func TestSeqAtomicLoadUncontended(t *testing.T) {

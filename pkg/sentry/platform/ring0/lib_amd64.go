@@ -17,7 +17,7 @@
 package ring0
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/cpuid"
 )
 
 // LoadFloatingPoint loads floating point state by the most efficient mechanism

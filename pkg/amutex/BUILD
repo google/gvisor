@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "amutex",
     srcs = ["amutex.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/amutex",
+    importpath = "gvisor.dev/gvisor/pkg/amutex",
     visibility = ["//:sandbox"],
 )
 

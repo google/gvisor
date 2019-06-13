@@ -28,7 +28,7 @@ go_library(
         "usermem_unsafe.go",
         "usermem_x86.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/usermem",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/usermem",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/atomicbitops",

@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "waitable.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/waitable",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/waitable",
     visibility = [
         "//visibility:public",
     ],

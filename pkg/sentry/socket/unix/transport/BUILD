@@ -25,7 +25,7 @@ go_library(
         "transport_message_list.go",
         "unix.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/unix/transport",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

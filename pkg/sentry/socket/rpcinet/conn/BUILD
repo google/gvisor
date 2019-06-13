@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "conn",
     srcs = ["conn.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/conn",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/conn",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/binary",

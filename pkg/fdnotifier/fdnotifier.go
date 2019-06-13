@@ -25,7 +25,7 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type fdInfo struct {

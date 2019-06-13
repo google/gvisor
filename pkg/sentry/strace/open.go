@@ -17,7 +17,7 @@ package strace
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/abi"
 )
 
 // OpenMode represents the mode to open(2) a file.

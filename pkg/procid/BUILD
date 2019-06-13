@@ -9,7 +9,7 @@ go_library(
         "procid_amd64.s",
         "procid_arm64.s",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/procid",
+    importpath = "gvisor.dev/gvisor/pkg/procid",
     visibility = ["//visibility:public"],
 )
 

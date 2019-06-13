@@ -49,7 +49,7 @@ go_library(
         "state.go",
         "stats.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/state",
+    importpath = "gvisor.dev/gvisor/pkg/state",
     visibility = ["//:sandbox"],
     deps = [
         ":object_go_proto",
@@ -65,7 +65,7 @@ proto_library(
 
 go_proto_library(
     name = "object_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/state/object_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/state/object_go_proto",
     proto = ":object_proto",
     visibility = ["//:sandbox"],
 )

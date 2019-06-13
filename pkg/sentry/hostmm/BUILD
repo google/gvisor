@@ -8,7 +8,7 @@ go_library(
         "cgroup.go",
         "hostmm.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/hostmm",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/hostmm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/fd",

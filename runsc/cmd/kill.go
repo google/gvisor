@@ -24,8 +24,8 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
 )
 
 // Kill implements subcommands.Command for the "kill" command.

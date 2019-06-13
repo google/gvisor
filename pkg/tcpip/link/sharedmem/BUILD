@@ -10,7 +10,7 @@ go_library(
         "sharedmem_unsafe.go",
         "tx.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem",
     visibility = [
         "//:sandbox",
     ],

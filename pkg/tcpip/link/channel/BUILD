@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "channel",
     srcs = ["channel.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/channel",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/channel",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",

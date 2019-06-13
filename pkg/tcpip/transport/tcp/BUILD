@@ -39,8 +39,8 @@ go_library(
         "tcp_segment_list.go",
         "timer.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/tcp",
+    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/rand",

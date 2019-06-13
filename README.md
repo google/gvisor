@@ -53,15 +53,6 @@ Make sure the following dependencies are installed:
 *   [Docker version 17.09.0 or greater][docker]
 *   Gold linker (e.g. `binutils-gold` package on Ubuntu)
 
-### Getting the source
-
-Clone the repository:
-
-```
-git clone https://gvisor.googlesource.com/gvisor gvisor
-cd gvisor
-```
-
 ### Building
 
 Build and install the `runsc` binary:
@@ -115,6 +106,24 @@ Then invoke bazel with the following flags:
 
 You can also add those flags to your local ~/.bazelrc to avoid needing to
 specify them each time on the command line.
+
+### Using `go get`
+
+This project uses [bazel][bazel] to build and manage dependencies. A synthetic
+`go` branch is maintained that is compatible with standard `go` tooling for
+convenience.
+
+For example, to build `runsc` directly from this branch:
+
+```
+echo "module runsc" > go.mod
+GO111MODULE=on go get gvisor.dev/gvisor/runsc@go
+CGO_ENABLED=0 GO111MODULE=on go install gvisor.dev/gvisor/runsc
+```
+
+Note that this branch is supported in a best effort capacity, and direct
+development on this branch is not supported. Development should occur on the
+`master` branch, which is then reflected into the `go` branch.
 
 ## Community & Governance
 

@@ -8,7 +8,7 @@ go_library(
         "full_reader.go",
         "secio.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/secio",
+    importpath = "gvisor.dev/gvisor/pkg/secio",
     visibility = ["//pkg/sentry:internal"],
 )
 

@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
 // PlatformType tells which platform to use.

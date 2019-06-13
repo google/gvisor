@@ -5,6 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "kdefs",
     srcs = ["kdefs.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/kdefs",
     visibility = ["//:sandbox"],
 )

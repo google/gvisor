@@ -11,7 +11,7 @@ go_library(
         "extra_filters_race.go",
         "filter.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/boot/filter",
+    importpath = "gvisor.dev/gvisor/runsc/boot/filter",
     visibility = [
         "//runsc/boot:__subpackages__",
     ],

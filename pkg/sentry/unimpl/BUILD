@@ -12,7 +12,7 @@ proto_library(
 
 go_proto_library(
     name = "unimplemented_syscall_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto",
     proto = ":unimplemented_syscall_proto",
     visibility = ["//visibility:public"],
     deps = ["//pkg/sentry/arch:registers_go_proto"],
@@ -21,7 +21,7 @@ go_proto_library(
 go_library(
     name = "unimpl",
     srcs = ["events.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/unimpl",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/unimpl",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

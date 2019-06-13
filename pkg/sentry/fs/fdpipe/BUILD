@@ -9,8 +9,8 @@ go_library(
         "pipe_opener.go",
         "pipe_state.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/fdpipe",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/sentry/fs"],
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/fdpipe",
+    imports = ["gvisor.dev/gvisor/pkg/sentry/fs"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/fd",

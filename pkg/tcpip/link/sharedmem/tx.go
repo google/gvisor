@@ -18,7 +18,7 @@ import (
 	"math"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/queue"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
 
 const (

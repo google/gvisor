@@ -17,8 +17,8 @@ package tcpconntrack_test
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcpconntrack"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcpconntrack"
 )
 
 // connected creates a connection tracker TCB and sets it to a connected state

@@ -6,7 +6,7 @@ package(licenses = ["notice"])
 go_library(
     name = "memevent",
     srcs = ["memory_events.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/memevent",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/memevent",
     visibility = ["//:sandbox"],
     deps = [
         ":memory_events_go_proto",
@@ -26,7 +26,7 @@ proto_library(
 
 go_proto_library(
     name = "memory_events_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto",
     proto = ":memory_events_proto",
     visibility = ["//visibility:public"],
 )

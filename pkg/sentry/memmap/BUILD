@@ -36,7 +36,7 @@ go_library(
         "mapping_set_impl.go",
         "memmap.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/memmap",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/memmap",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",

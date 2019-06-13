@@ -15,7 +15,7 @@
 package pipe
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // Reader satisfies the fs.FileOperations interface for read-only pipes.

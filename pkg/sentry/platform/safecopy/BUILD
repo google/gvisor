@@ -16,7 +16,7 @@ go_library(
         "sighandler_amd64.s",
         "sighandler_arm64.s",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/safecopy",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/safecopy",
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/syserror"],
 )

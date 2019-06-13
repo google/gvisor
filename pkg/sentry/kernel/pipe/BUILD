@@ -27,7 +27,7 @@ go_library(
         "reader_writer.go",
         "writer.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/pipe",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/pipe",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // mountInChroot creates the destination mount point in the given chroot and

@@ -85,7 +85,7 @@ proto_library(
 
 go_proto_library(
     name = "uncaught_signal_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto",
     proto = ":uncaught_signal_proto",
     visibility = ["//visibility:public"],
     deps = ["//pkg/sentry/arch:registers_go_proto"],
@@ -147,11 +147,11 @@ go_library(
         "vdso.go",
         "version.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel",
     imports = [
-        "gvisor.googlesource.com/gvisor/pkg/bpf",
-        "gvisor.googlesource.com/gvisor/pkg/sentry/device",
-        "gvisor.googlesource.com/gvisor/pkg/tcpip",
+        "gvisor.dev/gvisor/pkg/bpf",
+        "gvisor.dev/gvisor/pkg/sentry/device",
+        "gvisor.dev/gvisor/pkg/tcpip",
     ],
     visibility = ["//:sandbox"],
     deps = [

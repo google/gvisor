@@ -8,7 +8,7 @@ go_library(
         "icmp.go",
         "ipv6.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/ipv6",
     visibility = [
         "//visibility:public",
     ],

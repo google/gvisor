@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 go_library(
     name = "device",
     srcs = ["device.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/device",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/device",
     visibility = ["//pkg/sentry:internal"],
     deps = ["//pkg/abi/linux"],
 )

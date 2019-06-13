@@ -24,7 +24,7 @@ import (
 	"sort"
 
 	"github.com/golang/protobuf/proto"
-	pb "gvisor.googlesource.com/gvisor/pkg/state/object_go_proto"
+	pb "gvisor.dev/gvisor/pkg/state/object_go_proto"
 )
 
 // objectState represents an object that may be in the process of being

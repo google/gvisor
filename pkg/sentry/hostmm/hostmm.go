@@ -22,9 +22,9 @@ import (
 	"path"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // NotifyCurrentMemcgPressureCallback requests that f is called whenever the

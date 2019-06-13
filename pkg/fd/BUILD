@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "fd",
     srcs = ["fd.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/fd",
+    importpath = "gvisor.dev/gvisor/pkg/fd",
     visibility = ["//visibility:public"],
 )
 

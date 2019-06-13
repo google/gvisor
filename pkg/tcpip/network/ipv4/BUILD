@@ -8,7 +8,7 @@ go_library(
         "icmp.go",
         "ipv4.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/ipv4",
     visibility = [
         "//visibility:public",
     ],

@@ -8,7 +8,7 @@ alias(
     actual = "@com_github_golang_mock//mockgen:mockgen",
 )
 
-MOCK_SRC_PACKAGE = "gvisor.googlesource.com/gvisor/pkg/p9"
+MOCK_SRC_PACKAGE = "gvisor.dev/gvisor/pkg/p9"
 
 # mockgen_reflect is a source file that contains mock generation code that
 # imports the p9 package and generates a specification via reflection. The
@@ -64,7 +64,7 @@ go_library(
         "mocks.go",
         "p9test.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/p9/p9test",
+    importpath = "gvisor.dev/gvisor/pkg/p9/p9test",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/fd",

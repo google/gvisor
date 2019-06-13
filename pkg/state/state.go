@@ -55,7 +55,7 @@ import (
 	"reflect"
 	"runtime"
 
-	pb "gvisor.googlesource.com/gvisor/pkg/state/object_go_proto"
+	pb "gvisor.dev/gvisor/pkg/state/object_go_proto"
 )
 
 // ErrState is returned when an error is encountered during encode/decode.

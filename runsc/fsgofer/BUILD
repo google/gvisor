@@ -8,7 +8,7 @@ go_library(
         "fsgofer.go",
         "fsgofer_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/fsgofer",
+    importpath = "gvisor.dev/gvisor/runsc/fsgofer",
     visibility = [
         "//runsc:__subpackages__",
     ],

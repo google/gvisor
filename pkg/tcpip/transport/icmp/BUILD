@@ -23,8 +23,8 @@ go_library(
         "icmp_packet_list.go",
         "protocol.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/icmp",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/icmp",
+    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sleep",

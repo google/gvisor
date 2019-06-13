@@ -15,8 +15,8 @@
 package boot
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 // Event struct for encoding the event data to JSON. Corresponds to runc's

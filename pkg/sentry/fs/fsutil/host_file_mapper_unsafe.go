@@ -17,7 +17,7 @@ package fsutil
 import (
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
 )
 
 func (*HostFileMapper) unsafeBlockFromChunkMapping(addr uintptr) safemem.Block {

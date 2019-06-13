@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "compressio",
     srcs = ["compressio.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/compressio",
+    importpath = "gvisor.dev/gvisor/pkg/compressio",
     visibility = ["//:sandbox"],
     deps = ["//pkg/binary"],
 )

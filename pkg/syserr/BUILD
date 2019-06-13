@@ -9,7 +9,7 @@ go_library(
         "netstack.go",
         "syserr.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/syserr",
+    importpath = "gvisor.dev/gvisor/pkg/syserr",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",

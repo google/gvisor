@@ -11,7 +11,7 @@ go_library(
         "memory_unsafe.go",
         "usage.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/usage",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/usage",
     visibility = [
         "//pkg/sentry:internal",
     ],

@@ -8,7 +8,7 @@ go_library(
         "device.go",
         "shm.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/shm",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/shm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

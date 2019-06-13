@@ -33,7 +33,7 @@ go_library(
         "futex.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/futex",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

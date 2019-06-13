@@ -21,14 +21,14 @@ import (
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
-	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	rpb "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
-	ucspb "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/strace"
-	spb "gvisor.googlesource.com/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
+	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/strace"
+	spb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 )
 
 func initCompatLogs(fd int) error {

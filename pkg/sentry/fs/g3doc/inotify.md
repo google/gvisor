@@ -112,11 +112,11 @@ attempts to queue a new event, it is already holding `fs.Watches.mu`. If we used
 `Inotify.mu` to also protect the event queue, this would violate the above lock
 ordering.
 
-[dirent]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/dirent.go
-[event]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/inotify_event.go
-[fd_map]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/kernel/fd_map.go
-[inode]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/inode.go
-[inode_watches]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/inode_inotify.go
-[inotify]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/inotify.go
-[syscall_dir]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/syscalls/linux/
-[watch]: https://gvisor.googlesource.com/gvisor/+/master/pkg/sentry/fs/inotify_watch.go
+[dirent]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/dirent.go
+[event]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inotify_event.go
+[fd_map]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/kernel/fd_map.go
+[inode]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inode.go
+[inode_watches]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inode_inotify.go
+[inotify]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inotify.go
+[syscall_dir]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/syscalls/linux/
+[watch]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inotify_watch.go

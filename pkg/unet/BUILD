@@ -8,7 +8,7 @@ go_library(
         "unet.go",
         "unet_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/unet",
+    importpath = "gvisor.dev/gvisor/pkg/unet",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",

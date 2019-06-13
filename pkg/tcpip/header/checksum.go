@@ -19,8 +19,8 @@ package header
 import (
 	"encoding/binary"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 func calculateChecksum(buf []byte, initial uint32) uint16 {

@@ -23,7 +23,7 @@ go_library(
         "reassembler.go",
         "reassembler_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/network/fragmentation",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/network/fragmentation",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

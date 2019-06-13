@@ -25,8 +25,8 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/runsc/cgroup"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 func verifyPid(pid int, path string) error {

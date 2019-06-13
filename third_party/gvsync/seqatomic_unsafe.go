@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // Value is a required type parameter.

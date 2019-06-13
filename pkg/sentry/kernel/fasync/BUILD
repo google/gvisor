@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 go_library(
     name = "fasync",
     srcs = ["fasync.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/fasync",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/fasync",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

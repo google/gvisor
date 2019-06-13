@@ -7,8 +7,8 @@ go_template_instance(
     name = "dirty_set_impl",
     out = "dirty_set_impl.go",
     imports = {
-        "memmap": "gvisor.googlesource.com/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "Dirty",
@@ -25,7 +25,7 @@ go_template_instance(
     name = "frame_ref_set_impl",
     out = "frame_ref_set_impl.go",
     imports = {
-        "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "frameRef",
@@ -42,8 +42,8 @@ go_template_instance(
     name = "file_range_set_impl",
     out = "file_range_set_impl.go",
     imports = {
-        "memmap": "gvisor.googlesource.com/gvisor/pkg/sentry/memmap",
-        "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "fsutil",
     prefix = "FileRange",
@@ -74,7 +74,7 @@ go_library(
         "inode.go",
         "inode_cached.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/fsutil",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

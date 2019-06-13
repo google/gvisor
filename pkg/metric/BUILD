@@ -6,7 +6,7 @@ package(licenses = ["notice"])
 go_library(
     name = "metric",
     srcs = ["metric.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/metric",
+    importpath = "gvisor.dev/gvisor/pkg/metric",
     visibility = ["//:sandbox"],
     deps = [
         ":metric_go_proto",
@@ -23,7 +23,7 @@ proto_library(
 
 go_proto_library(
     name = "metric_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/metric/metric_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/metric/metric_go_proto",
     proto = ":metric_proto",
     visibility = ["//:sandbox"],
 )

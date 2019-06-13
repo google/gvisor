@@ -8,7 +8,7 @@ go_library(
         "prependable.go",
         "view.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/buffer",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/buffer",
     visibility = ["//visibility:public"],
 )
 

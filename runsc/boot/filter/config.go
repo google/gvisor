@@ -19,9 +19,9 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/unix"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/seccomp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/fdbased"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 )
 
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.

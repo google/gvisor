@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "linewriter",
     srcs = ["linewriter.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/linewriter",
+    importpath = "gvisor.dev/gvisor/pkg/linewriter",
     visibility = ["//visibility:public"],
 )
 

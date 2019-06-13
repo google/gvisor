@@ -27,7 +27,7 @@ go_library(
         "seccomp_rules.go",
         "seccomp_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/seccomp",
+    importpath = "gvisor.dev/gvisor/pkg/seccomp",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",

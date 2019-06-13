@@ -1,4 +1,4 @@
-module gvisor.googlesource.com/gvisor
+module gvisor.dev/gvisor
 
 go 1.12
 

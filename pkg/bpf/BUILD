@@ -11,7 +11,7 @@ go_library(
         "interpreter.go",
         "program_builder.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/bpf",
+    importpath = "gvisor.dev/gvisor/pkg/bpf",
     visibility = ["//visibility:public"],
     deps = ["//pkg/abi/linux"],
 )

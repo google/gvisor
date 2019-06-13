@@ -14,7 +14,7 @@
 
 package ashmem
 
-import "gvisor.googlesource.com/gvisor/pkg/abi/linux"
+import "gvisor.dev/gvisor/pkg/abi/linux"
 
 const maxUint64 = ^uint64(0)
 

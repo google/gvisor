@@ -8,6 +8,6 @@ go_library(
         "globals_visitor.go",
         "scope.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/tools/go_generics/globals",
+    importpath = "gvisor.dev/gvisor/tools/go_generics/globals",
     visibility = ["//tools/go_generics:__pkg__"],
 )

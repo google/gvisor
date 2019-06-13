@@ -55,8 +55,8 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/compressio"
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/compressio"
 )
 
 // keySize is the AES-256 key length.

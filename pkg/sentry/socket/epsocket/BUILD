@@ -11,7 +11,7 @@ go_library(
         "save_restore.go",
         "stack.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/epsocket",
     visibility = [
         "//pkg/sentry:internal",
     ],
