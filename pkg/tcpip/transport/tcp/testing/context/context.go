@@ -72,12 +72,6 @@ const (
 	testInitialSequenceNumber = 789
 )
 
-// defaultWindowScale value specified here depends on the tcp.DefaultBufferSize
-// constant defined in the tcp/endpoint.go because the tcp.DefaultBufferSize is
-// used in tcp.newHandshake to determine the window scale to use when sending a
-// SYN/SYN-ACK.
-var defaultWindowScale = tcp.FindWndScale(tcp.DefaultBufferSize)
-
 // Headers is used to represent the TCP header fields when building a
 // new packet.
 type Headers struct {
@@ -134,6 +128,10 @@ type Context struct {
 	// TimeStampEnabled is true if ep is connected with the timestamp option
 	// enabled.
 	TimeStampEnabled bool
+
+	// WindowScale is the expected window scale in SYN packets sent by
+	// the stack.
+	WindowScale uint8
 }
 
 // New allocates and initializes a test context containing a new
@@ -142,11 +140,11 @@ func New(t *testing.T, mtu uint32) *Context {
 	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultBufferSize, tcp.DefaultBufferSize * 10}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultSendBufferSize, 10 * tcp.DefaultSendBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultBufferSize, tcp.DefaultBufferSize * 10}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultReceiveBufferSize, 10 * tcp.DefaultReceiveBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
@@ -184,9 +182,10 @@ func New(t *testing.T, mtu uint32) *Context {
 	})
 
 	return &Context{
-		t:      t,
-		s:      s,
-		linkEP: linkEP,
+		t:           t,
+		s:           s,
+		linkEP:      linkEP,
+		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
 	}
 }
 
@@ -672,6 +671,21 @@ func (r *RawEndpoint) VerifyACKWithTS(tsVal uint32) {
 	r.RecentTS = opts.TSVal
 }
 
+// VerifyACKRcvWnd verifies that the window advertised by the incoming ACK
+// matches the provided rcvWnd.
+func (r *RawEndpoint) VerifyACKRcvWnd(rcvWnd uint16) {
+	ackPacket := r.C.GetPacket()
+	checker.IPv4(r.C.t, ackPacket,
+		checker.TCP(
+			checker.DstPort(r.SrcPort),
+			checker.TCPFlags(header.TCPFlagAck),
+			checker.SeqNum(uint32(r.AckNum)),
+			checker.AckNum(uint32(r.NextSeqNum)),
+			checker.Window(rcvWnd),
+		),
+	)
+}
+
 // VerifyACKNoSACK verifies that the ACK does not contain a SACK block.
 func (r *RawEndpoint) VerifyACKNoSACK() {
 	r.VerifyACKHasSACK(nil)
@@ -732,7 +746,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 			checker.TCPSynOptions(header.TCPSynOptions{
 				MSS:           mss,
 				TS:            true,
-				WS:            defaultWindowScale,
+				WS:            int(c.WindowScale),
 				SACKPermitted: c.SACKEnabled(),
 			}),
 		),
@@ -747,6 +761,9 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	// Build options w/ tsVal to be sent in the SYN-ACK.
 	synAckOptions := make([]byte, header.TCPOptionsMaximumSize)
 	offset := 0
+	if wantOptions.WS != -1 {
+		offset += header.EncodeWSOption(wantOptions.WS, synAckOptions[offset:])
+	}
 	if wantOptions.TS {
 		offset += header.EncodeTSOption(wantOptions.TSVal, synOptions.TSVal, synAckOptions[offset:])
 	}

@@ -182,7 +182,7 @@ func TestTimeStampEnabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
+		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
 	}
 	for _, tc := range testCases {
 		timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
@@ -239,7 +239,7 @@ func TestTimeStampDisabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
+		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
 	}
 	for _, tc := range testCases {
 		timeStampDisabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)

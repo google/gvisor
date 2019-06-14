@@ -47,7 +47,7 @@ type Forwarder struct {
 // If rcvWnd is set to zero, the default buffer size is used instead.
 func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*ForwarderRequest)) *Forwarder {
 	if rcvWnd == 0 {
-		rcvWnd = DefaultBufferSize
+		rcvWnd = DefaultReceiveBufferSize
 	}
 	return &Forwarder{
 		maxInFlight: maxInFlight,

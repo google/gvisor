@@ -225,6 +225,45 @@ type TCPSACKInfo struct {
 	MaxSACKED seqnum.Value
 }
 
+// RcvBufAutoTuneParams holds state related to TCP receive buffer auto-tuning.
+type RcvBufAutoTuneParams struct {
+	// MeasureTime is the time at which the current measurement
+	// was started.
+	MeasureTime time.Time
+
+	// CopiedBytes is the number of bytes copied to user space since
+	// this measure began.
+	CopiedBytes int
+
+	// PrevCopiedBytes is the number of bytes copied to user space in
+	// the previous RTT period.
+	PrevCopiedBytes int
+
+	// RcvBufSize is the auto tuned receive buffer size.
+	RcvBufSize int
+
+	// RTT is the smoothed RTT as measured by observing the time between
+	// when a byte is first acknowledged and the receipt of data that is at
+	// least one window beyond the sequence number that was acknowledged.
+	RTT time.Duration
+
+	// RTTVar is the "round-trip time variation" as defined in section 2
+	// of RFC6298.
+	RTTVar time.Duration
+
+	// RTTMeasureSeqNumber is the highest acceptable sequence number at the
+	// time this RTT measurement period began.
+	RTTMeasureSeqNumber seqnum.Value
+
+	// RTTMeasureTime is the absolute time at which the current RTT
+	// measurement period began.
+	RTTMeasureTime time.Time
+
+	// Disabled is true if an explicit receive buffer is set for the
+	// endpoint.
+	Disabled bool
+}
+
 // TCPEndpointState is a copy of the internal state of a TCP endpoint.
 type TCPEndpointState struct {
 	// ID is a copy of the TransportEndpointID for the endpoint.
@@ -239,6 +278,10 @@ type TCPEndpointState struct {
 	// RcvBufUsed is the amount of bytes actually held in the receive socket
 	// buffer for the endpoint.
 	RcvBufUsed int
+
+	// RcvBufAutoTuneParams is used to hold state variables to compute
+	// the auto tuned receive buffer size.
+	RcvAutoParams RcvBufAutoTuneParams
 
 	// RcvClosed if true, indicates the endpoint has been closed for reading.
 	RcvClosed bool

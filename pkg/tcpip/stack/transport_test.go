@@ -192,6 +192,9 @@ func (f *fakeTransportEndpoint) State() uint32 {
 	return 0
 }
 
+func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {
+}
+
 type fakeTransportGoodOption bool
 
 type fakeTransportBadOption bool

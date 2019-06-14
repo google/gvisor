@@ -1719,6 +1719,7 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 
 	// If we managed to copy something, we must deliver it.
 	if copied > 0 {
+		s.Endpoint.ModerateRecvBuf(copied)
 		return copied, nil
 	}
 

@@ -132,6 +132,42 @@ type SACKInfo struct {
 	NumBlocks int
 }
 
+// rcvBufAutoTuneParams are used to hold state variables to compute
+// the auto tuned recv buffer size.
+//
+// +stateify savable
+type rcvBufAutoTuneParams struct {
+	// measureTime is the time at which the current measurement
+	// was started.
+	measureTime time.Time `state:".(unixTime)"`
+
+	// copied is the number of bytes copied out of the receive
+	// buffers since this measure began.
+	copied int
+
+	// prevCopied is the number of bytes copied out of the receive
+	// buffers in the previous RTT period.
+	prevCopied int
+
+	// rtt is the non-smoothed minimum RTT as measured by observing the time
+	// between when a byte is first acknowledged and the receipt of data
+	// that is at least one window beyond the sequence number that was
+	// acknowledged.
+	rtt time.Duration
+
+	// rttMeasureSeqNumber is the highest acceptable sequence number at the
+	// time this RTT measurement period began.
+	rttMeasureSeqNumber seqnum.Value
+
+	// rttMeasureTime is the absolute time at which the current rtt
+	// measurement period began.
+	rttMeasureTime time.Time `state:".(unixTime)"`
+
+	// disabled is true if an explicit receive buffer is set for the
+	// endpoint.
+	disabled bool
+}
+
 // endpoint represents a TCP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -165,11 +201,12 @@ type endpoint struct {
 	// to indicate to users that no more data is coming.
 	//
 	// rcvListMu can be taken after the endpoint mu below.
-	rcvListMu  sync.Mutex  `state:"nosave"`
-	rcvList    segmentList `state:"wait"`
-	rcvClosed  bool
-	rcvBufSize int
-	rcvBufUsed int
+	rcvListMu     sync.Mutex  `state:"nosave"`
+	rcvList       segmentList `state:"wait"`
+	rcvClosed     bool
+	rcvBufSize    int
+	rcvBufUsed    int
+	rcvAutoParams rcvBufAutoTuneParams
 
 	// The following fields are protected by the mutex.
 	mu sync.RWMutex `state:"nosave"`
@@ -339,6 +376,9 @@ type endpoint struct {
 	bindAddress       tcpip.Address
 	connectingAddress tcpip.Address
 
+	// amss is the advertised MSS to the peer by this endpoint.
+	amss uint16
+
 	gso *stack.GSO
 }
 
@@ -373,8 +413,8 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		netProto:    netProto,
 		waiterQueue: waiterQueue,
 		state:       StateInitial,
-		rcvBufSize:  DefaultBufferSize,
-		sndBufSize:  DefaultBufferSize,
+		rcvBufSize:  DefaultReceiveBufferSize,
+		sndBufSize:  DefaultSendBufferSize,
 		sndMTU:      int(math.MaxInt32),
 		reuseAddr:   true,
 		keepalive: keepalive{
@@ -400,6 +440,11 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		e.cc = cs
 	}
 
+	var mrb tcpip.ModerateReceiveBufferOption
+	if err := stack.TransportProtocolOption(ProtocolNumber, &mrb); err == nil {
+		e.rcvAutoParams.disabled = !bool(mrb)
+	}
+
 	if p := stack.GetTCPProbe(); p != nil {
 		e.probe = p
 	}
@@ -408,6 +453,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 	e.workMu.Init()
 	e.workMu.Lock()
 	e.tsOffset = timeStampOffset()
+
 	return e
 }
 
@@ -549,6 +595,83 @@ func (e *endpoint) cleanupLocked() {
 
 	e.route.Release()
 	tcpip.DeleteDanglingEndpoint(e)
+}
+
+// initialReceiveWindow returns the initial receive window to advertise in the
+// SYN/SYN-ACK.
+func (e *endpoint) initialReceiveWindow() int {
+	rcvWnd := e.receiveBufferAvailable()
+	if rcvWnd > math.MaxUint16 {
+		rcvWnd = math.MaxUint16
+	}
+	routeWnd := InitialCwnd * int(mssForRoute(&e.route)) * 2
+	if rcvWnd > routeWnd {
+		rcvWnd = routeWnd
+	}
+	return rcvWnd
+}
+
+// ModerateRecvBuf adjusts the receive buffer and the advertised window
+// based on the number of bytes copied to user space.
+func (e *endpoint) ModerateRecvBuf(copied int) {
+	e.rcvListMu.Lock()
+	if e.rcvAutoParams.disabled {
+		e.rcvListMu.Unlock()
+		return
+	}
+	now := time.Now()
+	if rtt := e.rcvAutoParams.rtt; rtt == 0 || now.Sub(e.rcvAutoParams.measureTime) < rtt {
+		e.rcvAutoParams.copied += copied
+		e.rcvListMu.Unlock()
+		return
+	}
+	prevRTTCopied := e.rcvAutoParams.copied + copied
+	prevCopied := e.rcvAutoParams.prevCopied
+	rcvWnd := 0
+	if prevRTTCopied > prevCopied {
+		// The minimal receive window based on what was copied by the app
+		// in the immediate preceding RTT and some extra buffer for 16
+		// segments to account for variations.
+		// We multiply by 2 to account for packet losses.
+		rcvWnd = prevRTTCopied*2 + 16*int(e.amss)
+
+		// Scale for slow start based on bytes copied in this RTT vs previous.
+		grow := (rcvWnd * (prevRTTCopied - prevCopied)) / prevCopied
+
+		// Multiply growth factor by 2 again to account for sender being
+		// in slow-start where the sender grows it's congestion window
+		// by 100% per RTT.
+		rcvWnd += grow * 2
+
+		// Make sure auto tuned buffer size can always receive upto 2x
+		// the initial window of 10 segments.
+		if minRcvWnd := int(e.amss) * InitialCwnd * 2; rcvWnd < minRcvWnd {
+			rcvWnd = minRcvWnd
+		}
+
+		// Cap the auto tuned buffer size by the maximum permissible
+		// receive buffer size.
+		if max := e.maxReceiveBufferSize(); rcvWnd > max {
+			rcvWnd = max
+		}
+
+		// We do not adjust downwards as that can cause the receiver to
+		// reject valid data that might already be in flight as the
+		// acceptable window will shrink.
+		if rcvWnd > e.rcvBufSize {
+			e.rcvBufSize = rcvWnd
+			e.notifyProtocolGoroutine(notifyReceiveWindowChanged)
+		}
+
+		// We only update prevCopied when we grow the buffer because in cases
+		// where prevCopied > prevRTTCopied the existing buffer is already big
+		// enough to handle the current rate and we don't need to do any
+		// adjustments.
+		e.rcvAutoParams.prevCopied = prevRTTCopied
+	}
+	e.rcvAutoParams.measureTime = now
+	e.rcvAutoParams.copied = 0
+	e.rcvListMu.Unlock()
 }
 
 // Read reads data from the endpoint.
@@ -821,6 +944,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 		wasZero := e.zeroReceiveWindow(scale)
 		e.rcvBufSize = size
+		e.rcvAutoParams.disabled = true
 		if wasZero && !e.zeroReceiveWindow(scale) {
 			mask |= notifyNonZeroReceiveWindow
 		}
@@ -1657,6 +1781,33 @@ func (e *endpoint) receiveBufferSize() int {
 	return size
 }
 
+func (e *endpoint) maxReceiveBufferSize() int {
+	var rs ReceiveBufferSizeOption
+	if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err != nil {
+		// As a fallback return the hardcoded max buffer size.
+		return MaxBufferSize
+	}
+	return rs.Max
+}
+
+// rcvWndScaleForHandshake computes the receive window scale to offer to the
+// peer when window scaling is enabled (true by default). If auto-tuning is
+// disabled then the window scaling factor is based on the size of the
+// receiveBuffer otherwise we use the max permissible receive buffer size to
+// compute the scale.
+func (e *endpoint) rcvWndScaleForHandshake() int {
+	bufSizeForScale := e.receiveBufferSize()
+
+	e.rcvListMu.Lock()
+	autoTuningDisabled := e.rcvAutoParams.disabled
+	e.rcvListMu.Unlock()
+	if autoTuningDisabled {
+		return FindWndScale(seqnum.Size(bufSizeForScale))
+	}
+
+	return FindWndScale(seqnum.Size(e.maxReceiveBufferSize()))
+}
+
 // updateRecentTimestamp updates the recent timestamp using the algorithm
 // described in https://tools.ietf.org/html/rfc7323#section-4.3
 func (e *endpoint) updateRecentTimestamp(tsVal uint32, maxSentAck seqnum.Value, segSeq seqnum.Value) {
@@ -1749,6 +1900,13 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	s.RcvBufSize = e.rcvBufSize
 	s.RcvBufUsed = e.rcvBufUsed
 	s.RcvClosed = e.rcvClosed
+	s.RcvAutoParams.MeasureTime = e.rcvAutoParams.measureTime
+	s.RcvAutoParams.CopiedBytes = e.rcvAutoParams.copied
+	s.RcvAutoParams.PrevCopiedBytes = e.rcvAutoParams.prevCopied
+	s.RcvAutoParams.RTT = e.rcvAutoParams.rtt
+	s.RcvAutoParams.RTTMeasureSeqNumber = e.rcvAutoParams.rttMeasureSeqNumber
+	s.RcvAutoParams.RTTMeasureTime = e.rcvAutoParams.rttMeasureTime
+	s.RcvAutoParams.Disabled = e.rcvAutoParams.disabled
 	e.rcvListMu.Unlock()
 
 	// Endpoint TCP Option state.
@@ -1802,13 +1960,13 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		RTTMeasureTime:   e.snd.rttMeasureTime,
 		Closed:           e.snd.closed,
 		RTO:              e.snd.rto,
-		SRTTInited:       e.snd.srttInited,
 		MaxPayloadSize:   e.snd.maxPayloadSize,
 		SndWndScale:      e.snd.sndWndScale,
 		MaxSentAck:       e.snd.maxSentAck,
 	}
 	e.snd.rtt.Lock()
 	s.Sender.SRTT = e.snd.rtt.srtt
+	s.Sender.SRTTInited = e.snd.rtt.srttInited
 	e.snd.rtt.Unlock()
 
 	if cubic, ok := e.snd.cc.(*cubicState); ok {
@@ -1855,4 +2013,8 @@ func (e *endpoint) State() uint32 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return uint32(e.state)
+}
+
+func mssForRoute(r *stack.Route) uint16 {
+	return uint16(r.MTU() - header.TCPMinimumSize)
 }
