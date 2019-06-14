@@ -121,9 +121,8 @@ type sender struct {
 	// rtt.srtt, rtt.rttvar, and rto are the "smoothed round-trip time",
 	// "round-trip time variation" and "retransmit timeout", as defined in
 	// section 2 of RFC 6298.
-	rtt        rtt
-	rto        time.Duration
-	srttInited bool
+	rtt rtt
+	rto time.Duration
 
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
@@ -150,8 +149,9 @@ type sender struct {
 type rtt struct {
 	sync.Mutex `state:"nosave"`
 
-	srtt   time.Duration
-	rttvar time.Duration
+	srtt       time.Duration
+	rttvar     time.Duration
+	srttInited bool
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
@@ -323,10 +323,10 @@ func (s *sender) sendAck() {
 // available. This is done in accordance with section 2 of RFC 6298.
 func (s *sender) updateRTO(rtt time.Duration) {
 	s.rtt.Lock()
-	if !s.srttInited {
+	if !s.rtt.srttInited {
 		s.rtt.rttvar = rtt / 2
 		s.rtt.srtt = rtt
-		s.srttInited = true
+		s.rtt.srttInited = true
 	} else {
 		diff := s.rtt.srtt - rtt
 		if diff < 0 {
