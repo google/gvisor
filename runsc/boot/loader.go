@@ -847,9 +847,17 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			// privileges.
 			Raw: true,
 		})}
+
+		// Enable SACK Recovery.
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
 			return nil, fmt.Errorf("failed to enable SACK: %v", err)
 		}
+
+		// Enable Receive Buffer Auto-Tuning.
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+		}
+
 		return &s, nil
 
 	default:
