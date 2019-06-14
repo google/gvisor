@@ -87,6 +87,7 @@ const (
 type protocol struct {
 	mu                         sync.Mutex
 	sackEnabled                bool
+	delayedAckEnabled          bool
 	sendBufferSize             SendBufferSizeOption
 	recvBufferSize             ReceiveBufferSizeOption
 	congestionControl          string
@@ -168,6 +169,12 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
+	case tcpip.DelayedAckEnabledOption:
+		p.mu.Lock()
+		p.delayedAckEnabled = bool(v)
+		p.mu.Unlock()
+		return nil
+
 	case SendBufferSizeOption:
 		if v.Min <= 0 || v.Default < v.Min || v.Default > v.Max {
 			return tcpip.ErrInvalidOptionValue
@@ -216,6 +223,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	case *SACKEnabled:
 		p.mu.Lock()
 		*v = SACKEnabled(p.sackEnabled)
+		p.mu.Unlock()
+		return nil
+
+	case *tcpip.DelayedAckEnabledOption:
+		p.mu.Lock()
+		*v = tcpip.DelayedAckEnabledOption(p.delayedAckEnabled)
 		p.mu.Unlock()
 		return nil
 

@@ -37,6 +37,9 @@ const (
 	// nDupAckThreshold is the number of duplicate ACK's required
 	// before fast-retransmit is entered.
 	nDupAckThreshold = 3
+
+	// delayedAckTimeout is the maximum delay before an ack is sent.
+	delayedAckTimeout = 40 * time.Millisecond
 )
 
 // congestionControl is an interface that must be implemented by any supported
@@ -140,6 +143,10 @@ type sender struct {
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
+
+	// delayedAckTimer is used to send a delayed ack. When it expires, an
+	// acknowledgement is sent if there is unacknowledged data.
+	delayedAckTimer timer `state:"nosave"`
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -1169,6 +1176,9 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq
 
 	// Remember the max sent ack.
 	s.maxSentAck = rcvNxt
+
+	// Disable the delayed-ack timer since we are acknowledging all data.
+	s.delayedAckTimer.disable()
 
 	// Every time a packet containing data is sent (including a
 	// retransmission), if SACK is enabled then use the conservative timer

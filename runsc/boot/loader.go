@@ -858,6 +858,11 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
 		}
 
+		// Enable Delayed Acks.
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.DelayedAckEnabledOption(true)); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+		}
+
 		return &s, nil
 
 	default:

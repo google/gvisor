@@ -4246,3 +4246,128 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		payloadSize *= 2
 	}
 }
+
+func TestDelayedAck(t *testing.T) {
+	// Check that when two data packets are sent back to back, only one
+	// ACK comes back.
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Enable delayed ACKs.
+	stk := c.Stack()
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.DelayedAckEnabledOption(true)); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	c.CreateConnected(789, 30000, nil)
+
+	// Send two packets of data.
+	data := []byte{1, 2, 3}
+	c.SendPacket(data, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck | header.TCPFlagPsh,
+		SeqNum:  790,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  30000,
+	})
+
+	c.SendPacket(data, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: c.Port,
+		Flags:   header.TCPFlagAck | header.TCPFlagPsh,
+		SeqNum:  793,
+		AckNum:  c.IRS.Add(1),
+		RcvWnd:  30000,
+	})
+
+	// Check that ACK is received.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(uint32(790+2*len(data))),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	c.CheckNoPacket("Packet received when there is nothing to send or ack")
+}
+
+func TestNoDelayedAckAfterThreshold(t *testing.T) {
+	// Check that when data exceeding the MTU is received, that it gets
+	// immediately acknowledged.
+	const maxPayload = 32
+	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
+	defer c.Cleanup()
+
+	stk := c.Stack()
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.DelayedAckEnabledOption(true)); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	c.CreateConnected(789, 30000, nil)
+
+	// Send 3 packets that won't amount to an MTU. Only one ACK should be
+	// sent.
+	data := make([]byte, maxPayload)
+	next := uint32(790)
+	for i := 0; i < 3; i++ {
+		c.SendPacket(data[:maxPayload/3], &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck | header.TCPFlagPsh,
+			SeqNum:  seqnum.Value(next),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		next += maxPayload / 3
+	}
+
+	// Check that ACK is received for everything.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(next),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	c.CheckNoPacket("Packet received when there is nothing to send or ack")
+
+	// Now send three packets that are MTU sized.
+	for i := 0; i < 3; i++ {
+		c.SendPacket(data, &context.Headers{
+			SrcPort: context.TestPort,
+			DstPort: c.Port,
+			Flags:   header.TCPFlagAck | header.TCPFlagPsh,
+			SeqNum:  seqnum.Value(next),
+			AckNum:  c.IRS.Add(1),
+			RcvWnd:  30000,
+		})
+		next += maxPayload
+	}
+
+	// Check that ACK is received for the first two.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(next-maxPayload),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	// Check that a delayed ACK is received for the third one.
+	checker.IPv4(t, c.GetPacket(),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(next),
+			checker.TCPFlags(header.TCPFlagAck),
+		),
+	)
+
+	c.CheckNoPacket("Packet received when there is nothing to send or ack")
+}

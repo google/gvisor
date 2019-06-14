@@ -491,6 +491,9 @@ type AvailableCongestionControlOption string
 // buffer moderation.
 type ModerateReceiveBufferOption bool
 
+// DelayedAckEnabledOption is used to enable/disable the use of delayed acks.
+type DelayedAckEnabledOption bool
+
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8

@@ -298,6 +298,10 @@ type endpoint struct {
 	// slowAck is a boolean (0 is false) and must be accessed atomically.
 	slowAck uint32
 
+	// delayAck controls whether this TCP endpoint will delay ACK's or
+	// ack immediately.
+	delayAck bool
+
 	// segmentQueue is used to hand received segments to the protocol
 	// goroutine. Segments are queued as long as the queue is not full,
 	// and dropped when it is.
@@ -443,6 +447,11 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 	var mrb tcpip.ModerateReceiveBufferOption
 	if err := stack.TransportProtocolOption(ProtocolNumber, &mrb); err == nil {
 		e.rcvAutoParams.disabled = !bool(mrb)
+	}
+
+	var delayedAckEnabled tcpip.DelayedAckEnabledOption
+	if err := stack.TransportProtocolOption(ProtocolNumber, &delayedAckEnabled); err == nil {
+		e.delayAck = bool(delayedAckEnabled)
 	}
 
 	if p := stack.GetTCPProbe(); p != nil {

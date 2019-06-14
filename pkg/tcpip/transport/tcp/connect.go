@@ -776,6 +776,8 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			e.snd.handleRcvdSegment(s)
 		}
 		s.decRef()
+		// Send an ACK for all processed packets if needed.
+		e.maybeSendAck()
 	}
 
 	// If the queue is not empty, make sure we'll wake up in the next
@@ -785,13 +787,28 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 	}
 
 	// Send an ACK for all processed packets if needed.
-	if e.rcv.rcvNxt != e.snd.maxSentAck {
-		e.snd.sendAck()
-	}
-
+	e.maybeSendAck()
 	e.resetKeepaliveTimer(true)
 
 	return nil
+}
+
+func (e *endpoint) maybeSendAck() {
+	unacked := e.snd.maxSentAck.Size(e.rcv.rcvNxt)
+	if unacked == 0 {
+		return
+	}
+
+	if !e.delayAck {
+		e.snd.sendAck()
+		return
+	}
+
+	if unacked >= seqnum.Size(e.amss)*2 {
+		e.snd.sendAck()
+	} else if !e.snd.delayedAckTimer.enabled() {
+		e.snd.delayedAckTimer.enable(delayedAckTimeout)
+	}
 }
 
 // keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
@@ -858,6 +875,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 		if e.snd != nil {
 			e.snd.resendTimer.cleanup()
+			e.snd.delayedAckTimer.cleanup()
 		}
 
 		if closeTimer != nil {
@@ -920,11 +938,16 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	e.keepalive.timer.init(&e.keepalive.waker)
 	defer e.keepalive.timer.cleanup()
 
+	// Initialize the delayed-ack timer.
+	var delayedAckWaker sleep.Waker
+	e.snd.delayedAckTimer.init(&delayedAckWaker)
+
 	// Tell waiters that the endpoint is connected and writable.
 	e.mu.Lock()
 	e.state = StateEstablished
 	drained := e.drainDone != nil
 	e.mu.Unlock()
+
 	if drained {
 		close(e.drainDone)
 		<-e.undrain
@@ -961,6 +984,19 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			f: func() *tcpip.Error {
 				if !e.snd.retransmitTimerExpired() {
 					return tcpip.ErrTimeout
+				}
+				return nil
+			},
+		},
+		{
+			w: &delayedAckWaker,
+			f: func() *tcpip.Error {
+				if !e.snd.delayedAckTimer.checkExpiration() {
+					return nil
+				}
+
+				if e.snd.maxSentAck != e.rcv.rcvNxt {
+					e.snd.sendAck()
 				}
 				return nil
 			},
