@@ -45,70 +45,79 @@ SocketPairKind IPv6TCPAcceptBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv6 TCP socket");
   return SocketPairKind{
-      description, TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM,
-                                                  0, /* dual_stack = */ false)};
+      description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+      TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM, 0,
+                                     /* dual_stack = */ false)};
 }
 
 SocketPairKind IPv4TCPAcceptBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv4 TCP socket");
   return SocketPairKind{
-      description, TCPAcceptBindSocketPairCreator(AF_INET, type | SOCK_STREAM,
-                                                  0, /* dual_stack = */ false)};
+      description, AF_INET, type | SOCK_STREAM, IPPROTO_TCP,
+      TCPAcceptBindSocketPairCreator(AF_INET, type | SOCK_STREAM, 0,
+                                     /* dual_stack = */ false)};
 }
 
 SocketPairKind DualStackTCPAcceptBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected dual stack TCP socket");
   return SocketPairKind{
-      description, TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM,
-                                                  0, /* dual_stack = */ true)};
+      description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+      TCPAcceptBindSocketPairCreator(AF_INET6, type | SOCK_STREAM, 0,
+                                     /* dual_stack = */ true)};
 }
 
 SocketPairKind IPv6UDPBidirectionalBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv6 UDP socket");
-  return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
-                                         AF_INET6, type | SOCK_DGRAM, 0,
-                                         /* dual_stack = */ false)};
+  return SocketPairKind{
+      description, AF_INET6, type | SOCK_DGRAM, IPPROTO_UDP,
+      UDPBidirectionalBindSocketPairCreator(AF_INET6, type | SOCK_DGRAM, 0,
+                                            /* dual_stack = */ false)};
 }
 
 SocketPairKind IPv4UDPBidirectionalBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv4 UDP socket");
-  return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
-                                         AF_INET, type | SOCK_DGRAM, 0,
-                                         /* dual_stack = */ false)};
+  return SocketPairKind{
+      description, AF_INET, type | SOCK_DGRAM, IPPROTO_UDP,
+      UDPBidirectionalBindSocketPairCreator(AF_INET, type | SOCK_DGRAM, 0,
+                                            /* dual_stack = */ false)};
 }
 
 SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected dual stack UDP socket");
-  return SocketPairKind{description, UDPBidirectionalBindSocketPairCreator(
-                                         AF_INET6, type | SOCK_DGRAM, 0,
-                                         /* dual_stack = */ true)};
+  return SocketPairKind{
+      description, AF_INET6, type | SOCK_DGRAM, IPPROTO_UDP,
+      UDPBidirectionalBindSocketPairCreator(AF_INET6, type | SOCK_DGRAM, 0,
+                                            /* dual_stack = */ true)};
 }
 
 SocketPairKind IPv4UDPUnboundSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
   return SocketPairKind{
-      description, UDPUnboundSocketPairCreator(AF_INET, type | SOCK_DGRAM, 0,
-                                               /* dual_stack = */ false)};
+      description, AF_INET, type | SOCK_DGRAM, IPPROTO_UDP,
+      UDPUnboundSocketPairCreator(AF_INET, type | SOCK_DGRAM, 0,
+                                  /* dual_stack = */ false)};
 }
 
 SocketKind IPv4UDPUnboundSocket(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "IPv4 UDP socket");
-  return SocketKind{description, UnboundSocketCreator(
-                                     AF_INET, type | SOCK_DGRAM, IPPROTO_UDP)};
+  return SocketKind{
+      description, AF_INET, type | SOCK_DGRAM, IPPROTO_UDP,
+      UnboundSocketCreator(AF_INET, type | SOCK_DGRAM, IPPROTO_UDP)};
 }
 
 SocketKind IPv4TCPUnboundSocket(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "IPv4 TCP socket");
-  return SocketKind{description, UnboundSocketCreator(
-                                     AF_INET, type | SOCK_STREAM, IPPROTO_TCP)};
+  return SocketKind{
+      description, AF_INET, type | SOCK_STREAM, IPPROTO_TCP,
+      UnboundSocketCreator(AF_INET, type | SOCK_STREAM, IPPROTO_TCP)};
 }
 
 }  // namespace testing

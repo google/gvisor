@@ -111,7 +111,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 		return nil, syserr.TranslateNetstackError(e)
 	}
 
-	return New(t, p.family, stype, protocol, wq, ep)
+	return New(t, p.family, stype, int(transProto), wq, ep)
 }
 
 // Pair just returns nil sockets (not supported).

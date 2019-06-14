@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
@@ -144,24 +145,56 @@ TEST(NetlinkRouteTest, GetPeerName) {
   EXPECT_EQ(addr.nl_pid, 0);
 }
 
-using IntSockOptTest = ::testing::TestWithParam<int>;
+// Parameters for GetSockOpt test. They are:
+// 0: Socket option to query.
+// 1: A predicate to run on the returned sockopt value. Should return true if
+//    the value is considered ok.
+// 2: A description of what the sockopt value is expected to be. Should complete
+//    the sentence "<value> was unexpected, expected <description>"
+using SockOptTest =
+    ::testing::TestWithParam<std::tuple<int, std::function<bool(int)>, std::string>>;
 
-TEST_P(IntSockOptTest, GetSockOpt) {
+TEST_P(SockOptTest, GetSockOpt) {
+  int sockopt = std::get<0>(GetParam());
+  auto verifier = std::get<1>(GetParam());
+  std::string verifier_description = std::get<2>(GetParam());
+
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
 
   int res;
   socklen_t len = sizeof(res);
 
-  EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, GetParam(), &res, &len),
+  EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, sockopt, &res, &len),
               SyscallSucceeds());
 
   EXPECT_EQ(len, sizeof(res));
-  EXPECT_GT(res, 0);
+  EXPECT_TRUE(verifier(res)) << absl::StrFormat(
+      "getsockopt(%d, SOL_SOCKET, %d, &res, &len) => res=%d was unexpected, "
+      "expected %s",
+      fd.get(), sockopt, res, verifier_description);
 }
 
-INSTANTIATE_TEST_SUITE_P(NetlinkRouteTest, IntSockOptTest,
-                         ::testing::Values(SO_SNDBUF, SO_RCVBUF));
+std::function<bool(int)> IsPositive() {
+  return [](int val) { return val > 0; };
+}
+
+std::function<bool(int)> IsEqual(int target) {
+  return [target](int val) { return val == target; };
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    NetlinkRouteTest, SockOptTest,
+    ::testing::Values(
+        std::make_tuple(SO_SNDBUF, IsPositive(), "positive send buffer size"),
+        std::make_tuple(SO_RCVBUF, IsPositive(),
+                        "positive receive buffer size"),
+        std::make_tuple(SO_TYPE, IsEqual(SOCK_RAW),
+                        absl::StrFormat("SOCK_RAW (%d)", SOCK_RAW)),
+        std::make_tuple(SO_DOMAIN, IsEqual(AF_NETLINK),
+                        absl::StrFormat("AF_NETLINK (%d)", AF_NETLINK)),
+        std::make_tuple(SO_PROTOCOL, IsEqual(NETLINK_ROUTE),
+                        absl::StrFormat("NETLINK_ROUTE (%d)", NETLINK_ROUTE))));
 
 // Validates the reponses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {

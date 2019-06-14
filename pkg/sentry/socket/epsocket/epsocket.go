@@ -668,12 +668,6 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType linux.SockType, name, outLen int) (interface{}, *syserr.Error) {
 	// TODO(b/124056281): Stop rejecting short optLen values in getsockopt.
 	switch name {
-	case linux.SO_TYPE:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-		return int32(skType), nil
-
 	case linux.SO_ERROR:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
