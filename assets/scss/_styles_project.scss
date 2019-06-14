@@ -72,3 +72,10 @@ a.doc-table-anchor {
 .td-default main section.td-cover-block p.lead strong {
     font-weight: bold;
 }
+
+.td-page,.td-section {
+    main a.header-link {
+        color: inherit;
+        font-size: 60%;
+    }
+}

@@ -10,3 +10,10 @@
 <script src="{{ $js.RelPermalink }}" integrity="{{ $js.Data.Integrity }}"></script>
 {{ end }}
 {{ partial "hooks/body-end.html" . }}
+
+<script type="text/javascript">
+  $("body.td-page,body.td-section").find("main h2,h3,h4").each(function() {
+    var fragment = $(this).attr('id');
+    $(this).append('&nbsp;<a href="#'+fragment+'" class="header-link"><i class="fas fa-link"></i></a>');
+  });
+</script>
