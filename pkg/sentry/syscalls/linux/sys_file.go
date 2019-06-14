@@ -2067,7 +2067,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	name = memfdPrefix + name
 
 	inode := tmpfs.NewMemfdInode(t, allowSeals)
-	dirent := fs.NewDirent(inode, name)
+	dirent := fs.NewDirent(t, inode, name)
 	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
 	// FMODE_READ | FMODE_WRITE.
 	file, err := inode.GetFile(t, dirent, fs.FileFlags{Read: true, Write: true})

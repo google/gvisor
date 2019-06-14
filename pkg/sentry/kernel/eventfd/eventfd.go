@@ -68,7 +68,7 @@ type EventOperations struct {
 // New creates a new event object with the supplied initial value and mode.
 func New(ctx context.Context, initVal uint64, semMode bool) *fs.File {
 	// name matches fs/eventfd.c:eventfd_file_create.
-	dirent := fs.NewDirent(anon.NewInode(ctx), "anon_inode:[eventfd]")
+	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[eventfd]")
 	// Release the initial dirent reference after NewFile takes a reference.
 	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &EventOperations{

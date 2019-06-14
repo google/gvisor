@@ -11,6 +11,7 @@ func (x *FileAsync) save(m state.Map) {
 	x.beforeSave()
 	m.Save("e", &x.e)
 	m.Save("requester", &x.requester)
+	m.Save("registered", &x.registered)
 	m.Save("recipientPG", &x.recipientPG)
 	m.Save("recipientTG", &x.recipientTG)
 	m.Save("recipientT", &x.recipientT)
@@ -20,6 +21,7 @@ func (x *FileAsync) afterLoad() {}
 func (x *FileAsync) load(m state.Map) {
 	m.Load("e", &x.e)
 	m.Load("requester", &x.requester)
+	m.Load("registered", &x.registered)
 	m.Load("recipientPG", &x.recipientPG)
 	m.Load("recipientTG", &x.recipientTG)
 	m.Load("recipientT", &x.recipientT)

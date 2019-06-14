@@ -73,7 +73,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	sattr, node := newInodeOperations(ctx, i.fileState.s, newFile, qids[0], mask, p9attr, false)
 
 	// Construct a positive Dirent.
-	return fs.NewDirent(fs.NewInode(node, dir.MountSource, sattr), name), nil
+	return fs.NewDirent(ctx, fs.NewInode(ctx, node, dir.MountSource, sattr), name), nil
 }
 
 // Creates a new Inode at name and returns its File based on the session's cache policy.
@@ -141,7 +141,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr, false)
 
 	// Construct the positive Dirent.
-	d := fs.NewDirent(fs.NewInode(iops, dir.MountSource, sattr), name)
+	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
 	defer d.DecRef()
 
 	// Construct the new file, caching the handles if allowed.
@@ -277,7 +277,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, attr, true)
 
 	// Construct the positive Dirent.
-	childDir := fs.NewDirent(fs.NewInode(iops, dir.MountSource, sattr), name)
+	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
 	i.session().endpoints.add(key, childDir, ep)
 	return childDir, nil
 }

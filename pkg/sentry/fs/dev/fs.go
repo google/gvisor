@@ -95,5 +95,5 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	}
 
 	// Construct the devtmpfs root.
-	return New(ctx, fs.NewNonCachingMountSource(f, flags), binderEnabled, ashmemEnabled), nil
+	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags), binderEnabled, ashmemEnabled), nil
 }

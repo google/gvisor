@@ -111,7 +111,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 				parent.copyMu.RUnlock()
 				return nil, false, err
 			}
-			d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+			d, err := NewDirent(ctx, newOverlayInode(ctx, entry, inode.MountSource), name), nil
 			parent.copyMu.RUnlock()
 			return d, true, err
 		}
@@ -201,7 +201,7 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 		parent.copyMu.RUnlock()
 		return nil, false, err
 	}
-	d, err := NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+	d, err := NewDirent(ctx, newOverlayInode(ctx, entry, inode.MountSource), name), nil
 	parent.copyMu.RUnlock()
 	return d, upperInode != nil, err
 }
@@ -245,7 +245,7 @@ func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name st
 	// overlay file.
 	overlayInode := newOverlayInode(ctx, entry, parent.Inode.MountSource)
 	// d will own the inode reference.
-	overlayDirent := NewDirent(overlayInode, name)
+	overlayDirent := NewDirent(ctx, overlayInode, name)
 	// The overlay file created below with NewFile will take a reference on
 	// the overlayDirent, and it should be the only thing holding a
 	// reference at the time of creation, so we must drop this reference.
@@ -422,7 +422,7 @@ func overlayBind(ctx context.Context, o *overlayEntry, parent *Dirent, name stri
 		inode.DecRef()
 		return nil, err
 	}
-	return NewDirent(newOverlayInode(ctx, entry, inode.MountSource), name), nil
+	return NewDirent(ctx, newOverlayInode(ctx, entry, inode.MountSource), name), nil
 }
 
 func overlayBoundEndpoint(o *overlayEntry, path string) transport.BoundEndpoint {
@@ -648,13 +648,13 @@ func NewTestOverlayDir(ctx context.Context, upper, lower *Inode, revalidate bool
 	fs := &overlayFilesystem{}
 	var upperMsrc *MountSource
 	if revalidate {
-		upperMsrc = NewRevalidatingMountSource(fs, MountSourceFlags{})
+		upperMsrc = NewRevalidatingMountSource(ctx, fs, MountSourceFlags{})
 	} else {
-		upperMsrc = NewNonCachingMountSource(fs, MountSourceFlags{})
+		upperMsrc = NewNonCachingMountSource(ctx, fs, MountSourceFlags{})
 	}
-	msrc := NewMountSource(&overlayMountSourceOperations{
+	msrc := NewMountSource(ctx, &overlayMountSourceOperations{
 		upper: upperMsrc,
-		lower: NewNonCachingMountSource(fs, MountSourceFlags{}),
+		lower: NewNonCachingMountSource(ctx, fs, MountSourceFlags{}),
 	}, fs, MountSourceFlags{})
 	overlay := &overlayEntry{
 		upper: upper,

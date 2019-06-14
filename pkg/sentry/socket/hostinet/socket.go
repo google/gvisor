@@ -288,7 +288,7 @@ func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outLe
 		}
 	case syscall.SOL_SOCKET:
 		switch name {
-		case syscall.SO_ERROR, syscall.SO_KEEPALIVE, syscall.SO_SNDBUF, syscall.SO_RCVBUF, syscall.SO_REUSEADDR, syscall.SO_TYPE:
+		case syscall.SO_ERROR, syscall.SO_KEEPALIVE, syscall.SO_SNDBUF, syscall.SO_RCVBUF, syscall.SO_REUSEADDR:
 			optlen = sizeofInt32
 		case syscall.SO_LINGER:
 			optlen = syscall.SizeofLinger

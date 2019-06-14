@@ -33,7 +33,7 @@ func NewInode(ctx context.Context) *fs.Inode {
 			User: fs.PermMask{Read: true, Write: true},
 		}, linux.ANON_INODE_FS_MAGIC),
 	}
-	return fs.NewInode(iops, fs.NewPseudoMountSource(), fs.StableAttr{
+	return fs.NewInode(ctx, iops, fs.NewPseudoMountSource(ctx), fs.StableAttr{
 		Type:      fs.Anonymous,
 		DeviceID:  PseudoDevice.DeviceID(),
 		InodeID:   PseudoDevice.NextIno(),

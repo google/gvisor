@@ -82,14 +82,14 @@ func (p *proc) newKernelDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode
 	}
 
 	children := map[string]*fs.Inode{
-		"hostname": newProcInode(&h, msrc, fs.SpecialFile, nil),
+		"hostname": newProcInode(ctx, &h, msrc, fs.SpecialFile, nil),
 		"shmall":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMALL, 10))),
 		"shmmax":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMMAX, 10))),
 		"shmmni":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMMNI, 10))),
 	}
 
 	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 func (p *proc) newVMDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
@@ -98,7 +98,7 @@ func (p *proc) newVMDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		"overcommit_memory": seqfile.NewSeqFileInode(ctx, &overcommitMemory{}, msrc),
 	}
 	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 func (p *proc) newSysDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
@@ -115,7 +115,7 @@ func (p *proc) newSysDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 
 	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 // hostname is the inode for a file containing the system hostname.

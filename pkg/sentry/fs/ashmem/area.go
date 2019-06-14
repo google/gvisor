@@ -116,8 +116,8 @@ func (a *Area) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MM
 
 	if a.tmpfsFile == nil {
 		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{})
-		tmpfsInode := fs.NewInode(tmpfsInodeOps, fs.NewPseudoMountSource(), fs.StableAttr{})
-		dirent := fs.NewDirent(tmpfsInode, namePrefix+"/"+a.name)
+		tmpfsInode := fs.NewInode(ctx, tmpfsInodeOps, fs.NewPseudoMountSource(ctx), fs.StableAttr{})
+		dirent := fs.NewDirent(ctx, tmpfsInode, namePrefix+"/"+a.name)
 		tmpfsFile, err := tmpfsInode.GetFile(ctx, dirent, fs.FileFlags{Read: true, Write: true})
 		// Drop the extra reference on the Dirent.
 		dirent.DecRef()

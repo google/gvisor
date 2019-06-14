@@ -28,10 +28,10 @@ type overlayMountSourceOperations struct {
 	lower *MountSource
 }
 
-func newOverlayMountSource(upper, lower *MountSource, flags MountSourceFlags) *MountSource {
+func newOverlayMountSource(ctx context.Context, upper, lower *MountSource, flags MountSourceFlags) *MountSource {
 	upper.IncRef()
 	lower.IncRef()
-	msrc := NewMountSource(&overlayMountSourceOperations{
+	msrc := NewMountSource(ctx, &overlayMountSourceOperations{
 		upper: upper,
 		lower: lower,
 	}, &overlayFilesystem{}, flags)
