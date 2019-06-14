@@ -67,7 +67,7 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 		return nil, syserror.EINVAL
 	}
 
-	return newDir(ctx, fs.NewMountSource(&superOperations{}, f, flags)), nil
+	return newDir(ctx, fs.NewMountSource(ctx, &superOperations{}, f, flags)), nil
 }
 
 // superOperations implements fs.MountSourceOperations, preventing caching.

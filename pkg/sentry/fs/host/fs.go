@@ -262,7 +262,7 @@ func childDentAttrs(ctx context.Context, d *fs.Dirent) map[string]fs.DentAttr {
 // newMountSource constructs a new host fs.MountSource
 // relative to a root path. The root should match the mount point.
 func newMountSource(ctx context.Context, root string, mounter fs.FileOwner, filesystem fs.Filesystem, flags fs.MountSourceFlags, dontTranslateOwnership bool) *fs.MountSource {
-	return fs.NewMountSource(&superOperations{
+	return fs.NewMountSource(ctx, &superOperations{
 		root:                   root,
 		inodeMappings:          make(map[uint64]string),
 		mounter:                mounter,

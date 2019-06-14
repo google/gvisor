@@ -128,7 +128,7 @@ func NewMemfdInode(ctx context.Context, allowSeals bool) *fs.Inode {
 	if allowSeals {
 		iops.seals = 0
 	}
-	return fs.NewInode(iops, fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+	return fs.NewInode(ctx, iops, fs.NewNonCachingMountSource(ctx, nil, fs.MountSourceFlags{}), fs.StableAttr{
 		Type:      fs.RegularFile,
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),

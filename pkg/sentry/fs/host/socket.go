@@ -118,7 +118,7 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
+func NewConnectedEndpoint(ctx context.Context, file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
 		path:  path,
 		queue: queue,
@@ -151,7 +151,7 @@ func (c *ConnectedEndpoint) Init() {
 func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.FileFlags) (*fs.File, error) {
 	f2 := fd.New(f.FD())
 	var q waiter.Queue
-	e, err := NewConnectedEndpoint(f2, &q, "" /* path */)
+	e, err := NewConnectedEndpoint(ctx, f2, &q, "" /* path */)
 	if err != nil {
 		f2.Release()
 		return nil, err.ToError()
@@ -162,7 +162,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 
 	e.Init()
 
-	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.NewWithDirent(ctx, d, ep, e.stype, flags), nil
 }
@@ -181,7 +181,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	}
 	f := fd.New(ownedfd)
 	var q waiter.Queue
-	e, err := NewConnectedEndpoint(f, &q, "" /* path */)
+	e, err := NewConnectedEndpoint(ctx, f, &q, "" /* path */)
 	if err != nil {
 		if saveable {
 			f.Close()
@@ -194,7 +194,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	e.srfd = srfd
 	e.Init()
 
-	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.New(ctx, ep, e.stype), nil
 }

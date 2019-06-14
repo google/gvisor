@@ -90,7 +90,7 @@ func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwn
 	// Manually set the CreateOps.
 	d.ramfsDir.CreateOps = d.newCreateOps()
 
-	return fs.NewInode(d, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -218,7 +218,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 				Links: 0,
 			})
 			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr)
-			return fs.NewInode(iops, dir.MountSource, fs.StableAttr{
+			return fs.NewInode(ctx, iops, dir.MountSource, fs.StableAttr{
 				DeviceID:  tmpfsDevice.DeviceID(),
 				InodeID:   tmpfsDevice.NextIno(),
 				BlockSize: usermem.PageSize,
@@ -262,7 +262,7 @@ type Symlink struct {
 // NewSymlink returns a new symlink with the provided permissions.
 func NewSymlink(ctx context.Context, target string, owner fs.FileOwner, msrc *fs.MountSource) *fs.Inode {
 	s := &Symlink{Symlink: *ramfs.NewSymlink(ctx, owner, target)}
-	return fs.NewInode(s, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -292,7 +292,7 @@ type Socket struct {
 // NewSocket returns a new socket with the provided permissions.
 func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
 	s := &Socket{Socket: *ramfs.NewSocket(ctx, socket, owner, perms)}
-	return fs.NewInode(s, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -329,7 +329,7 @@ func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, 
 	fifoIops := &Fifo{iops}
 
 	// Build a new Inode.
-	return fs.NewInode(fifoIops, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, fifoIops, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,

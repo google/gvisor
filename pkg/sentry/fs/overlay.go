@@ -104,7 +104,7 @@ func NewOverlayRoot(ctx context.Context, upper *Inode, lower *Inode, flags Mount
 		return nil, fmt.Errorf("cannot nest overlay in upper file of another overlay")
 	}
 
-	msrc := newOverlayMountSource(upper.MountSource, lower.MountSource, flags)
+	msrc := newOverlayMountSource(ctx, upper.MountSource, lower.MountSource, flags)
 	overlay, err := newOverlayEntry(ctx, upper, lower, true)
 	if err != nil {
 		msrc.DecRef()
@@ -127,7 +127,7 @@ func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode,
 	if !IsRegular(lower.StableAttr) {
 		return nil, fmt.Errorf("lower Inode is not a regular file")
 	}
-	msrc := newOverlayMountSource(upperMS, lower.MountSource, flags)
+	msrc := newOverlayMountSource(ctx, upperMS, lower.MountSource, flags)
 	overlay, err := newOverlayEntry(ctx, nil, lower, true)
 	if err != nil {
 		msrc.DecRef()
@@ -140,9 +140,9 @@ func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode,
 func newOverlayInode(ctx context.Context, o *overlayEntry, msrc *MountSource) *Inode {
 	var inode *Inode
 	if o.upper != nil {
-		inode = NewInode(nil, msrc, o.upper.StableAttr)
+		inode = NewInode(ctx, nil, msrc, o.upper.StableAttr)
 	} else {
-		inode = NewInode(nil, msrc, o.lower.StableAttr)
+		inode = NewInode(ctx, nil, msrc, o.lower.StableAttr)
 	}
 	inode.overlay = o
 	return inode

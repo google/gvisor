@@ -120,15 +120,15 @@ func TestSeqFile(t *testing.T) {
 	testSource.Init()
 
 	// Create a file that can be R/W.
-	m := fs.NewPseudoMountSource()
 	ctx := contexttest.Context(t)
+	m := fs.NewPseudoMountSource(ctx)
 	contents := map[string]*fs.Inode{
 		"foo": NewSeqFileInode(ctx, testSource, m),
 	}
 	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
-	inode := fs.NewInode(root, m, fs.StableAttr{Type: fs.Directory})
+	inode := fs.NewInode(ctx, root, m, fs.StableAttr{Type: fs.Directory})
 	dirent2, err := root.Lookup(ctx, inode, "foo")
 	if err != nil {
 		t.Fatalf("failed to walk to foo for n2: %v", err)
@@ -196,15 +196,15 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	testSource.update = true
 
 	// Create a file that can be R/W.
-	m := fs.NewPseudoMountSource()
 	ctx := contexttest.Context(t)
+	m := fs.NewPseudoMountSource(ctx)
 	contents := map[string]*fs.Inode{
 		"foo": NewSeqFileInode(ctx, testSource, m),
 	}
 	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
-	inode := fs.NewInode(root, m, fs.StableAttr{Type: fs.Directory})
+	inode := fs.NewInode(ctx, root, m, fs.StableAttr{Type: fs.Directory})
 	dirent2, err := root.Lookup(ctx, inode, "foo")
 	if err != nil {
 		t.Fatalf("failed to walk to foo for dirent2: %v", err)

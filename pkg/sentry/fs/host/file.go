@@ -109,7 +109,7 @@ func newFileFromDonatedFD(ctx context.Context, donated int, mounter fs.FileOwner
 		iops := inode.InodeOperations.(*inodeOperations)
 
 		name := fmt.Sprintf("host:[%d]", inode.StableAttr.InodeID)
-		dirent := fs.NewDirent(inode, name)
+		dirent := fs.NewDirent(ctx, inode, name)
 		defer dirent.DecRef()
 
 		if isTTY {

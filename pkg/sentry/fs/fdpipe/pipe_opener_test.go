@@ -359,7 +359,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
 	})
-	file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, pipeOps)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, pipeOps)
 
 	// Check that the file we opened points to a pipe with a non-empty read ahead buffer.
 	bufsize := len(pipeOps.readAheadBuffer)

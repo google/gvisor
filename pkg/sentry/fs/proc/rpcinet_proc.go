@@ -45,7 +45,7 @@ func newRPCInetInode(ctx context.Context, msrc *fs.MountSource, filepath string,
 		filepath:        filepath,
 		k:               kernel.KernelFromContext(ctx),
 	}
-	return newProcInode(f, msrc, fs.SpecialFile, nil)
+	return newProcInode(ctx, f, msrc, fs.SpecialFile, nil)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -141,7 +141,7 @@ func newRPCInetProcNet(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 // newRPCInetProcSysNet will build an inode for /proc/sys/net.
@@ -152,7 +152,7 @@ func newRPCInetProcSysNet(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 // newRPCInetSysNetCore builds the /proc/sys/net/core directory.
@@ -170,7 +170,7 @@ func newRPCInetSysNetCore(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 // newRPCInetSysNetIPv4Dir builds the /proc/sys/net/ipv4 directory.
@@ -213,5 +213,5 @@ func newRPCInetSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource) *fs.Inod
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }

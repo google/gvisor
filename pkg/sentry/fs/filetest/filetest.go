@@ -46,7 +46,7 @@ type TestFileOperations struct {
 // NewTestFile creates and initializes a new test file.
 func NewTestFile(tb testing.TB) *fs.File {
 	ctx := contexttest.Context(tb)
-	dirent := fs.NewDirent(anon.NewInode(ctx), "test")
+	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "test")
 	return fs.NewFile(ctx, dirent, fs.FileFlags{}, &TestFileOperations{})
 }
 

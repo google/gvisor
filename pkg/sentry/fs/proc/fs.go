@@ -77,5 +77,5 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 
 	// Construct the procfs root. Since procfs files are all virtual, we
 	// never want them cached.
-	return New(ctx, fs.NewNonCachingMountSource(f, flags), cgroups)
+	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags), cgroups)
 }

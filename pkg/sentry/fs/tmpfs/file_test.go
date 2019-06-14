@@ -26,9 +26,9 @@ import (
 )
 
 func newFileInode(ctx context.Context) *fs.Inode {
-	m := fs.NewCachingMountSource(&Filesystem{}, fs.MountSourceFlags{})
+	m := fs.NewCachingMountSource(ctx, &Filesystem{}, fs.MountSourceFlags{})
 	iops := NewInMemoryFile(ctx, usage.Tmpfs, fs.WithCurrentTime(ctx, fs.UnstableAttr{}))
-	return fs.NewInode(iops, m, fs.StableAttr{
+	return fs.NewInode(ctx, iops, m, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -38,7 +38,7 @@ func newFileInode(ctx context.Context) *fs.Inode {
 
 func newFile(ctx context.Context) *fs.File {
 	inode := newFileInode(ctx)
-	f, _ := inode.GetFile(ctx, fs.NewDirent(inode, "stub"), fs.FileFlags{Read: true, Write: true})
+	f, _ := inode.GetFile(ctx, fs.NewDirent(ctx, inode, "stub"), fs.FileFlags{Read: true, Write: true})
 	return f
 }
 

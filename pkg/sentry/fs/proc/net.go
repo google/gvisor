@@ -70,7 +70,7 @@ func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSo
 		}
 	}
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 // ifinet6 implements seqfile.SeqSource for /proc/net/if_inet6.

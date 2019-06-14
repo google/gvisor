@@ -102,7 +102,7 @@ func makeOverlayTestFiles(t *testing.T) []*overlayTestFile {
 	if err != nil {
 		t.Fatalf("failed to mount tmpfs: %v", err)
 	}
-	lowerRoot := fs.NewDirent(lower, "")
+	lowerRoot := fs.NewDirent(ctx, lower, "")
 
 	// Make a deep set of subdirectories that everyone shares.
 	next := lowerRoot

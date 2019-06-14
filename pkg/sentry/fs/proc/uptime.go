@@ -44,7 +44,7 @@ func newUptime(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
 		startTime:       ktime.NowFromContext(ctx),
 	}
-	return newProcInode(u, msrc, fs.SpecialFile, nil)
+	return newProcInode(ctx, u, msrc, fs.SpecialFile, nil)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

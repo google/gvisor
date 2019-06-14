@@ -251,7 +251,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	// Construct the MountSource with the session and superBlockFlags.
-	m := fs.NewMountSource(s, filesystem, superBlockFlags)
+	m := fs.NewMountSource(ctx, s, filesystem, superBlockFlags)
 
 	// Given that gofer files can consume host FDs, restrict the number
 	// of files that can be held by the cache.
@@ -286,7 +286,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	sattr, iops := newInodeOperations(ctx, s, s.attach, qid, valid, attr, false)
-	return fs.NewInode(iops, m, sattr), nil
+	return fs.NewInode(ctx, iops, m, sattr), nil
 }
 
 // newEndpointMaps creates a new endpointMaps.

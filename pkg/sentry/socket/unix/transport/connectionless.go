@@ -16,6 +16,7 @@ package transport
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -32,8 +33,13 @@ type connectionlessEndpoint struct {
 	baseEndpoint
 }
 
+var (
+	_ = BoundEndpoint((*connectionlessEndpoint)(nil))
+	_ = Endpoint((*connectionlessEndpoint)(nil))
+)
+
 // NewConnectionless creates a new unbound dgram endpoint.
-func NewConnectionless() Endpoint {
+func NewConnectionless(ctx context.Context) Endpoint {
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
 	ep.receiver = &queueReceiver{readQueue: &queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}}
 	return ep
@@ -72,12 +78,12 @@ func (e *connectionlessEndpoint) Close() {
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
-func (e *connectionlessEndpoint) BidirectionalConnect(ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
+func (e *connectionlessEndpoint) BidirectionalConnect(ctx context.Context, ce ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error {
 	return syserr.ErrConnectionRefused
 }
 
 // UnidirectionalConnect implements BoundEndpoint.UnidirectionalConnect.
-func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error) {
+func (e *connectionlessEndpoint) UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error) {
 	e.Lock()
 	r := e.receiver
 	e.Unlock()
@@ -96,12 +102,12 @@ func (e *connectionlessEndpoint) UnidirectionalConnect() (ConnectedEndpoint, *sy
 
 // SendMsg writes data and a control message to the specified endpoint.
 // This method does not block if the data cannot be written.
-func (e *connectionlessEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
+func (e *connectionlessEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	if to == nil {
-		return e.baseEndpoint.SendMsg(data, c, nil)
+		return e.baseEndpoint.SendMsg(ctx, data, c, nil)
 	}
 
-	connected, err := to.UnidirectionalConnect()
+	connected, err := to.UnidirectionalConnect(ctx)
 	if err != nil {
 		return 0, syserr.ErrInvalidEndpointState
 	}
@@ -124,8 +130,8 @@ func (e *connectionlessEndpoint) Type() linux.SockType {
 }
 
 // Connect attempts to connect directly to server.
-func (e *connectionlessEndpoint) Connect(server BoundEndpoint) *syserr.Error {
-	connected, err := server.UnidirectionalConnect()
+func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoint) *syserr.Error {
+	connected, err := server.UnidirectionalConnect(ctx)
 	if err != nil {
 		return err
 	}

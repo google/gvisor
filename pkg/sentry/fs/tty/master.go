@@ -46,7 +46,7 @@ func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwn
 		d:               d,
 	}
 
-	return fs.NewInode(iops, d.msrc, fs.StableAttr{
+	return fs.NewInode(ctx, iops, d.msrc, fs.StableAttr{
 		DeviceID: ptsDevice.DeviceID(),
 		// N.B. Linux always uses inode id 2 for ptmx. See
 		// fs/devpts/inode.c:mknod_ptmx.

@@ -68,7 +68,7 @@ func makeSubdir(ctx context.Context, msrc *fs.MountSource, root *Dir, subdir str
 // emptyDir returns an empty *ramfs.Dir with all permissions granted.
 func emptyDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	dir := NewDir(ctx, make(map[string]*fs.Inode), fs.RootOwner, fs.FilePermsFromMode(0777))
-	return fs.NewInode(dir, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, dir, msrc, fs.StableAttr{
 		DeviceID:  anon.PseudoDevice.DeviceID(),
 		InodeID:   anon.PseudoDevice.NextIno(),
 		BlockSize: usermem.PageSize,
