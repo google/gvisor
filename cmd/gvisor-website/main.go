@@ -97,6 +97,14 @@ func hostRedirectHandler(h http.Handler) http.Handler {
 			http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
+
+		if *projectId != "" && r.Host == *projectId+".appspot.com" && *customHost != "" {
+			// Redirect to the custom domain.
+			r.URL.Scheme = "https" // Assume https.
+			r.URL.Host = *customHost
+			http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
+			return
+		}
 		h.ServeHTTP(w, r)
 	})
 }
@@ -210,6 +218,9 @@ func envFlagString(name, def string) string {
 var (
 	addr      = flag.String("http", envFlagString("HTTP", ":8080"), "HTTP service address")
 	staticDir = flag.String("static-dir", envFlagString("STATIC_DIR", "static"), "static files directory")
+	// Uses the standard GOOGLE_CLOUD_PROJECT environment variable set by App Engine.
+	projectId  = flag.String("project-id", envFlagString("GOOGLE_CLOUD_PROJECT", ""), "The App Engine project ID.")
+	customHost = flag.String("custom-domain", envFlagString("CUSTOM_DOMAIN", "gvisor.dev"), "The application's custom domain.")
 )
 
 func main() {
