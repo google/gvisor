@@ -234,6 +234,9 @@ type SocketOperations struct {
 	readMu sync.Mutex `state:"nosave"`
 	// readView contains the remaining payload from the last packet.
 	readView buffer.View
+	// readViewOrig is the original slice header we got from the underlying
+	// endpoint. This is used to return the view to the pool.
+	readViewOrig buffer.View `state:"nosave"`
 	// readCM holds control message information for the last packet read
 	// from Endpoint.
 	readCM tcpip.ControlMessages
@@ -359,7 +362,11 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 	if len(s.readView) > 0 {
 		return nil
 	}
-
+	// Return the view to the buffer pool.
+	if s.readViewOrig != nil {
+		buffer.PutView(s.readViewOrig)
+		s.readViewOrig = nil
+	}
 	s.readView = nil
 	s.sender = tcpip.FullAddress{}
 
@@ -369,6 +376,7 @@ func (s *SocketOperations) fetchReadView() *syserr.Error {
 	}
 
 	s.readView = v
+	s.readViewOrig = v
 	s.readCM = cms
 
 	return nil

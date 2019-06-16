@@ -628,7 +628,6 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 	if (flags & header.TCPFlagRst) != 0 {
 		r.Stats().TCP.ResetsSent.Increment()
 	}
-
 	return r.WritePacket(gso, hdr, data, ProtocolNumber, ttl)
 }
 

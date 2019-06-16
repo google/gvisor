@@ -472,6 +472,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 
 	src, dst := netProto.ParseAddresses(vv.First())
 
+	remoteIsNotLocal := n.stack.CheckLocalAddress(0, protocol, src) == 0
 	// If the packet is destined to the IPv4 Broadcast address, then make a
 	// route to each IPv4 network endpoint and let each endpoint handle the
 	// packet.
@@ -480,7 +481,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 		n.mu.RLock()
 		for _, ref := range n.endpoints {
 			if ref.protocol == header.IPv4ProtocolNumber && ref.tryIncRef() {
-				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* handleLocal */, false /* multicastLoop */)
+				r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* handleLocal */, false /* multicastLoop */, remoteIsNotLocal)
 				r.RemoteLinkAddress = remote
 				ref.ep.HandlePacket(&r, vv)
 				ref.decRef()
@@ -491,7 +492,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	}
 
 	if ref := n.getRef(protocol, dst); ref != nil {
-		r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* handleLocal */, false /* multicastLoop */)
+		r := makeRoute(protocol, dst, src, linkEP.LinkAddress(), ref, false /* handleLocal */, false /* multicastLoop */, remoteIsNotLocal)
 		r.RemoteLinkAddress = remote
 		ref.ep.HandlePacket(&r, vv)
 		ref.decRef()

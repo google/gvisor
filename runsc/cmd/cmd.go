@@ -93,6 +93,6 @@ func callSelfAsNobody(args []string) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := syscall.Exec(binPath, args, []string{})
+	err := syscall.Exec(binPath, args, []string{"GODEBUG=gctrace=5000,schedtrace=5000"})
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }

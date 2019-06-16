@@ -381,7 +381,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 		reg      bool
 		notifyCh chan struct{}
 	)
-	for nbytes < len(b) && (err == tcpip.ErrWouldBlock || err == nil) {
+	for nbytes < len(v) && (err == tcpip.ErrWouldBlock || err == nil) {
 		if err == tcpip.ErrWouldBlock {
 			if !reg {
 				// Only register once.

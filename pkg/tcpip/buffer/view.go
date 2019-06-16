@@ -15,13 +15,176 @@
 // Package buffer provides the implementation of a buffer view.
 package buffer
 
+import (
+	"log"
+	"runtime/debug"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
 // View is a slice of a buffer, with convenience methods.
 type View []byte
+
+type counter struct {
+	count int64
+}
+
+func (c *counter) inc() {
+	atomic.AddInt64(&c.count, 1)
+}
+
+func (c *counter) get() int64 {
+	return atomic.LoadInt64(&c.count)
+}
+
+// overall memory allocation metrics, metrics must be accessed
+// using atomic operations.
+var viewPoolAllocationMetrics = struct {
+	// Number of allocations made from one of the pools.
+	allocations *counter
+
+	// Number of deallocations where the allocation was returned to a pool.
+	deallocations *counter
+
+	// Number of allocations that were not served by a pool.
+	goAllocations *counter
+
+	// Number of deallocations that were not returned to the pool.
+	goDeallocations *counter
+}{&counter{}, &counter{}, &counter{}, &counter{}}
+
+type viewPool struct {
+	statIdx int
+	sz      int
+	pool    sync.Pool
+}
+
+func makeNew(idx int, sz int) func() interface{} {
+	return func() interface{} {
+		poolStats[idx].realAllocations.inc()
+		return make(View, sz)
+	}
+}
+
+func newViewPool(statIdx int, sz int) *viewPool {
+	return &viewPool{
+		statIdx: statIdx,
+		sz:      sz,
+		pool:    sync.Pool{New: makeNew(statIdx, sz)},
+	}
+}
+
+func (p *viewPool) Get() View {
+	return p.pool.Get().(View)
+}
+
+func (p *viewPool) Put(v View) {
+	p.pool.Put(v)
+}
+
+type poolStat struct {
+	// Number of times New() was used to allocate a buffer.
+	realAllocations *counter
+
+	// Number of times pool.Get() was used to get a buffer.
+	totalAllocations *counter
+
+	// Number of times pool.Put() was used to return a buffer to the pool.
+	deallocations *counter
+}
+
+const numPools = 11
+
+func makePools(num int) []*viewPool {
+	var viewPools []*viewPool
+	sz := 64
+	for i := 0; i < num; i++ {
+		viewPools = append(viewPools, newViewPool(i, sz))
+		sz *= 2
+	}
+	return viewPools
+}
+
+var viewPools = makePools(numPools)
+
+func makePoolStats(num int) []poolStat {
+	var poolStats []poolStat
+	for i := 0; i < num; i++ {
+		poolStats = append(poolStats, poolStat{new(counter), new(counter), new(counter)})
+	}
+	return poolStats
+}
+
+var poolStats = makePoolStats(numPools)
+
+var printerStarted int64
+
+func printPoolStats() {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	stats := &viewPoolAllocationMetrics
+	for {
+		<-t.C
+		log.Printf("Allocations: %d, deallocations: %d, goAllocations: %d, goDeallocations: %d", stats.allocations.get(), stats.deallocations.get(), stats.goAllocations.get(), stats.goDeallocations.get())
+		for i := 0; i < len(viewPools); i++ {
+			log.Printf("Pool SZ: %d, realAllocations: %d, totalAllocations: %d, deallocations: %d", viewPools[i].sz, poolStats[i].realAllocations.get(), poolStats[i].totalAllocations.get(), poolStats[i].deallocations.get())
+		}
+		var gcStats debug.GCStats
+		gcStats.PauseQuantiles = make([]time.Duration, 5)
+		debug.ReadGCStats(&gcStats)
+		log.Printf("gcstats: PauseQuantiles: %v", gcStats.PauseQuantiles)
+	}
+}
 
 // NewView allocates a new buffer and returns an initialized view that covers
 // the whole buffer.
 func NewView(size int) View {
-	return make(View, size)
+	if atomic.CompareAndSwapInt64(&printerStarted, 0, 1) {
+		go printPoolStats()
+	}
+	stats := &viewPoolAllocationMetrics
+	if size < viewPools[0].sz || size > viewPools[len(viewPools)-1].sz {
+		stats.goAllocations.inc()
+		return make(View, size)
+	}
+	// Now the size is requested has to be one that can be served
+	// by one of the pool sizes.
+	i := 0
+	for ; i < len(viewPools); i++ {
+		if size <= viewPools[i].sz {
+			break
+		}
+	}
+	stats.allocations.inc()
+	poolStats[i].totalAllocations.inc()
+	v := viewPools[i].Get()
+	capView(&v, size)
+	for i := range v {
+		v[i] = 0
+	}
+	return v
+}
+
+// PutView returns a view to the buffer pool.
+func PutView(v View) {
+	stats := &viewPoolAllocationMetrics
+	if cap(v) < viewPools[0].sz || cap(v) > viewPools[len(viewPools)-1].sz {
+		// Let GC recycle these buffers.
+		stats.goDeallocations.inc()
+		return
+	}
+	// Now the View size has to be returnable to one of our pools.
+	// Return the buffer to the pool which is of a smaller size
+	// than the view length but closest to it.
+	for i := len(viewPools) - 1; i >= 0; i-- {
+		if cap(v) >= viewPools[i].sz {
+			stats.deallocations.inc()
+			poolStats[i].deallocations.inc()
+			viewPools[i].Put(v)
+			break
+		}
+	}
 }
 
 // NewViewFromBytes allocates a new buffer and copies in the given bytes.

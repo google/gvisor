@@ -842,8 +842,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
+			remoteIsNotLocal := s.checkLocalAddressLocked(0, netProto, remoteAddr) == 0
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback), nil
+				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback, remoteIsNotLocal), nil
 			}
 		}
 	} else {
@@ -859,7 +860,8 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
-					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback)
+					remoteIsNotLocal := s.checkLocalAddressLocked(0, netProto, remoteAddr) == 0
+					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback, remoteIsNotLocal)
 					if needRoute {
 						r.NextHop = route.Gateway
 					}
@@ -883,13 +885,12 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 	return ok
 }
 
-// CheckLocalAddress determines if the given local address exists, and if it
+// checkLocalAddressLocked determines if the given local address exists, and if it
 // does, returns the id of the NIC it's bound to. Returns 0 if the address
 // does not exist.
-func (s *Stack) CheckLocalAddress(nicid tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+//
+// s.mu must be at least read locked when calling this function.
+func (s *Stack) checkLocalAddressLocked(nicid tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
 	// If a NIC is specified, we try to find the address there only.
 	if nicid != 0 {
 		nic := s.nics[nicid]
@@ -917,6 +918,15 @@ func (s *Stack) CheckLocalAddress(nicid tcpip.NICID, protocol tcpip.NetworkProto
 	}
 
 	return 0
+}
+
+// CheckLocalAddress determines if the given local address exists, and if it
+// does, returns the id of the NIC it's bound to. Returns 0 if the address
+// does not exist.
+func (s *Stack) CheckLocalAddress(nicid tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.checkLocalAddressLocked(nicid, protocol, addr)
 }
 
 // SetPromiscuousMode enables or disables promiscuous mode in the given NIC.

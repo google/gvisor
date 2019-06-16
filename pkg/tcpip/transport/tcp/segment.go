@@ -67,7 +67,6 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.Vectoris
 		route:  r.Clone(),
 	}
 	s.data = vv.Clone(s.views[:])
-	s.rcvdTime = time.Now()
 	return s
 }
 
@@ -79,7 +78,6 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 	}
 	s.views[0] = v
 	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
-	s.rcvdTime = time.Now()
 	return s
 }
 
@@ -105,6 +103,18 @@ func (s *segment) flagIsSet(flag uint8) bool {
 
 func (s *segment) decRef() {
 	if atomic.AddInt32(&s.refCnt, -1) == 0 {
+		// We can only reclaim buffers here if the following conditions hold
+		//   - route is not local i.e at least of the endpoints is not local.
+		//   - rcvdTime is not set, which means this was a segment used for
+		//     sending.
+		// Buffers used by received segments are reaped when they are delivered
+		// to the user and we don't need to recycle them here.
+		if s.route.RemoteIsNotLocal() && s.rcvdTime.IsZero() {
+			for v := s.data.First(); v != nil && len(v) != 0; v = s.data.First() {
+				buffer.PutView(v)
+				s.data.RemoveFirst()
+			}
+		}
 		s.route.Release()
 	}
 }

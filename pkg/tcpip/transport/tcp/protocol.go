@@ -23,6 +23,7 @@ package tcp
 import (
 	"strings"
 	"sync"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -131,6 +132,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 // means."
 func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) bool {
 	s := newSegment(r, id, vv)
+	s.rcvdTime = time.Now()
 	defer s.decRef()
 
 	if !s.parse() || !s.csumValid {

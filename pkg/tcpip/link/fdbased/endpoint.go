@@ -380,14 +380,12 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 				vnetHdr.gsoSize = gso.MSS
 			}
 		}
-
 		return rawfile.NonBlockingWrite3(e.fds[0], vnetHdrBuf, hdr.View(), payload.ToView())
 	}
 
 	if payload.Size() == 0 {
 		return rawfile.NonBlockingWrite(e.fds[0], hdr.View())
 	}
-
 	return rawfile.NonBlockingWrite3(e.fds[0], hdr.View(), payload.ToView(), nil)
 }
 

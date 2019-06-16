@@ -49,18 +49,21 @@ type Route struct {
 
 	// loop controls where WritePacket should send packets.
 	loop PacketLooping
+
+	// RemoteIsNotLocal is true, if the remote address specified is not
+	// local to the stack.
+	remoteIsNotLocal bool
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // reference to a network endpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, handleLocal, multicastLoop bool) Route {
+func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, handleLocal, multicastLoop, remoteIsNotLocal bool) Route {
 	loop := PacketOut
 	if handleLocal && localAddr != "" && remoteAddr == localAddr {
 		loop = PacketLoop
 	} else if multicastLoop && (header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)) {
 		loop |= PacketLoop
 	}
-
 	return Route{
 		NetProto:         netProto,
 		LocalAddress:     localAddr,
@@ -68,6 +71,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		RemoteAddress:    remoteAddr,
 		ref:              ref,
 		loop:             loop,
+		remoteIsNotLocal: remoteIsNotLocal,
 	}
 }
 
@@ -196,4 +200,10 @@ func (r *Route) MakeLoopedRoute() Route {
 		l.RemoteLinkAddress = l.LocalLinkAddress
 	}
 	return l
+}
+
+// RemoteIsNotLocal returns true if the RemoteAddr is not local to the this
+// instance of the stack.
+func (r *Route) RemoteIsNotLocal() bool {
+	return r.remoteIsNotLocal
 }
