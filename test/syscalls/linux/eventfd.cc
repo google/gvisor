@@ -53,9 +53,9 @@ TEST(EventfdTest, Nonblock) {
 void* read_three_times(void* arg) {
   int efd = *reinterpret_cast<int*>(arg);
   uint64_t l;
-  read(efd, &l, sizeof(l));
-  read(efd, &l, sizeof(l));
-  read(efd, &l, sizeof(l));
+  EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
+  EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
+  EXPECT_THAT(read(efd, &l, sizeof(l)), SyscallSucceedsWithValue(sizeof(l)));
   return nullptr;
 }
 
@@ -160,7 +160,7 @@ TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
   ScopedThread t([&efd] {
     sleep(5);
     uint64_t val = 1;
-    write(efd.get(), &val, sizeof(val));
+    EXPECT_THAT(write(efd.get(), &val, sizeof(val)), SyscallSucceedsWithValue(sizeof(val)));
   });
 
   // epoll_wait should return once the thread writes.
