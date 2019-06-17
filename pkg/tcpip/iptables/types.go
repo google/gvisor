@@ -15,8 +15,6 @@
 package iptables
 
 import (
-	"sync"
-
 	"gvisor.googlesource.com/gvisor/pkg/tcpip"
 	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
 )
@@ -98,9 +96,6 @@ const (
 
 // IPTables holds all the tables for a netstack.
 type IPTables struct {
-	// Mu protects the entire struct.
-	Mu sync.RWMutex
-
 	// Tables maps table names to tables. User tables have arbitrary names.
 	Tables map[string]Table
 
@@ -136,8 +131,6 @@ type Table struct {
 }
 
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
-//
-// Precondition: IPTables.mu must be locked for reading.
 func (table *Table) ValidHooks() (uint32, *tcpip.Error) {
 	hooks := uint32(0)
 	for hook, _ := range table.BuiltinChains {
