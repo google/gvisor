@@ -42,6 +42,7 @@ cc_binary(
     name = "exec_state_workload",
     testonly = 1,
     srcs = ["exec_state_workload.cc"],
+    deps = ["@com_google_absl//absl/strings"],
 )
 
 sh_binary(
