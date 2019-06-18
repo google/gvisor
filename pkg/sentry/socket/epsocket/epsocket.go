@@ -262,7 +262,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 
 	dirent := socket.NewDirent(t, epsocketDevice)
 	defer dirent.DecRef()
-	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
+	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, &SocketOperations{
 		Queue:    queue,
 		family:   family,
 		Endpoint: endpoint,

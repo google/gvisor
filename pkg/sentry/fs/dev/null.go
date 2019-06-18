@@ -97,6 +97,7 @@ func newZeroDevice(ctx context.Context, owner fs.FileOwner, mode linux.FileMode)
 func (zd *zeroDevice) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
 	flags.Pread = true
 	flags.Pwrite = true
+	flags.NonSeekable = true
 
 	return fs.NewFile(ctx, dirent, flags, &zeroFileOperations{}), nil
 }

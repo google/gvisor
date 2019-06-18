@@ -89,7 +89,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 
 	d := socket.NewDirent(t, netlinkSocketDevice)
 	defer d.DecRef()
-	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true}, s), nil
+	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
 // Pair implements socket.Provider.Pair by returning an error.

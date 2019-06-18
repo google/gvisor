@@ -162,6 +162,7 @@ func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.
 //
 // Precondition: at least one of flags.Read or flags.Write must be set.
 func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.File {
+	flags.NonSeekable = true
 	switch {
 	case flags.Read && flags.Write:
 		p.rOpen()
