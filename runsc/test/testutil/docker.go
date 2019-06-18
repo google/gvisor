@@ -15,6 +15,7 @@
 package testutil
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -30,10 +31,15 @@ import (
 	"github.com/kr/pty"
 )
 
+var runtimeType = flag.String("runtime-type", "", "specify which runtime to use: kvm, hostnet, overlay")
+
 func getRuntime() string {
 	r, ok := os.LookupEnv("RUNSC_RUNTIME")
 	if !ok {
-		return "runsc-test"
+		r = "runsc-test"
+	}
+	if *runtimeType != "" {
+		r += "-" + *runtimeType
 	}
 	return r
 }
