@@ -353,6 +353,7 @@ func (x *FileFlags) save(m state.Map) {
 	m.Save("Directory", &x.Directory)
 	m.Save("Async", &x.Async)
 	m.Save("LargeFile", &x.LargeFile)
+	m.Save("NonSeekable", &x.NonSeekable)
 }
 
 func (x *FileFlags) afterLoad() {}
@@ -368,6 +369,7 @@ func (x *FileFlags) load(m state.Map) {
 	m.Load("Directory", &x.Directory)
 	m.Load("Async", &x.Async)
 	m.Load("LargeFile", &x.LargeFile)
+	m.Load("NonSeekable", &x.NonSeekable)
 }
 
 func (x *Inode) beforeSave() {}

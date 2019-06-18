@@ -267,7 +267,7 @@ func (f *File) Readv(ctx context.Context, dst usermem.IOSequence) (int64, error)
 
 	reads.Increment()
 	n, err := f.FileOperations.Read(ctx, f, dst, f.offset)
-	if n > 0 {
+	if n > 0 && !f.flags.NonSeekable {
 		atomic.AddInt64(&f.offset, n)
 	}
 	f.mu.Unlock()
@@ -330,7 +330,7 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 
 	// We must hold the lock during the write.
 	n, err := f.FileOperations.Write(ctx, f, src, f.offset)
-	if n >= 0 {
+	if n >= 0 && !f.flags.NonSeekable {
 		atomic.StoreInt64(&f.offset, f.offset+n)
 	}
 	f.mu.Unlock()

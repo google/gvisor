@@ -77,7 +77,7 @@ func newSocketFile(ctx context.Context, family int, stype linux.SockType, protoc
 	}
 	dirent := socket.NewDirent(ctx, socketDevice)
 	defer dirent.DecRef()
-	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true}, s), nil
+	return fs.NewFile(ctx, dirent, fs.FileFlags{NonBlocking: nonblock, Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
 // Release implements fs.FileOperations.Release.

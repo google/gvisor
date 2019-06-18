@@ -64,7 +64,7 @@ type SocketOperations struct {
 func New(ctx context.Context, endpoint transport.Endpoint, stype linux.SockType) *fs.File {
 	dirent := socket.NewDirent(ctx, unixSocketDevice)
 	defer dirent.DecRef()
-	return NewWithDirent(ctx, dirent, endpoint, stype, fs.FileFlags{Read: true, Write: true})
+	return NewWithDirent(ctx, dirent, endpoint, stype, fs.FileFlags{Read: true, Write: true, NonSeekable: true})
 }
 
 // NewWithDirent creates a new unix socket using an existing dirent.

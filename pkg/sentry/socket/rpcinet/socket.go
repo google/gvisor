@@ -322,7 +322,13 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 
 	dirent := socket.NewDirent(t, socketDevice)
 	defer dirent.DecRef()
-	file := fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonBlocking: flags&linux.SOCK_NONBLOCK != 0}, &socketOperations{
+	fileFlags := fs.FileFlags{
+		Read:        true,
+		Write:       true,
+		NonSeekable: true,
+		NonBlocking: flags&linux.SOCK_NONBLOCK != 0,
+	}
+	file := fs.NewFile(t, dirent, fileFlags, &socketOperations{
 		wq:       &wq,
 		fd:       payload.Fd,
 		rpcConn:  s.rpcConn,
