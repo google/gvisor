@@ -92,6 +92,14 @@ build_everything() {
     "${BUILD_PACKAGES[@]}"
 }
 
+build_runsc_debian() {
+  cd ${WORKSPACE_DIR}
+
+  # TODO(b/135475885): pkg_deb is incompatible with Python3.
+  # https://github.com/bazelbuild/bazel/issues/8443
+  bazel build --host_force_python=py2 runsc:runsc-debian
+}
+
 # Run simple tests runs the tests that require no special setup or
 # configuration.
 run_simple_tests() {
@@ -276,6 +284,8 @@ main() {
 
   run_syscall_tests
   run_runsc_do_tests
+
+  build_runsc_debian
 
   # Build other flavors too.
   build_everything dbg

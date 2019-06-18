@@ -96,6 +96,11 @@ pkg_deb(
     maintainer = "The gVisor Authors <gvisor-dev@googlegroups.com>",
     package = "runsc",
     postinst = "debian/postinst.sh",
+    tags = [
+        # TODO(b/135475885): pkg_deb requires python2:
+        # https://github.com/bazelbuild/bazel/issues/8443
+        "manual",
+    ],
     version_file = ":version.txt",
     visibility = [
         "//visibility:public",
