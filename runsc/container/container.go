@@ -262,7 +262,15 @@ type Args struct {
 	PIDFile string
 
 	// UserLog is the filename to send user-visible logs to. It may be empty.
+	//
+	// It only applies for the init container.
 	UserLog string
+
+	// Attached indicates that the sandbox lifecycle is attached with the caller.
+	// If the caller exits, the sandbox should exit too.
+	//
+	// It only applies for the init container.
+	Attached bool
 }
 
 // Create creates the container in a new Sandbox process, unless the metadata
@@ -349,6 +357,7 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 				IOFiles:       ioFiles,
 				MountsFile:    specFile,
 				Cgroup:        cg,
+				Attached:      args.Attached,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -499,7 +508,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 }
 
 // Run is a helper that calls Create + Start + Wait.
-func Run(conf *boot.Config, args Args, detach bool) (syscall.WaitStatus, error) {
+func Run(conf *boot.Config, args Args) (syscall.WaitStatus, error) {
 	log.Debugf("Run container %q in root dir: %s", args.ID, conf.RootDir)
 	c, err := New(conf, args)
 	if err != nil {
@@ -522,11 +531,11 @@ func Run(conf *boot.Config, args Args, detach bool) (syscall.WaitStatus, error) 
 			return 0, fmt.Errorf("starting container: %v", err)
 		}
 	}
-	if detach {
-		cu.Release()
-		return 0, nil
+	if args.Attached {
+		return c.Wait()
 	}
-	return c.Wait()
+	cu.Release()
+	return 0, nil
 }
 
 // Execute runs the specified command in the container. It returns the PID of

@@ -39,9 +39,10 @@ import (
 // Do implements subcommands.Command for the "do" command. It sets up a simple
 // sandbox and executes the command inside it. See Usage() for more details.
 type Do struct {
-	root string
-	cwd  string
-	ip   string
+	root  string
+	cwd   string
+	ip    string
+	quiet bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -71,6 +72,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
 	f.StringVar(&c.cwd, "cwd", ".", "path to the current directory, defaults to the current directory")
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
+	f.BoolVar(&c.quiet, "quiet", false, "suppress runsc messages to stdout. Application output is still sent to stdout and stderr")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -134,7 +136,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 
 	} else if conf.Rootless {
 		if conf.Network == boot.NetworkSandbox {
-			fmt.Println("*** Rootless requires changing network type to host ***")
+			c.notifyUser("*** Warning: using host network due to --rootless ***")
 			conf.Network = boot.NetworkHost
 		}
 
@@ -168,14 +170,22 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		ID:        cid,
 		Spec:      spec,
 		BundleDir: tmpDir,
+		Attached:  true,
 	}
-	ws, err := container.Run(conf, runArgs, false)
+	ws, err := container.Run(conf, runArgs)
 	if err != nil {
 		return Errorf("running container: %v", err)
 	}
 
 	*waitStatus = ws
 	return subcommands.ExitSuccess
+}
+
+func (c *Do) notifyUser(format string, v ...interface{}) {
+	if !c.quiet {
+		fmt.Printf(format+"\n", v...)
+	}
+	log.Warningf(format, v...)
 }
 
 func resolvePath(path string) (string, error) {

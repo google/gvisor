@@ -103,6 +103,10 @@ type Args struct {
 
 	// Gcgroup is the cgroup that the sandbox is part of.
 	Cgroup *cgroup.Cgroup
+
+	// Attached indicates that the sandbox lifecycle is attached with the caller.
+	// If the caller exits, the sandbox should exit too.
+	Attached bool
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -648,6 +652,11 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	// Log the FDs we are donating to the sandbox process.
 	for i, f := range cmd.ExtraFiles {
 		log.Debugf("Donating FD %d: %q", i+3, f.Name())
+	}
+
+	if args.Attached {
+		// Kill sandbox if parent process exits in attached mode.
+		cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
 	}
 
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)

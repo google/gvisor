@@ -215,8 +215,9 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 		ID:        testutil.UniqueContainerID(),
 		Spec:      spec,
 		BundleDir: bundleDir,
+		Attached:  true,
 	}
-	ws, err := Run(conf, args, false)
+	ws, err := Run(conf, args)
 	if err != nil {
 		return fmt.Errorf("running container: %v", err)
 	}
@@ -430,8 +431,9 @@ func TestExePath(t *testing.T) {
 				ID:        testutil.UniqueContainerID(),
 				Spec:      spec,
 				BundleDir: bundleDir,
+				Attached:  true,
 			}
-			ws, err := Run(conf, args, false)
+			ws, err := Run(conf, args)
 
 			os.RemoveAll(rootDir)
 			os.RemoveAll(bundleDir)
@@ -468,8 +470,9 @@ func TestAppExitStatus(t *testing.T) {
 		ID:        testutil.UniqueContainerID(),
 		Spec:      succSpec,
 		BundleDir: bundleDir,
+		Attached:  true,
 	}
-	ws, err := Run(conf, args, false)
+	ws, err := Run(conf, args)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -492,8 +495,9 @@ func TestAppExitStatus(t *testing.T) {
 		ID:        testutil.UniqueContainerID(),
 		Spec:      errSpec,
 		BundleDir: bundleDir2,
+		Attached:  true,
 	}
-	ws, err = Run(conf, args2, false)
+	ws, err = Run(conf, args2)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -1624,8 +1628,9 @@ func TestUserLog(t *testing.T) {
 		Spec:      spec,
 		BundleDir: bundleDir,
 		UserLog:   userLog,
+		Attached:  true,
 	}
-	ws, err := Run(conf, args, false)
+	ws, err := Run(conf, args)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
