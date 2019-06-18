@@ -52,7 +52,12 @@ func TestSharedVolume(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -206,7 +211,12 @@ func TestSharedVolumeFile(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}

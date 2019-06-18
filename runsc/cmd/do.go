@@ -164,7 +164,12 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		return Errorf("Error write spec: %v", err)
 	}
 
-	ws, err := container.Run(cid, spec, conf, tmpDir, "", "", "", false)
+	runArgs := container.Args{
+		ID:        cid,
+		Spec:      spec,
+		BundleDir: tmpDir,
+	}
+	ws, err := container.Run(conf, runArgs, false)
 	if err != nil {
 		return Errorf("running container: %v", err)
 	}

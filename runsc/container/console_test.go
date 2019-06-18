@@ -138,8 +138,13 @@ func TestConsoleSocket(t *testing.T) {
 		defer cleanup()
 
 		// Create the container and pass the socket name.
-		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, sock, "", "")
+		args := Args{
+			ID:            testutil.UniqueContainerID(),
+			Spec:          spec,
+			BundleDir:     bundleDir,
+			ConsoleSocket: sock,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -167,7 +172,12 @@ func TestJobControlSignalExec(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -186,7 +196,7 @@ func TestJobControlSignalExec(t *testing.T) {
 	defer ptySlave.Close()
 
 	// Exec bash and attach a terminal.
-	args := &control.ExecArgs{
+	execArgs := &control.ExecArgs{
 		Filename: "/bin/bash",
 		// Don't let bash execute from profile or rc files, otherwise
 		// our PID counts get messed up.
@@ -198,7 +208,7 @@ func TestJobControlSignalExec(t *testing.T) {
 		StdioIsPty: true,
 	}
 
-	pid, err := c.Execute(args)
+	pid, err := c.Execute(execArgs)
 	if err != nil {
 		t.Fatalf("error executing: %v", err)
 	}
@@ -296,8 +306,13 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	defer cleanup()
 
 	// Create the container and pass the socket name.
-	id := testutil.UniqueContainerID()
-	c, err := Create(id, spec, conf, bundleDir, sock, "", "")
+	args := Args{
+		ID:            testutil.UniqueContainerID(),
+		Spec:          spec,
+		BundleDir:     bundleDir,
+		ConsoleSocket: sock,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
