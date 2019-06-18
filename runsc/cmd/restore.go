@@ -107,8 +107,9 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 		ConsoleSocket: r.consoleSocket,
 		PIDFile:       r.pidFile,
 		UserLog:       r.userLog,
+		Attached:      !r.detach,
 	}
-	ws, err := container.Run(conf, runArgs, r.detach)
+	ws, err := container.Run(conf, runArgs)
 	if err != nil {
 		return Errorf("running container: %v", err)
 	}
