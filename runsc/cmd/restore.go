@@ -100,7 +100,15 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 
 	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
 
-	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog, r.detach)
+	runArgs := container.Args{
+		ID:            id,
+		Spec:          spec,
+		BundleDir:     bundleDir,
+		ConsoleSocket: r.consoleSocket,
+		PIDFile:       r.pidFile,
+		UserLog:       r.userLog,
+	}
+	ws, err := container.Run(conf, runArgs, r.detach)
 	if err != nil {
 		return Errorf("running container: %v", err)
 	}

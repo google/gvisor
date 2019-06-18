@@ -242,16 +242,39 @@ func List(rootDir string) ([]string, error) {
 	return out, nil
 }
 
+// Args is used to configure a new container.
+type Args struct {
+	// ID is the container unique identifier.
+	ID string
+
+	// Spec is the OCI spec that describes the container.
+	Spec *specs.Spec
+
+	// BundleDir is the directory containing the container bundle.
+	BundleDir string
+
+	// ConsoleSocket is the path to a unix domain socket that will receive
+	// the console FD. It may be empty.
+	ConsoleSocket string
+
+	// PIDFile is the filename where the container's root process PID will be
+	// written to. It may be empty.
+	PIDFile string
+
+	// UserLog is the filename to send user-visible logs to. It may be empty.
+	UserLog string
+}
+
 // Create creates the container in a new Sandbox process, unless the metadata
 // indicates that an existing Sandbox should be used. The caller must call
 // Destroy() on the container.
-func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string) (*Container, error) {
-	log.Debugf("Create container %q in root dir: %s", id, conf.RootDir)
-	if err := validateID(id); err != nil {
+func New(conf *boot.Config, args Args) (*Container, error) {
+	log.Debugf("Create container %q in root dir: %s", args.ID, conf.RootDir)
+	if err := validateID(args.ID); err != nil {
 		return nil, err
 	}
 
-	unlockRoot, err := maybeLockRootContainer(spec, conf.RootDir)
+	unlockRoot, err := maybeLockRootContainer(args.Spec, conf.RootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +282,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 	// Lock the container metadata file to prevent concurrent creations of
 	// containers with the same id.
-	containerRoot := filepath.Join(conf.RootDir, id)
+	containerRoot := filepath.Join(conf.RootDir, args.ID)
 	unlock, err := lockContainerMetadata(containerRoot)
 	if err != nil {
 		return nil, err
@@ -269,16 +292,16 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// Check if the container already exists by looking for the metadata
 	// file.
 	if _, err := os.Stat(filepath.Join(containerRoot, metadataFilename)); err == nil {
-		return nil, fmt.Errorf("container with id %q already exists", id)
+		return nil, fmt.Errorf("container with id %q already exists", args.ID)
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("looking for existing container in %q: %v", containerRoot, err)
 	}
 
 	c := &Container{
-		ID:               id,
-		Spec:             spec,
-		ConsoleSocket:    consoleSocket,
-		BundleDir:        bundleDir,
+		ID:               args.ID,
+		Spec:             args.Spec,
+		ConsoleSocket:    args.ConsoleSocket,
+		BundleDir:        args.BundleDir,
 		Root:             containerRoot,
 		Status:           Creating,
 		CreatedAt:        time.Now(),
@@ -294,31 +317,46 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 	// started in an existing sandbox, we must do so. The metadata will
 	// indicate the ID of the sandbox, which is the same as the ID of the
 	// init container in the sandbox.
-	if isRoot(spec) {
-		log.Debugf("Creating new sandbox for container %q", id)
+	if isRoot(args.Spec) {
+		log.Debugf("Creating new sandbox for container %q", args.ID)
 
 		// Create and join cgroup before processes are created to ensure they are
 		// part of the cgroup from the start (and all tneir children processes).
-		cg, err := cgroup.New(spec)
+		cg, err := cgroup.New(args.Spec)
 		if err != nil {
 			return nil, err
 		}
 		if cg != nil {
 			// If there is cgroup config, install it before creating sandbox process.
-			if err := cg.Install(spec.Linux.Resources); err != nil {
+			if err := cg.Install(args.Spec.Linux.Resources); err != nil {
 				return nil, fmt.Errorf("configuring cgroup: %v", err)
 			}
 		}
 		if err := runInCgroup(cg, func() error {
-			ioFiles, specFile, err := c.createGoferProcess(spec, conf, bundleDir)
+			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir)
 			if err != nil {
 				return err
 			}
 
 			// Start a new sandbox for this container. Any errors after this point
 			// must destroy the container.
-			c.Sandbox, err = sandbox.New(id, spec, conf, bundleDir, consoleSocket, userLog, ioFiles, specFile, cg)
-			return err
+			sandArgs := &sandbox.Args{
+				ID:            args.ID,
+				Spec:          args.Spec,
+				BundleDir:     args.BundleDir,
+				ConsoleSocket: args.ConsoleSocket,
+				UserLog:       args.UserLog,
+				IOFiles:       ioFiles,
+				MountsFile:    specFile,
+				Cgroup:        cg,
+			}
+			sand, err := sandbox.New(conf, sandArgs)
+			if err != nil {
+				return err
+			}
+			c.Sandbox = sand
+			return nil
+
 		}); err != nil {
 			return nil, err
 		}
@@ -331,7 +369,7 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 		// * A container struct whose sandbox ID is equal to the above
 		//   container/sandbox ID, but that has a different container
 		//   ID. This is the child container.
-		sbid, ok := specutils.SandboxID(spec)
+		sbid, ok := specutils.SandboxID(args.Spec)
 		if !ok {
 			return nil, fmt.Errorf("no sandbox ID found when creating container")
 		}
@@ -356,8 +394,8 @@ func Create(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSo
 
 	// Write the PID file. Containerd considers the create complete after
 	// this file is created, so it must be the last thing we do.
-	if pidFile != "" {
-		if err := ioutil.WriteFile(pidFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
+	if args.PIDFile != "" {
+		if err := ioutil.WriteFile(args.PIDFile, []byte(strconv.Itoa(c.SandboxPid())), 0644); err != nil {
 			return nil, fmt.Errorf("error writing PID file: %v", err)
 		}
 	}
@@ -461,9 +499,9 @@ func (c *Container) Restore(spec *specs.Spec, conf *boot.Config, restoreFile str
 }
 
 // Run is a helper that calls Create + Start + Wait.
-func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, pidFile, userLog string, detach bool) (syscall.WaitStatus, error) {
-	log.Debugf("Run container %q in root dir: %s", id, conf.RootDir)
-	c, err := Create(id, spec, conf, bundleDir, consoleSocket, pidFile, userLog)
+func Run(conf *boot.Config, args Args, detach bool) (syscall.WaitStatus, error) {
+	log.Debugf("Run container %q in root dir: %s", args.ID, conf.RootDir)
+	c, err := New(conf, args)
 	if err != nil {
 		return 0, fmt.Errorf("creating container: %v", err)
 	}
@@ -476,7 +514,7 @@ func Run(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 
 	if conf.RestoreFile != "" {
 		log.Debugf("Restore: %v", conf.RestoreFile)
-		if err := c.Restore(spec, conf, conf.RestoreFile); err != nil {
+		if err := c.Restore(args.Spec, conf, conf.RestoreFile); err != nil {
 			return 0, fmt.Errorf("starting container: %v", err)
 		}
 	} else {

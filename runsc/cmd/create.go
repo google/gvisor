@@ -99,7 +99,15 @@ func (c *Create) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}
 	// Create the container. A new sandbox will be created for the
 	// container unless the metadata specifies that it should be run in an
 	// existing container.
-	if _, err := container.Create(id, spec, conf, bundleDir, c.consoleSocket, c.pidFile, c.userLog); err != nil {
+	contArgs := container.Args{
+		ID:            id,
+		Spec:          spec,
+		BundleDir:     bundleDir,
+		ConsoleSocket: c.consoleSocket,
+		PIDFile:       c.pidFile,
+		UserLog:       c.userLog,
+	}
+	if _, err := container.New(conf, contArgs); err != nil {
 		return Errorf("creating container: %v", err)
 	}
 	return subcommands.ExitSuccess
