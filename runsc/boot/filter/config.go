@@ -208,6 +208,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_MUNMAP:    {},
 	syscall.SYS_NANOSLEEP: {},
 	syscall.SYS_POLL:      {},
+	syscall.SYS_PPOLL:     {},
 	syscall.SYS_PREAD64:   {},
 	syscall.SYS_PWRITE64:  {},
 	syscall.SYS_READ:      {},

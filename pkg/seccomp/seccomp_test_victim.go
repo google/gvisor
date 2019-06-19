@@ -71,6 +71,7 @@ func main() {
 		syscall.SYS_NEWFSTATAT:      {},
 		syscall.SYS_OPEN:            {},
 		syscall.SYS_POLL:            {},
+		syscall.SYS_PPOLL:           {},
 		syscall.SYS_PREAD64:         {},
 		syscall.SYS_PSELECT6:        {},
 		syscall.SYS_PWRITE64:        {},

@@ -123,7 +123,7 @@ func BlockingRead(fd int, b []byte) (int, *tcpip.Error) {
 			Events: 1, // POLLIN
 		}
 
-		_, e = BlockingPoll(&event, 1, -1)
+		_, e = BlockingPoll(&event, 1, nil)
 		if e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
@@ -145,7 +145,7 @@ func BlockingReadv(fd int, iovecs []syscall.Iovec) (int, *tcpip.Error) {
 			Events: 1, // POLLIN
 		}
 
-		_, e = BlockingPoll(&event, 1, -1)
+		_, e = BlockingPoll(&event, 1, nil)
 		if e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
@@ -175,7 +175,7 @@ func BlockingRecvMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
 			Events: 1, // POLLIN
 		}
 
-		if _, e := BlockingPoll(&event, 1, -1); e != 0 && e != syscall.EINTR {
+		if _, e := BlockingPoll(&event, 1, nil); e != 0 && e != syscall.EINTR {
 			return 0, TranslateErrno(e)
 		}
 	}
