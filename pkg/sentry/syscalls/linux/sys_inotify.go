@@ -107,7 +107,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 		return 0, nil, err
 	}
 
-	err = fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, dirent *fs.Dirent) error {
+	err = fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, dirent *fs.Dirent, _ uint) error {
 		// "IN_ONLYDIR: Only watch pathname if it is a directory." -- inotify(7)
 		if onlyDir := mask&linux.IN_ONLYDIR != 0; onlyDir && !fs.IsDir(dirent.Inode.StableAttr) {
 			return syscall.ENOTDIR
