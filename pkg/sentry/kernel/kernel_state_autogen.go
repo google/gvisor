@@ -917,6 +917,7 @@ func (x *ThreadGroup) save(m state.Map) {
 	m.Save("limits", &x.limits)
 	m.Save("processGroup", &x.processGroup)
 	m.Save("execed", &x.execed)
+	m.Save("mounts", &x.mounts)
 }
 
 func (x *ThreadGroup) afterLoad() {}
@@ -950,6 +951,7 @@ func (x *ThreadGroup) load(m state.Map) {
 	m.Load("limits", &x.limits)
 	m.Load("processGroup", &x.processGroup)
 	m.Load("execed", &x.execed)
+	m.Load("mounts", &x.mounts)
 	m.LoadValue("rscr", new(*RSEQCriticalRegion), func(y interface{}) { x.loadRscr(y.(*RSEQCriticalRegion)) })
 }
 

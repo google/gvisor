@@ -238,11 +238,12 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 	tg := t.tg
 	if opts.NewThreadGroup {
+		tg.mounts.IncRef()
 		sh := t.tg.signalHandlers
 		if opts.NewSignalHandlers {
 			sh = sh.Fork()
 		}
-		tg = t.k.newThreadGroup(pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
+		tg = t.k.newThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
 	}
 
 	cfg := &TaskConfig{

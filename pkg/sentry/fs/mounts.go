@@ -124,7 +124,16 @@ func (m *Mount) IsUndo() bool {
 	return false
 }
 
-// MountNamespace defines a collection of mounts.
+// MountNamespace defines a VFS root. It contains collection of Mounts that are
+// mounted inside the Dirent tree rooted at the Root Dirent. It provides
+// methods for traversing the Dirent, and for mounting/unmounting in the tree.
+//
+// Note that this does not correspond to a "mount namespace" in the Linux. It
+// is more like a unique VFS instance.
+//
+// It's possible for different processes to have different MountNamespaces. In
+// this case, the file systems exposed to the processes are completely
+// distinct.
 //
 // +stateify savable
 type MountNamespace struct {

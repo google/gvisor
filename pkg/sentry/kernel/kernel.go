@@ -381,8 +381,22 @@ func (k *Kernel) SaveTo(w io.Writer) error {
 // flushMountSourceRefs flushes the MountSources for all mounted filesystems
 // and open FDs.
 func (k *Kernel) flushMountSourceRefs() error {
-	// Flush all mount sources for currently mounted filesystems.
+	// Flush all mount sources for currently mounted filesystems in the
+	// root mount namespace.
 	k.mounts.FlushMountSourceRefs()
+
+	// Some tasks may have other mount namespaces; flush those as well.
+	flushed := make(map[*fs.MountNamespace]struct{})
+	k.tasks.mu.RLock()
+	k.tasks.forEachThreadGroupLocked(func(tg *ThreadGroup) {
+		if _, ok := flushed[tg.mounts]; ok {
+			// Already flushed.
+			return
+		}
+		tg.mounts.FlushMountSourceRefs()
+		flushed[tg.mounts] = struct{}{}
+	})
+	k.tasks.mu.RUnlock()
 
 	// There may be some open FDs whose filesystems have been unmounted. We
 	// must flush those as well.
@@ -611,12 +625,18 @@ type CreateProcessArgs struct {
 	// AbstractSocketNamespace is the initial Abstract Socket namespace.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
+	// MountNamespace optionally contains the mount namespace for this
+	// process. If nil, the kernel's mount namespace is used.
+	//
+	// Anyone setting MountNamespace must donate a reference (i.e.
+	// increment it).
+	MountNamespace *fs.MountNamespace
+
 	// Root optionally contains the dirent that serves as the root for the
 	// process. If nil, the mount namespace's root is used as the process'
 	// root.
 	//
-	// Anyone setting Root must donate a reference (i.e. increment it) to
-	// keep it alive until it is decremented by CreateProcess.
+	// Anyone setting Root must donate a reference (i.e. increment it).
 	Root *fs.Dirent
 
 	// ContainerID is the container that the process belongs to.
@@ -715,20 +735,29 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		return nil, 0, fmt.Errorf("no kernel MountNamespace")
 	}
 
-	tg := k.newThreadGroup(k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
+	// Grab the mount namespace.
+	mounts := args.MountNamespace
+	if mounts == nil {
+		// If no MountNamespace was configured, then use the kernel's
+		// root mount namespace, with an extra reference that will be
+		// donated to the task.
+		mounts = k.mounts
+		mounts.IncRef()
+	}
+
+	tg := k.newThreadGroup(mounts, k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
 	ctx := args.NewContext(k)
 
 	// Grab the root directory.
 	root := args.Root
 	if root == nil {
-		root = fs.RootFromContext(ctx)
-		// Is the root STILL nil?
-		if root == nil {
-			return nil, 0, fmt.Errorf("CreateProcessArgs.Root was not provided, and failed to get root from context")
-		}
+		// If no Root was configured, then get it from the
+		// MountNamespace.
+		root = mounts.Root()
 	}
+	// The call to newFSContext below will take a reference on root, so we
+	// don't need to hold this one.
 	defer root.DecRef()
-	args.Root = nil
 
 	// Grab the working directory.
 	remainingTraversals := uint(args.MaxSymlinkTraversals)

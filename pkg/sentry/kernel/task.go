@@ -665,7 +665,7 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
-	realRoot := t.k.mounts.Root()
+	realRoot := t.tg.mounts.Root()
 	defer realRoot.DecRef()
 	root := t.fsc.RootDirectory()
 	if root != nil {
@@ -710,7 +710,7 @@ func (t *Task) WithMuLocked(f func(*Task)) {
 // MountNamespace returns t's MountNamespace. MountNamespace does not take an
 // additional reference on the returned MountNamespace.
 func (t *Task) MountNamespace() *fs.MountNamespace {
-	return t.k.mounts
+	return t.tg.mounts
 }
 
 // AbstractSockets returns t's AbstractSocketNamespace.
