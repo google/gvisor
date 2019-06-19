@@ -268,7 +268,7 @@ TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      EXPECT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
@@ -345,7 +345,7 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      EXPECT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
