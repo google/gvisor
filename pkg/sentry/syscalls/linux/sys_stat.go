@@ -35,7 +35,7 @@ func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		return 0, nil, err
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return stat(t, d, dirPath, statAddr)
 	})
 }
@@ -67,7 +67,7 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// then we must resolve the final component.
 	resolve := dirPath || flags&linux.AT_SYMLINK_NOFOLLOW == 0
 
-	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return stat(t, d, dirPath, statAddr)
 	})
 }
@@ -86,7 +86,7 @@ func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// want to resolve the final component.
 	resolve := dirPath
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return stat(t, d, dirPath, statAddr)
 	})
 }
@@ -204,7 +204,7 @@ func Statfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return statfsImpl(t, d, statfsAddr)
 	})
 }
