@@ -264,7 +264,7 @@ func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
 	})
 
 	// Replace the previous (now deleted) path node.
-	f.pathNode.children.Store(newName, origPathNode)
+	target.pathNode.children.Store(newName, origPathNode)
 
 	// Call Renamed on everything above.
 	notifyNameChange(origPathNode)
