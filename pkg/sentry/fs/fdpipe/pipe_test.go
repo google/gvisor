@@ -358,9 +358,9 @@ func TestPipeReadAheadBuffer(t *testing.T) {
 	}
 }
 
-// This is very important for pipes in general because they can return EWOULDBLOCK and for
-// those that block they must continue until they have read all of the data (and report it
-// as such.
+// This is very important for pipes in general because they can return
+// EWOULDBLOCK and for those that block they must continue until they have read
+// all of the data (and report it as such).
 func TestPipeReadsAccumulate(t *testing.T) {
 	fds := make([]int, 2)
 	if err := syscall.Pipe(fds); err != nil {
@@ -393,8 +393,8 @@ func TestPipeReadsAccumulate(t *testing.T) {
 		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(data))
 	}
 
-	// Construct a segment vec that is a bit more than we have written so we trigger
-	// an EWOULDBLOCK.
+	// Construct a segment vec that is a bit more than we have written so we
+	// trigger an EWOULDBLOCK.
 	wantBytes := len(data) + 1
 	readBuffer := make([]byte, wantBytes)
 	iov := usermem.BytesIOSequence(readBuffer)
@@ -446,8 +446,8 @@ func TestPipeWritesAccumulate(t *testing.T) {
 		wfile.Close()
 		t.Fatalf("newPipeOperations got error %v, want nil", err)
 	}
-	// Don't forget to remove the fd from the fd notifier.  Otherwise other tests will
-	// likely be borked, because it's global :(
+	// Don't forget to remove the fd from the fd notifier. Otherwise other tests
+	// will likely be borked, because it's global :(
 	defer p.Release()
 
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
@@ -455,32 +455,48 @@ func TestPipeWritesAccumulate(t *testing.T) {
 	})
 	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, p)
 
-	// Construct a segment vec that is larger than the pipe size to trigger an EWOULDBLOCK.
-	wantBytes := 65536 * 2
+	pipeSize, _, errno := syscall.Syscall(syscall.SYS_FCNTL, uintptr(wfile.FD()), syscall.F_GETPIPE_SZ, 0)
+	if errno != 0 {
+		t.Fatalf("fcntl(F_GETPIPE_SZ) failed: %v", errno)
+	}
+	t.Logf("Pipe buffer size: %d", pipeSize)
+
+	// Construct a segment vec that is larger than the pipe size to trigger an
+	// EWOULDBLOCK.
+	wantBytes := int(pipeSize) * 2
 	writeBuffer := make([]byte, wantBytes)
 	for i := 0; i < wantBytes; i++ {
 		writeBuffer[i] = 'a'
 	}
 	iov := usermem.BytesIOSequence(writeBuffer)
 	n, err := p.Write(ctx, file, iov, 0)
-	total := n
-	iov = iov.DropFirst64(n)
 	if err != syserror.ErrWouldBlock {
 		t.Fatalf("Writev got error %v, want %v", err, syserror.ErrWouldBlock)
 	}
+	if n != int64(pipeSize) {
+		t.Fatalf("Writev partial write, got: %v, want %v", n, pipeSize)
+	}
+	total := n
+	iov = iov.DropFirst64(n)
 
 	// Read the entire pipe buf size to make space for the second half.
-	throwAway := make([]byte, 65536)
-	if n, err := syscall.Read(fds[0], throwAway); n != len(throwAway) || err != nil {
-		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(throwAway))
+	readBuffer := make([]byte, n)
+	if n, err := syscall.Read(fds[0], readBuffer); n != len(readBuffer) || err != nil {
+		t.Fatalf("write to pipe got (%d, %v), want (%d, nil)", n, err, len(readBuffer))
+	}
+	if !bytes.Equal(readBuffer, writeBuffer[:len(readBuffer)]) {
+		t.Fatalf("wrong data read from pipe, got: %v, want: %v", readBuffer, writeBuffer)
 	}
 
 	// This time we should not block.
 	n, err = p.Write(ctx, file, iov, 0)
-	total += n
 	if err != nil {
 		t.Fatalf("Writev got error %v, want nil", err)
 	}
+	if n != int64(pipeSize) {
+		t.Fatalf("Writev partial write, got: %v, want %v", n, pipeSize)
+	}
+	total += n
 
 	// Assert that the result we got back is cumulative.
 	if total != int64(wantBytes) {
