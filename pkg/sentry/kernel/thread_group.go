@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -236,13 +237,21 @@ type ThreadGroup struct {
 
 	// rscr is the thread group's RSEQ critical region.
 	rscr atomic.Value `state:".(*RSEQCriticalRegion)"`
+
+	// mounts is the thread group's mount namespace. This does not really
+	// correspond to a "mount namespace" in Linux, but is more like a
+	// complete VFS that need not be shared between processes. See the
+	// comment in mounts.go  for more information.
+	//
+	// mounts is immutable.
+	mounts *fs.MountNamespace
 }
 
 // newThreadGroup returns a new, empty thread group in PID namespace ns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) newThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
+func (k *Kernel) newThreadGroup(mounts *fs.MountNamespace, ns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet, monotonicClock *timekeeperClock) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: ns,
@@ -251,6 +260,7 @@ func (k *Kernel) newThreadGroup(ns *PIDNamespace, sh *SignalHandlers, terminatio
 		terminationSignal: terminationSignal,
 		ioUsage:           &usage.IO{},
 		limits:            limits,
+		mounts:            mounts,
 	}
 	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
@@ -298,6 +308,7 @@ func (tg *ThreadGroup) release() {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
+	tg.mounts.DecRef()
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.
