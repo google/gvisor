@@ -2939,6 +2939,8 @@ cc_binary(
     testonly = 1,
     srcs = ["tcp_socket.cc"],
     linkstatic = 1,
+    # FIXME(b/135470853)
+    tags = ["flaky"],
     deps = [
         ":socket_test_util",
         "//test/util:file_descriptor",
