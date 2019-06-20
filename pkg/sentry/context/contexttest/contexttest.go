@@ -59,6 +59,7 @@ func Context(tb testing.TB) context.Context {
 		l:           limits.NewLimitSet(),
 		mf:          mf,
 		platform:    p,
+		creds:       auth.NewAnonymousCredentials(),
 		otherValues: make(map[interface{}]interface{}),
 	}
 }
@@ -70,6 +71,7 @@ type TestContext struct {
 	l           *limits.LimitSet
 	mf          *pgalloc.MemoryFile
 	platform    platform.Platform
+	creds       *auth.Credentials
 	otherValues map[interface{}]interface{}
 }
 
@@ -108,6 +110,8 @@ func (t *TestContext) RegisterValue(key, value interface{}) {
 // Value implements context.Context.
 func (t *TestContext) Value(key interface{}) interface{} {
 	switch key {
+	case auth.CtxCredentials:
+		return t.creds
 	case limits.CtxLimits:
 		return t.l
 	case pgalloc.CtxMemoryFile:
