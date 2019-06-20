@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package ramfs provides the fundamentals for a simple in-memory filesystem.
 package ramfs
 
 import (
