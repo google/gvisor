@@ -194,6 +194,7 @@ func (x *vma) save(m state.Map) {
 	m.SaveValue("realPerms", realPerms)
 	m.Save("mappable", &x.mappable)
 	m.Save("off", &x.off)
+	m.Save("dontfork", &x.dontfork)
 	m.Save("mlockMode", &x.mlockMode)
 	m.Save("numaPolicy", &x.numaPolicy)
 	m.Save("numaNodemask", &x.numaNodemask)
@@ -205,6 +206,7 @@ func (x *vma) afterLoad() {}
 func (x *vma) load(m state.Map) {
 	m.Load("mappable", &x.mappable)
 	m.Load("off", &x.off)
+	m.Load("dontfork", &x.dontfork)
 	m.Load("mlockMode", &x.mlockMode)
 	m.Load("numaPolicy", &x.numaPolicy)
 	m.Load("numaNodemask", &x.numaNodemask)

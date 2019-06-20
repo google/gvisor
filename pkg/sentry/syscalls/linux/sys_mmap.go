@@ -180,6 +180,10 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	switch adv {
 	case linux.MADV_DONTNEED:
 		return 0, nil, t.MemoryManager().Decommit(addr, length)
+	case linux.MADV_DOFORK:
+		return 0, nil, t.MemoryManager().SetDontFork(addr, length, false)
+	case linux.MADV_DONTFORK:
+		return 0, nil, t.MemoryManager().SetDontFork(addr, length, true)
 	case linux.MADV_HUGEPAGE, linux.MADV_NOHUGEPAGE:
 		fallthrough
 	case linux.MADV_MERGEABLE, linux.MADV_UNMERGEABLE:
@@ -191,7 +195,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	case linux.MADV_NORMAL, linux.MADV_RANDOM, linux.MADV_SEQUENTIAL, linux.MADV_WILLNEED:
 		// Do nothing, we totally ignore the suggestions above.
 		return 0, nil, nil
-	case linux.MADV_REMOVE, linux.MADV_DOFORK, linux.MADV_DONTFORK:
+	case linux.MADV_REMOVE:
 		// These "suggestions" have application-visible side effects, so we
 		// have to indicate that we don't support them.
 		return 0, nil, syserror.ENOSYS
