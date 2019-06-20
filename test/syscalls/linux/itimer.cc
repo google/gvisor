@@ -197,12 +197,17 @@ int TestSIGALRMToMainThread() {
   // (but don't guarantee it), so we expect to see most samples on the main
   // thread.
   //
+  // The number of SIGALRMs delivered to a worker should not exceed 20%
+  // of the number of total signals expected (this is somewhat arbitrary).
+  const int worker_threshold = result.expected_total / 5;
+
+  //
   // Linux only guarantees timers will never expire before the requested time.
   // Thus, we only check the upper bound and also it at least have one sample.
   TEST_CHECK(result.main_thread_samples <= result.expected_total);
   TEST_CHECK(result.main_thread_samples > 0);
   for (int num : result.worker_samples) {
-    TEST_CHECK_MSG(num <= 50, "worker received too many samples");
+    TEST_CHECK_MSG(num <= worker_threshold, "worker received too many samples");
   }
 
   return 0;
