@@ -439,6 +439,7 @@ func (vmaSetFunctions) Merge(ar1 usermem.AddrRange, vma1 vma, ar2 usermem.AddrRa
 		vma1.mlockMode != vma2.mlockMode ||
 		vma1.numaPolicy != vma2.numaPolicy ||
 		vma1.numaNodemask != vma2.numaNodemask ||
+		vma1.dontfork != vma2.dontfork ||
 		vma1.id != vma2.id ||
 		vma1.hint != vma2.hint {
 		return vma{}, false

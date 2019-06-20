@@ -118,6 +118,17 @@ inline PosixErrorOr<Mapping> MmapAnon(size_t length, int prot, int flags) {
   return Mmap(nullptr, length, prot, flags | MAP_ANONYMOUS, -1, 0);
 }
 
+// Returns true if the page containing addr is mapped.
+inline bool IsMapped(uintptr_t addr) {
+  int const rv = msync(reinterpret_cast<void*>(addr & ~(kPageSize - 1)),
+                       kPageSize, MS_ASYNC);
+  if (rv == 0) {
+    return true;
+  }
+  TEST_PCHECK_MSG(errno == ENOMEM, "msync failed with unexpected errno");
+  return false;
+}
+
 }  // namespace testing
 }  // namespace gvisor
 

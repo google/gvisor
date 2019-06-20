@@ -1026,6 +1026,32 @@ func (mm *MemoryManager) SetNumaPolicy(addr usermem.Addr, length uint64, policy 
 	}
 }
 
+// SetDontFork implements the semantics of madvise MADV_DONTFORK.
+func (mm *MemoryManager) SetDontFork(addr usermem.Addr, length uint64, dontfork bool) error {
+	ar, ok := addr.ToRange(length)
+	if !ok {
+		return syserror.EINVAL
+	}
+
+	mm.mappingMu.Lock()
+	defer mm.mappingMu.Unlock()
+	defer func() {
+		mm.vmas.MergeRange(ar)
+		mm.vmas.MergeAdjacent(ar)
+	}()
+
+	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {
+		vseg = mm.vmas.Isolate(vseg, ar)
+		vma := vseg.ValuePtr()
+		vma.dontfork = dontfork
+	}
+
+	if mm.vmas.SpanRange(ar) != ar.Length() {
+		return syserror.ENOMEM
+	}
+	return nil
+}
+
 // Decommit implements the semantics of Linux's madvise(MADV_DONTNEED).
 func (mm *MemoryManager) Decommit(addr usermem.Addr, length uint64) error {
 	ar, ok := addr.ToRange(length)

@@ -274,6 +274,9 @@ type vma struct {
 	// metag, none of which we currently support.
 	growsDown bool `state:"manual"`
 
+	// dontfork is the MADV_DONTFORK setting for this vma configured by madvise().
+	dontfork bool
+
 	mlockMode memmap.MLockMode
 
 	// numaPolicy is the NUMA policy for this vma set by mbind().

@@ -46,17 +46,6 @@ PosixErrorOr<void*> Mremap(void* old_address, size_t old_size, size_t new_size,
   return rv;
 }
 
-// Returns true if the page containing addr is mapped.
-bool IsMapped(uintptr_t addr) {
-  int const rv = msync(reinterpret_cast<void*>(addr & ~(kPageSize - 1)),
-                       kPageSize, MS_ASYNC);
-  if (rv == 0) {
-    return true;
-  }
-  TEST_PCHECK_MSG(errno == ENOMEM, "msync failed with unexpected errno");
-  return false;
-}
-
 // Fixture for mremap tests parameterized by mmap flags.
 using MremapParamTest = ::testing::TestWithParam<int>;
 
