@@ -10,7 +10,7 @@ go_library(
         "proc.go",
         "state.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/control",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/control",
     visibility = [
         "//pkg/sentry:internal",
     ],

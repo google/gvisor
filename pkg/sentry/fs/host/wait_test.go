@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestWait(t *testing.T) {

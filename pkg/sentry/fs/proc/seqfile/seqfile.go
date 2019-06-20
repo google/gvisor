@@ -18,15 +18,15 @@ import (
 	"io"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // SeqHandle is a helper handle to seek in the file.
@@ -133,7 +133,7 @@ func NewSeqFileInode(ctx context.Context, source SeqSource, msrc *fs.MountSource
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
-	return fs.NewInode(iops, msrc, sattr)
+	return fs.NewInode(ctx, iops, msrc, sattr)
 }
 
 // UnstableAttr returns unstable attributes of the SeqFile.

@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestPipeRW(t *testing.T) {

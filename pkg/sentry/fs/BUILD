@@ -43,7 +43,7 @@ go_library(
         "splice.go",
         "sync.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

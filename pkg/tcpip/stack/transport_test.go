@@ -17,12 +17,12 @@ package stack_test
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/channel"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/loopback"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -190,6 +190,9 @@ func (f *fakeTransportEndpoint) HandleControlPacket(stack.TransportEndpointID, s
 
 func (f *fakeTransportEndpoint) State() uint32 {
 	return 0
+}
+
+func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {
 }
 
 type fakeTransportGoodOption bool

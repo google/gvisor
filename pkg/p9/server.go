@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // Server is a 9p2000.L server.
@@ -264,7 +264,7 @@ func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
 	})
 
 	// Replace the previous (now deleted) path node.
-	f.pathNode.children.Store(newName, origPathNode)
+	target.pathNode.children.Store(newName, origPathNode)
 
 	// Call Renamed on everything above.
 	notifyNameChange(origPathNode)

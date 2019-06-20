@@ -19,25 +19,25 @@ import (
 	"math"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink/port"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const sizeOfInt32 int = 4
@@ -111,7 +111,7 @@ var _ socket.Socket = (*Socket)(nil)
 // NewSocket creates a new Socket.
 func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *syserr.Error) {
 	// Datagram endpoint used to buffer kernel -> user messages.
-	ep := transport.NewConnectionless()
+	ep := transport.NewConnectionless(t)
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
@@ -121,7 +121,7 @@ func NewSocket(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socke
 	}
 
 	// Create a connection from which the kernel can write messages.
-	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect()
+	connection, err := ep.(transport.BoundEndpoint).UnidirectionalConnect(t)
 	if err != nil {
 		ep.Close()
 		return nil, err

@@ -24,13 +24,13 @@ import (
 	"strings"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/raw"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -41,13 +41,18 @@ const (
 	ProtocolNumber = header.TCPProtocolNumber
 
 	// MinBufferSize is the smallest size of a receive or send buffer.
-	minBufferSize = 4 << 10 // 4096 bytes.
+	MinBufferSize = 4 << 10 // 4096 bytes.
 
-	// DefaultBufferSize is the default size of the receive and send buffers.
-	DefaultBufferSize = 1 << 20 // 1MB
+	// DefaultSendBufferSize is the default size of the send buffer for
+	// an endpoint.
+	DefaultSendBufferSize = 1 << 20 // 1MB
 
-	// MaxBufferSize is the largest size a receive and send buffer can grow to.
-	maxBufferSize = 4 << 20 // 4MB
+	// DefaultReceiveBufferSize is the default size of the receive buffer
+	// for an endpoint.
+	DefaultReceiveBufferSize = 1 << 20 // 1MB
+
+	// MaxBufferSize is the largest size a receive/send buffer can grow to.
+	MaxBufferSize = 4 << 20 // 4MB
 
 	// MaxUnprocessedSegments is the maximum number of unprocessed segments
 	// that can be queued for a given endpoint.
@@ -79,13 +84,6 @@ const (
 	ccCubic = "cubic"
 )
 
-// CongestionControlOption sets the current congestion control algorithm.
-type CongestionControlOption string
-
-// AvailableCongestionControlOption returns the supported congestion control
-// algorithms.
-type AvailableCongestionControlOption string
-
 type protocol struct {
 	mu                         sync.Mutex
 	sackEnabled                bool
@@ -93,7 +91,7 @@ type protocol struct {
 	recvBufferSize             ReceiveBufferSizeOption
 	congestionControl          string
 	availableCongestionControl []string
-	allowedCongestionControl   []string
+	moderateReceiveBuffer      bool
 }
 
 // Number returns the tcp protocol number.
@@ -188,7 +186,7 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 		p.mu.Unlock()
 		return nil
 
-	case CongestionControlOption:
+	case tcpip.CongestionControlOption:
 		for _, c := range p.availableCongestionControl {
 			if string(v) == c {
 				p.mu.Lock()
@@ -197,7 +195,16 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 				return nil
 			}
 		}
-		return tcpip.ErrInvalidOptionValue
+		// linux returns ENOENT when an invalid congestion control
+		// is specified.
+		return tcpip.ErrNoSuchFile
+
+	case tcpip.ModerateReceiveBufferOption:
+		p.mu.Lock()
+		p.moderateReceiveBuffer = bool(v)
+		p.mu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -223,16 +230,25 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 		*v = p.recvBufferSize
 		p.mu.Unlock()
 		return nil
-	case *CongestionControlOption:
+
+	case *tcpip.CongestionControlOption:
 		p.mu.Lock()
-		*v = CongestionControlOption(p.congestionControl)
+		*v = tcpip.CongestionControlOption(p.congestionControl)
 		p.mu.Unlock()
 		return nil
-	case *AvailableCongestionControlOption:
+
+	case *tcpip.AvailableCongestionControlOption:
 		p.mu.Lock()
-		*v = AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
+		*v = tcpip.AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
 		p.mu.Unlock()
 		return nil
+
+	case *tcpip.ModerateReceiveBufferOption:
+		p.mu.Lock()
+		*v = tcpip.ModerateReceiveBufferOption(p.moderateReceiveBuffer)
+		p.mu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
@@ -241,8 +257,8 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 func init() {
 	stack.RegisterTransportProtocolFactory(ProtocolName, func() stack.TransportProtocol {
 		return &protocol{
-			sendBufferSize:             SendBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
-			recvBufferSize:             ReceiveBufferSizeOption{minBufferSize, DefaultBufferSize, maxBufferSize},
+			sendBufferSize:             SendBufferSizeOption{MinBufferSize, DefaultSendBufferSize, MaxBufferSize},
+			recvBufferSize:             ReceiveBufferSizeOption{MinBufferSize, DefaultReceiveBufferSize, MaxBufferSize},
 			congestionControl:          ccReno,
 			availableCongestionControl: []string{ccReno, ccCubic},
 		}

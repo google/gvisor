@@ -42,6 +42,7 @@ cc_binary(
     name = "exec_state_workload",
     testonly = 1,
     srcs = ["exec_state_workload.cc"],
+    deps = ["@com_google_absl//absl/strings"],
 )
 
 sh_binary(
@@ -1909,6 +1910,7 @@ cc_library(
         ":unix_domain_socket_test_util",
         "//test/util:test_util",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",
     ],
     alwayslink = 1,
@@ -2427,6 +2429,7 @@ cc_binary(
         "//test/util:file_descriptor",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",
     ],
 )

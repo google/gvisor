@@ -15,7 +15,7 @@
 package boot
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/strace"
+	"gvisor.dev/gvisor/pkg/sentry/strace"
 )
 
 func enableStrace(conf *Config) error {

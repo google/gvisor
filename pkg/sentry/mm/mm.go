@@ -37,14 +37,14 @@ package mm
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // MemoryManager implements a virtual address space.

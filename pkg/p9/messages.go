@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"math"
 
-	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fd"
 )
 
 // ErrInvalidMsgType is returned when an unsupported message type is found.

@@ -15,10 +15,10 @@
 package tty
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ptsDevice is the pseudo-filesystem device.
@@ -67,7 +67,7 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 		return nil, syserror.EINVAL
 	}
 
-	return newDir(ctx, fs.NewMountSource(&superOperations{}, f, flags)), nil
+	return newDir(ctx, fs.NewMountSource(ctx, &superOperations{}, f, flags)), nil
 }
 
 // superOperations implements fs.MountSourceOperations, preventing caching.

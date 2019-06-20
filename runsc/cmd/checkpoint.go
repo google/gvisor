@@ -22,10 +22,10 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // File containing the container's saved image/state within the given image-path's directory.
@@ -133,7 +133,12 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...interfa
 		Fatalf("destroying container: %v", err)
 	}
 
-	cont, err = container.Create(id, spec, conf, bundleDir, "", "", "")
+	contArgs := container.Args{
+		ID:        id,
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err = container.New(conf, contArgs)
 	if err != nil {
 		Fatalf("restoring container: %v", err)
 	}

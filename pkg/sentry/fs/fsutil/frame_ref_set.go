@@ -17,7 +17,7 @@ package fsutil
 import (
 	"math"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 type frameRefSetFunctions struct{}

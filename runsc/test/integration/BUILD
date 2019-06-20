@@ -1,8 +1,9 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//runsc/test:build_defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
 
-go_test(
+runtime_test(
     name = "integration_test",
     size = "large",
     srcs = [
@@ -25,5 +26,5 @@ go_test(
 go_library(
     name = "integration",
     srcs = ["integration.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/test/integration",
+    importpath = "gvisor.dev/gvisor/runsc/test/integration",
 )

@@ -22,8 +22,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/time"
 )
 
 // setMemoryRegion initializes a region.

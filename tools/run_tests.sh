@@ -92,6 +92,14 @@ build_everything() {
     "${BUILD_PACKAGES[@]}"
 }
 
+build_runsc_debian() {
+  cd ${WORKSPACE_DIR}
+
+  # TODO(b/135475885): pkg_deb is incompatible with Python3.
+  # https://github.com/bazelbuild/bazel/issues/8443
+  bazel build --host_force_python=py2 runsc:runsc-debian
+}
+
 # Run simple tests runs the tests that require no special setup or
 # configuration.
 run_simple_tests() {
@@ -173,20 +181,24 @@ run_docker_tests() {
 
   # These names are used to exclude tests not supported in certain
   # configuration, e.g. save/restore not supported with hostnet.
-  declare -a variations=("" "-kvm" "-hostnet" "-overlay")
-  for v in "${variations[@]}"; do
-    # Change test names otherwise each run of tests will overwrite logs and
-    # results of the previous run.
-    sed -i "s/name = \"integration_test.*\"/name = \"integration_test${v}\"/" runsc/test/integration/BUILD
-    sed -i "s/name = \"image_test.*\"/name = \"image_test${v}\"/" runsc/test/image/BUILD
-    # Run runsc tests with docker that are tagged manual.
-    bazel test \
-      "${BAZEL_BUILD_FLAGS[@]}" \
-      --test_env=RUNSC_RUNTIME="${RUNTIME}${v}" \
-      --test_output=all \
-      //runsc/test/image:image_test${v} \
-      //runsc/test/integration:integration_test${v}
-  done
+  # Run runsc tests with docker that are tagged manual.
+  #
+  # The --nocache_test_results option is used here to eliminate cached results
+  # from the previous run for the runc runtime.
+  bazel test \
+    "${BAZEL_BUILD_FLAGS[@]}" \
+    --test_env=RUNSC_RUNTIME="${RUNTIME}" \
+    --test_output=all \
+    --nocache_test_results \
+    --test_output=streamed \
+    //runsc/test/integration:integration_test \
+    //runsc/test/integration:integration_test_hostnet \
+    //runsc/test/integration:integration_test_overlay \
+    //runsc/test/integration:integration_test_kvm \
+    //runsc/test/image:image_test \
+    //runsc/test/image:image_test_overlay \
+    //runsc/test/image:image_test_hostnet \
+    //runsc/test/image:image_test_kvm
 }
 
 # Run the tests that require root.
@@ -212,8 +224,8 @@ run_runsc_do_tests() {
   local runsc=$(find bazel-bin/runsc -type f -executable -name "runsc" | head -n1)
 
   # run runsc do without root privileges.
-  unshare -Ur ${runsc} --network=none --TESTONLY-unsafe-nonroot do true
-  unshare -Ur ${runsc} --TESTONLY-unsafe-nonroot --network=host do --netns=false true
+  ${runsc} --rootless do true
+  ${runsc} --rootless --network=none do true
 
   # run runsc do with root privileges.
   sudo -n -E ${runsc} do true
@@ -276,6 +288,8 @@ main() {
 
   run_syscall_tests
   run_runsc_do_tests
+
+  build_runsc_debian
 
   # Build other flavors too.
   build_everything dbg

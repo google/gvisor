@@ -17,15 +17,15 @@ package mm
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func testMemoryManager(ctx context.Context) *MemoryManager {

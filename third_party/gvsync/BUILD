@@ -40,7 +40,7 @@ go_library(
         "race_unsafe.go",
         "seqcount.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/third_party/gvsync",
+    importpath = "gvisor.dev/gvisor/third_party/gvsync",
 )
 
 go_test(

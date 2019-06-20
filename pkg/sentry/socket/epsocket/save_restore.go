@@ -15,7 +15,7 @@
 package epsocket
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // afterLoad is invoked by stateify.

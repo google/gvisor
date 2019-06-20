@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Error represents an internal error.

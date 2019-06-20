@@ -17,11 +17,11 @@ package fs_test
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 )
 
 // Creates a new MountNamespace with filesystem:
@@ -30,17 +30,17 @@ import (
 //   |-bar (file)
 func createMountNamespace(ctx context.Context) (*fs.MountNamespace, error) {
 	perms := fs.FilePermsFromMode(0777)
-	m := fs.NewPseudoMountSource()
+	m := fs.NewPseudoMountSource(ctx)
 
 	barFile := fsutil.NewSimpleFileInode(ctx, fs.RootOwner, perms, 0)
 	fooDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
-		"bar": fs.NewInode(barFile, m, fs.StableAttr{Type: fs.RegularFile}),
+		"bar": fs.NewInode(ctx, barFile, m, fs.StableAttr{Type: fs.RegularFile}),
 	}, fs.RootOwner, perms)
 	rootDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
-		"foo": fs.NewInode(fooDir, m, fs.StableAttr{Type: fs.Directory}),
+		"foo": fs.NewInode(ctx, fooDir, m, fs.StableAttr{Type: fs.Directory}),
 	}, fs.RootOwner, perms)
 
-	return fs.NewMountNamespace(ctx, fs.NewInode(rootDir, m, fs.StableAttr{Type: fs.Directory}))
+	return fs.NewMountNamespace(ctx, fs.NewInode(ctx, rootDir, m, fs.StableAttr{Type: fs.Directory}))
 }
 
 func TestFindLink(t *testing.T) {

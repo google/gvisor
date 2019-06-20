@@ -19,22 +19,22 @@ import (
 	"fmt"
 	"io"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/mm"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type fileContext struct {
@@ -69,11 +69,12 @@ type byteReader struct {
 var _ fs.FileOperations = (*byteReader)(nil)
 
 // newByteReaderFile creates a fake file to read data from.
-func newByteReaderFile(data []byte) *fs.File {
+func newByteReaderFile(ctx context.Context, data []byte) *fs.File {
 	// Create a fake inode.
 	inode := fs.NewInode(
+		ctx,
 		&fsutil.SimpleFileInode{},
-		fs.NewPseudoMountSource(),
+		fs.NewPseudoMountSource(ctx),
 		fs.StableAttr{
 			Type:      fs.Anonymous,
 			DeviceID:  anon.PseudoDevice.DeviceID(),
@@ -219,8 +220,8 @@ type VDSO struct {
 
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
-func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
-	vdsoFile := newByteReaderFile(vdsoBin)
+func PrepareVDSO(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
+	vdsoFile := newByteReaderFile(ctx, vdsoBin)
 
 	// First make sure the VDSO is valid. vdsoFile does not use ctx, so a
 	// nil context can be passed.

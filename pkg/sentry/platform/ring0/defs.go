@@ -17,7 +17,7 @@ package ring0
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 var (

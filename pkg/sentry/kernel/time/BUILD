@@ -8,7 +8,7 @@ go_library(
         "context.go",
         "time.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/time",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

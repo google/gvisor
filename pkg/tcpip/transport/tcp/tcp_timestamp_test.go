@@ -20,13 +20,13 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/checker"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp/testing/context"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // createConnectedWithTimestampOption creates and connects c.ep with the
@@ -182,7 +182,7 @@ func TestTimeStampEnabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
+		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
 	}
 	for _, tc := range testCases {
 		timeStampEnabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)
@@ -239,7 +239,7 @@ func TestTimeStampDisabledAccept(t *testing.T) {
 		wndSize       uint16
 	}{
 		{true, -1, 0xffff}, // When cookie is used window scaling is disabled.
-		{false, 5, 0x8000}, // 0x8000 * 2^5 = 1<<20 = 1MB window (the default).
+		{false, 5, 0x8000}, // DefaultReceiveBufferSize is 1MB >> 5.
 	}
 	for _, tc := range testCases {
 		timeStampDisabledAccept(t, tc.cookieEnabled, tc.wndScale, tc.wndSize)

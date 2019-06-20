@@ -7,7 +7,7 @@ go_template_instance(
     name = "file_refcount_set",
     out = "file_refcount_set.go",
     imports = {
-        "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "mm",
     prefix = "fileRefcount",
@@ -27,7 +27,7 @@ go_template_instance(
         "minDegree": "8",
     },
     imports = {
-        "usermem": "gvisor.googlesource.com/gvisor/pkg/sentry/usermem",
+        "usermem": "gvisor.dev/gvisor/pkg/sentry/usermem",
     },
     package = "mm",
     prefix = "vma",
@@ -47,7 +47,7 @@ go_template_instance(
         "minDegree": "8",
     },
     imports = {
-        "usermem": "gvisor.googlesource.com/gvisor/pkg/sentry/usermem",
+        "usermem": "gvisor.dev/gvisor/pkg/sentry/usermem",
     },
     package = "mm",
     prefix = "pma",
@@ -95,7 +95,7 @@ go_library(
         "vma.go",
         "vma_set.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/mm",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/mm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

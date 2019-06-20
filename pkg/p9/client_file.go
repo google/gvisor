@@ -21,8 +21,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // Attach attaches to a server.

@@ -17,11 +17,11 @@ package kernel
 // Accounting, limits, timers.
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getitimer implements getitimer(2).

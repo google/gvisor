@@ -27,12 +27,12 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/queue"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 // QueueConfig holds all the file descriptors needed to describe a tx or rx

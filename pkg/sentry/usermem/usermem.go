@@ -20,10 +20,10 @@ import (
 	"io"
 	"strconv"
 
-	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // IO provides access to the contents of a virtual memory space.

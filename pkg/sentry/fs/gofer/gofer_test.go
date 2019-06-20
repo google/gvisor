@@ -20,11 +20,11 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/p9/p9test"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/p9/p9test"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // rootTest runs a test with a p9 mock and an fs.InodeOperations created from
@@ -62,8 +62,8 @@ func rootTest(t *testing.T, name string, cp cachePolicy, fn func(context.Context
 		sattr, rootInodeOperations := newInodeOperations(ctx, s, contextFile{
 			file: rootFile,
 		}, root.QID, p9.AttrMaskAll(), root.Attr, false /* socket */)
-		m := fs.NewMountSource(s, &filesystem{}, fs.MountSourceFlags{})
-		rootInode := fs.NewInode(rootInodeOperations, m, sattr)
+		m := fs.NewMountSource(ctx, s, &filesystem{}, fs.MountSourceFlags{})
+		rootInode := fs.NewInode(ctx, rootInodeOperations, m, sattr)
 
 		// Ensure that the cache is fully invalidated, so that any
 		// close actions actually take place before the full harness is
@@ -207,7 +207,7 @@ func TestRevalidation(t *testing.T) {
 		name := fmt.Sprintf("cachepolicy=%s", test.cachePolicy)
 		rootTest(t, name, test.cachePolicy, func(ctx context.Context, h *p9test.Harness, rootFile *p9test.Mock, rootInode *fs.Inode) {
 			// Wrap in a dirent object.
-			rootDir := fs.NewDirent(rootInode, "root")
+			rootDir := fs.NewDirent(ctx, rootInode, "root")
 
 			// Create a mock file a child of the root. We save when
 			// this is generated, so that when the time changed, we

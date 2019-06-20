@@ -35,7 +35,7 @@ go_template_instance(
         "minDegree": "10",
     },
     imports = {
-        "platform": "gvisor.googlesource.com/gvisor/pkg/sentry/platform",
+        "platform": "gvisor.dev/gvisor/pkg/sentry/platform",
     },
     package = "pgalloc",
     prefix = "usage",
@@ -59,7 +59,7 @@ go_library(
         "save_restore.go",
         "usage_set.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/pgalloc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/log",

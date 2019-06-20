@@ -20,11 +20,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/sleep"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
 const (
@@ -121,9 +121,8 @@ type sender struct {
 	// rtt.srtt, rtt.rttvar, and rto are the "smoothed round-trip time",
 	// "round-trip time variation" and "retransmit timeout", as defined in
 	// section 2 of RFC 6298.
-	rtt        rtt
-	rto        time.Duration
-	srttInited bool
+	rtt rtt
+	rto time.Duration
 
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
@@ -150,8 +149,9 @@ type sender struct {
 type rtt struct {
 	sync.Mutex `state:"nosave"`
 
-	srtt   time.Duration
-	rttvar time.Duration
+	srtt       time.Duration
+	rttvar     time.Duration
+	srttInited bool
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
@@ -194,8 +194,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 	s := &sender{
 		ep:               ep,
-		sndCwnd:          InitialCwnd,
-		sndSsthresh:      math.MaxInt64,
 		sndWnd:           sndWnd,
 		sndUna:           iss + 1,
 		sndNxt:           iss + 1,
@@ -238,7 +236,13 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	return s
 }
 
-func (s *sender) initCongestionControl(congestionControlName CongestionControlOption) congestionControl {
+// initCongestionControl initializes the specified congestion control module and
+// returns a handle to it. It also initializes the sndCwnd and sndSsThresh to
+// their initial values.
+func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
+	s.sndCwnd = InitialCwnd
+	s.sndSsthresh = math.MaxInt64
+
 	switch congestionControlName {
 	case ccCubic:
 		return newCubicCC(s)
@@ -319,10 +323,10 @@ func (s *sender) sendAck() {
 // available. This is done in accordance with section 2 of RFC 6298.
 func (s *sender) updateRTO(rtt time.Duration) {
 	s.rtt.Lock()
-	if !s.srttInited {
+	if !s.rtt.srttInited {
 		s.rtt.rttvar = rtt / 2
 		s.rtt.srtt = rtt
-		s.srttInited = true
+		s.rtt.srttInited = true
 	} else {
 		diff := s.rtt.srtt - rtt
 		if diff < 0 {

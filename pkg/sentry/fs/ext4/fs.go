@@ -16,8 +16,8 @@
 package ext4
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // filesystem implements fs.Filesystem for ext4.

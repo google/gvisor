@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type hostOpener struct {
@@ -359,7 +359,7 @@ func TestCopiedReadAheadBuffer(t *testing.T) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{
 		Type: fs.Pipe,
 	})
-	file := fs.NewFile(ctx, fs.NewDirent(inode, "pipe"), fs.FileFlags{Read: true}, pipeOps)
+	file := fs.NewFile(ctx, fs.NewDirent(ctx, inode, "pipe"), fs.FileFlags{Read: true}, pipeOps)
 
 	// Check that the file we opened points to a pipe with a non-empty read ahead buffer.
 	bufsize := len(pipeOps.readAheadBuffer)

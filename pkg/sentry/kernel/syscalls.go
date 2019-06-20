@@ -19,10 +19,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi"
-	"gvisor.googlesource.com/gvisor/pkg/bits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/abi"
+	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // maxSyscallNum is the highest supported syscall number.

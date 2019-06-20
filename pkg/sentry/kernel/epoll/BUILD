@@ -22,7 +22,7 @@ go_library(
         "epoll_list.go",
         "epoll_state.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/epoll",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/epoll",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/refs",

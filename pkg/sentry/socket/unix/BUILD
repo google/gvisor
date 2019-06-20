@@ -9,7 +9,7 @@ go_library(
         "io.go",
         "unix.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/unix",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

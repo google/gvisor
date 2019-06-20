@@ -18,11 +18,11 @@ import (
 	"encoding/binary"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // +stateify savable
@@ -126,6 +126,9 @@ func (e *endpoint) Close() {
 
 	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 }
+
+// ModerateRecvBuf implements tcpip.Endpoint.ModerateRecvBuf.
+func (e *endpoint) ModerateRecvBuf(copied int) {}
 
 // Read reads data from the endpoint. This method does not block if
 // there is no data pending.

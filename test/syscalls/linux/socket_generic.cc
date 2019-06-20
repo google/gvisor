@@ -21,6 +21,7 @@
 
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -685,6 +686,55 @@ TEST_P(AllSocketPairTest, RecvTimeoutWaitAll) {
               SyscallSucceedsWithValue(sizeof(sent_data)));
 
   EXPECT_EQ(0, memcmp(sent_data, received_data, sizeof(sent_data)));
+}
+
+TEST_P(AllSocketPairTest, GetSockoptType) {
+  int type = GetParam().type;
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  for (const int fd : {sockets->first_fd(), sockets->second_fd()}) {
+    int opt;
+    socklen_t optlen = sizeof(opt);
+    EXPECT_THAT(getsockopt(fd, SOL_SOCKET, SO_TYPE, &opt, &optlen),
+                SyscallSucceeds());
+
+    // Type may have SOCK_NONBLOCK and SOCK_CLOEXEC ORed into it. Remove these
+    // before comparison.
+    type &= ~(SOCK_NONBLOCK | SOCK_CLOEXEC);
+    EXPECT_EQ(opt, type) << absl::StrFormat(
+        "getsockopt(%d, SOL_SOCKET, SO_TYPE, &opt, &optlen) => opt=%d was "
+        "unexpected",
+        fd, opt);
+  }
+}
+
+TEST_P(AllSocketPairTest, GetSockoptDomain) {
+  const int domain = GetParam().domain;
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  for (const int fd : {sockets->first_fd(), sockets->second_fd()}) {
+    int opt;
+    socklen_t optlen = sizeof(opt);
+    EXPECT_THAT(getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &opt, &optlen),
+                SyscallSucceeds());
+    EXPECT_EQ(opt, domain) << absl::StrFormat(
+        "getsockopt(%d, SOL_SOCKET, SO_DOMAIN, &opt, &optlen) => opt=%d was "
+        "unexpected",
+        fd, opt);
+  }
+}
+
+TEST_P(AllSocketPairTest, GetSockoptProtocol) {
+  const int protocol = GetParam().protocol;
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  for (const int fd : {sockets->first_fd(), sockets->second_fd()}) {
+    int opt;
+    socklen_t optlen = sizeof(opt);
+    EXPECT_THAT(getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, &opt, &optlen),
+                SyscallSucceeds());
+    EXPECT_EQ(opt, protocol) << absl::StrFormat(
+        "getsockopt(%d, SOL_SOCKET, SO_PROTOCOL, &opt, &optlen) => opt=%d was "
+        "unexpected",
+        fd, opt);
+  }
 }
 
 }  // namespace testing

@@ -21,15 +21,15 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // EventOperations represents an event with the semantics of Linux's file-based event
@@ -68,7 +68,7 @@ type EventOperations struct {
 // New creates a new event object with the supplied initial value and mode.
 func New(ctx context.Context, initVal uint64, semMode bool) *fs.File {
 	// name matches fs/eventfd.c:eventfd_file_create.
-	dirent := fs.NewDirent(anon.NewInode(ctx), "anon_inode:[eventfd]")
+	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[eventfd]")
 	// Release the initial dirent reference after NewFile takes a reference.
 	defer dirent.DecRef()
 	return fs.NewFile(ctx, dirent, fs.FileFlags{Read: true, Write: true}, &EventOperations{

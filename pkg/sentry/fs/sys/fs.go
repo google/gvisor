@@ -15,8 +15,8 @@
 package sys
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // filesystem is a sysfs.
@@ -61,5 +61,5 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	// device is always ignored.
 	// sysfs ignores data, see fs/sysfs/mount.c:sysfs_mount.
 
-	return New(ctx, fs.NewNonCachingMountSource(f, flags)), nil
+	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags)), nil
 }

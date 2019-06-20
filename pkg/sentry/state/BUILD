@@ -9,7 +9,7 @@ go_library(
         "state_metadata.go",
         "state_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/state",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/state",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

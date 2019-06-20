@@ -18,18 +18,18 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
 )
 
 func TestReaddir(t *testing.T) {
 	ctx := contexttest.Context(t)
 	ctx = &rootContext{
 		Context: ctx,
-		root:    fs.NewDirent(newTestRamfsDir(ctx, nil, nil), "root"),
+		root:    fs.NewDirent(ctx, newTestRamfsDir(ctx, nil, nil), "root"),
 	}
 	for _, test := range []struct {
 		// Test description.
@@ -103,7 +103,7 @@ func TestReaddir(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			openDir, err := test.dir.GetFile(ctx, fs.NewDirent(test.dir, "stub"), fs.FileFlags{Read: true})
+			openDir, err := test.dir.GetFile(ctx, fs.NewDirent(ctx, test.dir, "stub"), fs.FileFlags{Read: true})
 			if err != nil {
 				t.Fatalf("GetFile got error %v, want nil", err)
 			}
@@ -126,7 +126,7 @@ func TestReaddirRevalidation(t *testing.T) {
 	ctx := contexttest.Context(t)
 	ctx = &rootContext{
 		Context: ctx,
-		root:    fs.NewDirent(newTestRamfsDir(ctx, nil, nil), "root"),
+		root:    fs.NewDirent(ctx, newTestRamfsDir(ctx, nil, nil), "root"),
 	}
 
 	// Create an overlay with two directories, each with one file.
@@ -139,7 +139,7 @@ func TestReaddirRevalidation(t *testing.T) {
 	upperDir := upper.InodeOperations.(*dir).InodeOperations.(*ramfs.Dir)
 
 	// Check that overlay returns the files from both upper and lower.
-	openDir, err := overlay.GetFile(ctx, fs.NewDirent(overlay, "stub"), fs.FileFlags{Read: true})
+	openDir, err := overlay.GetFile(ctx, fs.NewDirent(ctx, overlay, "stub"), fs.FileFlags{Read: true})
 	if err != nil {
 		t.Fatalf("GetFile got error %v, want nil", err)
 	}
@@ -156,7 +156,7 @@ func TestReaddirRevalidation(t *testing.T) {
 	if err := upperDir.Remove(ctx, upper, "a"); err != nil {
 		t.Fatalf("error removing child: %v", err)
 	}
-	upperDir.AddChild(ctx, "c", fs.NewInode(fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermissions{}, 0),
+	upperDir.AddChild(ctx, "c", fs.NewInode(ctx, fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermissions{}, 0),
 		upper.MountSource, fs.StableAttr{Type: fs.RegularFile}))
 
 	// Seek to beginning of the directory and do the readdir again.
@@ -186,7 +186,7 @@ func TestReaddirOverlayFrozen(t *testing.T) {
 	overlayInode := fs.NewTestOverlayDir(ctx, upper, lower, false)
 
 	// Set that overlay as the root.
-	root := fs.NewDirent(overlayInode, "root")
+	root := fs.NewDirent(ctx, overlayInode, "root")
 	ctx = &rootContext{
 		Context: ctx,
 		root:    root,

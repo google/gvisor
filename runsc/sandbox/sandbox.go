@@ -28,16 +28,16 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
-	"gvisor.googlesource.com/gvisor/pkg/control/client"
-	"gvisor.googlesource.com/gvisor/pkg/control/server"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
-	"gvisor.googlesource.com/gvisor/pkg/urpc"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/cgroup"
-	"gvisor.googlesource.com/gvisor/runsc/console"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/control/client"
+	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
+	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/cgroup"
+	"gvisor.dev/gvisor/runsc/console"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Sandbox wraps a sandbox process.
@@ -73,15 +73,51 @@ type Sandbox struct {
 	statusMu sync.Mutex
 }
 
+// Args is used to configure a new sandbox.
+type Args struct {
+	// ID is the sandbox unique identifier.
+	ID string
+
+	// Spec is the OCI spec that describes the container.
+	Spec *specs.Spec
+
+	// BundleDir is the directory containing the container bundle.
+	BundleDir string
+
+	// ConsoleSocket is the path to a unix domain socket that will receive
+	// the console FD. It may be empty.
+	ConsoleSocket string
+
+	// UserLog is the filename to send user-visible logs to. It may be empty.
+	UserLog string
+
+	// IOFiles is the list of files that connect to a 9P endpoint for the mounts
+	// points using Gofers. They must be in the same order as mounts appear in
+	// the spec.
+	IOFiles []*os.File
+
+	// MountsFile is a file container mount information from the spec. It's
+	// equivalent to the mounts from the spec, except that all paths have been
+	// resolved to their final absolute location.
+	MountsFile *os.File
+
+	// Gcgroup is the cgroup that the sandbox is part of.
+	Cgroup *cgroup.Cgroup
+
+	// Attached indicates that the sandbox lifecycle is attached with the caller.
+	// If the caller exits, the sandbox should exit too.
+	Attached bool
+}
+
 // New creates the sandbox process. The caller must call Destroy() on the
 // sandbox.
-func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, specFile *os.File, cg *cgroup.Cgroup) (*Sandbox, error) {
-	s := &Sandbox{ID: id, Cgroup: cg}
+func New(conf *boot.Config, args *Args) (*Sandbox, error) {
+	s := &Sandbox{ID: args.ID, Cgroup: args.Cgroup}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := specutils.MakeCleanup(func() {
 		err := s.destroy()
-		log.Warningf("error destroying sandbox: %v", err)
+		log.Warningf("error Ndestroying sandbox: %v", err)
 	})
 	defer c.Clean()
 
@@ -93,7 +129,7 @@ func New(id string, spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocke
 	defer clientSyncFile.Close()
 
 	// Create the sandbox process.
-	err = s.createSandboxProcess(spec, conf, bundleDir, consoleSocket, userLog, ioFiles, specFile, sandboxSyncFile)
+	err = s.createSandboxProcess(conf, args, sandboxSyncFile)
 	// sandboxSyncFile has to be closed to be able to detect when the sandbox
 	// process exits unexpectedly.
 	sandboxSyncFile.Close()
@@ -291,7 +327,7 @@ func (s *Sandbox) connError(err error) error {
 
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
-func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bundleDir, consoleSocket, userLog string, ioFiles []*os.File, mountsFile, startSyncFile *os.File) error {
+func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncFile *os.File) error {
 	// nextFD is used to get unused FDs that we can pass to the sandbox.  It
 	// starts at 3 because 0, 1, and 2 are taken by stdin/out/err.
 	nextFD := 3
@@ -327,7 +363,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Add the "boot" command to the args.
 	//
 	// All flags after this must be for the boot command
-	cmd.Args = append(cmd.Args, "boot", "--bundle="+bundleDir)
+	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
 	// Create a socket for the control server and donate it to the sandbox.
 	addr := boot.ControlSocketAddr(s.ID)
@@ -342,12 +378,12 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	cmd.Args = append(cmd.Args, "--controller-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
-	defer mountsFile.Close()
-	cmd.ExtraFiles = append(cmd.ExtraFiles, mountsFile)
+	defer args.MountsFile.Close()
+	cmd.ExtraFiles = append(cmd.ExtraFiles, args.MountsFile)
 	cmd.Args = append(cmd.Args, "--mounts-fd="+strconv.Itoa(nextFD))
 	nextFD++
 
-	specFile, err := specutils.OpenSpec(bundleDir)
+	specFile, err := specutils.OpenSpec(args.BundleDir)
 	if err != nil {
 		return err
 	}
@@ -361,7 +397,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	nextFD++
 
 	// If there is a gofer, sends all socket ends to the sandbox.
-	for _, f := range ioFiles {
+	for _, f := range args.IOFiles {
 		defer f.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, f)
 		cmd.Args = append(cmd.Args, "--io-fds="+strconv.Itoa(nextFD))
@@ -389,14 +425,14 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 
 	// If the console control socket file is provided, then create a new
 	// pty master/slave pair and set the TTY on the sandbox process.
-	if consoleSocket != "" {
+	if args.ConsoleSocket != "" {
 		cmd.Args = append(cmd.Args, "--console=true")
 
 		// console.NewWithSocket will send the master on the given
 		// socket, and return the slave.
-		tty, err := console.NewWithSocket(consoleSocket)
+		tty, err := console.NewWithSocket(args.ConsoleSocket)
 		if err != nil {
-			return fmt.Errorf("setting up console with socket %q: %v", consoleSocket, err)
+			return fmt.Errorf("setting up console with socket %q: %v", args.ConsoleSocket, err)
 		}
 		defer tty.Close()
 
@@ -469,7 +505,7 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
 	// namespace.
-	if ns, ok := specutils.GetNS(specs.NetworkNamespace, spec); ok && conf.Network != boot.NetworkNone {
+	if ns, ok := specutils.GetNS(specs.NetworkNamespace, args.Spec); ok && conf.Network != boot.NetworkNone {
 		log.Infof("Sandbox will be started in the container's network namespace: %+v", ns)
 		nss = append(nss, ns)
 	} else if conf.Network == boot.NetworkHost {
@@ -483,10 +519,10 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// inside the user namespace specified in the spec or the current namespace
 	// if none is configured.
 	if conf.Network == boot.NetworkHost {
-		if userns, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
+		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
-			specutils.SetUIDGIDMappings(cmd, spec)
+			specutils.SetUIDGIDMappings(cmd, args.Spec)
 		} else {
 			log.Infof("Sandbox will be started in the current user namespace")
 		}
@@ -515,46 +551,64 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		} else if specutils.HasCapabilities(capability.CAP_SETUID, capability.CAP_SETGID) {
 			log.Infof("Sandbox will be started in new user namespace")
 			nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
-
-			// Map nobody in the new namespace to nobody in the parent namespace.
-			//
-			// A sandbox process will construct an empty
-			// root for itself, so it has to have the CAP_SYS_ADMIN
-			// capability.
-			//
-			// FIXME(b/122554829): The current implementations of
-			// os/exec doesn't allow to set ambient capabilities if
-			// a process is started in a new user namespace. As a
-			// workaround, we start the sandbox process with the 0
-			// UID and then it constructs a chroot and sets UID to
-			// nobody.  https://github.com/golang/go/issues/2315
-			const nobody = 65534
-			cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
-				{
-					ContainerID: int(0),
-					HostID:      int(nobody - 1),
-					Size:        int(1),
-				},
-				{
-					ContainerID: int(nobody),
-					HostID:      int(nobody),
-					Size:        int(1),
-				},
-			}
-			cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
-				{
-					ContainerID: int(nobody),
-					HostID:      int(nobody),
-					Size:        int(1),
-				},
-			}
-
-			// Set credentials to run as user and group nobody.
-			cmd.SysProcAttr.Credential = &syscall.Credential{
-				Uid: 0,
-				Gid: nobody,
-			}
 			cmd.Args = append(cmd.Args, "--setup-root")
+
+			if conf.Rootless {
+				log.Infof("Rootless mode: sandbox will run as root inside user namespace, mapped to the current user, uid: %d, gid: %d", os.Getuid(), os.Getgid())
+				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      os.Getuid(),
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      os.Getgid(),
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+
+			} else {
+				// Map nobody in the new namespace to nobody in the parent namespace.
+				//
+				// A sandbox process will construct an empty
+				// root for itself, so it has to have the CAP_SYS_ADMIN
+				// capability.
+				//
+				// FIXME(b/122554829): The current implementations of
+				// os/exec doesn't allow to set ambient capabilities if
+				// a process is started in a new user namespace. As a
+				// workaround, we start the sandbox process with the 0
+				// UID and then it constructs a chroot and sets UID to
+				// nobody.  https://github.com/golang/go/issues/2315
+				const nobody = 65534
+				cmd.SysProcAttr.UidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: 0,
+						HostID:      nobody - 1,
+						Size:        1,
+					},
+					{
+						ContainerID: nobody,
+						HostID:      nobody,
+						Size:        1,
+					},
+				}
+				cmd.SysProcAttr.GidMappings = []syscall.SysProcIDMap{
+					{
+						ContainerID: nobody,
+						HostID:      nobody,
+						Size:        1,
+					},
+				}
+
+				// Set credentials to run as user and group nobody.
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: nobody}
+			}
+
 		} else {
 			return fmt.Errorf("can't run sandbox process as user nobody since we don't have CAP_SETUID or CAP_SETGID")
 		}
@@ -580,8 +634,8 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 		}
 	}
 
-	if userLog != "" {
-		f, err := os.OpenFile(userLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
+	if args.UserLog != "" {
+		f, err := os.OpenFile(args.UserLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0664)
 		if err != nil {
 			return fmt.Errorf("opening compat log file: %v", err)
 		}
@@ -598,6 +652,11 @@ func (s *Sandbox) createSandboxProcess(spec *specs.Spec, conf *boot.Config, bund
 	// Log the FDs we are donating to the sandbox process.
 	for i, f := range cmd.ExtraFiles {
 		log.Debugf("Donating FD %d: %q", i+3, f.Name())
+	}
+
+	if args.Attached {
+		// Kill sandbox if parent process exits in attached mode.
+		cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
 	}
 
 	log.Debugf("Starting sandbox: %s %v", binPath, cmd.Args)

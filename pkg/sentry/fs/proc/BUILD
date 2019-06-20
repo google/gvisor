@@ -27,7 +27,7 @@ go_library(
         "uptime.go",
         "version.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

@@ -8,7 +8,7 @@ go_library(
     srcs = [
         "event.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/eventchannel",
+    importpath = "gvisor.dev/gvisor/pkg/eventchannel",
     visibility = ["//:sandbox"],
     deps = [
         ":eventchannel_go_proto",
@@ -26,7 +26,7 @@ proto_library(
 
 go_proto_library(
     name = "eventchannel_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/eventchannel/eventchannel_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto",
     proto = ":eventchannel_proto",
     visibility = ["//:sandbox"],
 )

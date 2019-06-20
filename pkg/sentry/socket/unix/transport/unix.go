@@ -19,11 +19,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // initialLimit is the starting limit for the socket buffers.
@@ -120,13 +121,13 @@ type Endpoint interface {
 	// CMTruncated indicates that the numRights hint was used to receive fewer
 	// than the total available SCM_RIGHTS FDs. Additional truncation may be
 	// required by the caller.
-	RecvMsg(data [][]byte, creds bool, numRights uintptr, peek bool, addr *tcpip.FullAddress) (recvLen, msgLen uintptr, cm ControlMessages, CMTruncated bool, err *syserr.Error)
+	RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights uintptr, peek bool, addr *tcpip.FullAddress) (recvLen, msgLen uintptr, cm ControlMessages, CMTruncated bool, err *syserr.Error)
 
 	// SendMsg writes data and a control message to the endpoint's peer.
 	// This method does not block if the data cannot be written.
 	//
 	// SendMsg does not take ownership of any of its arguments on error.
-	SendMsg([][]byte, ControlMessages, BoundEndpoint) (uintptr, *syserr.Error)
+	SendMsg(context.Context, [][]byte, ControlMessages, BoundEndpoint) (uintptr, *syserr.Error)
 
 	// Connect connects this endpoint directly to another.
 	//
@@ -134,7 +135,7 @@ type Endpoint interface {
 	// endpoint passed in as a parameter.
 	//
 	// The error codes are the same as Connect.
-	Connect(server BoundEndpoint) *syserr.Error
+	Connect(ctx context.Context, server BoundEndpoint) *syserr.Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
@@ -215,7 +216,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on endpoints with a
 	// type that isn't SockStream or SockSeqpacket.
-	BidirectionalConnect(ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error
+	BidirectionalConnect(ctx context.Context, ep ConnectingEndpoint, returnConnect func(Receiver, ConnectedEndpoint)) *syserr.Error
 
 	// UnidirectionalConnect establishes a write-only connection to a unix
 	// endpoint.
@@ -225,7 +226,7 @@ type BoundEndpoint interface {
 	//
 	// This method will return syserr.ErrConnectionRefused on a non-SockDgram
 	// endpoint.
-	UnidirectionalConnect() (ConnectedEndpoint, *syserr.Error)
+	UnidirectionalConnect(ctx context.Context) (ConnectedEndpoint, *syserr.Error)
 
 	// Passcred returns whether or not the SO_PASSCRED socket option is
 	// enabled on this end.
@@ -776,7 +777,7 @@ func (e *baseEndpoint) Connected() bool {
 }
 
 // RecvMsg reads data and a control message from the endpoint.
-func (e *baseEndpoint) RecvMsg(data [][]byte, creds bool, numRights uintptr, peek bool, addr *tcpip.FullAddress) (uintptr, uintptr, ControlMessages, bool, *syserr.Error) {
+func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights uintptr, peek bool, addr *tcpip.FullAddress) (uintptr, uintptr, ControlMessages, bool, *syserr.Error) {
 	e.Lock()
 
 	if e.receiver == nil {
@@ -802,7 +803,7 @@ func (e *baseEndpoint) RecvMsg(data [][]byte, creds bool, numRights uintptr, pee
 
 // SendMsg writes data and a control message to the endpoint's peer.
 // This method does not block if the data cannot be written.
-func (e *baseEndpoint) SendMsg(data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
+func (e *baseEndpoint) SendMsg(ctx context.Context, data [][]byte, c ControlMessages, to BoundEndpoint) (uintptr, *syserr.Error) {
 	e.Lock()
 	if !e.Connected() {
 		e.Unlock()

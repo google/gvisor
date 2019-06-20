@@ -20,18 +20,18 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/metric"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var (
@@ -128,7 +128,7 @@ func NewMemfdInode(ctx context.Context, allowSeals bool) *fs.Inode {
 	if allowSeals {
 		iops.seals = 0
 	}
-	return fs.NewInode(iops, fs.NewNonCachingMountSource(nil, fs.MountSourceFlags{}), fs.StableAttr{
+	return fs.NewInode(ctx, iops, fs.NewNonCachingMountSource(ctx, nil, fs.MountSourceFlags{}), fs.StableAttr{
 		Type:      fs.RegularFile,
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),

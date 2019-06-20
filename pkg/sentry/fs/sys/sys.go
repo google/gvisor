@@ -16,25 +16,25 @@
 package sys
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
-func newFile(node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
+func newFile(ctx context.Context, node fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
 	sattr := fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
-	return fs.NewInode(node, msrc, sattr)
+	return fs.NewInode(ctx, node, msrc, sattr)
 }
 
 func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.Inode) *fs.Inode {
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return fs.NewInode(d, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),
 		BlockSize: usermem.PageSize,

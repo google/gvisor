@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "urpc",
     srcs = ["urpc.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/urpc",
+    importpath = "gvisor.dev/gvisor/pkg/urpc",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/fd",

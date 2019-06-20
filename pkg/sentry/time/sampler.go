@@ -17,7 +17,7 @@ package time
 import (
 	"errors"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 const (

@@ -17,9 +17,11 @@
 package ptrace
 
 import (
+	"fmt"
+	"strings"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
 const (
@@ -101,4 +103,39 @@ func syscallReturnValue(regs *syscall.PtraceRegs) (uintptr, error) {
 		return 0, syscall.Errno(-rval)
 	}
 	return uintptr(rval), nil
+}
+
+func dumpRegs(regs *syscall.PtraceRegs) string {
+	var m strings.Builder
+
+	fmt.Fprintf(&m, "Registers:\n")
+	fmt.Fprintf(&m, "\tR15\t = %016x\n", regs.R15)
+	fmt.Fprintf(&m, "\tR14\t = %016x\n", regs.R14)
+	fmt.Fprintf(&m, "\tR13\t = %016x\n", regs.R13)
+	fmt.Fprintf(&m, "\tR12\t = %016x\n", regs.R12)
+	fmt.Fprintf(&m, "\tRbp\t = %016x\n", regs.Rbp)
+	fmt.Fprintf(&m, "\tRbx\t = %016x\n", regs.Rbx)
+	fmt.Fprintf(&m, "\tR11\t = %016x\n", regs.R11)
+	fmt.Fprintf(&m, "\tR10\t = %016x\n", regs.R10)
+	fmt.Fprintf(&m, "\tR9\t = %016x\n", regs.R9)
+	fmt.Fprintf(&m, "\tR8\t = %016x\n", regs.R8)
+	fmt.Fprintf(&m, "\tRax\t = %016x\n", regs.Rax)
+	fmt.Fprintf(&m, "\tRcx\t = %016x\n", regs.Rcx)
+	fmt.Fprintf(&m, "\tRdx\t = %016x\n", regs.Rdx)
+	fmt.Fprintf(&m, "\tRsi\t = %016x\n", regs.Rsi)
+	fmt.Fprintf(&m, "\tRdi\t = %016x\n", regs.Rdi)
+	fmt.Fprintf(&m, "\tOrig_rax = %016x\n", regs.Orig_rax)
+	fmt.Fprintf(&m, "\tRip\t = %016x\n", regs.Rip)
+	fmt.Fprintf(&m, "\tCs\t = %016x\n", regs.Cs)
+	fmt.Fprintf(&m, "\tEflags\t = %016x\n", regs.Eflags)
+	fmt.Fprintf(&m, "\tRsp\t = %016x\n", regs.Rsp)
+	fmt.Fprintf(&m, "\tSs\t = %016x\n", regs.Ss)
+	fmt.Fprintf(&m, "\tFs_base\t = %016x\n", regs.Fs_base)
+	fmt.Fprintf(&m, "\tGs_base\t = %016x\n", regs.Gs_base)
+	fmt.Fprintf(&m, "\tDs\t = %016x\n", regs.Ds)
+	fmt.Fprintf(&m, "\tEs\t = %016x\n", regs.Es)
+	fmt.Fprintf(&m, "\tFs\t = %016x\n", regs.Fs)
+	fmt.Fprintf(&m, "\tGs\t = %016x\n", regs.Gs)
+
+	return m.String()
 }

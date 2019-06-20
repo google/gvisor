@@ -15,8 +15,8 @@
 package fs
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // MockInodeOperations implements InodeOperations for testing Inodes.
@@ -34,7 +34,7 @@ type MockInodeOperations struct {
 
 // NewMockInode returns a mock *Inode using MockInodeOperations.
 func NewMockInode(ctx context.Context, msrc *MountSource, sattr StableAttr) *Inode {
-	return NewInode(NewMockInodeOperations(ctx), msrc, sattr)
+	return NewInode(ctx, NewMockInodeOperations(ctx), msrc, sattr)
 }
 
 // NewMockInodeOperations returns a *MockInodeOperations.
@@ -93,7 +93,7 @@ func (n *MockInodeOperations) IsVirtual() bool {
 // Lookup implements fs.InodeOperations.Lookup.
 func (n *MockInodeOperations) Lookup(ctx context.Context, dir *Inode, p string) (*Dirent, error) {
 	n.walkCalled = true
-	return NewDirent(NewInode(&MockInodeOperations{}, dir.MountSource, StableAttr{}), p), nil
+	return NewDirent(ctx, NewInode(ctx, &MockInodeOperations{}, dir.MountSource, StableAttr{}), p), nil
 }
 
 // SetPermissions implements fs.InodeOperations.SetPermissions.
@@ -114,7 +114,7 @@ func (n *MockInodeOperations) SetTimestamps(context.Context, *Inode, TimeSpec) e
 // Create implements fs.InodeOperations.Create.
 func (n *MockInodeOperations) Create(ctx context.Context, dir *Inode, p string, flags FileFlags, perms FilePermissions) (*File, error) {
 	n.createCalled = true
-	d := NewDirent(NewInode(&MockInodeOperations{}, dir.MountSource, StableAttr{}), p)
+	d := NewDirent(ctx, NewInode(ctx, &MockInodeOperations{}, dir.MountSource, StableAttr{}), p)
 	return &File{Dirent: d}, nil
 }
 

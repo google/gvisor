@@ -1,6 +1,4 @@
-package(
-    licenses = ["notice"],  # Apache 2.0
-)
+package(licenses = ["notice"])
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library")
@@ -24,8 +22,8 @@ go_library(
         "endpoint_state.go",
         "packet_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/raw",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/raw",
+    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/log",

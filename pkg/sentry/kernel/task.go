@@ -18,24 +18,24 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/bpf"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/sched"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/third_party/gvsync"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/unimpl"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // Task represents a thread of execution in the untrusted app.  It
@@ -665,7 +665,7 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
-	realRoot := t.k.mounts.Root()
+	realRoot := t.tg.mounts.Root()
 	defer realRoot.DecRef()
 	root := t.fsc.RootDirectory()
 	if root != nil {
@@ -710,7 +710,7 @@ func (t *Task) WithMuLocked(f func(*Task)) {
 // MountNamespace returns t's MountNamespace. MountNamespace does not take an
 // additional reference on the returned MountNamespace.
 func (t *Task) MountNamespace() *fs.MountNamespace {
-	return t.k.mounts
+	return t.tg.mounts
 }
 
 // AbstractSockets returns t's AbstractSocketNamespace.

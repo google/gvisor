@@ -6,7 +6,7 @@ go_library(
     name = "filetest",
     testonly = 1,
     srcs = ["filetest.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/filetest",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/filetest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/sentry/context",

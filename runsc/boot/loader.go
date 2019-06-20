@@ -20,51 +20,52 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/cpuid"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/memutil"
-	"gvisor.googlesource.com/gvisor/pkg/rand"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/loader"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/pgalloc"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/sighandling"
-	slinux "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/arp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/icmp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp"
-	"gvisor.googlesource.com/gvisor/runsc/boot/filter"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/loader"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
+	"gvisor.dev/gvisor/pkg/sentry/sighandling"
+	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
+	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/runsc/boot/filter"
+	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/hostinet"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/socket/netlink/route"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
+	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
+	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
 // Loader keeps state needed to start the kernel and run the container..
@@ -205,7 +206,9 @@ func New(args Args) (*Loader, error) {
 	// Create VDSO.
 	//
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(k)
+	//
+	// FIXME(b/109889800): Use non-nil context.
+	vdso, err := loader.PrepareVDSO(nil, k)
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %v", err)
 	}
@@ -445,6 +448,23 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	return mf, nil
 }
 
+func (l *Loader) installSeccompFilters() error {
+	if l.conf.DisableSeccomp {
+		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
+	} else {
+		opts := filter.Options{
+			Platform:      l.k.Platform,
+			HostNetwork:   l.conf.Network == NetworkHost,
+			ProfileEnable: l.conf.ProfileEnable,
+			ControllerFD:  l.ctrl.srv.FD(),
+		}
+		if err := filter.Install(opts); err != nil {
+			return fmt.Errorf("installing seccomp filters: %v", err)
+		}
+	}
+	return nil
+}
+
 // Run runs the root container.
 func (l *Loader) Run() error {
 	err := l.run()
@@ -480,25 +500,19 @@ func (l *Loader) run() error {
 		return fmt.Errorf("trying to start deleted container %q", l.sandboxID)
 	}
 
-	// Finally done with all configuration. Setup filters before user code
-	// is loaded.
-	if l.conf.DisableSeccomp {
-		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
-	} else {
-		opts := filter.Options{
-			Platform:      l.k.Platform,
-			HostNetwork:   l.conf.Network == NetworkHost,
-			ProfileEnable: l.conf.ProfileEnable,
-			ControllerFD:  l.ctrl.srv.FD(),
-		}
-		if err := filter.Install(opts); err != nil {
-			return fmt.Errorf("installing seccomp filters: %v", err)
-		}
-	}
-
 	// If we are restoring, we do not want to create a process.
 	// l.restore is set by the container manager when a restore call is made.
 	if !l.restore {
+		if l.conf.ProfileEnable {
+			initializePProf()
+		}
+
+		// Finally done with all configuration. Setup filters before user code
+		// is loaded.
+		if err := l.installSeccompFilters(); err != nil {
+			return err
+		}
+
 		// Create the FD map, which will set stdin, stdout, and stderr.  If console
 		// is true, then ioctl calls will be passed through to the host fd.
 		ctx := l.rootProcArgs.NewContext(l.k)
@@ -521,6 +535,24 @@ func (l *Loader) run() error {
 		rootMns := l.k.RootMountNamespace()
 		if err := setExecutablePath(rootCtx, rootMns, &l.rootProcArgs); err != nil {
 			return err
+		}
+
+		// Read /etc/passwd for the user's HOME directory and set the HOME
+		// environment variable as required by POSIX if it is not overridden by
+		// the user.
+		hasHomeEnvv := false
+		for _, envv := range l.rootProcArgs.Envv {
+			if strings.HasPrefix(envv, "HOME=") {
+				hasHomeEnvv = true
+			}
+		}
+		if !hasHomeEnvv {
+			homeDir, err := getExecUserHome(rootCtx, rootMns, uint32(l.rootProcArgs.Credentials.RealKUID))
+			if err != nil {
+				return fmt.Errorf("error reading exec user: %v", err)
+			}
+
+			l.rootProcArgs.Envv = append(l.rootProcArgs.Envv, "HOME="+homeDir)
 		}
 
 		// Create the root container init task. It will begin running
@@ -815,9 +847,17 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			// privileges.
 			Raw: true,
 		})}
+
+		// Enable SACK Recovery.
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(true)); err != nil {
 			return nil, fmt.Errorf("failed to enable SACK: %v", err)
 		}
+
+		// Enable Receive Buffer Auto-Tuning.
+		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
+		}
+
 		return &s, nil
 
 	default:

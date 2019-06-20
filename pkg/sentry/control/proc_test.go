@@ -17,9 +17,9 @@ package control
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/log"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 func init() {

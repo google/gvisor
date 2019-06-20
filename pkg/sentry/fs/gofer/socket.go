@@ -15,14 +15,15 @@
 package gofer
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // BoundEndpoint returns a gofer-backed transport.BoundEndpoint.
@@ -75,7 +76,7 @@ func sockTypeToP9(t linux.SockType) (p9.ConnectFlags, bool) {
 }
 
 // BidirectionalConnect implements ConnectableEndpoint.BidirectionalConnect.
-func (e *endpoint) BidirectionalConnect(ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
+func (e *endpoint) BidirectionalConnect(ctx context.Context, ce transport.ConnectingEndpoint, returnConnect func(transport.Receiver, transport.ConnectedEndpoint)) *syserr.Error {
 	cf, ok := sockTypeToP9(ce.Type())
 	if !ok {
 		return syserr.ErrConnectionRefused
@@ -100,7 +101,7 @@ func (e *endpoint) BidirectionalConnect(ce transport.ConnectingEndpoint, returnC
 		return syserr.ErrConnectionRefused
 	}
 
-	c, serr := host.NewConnectedEndpoint(hostFile, ce.WaiterQueue(), e.path)
+	c, serr := host.NewConnectedEndpoint(ctx, hostFile, ce.WaiterQueue(), e.path)
 	if serr != nil {
 		ce.Unlock()
 		log.Warningf("Gofer returned invalid host socket for BidirectionalConnect; file %+v flags %+v: %v", e.file, cf, serr)
@@ -116,13 +117,13 @@ func (e *endpoint) BidirectionalConnect(ce transport.ConnectingEndpoint, returnC
 
 // UnidirectionalConnect implements
 // transport.BoundEndpoint.UnidirectionalConnect.
-func (e *endpoint) UnidirectionalConnect() (transport.ConnectedEndpoint, *syserr.Error) {
+func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.ConnectedEndpoint, *syserr.Error) {
 	hostFile, err := e.file.Connect(p9.DgramSocket)
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
 	}
 
-	c, serr := host.NewConnectedEndpoint(hostFile, &waiter.Queue{}, e.path)
+	c, serr := host.NewConnectedEndpoint(ctx, hostFile, &waiter.Queue{}, e.path)
 	if serr != nil {
 		log.Warningf("Gofer returned invalid host socket for UnidirectionalConnect; file %+v: %v", e.file, serr)
 		return nil, serr

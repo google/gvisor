@@ -19,9 +19,9 @@ import (
 	"path"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // descriptor wraps a host fd.

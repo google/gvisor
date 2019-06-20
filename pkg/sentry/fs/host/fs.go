@@ -23,9 +23,9 @@ import (
 	"strconv"
 	"strings"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // FilesystemName is the name under which Filesystem is registered.
@@ -262,7 +262,7 @@ func childDentAttrs(ctx context.Context, d *fs.Dirent) map[string]fs.DentAttr {
 // newMountSource constructs a new host fs.MountSource
 // relative to a root path. The root should match the mount point.
 func newMountSource(ctx context.Context, root string, mounter fs.FileOwner, filesystem fs.Filesystem, flags fs.MountSourceFlags, dontTranslateOwnership bool) *fs.MountSource {
-	return fs.NewMountSource(&superOperations{
+	return fs.NewMountSource(ctx, &superOperations{
 		root:                   root,
 		inodeMappings:          make(map[uint64]string),
 		mounter:                mounter,

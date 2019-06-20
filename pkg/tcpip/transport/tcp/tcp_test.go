@@ -21,20 +21,20 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/checker"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/loopback"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/ports"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp/testing/context"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/ports"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp/testing/context"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -1110,8 +1110,9 @@ func TestNonScaledWindowAccept(t *testing.T) {
 		t.Fatalf("Listen failed: %v", err)
 	}
 
-	// Do 3-way handshake.
-	c.PassiveConnect(100, 2, header.TCPSynOptions{MSS: defaultIPv4MSS})
+	// Do 3-way handshake w/ window scaling disabled. The SYN-ACK to the SYN
+	// should not carry the window scaling option.
+	c.PassiveConnect(100, -1, header.TCPSynOptions{MSS: defaultIPv4MSS})
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
@@ -1600,7 +1601,6 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	// Set the buffer size to a deterministic size so that we can check the
 	// window scaling option.
 	const rcvBufferSize = 0x20000
-	const wndScale = 2
 	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(rcvBufferSize)); err != nil {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
@@ -1614,7 +1614,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	}
 
 	// Do 3-way handshake.
-	c.PassiveConnect(maxPayload, wndScale, header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize})
+	c.PassiveConnect(maxPayload, -1, header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize})
 
 	// Try to accept the connection.
 	we, ch := waiter.NewChannelEntry(nil)
@@ -1713,7 +1713,7 @@ func TestForwarderSendMSSLessThanMTU(t *testing.T) {
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
 
 	// Do 3-way handshake.
-	c.PassiveConnect(maxPayload, 1, header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize})
+	c.PassiveConnect(maxPayload, -1, header.TCPSynOptions{MSS: mtu - header.IPv4MinimumSize - header.TCPMinimumSize})
 
 	// Wait for connection to be available.
 	select {
@@ -2767,11 +2767,11 @@ func TestDefaultBufferSizes(t *testing.T) {
 		}
 	}()
 
-	checkSendBufferSize(t, ep, tcp.DefaultBufferSize)
-	checkRecvBufferSize(t, ep, tcp.DefaultBufferSize)
+	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize)
+	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize)
 
 	// Change the default send buffer size.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultBufferSize * 2, tcp.DefaultBufferSize * 20}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultSendBufferSize * 2, tcp.DefaultSendBufferSize * 20}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
@@ -2781,11 +2781,11 @@ func TestDefaultBufferSizes(t *testing.T) {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
 
-	checkSendBufferSize(t, ep, tcp.DefaultBufferSize*2)
-	checkRecvBufferSize(t, ep, tcp.DefaultBufferSize)
+	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*2)
+	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize)
 
 	// Change the default receive buffer size.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultBufferSize * 3, tcp.DefaultBufferSize * 30}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultReceiveBufferSize * 3, tcp.DefaultReceiveBufferSize * 30}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
@@ -2795,8 +2795,8 @@ func TestDefaultBufferSizes(t *testing.T) {
 		t.Fatalf("NewEndpoint failed; %v", err)
 	}
 
-	checkSendBufferSize(t, ep, tcp.DefaultBufferSize*2)
-	checkRecvBufferSize(t, ep, tcp.DefaultBufferSize*3)
+	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*2)
+	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*3)
 }
 
 func TestMinMaxBufferSizes(t *testing.T) {
@@ -2810,11 +2810,11 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	defer ep.Close()
 
 	// Change the min/max values for send/receive
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{200, tcp.DefaultBufferSize * 2, tcp.DefaultBufferSize * 20}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{200, tcp.DefaultReceiveBufferSize * 2, tcp.DefaultReceiveBufferSize * 20}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{300, tcp.DefaultBufferSize * 3, tcp.DefaultBufferSize * 30}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{300, tcp.DefaultSendBufferSize * 3, tcp.DefaultSendBufferSize * 30}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
@@ -2832,17 +2832,17 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	checkSendBufferSize(t, ep, 300)
 
 	// Set values above the max.
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(1 + tcp.DefaultBufferSize*20)); err != nil {
+	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(1 + tcp.DefaultReceiveBufferSize*20)); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
-	checkRecvBufferSize(t, ep, tcp.DefaultBufferSize*20)
+	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20)
 
-	if err := ep.SetSockOpt(tcpip.SendBufferSizeOption(1 + tcp.DefaultBufferSize*30)); err != nil {
+	if err := ep.SetSockOpt(tcpip.SendBufferSizeOption(1 + tcp.DefaultSendBufferSize*30)); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
-	checkSendBufferSize(t, ep, tcp.DefaultBufferSize*30)
+	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30)
 }
 
 func makeStack() (*stack.Stack, *tcpip.Error) {
@@ -3205,13 +3205,14 @@ func TestTCPEndpointProbe(t *testing.T) {
 	}
 }
 
-func TestSetCongestionControl(t *testing.T) {
+func TestStackSetCongestionControl(t *testing.T) {
 	testCases := []struct {
-		cc       tcp.CongestionControlOption
-		mustPass bool
+		cc  tcpip.CongestionControlOption
+		err *tcpip.Error
 	}{
-		{"reno", true},
-		{"cubic", true},
+		{"reno", nil},
+		{"cubic", nil},
+		{"blahblah", tcpip.ErrNoSuchFile},
 	}
 
 	for _, tc := range testCases {
@@ -3221,62 +3222,135 @@ func TestSetCongestionControl(t *testing.T) {
 
 			s := c.Stack()
 
-			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != nil && tc.mustPass {
-				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want not-nil", tcp.ProtocolNumber, tc.cc, err)
+			var oldCC tcpip.CongestionControlOption
+			if err := s.TransportProtocolOption(tcp.ProtocolNumber, &oldCC); err != nil {
+				t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &oldCC, err)
 			}
 
-			var cc tcp.CongestionControlOption
+			if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tc.cc); err != tc.err {
+				t.Fatalf("s.SetTransportProtocolOption(%v, %v) = %v, want %v", tcp.ProtocolNumber, tc.cc, err, tc.err)
+			}
+
+			var cc tcpip.CongestionControlOption
 			if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
 				t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
 			}
-			if got, want := cc, tc.cc; got != want {
+
+			got, want := cc, oldCC
+			// If SetTransportProtocolOption is expected to succeed
+			// then the returned value for congestion control should
+			// match the one specified in the
+			// SetTransportProtocolOption call above, else it should
+			// be what it was before the call to
+			// SetTransportProtocolOption.
+			if tc.err == nil {
+				want = tc.cc
+			}
+			if got != want {
 				t.Fatalf("got congestion control: %v, want: %v", got, want)
 			}
 		})
 	}
 }
 
-func TestAvailableCongestionControl(t *testing.T) {
+func TestStackAvailableCongestionControl(t *testing.T) {
 	c := context.New(t, 1500)
 	defer c.Cleanup()
 
 	s := c.Stack()
 
 	// Query permitted congestion control algorithms.
-	var aCC tcp.AvailableCongestionControlOption
+	var aCC tcpip.AvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &aCC); err != nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &aCC, err)
 	}
-	if got, want := aCC, tcp.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcp.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := aCC, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
 	}
 }
 
-func TestSetAvailableCongestionControl(t *testing.T) {
+func TestStackSetAvailableCongestionControl(t *testing.T) {
 	c := context.New(t, 1500)
 	defer c.Cleanup()
 
 	s := c.Stack()
 
 	// Setting AvailableCongestionControlOption should fail.
-	aCC := tcp.AvailableCongestionControlOption("xyz")
+	aCC := tcpip.AvailableCongestionControlOption("xyz")
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &aCC); err == nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = nil, want non-nil", tcp.ProtocolNumber, &aCC)
 	}
 
 	// Verify that we still get the expected list of congestion control options.
-	var cc tcp.AvailableCongestionControlOption
+	var cc tcpip.AvailableCongestionControlOption
 	if err := s.TransportProtocolOption(tcp.ProtocolNumber, &cc); err != nil {
 		t.Fatalf("s.TransportProtocolOption(%v, %v) = %v", tcp.ProtocolNumber, &cc, err)
 	}
-	if got, want := cc, tcp.AvailableCongestionControlOption("reno cubic"); got != want {
-		t.Fatalf("got tcp.AvailableCongestionControlOption: %v, want: %v", got, want)
+	if got, want := cc, tcpip.AvailableCongestionControlOption("reno cubic"); got != want {
+		t.Fatalf("got tcpip.AvailableCongestionControlOption: %v, want: %v", got, want)
+	}
+}
+
+func TestEndpointSetCongestionControl(t *testing.T) {
+	testCases := []struct {
+		cc  tcpip.CongestionControlOption
+		err *tcpip.Error
+	}{
+		{"reno", nil},
+		{"cubic", nil},
+		{"blahblah", tcpip.ErrNoSuchFile},
+	}
+
+	for _, connected := range []bool{false, true} {
+		for _, tc := range testCases {
+			t.Run(fmt.Sprintf("SetSockOpt(.., %v) w/ connected = %v", tc.cc, connected), func(t *testing.T) {
+				c := context.New(t, 1500)
+				defer c.Cleanup()
+
+				// Create TCP endpoint.
+				var err *tcpip.Error
+				c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+				if err != nil {
+					t.Fatalf("NewEndpoint failed: %v", err)
+				}
+
+				var oldCC tcpip.CongestionControlOption
+				if err := c.EP.GetSockOpt(&oldCC); err != nil {
+					t.Fatalf("c.EP.SockOpt(%v) = %v", &oldCC, err)
+				}
+
+				if connected {
+					c.Connect(789 /* iss */, 32768 /* rcvWnd */, nil)
+				}
+
+				if err := c.EP.SetSockOpt(tc.cc); err != tc.err {
+					t.Fatalf("c.EP.SetSockOpt(%v) = %v, want %v", tc.cc, err, tc.err)
+				}
+
+				var cc tcpip.CongestionControlOption
+				if err := c.EP.GetSockOpt(&cc); err != nil {
+					t.Fatalf("c.EP.SockOpt(%v) = %v", &cc, err)
+				}
+
+				got, want := cc, oldCC
+				// If SetSockOpt is expected to succeed then the
+				// returned value for congestion control should match
+				// the one specified in the SetSockOpt above, else it
+				// should be what it was before the call to SetSockOpt.
+				if tc.err == nil {
+					want = tc.cc
+				}
+				if got != want {
+					t.Fatalf("got congestion control: %v, want: %v", got, want)
+				}
+			})
+		}
 	}
 }
 
 func enableCUBIC(t *testing.T, c *context.Context) {
 	t.Helper()
-	opt := tcp.CongestionControlOption("cubic")
+	opt := tcpip.CongestionControlOption("cubic")
 	if err := c.Stack().SetTransportProtocolOption(tcp.ProtocolNumber, opt); err != nil {
 		t.Fatalf("c.s.SetTransportProtocolOption(tcp.ProtocolNumber, %v = %v", opt, err)
 	}
@@ -3901,4 +3975,274 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
 	}
 
+}
+
+// This test verifies that the auto tuning does not grow the receive buffer if
+// the application is not reading the data actively.
+func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
+	const mtu = 1500
+	const mss = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
+
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	stk := c.Stack()
+	// Set lower limits for auto-tuning tests. This is required because the
+	// test stops the worker which can cause packets to be dropped because
+	// the segment queue holding unprocessed packets is limited to 500.
+	const receiveBufferSize = 80 << 10 // 80KB.
+	const maxReceiveBufferSize = receiveBufferSize * 10
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, receiveBufferSize, maxReceiveBufferSize}); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	// Enable auto-tuning.
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+	// Change the expected window scale to match the value needed for the
+	// maximum buffer size defined above.
+	c.WindowScale = uint8(tcp.FindWndScale(maxReceiveBufferSize))
+
+	rawEP := c.CreateConnectedWithOptions(header.TCPSynOptions{TS: true, WS: 4})
+
+	// NOTE: The timestamp values in the sent packets are meaningless to the
+	// peer so we just increment the timestamp value by 1 every batch as we
+	// are not really using them for anything. Send a single byte to verify
+	// the advertised window.
+	tsVal := rawEP.TSVal + 1
+
+	// Introduce a 25ms latency by delaying the first byte.
+	latency := 25 * time.Millisecond
+	time.Sleep(latency)
+	rawEP.SendPacketWithTS([]byte{1}, tsVal)
+
+	// Verify that the ACK has the expected window.
+	wantRcvWnd := receiveBufferSize
+	wantRcvWnd = (wantRcvWnd >> uint32(c.WindowScale))
+	rawEP.VerifyACKRcvWnd(uint16(wantRcvWnd - 1))
+	time.Sleep(25 * time.Millisecond)
+
+	// Allocate a large enough payload for the test.
+	b := make([]byte, int(receiveBufferSize)*2)
+	offset := 0
+	payloadSize := receiveBufferSize - 1
+	worker := (c.EP).(interface {
+		StopWork()
+		ResumeWork()
+	})
+	tsVal++
+
+	// Stop the worker goroutine.
+	worker.StopWork()
+	start := offset
+	end := offset + payloadSize
+	packetsSent := 0
+	for ; start < end; start += mss {
+		rawEP.SendPacketWithTS(b[start:start+mss], tsVal)
+		packetsSent++
+	}
+	// Resume the worker so that it only sees the packets once all of them
+	// are waiting to be read.
+	worker.ResumeWork()
+
+	// Since we read no bytes the window should goto zero till the
+	// application reads some of the data.
+	// Discard all intermediate acks except the last one.
+	if packetsSent > 100 {
+		for i := 0; i < (packetsSent / 100); i++ {
+			_ = c.GetPacket()
+		}
+	}
+	rawEP.VerifyACKRcvWnd(0)
+
+	time.Sleep(25 * time.Millisecond)
+	// Verify that sending more data when window is closed is dropped and
+	// not acked.
+	rawEP.SendPacketWithTS(b[start:start+mss], tsVal)
+
+	// Verify that the stack sends us back an ACK with the sequence number
+	// of the last packet sent indicating it was dropped.
+	p := c.GetPacket()
+	checker.IPv4(t, p, checker.TCP(
+		checker.AckNum(uint32(rawEP.NextSeqNum)-uint32(mss)),
+		checker.Window(0),
+	))
+
+	// Now read all the data from the endpoint and verify that advertised
+	// window increases to the full available buffer size.
+	for {
+		_, _, err := c.EP.Read(nil)
+		if err == tcpip.ErrWouldBlock {
+			break
+		}
+	}
+
+	// Verify that we receive a non-zero window update ACK. When running
+	// under thread santizer this test can end up sending more than 1
+	// ack, 1 for the non-zero window
+	p = c.GetPacket()
+	checker.IPv4(t, p, checker.TCP(
+		checker.AckNum(uint32(rawEP.NextSeqNum)-uint32(mss)),
+		func(t *testing.T, h header.Transport) {
+			tcp, ok := h.(header.TCP)
+			if !ok {
+				return
+			}
+			if w := tcp.WindowSize(); w == 0 || w > uint16(wantRcvWnd) {
+				t.Errorf("expected a non-zero window: got %d, want <= wantRcvWnd", w, wantRcvWnd)
+			}
+		},
+	))
+}
+
+// This test verifies that the auto tuning does not grow the receive buffer if
+// the application is not reading the data actively.
+func TestReceiveBufferAutoTuning(t *testing.T) {
+	const mtu = 1500
+	const mss = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
+
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	// Enable Auto-tuning.
+	stk := c.Stack()
+	// Set lower limits for auto-tuning tests. This is required because the
+	// test stops the worker which can cause packets to be dropped because
+	// the segment queue holding unprocessed packets is limited to 500.
+	const receiveBufferSize = 80 << 10 // 80KB.
+	const maxReceiveBufferSize = receiveBufferSize * 10
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, receiveBufferSize, maxReceiveBufferSize}); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+
+	// Enable auto-tuning.
+	if err := stk.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
+		t.Fatalf("SetTransportProtocolOption failed: %v", err)
+	}
+	// Change the expected window scale to match the value needed for the
+	// maximum buffer size used by stack.
+	c.WindowScale = uint8(tcp.FindWndScale(maxReceiveBufferSize))
+
+	rawEP := c.CreateConnectedWithOptions(header.TCPSynOptions{TS: true, WS: 4})
+
+	wantRcvWnd := receiveBufferSize
+	scaleRcvWnd := func(rcvWnd int) uint16 {
+		return uint16(rcvWnd >> uint16(c.WindowScale))
+	}
+	// Allocate a large array to send to the endpoint.
+	b := make([]byte, receiveBufferSize*48)
+
+	// In every iteration we will send double the number of bytes sent in
+	// the previous iteration and read the same from the app. The received
+	// window should grow by at least 2x of bytes read by the app in every
+	// RTT.
+	offset := 0
+	payloadSize := receiveBufferSize / 8
+	worker := (c.EP).(interface {
+		StopWork()
+		ResumeWork()
+	})
+	tsVal := rawEP.TSVal
+	// We are going to do our own computation of what the moderated receive
+	// buffer should be based on sent/copied data per RTT and verify that
+	// the advertised window by the stack matches our calculations.
+	prevCopied := 0
+	done := false
+	latency := 1 * time.Millisecond
+	for i := 0; !done; i++ {
+		tsVal++
+
+		// Stop the worker goroutine.
+		worker.StopWork()
+		start := offset
+		end := offset + payloadSize
+		totalSent := 0
+		packetsSent := 0
+		for ; start < end; start += mss {
+			rawEP.SendPacketWithTS(b[start:start+mss], tsVal)
+			totalSent += mss
+			packetsSent++
+		}
+		// Resume it so that it only sees the packets once all of them
+		// are waiting to be read.
+		worker.ResumeWork()
+
+		// Give 1ms for the worker to process the packets.
+		time.Sleep(1 * time.Millisecond)
+
+		// Verify that the advertised window on the ACK is reduced by
+		// the total bytes sent.
+		expectedWnd := wantRcvWnd - totalSent
+		if packetsSent > 100 {
+			for i := 0; i < (packetsSent / 100); i++ {
+				_ = c.GetPacket()
+			}
+		}
+		rawEP.VerifyACKRcvWnd(scaleRcvWnd(expectedWnd))
+
+		// Now read all the data from the endpoint and invoke the
+		// moderation API to allow for receive buffer auto-tuning
+		// to happen before we measure the new window.
+		totalCopied := 0
+		for {
+			b, _, err := c.EP.Read(nil)
+			if err == tcpip.ErrWouldBlock {
+				break
+			}
+			totalCopied += len(b)
+		}
+
+		// Invoke the moderation API. This is required for auto-tuning
+		// to happen. This method is normally expected to be invoked
+		// from a higher layer than tcpip.Endpoint. So we simulate
+		// copying to user-space by invoking it explicitly here.
+		c.EP.ModerateRecvBuf(totalCopied)
+
+		// Now send a keep-alive packet to trigger an ACK so that we can
+		// measure the new window.
+		rawEP.NextSeqNum--
+		rawEP.SendPacketWithTS(nil, tsVal)
+		rawEP.NextSeqNum++
+
+		if i == 0 {
+			// In the first iteration the receiver based RTT is not
+			// yet known as a result the moderation code should not
+			// increase the advertised window.
+			rawEP.VerifyACKRcvWnd(scaleRcvWnd(wantRcvWnd))
+			prevCopied = totalCopied
+		} else {
+			rttCopied := totalCopied
+			if i == 1 {
+				// The moderation code accumulates copied bytes till
+				// RTT is established. So add in the bytes sent in
+				// the first iteration to the total bytes for this
+				// RTT.
+				rttCopied += prevCopied
+				// Now reset it to the initial value used by the
+				// auto tuning logic.
+				prevCopied = tcp.InitialCwnd * mss * 2
+			}
+			newWnd := rttCopied<<1 + 16*mss
+			grow := (newWnd * (rttCopied - prevCopied)) / prevCopied
+			newWnd += (grow << 1)
+			if newWnd > maxReceiveBufferSize {
+				newWnd = maxReceiveBufferSize
+				done = true
+			}
+			rawEP.VerifyACKRcvWnd(scaleRcvWnd(newWnd))
+			wantRcvWnd = newWnd
+			prevCopied = rttCopied
+			// Increase the latency after first two iterations to
+			// establish a low RTT value in the receiver since it
+			// only tracks the lowest value. This ensures that when
+			// ModerateRcvBuf is called the elapsed time is always >
+			// rtt. Without this the test is flaky due to delays due
+			// to scheduling/wakeup etc.
+			latency += 50 * time.Millisecond
+		}
+		time.Sleep(latency)
+		offset += payloadSize
+		payloadSize *= 2
+	}
 }

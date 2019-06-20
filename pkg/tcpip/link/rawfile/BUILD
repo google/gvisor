@@ -11,7 +11,7 @@ go_library(
         "errors.go",
         "rawfile_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/rawfile",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/rawfile",
     visibility = [
         "//visibility:public",
     ],

@@ -17,12 +17,12 @@ package boot
 import (
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/host"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
 )
 
 // createFDMap creates an FD map that contains stdin, stdout, and stderr. If

@@ -21,9 +21,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	pb "gvisor.googlesource.com/gvisor/pkg/metric/metric_go_proto"
+	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/log"
+	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 )
 
 var (

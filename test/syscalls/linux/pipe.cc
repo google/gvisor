@@ -50,32 +50,28 @@ struct PipeCreator {
 };
 
 class PipeTest : public ::testing::TestWithParam<PipeCreator> {
- protected:
-  FileDescriptor rfd;
-  FileDescriptor wfd;
-
  public:
   static void SetUpTestSuite() {
     // Tests intentionally generate SIGPIPE.
     TEST_PCHECK(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
   }
 
-  // Initializes rfd and wfd as a blocking pipe.
+  // Initializes rfd_ and wfd_ as a blocking pipe.
   //
   // The return value indicates success: the test should be skipped otherwise.
   bool CreateBlocking() { return create(true); }
 
-  // Initializes rfd and wfd as a non-blocking pipe.
+  // Initializes rfd_ and wfd_ as a non-blocking pipe.
   //
   // The return value is per CreateBlocking.
   bool CreateNonBlocking() { return create(false); }
 
   // Returns true iff the pipe represents a named pipe.
-  bool IsNamedPipe() { return namedpipe_; }
+  bool IsNamedPipe() const { return named_pipe_; }
 
-  int Size() {
-    int s1 = fcntl(rfd.get(), F_GETPIPE_SZ);
-    int s2 = fcntl(wfd.get(), F_GETPIPE_SZ);
+  int Size() const {
+    int s1 = fcntl(rfd_.get(), F_GETPIPE_SZ);
+    int s2 = fcntl(wfd_.get(), F_GETPIPE_SZ);
     EXPECT_GT(s1, 0);
     EXPECT_GT(s2, 0);
     EXPECT_EQ(s1, s2);
@@ -87,20 +83,18 @@ class PipeTest : public ::testing::TestWithParam<PipeCreator> {
   }
 
  private:
-  bool namedpipe_ = false;
-
   bool create(bool wants_blocking) {
     // Generate the pipe.
     int fds[2] = {-1, -1};
     bool is_blocking = false;
-    GetParam().create_(fds, &is_blocking, &namedpipe_);
+    GetParam().create_(fds, &is_blocking, &named_pipe_);
     if (fds[0] < 0 || fds[1] < 0) {
       return false;
     }
 
     // Save descriptors.
-    rfd.reset(fds[0]);
-    wfd.reset(fds[1]);
+    rfd_.reset(fds[0]);
+    wfd_.reset(fds[1]);
 
     // Adjust blocking, if needed.
     if (!is_blocking && wants_blocking) {
@@ -115,6 +109,13 @@ class PipeTest : public ::testing::TestWithParam<PipeCreator> {
 
     return true;
   }
+
+ protected:
+  FileDescriptor rfd_;
+  FileDescriptor wfd_;
+
+ private:
+  bool named_pipe_ = false;
 };
 
 TEST_P(PipeTest, Inode) {
@@ -122,9 +123,9 @@ TEST_P(PipeTest, Inode) {
 
   // Ensure that the inode number is the same for each end.
   struct stat rst;
-  ASSERT_THAT(fstat(rfd.get(), &rst), SyscallSucceeds());
+  ASSERT_THAT(fstat(rfd_.get(), &rst), SyscallSucceeds());
   struct stat wst;
-  ASSERT_THAT(fstat(wfd.get(), &wst), SyscallSucceeds());
+  ASSERT_THAT(fstat(wfd_.get(), &wst), SyscallSucceeds());
   EXPECT_EQ(rst.st_ino, wst.st_ino);
 }
 
@@ -133,9 +134,10 @@ TEST_P(PipeTest, Permissions) {
 
   // Attempt bad operations.
   int buf = kTestValue;
-  ASSERT_THAT(write(rfd.get(), &buf, sizeof(buf)),
+  ASSERT_THAT(write(rfd_.get(), &buf, sizeof(buf)),
               SyscallFailsWithErrno(EBADF));
-  EXPECT_THAT(read(wfd.get(), &buf, sizeof(buf)), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(read(wfd_.get(), &buf, sizeof(buf)),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST_P(PipeTest, Flags) {
@@ -144,13 +146,13 @@ TEST_P(PipeTest, Flags) {
   if (IsNamedPipe()) {
     // May be stubbed to zero; define locally.
     constexpr int kLargefile = 0100000;
-    EXPECT_THAT(fcntl(rfd.get(), F_GETFL),
+    EXPECT_THAT(fcntl(rfd_.get(), F_GETFL),
                 SyscallSucceedsWithValue(kLargefile | O_RDONLY));
-    EXPECT_THAT(fcntl(wfd.get(), F_GETFL),
+    EXPECT_THAT(fcntl(wfd_.get(), F_GETFL),
                 SyscallSucceedsWithValue(kLargefile | O_WRONLY));
   } else {
-    EXPECT_THAT(fcntl(rfd.get(), F_GETFL), SyscallSucceedsWithValue(O_RDONLY));
-    EXPECT_THAT(fcntl(wfd.get(), F_GETFL), SyscallSucceedsWithValue(O_WRONLY));
+    EXPECT_THAT(fcntl(rfd_.get(), F_GETFL), SyscallSucceedsWithValue(O_RDONLY));
+    EXPECT_THAT(fcntl(wfd_.get(), F_GETFL), SyscallSucceedsWithValue(O_WRONLY));
   }
 }
 
@@ -159,9 +161,9 @@ TEST_P(PipeTest, Write) {
 
   int wbuf = kTestValue;
   int rbuf = ~kTestValue;
-  ASSERT_THAT(write(wfd.get(), &wbuf, sizeof(wbuf)),
+  ASSERT_THAT(write(wfd_.get(), &wbuf, sizeof(wbuf)),
               SyscallSucceedsWithValue(sizeof(wbuf)));
-  ASSERT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  ASSERT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
   EXPECT_EQ(wbuf, rbuf);
 }
@@ -171,15 +173,15 @@ TEST_P(PipeTest, NonBlocking) {
 
   int wbuf = kTestValue;
   int rbuf = ~kTestValue;
-  EXPECT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  EXPECT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
-  ASSERT_THAT(write(wfd.get(), &wbuf, sizeof(wbuf)),
+  ASSERT_THAT(write(wfd_.get(), &wbuf, sizeof(wbuf)),
               SyscallSucceedsWithValue(sizeof(wbuf)));
 
-  ASSERT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  ASSERT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
   EXPECT_EQ(wbuf, rbuf);
-  EXPECT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  EXPECT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallFailsWithErrno(EWOULDBLOCK));
 }
 
@@ -202,26 +204,26 @@ TEST_P(PipeTest, Seek) {
 
   for (int i = 0; i < 4; i++) {
     // Attempt absolute seeks.
-    EXPECT_THAT(lseek(rfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 
     // Attempt relative seeks.
-    EXPECT_THAT(lseek(rfd.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), 4, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
 
     // Attempt end-of-file seeks.
-    EXPECT_THAT(lseek(rfd.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(rfd.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
-    EXPECT_THAT(lseek(wfd.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(rfd_.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), 0, SEEK_CUR), SyscallFailsWithErrno(ESPIPE));
+    EXPECT_THAT(lseek(wfd_.get(), -4, SEEK_END), SyscallFailsWithErrno(ESPIPE));
 
     // Add some more data to the pipe.
     int buf = kTestValue;
-    ASSERT_THAT(write(wfd.get(), &buf, sizeof(buf)),
+    ASSERT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
                 SyscallSucceedsWithValue(sizeof(buf)));
   }
 }
@@ -230,14 +232,14 @@ TEST_P(PipeTest, OffsetCalls) {
   SKIP_IF(!CreateBlocking());
 
   int buf;
-  EXPECT_THAT(pread(wfd.get(), &buf, sizeof(buf), 0),
+  EXPECT_THAT(pread(wfd_.get(), &buf, sizeof(buf), 0),
               SyscallFailsWithErrno(ESPIPE));
-  EXPECT_THAT(pwrite(rfd.get(), &buf, sizeof(buf), 0),
+  EXPECT_THAT(pwrite(rfd_.get(), &buf, sizeof(buf), 0),
               SyscallFailsWithErrno(ESPIPE));
 
   struct iovec iov;
-  EXPECT_THAT(preadv(wfd.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
-  EXPECT_THAT(pwritev(rfd.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(preadv(wfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(pwritev(rfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
 }
 
 TEST_P(PipeTest, WriterSideCloses) {
@@ -245,13 +247,13 @@ TEST_P(PipeTest, WriterSideCloses) {
 
   ScopedThread t([this]() {
     int buf = ~kTestValue;
-    ASSERT_THAT(read(rfd.get(), &buf, sizeof(buf)),
+    ASSERT_THAT(read(rfd_.get(), &buf, sizeof(buf)),
                 SyscallSucceedsWithValue(sizeof(buf)));
     EXPECT_EQ(buf, kTestValue);
     // This will return when the close() completes.
-    ASSERT_THAT(read(rfd.get(), &buf, sizeof(buf)), SyscallSucceeds());
+    ASSERT_THAT(read(rfd_.get(), &buf, sizeof(buf)), SyscallSucceeds());
     // This will return straight away.
-    ASSERT_THAT(read(rfd.get(), &buf, sizeof(buf)),
+    ASSERT_THAT(read(rfd_.get(), &buf, sizeof(buf)),
                 SyscallSucceedsWithValue(0));
   });
 
@@ -260,14 +262,14 @@ TEST_P(PipeTest, WriterSideCloses) {
 
   // Write to unblock.
   int buf = kTestValue;
-  ASSERT_THAT(write(wfd.get(), &buf, sizeof(buf)),
+  ASSERT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
 
   // Sleep a bit so the thread can block again.
   absl::SleepFor(syncDelay);
 
   // Allow the thread to complete.
-  ASSERT_THAT(close(wfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(wfd_.release()), SyscallSucceeds());
   t.Join();
 }
 
@@ -275,36 +277,36 @@ TEST_P(PipeTest, WriterSideClosesReadDataFirst) {
   SKIP_IF(!CreateBlocking());
 
   int wbuf = kTestValue;
-  ASSERT_THAT(write(wfd.get(), &wbuf, sizeof(wbuf)),
+  ASSERT_THAT(write(wfd_.get(), &wbuf, sizeof(wbuf)),
               SyscallSucceedsWithValue(sizeof(wbuf)));
-  ASSERT_THAT(close(wfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(wfd_.release()), SyscallSucceeds());
 
   int rbuf;
-  ASSERT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  ASSERT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
   EXPECT_EQ(wbuf, rbuf);
-  EXPECT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+  EXPECT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(0));
 }
 
 TEST_P(PipeTest, ReaderSideCloses) {
   SKIP_IF(!CreateBlocking());
 
-  ASSERT_THAT(close(rfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
   int buf = kTestValue;
-  EXPECT_THAT(write(wfd.get(), &buf, sizeof(buf)),
+  EXPECT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
               SyscallFailsWithErrno(EPIPE));
 }
 
 TEST_P(PipeTest, CloseTwice) {
   SKIP_IF(!CreateBlocking());
 
-  int _rfd = rfd.release();
-  int _wfd = wfd.release();
-  ASSERT_THAT(close(_rfd), SyscallSucceeds());
-  ASSERT_THAT(close(_wfd), SyscallSucceeds());
-  EXPECT_THAT(close(_rfd), SyscallFailsWithErrno(EBADF));
-  EXPECT_THAT(close(_wfd), SyscallFailsWithErrno(EBADF));
+  int reader = rfd_.release();
+  int writer = wfd_.release();
+  ASSERT_THAT(close(reader), SyscallSucceeds());
+  ASSERT_THAT(close(writer), SyscallSucceeds());
+  EXPECT_THAT(close(reader), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(close(writer), SyscallFailsWithErrno(EBADF));
 }
 
 // Blocking write returns EPIPE when read end is closed if nothing has been
@@ -316,18 +318,18 @@ TEST_P(PipeTest, BlockWriteClosed) {
   ScopedThread t([this, &notify]() {
     std::vector<char> buf(Size());
     // Exactly fill the pipe buffer.
-    ASSERT_THAT(WriteFd(wfd.get(), buf.data(), buf.size()),
+    ASSERT_THAT(WriteFd(wfd_.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(buf.size()));
 
     notify.Notify();
 
     // Attempt to write one more byte. Blocks.
     // N.B. Don't use WriteFd, we don't want a retry.
-    EXPECT_THAT(write(wfd.get(), buf.data(), 1), SyscallFailsWithErrno(EPIPE));
+    EXPECT_THAT(write(wfd_.get(), buf.data(), 1), SyscallFailsWithErrno(EPIPE));
   });
 
   notify.WaitForNotification();
-  ASSERT_THAT(close(rfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
   t.Join();
 }
 
@@ -340,9 +342,9 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
     std::vector<char> buf(2 * Size());
     // Write more than fits in the buffer. Blocks then returns partial write
     // when the other end is closed. The next call returns EPIPE.
-    ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+    ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(Size()));
-    EXPECT_THAT(write(wfd.get(), buf.data(), buf.size()),
+    EXPECT_THAT(write(wfd_.get(), buf.data(), buf.size()),
                 SyscallFailsWithErrno(EPIPE));
   });
 
@@ -350,7 +352,7 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
   absl::SleepFor(syncDelay);
 
   // Unblock the above.
-  ASSERT_THAT(close(rfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
   t.Join();
 }
 
@@ -361,7 +363,7 @@ TEST_P(PipeTest, ReadFromClosedFd_NoRandomSave) {
   ScopedThread t([this, &notify]() {
     notify.Notify();
     int buf;
-    ASSERT_THAT(read(rfd.get(), &buf, sizeof(buf)),
+    ASSERT_THAT(read(rfd_.get(), &buf, sizeof(buf)),
                 SyscallSucceedsWithValue(sizeof(buf)));
     ASSERT_EQ(kTestValue, buf);
   });
@@ -375,9 +377,9 @@ TEST_P(PipeTest, ReadFromClosedFd_NoRandomSave) {
     // is ongoing read() above. We will not be able to restart the read()
     // successfully in restore run since the read fd is closed.
     const DisableSave ds;
-    ASSERT_THAT(close(rfd.release()), SyscallSucceeds());
+    ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
     int buf = kTestValue;
-    ASSERT_THAT(write(wfd.get(), &buf, sizeof(buf)),
+    ASSERT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
                 SyscallSucceedsWithValue(sizeof(buf)));
     t.Join();
   }
@@ -387,18 +389,18 @@ TEST_P(PipeTest, FionRead) {
   SKIP_IF(!CreateBlocking());
 
   int n;
-  ASSERT_THAT(ioctl(rfd.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(ioctl(rfd_.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, 0);
-  ASSERT_THAT(ioctl(wfd.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(ioctl(wfd_.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, 0);
 
   std::vector<char> buf(Size());
-  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+  ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
 
-  EXPECT_THAT(ioctl(rfd.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(ioctl(rfd_.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, buf.size());
-  EXPECT_THAT(ioctl(wfd.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
+  EXPECT_THAT(ioctl(wfd_.get(), FIONREAD, &n), SyscallSucceedsWithValue(0));
   EXPECT_EQ(n, buf.size());
 }
 
@@ -409,11 +411,11 @@ TEST_P(PipeTest, OpenViaProcSelfFD) {
   SKIP_IF(IsNamedPipe());
 
   // Close the write end of the pipe.
-  ASSERT_THAT(close(wfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(wfd_.release()), SyscallSucceeds());
 
   // Open other side via /proc/self/fd.  It should not block.
   FileDescriptor proc_self_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Open(absl::StrCat("/proc/self/fd/", rfd.get()), O_RDONLY));
+      Open(absl::StrCat("/proc/self/fd/", rfd_.get()), O_RDONLY));
 }
 
 // Test that opening and reading from an anonymous pipe (with existing writes)
@@ -424,13 +426,13 @@ TEST_P(PipeTest, OpenViaProcSelfFDWithWrites) {
 
   // Write to the pipe and then close the write fd.
   int wbuf = kTestValue;
-  ASSERT_THAT(write(wfd.get(), &wbuf, sizeof(wbuf)),
+  ASSERT_THAT(write(wfd_.get(), &wbuf, sizeof(wbuf)),
               SyscallSucceedsWithValue(sizeof(wbuf)));
-  ASSERT_THAT(close(wfd.release()), SyscallSucceeds());
+  ASSERT_THAT(close(wfd_.release()), SyscallSucceeds());
 
   // Open read side via /proc/self/fd, and read from it.
   FileDescriptor proc_self_fd = ASSERT_NO_ERRNO_AND_VALUE(
-      Open(absl::StrCat("/proc/self/fd/", rfd.get()), O_RDONLY));
+      Open(absl::StrCat("/proc/self/fd/", rfd_.get()), O_RDONLY));
   int rbuf;
   ASSERT_THAT(read(proc_self_fd.get(), &rbuf, sizeof(rbuf)),
               SyscallSucceedsWithValue(sizeof(rbuf)));
@@ -443,13 +445,13 @@ TEST_P(PipeTest, ProcFDReleasesFile) {
 
   // Stat the pipe FD, which shouldn't alter the refcount.
   struct stat wst;
-  ASSERT_THAT(lstat(absl::StrCat("/proc/self/fd/", wfd.get()).c_str(), &wst),
+  ASSERT_THAT(lstat(absl::StrCat("/proc/self/fd/", wfd_.get()).c_str(), &wst),
               SyscallSucceeds());
 
   // Close the write end and ensure that read indicates EOF.
-  wfd.reset();
+  wfd_.reset();
   char buf;
-  ASSERT_THAT(read(rfd.get(), &buf, 1), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(rfd_.get(), &buf, 1), SyscallSucceedsWithValue(0));
 }
 
 // Same for /proc/<PID>/fdinfo.
@@ -459,30 +461,30 @@ TEST_P(PipeTest, ProcFDInfoReleasesFile) {
   // Stat the pipe FD, which shouldn't alter the refcount.
   struct stat wst;
   ASSERT_THAT(
-      lstat(absl::StrCat("/proc/self/fdinfo/", wfd.get()).c_str(), &wst),
+      lstat(absl::StrCat("/proc/self/fdinfo/", wfd_.get()).c_str(), &wst),
       SyscallSucceeds());
 
   // Close the write end and ensure that read indicates EOF.
-  wfd.reset();
+  wfd_.reset();
   char buf;
-  ASSERT_THAT(read(rfd.get(), &buf, 1), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(rfd_.get(), &buf, 1), SyscallSucceedsWithValue(0));
 }
 
 TEST_P(PipeTest, SizeChange) {
   SKIP_IF(!CreateBlocking());
 
   // Set the minimum possible size.
-  ASSERT_THAT(fcntl(rfd.get(), F_SETPIPE_SZ, 0), SyscallSucceeds());
+  ASSERT_THAT(fcntl(rfd_.get(), F_SETPIPE_SZ, 0), SyscallSucceeds());
   int min = Size();
   EXPECT_GT(min, 0);  // Should be rounded up.
 
   // Set from the read end.
-  ASSERT_THAT(fcntl(rfd.get(), F_SETPIPE_SZ, min + 1), SyscallSucceeds());
+  ASSERT_THAT(fcntl(rfd_.get(), F_SETPIPE_SZ, min + 1), SyscallSucceeds());
   int med = Size();
   EXPECT_GT(med, min);  // Should have grown, may be rounded.
 
   // Set from the write end.
-  ASSERT_THAT(fcntl(wfd.get(), F_SETPIPE_SZ, med + 1), SyscallSucceeds());
+  ASSERT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, med + 1), SyscallSucceeds());
   int max = Size();
   EXPECT_GT(max, med);  // Ditto.
 }
@@ -491,9 +493,9 @@ TEST_P(PipeTest, SizeChangeMax) {
   SKIP_IF(!CreateBlocking());
 
   // Assert there's some maximum.
-  EXPECT_THAT(fcntl(rfd.get(), F_SETPIPE_SZ, 0x7fffffffffffffff),
+  EXPECT_THAT(fcntl(rfd_.get(), F_SETPIPE_SZ, 0x7fffffffffffffff),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(fcntl(wfd.get(), F_SETPIPE_SZ, 0x7fffffffffffffff),
+  EXPECT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, 0x7fffffffffffffff),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -505,14 +507,14 @@ TEST_P(PipeTest, SizeChangeFull) {
   // adjust the size and the call below will return success. It was found via
   // experimentation that this granularity avoids the rounding for Linux.
   constexpr int kDelta = 64 * 1024;
-  ASSERT_THAT(fcntl(wfd.get(), F_SETPIPE_SZ, Size() + kDelta),
+  ASSERT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, Size() + kDelta),
               SyscallSucceeds());
 
   // Fill the buffer and try to change down.
   std::vector<char> buf(Size());
-  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+  ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(buf.size()));
-  EXPECT_THAT(fcntl(wfd.get(), F_SETPIPE_SZ, Size() - kDelta),
+  EXPECT_THAT(fcntl(wfd_.get(), F_SETPIPE_SZ, Size() - kDelta),
               SyscallFailsWithErrno(EBUSY));
 }
 
@@ -522,23 +524,32 @@ TEST_P(PipeTest, Streaming) {
   // We make too many calls to go through full save cycles.
   DisableSave ds;
 
+  // Size() requires 2 syscalls, call it once and remember the value.
+  const int pipe_size = Size();
+
   absl::Notification notify;
-  ScopedThread t([this, &notify]() {
+  ScopedThread t([this, &notify, pipe_size]() {
     // Don't start until it's full.
     notify.WaitForNotification();
-    for (int i = 0; i < 2 * Size(); i++) {
+    for (int i = 0; i < pipe_size; i++) {
       int rbuf;
-      ASSERT_THAT(read(rfd.get(), &rbuf, sizeof(rbuf)),
+      ASSERT_THAT(read(rfd_.get(), &rbuf, sizeof(rbuf)),
                   SyscallSucceedsWithValue(sizeof(rbuf)));
       EXPECT_EQ(rbuf, i);
     }
   });
-  for (int i = 0; i < 2 * Size(); i++) {
-    int wbuf = i;
-    ASSERT_THAT(write(wfd.get(), &wbuf, sizeof(wbuf)),
-                SyscallSucceedsWithValue(sizeof(wbuf)));
-    // Did that write just fill up the buffer? Wake up the reader. Once only.
-    if ((i * sizeof(wbuf)) < Size() && ((i + 1) * sizeof(wbuf)) >= Size()) {
+
+  // Write 4 bytes * pipe_size. It will fill up the pipe once, notify the reader
+  // to start. Then we write pipe size worth 3 more times to ensure the reader
+  // can follow along.
+  ssize_t total = 0;
+  for (int i = 0; i < pipe_size; i++) {
+    ssize_t written = write(wfd_.get(), &i, sizeof(i));
+    ASSERT_THAT(written, SyscallSucceedsWithValue(sizeof(i)));
+    total += written;
+
+    // Is the next write about to fill up the buffer? Wake up the reader once.
+    if (total < pipe_size && (total + written) >= pipe_size) {
       notify.Notify();
     }
   }

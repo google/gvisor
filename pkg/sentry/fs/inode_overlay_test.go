@@ -17,12 +17,12 @@ package fs_test
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/contexttest"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func TestLookup(t *testing.T) {
@@ -275,12 +275,12 @@ func TestLookupRevalidation(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			root := fs.NewDirent(newTestRamfsDir(ctx, nil, nil), "root")
+			root := fs.NewDirent(ctx, newTestRamfsDir(ctx, nil, nil), "root")
 			ctx = &rootContext{
 				Context: ctx,
 				root:    root,
 			}
-			overlay := fs.NewDirent(fs.NewTestOverlayDir(ctx, tc.upper, tc.lower, tc.revalidate), "overlay")
+			overlay := fs.NewDirent(ctx, fs.NewTestOverlayDir(ctx, tc.upper, tc.lower, tc.revalidate), "overlay")
 			// Lookup the file twice through the overlay.
 			first, err := overlay.Walk(ctx, root, fileName)
 			if err != nil {
@@ -442,7 +442,7 @@ func (f *dirFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySeria
 }
 
 func newTestRamfsInode(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	inode := fs.NewInode(&inode{
+	inode := fs.NewInode(ctx, &inode{
 		InodeStaticFileGetter: fsutil.InodeStaticFileGetter{
 			Contents: []byte("foobar"),
 		},
@@ -451,7 +451,7 @@ func newTestRamfsInode(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 }
 
 func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []string) *fs.Inode {
-	msrc := fs.NewPseudoMountSource()
+	msrc := fs.NewPseudoMountSource(ctx)
 	contents := make(map[string]*fs.Inode)
 	for _, c := range contains {
 		if c.dir {
@@ -463,7 +463,7 @@ func newTestRamfsDir(ctx context.Context, contains []dirContent, negative []stri
 	dops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermissions{
 		User: fs.PermMask{Read: true, Execute: true},
 	})
-	return fs.NewInode(&dir{
+	return fs.NewInode(ctx, &dir{
 		InodeOperations: dops,
 		negative:        negative,
 	}, msrc, fs.StableAttr{Type: fs.Directory})

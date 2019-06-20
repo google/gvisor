@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 func statAt(dirFd int, name string) (syscall.Stat_t, error) {

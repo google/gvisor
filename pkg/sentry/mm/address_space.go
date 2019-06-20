@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/atomicbitops"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // AddressSpace returns the platform.AddressSpace bound to mm.

@@ -17,10 +17,10 @@ package gofer
 import (
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // beforeSave is invoked by stateify.

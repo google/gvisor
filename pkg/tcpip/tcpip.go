@@ -38,8 +38,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // Error represents an error in the netstack error space. Using a special type
@@ -381,6 +381,13 @@ type Endpoint interface {
 	// State returns a socket's lifecycle state. The returned value is
 	// protocol-specific and is primarily used for diagnostics.
 	State() uint32
+
+	// ModerateRecvBuf should be called everytime data is copied to the user
+	// space. This allows for dynamic tuning of recv buffer space for a
+	// given socket.
+	//
+	// NOTE: This method is a no-op for sockets other than TCP.
+	ModerateRecvBuf(copied int)
 }
 
 // WriteOptions contains options for Endpoint.Write.
@@ -471,6 +478,18 @@ type KeepaliveIntervalOption time.Duration
 // of un-ACKed TCP keepalives that will be sent before the connection is
 // closed.
 type KeepaliveCountOption int
+
+// CongestionControlOption is used by SetSockOpt/GetSockOpt to set/get
+// the current congestion control algorithm.
+type CongestionControlOption string
+
+// AvailableCongestionControlOption is used to query the supported congestion
+// control algorithms.
+type AvailableCongestionControlOption string
+
+// ModerateReceiveBufferOption allows the caller to enable/disable TCP receive
+// buffer moderation.
+type ModerateReceiveBufferOption bool
 
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.

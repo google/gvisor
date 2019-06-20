@@ -22,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm/testutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/platform/kvm/testutil"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 var dummyFPState = (*byte)(arch.NewFloatingPointData())

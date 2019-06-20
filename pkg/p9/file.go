@@ -17,7 +17,7 @@ package p9
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fd"
 )
 
 // Attacher is provided by the server.

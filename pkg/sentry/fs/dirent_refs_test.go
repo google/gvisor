@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 )
 
 func newMockDirInode(ctx context.Context, cache *DirentCache) *Inode {
@@ -31,7 +31,7 @@ func TestWalkPositive(t *testing.T) {
 	// refs == -1 -> has been destroyed.
 
 	ctx := contexttest.Context(t)
-	root := NewDirent(newMockDirInode(ctx, nil), "root")
+	root := NewDirent(ctx, newMockDirInode(ctx, nil), "root")
 
 	if got := root.ReadRefs(); got != 1 {
 		t.Fatalf("root has a ref count of %d, want %d", got, 1)
@@ -73,7 +73,7 @@ func TestWalkNegative(t *testing.T) {
 	// refs == -1 -> has been destroyed.
 
 	ctx := contexttest.Context(t)
-	root := NewDirent(NewEmptyDir(ctx, nil), "root")
+	root := NewDirent(ctx, NewEmptyDir(ctx, nil), "root")
 	mn := root.Inode.InodeOperations.(*mockInodeOperationsLookupNegative)
 
 	if got := root.ReadRefs(); got != 1 {
@@ -144,7 +144,7 @@ type mockInodeOperationsLookupNegative struct {
 
 func NewEmptyDir(ctx context.Context, cache *DirentCache) *Inode {
 	m := NewMockMountSource(cache)
-	return NewInode(&mockInodeOperationsLookupNegative{
+	return NewInode(ctx, &mockInodeOperationsLookupNegative{
 		MockInodeOperations: NewMockInodeOperations(ctx),
 	}, m, StableAttr{Type: Directory})
 }
@@ -162,7 +162,7 @@ func TestHashNegativeToPositive(t *testing.T) {
 	// refs == -1 -> has been destroyed.
 
 	ctx := contexttest.Context(t)
-	root := NewDirent(NewEmptyDir(ctx, nil), "root")
+	root := NewDirent(ctx, NewEmptyDir(ctx, nil), "root")
 
 	name := "d"
 	_, err := root.walk(ctx, root, name, false)
@@ -215,7 +215,6 @@ func TestRevalidate(t *testing.T) {
 	// refs == 0 -> one reference.
 	// refs == -1 -> has been destroyed.
 
-	ctx := contexttest.Context(t)
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -233,7 +232,8 @@ func TestRevalidate(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			root := NewDirent(NewMockInodeRevalidate(ctx, test.makeNegative), "root")
+			ctx := contexttest.Context(t)
+			root := NewDirent(ctx, NewMockInodeRevalidate(ctx, test.makeNegative), "root")
 
 			name := "d"
 			d1, err := root.walk(ctx, root, name, false)
@@ -263,7 +263,7 @@ func NewMockInodeRevalidate(ctx context.Context, makeNegative bool) *Inode {
 	mn := NewMockInodeOperations(ctx)
 	m := NewMockMountSource(nil)
 	m.MountSourceOperations.(*MockMountSourceOps).revalidate = true
-	return NewInode(&MockInodeOperationsRevalidate{MockInodeOperations: mn, makeNegative: makeNegative}, m, StableAttr{Type: Directory})
+	return NewInode(ctx, &MockInodeOperationsRevalidate{MockInodeOperations: mn, makeNegative: makeNegative}, m, StableAttr{Type: Directory})
 }
 
 func (m *MockInodeOperationsRevalidate) Lookup(ctx context.Context, dir *Inode, p string) (*Dirent, error) {
@@ -290,12 +290,12 @@ func TestCreateExtraRefs(t *testing.T) {
 	}{
 		{
 			desc: "Create caching",
-			root: NewDirent(NewEmptyDir(ctx, NewDirentCache(1)), "root"),
+			root: NewDirent(ctx, NewEmptyDir(ctx, NewDirentCache(1)), "root"),
 			refs: 2,
 		},
 		{
 			desc: "Create not caching",
-			root: NewDirent(NewEmptyDir(ctx, nil), "root"),
+			root: NewDirent(ctx, NewEmptyDir(ctx, nil), "root"),
 			refs: 1,
 		},
 	} {
@@ -328,11 +328,11 @@ func TestRemoveExtraRefs(t *testing.T) {
 	}{
 		{
 			desc: "Remove caching",
-			root: NewDirent(NewEmptyDir(ctx, NewDirentCache(1)), "root"),
+			root: NewDirent(ctx, NewEmptyDir(ctx, NewDirentCache(1)), "root"),
 		},
 		{
 			desc: "Remove not caching",
-			root: NewDirent(NewEmptyDir(ctx, nil), "root"),
+			root: NewDirent(ctx, NewEmptyDir(ctx, nil), "root"),
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -366,7 +366,6 @@ func TestRenameExtraRefs(t *testing.T) {
 	// refs == 0 -> one reference.
 	// refs == -1 -> has been destroyed.
 
-	ctx := contexttest.Context(t)
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -384,10 +383,12 @@ func TestRenameExtraRefs(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+
 			dirAttr := StableAttr{Type: Directory}
 
-			oldParent := NewDirent(NewMockInode(ctx, NewMockMountSource(test.cache), dirAttr), "old_parent")
-			newParent := NewDirent(NewMockInode(ctx, NewMockMountSource(test.cache), dirAttr), "new_parent")
+			oldParent := NewDirent(ctx, NewMockInode(ctx, NewMockMountSource(test.cache), dirAttr), "old_parent")
+			newParent := NewDirent(ctx, NewMockInode(ctx, NewMockMountSource(test.cache), dirAttr), "new_parent")
 
 			renamed, err := oldParent.Walk(ctx, oldParent, "old_child")
 			if err != nil {

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // beforeSave is invoked by stateify.

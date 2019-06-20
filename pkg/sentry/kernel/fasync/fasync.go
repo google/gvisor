@@ -18,11 +18,11 @@ package fasync
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // New creates a new FileAsync.
@@ -34,9 +34,23 @@ func New() fs.FileAsync {
 //
 // +stateify savable
 type FileAsync struct {
-	mu        sync.Mutex `state:"nosave"`
-	e         waiter.Entry
-	requester *auth.Credentials
+	// e is immutable after first use (which is protected by mu below).
+	e waiter.Entry
+
+	// regMu protects registeration and unregistration actions on e.
+	//
+	// regMu must be held while registration decisions are being made
+	// through the registration action itself.
+	//
+	// Lock ordering: regMu, mu.
+	regMu sync.Mutex `state:"nosave"`
+
+	// mu protects all following fields.
+	//
+	// Lock ordering: e.mu, mu.
+	mu         sync.Mutex `state:"nosave"`
+	requester  *auth.Credentials
+	registered bool
 
 	// Only one of the following is allowed to be non-nil.
 	recipientPG *kernel.ProcessGroup
@@ -47,7 +61,7 @@ type FileAsync struct {
 // Callback sends a signal.
 func (a *FileAsync) Callback(e *waiter.Entry) {
 	a.mu.Lock()
-	if a.e.Callback == nil {
+	if !a.registered {
 		a.mu.Unlock()
 		return
 	}
@@ -80,14 +94,21 @@ func (a *FileAsync) Callback(e *waiter.Entry) {
 //
 // The file must not be currently registered.
 func (a *FileAsync) Register(w waiter.Waitable) {
+	a.regMu.Lock()
+	defer a.regMu.Unlock()
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
-	if a.e.Callback != nil {
+	if a.registered {
+		a.mu.Unlock()
 		panic("registering already registered file")
 	}
 
-	a.e.Callback = a
+	if a.e.Callback == nil {
+		a.e.Callback = a
+	}
+	a.registered = true
+
+	a.mu.Unlock()
 	w.EventRegister(&a.e, waiter.EventIn|waiter.EventOut|waiter.EventErr|waiter.EventHUp)
 }
 
@@ -95,15 +116,19 @@ func (a *FileAsync) Register(w waiter.Waitable) {
 //
 // The file must be currently registered.
 func (a *FileAsync) Unregister(w waiter.Waitable) {
+	a.regMu.Lock()
+	defer a.regMu.Unlock()
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
-	if a.e.Callback == nil {
+	if !a.registered {
+		a.mu.Unlock()
 		panic("unregistering unregistered file")
 	}
 
+	a.registered = false
+
+	a.mu.Unlock()
 	w.EventUnregister(&a.e)
-	a.e.Callback = nil
 }
 
 // Owner returns who is currently getting signals. All return values will be

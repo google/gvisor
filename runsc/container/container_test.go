@@ -31,12 +31,13 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 // waitForProcessList waits for the given process list to show up in the container.
@@ -210,7 +211,13 @@ func run(spec *specs.Spec, conf *boot.Config) error {
 	defer os.RemoveAll(bundleDir)
 
 	// Create, start and wait for the container.
-	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "", false)
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		Attached:  true,
+	}
+	ws, err := Run(conf, args)
 	if err != nil {
 		return fmt.Errorf("running container: %v", err)
 	}
@@ -294,15 +301,19 @@ func TestLifecycle(t *testing.T) {
 			},
 		}
 		// Create the container.
-		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
 		defer c.Destroy()
 
 		// Load the container from disk and check the status.
-		c, err = Load(rootDir, id)
+		c, err = Load(rootDir, args.ID)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -315,7 +326,7 @@ func TestLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error listing containers: %v", err)
 		}
-		if got, want := ids, []string{id}; !reflect.DeepEqual(got, want) {
+		if got, want := ids, []string{args.ID}; !reflect.DeepEqual(got, want) {
 			t.Errorf("container list got %v, want %v", got, want)
 		}
 
@@ -325,7 +336,7 @@ func TestLifecycle(t *testing.T) {
 		}
 
 		// Load the container from disk and check the status.
-		c, err = Load(rootDir, id)
+		c, err = Load(rootDir, args.ID)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -366,7 +377,7 @@ func TestLifecycle(t *testing.T) {
 		wg.Wait()
 
 		// Load the container from disk and check the status.
-		c, err = Load(rootDir, id)
+		c, err = Load(rootDir, args.ID)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -389,7 +400,7 @@ func TestLifecycle(t *testing.T) {
 		}
 
 		// Loading the container by id should fail.
-		if _, err = Load(rootDir, id); err == nil {
+		if _, err = Load(rootDir, args.ID); err == nil {
 			t.Errorf("expected loading destroyed container to fail, but it did not")
 		}
 	}
@@ -416,7 +427,13 @@ func TestExePath(t *testing.T) {
 				t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
 			}
 
-			ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "", false)
+			args := Args{
+				ID:        testutil.UniqueContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+				Attached:  true,
+			}
+			ws, err := Run(conf, args)
 
 			os.RemoveAll(rootDir)
 			os.RemoveAll(bundleDir)
@@ -449,7 +466,13 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	ws, err := Run(testutil.UniqueContainerID(), succSpec, conf, bundleDir, "", "", "", false)
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      succSpec,
+		BundleDir: bundleDir,
+		Attached:  true,
+	}
+	ws, err := Run(conf, args)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -468,7 +491,13 @@ func TestAppExitStatus(t *testing.T) {
 	defer os.RemoveAll(rootDir2)
 	defer os.RemoveAll(bundleDir2)
 
-	ws, err = Run(testutil.UniqueContainerID(), errSpec, conf, bundleDir2, "", "", "", false)
+	args2 := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      errSpec,
+		BundleDir: bundleDir2,
+		Attached:  true,
+	}
+	ws, err = Run(conf, args2)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -493,7 +522,12 @@ func TestExec(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -525,7 +559,7 @@ func TestExec(t *testing.T) {
 			t.Error(err)
 		}
 
-		args := &control.ExecArgs{
+		execArgs := &control.ExecArgs{
 			Filename:         "/bin/sleep",
 			Argv:             []string{"/bin/sleep", "5"},
 			WorkingDirectory: "/",
@@ -536,7 +570,7 @@ func TestExec(t *testing.T) {
 		// First, start running exec (whick blocks).
 		status := make(chan error, 1)
 		go func() {
-			exitStatus, err := cont.executeSync(args)
+			exitStatus, err := cont.executeSync(execArgs)
 			if err != nil {
 				log.Debugf("error executing: %v", err)
 				status <- err
@@ -584,7 +618,12 @@ func TestKillPid(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -655,7 +694,12 @@ func TestCheckpointRestore(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -701,7 +745,12 @@ func TestCheckpointRestore(t *testing.T) {
 		defer outputFile2.Close()
 
 		// Restore into a new container.
-		cont2, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args2 := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont2, err := New(conf, args2)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -740,7 +789,12 @@ func TestCheckpointRestore(t *testing.T) {
 		defer outputFile3.Close()
 
 		// Restore into a new container.
-		cont3, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args3 := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont3, err := New(conf, args3)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -819,7 +873,12 @@ func TestUnixDomainSockets(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -866,7 +925,12 @@ func TestUnixDomainSockets(t *testing.T) {
 		defer outputFile2.Close()
 
 		// Restore into a new container.
-		contRestore, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		argsRestore := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		contRestore, err := New(conf, argsRestore)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -920,7 +984,12 @@ func TestPauseResume(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -948,7 +1017,7 @@ func TestPauseResume(t *testing.T) {
 		}
 
 		script := fmt.Sprintf("while [[ -f %q ]]; do sleep 0.1; done", lock.Name())
-		args := &control.ExecArgs{
+		execArgs := &control.ExecArgs{
 			Filename:         "/bin/bash",
 			Argv:             []string{"bash", "-c", script},
 			WorkingDirectory: "/",
@@ -956,7 +1025,7 @@ func TestPauseResume(t *testing.T) {
 		}
 
 		// First, start running exec.
-		_, err = cont.Execute(args)
+		_, err = cont.Execute(execArgs)
 		if err != nil {
 			t.Fatalf("error executing: %v", err)
 		}
@@ -1025,7 +1094,12 @@ func TestPauseResumeStatus(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1089,7 +1163,12 @@ func TestCapabilities(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1131,7 +1210,7 @@ func TestCapabilities(t *testing.T) {
 		// Need to traverse the intermediate directory.
 		os.Chmod(rootDir, 0755)
 
-		args := &control.ExecArgs{
+		execArgs := &control.ExecArgs{
 			Filename:         exePath,
 			Argv:             []string{exePath},
 			WorkingDirectory: "/",
@@ -1141,16 +1220,16 @@ func TestCapabilities(t *testing.T) {
 		}
 
 		// "exe" should fail because we don't have the necessary permissions.
-		if _, err := cont.executeSync(args); err == nil {
+		if _, err := cont.executeSync(execArgs); err == nil {
 			t.Fatalf("container executed without error, but an error was expected")
 		}
 
 		// Now we run with the capability enabled and should succeed.
-		args.Capabilities = &auth.TaskCapabilities{
+		execArgs.Capabilities = &auth.TaskCapabilities{
 			EffectiveCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 		}
 		// "exe" should not fail this time.
-		if _, err := cont.executeSync(args); err != nil {
+		if _, err := cont.executeSync(execArgs); err != nil {
 			t.Fatalf("container failed to exec %v: %v", args, err)
 		}
 	}
@@ -1231,7 +1310,12 @@ func TestReadonlyRoot(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1299,7 +1383,12 @@ func TestUIDMap(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1351,7 +1440,12 @@ func TestReadonlyMount(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create, start and wait for the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1395,7 +1489,12 @@ func TestAbbreviatedIDs(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and start the container.
-		cont, err := Create(cid, spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        cid,
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1440,7 +1539,12 @@ func TestGoferExits(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1519,7 +1623,14 @@ func TestUserLog(t *testing.T) {
 	userLog := filepath.Join(dir, "user.log")
 
 	// Create, start and wait for the container.
-	ws, err := Run(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", userLog, false)
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		UserLog:   userLog,
+		Attached:  true,
+	}
+	ws, err := Run(conf, args)
 	if err != nil {
 		t.Fatalf("error running container: %v", err)
 	}
@@ -1553,7 +1664,12 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create and Start the container.
-		c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -1596,7 +1712,12 @@ func TestDestroyNotStarted(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create the container and check that it can be destroyed.
-	c, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -1618,15 +1739,19 @@ func TestDestroyStarting(t *testing.T) {
 		defer os.RemoveAll(bundleDir)
 
 		// Create the container and check that it can be destroyed.
-		id := testutil.UniqueContainerID()
-		c, err := Create(id, spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		c, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
 
 		// Container is not thread safe, so load another instance to run in
 		// concurrently.
-		startCont, err := Load(rootDir, id)
+		startCont, err := Load(rootDir, args.ID)
 		if err != nil {
 			t.Fatalf("error loading container: %v", err)
 		}
@@ -1731,7 +1856,12 @@ func TestMountPropagation(t *testing.T) {
 	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
-	cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("creating container: %v", err)
 	}
@@ -1749,21 +1879,21 @@ func TestMountPropagation(t *testing.T) {
 
 	// Check that mount didn't propagate to private mount.
 	privFile := filepath.Join(priv, "mnt", "file")
-	args := &control.ExecArgs{
+	execArgs := &control.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "!", "-f", privFile},
 	}
-	if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+	if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
 		t.Fatalf("exec: test ! -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 
 	// Check that mount propagated to slave mount.
 	slaveFile := filepath.Join(slave, "mnt", "file")
-	args = &control.ExecArgs{
+	execArgs = &control.ExecArgs{
 		Filename: "/usr/bin/test",
 		Argv:     []string{"test", "-f", slaveFile},
 	}
-	if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+	if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
 		t.Fatalf("exec: test -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 }
@@ -1812,7 +1942,12 @@ func TestMountSymlink(t *testing.T) {
 		defer os.RemoveAll(rootDir)
 		defer os.RemoveAll(bundleDir)
 
-		cont, err := Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        testutil.UniqueContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			t.Fatalf("creating container: %v", err)
 		}
@@ -1825,11 +1960,11 @@ func TestMountSymlink(t *testing.T) {
 		// Check that symlink was resolved and mount was created where the symlink
 		// is pointing to.
 		file := path.Join(target, "file")
-		args := &control.ExecArgs{
+		execArgs := &control.ExecArgs{
 			Filename: "/usr/bin/test",
 			Argv:     []string{"test", "-f", file},
 		}
-		if ws, err := cont.executeSync(args); err != nil || ws != 0 {
+		if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
 			t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
 		}
 	}
@@ -1853,7 +1988,7 @@ func TestMain(m *testing.M) {
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
-	testutil.RunAsRoot()
+	specutils.MaybeRunAsRoot()
 
 	os.Exit(m.Run())
 }

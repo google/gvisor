@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 go_library(
     name = "seqfile",
     srcs = ["seqfile.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

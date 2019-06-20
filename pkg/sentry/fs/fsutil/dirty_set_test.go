@@ -18,8 +18,8 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 func TestDirtySet(t *testing.T) {

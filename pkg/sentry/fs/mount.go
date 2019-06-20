@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
 // DirentOperations provide file systems greater control over how long a Dirent stays pinned
@@ -127,7 +127,7 @@ const DefaultDirentCacheSize uint64 = 1000
 
 // NewMountSource returns a new MountSource. Filesystem may be nil if there is no
 // filesystem backing the mount.
-func NewMountSource(mops MountSourceOperations, filesystem Filesystem, flags MountSourceFlags) *MountSource {
+func NewMountSource(ctx context.Context, mops MountSourceOperations, filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	fsType := "none"
 	if filesystem != nil {
 		fsType = filesystem.Name()
@@ -188,16 +188,16 @@ func (msrc *MountSource) SetDirentCacheLimiter(l *DirentCacheLimiter) {
 
 // NewCachingMountSource returns a generic mount that will cache dirents
 // aggressively.
-func NewCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
-	return NewMountSource(&SimpleMountSourceOperations{
+func NewCachingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
+	return NewMountSource(ctx, &SimpleMountSourceOperations{
 		keep:       true,
 		revalidate: false,
 	}, filesystem, flags)
 }
 
 // NewNonCachingMountSource returns a generic mount that will never cache dirents.
-func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
-	return NewMountSource(&SimpleMountSourceOperations{
+func NewNonCachingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
+	return NewMountSource(ctx, &SimpleMountSourceOperations{
 		keep:       false,
 		revalidate: false,
 	}, filesystem, flags)
@@ -205,8 +205,8 @@ func NewNonCachingMountSource(filesystem Filesystem, flags MountSourceFlags) *Mo
 
 // NewRevalidatingMountSource returns a generic mount that will cache dirents,
 // but will revalidate them on each lookup.
-func NewRevalidatingMountSource(filesystem Filesystem, flags MountSourceFlags) *MountSource {
-	return NewMountSource(&SimpleMountSourceOperations{
+func NewRevalidatingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
+	return NewMountSource(ctx, &SimpleMountSourceOperations{
 		keep:       true,
 		revalidate: true,
 	}, filesystem, flags)
@@ -214,8 +214,8 @@ func NewRevalidatingMountSource(filesystem Filesystem, flags MountSourceFlags) *
 
 // NewPseudoMountSource returns a "pseudo" mount source that is not backed by
 // an actual filesystem. It is always non-caching.
-func NewPseudoMountSource() *MountSource {
-	return NewMountSource(&SimpleMountSourceOperations{
+func NewPseudoMountSource(ctx context.Context) *MountSource {
+	return NewMountSource(ctx, &SimpleMountSourceOperations{
 		keep:       false,
 		revalidate: false,
 	}, nil, MountSourceFlags{})

@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "tun",
     srcs = ["tun_unsafe.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/tun",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/tun",
     visibility = [
         "//visibility:public",
     ],

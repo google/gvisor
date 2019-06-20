@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "binary",
     srcs = ["binary.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/binary",
+    importpath = "gvisor.dev/gvisor/pkg/binary",
     visibility = ["//:sandbox"],
 )
 

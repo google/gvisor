@@ -22,13 +22,13 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type globalDirentMap struct {
@@ -206,7 +206,7 @@ type Dirent struct {
 
 // NewDirent returns a new root Dirent, taking the caller's reference on inode. The caller
 // holds the only reference to the Dirent. Parents may call hashChild to parent this Dirent.
-func NewDirent(inode *Inode, name string) *Dirent {
+func NewDirent(ctx context.Context, inode *Inode, name string) *Dirent {
 	d := newDirent(inode, name)
 	allDirents.add(d)
 	d.userVisible = true
@@ -1068,7 +1068,7 @@ func (d *Dirent) mount(ctx context.Context, inode *Inode) (newChild *Dirent, err
 	//
 	// Note that NewDirent returns with one reference taken; the reference
 	// is donated to the caller as the mount reference.
-	replacement := NewDirent(inode, d.name)
+	replacement := NewDirent(ctx, inode, d.name)
 	replacement.mounted = true
 
 	weakRef, ok := d.parent.hashChild(replacement)

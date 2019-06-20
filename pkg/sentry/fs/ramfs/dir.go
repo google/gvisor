@@ -19,12 +19,12 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // CreateOps represents operations to create different file types.
@@ -269,7 +269,7 @@ func (d *Dir) Lookup(ctx context.Context, _ *fs.Inode, p string) (*fs.Dirent, er
 	// Take a reference on the inode before returning it.  This reference
 	// is owned by the dirent we are about to create.
 	inode.IncRef()
-	return fs.NewDirent(inode, p), nil
+	return fs.NewDirent(ctx, inode, p), nil
 }
 
 // walkLocked must be called with d.mu held.
@@ -321,7 +321,7 @@ func (d *Dir) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.F
 	inode.IncRef()
 
 	// Create the Dirent and corresponding file.
-	created := fs.NewDirent(inode, name)
+	created := fs.NewDirent(ctx, inode, name)
 	defer created.DecRef()
 	return created.Inode.GetFile(ctx, created, flags)
 }
@@ -382,7 +382,7 @@ func (d *Dir) Bind(ctx context.Context, dir *fs.Inode, name string, ep transport
 	}
 	// Take another ref on inode which will be donated to the new dirent.
 	inode.IncRef()
-	return fs.NewDirent(inode, name), nil
+	return fs.NewDirent(ctx, inode, name), nil
 }
 
 // CreateFifo implements fs.InodeOperations.CreateFifo.

@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "loopback",
     srcs = ["loopback.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/loopback",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/loopback",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",

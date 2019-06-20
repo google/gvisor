@@ -15,8 +15,8 @@
 package tcp
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
 const (
@@ -31,6 +31,13 @@ const (
 // segment identified by segStart->segEnd.
 func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value, rcvNxt seqnum.Value) {
 	newSB := header.SACKBlock{Start: segStart, End: segEnd}
+
+	// Ignore any invalid SACK blocks or blocks that are before rcvNxt as
+	// those bytes have already been acked.
+	if newSB.End.LessThanEq(newSB.Start) || newSB.End.LessThan(rcvNxt) {
+		return
+	}
+
 	if sack.NumBlocks == 0 {
 		sack.Blocks[0] = newSB
 		sack.NumBlocks = 1
@@ -39,9 +46,8 @@ func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value
 	var n = 0
 	for i := 0; i < sack.NumBlocks; i++ {
 		start, end := sack.Blocks[i].Start, sack.Blocks[i].End
-		if end.LessThanEq(start) || start.LessThanEq(rcvNxt) {
-			// Discard any invalid blocks where end is before start
-			// and discard any sack blocks that are before rcvNxt as
+		if end.LessThanEq(rcvNxt) {
+			// Discard any sack blocks that are before rcvNxt as
 			// those have already been acked.
 			continue
 		}

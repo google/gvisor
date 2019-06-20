@@ -18,7 +18,7 @@ go_library(
         "strace.go",
         "syscalls.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/strace",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/strace",
     visibility = ["//:sandbox"],
     deps = [
         ":strace_go_proto",
@@ -47,7 +47,7 @@ proto_library(
 
 go_proto_library(
     name = "strace_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/strace/strace_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto",
     proto = ":strace_proto",
     visibility = ["//visibility:public"],
 )

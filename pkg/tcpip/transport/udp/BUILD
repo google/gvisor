@@ -24,8 +24,8 @@ go_library(
         "protocol.go",
         "udp_packet_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/transport/udp",
-    imports = ["gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"],
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/udp",
+    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sleep",

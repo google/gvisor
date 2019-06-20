@@ -16,9 +16,10 @@ package tcp
 
 import (
 	"container/heap"
+	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
 // receiver holds the state necessary to receive TCP segments and turn them
@@ -38,6 +39,9 @@ type receiver struct {
 	// shrinking it.
 	rcvAcc seqnum.Value
 
+	// rcvWnd is the non-scaled receive window last advertised to the peer.
+	rcvWnd seqnum.Size
+
 	rcvWndScale uint8
 
 	closed bool
@@ -47,13 +51,14 @@ type receiver struct {
 	pendingBufSize      seqnum.Size
 }
 
-func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
+func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8, pendingBufSize seqnum.Size) *receiver {
 	return &receiver{
 		ep:             ep,
 		rcvNxt:         irs + 1,
 		rcvAcc:         irs.Add(rcvWnd + 1),
+		rcvWnd:         rcvWnd,
 		rcvWndScale:    rcvWndScale,
-		pendingBufSize: rcvWnd,
+		pendingBufSize: pendingBufSize,
 	}
 }
 
@@ -72,14 +77,16 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 // getSendParams returns the parameters needed by the sender when building
 // segments to send.
 func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
-	// Calculate the window size based on the current buffer size.
-	n := r.ep.receiveBufferAvailable()
-	acc := r.rcvNxt.Add(seqnum.Size(n))
+	// Calculate the window size based on the available buffer space.
+	receiveBufferAvailable := r.ep.receiveBufferAvailable()
+	acc := r.rcvNxt.Add(seqnum.Size(receiveBufferAvailable))
 	if r.rcvAcc.LessThan(acc) {
 		r.rcvAcc = acc
 	}
-
-	return r.rcvNxt, r.rcvNxt.Size(r.rcvAcc) >> r.rcvWndScale
+	// Stash away the non-scaled receive window as we use it for measuring
+	// receiver's estimated RTT.
+	r.rcvWnd = r.rcvNxt.Size(r.rcvAcc)
+	return r.rcvNxt, r.rcvWnd >> r.rcvWndScale
 }
 
 // nonZeroWindow is called when the receive window grows from zero to nonzero;
@@ -129,6 +136,21 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 	// Update the segment that we're expecting to consume.
 	r.rcvNxt = segSeq.Add(segLen)
+
+	// In cases of a misbehaving sender which could send more than the
+	// advertised window, we could end up in a situation where we get a
+	// segment that exceeds the window advertised. Instead of partially
+	// accepting the segment and discarding bytes beyond the advertised
+	// window, we accept the whole segment and make sure r.rcvAcc is moved
+	// forward to match r.rcvNxt to indicate that the window is now closed.
+	//
+	// In absence of this check the r.acceptable() check fails and accepts
+	// segments that should be dropped because rcvWnd is calculated as
+	// the size of the interval (rcvNxt, rcvAcc] which becomes extremely
+	// large if rcvAcc is ever less than rcvNxt.
+	if r.rcvAcc.LessThan(r.rcvNxt) {
+		r.rcvAcc = r.rcvNxt
+	}
 
 	// Trim SACK Blocks to remove any SACK information that covers
 	// sequence numbers that have been consumed.
@@ -198,6 +220,39 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	return true
 }
 
+// updateRTT updates the receiver RTT measurement based on the sequence number
+// of the received segment.
+func (r *receiver) updateRTT() {
+	// From: https://public.lanl.gov/radiant/pubs/drs/sc2001-poster.pdf
+	//
+	// A system that is only transmitting acknowledgements can still
+	// estimate the round-trip time by observing the time between when a byte
+	// is first acknowledged and the receipt of data that is at least one
+	// window beyond the sequence number that was acknowledged.
+	r.ep.rcvListMu.Lock()
+	if r.ep.rcvAutoParams.rttMeasureTime.IsZero() {
+		// New measurement.
+		r.ep.rcvAutoParams.rttMeasureTime = time.Now()
+		r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
+		r.ep.rcvListMu.Unlock()
+		return
+	}
+	if r.rcvNxt.LessThan(r.ep.rcvAutoParams.rttMeasureSeqNumber) {
+		r.ep.rcvListMu.Unlock()
+		return
+	}
+	rtt := time.Since(r.ep.rcvAutoParams.rttMeasureTime)
+	// We only store the minimum observed RTT here as this is only used in
+	// absence of a SRTT available from either timestamps or a sender
+	// measurement of RTT.
+	if r.ep.rcvAutoParams.rtt == 0 || rtt < r.ep.rcvAutoParams.rtt {
+		r.ep.rcvAutoParams.rtt = rtt
+	}
+	r.ep.rcvAutoParams.rttMeasureTime = time.Now()
+	r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
+	r.ep.rcvListMu.Unlock()
+}
+
 // handleRcvdSegment handles TCP segments directed at the connection managed by
 // r as they arrive. It is called by the protocol main loop.
 func (r *receiver) handleRcvdSegment(s *segment) {
@@ -226,15 +281,20 @@ func (r *receiver) handleRcvdSegment(s *segment) {
 				r.pendingBufUsed += s.logicalLen()
 				s.incRef()
 				heap.Push(&r.pendingRcvdSegments, s)
+				UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.rcvNxt)
 			}
-
-			UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.rcvNxt)
 
 			// Immediately send an ack so that the peer knows it may
 			// have to retransmit.
 			r.ep.snd.sendAck()
 		}
 		return
+	}
+
+	// Since we consumed a segment update the receiver's RTT estimate
+	// if required.
+	if segLen > 0 {
+		r.updateRTT()
 	}
 
 	// By consuming the current segment, we may have filled a gap in the

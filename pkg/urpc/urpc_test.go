@@ -19,7 +19,7 @@ import (
 	"os"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 type test struct {

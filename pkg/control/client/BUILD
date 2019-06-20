@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "client.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/control/client",
+    importpath = "gvisor.dev/gvisor/pkg/control/client",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/unet",

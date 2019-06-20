@@ -15,7 +15,7 @@
 package fs
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // FileFlags encodes file flags.
@@ -57,6 +57,9 @@ type FileFlags struct {
 	// Linux sets this flag for all files. Since gVisor is only compatible
 	// with 64-bit Linux, it also sets this flag for all files.
 	LargeFile bool
+
+	// NonSeekable indicates that file.offset isn't used.
+	NonSeekable bool
 }
 
 // SettableFileFlags is a subset of FileFlags above that can be changed

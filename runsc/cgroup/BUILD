@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/cgroup",
+    importpath = "gvisor.dev/gvisor/runsc/cgroup",
     visibility = [
         "//runsc:__subpackages__",
     ],

@@ -8,7 +8,7 @@ go_library(
         "epoll.go",
         "syscalls.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/syscalls",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

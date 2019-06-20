@@ -22,17 +22,17 @@ import (
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/control/server"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/epsocket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/pkg/control/server"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/time"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 const (
@@ -357,6 +357,17 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	}
 	if info.Size() == 0 {
 		return fmt.Errorf("file cannot be empty")
+	}
+
+	if cm.l.conf.ProfileEnable {
+		// initializePProf opens /proc/self/maps, so has to be
+		// called before installing seccomp filters.
+		initializePProf()
+	}
+
+	// Seccomp filters have to be applied before parsing the state file.
+	if err := cm.l.installSeccompFilters(); err != nil {
+		return err
 	}
 
 	// Load the state.

@@ -49,7 +49,7 @@ go_library(
         "sys_write.go",
         "timespec.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/syscalls/linux",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/syscalls/linux",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi",
@@ -86,6 +86,7 @@ go_library(
         "//pkg/sentry/syscalls",
         "//pkg/sentry/usage",
         "//pkg/sentry/usermem",
+        "//pkg/syserr",
         "//pkg/syserror",
         "//pkg/waiter",
     ],

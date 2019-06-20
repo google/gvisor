@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // DefaultReassembleTimeout is based on the linux stack: net.ipv4.ipfrag_time.

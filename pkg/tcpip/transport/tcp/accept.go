@@ -22,13 +22,13 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/rand"
-	"gvisor.googlesource.com/gvisor/pkg/sleep"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -213,6 +213,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.route = s.route.Clone()
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
 	n.rcvBufSize = int(l.rcvWnd)
+	n.amss = mssForRoute(&n.route)
 
 	n.maybeEnableTimestamp(rcvdSynOpts)
 	n.maybeEnableSACKPermitted(rcvdSynOpts)
@@ -232,7 +233,11 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	// The receiver at least temporarily has a zero receive window scale,
 	// but the caller may change it (before starting the protocol loop).
 	n.snd = newSender(n, iss, irs, s.window, rcvdSynOpts.MSS, rcvdSynOpts.WS)
-	n.rcv = newReceiver(n, irs, l.rcvWnd, 0)
+	n.rcv = newReceiver(n, irs, seqnum.Size(n.initialReceiveWindow()), 0, seqnum.Size(n.receiveBufferSize()))
+	// Bootstrap the auto tuning algorithm. Starting at zero will result in
+	// a large step function on the first window adjustment causing the
+	// window to grow to a really large value.
+	n.rcvAutoParams.prevCopied = n.initialReceiveWindow()
 
 	return n, nil
 }
@@ -249,7 +254,7 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// Perform the 3-way handshake.
-	h := newHandshake(ep, l.rcvWnd)
+	h := newHandshake(ep, seqnum.Size(ep.initialReceiveWindow()))
 
 	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
@@ -359,16 +364,19 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				return
 			}
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
-			// Send SYN with window scaling because we currently
+
+			// Send SYN without window scaling because we currently
 			// dont't encode this information in the cookie.
 			//
 			// Enable Timestamp option if the original syn did have
 			// the timestamp option specified.
+			mss := mssForRoute(&s.route)
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
 				TSVal: tcpTimeStamp(timeStampOffset()),
 				TSEcr: opts.TSVal,
+				MSS:   uint16(mss),
 			}
 			sendSynTCP(&s.route, s.id, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()

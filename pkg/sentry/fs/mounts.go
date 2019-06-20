@@ -22,12 +22,12 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // DefaultTraversalLimit provides a sensible default traversal limit that may
@@ -124,7 +124,16 @@ func (m *Mount) IsUndo() bool {
 	return false
 }
 
-// MountNamespace defines a collection of mounts.
+// MountNamespace defines a VFS root. It contains collection of Mounts that are
+// mounted inside the Dirent tree rooted at the Root Dirent. It provides
+// methods for traversing the Dirent, and for mounting/unmounting in the tree.
+//
+// Note that this does not correspond to a "mount namespace" in the Linux. It
+// is more like a unique VFS instance.
+//
+// It's possible for different processes to have different MountNamespaces. In
+// this case, the file systems exposed to the processes are completely
+// distinct.
 //
 // +stateify savable
 type MountNamespace struct {
@@ -166,7 +175,7 @@ func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error
 
 	// Set the root dirent and id on the root mount. The reference returned from
 	// NewDirent will be donated to the MountNamespace constructed below.
-	d := NewDirent(root, "/")
+	d := NewDirent(ctx, root, "/")
 
 	mnts := map[*Dirent]*Mount{
 		d: newRootMount(1, d),

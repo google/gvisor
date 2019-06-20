@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 go_library(
     name = "timerfd",
     srcs = ["timerfd.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/timerfd",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/timerfd",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/sentry/context",

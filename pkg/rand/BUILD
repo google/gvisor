@@ -8,7 +8,7 @@ go_library(
         "rand.go",
         "rand_linux.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/rand",
+    importpath = "gvisor.dev/gvisor/pkg/rand",
     visibility = ["//:sandbox"],
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

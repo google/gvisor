@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 // httpRequestSucceeds sends a request to a given url and checks that the status is OK.

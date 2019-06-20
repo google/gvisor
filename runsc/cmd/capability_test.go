@@ -21,11 +21,11 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 func init() {
@@ -97,7 +97,12 @@ func TestCapabilities(t *testing.T) {
 	defer os.RemoveAll(bundleDir)
 
 	// Create and start the container.
-	c, err := container.Create(testutil.UniqueContainerID(), spec, conf, bundleDir, "", "", "")
+	args := container.Args{
+		ID:        testutil.UniqueContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := container.New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -116,6 +121,6 @@ func TestCapabilities(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	testutil.RunAsRoot()
+	specutils.MaybeRunAsRoot()
 	os.Exit(m.Run())
 }

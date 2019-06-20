@@ -17,7 +17,7 @@ package pagetables
 import (
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // newAlignedPTEs returns a set of aligned PTEs.

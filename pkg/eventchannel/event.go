@@ -27,9 +27,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes"
-	pb "gvisor.googlesource.com/gvisor/pkg/eventchannel/eventchannel_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
+	pb "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // Emitter emits a proto message.

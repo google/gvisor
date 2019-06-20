@@ -18,14 +18,14 @@ import (
 	"fmt"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/p9"
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // DefaultDirentCacheSize is the default dirent cache size for 9P mounts. It can
@@ -251,7 +251,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	// Construct the MountSource with the session and superBlockFlags.
-	m := fs.NewMountSource(s, filesystem, superBlockFlags)
+	m := fs.NewMountSource(ctx, s, filesystem, superBlockFlags)
 
 	// Given that gofer files can consume host FDs, restrict the number
 	// of files that can be held by the cache.
@@ -286,7 +286,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	sattr, iops := newInodeOperations(ctx, s, s.attach, qid, valid, attr, false)
-	return fs.NewInode(iops, m, sattr), nil
+	return fs.NewInode(ctx, iops, m, sattr), nil
 }
 
 // newEndpointMaps creates a new endpointMaps.

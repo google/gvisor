@@ -9,7 +9,7 @@ go_library(
         "network_unsafe.go",
         "sandbox.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/sandbox",
+    importpath = "gvisor.dev/gvisor/runsc/sandbox",
     visibility = [
         "//runsc:__subpackages__",
     ],

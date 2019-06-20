@@ -19,9 +19,12 @@
 #include <sys/auxv.h>
 #include <sys/prctl.h>
 #include <sys/time.h>
+
 #include <iostream>
 #include <ostream>
 #include <string>
+
+#include "absl/strings/numbers.h"
 
 // Pretty-print a sigset_t.
 std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
@@ -138,15 +141,14 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    char* end;
-    uint32_t signo = strtoul(argv[2], &end, 10);
-    if (end == argv[2]) {
+    uint32_t signo;
+    if (!absl::SimpleAtoi(argv[2], &signo)) {
       std::cerr << "invalid signo: " << argv[2] << std::endl;
       return 1;
     }
 
-    uintptr_t handler = strtoull(argv[3], &end, 16);
-    if (end == argv[3]) {
+    uintptr_t handler;
+    if (!absl::numbers_internal::safe_strtoi_base(argv[3], &handler, 16)) {
       std::cerr << "invalid handler: " << std::hex << argv[3] << std::endl;
       return 1;
     }
@@ -160,9 +162,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    char* end;
-    uint32_t signo = strtoul(argv[2], &end, 10);
-    if (end == argv[2]) {
+    uint32_t signo;
+    if (!absl::SimpleAtoi(argv[2], &signo)) {
       std::cerr << "invalid signo: " << argv[2] << std::endl;
       return 1;
     }
@@ -176,9 +177,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    char* end;
-    uint32_t timer = strtoul(argv[2], &end, 10);
-    if (end == argv[2]) {
+    uint32_t timer;
+    if (!absl::SimpleAtoi(argv[2], &timer)) {
       std::cerr << "invalid signo: " << argv[2] << std::endl;
       return 1;
     }

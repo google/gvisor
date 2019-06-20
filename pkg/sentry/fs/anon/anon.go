@@ -17,11 +17,11 @@
 package anon
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // NewInode constructs an anonymous Inode that is not associated
@@ -33,7 +33,7 @@ func NewInode(ctx context.Context) *fs.Inode {
 			User: fs.PermMask{Read: true, Write: true},
 		}, linux.ANON_INODE_FS_MAGIC),
 	}
-	return fs.NewInode(iops, fs.NewPseudoMountSource(), fs.StableAttr{
+	return fs.NewInode(ctx, iops, fs.NewPseudoMountSource(ctx), fs.StableAttr{
 		Type:      fs.Anonymous,
 		DeviceID:  PseudoDevice.DeviceID(),
 		InodeID:   PseudoDevice.NextIno(),

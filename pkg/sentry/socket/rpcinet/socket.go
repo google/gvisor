@@ -19,26 +19,26 @@ import (
 	"syscall"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/conn"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/notifier"
-	pb "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/conn"
+	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/notifier"
+	pb "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/unimpl"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // socketOperations implements fs.FileOperations and socket.Socket for a socket
@@ -322,7 +322,13 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 
 	dirent := socket.NewDirent(t, socketDevice)
 	defer dirent.DecRef()
-	file := fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonBlocking: flags&linux.SOCK_NONBLOCK != 0}, &socketOperations{
+	fileFlags := fs.FileFlags{
+		Read:        true,
+		Write:       true,
+		NonSeekable: true,
+		NonBlocking: flags&linux.SOCK_NONBLOCK != 0,
+	}
+	file := fs.NewFile(t, dirent, fileFlags, &socketOperations{
 		wq:       &wq,
 		fd:       payload.Fd,
 		rpcConn:  s.rpcConn,

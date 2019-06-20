@@ -229,6 +229,37 @@ TEST_F(IoctlTest, FIOASYNCSelfTarget2) {
   EXPECT_EQ(io_received, 1);
 }
 
+// Check that closing an FD does not result in an event.
+TEST_F(IoctlTest, FIOASYNCSelfTargetClose) {
+  // Count SIGIOs received.
+  struct sigaction sa;
+  io_received = 0;
+  sa.sa_sigaction = inc_io_handler;
+  sigfillset(&sa.sa_mask);
+  sa.sa_flags = SA_RESTART;
+  auto sa_cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGIO, sa));
+
+  // Actually allow SIGIO delivery.
+  auto mask_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSignalMask(SIG_UNBLOCK, SIGIO));
+
+  for (int i = 0; i < 2; i++) {
+    auto pair = ASSERT_NO_ERRNO_AND_VALUE(
+        UnixDomainSocketPair(SOCK_SEQPACKET).Create());
+
+    pid_t pid = getpid();
+    EXPECT_THAT(ioctl(pair->second_fd(), FIOSETOWN, &pid), SyscallSucceeds());
+
+    int set = 1;
+    EXPECT_THAT(ioctl(pair->second_fd(), FIOASYNC, &set), SyscallSucceeds());
+  }
+
+  // FIXME(b/120624367): gVisor erroneously sends SIGIO on close.
+  SKIP_IF(IsRunningOnGvisor());
+
+  EXPECT_EQ(io_received, 0);
+}
+
 TEST_F(IoctlTest, FIOASYNCInvalidPID) {
   auto pair =
       ASSERT_NO_ERRNO_AND_VALUE(UnixDomainSocketPair(SOCK_SEQPACKET).Create());

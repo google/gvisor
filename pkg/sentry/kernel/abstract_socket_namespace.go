@@ -18,8 +18,8 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 )
 
 // +stateify savable

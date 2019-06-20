@@ -10,7 +10,7 @@ go_library(
         "fs.go",
         "sys.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/sys",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/sys",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

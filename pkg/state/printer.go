@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/proto"
-	pb "gvisor.googlesource.com/gvisor/pkg/state/object_go_proto"
+	pb "gvisor.dev/gvisor/pkg/state/object_go_proto"
 )
 
 // format formats a single object, for pretty-printing. It also returns whether

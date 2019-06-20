@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // FSContext contains filesystem context.

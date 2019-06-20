@@ -21,9 +21,9 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
 )
 
 // Delete implements subcommands.Command for the "delete" command.

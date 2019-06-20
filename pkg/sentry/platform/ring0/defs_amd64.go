@@ -17,7 +17,7 @@
 package ring0
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/platform/ring0/pagetables"
+	"gvisor.dev/gvisor/pkg/sentry/platform/ring0/pagetables"
 )
 
 // Segment indices and Selectors.

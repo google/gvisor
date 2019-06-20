@@ -19,7 +19,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 var reassambleTestCases = []struct {

@@ -31,28 +31,28 @@ import (
 	"syscall"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/binary"
-	"gvisor.googlesource.com/gvisor/pkg/metric"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/unimpl"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func mustCreateMetric(name, description string) *tcpip.StatCounter {
@@ -262,7 +262,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 
 	dirent := socket.NewDirent(t, epsocketDevice)
 	defer dirent.DecRef()
-	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true}, &SocketOperations{
+	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, &SocketOperations{
 		Queue:    queue,
 		family:   family,
 		Endpoint: endpoint,
@@ -668,12 +668,6 @@ func GetSockOpt(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, 
 func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family int, skType linux.SockType, name, outLen int) (interface{}, *syserr.Error) {
 	// TODO(b/124056281): Stop rejecting short optLen values in getsockopt.
 	switch name {
-	case linux.SO_TYPE:
-		if outLen < sizeOfInt32 {
-			return nil, syserr.ErrInvalidArgument
-		}
-		return int32(skType), nil
-
 	case linux.SO_ERROR:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -919,6 +913,30 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 		linux.TCP_ZEROCOPY_RECEIVE:
 
 		t.Kernel().EmitUnimplementedEvent(t)
+
+	case linux.TCP_CONGESTION:
+		if outLen <= 0 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.CongestionControlOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		// We match linux behaviour here where it returns the lower of
+		// TCP_CA_NAME_MAX bytes or the value of the option length.
+		//
+		// This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+		const tcpCANameMax = 16
+
+		toCopy := tcpCANameMax
+		if outLen < tcpCANameMax {
+			toCopy = outLen
+		}
+		b := make([]byte, toCopy)
+		copy(b, v)
+		return b, nil
 
 	default:
 		emitUnimplementedEventTCP(t, name)
@@ -1222,6 +1240,12 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.KeepaliveIntervalOption(time.Second * time.Duration(v))))
 
+	case linux.TCP_CONGESTION:
+		v := tcpip.CongestionControlOption(optVal)
+		if err := ep.SetSockOpt(v); err != nil {
+			return syserr.TranslateNetstackError(err)
+		}
+		return nil
 	case linux.TCP_REPAIR_OPTIONS:
 		t.Kernel().EmitUnimplementedEvent(t)
 
@@ -1695,6 +1719,7 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 
 	// If we managed to copy something, we must deliver it.
 	if copied > 0 {
+		s.Endpoint.ModerateRecvBuf(copied)
 		return copied, nil
 	}
 

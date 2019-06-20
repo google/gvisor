@@ -30,19 +30,19 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Do implements subcommands.Command for the "do" command. It sets up a simple
 // sandbox and executes the command inside it. See Usage() for more details.
 type Do struct {
-	root             string
-	cwd              string
-	ip               string
-	networkNamespace bool
+	root  string
+	cwd   string
+	ip    string
+	quiet bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -72,7 +72,7 @@ func (c *Do) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.root, "root", "/", `path to the root directory, defaults to "/"`)
 	f.StringVar(&c.cwd, "cwd", ".", "path to the current directory, defaults to the current directory")
 	f.StringVar(&c.ip, "ip", "192.168.10.2", "IPv4 address for the sandbox")
-	f.BoolVar(&c.networkNamespace, "netns", true, "run in a new network namespace")
+	f.BoolVar(&c.quiet, "quiet", false, "suppress runsc messages to stdout. Application output is still sent to stdout and stderr")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -85,15 +85,21 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
-	// Map the entire host file system, but make it readonly with a writable
-	// overlay on top (ignore --overlay option).
-	conf.Overlay = true
+	if conf.Rootless {
+		if err := specutils.MaybeRunAsRoot(); err != nil {
+			return Errorf("Error executing inside namespace: %v", err)
+		}
+		// Execution will continue here if no more capabilities are needed...
+	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
 		return Errorf("Error to retrieve hostname: %v", err)
 	}
 
+	// Map the entire host file system, but make it readonly with a writable
+	// overlay on top (ignore --overlay option).
+	conf.Overlay = true
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
 		return Errorf("Error resolving root: %v", err)
@@ -119,11 +125,22 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 	specutils.LogSpec(spec)
 
 	cid := fmt.Sprintf("runsc-%06d", rand.Int31n(1000000))
-	if !c.networkNamespace {
-		if conf.Network != boot.NetworkHost {
-			Fatalf("The current network namespace can be used only if --network=host is set", nil)
+	if conf.Network == boot.NetworkNone {
+		netns := specs.LinuxNamespace{
+			Type: specs.NetworkNamespace,
 		}
-	} else if conf.Network != boot.NetworkNone {
+		if spec.Linux != nil {
+			panic("spec.Linux is not nil")
+		}
+		spec.Linux = &specs.Linux{Namespaces: []specs.LinuxNamespace{netns}}
+
+	} else if conf.Rootless {
+		if conf.Network == boot.NetworkSandbox {
+			c.notifyUser("*** Warning: using host network due to --rootless ***")
+			conf.Network = boot.NetworkHost
+		}
+
+	} else {
 		clean, err := c.setupNet(cid, spec)
 		if err != nil {
 			return Errorf("Error setting up network: %v", err)
@@ -149,13 +166,26 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) su
 		return Errorf("Error write spec: %v", err)
 	}
 
-	ws, err := container.Run(cid, spec, conf, tmpDir, "", "", "", false)
+	runArgs := container.Args{
+		ID:        cid,
+		Spec:      spec,
+		BundleDir: tmpDir,
+		Attached:  true,
+	}
+	ws, err := container.Run(conf, runArgs)
 	if err != nil {
 		return Errorf("running container: %v", err)
 	}
 
 	*waitStatus = ws
 	return subcommands.ExitSuccess
+}
+
+func (c *Do) notifyUser(format string, v ...interface{}) {
+	if !c.quiet {
+		fmt.Printf(format+"\n", v...)
+	}
+	log.Warningf(format, v...)
 }
 
 func resolvePath(path string) (string, error) {

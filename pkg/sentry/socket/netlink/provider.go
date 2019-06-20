@@ -17,12 +17,12 @@ package netlink
 import (
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/syserr"
 )
 
 // Protocol is the implementation of a netlink socket protocol.
@@ -89,7 +89,7 @@ func (*socketProvider) Socket(t *kernel.Task, stype linux.SockType, protocol int
 
 	d := socket.NewDirent(t, netlinkSocketDevice)
 	defer d.DecRef()
-	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true}, s), nil
+	return fs.NewFile(t, d, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, s), nil
 }
 
 // Pair implements socket.Provider.Pair by returning an error.

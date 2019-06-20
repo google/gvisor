@@ -18,18 +18,18 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/secio"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/safemem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/secio"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // inodeOperations implements fs.InodeOperations for an fs.Inodes backed
@@ -205,7 +205,7 @@ func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, 
 	}
 
 	// Return the fs.Inode.
-	return fs.NewInode(iops, msrc, fileState.sattr), nil
+	return fs.NewInode(ctx, iops, msrc, fileState.sattr), nil
 }
 
 // Mappable implements fs.InodeOperations.Mappable.
@@ -245,7 +245,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	}
 
 	// Return the fs.Dirent.
-	return fs.NewDirent(inode, name), nil
+	return fs.NewDirent(ctx, inode, name), nil
 }
 
 // Create implements fs.InodeOperations.Create.
@@ -265,7 +265,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 		return nil, err
 	}
 
-	d := fs.NewDirent(inode, name)
+	d := fs.NewDirent(ctx, inode, name)
 	defer d.DecRef()
 	return inode.GetFile(ctx, d, flags)
 }

@@ -287,6 +287,9 @@ Creator<FileDescriptor> UnboundSocketCreator(int domain, int type,
 // a function that creates such a socket pair.
 struct SocketPairKind {
   std::string description;
+  int domain;
+  int type;
+  int protocol;
   Creator<SocketPair> creator;
 
   // Create creates a socket pair of this kind.
@@ -297,6 +300,9 @@ struct SocketPairKind {
 // a function that creates such a socket.
 struct SocketKind {
   std::string description;
+  int domain;
+  int type;
+  int protocol;
   Creator<FileDescriptor> creator;
 
   // Create creates a socket pair of this kind.
@@ -353,6 +359,7 @@ Middleware SetSockOpt(int level, int optname, T* value) {
     return SocketPairKind{
         absl::StrCat("setsockopt(", level, ", ", optname, ", ", *value, ") ",
                      base.description),
+        base.domain, base.type, base.protocol,
         [creator, level, optname,
          value]() -> PosixErrorOr<std::unique_ptr<SocketPair>> {
           ASSIGN_OR_RETURN_ERRNO(auto creator_value, creator());

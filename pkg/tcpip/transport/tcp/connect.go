@@ -18,14 +18,14 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/rand"
-	"gvisor.googlesource.com/gvisor/pkg/sleep"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/sleep"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // maxSegmentsPerWake is the maximum number of segments to process in the main
@@ -78,6 +78,9 @@ type handshake struct {
 	// mss is the maximum segment size received from the peer.
 	mss uint16
 
+	// amss is the maximum segment size advertised by us to the peer.
+	amss uint16
+
 	// sndWndScale is the send window scale, as defined in RFC 1323. A
 	// negative value means no scaling is supported by the peer.
 	sndWndScale int
@@ -87,11 +90,24 @@ type handshake struct {
 }
 
 func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
+	rcvWndScale := ep.rcvWndScaleForHandshake()
+
+	// Round-down the rcvWnd to a multiple of wndScale. This ensures that the
+	// window offered in SYN won't be reduced due to the loss of precision if
+	// window scaling is enabled after the handshake.
+	rcvWnd = (rcvWnd >> uint8(rcvWndScale)) << uint8(rcvWndScale)
+
+	// Ensure we can always accept at least 1 byte if the scale specified
+	// was too high for the provided rcvWnd.
+	if rcvWnd == 0 {
+		rcvWnd = 1
+	}
+
 	h := handshake{
 		ep:          ep,
 		active:      true,
 		rcvWnd:      rcvWnd,
-		rcvWndScale: FindWndScale(rcvWnd),
+		rcvWndScale: int(rcvWndScale),
 	}
 	h.resetState()
 	return h
@@ -224,7 +240,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	h.ep.state = StateSynRecv
 	h.ep.mu.Unlock()
 	synOpts := header.TCPSynOptions{
-		WS:    h.rcvWndScale,
+		WS:    int(h.effectiveRcvWndScale()),
 		TS:    rcvSynOpts.TS,
 		TSVal: h.ep.timestamp(),
 		TSEcr: h.ep.recentTS,
@@ -233,6 +249,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		// permits SACK. This is not explicitly defined in the RFC but
 		// this is the behaviour implemented by Linux.
 		SACKPermitted: rcvSynOpts.SACKPermitted,
+		MSS:           h.ep.amss,
 	}
 	sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 
@@ -277,6 +294,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			TSVal:         h.ep.timestamp(),
 			TSEcr:         h.ep.recentTS,
 			SACKPermitted: h.ep.sackPermitted,
+			MSS:           h.ep.amss,
 		}
 		sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 		return nil
@@ -419,12 +437,15 @@ func (h *handshake) execute() *tcpip.Error {
 
 	// Send the initial SYN segment and loop until the handshake is
 	// completed.
+	h.ep.amss = mssForRoute(&h.ep.route)
+
 	synOpts := header.TCPSynOptions{
 		WS:            h.rcvWndScale,
 		TS:            true,
 		TSVal:         h.ep.timestamp(),
 		TSEcr:         h.ep.recentTS,
 		SACKPermitted: bool(sackEnabled),
+		MSS:           h.ep.amss,
 	}
 
 	// Execute is also called in a listen context so we want to make sure we
@@ -433,6 +454,11 @@ func (h *handshake) execute() *tcpip.Error {
 	if h.state == handshakeSynRcvd {
 		synOpts.TS = h.ep.sendTSOk
 		synOpts.SACKPermitted = h.ep.sackPermitted && bool(sackEnabled)
+		if h.sndWndScale < 0 {
+			// Disable window scaling if the peer did not send us
+			// the window scaling option.
+			synOpts.WS = -1
+		}
 	}
 	sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 	for h.state != handshakeCompleted {
@@ -554,13 +580,6 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 }
 
 func sendSynTCP(r *stack.Route, id stack.TransportEndpointID, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts header.TCPSynOptions) *tcpip.Error {
-	// The MSS in opts is automatically calculated as this function is
-	// called from many places and we don't want every call point being
-	// embedded with the MSS calculation.
-	if opts.MSS == 0 {
-		opts.MSS = uint16(r.MTU() - header.TCPMinimumSize)
-	}
-
 	options := makeSynOptions(opts)
 	err := sendTCP(r, id, buffer.VectorisedView{}, r.DefaultTTL(), flags, seq, ack, rcvWnd, options, nil)
 	putOptions(options)
@@ -861,7 +880,8 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		// This is an active connection, so we must initiate the 3-way
 		// handshake, and then inform potential waiters about its
 		// completion.
-		h := newHandshake(e, seqnum.Size(e.receiveBufferAvailable()))
+		initialRcvWnd := e.initialReceiveWindow()
+		h := newHandshake(e, seqnum.Size(initialRcvWnd))
 		e.mu.Lock()
 		h.ep.state = StateSynSent
 		e.mu.Unlock()
@@ -886,8 +906,14 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		// (indicated by a negative send window scale).
 		e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
+		rcvBufSize := seqnum.Size(e.receiveBufferSize())
 		e.rcvListMu.Lock()
-		e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
+		e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale(), rcvBufSize)
+		// boot strap the auto tuning algorithm. Starting at zero will
+		// result in a large step function on the first proper causing
+		// the window to just go to a really large value after the first
+		// RTT itself.
+		e.rcvAutoParams.prevCopied = initialRcvWnd
 		e.rcvListMu.Unlock()
 	}
 

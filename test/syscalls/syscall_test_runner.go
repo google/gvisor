@@ -31,10 +31,10 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
-	"gvisor.googlesource.com/gvisor/test/syscalls/gtest"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/syscalls/gtest"
 )
 
 // Location of syscall tests, relative to the repo root.

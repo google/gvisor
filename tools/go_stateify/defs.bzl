@@ -50,7 +50,7 @@ def _go_stateify_impl(ctx):
         args += ["-imports=%s" % ",".join(ctx.attr.imports)]
     args += ["--"]
     for src in ctx.attr.srcs:
-        args += [f.path for f in src.files]
+        args += [f.path for f in src.files.to_list()]
     ctx.actions.run(
         inputs = ctx.files.srcs,
         outputs = [output],
@@ -76,7 +76,7 @@ go_stateify = rule(
         "package": attr.string(mandatory = True),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_stateify:stateify")),
-        "_statepkg": attr.string(default = "gvisor.googlesource.com/gvisor/pkg/state"),
+        "_statepkg": attr.string(default = "gvisor.dev/gvisor/pkg/state"),
     },
 )
 

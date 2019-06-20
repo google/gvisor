@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "console",
     srcs = ["console.go"],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/console",
+    importpath = "gvisor.dev/gvisor/runsc/console",
     visibility = [
         "//runsc:__subpackages__",
     ],

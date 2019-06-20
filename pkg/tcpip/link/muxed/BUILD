@@ -1,13 +1,11 @@
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
-package(
-    licenses = ["notice"],  # Apache 2.0
-)
+package(licenses = ["notice"])
 
 go_library(
     name = "muxed",
     srcs = ["injectable.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/muxed",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/muxed",
     visibility = [
         "//visibility:public",
     ],

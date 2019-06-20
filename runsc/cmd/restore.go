@@ -21,9 +21,9 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // Restore implements subcommands.Command for the "restore" command.
@@ -80,25 +80,38 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	conf := args[0].(*boot.Config)
 	waitStatus := args[1].(*syscall.WaitStatus)
 
+	if conf.Rootless {
+		return Errorf("Rootless mode not supported with %q", r.Name())
+	}
+
 	bundleDir := r.bundleDir
 	if bundleDir == "" {
 		bundleDir = getwdOrDie()
 	}
 	spec, err := specutils.ReadSpec(bundleDir)
 	if err != nil {
-		Fatalf("reading spec: %v", err)
+		return Errorf("reading spec: %v", err)
 	}
 	specutils.LogSpec(spec)
 
 	if r.imagePath == "" {
-		Fatalf("image-path flag must be provided")
+		return Errorf("image-path flag must be provided")
 	}
 
 	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
 
-	ws, err := container.Run(id, spec, conf, bundleDir, r.consoleSocket, r.pidFile, r.userLog, r.detach)
+	runArgs := container.Args{
+		ID:            id,
+		Spec:          spec,
+		BundleDir:     bundleDir,
+		ConsoleSocket: r.consoleSocket,
+		PIDFile:       r.pidFile,
+		UserLog:       r.userLog,
+		Attached:      !r.detach,
+	}
+	ws, err := container.Run(conf, runArgs)
 	if err != nil {
-		Fatalf("running container: %v", err)
+		return Errorf("running container: %v", err)
 	}
 	*waitStatus = ws
 

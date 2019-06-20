@@ -13,7 +13,7 @@ go_library(
         "stack_global_state.go",
         "transport_demuxer.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/stack",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/stack",
     visibility = [
         "//visibility:public",
     ],

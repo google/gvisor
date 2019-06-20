@@ -16,7 +16,7 @@
 package device
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/device"
+	"gvisor.dev/gvisor/pkg/sentry/device"
 )
 
 // ProcDevice is the kernel proc device.

@@ -14,7 +14,7 @@
 
 package tmpfs
 
-import "gvisor.googlesource.com/gvisor/pkg/sentry/device"
+import "gvisor.dev/gvisor/pkg/sentry/device"
 
 // tmpfsDevice is the kernel tmpfs device.
 var tmpfsDevice = device.NewAnonDevice()

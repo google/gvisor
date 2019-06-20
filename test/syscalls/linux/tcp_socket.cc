@@ -268,7 +268,7 @@ TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      EXPECT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
@@ -345,7 +345,7 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      EXPECT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
@@ -749,6 +749,133 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
 
   // Avoiding triggering save in destructor of s.
   EXPECT_THAT(close(s.release()), SyscallSucceeds());
+}
+
+// Test that setting a supported congestion control algorithm succeeds for an
+// unconnected TCP socket
+TEST_P(SimpleTcpSocketTest, SetCongestionControlSucceedsForSupported) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  {
+    const char kSetCC[kTcpCaNameMax] = "reno";
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
+                           strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax];
+    memset(got_cc, '1', sizeof(got_cc));
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
+        SyscallSucceedsWithValue(0));
+    // We ignore optlen here as the linux kernel sets optlen to the lower of the
+    // size of the buffer passed in or kTcpCaNameMax and not the length of the
+    // congestion control algorithm's actual name.
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kTcpCaNameMax)));
+  }
+  {
+    const char kSetCC[kTcpCaNameMax] = "cubic";
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
+                           strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax];
+    memset(got_cc, '1', sizeof(got_cc));
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
+        SyscallSucceedsWithValue(0));
+    // We ignore optlen here as the linux kernel sets optlen to the lower of the
+    // size of the buffer passed in or kTcpCaNameMax and not the length of the
+    // congestion control algorithm's actual name.
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kTcpCaNameMax)));
+  }
+}
+
+// This test verifies that a getsockopt(...TCP_CONGESTION) behaviour is
+// consistent between linux and gvisor when the passed in buffer is smaller than
+// kTcpCaNameMax.
+TEST_P(SimpleTcpSocketTest, SetGetTCPCongestionShortReadBuffer) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  {
+    // Verify that getsockopt/setsockopt work with buffers smaller than
+    // kTcpCaNameMax.
+    const char kSetCC[] = "cubic";
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
+                           strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[sizeof(kSetCC)];
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
+        SyscallSucceedsWithValue(0));
+    EXPECT_EQ(sizeof(got_cc), optlen);
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(got_cc)));
+  }
+}
+
+// This test verifies that a getsockopt(...TCP_CONGESTION) behaviour is
+// consistent between linux and gvisor when the passed in buffer is larger than
+// kTcpCaNameMax.
+TEST_P(SimpleTcpSocketTest, SetGetTCPCongestionLargeReadBuffer) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  {
+    // Verify that getsockopt works with buffers larger than
+    // kTcpCaNameMax.
+    const char kSetCC[] = "cubic";
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &kSetCC,
+                           strlen(kSetCC)),
+                SyscallSucceedsWithValue(0));
+
+    char got_cc[kTcpCaNameMax + 5];
+    socklen_t optlen = sizeof(got_cc);
+    ASSERT_THAT(
+        getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
+        SyscallSucceedsWithValue(0));
+    // Linux copies the minimum of kTcpCaNameMax or the length of the passed in
+    // buffer and sets optlen to the number of bytes actually copied
+    // irrespective of the actual length of the congestion control name.
+    EXPECT_EQ(kTcpCaNameMax, optlen);
+    EXPECT_EQ(0, memcmp(got_cc, kSetCC, sizeof(kSetCC)));
+  }
+}
+
+// Test that setting an unsupported congestion control algorithm fails for an
+// unconnected TCP socket.
+TEST_P(SimpleTcpSocketTest, SetCongestionControlFailsForUnsupported) {
+  // This is Linux's net/tcp.h TCP_CA_NAME_MAX.
+  const int kTcpCaNameMax = 16;
+
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  char old_cc[kTcpCaNameMax];
+  socklen_t optlen = sizeof(old_cc);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &old_cc, &optlen),
+      SyscallSucceedsWithValue(0));
+
+  const char kSetCC[] = "invalid_ca_kSetCC";
+  ASSERT_THAT(
+      setsockopt(s.get(), SOL_TCP, TCP_CONGESTION, &kSetCC, strlen(kSetCC)),
+      SyscallFailsWithErrno(ENOENT));
+
+  char got_cc[kTcpCaNameMax];
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_CONGESTION, &got_cc, &optlen),
+      SyscallSucceedsWithValue(0));
+  // We ignore optlen here as the linux kernel sets optlen to the lower of the
+  // size of the buffer passed in or kTcpCaNameMax and not the length of the
+  // congestion control algorithm's actual name.
+  EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(kTcpCaNameMax)));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,

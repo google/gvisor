@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "gtest",
     srcs = ["gtest.go"],
-    importpath = "gvisor.googlesource.com/gvisor/test/syscalls/gtest",
+    importpath = "gvisor.dev/gvisor/test/syscalls/gtest",
     visibility = [
         "//test:__subpackages__",
     ],

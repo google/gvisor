@@ -17,7 +17,7 @@
 // https://www.freebsd.org/cgi/man.cgi?bpf(4)
 package bpf
 
-import "gvisor.googlesource.com/gvisor/pkg/abi/linux"
+import "gvisor.dev/gvisor/pkg/abi/linux"
 
 const (
 	// MaxInstructions is the maximum number of instructions in a BPF program,

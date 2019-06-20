@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "watchdog",
     srcs = ["watchdog.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/watchdog",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/watchdog",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

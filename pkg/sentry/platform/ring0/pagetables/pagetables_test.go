@@ -17,7 +17,7 @@ package pagetables
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 type mapping struct {

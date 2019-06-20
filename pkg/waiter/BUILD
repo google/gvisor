@@ -21,7 +21,7 @@ go_library(
         "waiter.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/waiter",
+    importpath = "gvisor.dev/gvisor/pkg/waiter",
     visibility = ["//visibility:public"],
 )
 

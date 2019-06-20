@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "jenkins",
     srcs = ["jenkins.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/hash/jenkins",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/hash/jenkins",
     visibility = [
         "//visibility:public",
     ],

@@ -28,10 +28,10 @@ import (
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/control"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
@@ -84,7 +84,12 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		}
 		bundles = append(bundles, bundleDir)
 
-		cont, err := Create(ids[i], spec, conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        ids[i],
+			Spec:      spec,
+			BundleDir: bundleDir,
+		}
+		cont, err := New(conf, args)
 		if err != nil {
 			cleanup()
 			return nil, nil, fmt.Errorf("error creating container: %v", err)
@@ -661,7 +666,12 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 	}
 	defer os.RemoveAll(rootBundleDir)
 
-	root, err := Create(ids[0], specs[0], conf, rootBundleDir, "", "", "")
+	rootArgs := Args{
+		ID:        ids[0],
+		Spec:      specs[0],
+		BundleDir: rootBundleDir,
+	}
+	root, err := New(conf, rootArgs)
 	if err != nil {
 		t.Fatalf("error creating root container: %v", err)
 	}
@@ -677,7 +687,12 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 	}
 	defer os.RemoveAll(bundleDir)
 
-	cont, err := Create(ids[1], specs[1], conf, bundleDir, "", "", "")
+	args := Args{
+		ID:        ids[1],
+		Spec:      specs[1],
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
 	if err != nil {
 		t.Fatalf("error creating container: %v", err)
 	}
@@ -712,7 +727,12 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 	}
 	defer os.RemoveAll(rootBundleDir)
 
-	root, err := Create(ids[0], specs[0], conf, rootBundleDir, "", "", "")
+	rootArgs := Args{
+		ID:        ids[0],
+		Spec:      specs[0],
+		BundleDir: rootBundleDir,
+	}
+	root, err := New(conf, rootArgs)
 	if err != nil {
 		t.Fatalf("error creating root container: %v", err)
 	}
@@ -733,7 +753,12 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 		}
 		defer os.RemoveAll(bundleDir)
 
-		cont, err := Create(ids[i], specs[i], conf, bundleDir, "", "", "")
+		rootArgs := Args{
+			ID:        ids[i],
+			Spec:      specs[i],
+			BundleDir: rootBundleDir,
+		}
+		cont, err := New(conf, rootArgs)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}
@@ -807,7 +832,12 @@ func TestMultiContainerGoferStop(t *testing.T) {
 
 	// Start root container.
 	conf := testutil.TestConfigWithRoot(rootDir)
-	root, err := Create(rootID, rootSpec, conf, bundleDir, "", "", "")
+	rootArgs := Args{
+		ID:        rootID,
+		Spec:      rootSpec,
+		BundleDir: bundleDir,
+	}
+	root, err := New(conf, rootArgs)
 	if err != nil {
 		t.Fatalf("error creating root container: %v", err)
 	}
@@ -831,7 +861,12 @@ func TestMultiContainerGoferStop(t *testing.T) {
 			}
 			defer os.RemoveAll(bundleDir)
 
-			child, err := Create(ids[j], spec, conf, bundleDir, "", "", "")
+			args := Args{
+				ID:        ids[j],
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			child, err := New(conf, args)
 			if err != nil {
 				t.Fatalf("error creating container: %v", err)
 			}
@@ -1087,7 +1122,12 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 		}
 		defer os.RemoveAll(bundleDir)
 
-		containers[1], err = Create(ids[1], podSpec[1], conf, bundleDir, "", "", "")
+		args := Args{
+			ID:        ids[1],
+			Spec:      podSpec[1],
+			BundleDir: bundleDir,
+		}
+		containers[1], err = New(conf, args)
 		if err != nil {
 			t.Fatalf("error creating container: %v", err)
 		}

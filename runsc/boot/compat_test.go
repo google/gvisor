@@ -17,7 +17,7 @@ package boot
 import (
 	"testing"
 
-	rpb "gvisor.googlesource.com/gvisor/pkg/sentry/arch/registers_go_proto"
+	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
 )
 
 func TestOnceTracker(t *testing.T) {

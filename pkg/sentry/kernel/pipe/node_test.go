@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 type sleeper struct {
@@ -63,7 +63,7 @@ var perms fs.FilePermissions = fs.FilePermissions{
 
 func testOpenOrDie(ctx context.Context, t *testing.T, n fs.InodeOperations, flags fs.FileFlags, doneChan chan<- struct{}) (*fs.File, error) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Pipe})
-	d := fs.NewDirent(inode, "pipe")
+	d := fs.NewDirent(ctx, inode, "pipe")
 	file, err := n.GetFile(ctx, d, flags)
 	if err != nil {
 		t.Fatalf("open with flags %+v failed: %v", flags, err)
@@ -76,7 +76,7 @@ func testOpenOrDie(ctx context.Context, t *testing.T, n fs.InodeOperations, flag
 
 func testOpen(ctx context.Context, t *testing.T, n fs.InodeOperations, flags fs.FileFlags, resChan chan<- openResult) (*fs.File, error) {
 	inode := fs.NewMockInode(ctx, fs.NewMockMountSource(nil), fs.StableAttr{Type: fs.Pipe})
-	d := fs.NewDirent(inode, "pipe")
+	d := fs.NewDirent(ctx, inode, "pipe")
 	file, err := n.GetFile(ctx, d, flags)
 	if resChan != nil {
 		resChan <- openResult{file, err}

@@ -457,7 +457,8 @@ Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
 SocketPairKind Reversed(SocketPairKind const& base) {
   auto const& creator = base.creator;
   return SocketPairKind{
-      absl::StrCat("reversed ", base.description),
+      absl::StrCat("reversed ", base.description), base.domain, base.type,
+      base.protocol,
       [creator]() -> PosixErrorOr<std::unique_ptr<ReversedSocketPair>> {
         ASSIGN_OR_RETURN_ERRNO(auto creator_value, creator());
         return absl::make_unique<ReversedSocketPair>(std::move(creator_value));
@@ -542,8 +543,8 @@ struct sockaddr_storage AddrFDSocketPair::to_storage(const sockaddr_in6& addr) {
 
 SocketKind SimpleSocket(int fam, int type, int proto) {
   return SocketKind{
-      absl::StrCat("Family ", fam, ", type ", type, ", proto ", proto),
-      SyscallSocketCreator(fam, type, proto)};
+      absl::StrCat("Family ", fam, ", type ", type, ", proto ", proto), fam,
+      type, proto, SyscallSocketCreator(fam, type, proto)};
 }
 
 ssize_t SendLargeSendMsg(const std::unique_ptr<SocketPair>& sockets,

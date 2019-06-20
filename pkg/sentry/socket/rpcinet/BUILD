@@ -12,7 +12,7 @@ go_library(
         "stack.go",
         "stack_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         ":syscall_rpc_go_proto",
@@ -52,7 +52,7 @@ proto_library(
 
 go_proto_library(
     name = "syscall_rpc_go_proto",
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto",
     proto = ":syscall_rpc_proto",
     visibility = [
         "//visibility:public",

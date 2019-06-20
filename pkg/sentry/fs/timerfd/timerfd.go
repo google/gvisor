@@ -19,14 +19,14 @@ package timerfd
 import (
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // TimerOperations implements fs.FileOperations for timerfds.
@@ -53,7 +53,7 @@ type TimerOperations struct {
 
 // NewFile returns a timerfd File that receives time from c.
 func NewFile(ctx context.Context, c ktime.Clock) *fs.File {
-	dirent := fs.NewDirent(anon.NewInode(ctx), "anon_inode:[timerfd]")
+	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "anon_inode:[timerfd]")
 	// Release the initial dirent reference after NewFile takes a reference.
 	defer dirent.DecRef()
 	tops := &TimerOperations{}

@@ -15,10 +15,10 @@
 package kernel
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/bpf"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SharingOptions controls what resources are shared by a new task created by
@@ -238,11 +238,12 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 	}
 	tg := t.tg
 	if opts.NewThreadGroup {
+		tg.mounts.IncRef()
 		sh := t.tg.signalHandlers
 		if opts.NewSignalHandlers {
 			sh = sh.Fork()
 		}
-		tg = t.k.newThreadGroup(pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
+		tg = t.k.newThreadGroup(tg.mounts, pidns, sh, opts.TerminationSignal, tg.limits.GetCopy(), t.k.monotonicClock)
 	}
 
 	cfg := &TaskConfig{

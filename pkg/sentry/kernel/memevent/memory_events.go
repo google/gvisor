@@ -20,12 +20,12 @@ import (
 	"sync"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/eventchannel"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/metric"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	pb "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/eventchannel"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	pb "gvisor.dev/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
 
 var totalTicks = metric.MustCreateNewUint64Metric("/memory_events/ticks", false /*sync*/, "Total number of memory event periods that have elapsed since startup.")

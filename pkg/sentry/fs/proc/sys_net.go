@@ -19,15 +19,15 @@ import (
 	"io"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/device"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/inet"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 type tcpMemDir int
@@ -74,7 +74,7 @@ func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
-	return fs.NewInode(tm, msrc, sattr)
+	return fs.NewInode(ctx, tm, msrc, sattr)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -184,7 +184,7 @@ func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *f
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
-	return fs.NewInode(ts, msrc, sattr)
+	return fs.NewInode(ctx, ts, msrc, sattr)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.
@@ -277,7 +277,7 @@ func (p *proc) newSysNetCore(ctx context.Context, msrc *fs.MountSource, s inet.S
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
@@ -339,7 +339,7 @@ func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s ine
 	}
 
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
 func (p *proc) newSysNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
@@ -351,5 +351,5 @@ func (p *proc) newSysNetDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode
 		}
 	}
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(d, msrc, fs.SpecialDirectory, nil)
+	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }

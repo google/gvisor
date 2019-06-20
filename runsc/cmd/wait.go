@@ -22,8 +22,8 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/runsc/boot"
-	"gvisor.googlesource.com/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/container"
 )
 
 const (

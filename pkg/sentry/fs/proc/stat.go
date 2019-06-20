@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc/seqfile"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
 // statData backs /proc/stat.

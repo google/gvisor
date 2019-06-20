@@ -22,7 +22,7 @@ import (
 	"reflect"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // numSignals is the number of normal (non-realtime) signals on Linux.

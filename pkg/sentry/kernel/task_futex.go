@@ -15,8 +15,8 @@
 package kernel
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/futex"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // Futex returns t's futex manager.

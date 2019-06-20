@@ -21,18 +21,18 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/checker"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/channel"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sniffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv4"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/network/ipv6"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/seqnum"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/stack"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/transport/tcp"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -71,12 +71,6 @@ const (
 	// are sent in response to a SYN or in the initial SYN sent to the stack.
 	testInitialSequenceNumber = 789
 )
-
-// defaultWindowScale value specified here depends on the tcp.DefaultBufferSize
-// constant defined in the tcp/endpoint.go because the tcp.DefaultBufferSize is
-// used in tcp.newHandshake to determine the window scale to use when sending a
-// SYN/SYN-ACK.
-var defaultWindowScale = tcp.FindWndScale(tcp.DefaultBufferSize)
 
 // Headers is used to represent the TCP header fields when building a
 // new packet.
@@ -134,6 +128,10 @@ type Context struct {
 	// TimeStampEnabled is true if ep is connected with the timestamp option
 	// enabled.
 	TimeStampEnabled bool
+
+	// WindowScale is the expected window scale in SYN packets sent by
+	// the stack.
+	WindowScale uint8
 }
 
 // New allocates and initializes a test context containing a new
@@ -142,11 +140,11 @@ func New(t *testing.T, mtu uint32) *Context {
 	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
 
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultBufferSize, tcp.DefaultBufferSize * 10}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultSendBufferSize, 10 * tcp.DefaultSendBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
-	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultBufferSize, tcp.DefaultBufferSize * 10}); err != nil {
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.ReceiveBufferSizeOption{1, tcp.DefaultReceiveBufferSize, 10 * tcp.DefaultReceiveBufferSize}); err != nil {
 		t.Fatalf("SetTransportProtocolOption failed: %v", err)
 	}
 
@@ -184,9 +182,10 @@ func New(t *testing.T, mtu uint32) *Context {
 	})
 
 	return &Context{
-		t:      t,
-		s:      s,
-		linkEP: linkEP,
+		t:           t,
+		s:           s,
+		linkEP:      linkEP,
+		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
 	}
 }
 
@@ -520,35 +519,21 @@ func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf
 	c.CreateConnectedWithRawOptions(iss, rcvWnd, epRcvBuf, nil)
 }
 
-// CreateConnectedWithRawOptions creates a connected TCP endpoint and sends
-// the specified option bytes as the Option field in the initial SYN packet.
+// Connect performs the 3-way handshake for c.EP with the provided Initial
+// Sequence Number (iss) and receive window(rcvWnd) and any options if
+// specified.
 //
 // It also sets the receive buffer for the endpoint to the specified
 // value in epRcvBuf.
-func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption, options []byte) {
-	// Create TCP endpoint.
-	var err *tcpip.Error
-	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
-	if err != nil {
-		c.t.Fatalf("NewEndpoint failed: %v", err)
-	}
-	if got, want := tcp.EndpointState(c.EP.State()), tcp.StateInitial; got != want {
-		c.t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
-	}
-
-	if epRcvBuf != nil {
-		if err := c.EP.SetSockOpt(*epRcvBuf); err != nil {
-			c.t.Fatalf("SetSockOpt failed failed: %v", err)
-		}
-	}
-
+//
+// PreCondition: c.EP must already be created.
+func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) {
 	// Start connection attempt.
 	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&waitEntry, waiter.EventOut)
 	defer c.WQ.EventUnregister(&waitEntry)
 
-	err = c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort})
-	if err != tcpip.ErrConnectStarted {
+	if err := c.EP.Connect(tcpip.FullAddress{Addr: TestAddr, Port: TestPort}); err != tcpip.ErrConnectStarted {
 		c.t.Fatalf("Unexpected return value from Connect: %v", err)
 	}
 
@@ -590,8 +575,7 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 	// Wait for connection to be established.
 	select {
 	case <-notifyCh:
-		err = c.EP.GetSockOpt(tcpip.ErrorOption{})
-		if err != nil {
+		if err := c.EP.GetSockOpt(tcpip.ErrorOption{}); err != nil {
 			c.t.Fatalf("Unexpected error when connecting: %v", err)
 		}
 	case <-time.After(1 * time.Second):
@@ -602,6 +586,27 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 	}
 
 	c.Port = tcpHdr.SourcePort()
+}
+
+// CreateConnectedWithRawOptions creates a connected TCP endpoint and sends
+// the specified option bytes as the Option field in the initial SYN packet.
+//
+// It also sets the receive buffer for the endpoint to the specified
+// value in epRcvBuf.
+func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption, options []byte) {
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		c.t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	if epRcvBuf != nil {
+		if err := c.EP.SetSockOpt(*epRcvBuf); err != nil {
+			c.t.Fatalf("SetSockOpt failed failed: %v", err)
+		}
+	}
+	c.Connect(iss, rcvWnd, options)
 }
 
 // RawEndpoint is just a small wrapper around a TCP endpoint's state to make
@@ -666,6 +671,21 @@ func (r *RawEndpoint) VerifyACKWithTS(tsVal uint32) {
 	r.RecentTS = opts.TSVal
 }
 
+// VerifyACKRcvWnd verifies that the window advertised by the incoming ACK
+// matches the provided rcvWnd.
+func (r *RawEndpoint) VerifyACKRcvWnd(rcvWnd uint16) {
+	ackPacket := r.C.GetPacket()
+	checker.IPv4(r.C.t, ackPacket,
+		checker.TCP(
+			checker.DstPort(r.SrcPort),
+			checker.TCPFlags(header.TCPFlagAck),
+			checker.SeqNum(uint32(r.AckNum)),
+			checker.AckNum(uint32(r.NextSeqNum)),
+			checker.Window(rcvWnd),
+		),
+	)
+}
+
 // VerifyACKNoSACK verifies that the ACK does not contain a SACK block.
 func (r *RawEndpoint) VerifyACKNoSACK() {
 	r.VerifyACKHasSACK(nil)
@@ -726,7 +746,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 			checker.TCPSynOptions(header.TCPSynOptions{
 				MSS:           mss,
 				TS:            true,
-				WS:            defaultWindowScale,
+				WS:            int(c.WindowScale),
 				SACKPermitted: c.SACKEnabled(),
 			}),
 		),
@@ -741,6 +761,9 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions) *
 	// Build options w/ tsVal to be sent in the SYN-ACK.
 	synAckOptions := make([]byte, header.TCPOptionsMaximumSize)
 	offset := 0
+	if wantOptions.WS != -1 {
+		offset += header.EncodeWSOption(wantOptions.WS, synAckOptions[offset:])
+	}
 	if wantOptions.TS {
 		offset += header.EncodeTSOption(wantOptions.TSVal, synOptions.TSVal, synAckOptions[offset:])
 	}

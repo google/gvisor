@@ -19,13 +19,13 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // TestFileOperations is an implementation of the File interface. It provides all
@@ -46,7 +46,7 @@ type TestFileOperations struct {
 // NewTestFile creates and initializes a new test file.
 func NewTestFile(tb testing.TB) *fs.File {
 	ctx := contexttest.Context(tb)
-	dirent := fs.NewDirent(anon.NewInode(ctx), "test")
+	dirent := fs.NewDirent(ctx, anon.NewInode(ctx), "test")
 	return fs.NewFile(ctx, dirent, fs.FileFlags{}, &TestFileOperations{})
 }
 

@@ -8,7 +8,7 @@ go_library(
         "anon.go",
         "device.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/anon",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/anon",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

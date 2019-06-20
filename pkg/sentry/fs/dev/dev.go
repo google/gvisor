@@ -18,13 +18,13 @@ package dev
 import (
 	"math"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ashmem"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/binder"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ashmem"
+	"gvisor.dev/gvisor/pkg/sentry/fs/binder"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // Memory device numbers are from Linux's drivers/char/mem.c
@@ -40,8 +40,8 @@ const (
 	urandomDevMinor uint32 = 9
 )
 
-func newCharacterDevice(iops fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
-	return fs.NewInode(iops, msrc, fs.StableAttr{
+func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
+	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -49,8 +49,8 @@ func newCharacterDevice(iops fs.InodeOperations, msrc *fs.MountSource) *fs.Inode
 	})
 }
 
-func newMemDevice(iops fs.InodeOperations, msrc *fs.MountSource, minor uint32) *fs.Inode {
-	return fs.NewInode(iops, msrc, fs.StableAttr{
+func newMemDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, minor uint32) *fs.Inode {
+	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:        devDevice.DeviceID(),
 		InodeID:         devDevice.NextIno(),
 		BlockSize:       usermem.PageSize,
@@ -62,7 +62,7 @@ func newMemDevice(iops fs.InodeOperations, msrc *fs.MountSource, minor uint32) *
 
 func newDirectory(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	iops := ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return fs.NewInode(iops, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -72,7 +72,7 @@ func newDirectory(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 
 func newSymlink(ctx context.Context, target string, msrc *fs.MountSource) *fs.Inode {
 	iops := ramfs.NewSymlink(ctx, fs.RootOwner, target)
-	return fs.NewInode(iops, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
 		BlockSize: usermem.PageSize,
@@ -88,17 +88,17 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 		"stdout": newSymlink(ctx, "/proc/self/fd/1", msrc),
 		"stderr": newSymlink(ctx, "/proc/self/fd/2", msrc),
 
-		"null": newMemDevice(newNullDevice(ctx, fs.RootOwner, 0666), msrc, nullDevMinor),
-		"zero": newMemDevice(newZeroDevice(ctx, fs.RootOwner, 0666), msrc, zeroDevMinor),
-		"full": newMemDevice(newFullDevice(ctx, fs.RootOwner, 0666), msrc, fullDevMinor),
+		"null": newMemDevice(ctx, newNullDevice(ctx, fs.RootOwner, 0666), msrc, nullDevMinor),
+		"zero": newMemDevice(ctx, newZeroDevice(ctx, fs.RootOwner, 0666), msrc, zeroDevMinor),
+		"full": newMemDevice(ctx, newFullDevice(ctx, fs.RootOwner, 0666), msrc, fullDevMinor),
 
 		// This is not as good as /dev/random in linux because go
 		// runtime uses sys_random and /dev/urandom internally.
 		// According to 'man 4 random', this will be sufficient unless
 		// application uses this to generate long-lived GPG/SSL/SSH
 		// keys.
-		"random":  newMemDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc, randomDevMinor),
-		"urandom": newMemDevice(newRandomDevice(ctx, fs.RootOwner, 0444), msrc, urandomDevMinor),
+		"random":  newMemDevice(ctx, newRandomDevice(ctx, fs.RootOwner, 0444), msrc, randomDevMinor),
+		"urandom": newMemDevice(ctx, newRandomDevice(ctx, fs.RootOwner, 0444), msrc, urandomDevMinor),
 
 		"shm": tmpfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0777), msrc),
 
@@ -120,16 +120,16 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 
 	if binderEnabled {
 		binder := binder.NewDevice(ctx, fs.RootOwner, fs.FilePermsFromMode(0666))
-		contents["binder"] = newCharacterDevice(binder, msrc)
+		contents["binder"] = newCharacterDevice(ctx, binder, msrc)
 	}
 
 	if ashmemEnabled {
 		ashmem := ashmem.NewDevice(ctx, fs.RootOwner, fs.FilePermsFromMode(0666))
-		contents["ashmem"] = newCharacterDevice(ashmem, msrc)
+		contents["ashmem"] = newCharacterDevice(ctx, ashmem, msrc)
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return fs.NewInode(iops, msrc, fs.StableAttr{
+	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
 		BlockSize: usermem.PageSize,

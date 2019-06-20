@@ -27,7 +27,7 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 )
 
 // Syscalls implements subcommands.Command for the "syscalls" command.

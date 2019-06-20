@@ -17,11 +17,11 @@ package control
 import (
 	"errors"
 
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/state"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/watchdog"
-	"gvisor.googlesource.com/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/state"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 // ErrInvalidFiles is returned when the urpc call to Save does not include an

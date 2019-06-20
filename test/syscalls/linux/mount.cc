@@ -190,6 +190,14 @@ TEST(MountTest, MountTmpfs) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  // NOTE(b/129868551): Inode IDs are only stable across S/R if we have an open
+  // FD for that inode. Since we are going to compare inode IDs below, get a
+  // FileDescriptor for this directory here, which will be closed automatically
+  // at the end of the test.
+  auto const fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY, O_RDONLY));
+
   const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
 
   {

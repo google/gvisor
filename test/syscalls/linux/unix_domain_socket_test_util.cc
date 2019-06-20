@@ -47,7 +47,7 @@ std::string DescribeUnixDomainSocketType(int type) {
 }
 
 SocketPairKind UnixDomainSocketPair(int type) {
-  return SocketPairKind{DescribeUnixDomainSocketType(type),
+  return SocketPairKind{DescribeUnixDomainSocketType(type), AF_UNIX, type, 0,
                         SyscallSocketPairCreator(AF_UNIX, type, 0)};
 }
 
@@ -56,11 +56,12 @@ SocketPairKind FilesystemBoundUnixDomainSocketPair(int type) {
                                     " created with filesystem binding");
   if ((type & SOCK_DGRAM) == SOCK_DGRAM) {
     return SocketPairKind{
-        description,
+        description, AF_UNIX, type, 0,
         FilesystemBidirectionalBindSocketPairCreator(AF_UNIX, type, 0)};
   }
   return SocketPairKind{
-      description, FilesystemAcceptBindSocketPairCreator(AF_UNIX, type, 0)};
+      description, AF_UNIX, type, 0,
+      FilesystemAcceptBindSocketPairCreator(AF_UNIX, type, 0)};
 }
 
 SocketPairKind AbstractBoundUnixDomainSocketPair(int type) {
@@ -68,17 +69,17 @@ SocketPairKind AbstractBoundUnixDomainSocketPair(int type) {
                                     " created with abstract namespace binding");
   if ((type & SOCK_DGRAM) == SOCK_DGRAM) {
     return SocketPairKind{
-        description,
+        description, AF_UNIX, type, 0,
         AbstractBidirectionalBindSocketPairCreator(AF_UNIX, type, 0)};
   }
-  return SocketPairKind{description,
+  return SocketPairKind{description, AF_UNIX, type, 0,
                         AbstractAcceptBindSocketPairCreator(AF_UNIX, type, 0)};
 }
 
 SocketPairKind SocketpairGoferUnixDomainSocketPair(int type) {
   std::string description = absl::StrCat(DescribeUnixDomainSocketType(type),
                                     " created with the socketpair gofer");
-  return SocketPairKind{description,
+  return SocketPairKind{description, AF_UNIX, type, 0,
                         SocketpairGoferSocketPairCreator(AF_UNIX, type, 0)};
 }
 
@@ -87,13 +88,15 @@ SocketPairKind SocketpairGoferFileSocketPair(int type) {
       absl::StrCat(((type & O_NONBLOCK) != 0) ? "non-blocking " : "",
                    ((type & O_CLOEXEC) != 0) ? "close-on-exec " : "",
                    "file socket created with the socketpair gofer");
-  return SocketPairKind{description,
+  // The socketpair gofer always creates SOCK_STREAM sockets on open(2).
+  return SocketPairKind{description, AF_UNIX, SOCK_STREAM, 0,
                         SocketpairGoferFileSocketPairCreator(type)};
 }
 
 SocketPairKind FilesystemUnboundUnixDomainSocketPair(int type) {
   return SocketPairKind{absl::StrCat(DescribeUnixDomainSocketType(type),
                                      " unbound with a filesystem address"),
+                        AF_UNIX, type, 0,
                         FilesystemUnboundSocketPairCreator(AF_UNIX, type, 0)};
 }
 
@@ -101,7 +104,7 @@ SocketPairKind AbstractUnboundUnixDomainSocketPair(int type) {
   return SocketPairKind{
       absl::StrCat(DescribeUnixDomainSocketType(type),
                    " unbound with an abstract namespace address"),
-      AbstractUnboundSocketPairCreator(AF_UNIX, type, 0)};
+      AF_UNIX, type, 0, AbstractUnboundSocketPairCreator(AF_UNIX, type, 0)};
 }
 
 void SendSingleFD(int sock, int fd, char buf[], int buf_size) {

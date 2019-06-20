@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 )
 
 // cacheReallyContains iterates through the dirent cache to determine whether

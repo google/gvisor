@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "ports",
     srcs = ["ports.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/ports",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/ports",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",

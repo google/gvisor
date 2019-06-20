@@ -17,17 +17,17 @@ package ashmem
 import (
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/memmap"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usage"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -116,8 +116,8 @@ func (a *Area) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MM
 
 	if a.tmpfsFile == nil {
 		tmpfsInodeOps := tmpfs.NewInMemoryFile(ctx, usage.Tmpfs, fs.UnstableAttr{})
-		tmpfsInode := fs.NewInode(tmpfsInodeOps, fs.NewPseudoMountSource(), fs.StableAttr{})
-		dirent := fs.NewDirent(tmpfsInode, namePrefix+"/"+a.name)
+		tmpfsInode := fs.NewInode(ctx, tmpfsInodeOps, fs.NewPseudoMountSource(ctx), fs.StableAttr{})
+		dirent := fs.NewDirent(ctx, tmpfsInode, namePrefix+"/"+a.name)
 		tmpfsFile, err := tmpfsInode.GetFile(ctx, dirent, fs.FileFlags{Read: true, Write: true})
 		// Drop the extra reference on the Dirent.
 		dirent.DecRef()

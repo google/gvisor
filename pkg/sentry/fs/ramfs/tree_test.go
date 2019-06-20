@@ -17,12 +17,11 @@ package ramfs
 import (
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 func TestMakeDirectoryTree(t *testing.T) {
-	mount := fs.NewPseudoMountSource()
 
 	for _, test := range []struct {
 		name    string
@@ -54,6 +53,7 @@ func TestMakeDirectoryTree(t *testing.T) {
 		},
 	} {
 		ctx := contexttest.Context(t)
+		mount := fs.NewPseudoMountSource(ctx)
 		tree, err := MakeDirectoryTree(ctx, mount, test.subdirs)
 		if err != nil {
 			t.Errorf("%s: failed to make ramfs tree, got error %v, want nil", test.name, err)

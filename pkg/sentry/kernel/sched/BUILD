@@ -8,7 +8,7 @@ go_library(
         "cpuset.go",
         "sched.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/sched",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/sched",
     visibility = ["//pkg/sentry:internal"],
 )
 

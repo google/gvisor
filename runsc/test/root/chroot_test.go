@@ -31,8 +31,8 @@ import (
 	"testing"
 
 	"github.com/syndtr/gocapability/capability"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 // TestChroot verifies that the sandbox is chroot'd and that mounts are cleaned

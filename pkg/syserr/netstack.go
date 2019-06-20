@@ -15,8 +15,8 @@
 package syserr
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // Mapping for tcpip.Error types.

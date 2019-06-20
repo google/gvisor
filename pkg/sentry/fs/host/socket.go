@@ -19,22 +19,22 @@ import (
 	"sync"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/fdnotifier"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/refs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/control"
-	unixsocket "gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/uniqueid"
-	"gvisor.googlesource.com/gvisor/pkg/syserr"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/unet"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/socket/control"
+	unixsocket "gvisor.dev/gvisor/pkg/sentry/socket/unix"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
+	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // maxSendBufferSize is the maximum host send buffer size allowed for endpoint.
@@ -118,7 +118,7 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 // The caller is responsible for calling Init(). Additionaly, Release needs to
 // be called twice because ConnectedEndpoint is both a transport.Receiver and
 // transport.ConnectedEndpoint.
-func NewConnectedEndpoint(file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
+func NewConnectedEndpoint(ctx context.Context, file *fd.FD, queue *waiter.Queue, path string) (*ConnectedEndpoint, *syserr.Error) {
 	e := ConnectedEndpoint{
 		path:  path,
 		queue: queue,
@@ -151,7 +151,7 @@ func (c *ConnectedEndpoint) Init() {
 func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.FileFlags) (*fs.File, error) {
 	f2 := fd.New(f.FD())
 	var q waiter.Queue
-	e, err := NewConnectedEndpoint(f2, &q, "" /* path */)
+	e, err := NewConnectedEndpoint(ctx, f2, &q, "" /* path */)
 	if err != nil {
 		f2.Release()
 		return nil, err.ToError()
@@ -162,7 +162,7 @@ func NewSocketWithDirent(ctx context.Context, d *fs.Dirent, f *fd.FD, flags fs.F
 
 	e.Init()
 
-	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.NewWithDirent(ctx, d, ep, e.stype, flags), nil
 }
@@ -181,7 +181,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	}
 	f := fd.New(ownedfd)
 	var q waiter.Queue
-	e, err := NewConnectedEndpoint(f, &q, "" /* path */)
+	e, err := NewConnectedEndpoint(ctx, f, &q, "" /* path */)
 	if err != nil {
 		if saveable {
 			f.Close()
@@ -194,7 +194,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 	e.srfd = srfd
 	e.Init()
 
-	ep := transport.NewExternal(e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
+	ep := transport.NewExternal(ctx, e.stype, uniqueid.GlobalProviderFromContext(ctx), &q, e, e)
 
 	return unixsocket.New(ctx, ep, e.stype), nil
 }

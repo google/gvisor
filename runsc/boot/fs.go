@@ -24,24 +24,24 @@ import (
 	"syscall"
 
 	// Include filesystem types that OCI spec might mount.
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/dev"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/host"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/proc"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/sys"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	_ "gvisor.googlesource.com/gvisor/pkg/sentry/fs/tty"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/log"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/gofer"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/ramfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -76,7 +76,7 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	tmpFS := mustFindFilesystem("tmpfs")
 	if !fs.IsDir(lower.StableAttr) {
 		// Create overlay on top of mount file, e.g. /etc/hostname.
-		msrc := fs.NewCachingMountSource(tmpFS, upperFlags)
+		msrc := fs.NewCachingMountSource(ctx, tmpFS, upperFlags)
 		return fs.NewOverlayRootFile(ctx, msrc, lower, upperFlags)
 	}
 
@@ -226,7 +226,7 @@ func mustFindFilesystem(name string) fs.Filesystem {
 // addSubmountOverlay overlays the inode over a ramfs tree containing the given
 // paths.
 func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string) (*fs.Inode, error) {
-	msrc := fs.NewPseudoMountSource()
+	msrc := fs.NewPseudoMountSource(ctx)
 	mountTree, err := ramfs.MakeDirectoryTree(ctx, msrc, submounts)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount tree: %v", err)

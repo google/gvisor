@@ -19,10 +19,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.googlesource.com/gvisor/pkg/ilist"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/ilist"
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 // NIC represents a "network interface card" to which the networking stack is

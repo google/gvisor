@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
 // NulByte is a single NUL byte. It is passed to readlinkat as an empty string.

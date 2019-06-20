@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"io"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // execArgType enumerates the types of exec arguments that are exposed through
@@ -64,7 +64,7 @@ func newExecArgInode(t *kernel.Task, msrc *fs.MountSource, arg execArgType) *fs.
 		arg:             arg,
 		t:               t,
 	}
-	return newProcInode(f, msrc, fs.SpecialFile, t)
+	return newProcInode(t, f, msrc, fs.SpecialFile, t)
 }
 
 // GetFile implements fs.InodeOperations.GetFile.

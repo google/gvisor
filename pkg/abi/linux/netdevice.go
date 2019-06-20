@@ -14,7 +14,7 @@
 
 package linux
 
-import "gvisor.googlesource.com/gvisor/pkg/binary"
+import "gvisor.dev/gvisor/pkg/binary"
 
 const (
 	// IFNAMSIZ is the size of the name field for IFReq.

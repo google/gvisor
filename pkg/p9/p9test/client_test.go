@@ -28,8 +28,8 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"gvisor.googlesource.com/gvisor/pkg/fd"
-	"gvisor.googlesource.com/gvisor/pkg/p9"
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/p9"
 )
 
 func TestPanic(t *testing.T) {
@@ -269,14 +269,14 @@ type fileGenerator func(*Harness, string, p9.File) (*Mock, *Mock, p9.File)
 func walkHelper(h *Harness, name string, dir p9.File) (parentBackend *Mock, walkedBackend *Mock, walked p9.File) {
 	_, parent, err := dir.Walk(nil)
 	if err != nil {
-		h.t.Fatalf("got walk err %v, want nil", err)
+		h.t.Fatalf("Walk(nil) got err %v, want nil", err)
 	}
 	defer parent.Close()
 	parentBackend = h.Pop(parent)
 
 	_, walked, err = parent.Walk([]string{name})
 	if err != nil {
-		h.t.Fatalf("got walk err %v, want nil", err)
+		h.t.Fatalf("Walk(%s) got err %v, want nil", name, err)
 	}
 	walkedBackend = h.Pop(walked)
 
@@ -851,6 +851,62 @@ func TestRenameAtInvalid(t *testing.T) {
 				t.Errorf("got %v for name %q, want EINVAL", err, invalidName)
 			}
 		}
+	}
+}
+
+// TestRenameSecondOrder tests that indirect rename targets continue to receive
+// Renamed calls after a rename of its renamed parent. i.e.,
+//
+// 1. Create /one/file
+// 2. Create /directory
+// 3. Rename /one -> /directory/one
+// 4. Rename /directory -> /three/foo
+// 5. file from (1) should still receive Renamed.
+//
+// This is a regression test for b/135219260.
+func TestRenameSecondOrder(t *testing.T) {
+	h, c := NewHarness(t)
+	defer h.Finish()
+
+	rootBackend, root := newRoot(h, c)
+	defer root.Close()
+
+	// Walk to /one.
+	_, oneBackend, oneFile := walkHelper(h, "one", root)
+	defer oneFile.Close()
+
+	// Walk to and generate /one/file.
+	//
+	// walkHelper re-walks to oneFile, so we need the second backend,
+	// which will also receive Renamed calls.
+	oneSecondBackend, fileBackend, fileFile := walkHelper(h, "file", oneFile)
+	defer fileFile.Close()
+
+	// Walk to and generate /directory.
+	_, directoryBackend, directoryFile := walkHelper(h, "directory", root)
+	defer directoryFile.Close()
+
+	// Rename /one to /directory/one.
+	rootBackend.EXPECT().RenameAt("one", directoryBackend, "one").Return(nil)
+	expectRenamed(oneBackend, []string{}, directoryBackend, "one")
+	expectRenamed(oneSecondBackend, []string{}, directoryBackend, "one")
+	expectRenamed(fileBackend, []string{}, oneBackend, "file")
+	if err := renameAt(h, root, directoryFile, "one", "one", false); err != nil {
+		h.t.Fatalf("got rename err %v, want nil", err)
+	}
+
+	// Walk to /three.
+	_, threeBackend, threeFile := walkHelper(h, "three", root)
+	defer threeFile.Close()
+
+	// Rename /directory to /three/foo.
+	rootBackend.EXPECT().RenameAt("directory", threeBackend, "foo").Return(nil)
+	expectRenamed(directoryBackend, []string{}, threeBackend, "foo")
+	expectRenamed(oneBackend, []string{}, directoryBackend, "one")
+	expectRenamed(oneSecondBackend, []string{}, directoryBackend, "one")
+	expectRenamed(fileBackend, []string{}, oneBackend, "file")
+	if err := renameAt(h, root, threeFile, "directory", "foo", false); err != nil {
+		h.t.Fatalf("got rename err %v, want nil", err)
 	}
 }
 

@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
 func TestHelloWorld(t *testing.T) {

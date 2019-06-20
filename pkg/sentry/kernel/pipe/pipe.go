@@ -21,11 +21,11 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 const (
@@ -150,8 +150,8 @@ func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.
 		InodeID:   ino,
 		BlockSize: int64(atomicIOBytes),
 	}
-	ms := fs.NewPseudoMountSource()
-	d := fs.NewDirent(fs.NewInode(iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
+	ms := fs.NewPseudoMountSource(ctx)
+	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, ms, sattr), fmt.Sprintf("pipe:[%d]", ino))
 	// The p.Open calls below will each take a reference on the Dirent. We
 	// must drop the one we already have.
 	defer d.DecRef()
@@ -162,6 +162,7 @@ func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.
 //
 // Precondition: at least one of flags.Read or flags.Write must be set.
 func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.File {
+	flags.NonSeekable = true
 	switch {
 	case flags.Read && flags.Write:
 		p.rOpen()

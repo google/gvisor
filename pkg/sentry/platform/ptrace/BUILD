@@ -15,7 +15,7 @@ go_library(
         "subprocess_linux_amd64_unsafe.go",
         "subprocess_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/ptrace",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/ptrace",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

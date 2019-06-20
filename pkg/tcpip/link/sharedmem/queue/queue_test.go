@@ -19,7 +19,7 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/pipe"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
 
 func TestBasicTxQueue(t *testing.T) {

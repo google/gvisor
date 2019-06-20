@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 go_library(
     name = "socket",
     srcs = ["socket.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/socket",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

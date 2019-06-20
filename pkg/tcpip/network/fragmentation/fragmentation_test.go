@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.googlesource.com/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // vv is a helper to build VectorisedView from different strings.

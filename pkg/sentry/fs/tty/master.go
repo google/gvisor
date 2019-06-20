@@ -15,15 +15,15 @@
 package tty
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/unimpl"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/unimpl"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // masterInodeOperations are the fs.InodeOperations for the master end of the
@@ -46,7 +46,7 @@ func newMasterInode(ctx context.Context, d *dirInodeOperations, owner fs.FileOwn
 		d:               d,
 	}
 
-	return fs.NewInode(iops, d.msrc, fs.StableAttr{
+	return fs.NewInode(ctx, iops, d.msrc, fs.StableAttr{
 		DeviceID: ptsDevice.DeviceID(),
 		// N.B. Linux always uses inode id 2 for ptmx. See
 		// fs/devpts/inode.c:mknod_ptmx.

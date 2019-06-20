@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
-	"gvisor.googlesource.com/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // ErrorLogger is where error messages should be written to. These messages are

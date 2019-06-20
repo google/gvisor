@@ -21,7 +21,7 @@ go_library(
         "semaphore.go",
         "waiter_list.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/semaphore",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/semaphore",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

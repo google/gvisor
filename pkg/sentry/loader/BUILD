@@ -21,7 +21,7 @@ go_library(
         "vdso_state.go",
         ":vdso_bin",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/loader",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/loader",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi",

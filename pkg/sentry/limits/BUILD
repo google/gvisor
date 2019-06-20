@@ -9,7 +9,7 @@ go_library(
         "limits.go",
         "linux.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/limits",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/limits",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",

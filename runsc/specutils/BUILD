@@ -9,11 +9,8 @@ go_library(
         "namespace.go",
         "specutils.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/runsc/specutils",
-    visibility = [
-        "//runsc:__subpackages__",
-        "//test:__subpackages__",
-    ],
+    importpath = "gvisor.dev/gvisor/runsc/specutils",
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/log",

@@ -17,31 +17,31 @@ package linux
 import (
 	"syscall"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/lock"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/tmpfs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/fasync"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/pipe"
-	ktime "gvisor.googlesource.com/gvisor/pkg/sentry/kernel/time"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/limits"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
+	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/limits"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // fileOpAt performs an operation on the second last component in the path.
-func fileOpAt(t *kernel.Task, dirFD kdefs.FD, path string, fn func(root *fs.Dirent, d *fs.Dirent, name string) error) error {
+func fileOpAt(t *kernel.Task, dirFD kdefs.FD, path string, fn func(root *fs.Dirent, d *fs.Dirent, name string, remainingTraversals uint) error) error {
 	// Extract the last component.
 	dir, name := fs.SplitLast(path)
 	if dir == "/" {
 		// Common case: we are accessing a file in the root.
 		root := t.FSContext().RootDirectory()
-		err := fn(root, root, name)
+		err := fn(root, root, name, linux.MaxSymlinkTraversals)
 		root.DecRef()
 		return err
 	} else if dir == "." && dirFD == linux.AT_FDCWD {
@@ -49,19 +49,19 @@ func fileOpAt(t *kernel.Task, dirFD kdefs.FD, path string, fn func(root *fs.Dire
 		// working directory; skip the look-up.
 		wd := t.FSContext().WorkingDirectory()
 		root := t.FSContext().RootDirectory()
-		err := fn(root, wd, name)
+		err := fn(root, wd, name, linux.MaxSymlinkTraversals)
 		wd.DecRef()
 		root.DecRef()
 		return err
 	}
 
-	return fileOpOn(t, dirFD, dir, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
-		return fn(root, d, name)
+	return fileOpOn(t, dirFD, dir, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error {
+		return fn(root, d, name, remainingTraversals)
 	})
 }
 
 // fileOpOn performs an operation on the last entry of the path.
-func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent) error) error {
+func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error) error {
 	var (
 		d   *fs.Dirent // The file.
 		wd  *fs.Dirent // The working directory (if required.)
@@ -110,7 +110,7 @@ func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func
 		return err
 	}
 
-	err = fn(root, d)
+	err = fn(root, d, remainingTraversals)
 	d.DecRef()
 	return err
 }
@@ -139,7 +139,7 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 	}
 
 	resolve := flags&linux.O_NOFOLLOW == 0
-	err = fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
+	err = fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// First check a few things about the filesystem before trying to get the file
 		// reference.
 		//
@@ -211,7 +211,7 @@ func mknodAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileM
 		return syserror.ENOENT
 	}
 
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -304,7 +304,7 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		return 0, syserror.ENOENT
 	}
 
-	err = fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	err = fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, remainingTraversals uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -314,7 +314,6 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		fileFlags.LargeFile = true
 
 		// Does this file exist already?
-		remainingTraversals := uint(linux.MaxSymlinkTraversals)
 		targetDirent, err := t.MountNamespace().FindInode(t, root, d, name, &remainingTraversals)
 		var newFile *fs.File
 		switch err {
@@ -458,7 +457,7 @@ func accessAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, resolve bool, m
 		return syserror.EINVAL
 	}
 
-	return fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
+	return fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// access(2) and faccessat(2) check permissions using real
 		// UID/GID, not effective UID/GID.
 		//
@@ -626,7 +625,7 @@ func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, err
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Is it a directory?
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
@@ -651,7 +650,7 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Is it a directory?
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
@@ -1017,7 +1016,7 @@ func mkdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileM
 		return err
 	}
 
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -1074,7 +1073,7 @@ func rmdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr) error {
 		return syserror.EBUSY
 	}
 
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -1122,7 +1121,7 @@ func symlinkAt(t *kernel.Task, dirFD kdefs.FD, newAddr usermem.Addr, oldAddr use
 		return syserror.ENOENT
 	}
 
-	return fileOpAt(t, dirFD, newPath, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	return fileOpAt(t, dirFD, newPath, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -1212,7 +1211,7 @@ func linkAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD kd
 		}
 
 		// Resolve the target directory.
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string) error {
+		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
 				return syserror.ENOTDIR
 			}
@@ -1227,13 +1226,13 @@ func linkAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD kd
 
 	// Resolve oldDirFD and oldAddr to a dirent.  The "resolve" argument
 	// only applies to this name.
-	return fileOpOn(t, oldDirFD, oldPath, resolve, func(root *fs.Dirent, target *fs.Dirent) error {
+	return fileOpOn(t, oldDirFD, oldPath, resolve, func(root *fs.Dirent, target *fs.Dirent, _ uint) error {
 		if err := mayLinkAt(t, target.Inode); err != nil {
 			return err
 		}
 
 		// Next resolve newDirFD and newAddr to the parent dirent and name.
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string) error {
+		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
 				return syserror.ENOTDIR
 			}
@@ -1300,7 +1299,7 @@ func readlinkAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, bufAddr userm
 		return 0, syserror.ENOENT
 	}
 
-	err = fileOpOn(t, dirFD, path, false /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	err = fileOpOn(t, dirFD, path, false /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Check for Read permission.
 		if err := d.Inode.CheckPermission(t, fs.PermMask{Read: true}); err != nil {
 			return err
@@ -1359,7 +1358,7 @@ func unlinkAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr) error {
 		return syserror.ENOENT
 	}
 
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string) error {
+	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -1414,7 +1413,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.EFBIG
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		if fs.IsDir(d.Inode.StableAttr) {
 			return syserror.EISDIR
 		}
@@ -1576,7 +1575,7 @@ func chownAt(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, resolve, allowEmpty
 		return chown(t, file.Dirent, uid, gid)
 	}
 
-	return fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent) error {
+	return fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return chown(t, d, uid, gid)
 	})
 }
@@ -1652,7 +1651,7 @@ func chmodAt(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, mode linux.FileMode
 		return err
 	}
 
-	return fileOpOn(t, fd, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent) error {
+	return fileOpOn(t, fd, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		return chmod(t, d, mode)
 	})
 }
@@ -1698,7 +1697,7 @@ func defaultSetToSystemTimeSpec() fs.TimeSpec {
 }
 
 func utimes(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, ts fs.TimeSpec, resolve bool) error {
-	setTimestamp := func(root *fs.Dirent, d *fs.Dirent) error {
+	setTimestamp := func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Does the task own the file?
 		if !d.Inode.CheckOwnership(t) {
 			// Trying to set a specific time? Must be owner.
@@ -1739,7 +1738,7 @@ func utimes(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, ts fs.TimeSpec, r
 		root := t.FSContext().RootDirectory()
 		defer root.DecRef()
 
-		return setTimestamp(root, f.Dirent)
+		return setTimestamp(root, f.Dirent, linux.MaxSymlinkTraversals)
 	}
 
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
@@ -1867,7 +1866,7 @@ func renameAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD 
 		return err
 	}
 
-	return fileOpAt(t, oldDirFD, oldPath, func(root *fs.Dirent, oldParent *fs.Dirent, oldName string) error {
+	return fileOpAt(t, oldDirFD, oldPath, func(root *fs.Dirent, oldParent *fs.Dirent, oldName string, _ uint) error {
 		if !fs.IsDir(oldParent.Inode.StableAttr) {
 			return syserror.ENOTDIR
 		}
@@ -1879,7 +1878,7 @@ func renameAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD 
 			return syserror.EBUSY
 		}
 
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string) error {
+		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
 			if !fs.IsDir(newParent.Inode.StableAttr) {
 				return syserror.ENOTDIR
 			}
@@ -2067,7 +2066,7 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	name = memfdPrefix + name
 
 	inode := tmpfs.NewMemfdInode(t, allowSeals)
-	dirent := fs.NewDirent(inode, name)
+	dirent := fs.NewDirent(t, inode, name)
 	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
 	// FMODE_READ | FMODE_WRITE.
 	file, err := inode.GetFile(t, dirent, fs.FileFlags{Read: true, Write: true})

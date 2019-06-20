@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var globalError error

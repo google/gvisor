@@ -18,7 +18,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot"
 )
 
 func TestNotFound(t *testing.T) {

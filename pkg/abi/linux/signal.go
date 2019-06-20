@@ -15,7 +15,7 @@
 package linux
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/bits"
 )
 
 const (

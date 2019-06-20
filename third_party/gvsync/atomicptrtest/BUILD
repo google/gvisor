@@ -18,7 +18,7 @@ go_template_instance(
 go_library(
     name = "atomicptr",
     srcs = ["atomicptr_int.go"],
-    importpath = "gvisor.googlesource.com/gvisor/third_party/gvsync/atomicptr",
+    importpath = "gvisor.dev/gvisor/third_party/gvsync/atomicptr",
 )
 
 go_test(

@@ -8,7 +8,7 @@ go_library(
         "rx.go",
         "tx.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip/link/sharedmem/queue",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",

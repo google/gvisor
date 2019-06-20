@@ -25,7 +25,7 @@ go_library(
         "physical_map.go",
         "virtual_map.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/platform/kvm",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/platform/kvm",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

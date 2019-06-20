@@ -21,15 +21,15 @@ import (
 	"strconv"
 	"sync"
 
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // dirInodeOperations is the root of a devpts mount.
@@ -114,7 +114,7 @@ func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 		InodeID: d.master.StableAttr.InodeID,
 	})
 
-	return fs.NewInode(d, m, fs.StableAttr{
+	return fs.NewInode(ctx, d, m, fs.StableAttr{
 		DeviceID: ptsDevice.DeviceID(),
 		// N.B. Linux always uses inode id 1 for the directory. See
 		// fs/devpts/inode.c:devpts_fill_super.
@@ -143,7 +143,7 @@ func (d *dirInodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name str
 	// Master?
 	if name == "ptmx" {
 		d.master.IncRef()
-		return fs.NewDirent(d.master, name), nil
+		return fs.NewDirent(ctx, d.master, name), nil
 	}
 
 	// Slave number?
@@ -159,7 +159,7 @@ func (d *dirInodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name str
 	}
 
 	s.IncRef()
-	return fs.NewDirent(s, name), nil
+	return fs.NewDirent(ctx, s, name), nil
 }
 
 // Create implements fs.InodeOperations.Create.

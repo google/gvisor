@@ -9,6 +9,6 @@ go_library(
         "abi_linux.go",
         "flag.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/abi",
+    importpath = "gvisor.dev/gvisor/pkg/abi",
     visibility = ["//:sandbox"],
 )

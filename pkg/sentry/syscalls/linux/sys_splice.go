@@ -15,13 +15,13 @@
 package linux
 
 import (
-	"gvisor.googlesource.com/gvisor/pkg/abi/linux"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.googlesource.com/gvisor/pkg/syserror"
-	"gvisor.googlesource.com/gvisor/pkg/waiter"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
+	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // doSplice implements a blocking splice operation.
@@ -48,12 +48,12 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		if ch == nil {
 			ch = make(chan struct{}, 1)
 		}
-		if !inW && inFile.Readiness(EventMaskRead) == 0 && !inFile.Flags().NonBlocking {
+		if !inW && !inFile.Flags().NonBlocking {
 			w, _ := waiter.NewChannelEntry(ch)
 			inFile.EventRegister(&w, EventMaskRead)
 			defer inFile.EventUnregister(&w)
 			inW = true // Registered.
-		} else if !outW && outFile.Readiness(EventMaskWrite) == 0 && !outFile.Flags().NonBlocking {
+		} else if !outW && !outFile.Flags().NonBlocking {
 			w, _ := waiter.NewChannelEntry(ch)
 			outFile.EventRegister(&w, EventMaskWrite)
 			defer outFile.EventUnregister(&w)
@@ -63,6 +63,11 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		// Was anything registered? If no, everything is non-blocking.
 		if !inW && !outW {
 			break
+		}
+
+		if (!inW || inFile.Readiness(EventMaskRead) != 0) && (!outW || outFile.Readiness(EventMaskWrite) != 0) {
+			// Something became ready, try again without blocking.
+			continue
 		}
 
 		// Block until there's data.

@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"testing"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // TestMultipleReaddir verifies that multiple Readdir calls return the same
@@ -56,7 +56,7 @@ func TestMultipleReaddir(t *testing.T) {
 		t.Fatalf("Failed to create inode: %v", err)
 	}
 
-	dirent := fs.NewDirent(n, "readdir")
+	dirent := fs.NewDirent(ctx, n, "readdir")
 	openFile, err := n.GetFile(ctx, dirent, fs.FileFlags{Read: true})
 	if err != nil {
 		t.Fatalf("Failed to get file: %v", err)

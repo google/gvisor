@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/arch"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // GETREGSET/SETREGSET register set types.

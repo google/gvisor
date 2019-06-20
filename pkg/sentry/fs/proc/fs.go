@@ -17,8 +17,8 @@ package proc
 import (
 	"fmt"
 
-	"gvisor.googlesource.com/gvisor/pkg/sentry/context"
-	"gvisor.googlesource.com/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/context"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 )
 
 // filesystem is a procfs.
@@ -77,5 +77,5 @@ func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 
 	// Construct the procfs root. Since procfs files are all virtual, we
 	// never want them cached.
-	return New(ctx, fs.NewNonCachingMountSource(f, flags), cgroups)
+	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags), cgroups)
 }

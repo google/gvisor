@@ -6,7 +6,7 @@ go_library(
     name = "contexttest",
     testonly = 1,
     srcs = ["contexttest.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/context/contexttest",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/context/contexttest",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/memutil",

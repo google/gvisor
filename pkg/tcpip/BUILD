@@ -8,7 +8,7 @@ go_library(
         "tcpip.go",
         "time_unsafe.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/tcpip",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip",
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip/buffer",

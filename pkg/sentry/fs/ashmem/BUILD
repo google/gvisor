@@ -12,7 +12,7 @@ go_library(
         "uint64_range.go",
         "uint64_set.go",
     ],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/sentry/fs/ashmem",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/ashmem",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",

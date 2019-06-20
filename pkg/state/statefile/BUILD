@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "statefile",
     srcs = ["statefile.go"],
-    importpath = "gvisor.googlesource.com/gvisor/pkg/state/statefile",
+    importpath = "gvisor.dev/gvisor/pkg/state/statefile",
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/binary",

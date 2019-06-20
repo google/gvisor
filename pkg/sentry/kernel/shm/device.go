@@ -14,7 +14,7 @@
 
 package shm
 
-import "gvisor.googlesource.com/gvisor/pkg/sentry/device"
+import "gvisor.dev/gvisor/pkg/sentry/device"
 
 // shmDevice is the kernel shm device.
 var shmDevice = device.NewAnonDevice()
