@@ -117,7 +117,7 @@ func New(conf *boot.Config, args *Args) (*Sandbox, error) {
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := specutils.MakeCleanup(func() {
 		err := s.destroy()
-		log.Warningf("error Ndestroying sandbox: %v", err)
+		log.Warningf("error destroying sandbox: %v", err)
 	})
 	defer c.Clean()
 
