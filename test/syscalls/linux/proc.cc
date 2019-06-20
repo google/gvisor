@@ -1908,6 +1908,25 @@ void CheckDuplicatesRecursively(std::string path) {
 
 TEST(Proc, NoDuplicates) { CheckDuplicatesRecursively("/proc"); }
 
+TEST(Proc, Getdents) {
+  int child_pid = fork();
+  ASSERT_GE(child_pid, 0);
+  if (child_pid == 0) {
+    while(1){
+      sleep(100);
+    }
+  }
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+  char name[100];
+  char buf[1024];
+  int fd;
+  sprintf(name, "/proc/%d/task", child_pid);
+  fd = open(name, O_RDONLY | O_DIRECTORY);
+  ASSERT_THAT(kill(child_pid, SIGKILL), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, NULL, 0), SyscallSucceedsWithValue(child_pid));
+  ASSERT_THAT(syscall(SYS_getdents, fd, buf, 1024), SyscallFailsWithErrno(ENOENT));
+}
+
 // Most /proc/PID files are owned by the task user with SUID_DUMP_USER.
 TEST(ProcPid, UserDumpableOwner) {
   int before;

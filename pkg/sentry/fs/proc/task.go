@@ -20,6 +20,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
@@ -162,6 +163,11 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 	// subtask to emit.
 	offset := file.Offset()
 
+	tasks := f.t.ThreadGroup().MemberIDs(f.pidns)
+	if len(tasks) == 0 {
+		return offset, syscall.ENOENT
+	}
+
 	if offset == 0 {
 		// Serialize "." and "..".
 		root := fs.RootFromContext(ctx)
@@ -178,7 +184,6 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 	}
 
 	// Serialize tasks.
-	tasks := f.t.ThreadGroup().MemberIDs(f.pidns)
 	taskInts := make([]int, 0, len(tasks))
 	for _, tid := range tasks {
 		taskInts = append(taskInts, int(tid))
