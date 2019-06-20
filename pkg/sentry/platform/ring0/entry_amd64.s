@@ -15,7 +15,7 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// NB: Offsets are programatically generated (see BUILD).
+// NB: Offsets are programmatically generated (see BUILD).
 //
 // This file is concatenated with the definitions.
 

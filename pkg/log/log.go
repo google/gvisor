@@ -222,7 +222,7 @@ var logMu sync.Mutex
 // log is the default logger.
 var log atomic.Value
 
-// Log retieves the global logger.
+// Log retrieves the global logger.
 func Log() *BasicLogger {
 	return log.Load().(*BasicLogger)
 }

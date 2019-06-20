@@ -126,7 +126,7 @@ A mount point is restored in two steps:
 
 -   Second, during state.Load, each `fs.MountedFilesystem` optionally searches
     for a mount in the `fs.RestoreEnvironment` that matches its saved device
-    name. The `fs.MountedFilesystem` then restablishes a pointer to the root of
+    name. The `fs.MountedFilesystem` then reestablishes a pointer to the root of
     the mounted filesystem. For example, the mount specification provides the
     network connection for a mounted remote filesystem client to communicate
     with its remote file server. The `fs.MountedFilesystem` also trivially loads
@@ -158,7 +158,7 @@ Otherwise an `fs.File` restores flags, an offset, and a unique identifier (only
 used internally).
 
 It may use the `fs.Inode`, which it indirectly holds a reference on through the
-`fs.Dirent`, to restablish an open file handle on the backing filesystem (e.g.
+`fs.Dirent`, to reestablish an open file handle on the backing filesystem (e.g.
 to continue reading and writing).
 
 ## Overlay

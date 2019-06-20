@@ -85,7 +85,7 @@ func (mappingSetFunctions) Merge(r1 MappableRange, val1 MappingsOfRange, r2 Mapp
 	// Each MappingOfRange in val1 must have a matching region in val2, forming
 	// one contiguous region.
 	for k1 := range val1 {
-		// We expect val2 to to contain a key that forms a contiguous
+		// We expect val2 to contain a key that forms a contiguous
 		// region with k1.
 		k2 := MappingOfRange{
 			MappingSpace: k1.MappingSpace,

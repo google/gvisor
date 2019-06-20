@@ -29,7 +29,7 @@ import (
 )
 
 // DefaultDirentCacheSize is the default dirent cache size for 9P mounts. It can
-// be adjusted independentely from the other dirent caches.
+// be adjusted independently from the other dirent caches.
 var DefaultDirentCacheSize uint64 = fs.DefaultDirentCacheSize
 
 // +stateify savable

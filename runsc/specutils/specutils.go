@@ -394,7 +394,7 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 
 // DebugLogFile opens a log file using 'logPattern' as location. If 'logPattern'
 // ends with '/', it's used as a directory with default file name.
-// 'logPattern' can contain variables that are substitued:
+// 'logPattern' can contain variables that are substituted:
 //   - %TIMESTAMP%: is replaced with a timestamp using the following format:
 //			<yyyymmdd-hhmmss.uuuuuu>
 //	 - %COMMAND%: is replaced with 'command'

@@ -203,7 +203,7 @@ func (d *Docker) Stop() error {
 }
 
 // Run calls 'docker run' with the arguments provided. The container starts
-// running in the backgroud and the call returns immediately.
+// running in the background and the call returns immediately.
 func (d *Docker) Run(args ...string) error {
 	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
 	a = append(a, args...)

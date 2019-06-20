@@ -256,7 +256,7 @@ type AddressSpaceIO interface {
 	LoadUint32(addr usermem.Addr) (uint32, error)
 }
 
-// NoAddressSpaceIO implements AddressSpaceIO methods by panicing.
+// NoAddressSpaceIO implements AddressSpaceIO methods by panicking.
 type NoAddressSpaceIO struct{}
 
 // CopyOut implements AddressSpaceIO.CopyOut.

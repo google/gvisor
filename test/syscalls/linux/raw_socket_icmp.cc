@@ -234,7 +234,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
 }
 
 // A raw ICMP socket and ping socket should both receive the ICMP packets
-// indended for the ping socket.
+// intended for the ping socket.
 TEST_F(RawSocketICMPTest, RawAndPingSockets) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
 

@@ -428,7 +428,7 @@ TEST_F(FlockTest, TestDupFdFollowedByLock) {
   ASSERT_THAT(flock(fd.get(), LOCK_UN), SyscallSucceedsWithValue(0));
 }
 
-// NOTE: These blocking tests are not perfect. Unfortunantely it's very hard to
+// NOTE: These blocking tests are not perfect. Unfortunately it's very hard to
 // determine if a thread was actually blocked in the kernel so we're forced
 // to use timing.
 TEST_F(FlockTest, BlockingLockNoBlockingForSharedLocks_NoRandomSave) {

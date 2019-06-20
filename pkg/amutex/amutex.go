@@ -21,13 +21,13 @@ import (
 )
 
 // Sleeper must be implemented by users of the abortable mutex to allow for
-// cancelation of waits.
+// cancellation of waits.
 type Sleeper interface {
 	// SleepStart is called by the AbortableMutex.Lock() function when the
 	// mutex is contended and the goroutine is about to sleep.
 	//
 	// A channel can be returned that causes the sleep to be canceled if
-	// it's readable. If no cancelation is desired, nil can be returned.
+	// it's readable. If no cancellation is desired, nil can be returned.
 	SleepStart() <-chan struct{}
 
 	// SleepFinish is called by AbortableMutex.Lock() once a contended mutex

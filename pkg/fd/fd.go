@@ -167,7 +167,7 @@ func NewFromFile(file *os.File) (*FD, error) {
 	return New(fd), nil
 }
 
-// Open is equivallent to open(2).
+// Open is equivalent to open(2).
 func Open(path string, openmode int, perm uint32) (*FD, error) {
 	f, err := syscall.Open(path, openmode|syscall.O_LARGEFILE, perm)
 	if err != nil {
@@ -176,7 +176,7 @@ func Open(path string, openmode int, perm uint32) (*FD, error) {
 	return New(f), nil
 }
 
-// OpenAt is equivallent to openat(2).
+// OpenAt is equivalent to openat(2).
 func OpenAt(dir *FD, path string, flags int, mode uint32) (*FD, error) {
 	f, err := syscall.Openat(dir.FD(), path, flags, mode)
 	if err != nil {

@@ -14,7 +14,7 @@
 
 package linux
 
-// Comands from linux/fcntl.h.
+// Commands from linux/fcntl.h.
 const (
 	F_DUPFD         = 0
 	F_GETFD         = 1

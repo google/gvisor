@@ -74,7 +74,7 @@ type MemoryManager struct {
 	// privateRefs is immutable.
 	privateRefs *privateRefs
 
-	// users is the number of dependences on the mappings in the MemoryManager.
+	// users is the number of dependencies on the mappings in the MemoryManager.
 	// When the number of references in users reaches zero, all mappings are
 	// unmapped.
 	//

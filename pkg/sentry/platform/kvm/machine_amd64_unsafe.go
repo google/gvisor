@@ -87,7 +87,7 @@ func (c *vCPU) setCPUID() error {
 
 // setSystemTime sets the TSC for the vCPU.
 //
-// This has to make the call many times in order to minimize the intrinstic
+// This has to make the call many times in order to minimize the intrinsic
 // error in the offset. Unfortunately KVM does not expose a relative offset via
 // the API, so this is an approximation. We do this via an iterative algorithm.
 // This has the advantage that it can generally deal with highly variable

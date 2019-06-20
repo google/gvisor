@@ -84,7 +84,7 @@ type encodeState struct {
 
 // register looks up an ID, registering if necessary.
 //
-// If the object was not previosly registered, it is enqueued to be serialized.
+// If the object was not previously registered, it is enqueued to be serialized.
 // See the documentation for idsByObject for more information.
 func (es *encodeState) register(obj reflect.Value) uint64 {
 	// It is not legal to call register for any non-pointer objects (see

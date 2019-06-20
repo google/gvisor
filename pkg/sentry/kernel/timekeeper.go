@@ -122,7 +122,7 @@ func (t *Timekeeper) SetClocks(c sentrytime.Clocks) {
 	//
 	// In a restored sentry, monotonic time jumps forward by approximately
 	// the same amount as real time. There are no guarantees here, we are
-	// just making a best-effort attempt to to make it appear that the app
+	// just making a best-effort attempt to make it appear that the app
 	// was simply not scheduled for a long period, rather than that the
 	// real time clock was changed.
 	//

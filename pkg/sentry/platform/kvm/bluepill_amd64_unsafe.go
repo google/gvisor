@@ -30,7 +30,7 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 	return &((*arch.UContext64)(context).MContext)
 }
 
-// dieArchSetup initialies the state for dieTrampoline.
+// dieArchSetup initializes the state for dieTrampoline.
 //
 // The amd64 dieTrampoline requires the vCPU to be set in BX, and the last RIP
 // to be in AX. The trampoline then simulates a call to dieHandler from the

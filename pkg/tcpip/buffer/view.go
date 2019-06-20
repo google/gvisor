@@ -50,7 +50,7 @@ func (v View) ToVectorisedView() VectorisedView {
 	return NewVectorisedView(len(v), []View{v})
 }
 
-// VectorisedView is a vectorised version of View using non contigous memory.
+// VectorisedView is a vectorised version of View using non contiguous memory.
 // It supports all the convenience methods supported by View.
 //
 // +stateify savable

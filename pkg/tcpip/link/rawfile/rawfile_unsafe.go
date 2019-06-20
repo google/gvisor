@@ -110,7 +110,7 @@ type PollEvent struct {
 
 // BlockingRead reads from a file descriptor that is set up as non-blocking. If
 // no data is available, it will block in a poll() syscall until the file
-// descirptor becomes readable.
+// descriptor becomes readable.
 func BlockingRead(fd int, b []byte) (int, *tcpip.Error) {
 	for {
 		n, _, e := syscall.RawSyscall(syscall.SYS_READ, uintptr(fd), uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)))

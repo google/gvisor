@@ -86,7 +86,7 @@ type Set struct {
 	dead bool
 }
 
-// sem represents a single semanphore from a set.
+// sem represents a single semaphore from a set.
 //
 // +stateify savable
 type sem struct {

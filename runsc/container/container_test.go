@@ -831,7 +831,7 @@ func TestUnixDomainSockets(t *testing.T) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		// UDS path is limited to 108 chars for compatibility with older systems.
-		// Use '/tmp' (instead of testutil.TmpDir) to to ensure the size limit is
+		// Use '/tmp' (instead of testutil.TmpDir) to ensure the size limit is
 		// not exceeded. Assumes '/tmp' exists in the system.
 		dir, err := ioutil.TempDir("/tmp", "uds-test")
 		if err != nil {

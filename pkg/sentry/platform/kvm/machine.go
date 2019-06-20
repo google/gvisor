@@ -135,7 +135,7 @@ type dieState struct {
 
 // newVCPU creates a returns a new vCPU.
 //
-// Precondtion: mu must be held.
+// Precondition: mu must be held.
 func (m *machine) newVCPU() *vCPU {
 	id := len(m.vCPUs)
 

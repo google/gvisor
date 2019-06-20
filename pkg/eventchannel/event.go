@@ -144,7 +144,7 @@ type debugEmitter struct {
 	inner Emitter
 }
 
-// DebugEmitterFrom creates a new event channel emitter by wraping an existing
+// DebugEmitterFrom creates a new event channel emitter by wrapping an existing
 // raw emitter.
 func DebugEmitterFrom(inner Emitter) Emitter {
 	return &debugEmitter{

@@ -596,7 +596,7 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 }
 
 // SetAttr implements p9.File. Due to mismatch in file API, options
-// cannot be changed atomicaly and user may see partial changes when
+// cannot be changed atomically and user may see partial changes when
 // an error happens.
 func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	conf := l.attachPoint.conf

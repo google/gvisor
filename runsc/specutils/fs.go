@@ -87,7 +87,7 @@ func OptionsToFlags(opts []string) uint32 {
 
 // PropOptionsToFlags converts propagation mount options to syscall flags.
 // Propagation options cannot be set other with other options and must be
-// handled separatedly.
+// handled separately.
 func PropOptionsToFlags(opts []string) uint32 {
 	return optionsToFlags(opts, propOptionsMap)
 }

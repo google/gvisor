@@ -620,7 +620,7 @@ func vendorIDFromRegs(bx, cx, dx uint32) string {
 // state includes floating point registers, and other cpu state that's not
 // associated with the normal task context.
 //
-// Note: We can save some space here with an optimiazation where we use a
+// Note: We can save some space here with an optimization where we use a
 // smaller chunk of memory depending on features that are actually enabled.
 // Currently we just use the largest possible size for simplicity (which is
 // about 2.5K worst case, with avx512).

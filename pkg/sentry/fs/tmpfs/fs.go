@@ -65,7 +65,7 @@ func init() {
 	fs.RegisterFilesystem(&Filesystem{})
 }
 
-// FilesystemName is the name underwhich the filesystem is registered.
+// FilesystemName is the name under which the filesystem is registered.
 // Name matches mm/shmem.c:shmem_fs_type.name.
 const FilesystemName = "tmpfs"
 

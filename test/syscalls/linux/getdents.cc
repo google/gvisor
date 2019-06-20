@@ -364,7 +364,7 @@ TYPED_TEST(GetdentsTest, PartialBuffer) {
 }
 
 // Open many file descriptors, then scan through /proc/self/fd to find and close
-// them all. (The latter is commonly used to handle races betweek fork/execve
+// them all. (The latter is commonly used to handle races between fork/execve
 // and the creation of unwanted non-O_CLOEXEC file descriptors.) This tests that
 // getdents iterates correctly despite mutation of /proc/self/fd.
 TYPED_TEST(GetdentsTest, ProcSelfFd) {

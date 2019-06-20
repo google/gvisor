@@ -389,7 +389,7 @@ func checkDeleted(h *Harness, file p9.File) {
 	_, newFile, err := file.Walk(nil)
 	if err == syscall.EBUSY {
 		// We can't walk from here because this reference is open
-		// aleady. Okay, we will also have unopened cases through
+		// already. Okay, we will also have unopened cases through
 		// TestUnlink, just skip the remove operation for now.
 		return
 	} else if err != nil {

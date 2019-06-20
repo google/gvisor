@@ -40,7 +40,7 @@ SocketPairKind FilesystemBoundUnixDomainSocketPair(int type);
 SocketPairKind AbstractBoundUnixDomainSocketPair(int type);
 
 // SocketpairGoferUnixDomainSocketPair returns a SocketPairKind that was created
-// with two sockets conected to the socketpair gofer.
+// with two sockets connected to the socketpair gofer.
 SocketPairKind SocketpairGoferUnixDomainSocketPair(int type);
 
 // SocketpairGoferFileSocketPair returns a SocketPairKind that was created with
