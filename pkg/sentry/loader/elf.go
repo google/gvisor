@@ -488,6 +488,17 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 			panic(fmt.Sprintf("Failed to unmap base address: %v", err))
 		}
 
+		// Offset is used as start virtual address of shared object, the
+		// map and unmap will ensure there are enouth space for all
+		// PT_LOAD phdrs.
+		// Later using of offset as virtual address 0 of the share object,
+		// this assume is right if the virtual address of phdrs start at 0.
+		// But this is not true if prelink is enabled, maybe some other
+		// reasons, this will make the mmap in mapSegment failed unexpected.
+		if offset != 0 {
+			offset = offset - usermem.Addr(start).RoundDown()
+		}
+
 		start, ok = start.AddLength(uint64(offset))
 		if !ok {
 			panic(fmt.Sprintf("Start %#x + offset %#x overflows?", start, offset))
