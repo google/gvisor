@@ -35,7 +35,7 @@ type Server struct {
 	// These may be across different connections, but rename operations
 	// must be serialized globally for safely. There is a single pathTree
 	// for the entire server, and not per connection.
-	pathTree pathNode
+	pathTree *pathNode
 
 	// renameMu is a global lock protecting rename operations. With this
 	// lock, we can be certain that any given rename operation can safely
@@ -49,6 +49,7 @@ type Server struct {
 func NewServer(attacher Attacher) *Server {
 	return &Server{
 		attacher: attacher,
+		pathTree: newPathNode(),
 	}
 }
 
@@ -204,16 +205,13 @@ func (f *fidRef) maybeParent() *fidRef {
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func notifyDelete(pn *pathNode) {
 	// Call on all local references.
-	pn.fidRefNames.Range(func(key, _ interface{}) bool {
-		ref := key.(*fidRef)
+	pn.forEachChildRef(func(ref *fidRef, _ string) {
 		atomic.StoreUint32(&ref.deleted, 1)
-		return true
 	})
 
 	// Call on all subtrees.
-	pn.childNodes.Range(func(_, value interface{}) bool {
-		notifyDelete(value.(*pathNode))
-		return true
+	pn.forEachChildNode(func(pn *pathNode) {
+		notifyDelete(pn)
 	})
 }
 
@@ -225,8 +223,10 @@ func (f *fidRef) markChildDeleted(name string) {
 		atomic.StoreUint32(&ref.deleted, 1)
 	})
 
-	// Mark everything below as deleted.
-	notifyDelete(origPathNode)
+	if origPathNode != nil {
+		// Mark all children as deleted.
+		notifyDelete(origPathNode)
+	}
 }
 
 // notifyNameChange calls the relevant Renamed method on all nodes in the path,
@@ -236,17 +236,13 @@ func (f *fidRef) markChildDeleted(name string) {
 // Precondition: this must be called via safelyGlobal.
 func notifyNameChange(pn *pathNode) {
 	// Call on all local references.
-	pn.fidRefNames.Range(func(key, value interface{}) bool {
-		ref := key.(*fidRef)
-		name := value.(string)
+	pn.forEachChildRef(func(ref *fidRef, name string) {
 		ref.file.Renamed(ref.parent.file, name)
-		return true
 	})
 
 	// Call on all subtrees.
-	pn.childNodes.Range(func(name, value interface{}) bool {
-		notifyNameChange(value.(*pathNode))
-		return true
+	pn.forEachChildNode(func(pn *pathNode) {
+		notifyNameChange(pn)
 	})
 }
 
@@ -256,18 +252,25 @@ func notifyNameChange(pn *pathNode) {
 func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
 	target.markChildDeleted(newName)
 	origPathNode := f.pathNode.removeWithName(oldName, func(ref *fidRef) {
+		// N.B. DecRef can take f.pathNode's parent's childMu. This is
+		// allowed because renameMu is held for write via safelyGlobal.
 		ref.parent.DecRef() // Drop original reference.
 		ref.parent = target // Change parent.
 		ref.parent.IncRef() // Acquire new one.
-		target.pathNode.addChild(ref, newName)
+		if f.pathNode == target.pathNode {
+			target.pathNode.addChildLocked(ref, newName)
+		} else {
+			target.pathNode.addChild(ref, newName)
+		}
 		ref.file.Renamed(target.file, newName)
 	})
 
-	// Replace the previous (now deleted) path node.
-	target.pathNode.childNodes.Store(newName, origPathNode)
-
-	// Call Renamed on everything above.
-	notifyNameChange(origPathNode)
+	if origPathNode != nil {
+		// Replace the previous (now deleted) path node.
+		target.pathNode.addPathNodeFor(newName, origPathNode)
+		// Call Renamed on all children.
+		notifyNameChange(origPathNode)
+	}
 }
 
 // safelyRead executes the given operation with the local path node locked.
@@ -275,8 +278,8 @@ func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
 func (f *fidRef) safelyRead(fn func() error) (err error) {
 	f.server.renameMu.RLock()
 	defer f.server.renameMu.RUnlock()
-	f.pathNode.mu.RLock()
-	defer f.pathNode.mu.RUnlock()
+	f.pathNode.opMu.RLock()
+	defer f.pathNode.opMu.RUnlock()
 	return fn()
 }
 
@@ -285,8 +288,8 @@ func (f *fidRef) safelyRead(fn func() error) (err error) {
 func (f *fidRef) safelyWrite(fn func() error) (err error) {
 	f.server.renameMu.RLock()
 	defer f.server.renameMu.RUnlock()
-	f.pathNode.mu.Lock()
-	defer f.pathNode.mu.Unlock()
+	f.pathNode.opMu.Lock()
+	defer f.pathNode.opMu.Unlock()
 	return fn()
 }
 

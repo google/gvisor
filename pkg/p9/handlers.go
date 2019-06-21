@@ -224,7 +224,7 @@ func (t *Tattach) handle(cs *connState) message {
 		file:     sf,
 		refs:     1,
 		mode:     attr.Mode.FileType(),
-		pathNode: &cs.server.pathTree,
+		pathNode: cs.server.pathTree,
 	}
 	defer root.DecRef()
 
@@ -552,8 +552,8 @@ func (t *Tunlinkat) handle(cs *connState) message {
 		// since we always acquire deeper in the hierarchy, we know
 		// that we are free of lock cycles.
 		childPathNode := ref.pathNode.pathNodeFor(t.Name)
-		childPathNode.mu.Lock()
-		defer childPathNode.mu.Unlock()
+		childPathNode.opMu.Lock()
+		defer childPathNode.opMu.Unlock()
 
 		// Do the unlink.
 		err = ref.file.UnlinkAt(t.Name, t.Flags)
