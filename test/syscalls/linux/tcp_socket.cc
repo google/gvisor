@@ -265,10 +265,16 @@ TEST_P(TcpSocketTest, BlockingLargeWrite_NoRandomSave) {
   ScopedThread t([this, &read_bytes]() {
     // Avoid interrupting the blocking write in main thread.
     const DisableSave ds;
+
+    // Take ownership of the FD so that we close it on failure. This will
+    // unblock the blocking write below.
+    FileDescriptor fd(t_);
+    t_ = -1;
+
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(fd.get(), &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
@@ -342,10 +348,16 @@ TEST_P(TcpSocketTest, BlockingLargeSend_NoRandomSave) {
   ScopedThread t([this, &read_bytes]() {
     // Avoid interrupting the blocking write in main thread.
     const DisableSave ds;
+
+    // Take ownership of the FD so that we close it on failure. This will
+    // unblock the blocking write below.
+    FileDescriptor fd(t_);
+    t_ = -1;
+
     char readbuf[2500] = {};
     int n = -1;
     while (n != 0) {
-      ASSERT_THAT(n = RetryEINTR(read)(t_, &readbuf, sizeof(readbuf)),
+      ASSERT_THAT(n = RetryEINTR(read)(fd.get(), &readbuf, sizeof(readbuf)),
                   SyscallSucceeds());
       read_bytes += n;
     }
