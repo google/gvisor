@@ -201,17 +201,17 @@ func (f *fidRef) maybeParent() *fidRef {
 
 // notifyDelete marks all fidRefs as deleted.
 //
-// Precondition: the write lock must be held on the given pathNode.
+// Precondition: this must be called via safelyWrite or safelyGlobal.
 func notifyDelete(pn *pathNode) {
 	// Call on all local references.
-	pn.fidRefs.Range(func(key, _ interface{}) bool {
+	pn.fidRefNames.Range(func(key, _ interface{}) bool {
 		ref := key.(*fidRef)
 		atomic.StoreUint32(&ref.deleted, 1)
 		return true
 	})
 
 	// Call on all subtrees.
-	pn.children.Range(func(_, value interface{}) bool {
+	pn.childNodes.Range(func(_, value interface{}) bool {
 		notifyDelete(value.(*pathNode))
 		return true
 	})
@@ -233,10 +233,10 @@ func (f *fidRef) markChildDeleted(name string) {
 // recursively. Note that this applies only for subtrees, as these
 // notifications do not apply to the actual file whose name has changed.
 //
-// Precondition: the write lock must be held on the given pathNode.
+// Precondition: this must be called via safelyGlobal.
 func notifyNameChange(pn *pathNode) {
 	// Call on all local references.
-	pn.fidRefs.Range(func(key, value interface{}) bool {
+	pn.fidRefNames.Range(func(key, value interface{}) bool {
 		ref := key.(*fidRef)
 		name := value.(string)
 		ref.file.Renamed(ref.parent.file, name)
@@ -244,7 +244,7 @@ func notifyNameChange(pn *pathNode) {
 	})
 
 	// Call on all subtrees.
-	pn.children.Range(func(_, value interface{}) bool {
+	pn.childNodes.Range(func(name, value interface{}) bool {
 		notifyNameChange(value.(*pathNode))
 		return true
 	})
@@ -264,7 +264,7 @@ func (f *fidRef) renameChildTo(oldName string, target *fidRef, newName string) {
 	})
 
 	// Replace the previous (now deleted) path node.
-	target.pathNode.children.Store(newName, origPathNode)
+	target.pathNode.childNodes.Store(newName, origPathNode)
 
 	// Call Renamed on everything above.
 	notifyNameChange(origPathNode)
