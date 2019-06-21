@@ -60,13 +60,14 @@ const (
 	CAP_BLOCK_SUSPEND    = Capability(36)
 	CAP_AUDIT_READ       = Capability(37)
 
-	// MaxCapability is the highest-numbered capability.
-	MaxCapability = CAP_AUDIT_READ
+	// CAP_LAST_CAP is the highest-numbered capability.
+	// Seach for "CAP_LAST_CAP" to find other places that need to change.
+	CAP_LAST_CAP = CAP_AUDIT_READ
 )
 
 // Ok returns true if cp is a supported capability.
 func (cp Capability) Ok() bool {
-	return cp >= 0 && cp <= MaxCapability
+	return cp >= 0 && cp <= CAP_LAST_CAP
 }
 
 // String returns the capability name.
