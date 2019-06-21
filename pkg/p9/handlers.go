@@ -545,7 +545,7 @@ func (t *Tunlinkat) handle(cs *connState) message {
 		// Before we do the unlink itself, we need to ensure that there
 		// are no operations in flight on associated path node. The
 		// child's path node lock must be held to ensure that the
-		// unlink at marking the child deleted below is atomic with
+		// unlinkat marking the child deleted below is atomic with
 		// respect to any other read or write operations.
 		//
 		// This is one case where we have a lock ordering issue, but

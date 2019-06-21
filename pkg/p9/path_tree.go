@@ -22,39 +22,44 @@ import (
 // pathNode is a single node in a path traversal.
 //
 // These are shared by all fidRefs that point to the same path.
-//
-// These are not synchronized because we allow certain operations (file walk)
-// to proceed without having to acquire a write lock. The lock in this
-// structure exists to synchronize high-level, semantic operations, such as the
-// simultaneous creation and deletion of a file.
-//
-// (+) below is the path component string.
 type pathNode struct {
-	mu       sync.RWMutex // See above.
-	fidRefs  sync.Map     // => map[*fidRef]string(+)
-	children sync.Map     // => map[string(+)]*pathNode
-	count    int64
+	// fidRefName is a map[*fidRef]string mapping child fidRefs to their
+	// path component name.
+	fidRefNames sync.Map
+
+	// childNodes is a map[string]*pathNode mapping child path component
+	// names to their pathNode.
+	childNodes sync.Map
+
+	// mu does *not* protect the fields above.
+	//
+	// They are not synchronized because we allow certain operations (file
+	// walk) to proceed without having to acquire a write lock. mu exists
+	// to synchronize high-level, semantic operations, such as the
+	// simultaneous creation and deletion of a file.
+	mu sync.RWMutex
 }
 
 // pathNodeFor returns the path node for the given name, or a new one.
 //
-// Precondition: mu must be held in a readable fashion.
+// Precondition: This call is synchronized w.r.t. other adding or removing of
+// children.
 func (p *pathNode) pathNodeFor(name string) *pathNode {
 	// Load the existing path node.
-	if pn, ok := p.children.Load(name); ok {
+	if pn, ok := p.childNodes.Load(name); ok {
 		return pn.(*pathNode)
 	}
 
 	// Create a new pathNode for shared use.
-	pn, _ := p.children.LoadOrStore(name, new(pathNode))
+	pn, _ := p.childNodes.LoadOrStore(name, new(pathNode))
 	return pn.(*pathNode)
 }
 
 // nameFor returns the name for the given fidRef.
 //
-// Precondition: mu must be held in a readable fashion.
+// Precondition: addChild is called for ref before nameFor.
 func (p *pathNode) nameFor(ref *fidRef) string {
-	if s, ok := p.fidRefs.Load(ref); ok {
+	if s, ok := p.fidRefNames.Load(ref); ok {
 		return s.(string)
 	}
 
@@ -62,27 +67,26 @@ func (p *pathNode) nameFor(ref *fidRef) string {
 	panic(fmt.Sprintf("expected name for %+v, none found", ref))
 }
 
-// addChild adds a child to the given pathNode.
+// addChild adds a child to p.
 //
 // This applies only to an individual fidRef.
 //
-// Precondition: mu must be held in a writable fashion.
+// Precondition: ref is added only once unless it is removed before adding with
+// a new name.
 func (p *pathNode) addChild(ref *fidRef, name string) {
-	if s, ok := p.fidRefs.Load(ref); ok {
+	if s, ok := p.fidRefNames.Load(ref); ok {
 		// This should not happen, don't proceed.
 		panic(fmt.Sprintf("unexpected fidRef %+v with path %q, wanted %q", ref, s, name))
 	}
 
-	p.fidRefs.Store(ref, name)
+	p.fidRefNames.Store(ref, name)
 }
 
 // removeChild removes the given child.
 //
 // This applies only to an individual fidRef.
-//
-// Precondition: mu must be held in a writable fashion.
 func (p *pathNode) removeChild(ref *fidRef) {
-	p.fidRefs.Delete(ref)
+	p.fidRefNames.Delete(ref)
 }
 
 // removeWithName removes all references with the given name.
@@ -92,11 +96,12 @@ func (p *pathNode) removeChild(ref *fidRef) {
 //
 // The provided function is executed after removal.
 //
-// Precondition: mu must be held in a writable fashion.
+// Precondition: This call is synchronized w.r.t. other adding or removing of
+// children.
 func (p *pathNode) removeWithName(name string, fn func(ref *fidRef)) *pathNode {
-	p.fidRefs.Range(func(key, value interface{}) bool {
+	p.fidRefNames.Range(func(key, value interface{}) bool {
 		if value.(string) == name {
-			p.fidRefs.Delete(key)
+			p.fidRefNames.Delete(key)
 			fn(key.(*fidRef))
 		}
 		return true
@@ -104,6 +109,6 @@ func (p *pathNode) removeWithName(name string, fn func(ref *fidRef)) *pathNode {
 
 	// Return the original path node.
 	origPathNode := p.pathNodeFor(name)
-	p.children.Delete(name)
+	p.childNodes.Delete(name)
 	return origPathNode
 }
