@@ -440,7 +440,6 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		// Note that the Ctty field must be the FD of the TTY in the
 		// *new* process, not this process. Since we are about to
 		// assign the TTY to nextFD, we can use that value here.
-		// stdin, we can use FD 0 here.
 		cmd.SysProcAttr.Setctty = true
 		cmd.SysProcAttr.Ctty = nextFD
 
