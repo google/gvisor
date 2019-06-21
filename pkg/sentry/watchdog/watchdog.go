@@ -271,23 +271,23 @@ func (w *Watchdog) reportStuckWatchdog() {
 	w.onStuckTask(true, &buf)
 }
 
-func (w *Watchdog) onStuckTask(newTaskFound bool, buf *bytes.Buffer) {
+func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
 	switch w.timeoutAction {
 	case LogWarning:
 		// Dump stack only if a new task is detected or if it sometime has passed since
 		// the last time a stack dump was generated.
 		if !newTaskFound && time.Since(w.lastStackDump) < stackDumpSameTaskPeriod {
-			buf.WriteString("\n...[stack dump skipped]...")
-			log.Warningf(buf.String())
+			msg.WriteString("\n...[stack dump skipped]...")
+			log.Warningf(msg.String())
 		} else {
-			log.TracebackAll(buf.String())
+			log.TracebackAll(msg.String())
 			w.lastStackDump = time.Now()
 		}
 
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
 		// dump all stacks before panic'ing.
-		log.TracebackAll(buf.String())
+		log.TracebackAll(msg.String())
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
 		metricsEmitted := make(chan struct{}, 1)
@@ -300,6 +300,6 @@ func (w *Watchdog) onStuckTask(newTaskFound bool, buf *bytes.Buffer) {
 		case <-metricsEmitted:
 		case <-time.After(1 * time.Second):
 		}
-		panic("Sentry detected stuck task(s). See stack trace and message above for more details")
+		panic(fmt.Sprintf("Stack for running G's are skipped while panicking.\n%s", msg.String()))
 	}
 }
