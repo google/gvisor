@@ -24,7 +24,7 @@ import (
 type CapabilitySet uint64
 
 // AllCapabilities is a CapabilitySet containing all valid capabilities.
-var AllCapabilities = CapabilitySetOf(linux.MaxCapability+1) - 1
+var AllCapabilities = CapabilitySetOf(linux.CAP_LAST_CAP+1) - 1
 
 // CapabilitySetOf returns a CapabilitySet containing only the given
 // capability.
