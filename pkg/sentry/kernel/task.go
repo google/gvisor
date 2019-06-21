@@ -703,8 +703,8 @@ func (t *Task) FDMap() *FDMap {
 // WithMuLocked executes f with t.mu locked.
 func (t *Task) WithMuLocked(f func(*Task)) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	f(t)
+	t.mu.Unlock()
 }
 
 // MountNamespace returns t's MountNamespace. MountNamespace does not take an
