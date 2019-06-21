@@ -636,7 +636,7 @@ func TestSimpleReceive(t *testing.T) {
 		syscall.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
 
 		// Wait for packet to be received, then check it.
-		c.waitForPackets(1, time.After(time.Second), "Error waiting for packet")
+		c.waitForPackets(1, time.After(5*time.Second), "Timeout waiting for packet")
 		c.mu.Lock()
 		rcvd := []byte(c.packets[0].vv.First())
 		c.packets = c.packets[:0]
