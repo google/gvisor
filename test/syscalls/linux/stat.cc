@@ -16,7 +16,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/types.h>
 #include <unistd.h>
+
 #include <string>
 #include <vector>
 
@@ -552,6 +554,99 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 
   EXPECT_EQ(st1_after.st_ino, st1.st_ino);
   EXPECT_EQ(st2_after.st_ino, st2.st_ino);
+}
+
+#ifndef SYS_statx
+#if defined(__x86_64__)
+#define SYS_statx 397
+#else
+#error "Unknown architecture"
+#endif
+#endif  // SYS_statx
+
+#ifndef STATX_ALL
+#define STATX_ALL 0x00000fffU
+#endif  // STATX_ALL
+
+// struct kernel_statx_timestamp is a Linux statx_timestamp struct.
+struct kernel_statx_timestamp {
+  int64_t tv_sec;
+  uint32_t tv_nsec;
+  int32_t __reserved;
+};
+
+// struct kernel_statx is a Linux statx struct. Old versions of glibc do not
+// expose it. See include/uapi/linux/stat.h
+struct kernel_statx {
+  uint32_t stx_mask;
+  uint32_t stx_blksize;
+  uint64_t stx_attributes;
+  uint32_t stx_nlink;
+  uint32_t stx_uid;
+  uint32_t stx_gid;
+  uint16_t stx_mode;
+  uint16_t __spare0[1];
+  uint64_t stx_ino;
+  uint64_t stx_size;
+  uint64_t stx_blocks;
+  uint64_t stx_attributes_mask;
+  struct kernel_statx_timestamp stx_atime;
+  struct kernel_statx_timestamp stx_btime;
+  struct kernel_statx_timestamp stx_ctime;
+  struct kernel_statx_timestamp stx_mtime;
+  uint32_t stx_rdev_major;
+  uint32_t stx_rdev_minor;
+  uint32_t stx_dev_major;
+  uint32_t stx_dev_minor;
+  uint64_t __spare2[14];
+};
+
+int statx(int dirfd, const char *pathname, int flags, unsigned int mask,
+          struct kernel_statx *statxbuf) {
+  return syscall(SYS_statx, dirfd, pathname, flags, mask, statxbuf);
+}
+
+TEST_F(StatTest, StatxAbsPath) {
+  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(-1, test_file_name_.c_str(), 0, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxRelPathDirFD) {
+  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  struct kernel_statx stx;
+  auto const dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(GetAbsoluteTestTmpdir(), O_RDONLY));
+  auto filename = std::string(Basename(test_file_name_));
+
+  EXPECT_THAT(statx(dirfd.get(), filename.c_str(), 0, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxRelPathCwd) {
+  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+  auto filename = std::string(Basename(test_file_name_));
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(AT_FDCWD, filename.c_str(), 0, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
+}
+
+TEST_F(StatTest, StatxEmptyPath) {
+  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+
+  const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
+  struct kernel_statx stx;
+  EXPECT_THAT(statx(fd.get(), "", AT_EMPTY_PATH, STATX_ALL, &stx),
+              SyscallSucceeds());
+  EXPECT_TRUE(S_ISREG(stx.stx_mode));
 }
 
 }  // namespace

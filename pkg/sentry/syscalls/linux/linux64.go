@@ -379,6 +379,7 @@ var AMD64 = &kernel.SyscallTable{
 		326: syscalls.ErrorWithEvent("copy_file_range", syscall.ENOSYS, "", nil),
 		327: syscalls.Undocumented("preadv2", Preadv2),
 		328: syscalls.Undocumented("pwritev2", Pwritev2),
+		397: syscalls.Undocumented("statx", Statx),
 	},
 
 	Emulate: map[usermem.Addr]uintptr{

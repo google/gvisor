@@ -181,6 +181,57 @@ type Stat struct {
 // SizeOfStat is the size of a Stat struct.
 var SizeOfStat = binary.Size(Stat{})
 
+// Flags for statx.
+const (
+	AT_STATX_SYNC_TYPE    = 0x6000
+	AT_STATX_SYNC_AS_STAT = 0x0000
+	AT_STATX_FORCE_SYNC   = 0x2000
+	AT_STATX_DONT_SYNC    = 0x4000
+)
+
+// Mask values for statx.
+const (
+	STATX_TYPE        = 0x00000001
+	STATX_MODE        = 0x00000002
+	STATX_NLINK       = 0x00000004
+	STATX_UID         = 0x00000008
+	STATX_GID         = 0x00000010
+	STATX_ATIME       = 0x00000020
+	STATX_MTIME       = 0x00000040
+	STATX_CTIME       = 0x00000080
+	STATX_INO         = 0x00000100
+	STATX_SIZE        = 0x00000200
+	STATX_BLOCKS      = 0x00000400
+	STATX_BASIC_STATS = 0x000007ff
+	STATX_BTIME       = 0x00000800
+	STATX_ALL         = 0x00000fff
+	STATX__RESERVED   = 0x80000000
+)
+
+// Statx represents struct statx.
+type Statx struct {
+	Mask           uint32
+	Blksize        uint32
+	Attributes     uint64
+	Nlink          uint32
+	UID            uint32
+	GID            uint32
+	Mode           uint16
+	_              uint16
+	Ino            uint64
+	Size           uint64
+	Blocks         uint64
+	AttributesMask uint64
+	Atime          StatxTimestamp
+	Btime          StatxTimestamp
+	Ctime          StatxTimestamp
+	Mtime          StatxTimestamp
+	RdevMajor      uint32
+	RdevMinor      uint32
+	DevMajor       uint32
+	DevMinor       uint32
+}
+
 // FileMode represents a mode_t.
 type FileMode uint
 

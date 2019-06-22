@@ -226,3 +226,18 @@ type Tms struct {
 // TimerID represents type timer_t, which identifies a POSIX per-process
 // interval timer.
 type TimerID int32
+
+// StatxTimestamp represents struct statx_timestamp.
+type StatxTimestamp struct {
+	Sec  int64
+	Nsec uint32
+	_    int32
+}
+
+// NsecToStatxTimestamp translates nanoseconds to StatxTimestamp.
+func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
+	return StatxTimestamp{
+		Sec:  nsec / 1e9,
+		Nsec: uint32(nsec % 1e9),
+	}
+}

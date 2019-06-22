@@ -89,6 +89,28 @@ func (n InodeType) String() string {
 	}
 }
 
+// LinuxType returns the linux file type for this inode type.
+func (n InodeType) LinuxType() uint32 {
+	switch n {
+	case RegularFile, SpecialFile:
+		return linux.ModeRegular
+	case Directory, SpecialDirectory:
+		return linux.ModeDirectory
+	case Symlink:
+		return linux.ModeSymlink
+	case Pipe:
+		return linux.ModeNamedPipe
+	case CharacterDevice:
+		return linux.ModeCharacterDevice
+	case BlockDevice:
+		return linux.ModeBlockDevice
+	case Socket:
+		return linux.ModeSocket
+	default:
+		return 0
+	}
+}
+
 // StableAttr contains Inode attributes that will be stable throughout the
 // lifetime of the Inode.
 //
