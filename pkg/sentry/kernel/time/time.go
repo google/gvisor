@@ -142,6 +142,11 @@ func (t Time) Timeval() linux.Timeval {
 	return linux.NsecToTimeval(t.Nanoseconds())
 }
 
+// StatxTimestamp converts Time to a Linux statx_timestamp.
+func (t Time) StatxTimestamp() linux.StatxTimestamp {
+	return linux.NsecToStatxTimestamp(t.Nanoseconds())
+}
+
 // Add adds the duration of d to t.
 func (t Time) Add(d time.Duration) Time {
 	if t.ns > 0 && d.Nanoseconds() > math.MaxInt64-int64(t.ns) {

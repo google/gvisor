@@ -132,24 +132,6 @@ func fstat(t *kernel.Task, f *fs.File, statAddr usermem.Addr) error {
 // t.CopyObjectOut has noticeable performance impact due to its many slice
 // allocations and use of reflection.
 func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs.UnstableAttr) error {
-	var mode uint32
-	switch sattr.Type {
-	case fs.RegularFile, fs.SpecialFile:
-		mode |= linux.ModeRegular
-	case fs.Symlink:
-		mode |= linux.ModeSymlink
-	case fs.Directory, fs.SpecialDirectory:
-		mode |= linux.ModeDirectory
-	case fs.Pipe:
-		mode |= linux.ModeNamedPipe
-	case fs.CharacterDevice:
-		mode |= linux.ModeCharacterDevice
-	case fs.BlockDevice:
-		mode |= linux.ModeBlockDevice
-	case fs.Socket:
-		mode |= linux.ModeSocket
-	}
-
 	b := t.CopyScratchBuffer(int(linux.SizeOfStat))[:0]
 
 	// Dev (uint64)
@@ -159,7 +141,7 @@ func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs
 	// Nlink (uint64)
 	b = binary.AppendUint64(b, usermem.ByteOrder, uattr.Links)
 	// Mode (uint32)
-	b = binary.AppendUint32(b, usermem.ByteOrder, mode|uint32(uattr.Perms.LinuxMode()))
+	b = binary.AppendUint32(b, usermem.ByteOrder, sattr.Type.LinuxType()|uint32(uattr.Perms.LinuxMode()))
 	// UID (uint32)
 	b = binary.AppendUint32(b, usermem.ByteOrder, uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
 	// GID (uint32)
@@ -191,6 +173,98 @@ func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs
 	b = binary.AppendUint64(b, usermem.ByteOrder, uint64(ctime.Nsec))
 
 	_, err := t.CopyOutBytes(dst, b)
+	return err
+}
+
+// Statx implements linux syscall statx(2).
+func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := kdefs.FD(args[0].Int())
+	pathAddr := args[1].Pointer()
+	flags := args[2].Int()
+	mask := args[3].Uint()
+	statxAddr := args[4].Pointer()
+
+	if mask&linux.STATX__RESERVED > 0 {
+		return 0, nil, syserror.EINVAL
+	}
+	if flags&linux.AT_STATX_SYNC_TYPE == linux.AT_STATX_SYNC_TYPE {
+		return 0, nil, syserror.EINVAL
+	}
+
+	path, dirPath, err := copyInPath(t, pathAddr, flags&linux.AT_EMPTY_PATH != 0)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if path == "" {
+		file := t.FDMap().GetFile(fd)
+		if file == nil {
+			return 0, nil, syserror.EBADF
+		}
+		defer file.DecRef()
+		uattr, err := file.UnstableAttr(t)
+		if err != nil {
+			return 0, nil, err
+		}
+		return 0, nil, statx(t, file.Dirent.Inode.StableAttr, uattr, statxAddr)
+	}
+
+	resolve := dirPath || flags&linux.AT_SYMLINK_NOFOLLOW == 0
+
+	return 0, nil, fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+		if dirPath && !fs.IsDir(d.Inode.StableAttr) {
+			return syserror.ENOTDIR
+		}
+		uattr, err := d.Inode.UnstableAttr(t)
+		if err != nil {
+			return err
+		}
+		return statx(t, d.Inode.StableAttr, uattr, statxAddr)
+	})
+}
+
+func statx(t *kernel.Task, sattr fs.StableAttr, uattr fs.UnstableAttr, statxAddr usermem.Addr) error {
+	// "[T]he kernel may return fields that weren't requested and may fail to
+	// return fields that were requested, depending on what the backing
+	// filesystem supports.
+	// [...]
+	// A filesystem may also fill in fields that the caller didn't ask for
+	// if it has values for them available and the information is available
+	// at no extra cost. If this happens, the corresponding bits will be
+	// set in stx_mask." -- statx(2)
+	//
+	// We fill in all the values we have (which currently does not include
+	// btime, see b/135608823), regardless of what the user asked for. The
+	// STATX_BASIC_STATS mask indicates that all fields are present except
+	// for btime.
+
+	devMajor, devMinor := linux.DecodeDeviceID(uint32(sattr.DeviceID))
+	s := linux.Statx{
+		// TODO(b/135608823): Support btime, and then change this to
+		// STATX_ALL to indicate presence of btime.
+		Mask: linux.STATX_BASIC_STATS,
+
+		// No attributes, and none supported.
+		Attributes:     0,
+		AttributesMask: 0,
+
+		Blksize:   uint32(sattr.BlockSize),
+		Nlink:     uint32(uattr.Links),
+		UID:       uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()),
+		GID:       uint32(uattr.Owner.GID.In(t.UserNamespace()).OrOverflow()),
+		Mode:      uint16(sattr.Type.LinuxType()) | uint16(uattr.Perms.LinuxMode()),
+		Ino:       sattr.InodeID,
+		Size:      uint64(uattr.Size),
+		Blocks:    uint64(uattr.Usage) / 512,
+		Atime:     uattr.AccessTime.StatxTimestamp(),
+		Ctime:     uattr.StatusChangeTime.StatxTimestamp(),
+		Mtime:     uattr.ModificationTime.StatxTimestamp(),
+		RdevMajor: uint32(sattr.DeviceFileMajor),
+		RdevMinor: sattr.DeviceFileMinor,
+		DevMajor:  uint32(devMajor),
+		DevMinor:  devMinor,
+	}
+	_, err := t.CopyOut(statxAddr, &s)
 	return err
 }
 
@@ -252,8 +326,6 @@ func statfsImpl(t *kernel.Task, d *fs.Dirent, addr usermem.Addr) error {
 		FragmentSize: d.Inode.StableAttr.BlockSize,
 		// Leave other fields 0 like simple_statfs does.
 	}
-	if _, err := t.CopyOut(addr, &statfs); err != nil {
-		return err
-	}
-	return nil
+	_, err = t.CopyOut(addr, &statfs)
+	return err
 }
