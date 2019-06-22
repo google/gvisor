@@ -207,6 +207,12 @@ type endpoint struct {
 	rcvBufSize    int
 	rcvBufUsed    int
 	rcvAutoParams rcvBufAutoTuneParams
+	// zeroWindow indicates that the window was closed due to receive buffer
+	// space being filled up. This is set by the worker goroutine before
+	// moving a segment to the rcvList. This setting is cleared by the
+	// endpoint when a Read() call reads enough data for the new window to
+	// be non-zero.
+	zeroWindow bool
 
 	// The following fields are protected by the mutex.
 	mu sync.RWMutex `state:"nosave"`
@@ -719,10 +725,12 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 		s.decRef()
 	}
 
-	scale := e.rcv.rcvWndScale
-	wasZero := e.zeroReceiveWindow(scale)
 	e.rcvBufUsed -= len(v)
-	if wasZero && !e.zeroReceiveWindow(scale) {
+	// If the window was zero before this read and if the read freed up
+	// enough buffer space for the scaled window to be non-zero then notify
+	// the protocol goroutine to send a window update.
+	if e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale) {
+		e.zeroWindow = false
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
 
@@ -942,10 +950,10 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			size = math.MaxInt32 / 2
 		}
 
-		wasZero := e.zeroReceiveWindow(scale)
 		e.rcvBufSize = size
 		e.rcvAutoParams.disabled = true
-		if wasZero && !e.zeroReceiveWindow(scale) {
+		if e.zeroWindow && !e.zeroReceiveWindow(scale) {
+			e.zeroWindow = false
 			mask |= notifyNonZeroReceiveWindow
 		}
 		e.rcvListMu.Unlock()
@@ -1747,6 +1755,13 @@ func (e *endpoint) readyToRead(s *segment) {
 	if s != nil {
 		s.incRef()
 		e.rcvBufUsed += s.data.Size()
+		// Check if the receive window is now closed. If so make sure
+		// we set the zero window before we deliver the segment to ensure
+		// that a subsequent read of the segment will correctly trigger
+		// a non-zero notification.
+		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
+			e.zeroWindow = true
+		}
 		e.rcvList.PushBack(s)
 	} else {
 		e.rcvClosed = true
@@ -1756,21 +1771,26 @@ func (e *endpoint) readyToRead(s *segment) {
 	e.waiterQueue.Notify(waiter.EventIn)
 }
 
+// receiveBufferAvailableLocked calculates how many bytes are still available
+// in the receive buffer.
+// rcvListMu must be held when this function is called.
+func (e *endpoint) receiveBufferAvailableLocked() int {
+	// We may use more bytes than the buffer size when the receive buffer
+	// shrinks.
+	if e.rcvBufUsed >= e.rcvBufSize {
+		return 0
+	}
+
+	return e.rcvBufSize - e.rcvBufUsed
+}
+
 // receiveBufferAvailable calculates how many bytes are still available in the
 // receive buffer.
 func (e *endpoint) receiveBufferAvailable() int {
 	e.rcvListMu.Lock()
-	size := e.rcvBufSize
-	used := e.rcvBufUsed
+	available := e.receiveBufferAvailableLocked()
 	e.rcvListMu.Unlock()
-
-	// We may use more bytes than the buffer size when the receive buffer
-	// shrinks.
-	if used >= size {
-		return 0
-	}
-
-	return size - used
+	return available
 }
 
 func (e *endpoint) receiveBufferSize() int {
