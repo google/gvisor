@@ -948,15 +948,22 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	if dirCtx.Serializer == nil {
 		panic("Dirent.Readdir: serializer must not be nil")
 	}
-	if d.frozen {
-		return d.readdirFrozen(root, offset, dirCtx)
-	}
 
 	// Check that this is actually a directory before emitting anything.
 	// Once we have written entries for "." and "..", future errors from
 	// IterateDir will be hidden.
 	if !IsDir(d.Inode.StableAttr) {
 		return 0, syserror.ENOTDIR
+	}
+
+	// This is a special case for lseek(fd, 0, SEEK_END).
+	// See SeekWithDirCursor for more details.
+	if offset == FileMaxOffset {
+		return offset, nil
+	}
+
+	if d.frozen {
+		return d.readdirFrozen(root, offset, dirCtx)
 	}
 
 	// Collect attrs for "." and "..".
