@@ -609,8 +609,6 @@ syscall_test(test = "//test/syscalls/linux:sysret_test")
 syscall_test(
     size = "medium",
     shard_count = 10,
-    # FIXME(b/135470853)
-    tags = ["flaky"],
     test = "//test/syscalls/linux:tcp_socket_test",
 )
 
