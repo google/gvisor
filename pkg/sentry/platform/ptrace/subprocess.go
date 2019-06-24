@@ -376,7 +376,7 @@ func (t *thread) init() {
 		syscall.PTRACE_SETOPTIONS,
 		uintptr(t.tid),
 		0,
-		syscall.PTRACE_O_TRACESYSGOOD,
+		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT,
 		0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("ptrace set options failed: %v", errno))
@@ -419,7 +419,7 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 	// between syscall-enter-stop and syscall-exit-stop; it happens *after*
 	// syscall-exit-stop.)" - ptrace(2), "Syscall-stops"
 	if sig := t.wait(stopped); sig != (syscallEvent | syscall.SIGTRAP) {
-		panic(fmt.Sprintf("wait failed: expected SIGTRAP, got %v [%d]", sig, sig))
+		t.dumpAndPanic(fmt.Sprintf("wait failed: expected SIGTRAP, got %v [%d]", sig, sig))
 	}
 
 	// Grab registers.
