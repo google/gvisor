@@ -17,12 +17,15 @@ package cmd
 import (
 	"context"
 	"os"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
 )
@@ -36,6 +39,9 @@ type Debug struct {
 	profileCPU   string
 	profileDelay int
 	trace        string
+	strace       string
+	logLevel     string
+	logPackets   string
 }
 
 // Name implements subcommands.Command.
@@ -62,6 +68,9 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&d.profileDelay, "profile-delay", 5, "amount of time to wait before stoping CPU profile")
 	f.StringVar(&d.trace, "trace", "", "writes an execution trace to the given file.")
 	f.IntVar(&d.signal, "signal", -1, "sends signal to the sandbox")
+	f.StringVar(&d.strace, "strace", "", `A comma separated list of syscalls to trace. "all" enables all traces, "off" disables all`)
+	f.StringVar(&d.logLevel, "log-level", "", "The log level to set: warning (0), info (1), or debug (2).")
+	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -78,7 +87,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		var err error
 		c, err = container.Load(conf.RootDir, f.Arg(0))
 		if err != nil {
-			Fatalf("loading container %q: %v", f.Arg(0), err)
+			return Errorf("loading container %q: %v", f.Arg(0), err)
 		}
 	} else {
 		if f.NArg() != 0 {
@@ -88,12 +97,12 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		// Go over all sandboxes and find the one that matches PID.
 		ids, err := container.List(conf.RootDir)
 		if err != nil {
-			Fatalf("listing containers: %v", err)
+			return Errorf("listing containers: %v", err)
 		}
 		for _, id := range ids {
 			candidate, err := container.Load(conf.RootDir, id)
 			if err != nil {
-				Fatalf("loading container %q: %v", id, err)
+				return Errorf("loading container %q: %v", id, err)
 			}
 			if candidate.SandboxPid() == d.pid {
 				c = candidate
@@ -101,38 +110,38 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			}
 		}
 		if c == nil {
-			Fatalf("container with PID %d not found", d.pid)
+			return Errorf("container with PID %d not found", d.pid)
 		}
 	}
 
 	if c.Sandbox == nil || !c.Sandbox.IsRunning() {
-		Fatalf("container sandbox is not running")
+		return Errorf("container sandbox is not running")
 	}
 	log.Infof("Found sandbox %q, PID: %d", c.Sandbox.ID, c.Sandbox.Pid)
 
 	if d.signal > 0 {
 		log.Infof("Sending signal %d to process: %d", d.signal, c.Sandbox.Pid)
 		if err := syscall.Kill(c.Sandbox.Pid, syscall.Signal(d.signal)); err != nil {
-			Fatalf("failed to send signal %d to processs %d", d.signal, c.Sandbox.Pid)
+			return Errorf("failed to send signal %d to processs %d", d.signal, c.Sandbox.Pid)
 		}
 	}
 	if d.stacks {
 		log.Infof("Retrieving sandbox stacks")
 		stacks, err := c.Sandbox.Stacks()
 		if err != nil {
-			Fatalf("retrieving stacks: %v", err)
+			return Errorf("retrieving stacks: %v", err)
 		}
 		log.Infof("     *** Stack dump ***\n%s", stacks)
 	}
 	if d.profileHeap != "" {
 		f, err := os.Create(d.profileHeap)
 		if err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		defer f.Close()
 
 		if err := c.Sandbox.HeapProfile(f); err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		log.Infof("Heap profile written to %q", d.profileHeap)
 	}
@@ -142,7 +151,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		delay = true
 		f, err := os.Create(d.profileCPU)
 		if err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		defer func() {
 			f.Close()
@@ -152,7 +161,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			log.Infof("CPU profile written to %q", d.profileCPU)
 		}()
 		if err := c.Sandbox.StartCPUProfile(f); err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		log.Infof("CPU profile started for %d sec, writing to %q", d.profileDelay, d.profileCPU)
 	}
@@ -160,7 +169,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		delay = true
 		f, err := os.Create(d.trace)
 		if err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		defer func() {
 			f.Close()
@@ -170,15 +179,71 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			log.Infof("Trace written to %q", d.trace)
 		}()
 		if err := c.Sandbox.StartTrace(f); err != nil {
-			Fatalf(err.Error())
+			return Errorf(err.Error())
 		}
 		log.Infof("Tracing started for %d sec, writing to %q", d.profileDelay, d.trace)
 
 	}
 
+	if d.strace != "" || len(d.logLevel) != 0 || len(d.logPackets) != 0 {
+		args := control.LoggingArgs{}
+		switch strings.ToLower(d.strace) {
+		case "":
+			// strace not set, nothing to do here.
+
+		case "off":
+			log.Infof("Disabling strace")
+			args.SetStrace = true
+
+		case "all":
+			log.Infof("Enabling all straces")
+			args.SetStrace = true
+			args.EnableStrace = true
+
+		default:
+			log.Infof("Enabling strace for syscalls: %s", d.strace)
+			args.SetStrace = true
+			args.EnableStrace = true
+			args.StraceWhitelist = strings.Split(d.strace, ",")
+		}
+
+		if len(d.logLevel) != 0 {
+			args.SetLevel = true
+			switch strings.ToLower(d.logLevel) {
+			case "warning", "0":
+				args.Level = log.Warning
+			case "info", "1":
+				args.Level = log.Info
+			case "debug", "2":
+				args.Level = log.Debug
+			default:
+				return Errorf("invalid log level %q", d.logLevel)
+			}
+			log.Infof("Setting log level %v", args.Level)
+		}
+
+		if len(d.logPackets) != 0 {
+			args.SetLogPackets = true
+			lp, err := strconv.ParseBool(d.logPackets)
+			if err != nil {
+				return Errorf("invalid value for log_packets %q", d.logPackets)
+			}
+			args.LogPackets = lp
+			if args.LogPackets {
+				log.Infof("Enabling packet logging")
+			} else {
+				log.Infof("Disabling packet logging")
+			}
+		}
+
+		if err := c.Sandbox.ChangeLogging(args); err != nil {
+			return Errorf(err.Error())
+		}
+		log.Infof("Logging options changed")
+	}
+
 	if delay {
 		time.Sleep(time.Duration(d.profileDelay) * time.Second)
-
 	}
 
 	return subcommands.ExitSuccess

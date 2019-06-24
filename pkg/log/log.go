@@ -50,6 +50,19 @@ const (
 	Debug
 )
 
+func (l Level) String() string {
+	switch l {
+	case Warning:
+		return "Warning"
+	case Info:
+		return "Info"
+	case Debug:
+		return "Debug"
+	default:
+		return fmt.Sprintf("Invalid level: %d", l)
+	}
+}
+
 // Emitter is the final destination for logs.
 type Emitter interface {
 	// Emit emits the given log statement. This allows for control over the

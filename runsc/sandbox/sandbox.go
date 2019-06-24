@@ -960,7 +960,7 @@ func (s *Sandbox) StartTrace(f *os.File) error {
 	return nil
 }
 
-// StopTrace stops a previously started trace..
+// StopTrace stops a previously started trace.
 func (s *Sandbox) StopTrace() error {
 	log.Debugf("Trace stop %q", s.ID)
 	conn, err := s.sandboxConnect()
@@ -971,6 +971,21 @@ func (s *Sandbox) StopTrace() error {
 
 	if err := conn.Call(boot.StopTrace, nil, nil); err != nil {
 		return fmt.Errorf("stopping sandbox %q trace: %v", s.ID, err)
+	}
+	return nil
+}
+
+// ChangeLogging changes logging options.
+func (s *Sandbox) ChangeLogging(args control.LoggingArgs) error {
+	log.Debugf("Change logging start %q", s.ID)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ChangeLogging, &args, nil); err != nil {
+		return fmt.Errorf("changing sandbox %q logging: %v", s.ID, err)
 	}
 	return nil
 }
