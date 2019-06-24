@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -55,9 +56,8 @@ func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSo
 			"psched": newStaticProcInode(ctx, msrc, []byte(fmt.Sprintf("%08x %08x %08x %08x\n", uint64(time.Microsecond/time.Nanosecond), 64, 1000000, uint64(time.Second/time.Nanosecond)))),
 			"ptype":  newStaticProcInode(ctx, msrc, []byte("Type Device      Function")),
 			"route":  newStaticProcInode(ctx, msrc, []byte("Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT")),
-			"tcp":    newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode")),
-
-			"udp": newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops")),
+			"tcp":    seqfile.NewSeqFileInode(ctx, &netTCP{k: k}, msrc),
+			"udp":    newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops")),
 
 			"unix": seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
 		}
@@ -210,10 +210,6 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 	}
 
 	var buf bytes.Buffer
-	// Header
-	fmt.Fprintf(&buf, "Num       RefCount Protocol Flags    Type St Inode Path\n")
-
-	// Entries
 	for _, se := range n.k.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
@@ -222,6 +218,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		sfile := s.(*fs.File)
 		if family, _, _ := sfile.FileOperations.(socket.Socket).Type(); family != linux.AF_UNIX {
+			s.DecRef()
 			// Not a unix socket.
 			continue
 		}
@@ -281,12 +278,160 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 		}
 		fmt.Fprintf(&buf, "\n")
 
-		sfile.DecRef()
+		s.DecRef()
 	}
 
-	data := []seqfile.SeqData{{
-		Buf:    buf.Bytes(),
-		Handle: (*netUnix)(nil),
-	}}
+	data := []seqfile.SeqData{
+		{
+			Buf:    []byte("Num       RefCount Protocol Flags    Type St Inode Path\n"),
+			Handle: n,
+		},
+		{
+			Buf:    buf.Bytes(),
+			Handle: n,
+		},
+	}
+	return data, 0
+}
+
+// netTCP implements seqfile.SeqSource for /proc/net/tcp.
+//
+// +stateify savable
+type netTCP struct {
+	k *kernel.Kernel
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (*netTCP) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	t := kernel.TaskFromContext(ctx)
+
+	if h != nil {
+		return nil, 0
+	}
+
+	var buf bytes.Buffer
+	for _, se := range n.k.ListSockets() {
+		s := se.Sock.Get()
+		if s == nil {
+			log.Debugf("Couldn't resolve weakref %+v in socket table, racing with destruction?", se.Sock)
+			continue
+		}
+		sfile := s.(*fs.File)
+		sops, ok := sfile.FileOperations.(socket.Socket)
+		if !ok {
+			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
+		}
+		if family, stype, _ := sops.Type(); !(family == linux.AF_INET && stype == linux.SOCK_STREAM) {
+			s.DecRef()
+			// Not tcp4 sockets.
+			continue
+		}
+
+		// Linux's documentation for the fields below can be found at
+		// https://www.kernel.org/doc/Documentation/networking/proc_net_tcp.txt.
+		// For Linux's implementation, see net/ipv4/tcp_ipv4.c:get_tcp4_sock().
+		// Note that the header doesn't contain labels for all the fields.
+
+		// Field: sl; entry number.
+		fmt.Fprintf(&buf, "%4d: ", se.ID)
+
+		portBuf := make([]byte, 2)
+
+		// Field: local_adddress.
+		var localAddr linux.SockAddrInet
+		if local, _, err := sops.GetSockName(t); err == nil {
+			localAddr = local.(linux.SockAddrInet)
+		}
+		binary.LittleEndian.PutUint16(portBuf, localAddr.Port)
+		fmt.Fprintf(&buf, "%08X:%04X ",
+			binary.LittleEndian.Uint32(localAddr.Addr[:]),
+			portBuf)
+
+		// Field: rem_address.
+		var remoteAddr linux.SockAddrInet
+		if remote, _, err := sops.GetPeerName(t); err == nil {
+			remoteAddr = remote.(linux.SockAddrInet)
+		}
+		binary.LittleEndian.PutUint16(portBuf, remoteAddr.Port)
+		fmt.Fprintf(&buf, "%08X:%04X ",
+			binary.LittleEndian.Uint32(remoteAddr.Addr[:]),
+			portBuf)
+
+		// Field: state; socket state.
+		fmt.Fprintf(&buf, "%02X ", sops.State())
+
+		// Field: tx_queue, rx_queue; number of packets in the transmit and
+		// receive queue. Unimplemented.
+		fmt.Fprintf(&buf, "%08X:%08X ", 0, 0)
+
+		// Field: tr, tm->when; timer active state and number of jiffies
+		// until timer expires. Unimplemented.
+		fmt.Fprintf(&buf, "%02X:%08X ", 0, 0)
+
+		// Field: retrnsmt; number of unrecovered RTO timeouts.
+		// Unimplemented.
+		fmt.Fprintf(&buf, "%08X ", 0)
+
+		// Field: uid.
+		uattr, err := sfile.Dirent.Inode.UnstableAttr(ctx)
+		if err != nil {
+			log.Warningf("Failed to retrieve unstable attr for socket file: %v", err)
+			fmt.Fprintf(&buf, "%5d ", 0)
+		} else {
+			fmt.Fprintf(&buf, "%5d ", uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
+		}
+
+		// Field: timeout; number of unanswered 0-window probes.
+		// Unimplemented.
+		fmt.Fprintf(&buf, "%8d ", 0)
+
+		// Field: inode.
+		fmt.Fprintf(&buf, "%8d ", sfile.InodeID())
+
+		// Field: refcount. Don't count the ref we obtain while deferencing
+		// the weakref to this socket.
+		fmt.Fprintf(&buf, "%d ", sfile.ReadRefs()-1)
+
+		// Field: Socket struct address. Redacted due to the same reason as
+		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
+		fmt.Fprintf(&buf, "%#016p ", (*socket.Socket)(nil))
+
+		// Field: retransmit timeout. Unimplemented.
+		fmt.Fprintf(&buf, "%d ", 0)
+
+		// Field: predicted tick of soft clock (delayed ACK control data).
+		// Unimplemented.
+		fmt.Fprintf(&buf, "%d ", 0)
+
+		// Field: (ack.quick<<1)|ack.pingpong, Unimplemented.
+		fmt.Fprintf(&buf, "%d ", 0)
+
+		// Field: sending congestion window, Unimplemented.
+		fmt.Fprintf(&buf, "%d ", 0)
+
+		// Field: Slow start size threshold, -1 if threshold >= 0xFFFF.
+		// Unimplemented, report as large threshold.
+		fmt.Fprintf(&buf, "%d", -1)
+
+		fmt.Fprintf(&buf, "\n")
+
+		s.DecRef()
+	}
+
+	data := []seqfile.SeqData{
+		{
+			Buf:    []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n"),
+			Handle: n,
+		},
+		{
+			Buf:    buf.Bytes(),
+			Handle: n,
+		},
+	}
 	return data, 0
 }

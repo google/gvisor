@@ -162,7 +162,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
 // Finds the first entry in 'entries' for which 'predicate' returns true.
 // Returns true on match, and sets 'match' to point to the matching entry.
 bool FindBy(std::vector<UnixEntry> entries, UnixEntry* match,
-            std::function<bool(UnixEntry)> predicate) {
+            std::function<bool(const UnixEntry&)> predicate) {
   for (int i = 0; i < entries.size(); ++i) {
     if (predicate(entries[i])) {
       *match = entries[i];
@@ -174,7 +174,8 @@ bool FindBy(std::vector<UnixEntry> entries, UnixEntry* match,
 
 bool FindByPath(std::vector<UnixEntry> entries, UnixEntry* match,
                 const std::string& path) {
-  return FindBy(entries, match, [path](UnixEntry e) { return e.path == path; });
+  return FindBy(entries, match,
+                [path](const UnixEntry& e) { return e.path == path; });
 }
 
 TEST(ProcNetUnix, Exists) {
