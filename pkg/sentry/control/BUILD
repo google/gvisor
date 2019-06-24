@@ -6,6 +6,7 @@ go_library(
     name = "control",
     srcs = [
         "control.go",
+        "logging.go",
         "pprof.go",
         "proc.go",
         "state.go",
@@ -26,8 +27,10 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/limits",
         "//pkg/sentry/state",
+        "//pkg/sentry/strace",
         "//pkg/sentry/usage",
         "//pkg/sentry/watchdog",
+        "//pkg/tcpip/link/sniffer",
         "//pkg/urpc",
     ],
 )
