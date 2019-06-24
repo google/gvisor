@@ -558,7 +558,7 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 
 #ifndef SYS_statx
 #if defined(__x86_64__)
-#define SYS_statx 397
+#define SYS_statx 332
 #else
 #error "Unknown architecture"
 #endif
@@ -607,7 +607,8 @@ int statx(int dirfd, const char *pathname, int flags, unsigned int mask,
 }
 
 TEST_F(StatTest, StatxAbsPath) {
-  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+          errno == ENOSYS);
 
   struct kernel_statx stx;
   EXPECT_THAT(statx(-1, test_file_name_.c_str(), 0, STATX_ALL, &stx),
@@ -616,7 +617,8 @@ TEST_F(StatTest, StatxAbsPath) {
 }
 
 TEST_F(StatTest, StatxRelPathDirFD) {
-  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+          errno == ENOSYS);
 
   struct kernel_statx stx;
   auto const dirfd =
@@ -629,7 +631,8 @@ TEST_F(StatTest, StatxRelPathDirFD) {
 }
 
 TEST_F(StatTest, StatxRelPathCwd) {
-  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+          errno == ENOSYS);
 
   ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
   auto filename = std::string(Basename(test_file_name_));
@@ -640,7 +643,8 @@ TEST_F(StatTest, StatxRelPathCwd) {
 }
 
 TEST_F(StatTest, StatxEmptyPath) {
-  SKIP_IF(statx(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, 0) < 0 &&
+          errno == ENOSYS);
 
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_, O_RDONLY));
   struct kernel_statx stx;
