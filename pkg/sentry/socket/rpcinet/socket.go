@@ -213,9 +213,9 @@ func rpcWrite(t *kernel.Task, req *pb.SyscallRequest_Write) (uint32, *syserr.Err
 // Write implements fs.FileOperations.Write.
 func (s *socketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	t := ctx.(*kernel.Task)
-	v := buffer.NewView(int(src.NumBytes()))
 
 	// Copy all the data into the buffer.
+	v := buffer.NewView(int(src.NumBytes()))
 	if _, err := src.CopyIn(t, v); err != nil {
 		return 0, err
 	}
@@ -775,9 +775,8 @@ func (s *socketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		return 0, syserr.ErrInvalidArgument
 	}
 
-	v := buffer.NewView(int(src.NumBytes()))
-
 	// Copy all the data into the buffer.
+	v := buffer.NewView(int(src.NumBytes()))
 	if _, err := src.CopyIn(t, v); err != nil {
 		return 0, syserr.FromError(err)
 	}

@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "prependable.go",
         "view.go",
+        "view_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/buffer",
     visibility = ["//visibility:public"],

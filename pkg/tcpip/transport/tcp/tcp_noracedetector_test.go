@@ -340,7 +340,6 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 
 	const iterations = 7
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
-
 	for i := range data {
 		data[i] = byte(i)
 	}

@@ -406,10 +406,13 @@ func (i *ioSequencePayload) Get(size int) ([]byte, *tcpip.Error) {
 	if size > i.Size() {
 		size = i.Size()
 	}
+
+	// Copy all the data into the buffer.
 	v := buffer.NewView(size)
 	if _, err := i.src.CopyIn(i.ctx, v); err != nil {
 		return nil, tcpip.ErrBadAddress
 	}
+
 	return v, nil
 }
 
@@ -1932,9 +1935,8 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		addr = &addrBuf
 	}
 
-	v := buffer.NewView(int(src.NumBytes()))
-
 	// Copy all the data into the buffer.
+	v := buffer.NewView(int(src.NumBytes()))
 	if _, err := src.CopyIn(t, v); err != nil {
 		return 0, syserr.FromError(err)
 	}

@@ -20,13 +20,17 @@ type View []byte
 
 // NewView allocates a new buffer and returns an initialized view that covers
 // the whole buffer.
+//
+// N.B. The view is not zeroed. This must be done explicitly if required.
 func NewView(size int) View {
-	return make(View, size)
+	return rawbyteslice(size)
 }
 
 // NewViewFromBytes allocates a new buffer and copies in the given bytes.
 func NewViewFromBytes(b []byte) View {
-	return append(View(nil), b...)
+	v := NewView(len(b))
+	copy(v, b)
+	return v
 }
 
 // TrimFront removes the first "count" bytes from the visible section of the
@@ -103,14 +107,15 @@ func (vv *VectorisedView) CapLength(length int) {
 }
 
 // Clone returns a clone of this VectorisedView.
+//
 // If the buffer argument is large enough to contain all the Views of this VectorisedView,
 // the method will avoid allocations and use the buffer to store the Views of the clone.
-func (vv VectorisedView) Clone(buffer []View) VectorisedView {
+func (vv *VectorisedView) Clone(buffer []View) VectorisedView {
 	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
 }
 
 // First returns the first view of the vectorised view.
-func (vv VectorisedView) First() View {
+func (vv *VectorisedView) First() View {
 	if len(vv.views) == 0 {
 		return nil
 	}
@@ -127,7 +132,7 @@ func (vv *VectorisedView) RemoveFirst() {
 }
 
 // Size returns the size in bytes of the entire content stored in the vectorised view.
-func (vv VectorisedView) Size() int {
+func (vv *VectorisedView) Size() int {
 	return vv.size
 }
 
@@ -135,7 +140,7 @@ func (vv VectorisedView) Size() int {
 //
 // If the vectorised view contains a single view, that view will be returned
 // directly.
-func (vv VectorisedView) ToView() View {
+func (vv *VectorisedView) ToView() View {
 	if len(vv.views) == 1 {
 		return vv.views[0]
 	}
@@ -147,7 +152,7 @@ func (vv VectorisedView) ToView() View {
 }
 
 // Views returns the slice containing the all views.
-func (vv VectorisedView) Views() []View {
+func (vv *VectorisedView) Views() []View {
 	return vv.views
 }
 

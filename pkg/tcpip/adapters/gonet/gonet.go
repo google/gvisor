@@ -648,8 +648,7 @@ func (c *PacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 		wopts.To = &tcpip.FullAddress{Addr: tcpip.Address(ua.IP), Port: uint16(ua.Port)}
 	}
 
-	v := buffer.NewView(len(b))
-	copy(v, b)
+	v := buffer.NewViewFromBytes(b)
 
 	n, resCh, err := c.ep.Write(tcpip.SlicePayload(v), wopts)
 	if resCh != nil {

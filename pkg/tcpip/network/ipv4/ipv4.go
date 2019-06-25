@@ -150,7 +150,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 		h.SetChecksum(^h.CalculateChecksum())
 		offset += uint16(innerMTU)
 		if i > 0 {
-			newPayload := payload.Clone([]buffer.View{})
+			newPayload := payload.Clone(nil)
 			newPayload.CapLength(innerMTU)
 			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber); err != nil {
 				return err
@@ -162,7 +162,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 		// Special handling for the first fragment because it comes from the hdr.
 		if outerMTU >= hdr.UsedLength() {
 			// This fragment can fit all of hdr and possibly some of payload, too.
-			newPayload := payload.Clone([]buffer.View{})
+			newPayload := payload.Clone(nil)
 			newPayloadLength := outerMTU - hdr.UsedLength()
 			newPayload.CapLength(newPayloadLength)
 			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber); err != nil {

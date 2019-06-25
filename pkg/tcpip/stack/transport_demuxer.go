@@ -150,9 +150,7 @@ func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, vv b
 				endpoint.HandlePacket(r, id, vv)
 				break
 			}
-			vvCopy := buffer.NewView(vv.Size())
-			copy(vvCopy, vv.ToView())
-			endpoint.HandlePacket(r, id, vvCopy.ToVectorisedView())
+			endpoint.HandlePacket(r, id, vv.Clone(nil))
 		}
 	} else {
 		ep.selectEndpoint(id).HandlePacket(r, id, vv)
