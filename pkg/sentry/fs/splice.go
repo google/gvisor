@@ -88,6 +88,8 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 
 	// Check append-only mode and the limit.
 	if !dstPipe {
+		unlock := dst.Dirent.Inode.lockAppendMu(dst.Flags().Append)
+		defer unlock()
 		if dst.Flags().Append {
 			if opts.DstOffset {
 				// We need to acquire the lock.

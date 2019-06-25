@@ -15,6 +15,8 @@
 package fs
 
 import (
+	"sync"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -55,6 +57,12 @@ type Inode struct {
 
 	// overlay is the overlay entry for this Inode.
 	overlay *overlayEntry
+
+	// appendMu is used to synchronize write operations into files which
+	// have been opened with O_APPEND. Operations which change a file size
+	// have to take this lock for read. Write operations to files with
+	// O_APPEND have to take this lock for write.
+	appendMu sync.RWMutex `state:"nosave"`
 }
 
 // LockCtx is an Inode's lock context and contains different personalities of locks; both
@@ -337,6 +345,8 @@ func (i *Inode) Truncate(ctx context.Context, d *Dirent, size int64) error {
 	if i.overlay != nil {
 		return overlayTruncate(ctx, i.overlay, d, size)
 	}
+	i.appendMu.RLock()
+	defer i.appendMu.RUnlock()
 	return i.InodeOperations.Truncate(ctx, i, size)
 }
 
@@ -437,4 +447,13 @@ func (i *Inode) CheckCapability(ctx context.Context, cp linux.Capability) bool {
 		return false
 	}
 	return creds.HasCapability(cp)
+}
+
+func (i *Inode) lockAppendMu(appendMode bool) func() {
+	if appendMode {
+		i.appendMu.Lock()
+		return i.appendMu.Unlock
+	}
+	i.appendMu.RLock()
+	return i.appendMu.RUnlock
 }

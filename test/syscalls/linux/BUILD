@@ -1177,6 +1177,7 @@ cc_binary(
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "//test/util:thread_util",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest",
     ],
@@ -2940,6 +2941,8 @@ cc_binary(
     testonly = 1,
     srcs = ["tcp_socket.cc"],
     linkstatic = 1,
+    # FIXME(b/135470853)
+    tags = ["flaky"],
     deps = [
         ":socket_test_util",
         "//test/util:file_descriptor",

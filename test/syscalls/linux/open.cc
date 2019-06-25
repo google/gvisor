@@ -28,6 +28,7 @@
 #include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -212,6 +213,42 @@ TEST_F(OpenTest, AppendOnly) {
   EXPECT_EQ(s1.st_size, kBufSize * 3);
   EXPECT_THAT(lseek(fd2.get(), 0, SEEK_CUR),
               SyscallSucceedsWithValue(kBufSize * 3));
+}
+
+TEST_F(OpenTest, AppendConcurrentWrite) {
+  constexpr int kThreadCount = 5;
+  constexpr int kBytesPerThread = 10000;
+  std::unique_ptr<ScopedThread> threads[kThreadCount];
+
+  // In case of the uncached policy, we expect that a file system can be changed
+  // externally, so we create a new inode each time when we open a file and we
+  // can't guarantee that writes to files with O_APPEND will work correctly.
+  SKIP_IF(getenv("GVISOR_GOFER_UNCACHED"));
+
+  EXPECT_THAT(truncate(test_file_name_.c_str(), 0), SyscallSucceeds());
+
+  std::string filename = test_file_name_;
+  DisableSave ds;  // Too many syscalls.
+  // Start kThreadCount threads which will write concurrently into the same
+  // file.
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i] = absl::make_unique<ScopedThread>([filename]() {
+      const FileDescriptor fd =
+          ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDWR | O_APPEND));
+
+      for (int j = 0; j < kBytesPerThread; j++) {
+        EXPECT_THAT(WriteFd(fd.get(), &j, 1), SyscallSucceedsWithValue(1));
+      }
+    });
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i]->Join();
+  }
+
+  // Check that the size of the file is correct.
+  struct stat st;
+  EXPECT_THAT(stat(test_file_name_.c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_size, kThreadCount * kBytesPerThread);
 }
 
 TEST_F(OpenTest, Truncate) {
