@@ -1,4 +1,4 @@
-package futex
+package auth
 
 import (
 	"sync/atomic"
@@ -13,25 +13,25 @@ import (
 // this case, do `dst.Store(src.Load())` instead.
 //
 // +stateify savable
-type AtomicPtrBucket struct {
-	ptr unsafe.Pointer `state:".(*bucket)"`
+type AtomicPtrCredentials struct {
+	ptr unsafe.Pointer `state:".(*Credentials)"`
 }
 
-func (p *AtomicPtrBucket) savePtr() *bucket {
+func (p *AtomicPtrCredentials) savePtr() *Credentials {
 	return p.Load()
 }
 
-func (p *AtomicPtrBucket) loadPtr(v *bucket) {
+func (p *AtomicPtrCredentials) loadPtr(v *Credentials) {
 	p.Store(v)
 }
 
 // Load returns the value set by the most recent Store. It returns nil if there
 // has been no previous call to Store.
-func (p *AtomicPtrBucket) Load() *bucket {
-	return (*bucket)(atomic.LoadPointer(&p.ptr))
+func (p *AtomicPtrCredentials) Load() *Credentials {
+	return (*Credentials)(atomic.LoadPointer(&p.ptr))
 }
 
 // Store sets the value returned by Load to x.
-func (p *AtomicPtrBucket) Store(x *bucket) {
+func (p *AtomicPtrCredentials) Store(x *Credentials) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }

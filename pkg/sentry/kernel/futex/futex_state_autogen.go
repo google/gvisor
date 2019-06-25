@@ -6,6 +6,18 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *AtomicPtrBucket) beforeSave() {}
+func (x *AtomicPtrBucket) save(m state.Map) {
+	x.beforeSave()
+	var ptr *bucket = x.savePtr()
+	m.SaveValue("ptr", ptr)
+}
+
+func (x *AtomicPtrBucket) afterLoad() {}
+func (x *AtomicPtrBucket) load(m state.Map) {
+	m.LoadValue("ptr", new(*bucket), func(y interface{}) { x.loadPtr(y.(*bucket)) })
+}
+
 func (x *bucket) beforeSave() {}
 func (x *bucket) save(m state.Map) {
 	x.beforeSave()
@@ -55,6 +67,7 @@ func (x *waiterEntry) load(m state.Map) {
 }
 
 func init() {
+	state.Register("futex.AtomicPtrBucket", (*AtomicPtrBucket)(nil), state.Fns{Save: (*AtomicPtrBucket).save, Load: (*AtomicPtrBucket).load})
 	state.Register("futex.bucket", (*bucket)(nil), state.Fns{Save: (*bucket).save, Load: (*bucket).load})
 	state.Register("futex.Manager", (*Manager)(nil), state.Fns{Save: (*Manager).save, Load: (*Manager).load})
 	state.Register("futex.waiterList", (*waiterList)(nil), state.Fns{Save: (*waiterList).save, Load: (*waiterList).load})

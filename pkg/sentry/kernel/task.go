@@ -386,10 +386,11 @@ type Task struct {
 
 	// creds is the task's credentials.
 	//
-	// creds is protected by mu, however the value itself is immutable and can
-	// only be changed by a copy. After reading the pointer, access will
-	// proceed outside the scope of mu. creds is owned by the task goroutine.
-	creds *auth.Credentials
+	// creds.Load() may be called without synchronization. creds.Store() is
+	// serialized by mu. creds is owned by the task goroutine. All
+	// auth.Credentials objects that creds may point to, or have pointed to
+	// in the past, must be treated as immutable.
+	creds auth.AtomicPtrCredentials
 
 	// utsns is the task's UTS namespace.
 	//
@@ -597,7 +598,7 @@ func (t *Task) Value(key interface{}) interface{} {
 	case CtxTask:
 		return t
 	case auth.CtxCredentials:
-		return t.creds
+		return t.Credentials()
 	case context.CtxThreadGroupID:
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
