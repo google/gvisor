@@ -31,6 +31,10 @@ func init() {
 
 	allConfs = append(allConfs, rwConfs...)
 	allConfs = append(allConfs, roConfs...)
+
+	if err := OpenProcSelfFD(); err != nil {
+		panic(err)
+	}
 }
 
 func assertPanic(t *testing.T, f func()) {

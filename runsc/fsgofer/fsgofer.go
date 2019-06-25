@@ -28,6 +28,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -223,6 +224,28 @@ type localFile struct {
 	lastDirentOffset uint64
 }
 
+var procSelfFD *fd.FD
+
+// OpenProcSelfFD opens the /proc/self/fd directory, which will be used to
+// reopen file descriptors.
+func OpenProcSelfFD() error {
+	d, err := syscall.Open("/proc/self/fd", syscall.O_RDONLY|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return fmt.Errorf("error opening /proc/self/fd: %v", err)
+	}
+	procSelfFD = fd.New(d)
+	return nil
+}
+
+func reopenProcFd(f *fd.FD, mode int) (*fd.FD, error) {
+	d, err := syscall.Openat(int(procSelfFD.FD()), strconv.Itoa(f.FD()), mode&^syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return fd.New(d), nil
+}
+
 func openAnyFileFromParent(parent *localFile, name string) (*fd.FD, string, error) {
 	path := path.Join(parent.hostPath, name)
 	f, err := openAnyFile(path, func(mode int) (*fd.FD, error) {
@@ -348,7 +371,7 @@ func (l *localFile) Open(mode p9.OpenFlags) (*fd.FD, p9.QID, uint32, error) {
 		// name_to_handle_at and open_by_handle_at aren't supported by overlay2.
 		log.Debugf("Open reopening file, mode: %v, %q", mode, l.hostPath)
 		var err error
-		newFile, err = fd.Open(l.hostPath, openFlags|mode.OSFlags(), 0)
+		newFile, err = reopenProcFd(l.file, openFlags|mode.OSFlags())
 		if err != nil {
 			return nil, p9.QID{}, 0, extractErrno(err)
 		}
@@ -477,7 +500,7 @@ func (l *localFile) Walk(names []string) ([]p9.QID, p9.File, error) {
 	// Duplicate current file if 'names' is empty.
 	if len(names) == 0 {
 		newFile, err := openAnyFile(l.hostPath, func(mode int) (*fd.FD, error) {
-			return fd.Open(l.hostPath, openFlags|mode, 0)
+			return reopenProcFd(l.file, openFlags|mode)
 		})
 		if err != nil {
 			return nil, nil, extractErrno(err)
@@ -635,7 +658,7 @@ func (l *localFile) SetAttr(valid p9.SetAttrMask, attr p9.SetAttr) error {
 	f := l.file
 	if l.ft == regular && l.mode != p9.WriteOnly && l.mode != p9.ReadWrite {
 		var err error
-		f, err = fd.Open(l.hostPath, openFlags|syscall.O_WRONLY, 0)
+		f, err = reopenProcFd(l.file, openFlags|os.O_WRONLY)
 		if err != nil {
 			return extractErrno(err)
 		}

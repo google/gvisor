@@ -37,6 +37,9 @@ import (
 func init() {
 	log.SetLevel(log.Debug)
 	rand.Seed(time.Now().UnixNano())
+	if err := fsgofer.OpenProcSelfFD(); err != nil {
+		panic(err)
+	}
 }
 
 func testConfig() *Config {

@@ -152,6 +152,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	syscall.Umask(0)
 
+	if err := fsgofer.OpenProcSelfFD(); err != nil {
+		Fatalf("failed to open /proc/self/fd: %v", err)
+	}
+
 	if err := syscall.Chroot(root); err != nil {
 		Fatalf("failed to chroot to %q: %v", root, err)
 	}
