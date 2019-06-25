@@ -310,9 +310,11 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 		return 0, syserror.ErrInterrupted
 	}
 
+	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
 	// Handle append mode.
 	if f.Flags().Append {
 		if err := f.offsetForAppend(ctx, &f.offset); err != nil {
+			unlockAppendMu()
 			f.mu.Unlock()
 			return 0, err
 		}
@@ -322,6 +324,7 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	limit, ok := f.checkLimit(ctx, f.offset)
 	switch {
 	case ok && limit == 0:
+		unlockAppendMu()
 		f.mu.Unlock()
 		return 0, syserror.ErrExceedsFileSizeLimit
 	case ok:
@@ -333,6 +336,7 @@ func (f *File) Writev(ctx context.Context, src usermem.IOSequence) (int64, error
 	if n >= 0 && !f.flags.NonSeekable {
 		atomic.StoreInt64(&f.offset, f.offset+n)
 	}
+	unlockAppendMu()
 	f.mu.Unlock()
 	return n, err
 }
@@ -348,13 +352,11 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 	// However, on Linux, if a file is opened with O_APPEND,  pwrite()
 	// appends data to the end of the file, regardless of the value of
 	// offset."
+	unlockAppendMu := f.Dirent.Inode.lockAppendMu(f.Flags().Append)
+	defer unlockAppendMu()
+
 	if f.Flags().Append {
-		if !f.mu.Lock(ctx) {
-			return 0, syserror.ErrInterrupted
-		}
-		defer f.mu.Unlock()
 		if err := f.offsetForAppend(ctx, &offset); err != nil {
-			f.mu.Unlock()
 			return 0, err
 		}
 	}
@@ -373,7 +375,7 @@ func (f *File) Pwritev(ctx context.Context, src usermem.IOSequence, offset int64
 
 // offsetForAppend sets the given offset to the end of the file.
 //
-// Precondition: the underlying file mutex should be held.
+// Precondition: the file.Dirent.Inode.appendMu mutex should be held for writing.
 func (f *File) offsetForAppend(ctx context.Context, offset *int64) error {
 	uattr, err := f.Dirent.Inode.UnstableAttr(ctx)
 	if err != nil {
