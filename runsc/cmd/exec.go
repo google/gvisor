@@ -237,6 +237,16 @@ func (ex *Exec) execChildAndWait(waitStatus *syscall.WaitStatus) subcommands.Exi
 			Setctty: true,
 			Ctty:    int(tty.Fd()),
 		}
+		// TODO(b/133868570): Delete this check once Go 1.12 is no
+		// longer supported.
+		if console.CttyFdIsPostShuffle {
+			// In go1.12 and before, the Ctty FD must be the FD in
+			// the child process's FD table. Since we set
+			// cmd.Stdin/Stdout/Stderr to the tty FD, we can use
+			// any of 0, 1, or 2 here.
+			cmd.SysProcAttr.Ctty = 0
+		}
+
 	}
 
 	if err := cmd.Start(); err != nil {
