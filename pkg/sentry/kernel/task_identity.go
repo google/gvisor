@@ -25,30 +25,22 @@ import (
 //
 // This value must be considered immutable.
 func (t *Task) Credentials() *auth.Credentials {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.creds
+	return t.creds.Load()
 }
 
 // UserNamespace returns the user namespace associated with the task.
 func (t *Task) UserNamespace() *auth.UserNamespace {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.creds.UserNamespace
+	return t.Credentials().UserNamespace
 }
 
 // HasCapabilityIn checks if the task has capability cp in user namespace ns.
 func (t *Task) HasCapabilityIn(cp linux.Capability, ns *auth.UserNamespace) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.creds.HasCapabilityIn(cp, ns)
+	return t.Credentials().HasCapabilityIn(cp, ns)
 }
 
 // HasCapability checks if the task has capability cp in its user namespace.
 func (t *Task) HasCapability(cp linux.Capability) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.creds.HasCapability(cp)
+	return t.Credentials().HasCapability(cp)
 }
 
 // SetUID implements the semantics of setuid(2).
@@ -57,9 +49,12 @@ func (t *Task) SetUID(uid auth.UID) error {
 	if !uid.Ok() {
 		return syserror.EINVAL
 	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	kuid := t.creds.UserNamespace.MapToKUID(uid)
+
+	creds := t.Credentials()
+	kuid := creds.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
 		return syserror.EINVAL
 	}
@@ -67,17 +62,17 @@ func (t *Task) SetUID(uid auth.UID) error {
 	// effective UID of the caller is root (more precisely: if the caller has
 	// the CAP_SETUID capability), the real UID and saved set-user-ID are also
 	// set." - setuid(2)
-	if t.creds.HasCapability(linux.CAP_SETUID) {
+	if creds.HasCapability(linux.CAP_SETUID) {
 		t.setKUIDsUncheckedLocked(kuid, kuid, kuid)
 		return nil
 	}
 	// "EPERM: The user is not privileged (Linux: does not have the CAP_SETUID
 	// capability) and uid does not match the real UID or saved set-user-ID of
 	// the calling process."
-	if kuid != t.creds.RealKUID && kuid != t.creds.SavedKUID {
+	if kuid != creds.RealKUID && kuid != creds.SavedKUID {
 		return syserror.EPERM
 	}
-	t.setKUIDsUncheckedLocked(t.creds.RealKUID, kuid, t.creds.SavedKUID)
+	t.setKUIDsUncheckedLocked(creds.RealKUID, kuid, creds.SavedKUID)
 	return nil
 }
 
@@ -87,37 +82,38 @@ func (t *Task) SetREUID(r, e auth.UID) error {
 	defer t.mu.Unlock()
 	// "Supplying a value of -1 for either the real or effective user ID forces
 	// the system to leave that ID unchanged." - setreuid(2)
-	newR := t.creds.RealKUID
+	creds := t.Credentials()
+	newR := creds.RealKUID
 	if r.Ok() {
-		newR = t.creds.UserNamespace.MapToKUID(r)
+		newR = creds.UserNamespace.MapToKUID(r)
 		if !newR.Ok() {
 			return syserror.EINVAL
 		}
 	}
-	newE := t.creds.EffectiveKUID
+	newE := creds.EffectiveKUID
 	if e.Ok() {
-		newE = t.creds.UserNamespace.MapToKUID(e)
+		newE = creds.UserNamespace.MapToKUID(e)
 		if !newE.Ok() {
 			return syserror.EINVAL
 		}
 	}
-	if !t.creds.HasCapability(linux.CAP_SETUID) {
+	if !creds.HasCapability(linux.CAP_SETUID) {
 		// "Unprivileged processes may only set the effective user ID to the
 		// real user ID, the effective user ID, or the saved set-user-ID."
-		if newE != t.creds.RealKUID && newE != t.creds.EffectiveKUID && newE != t.creds.SavedKUID {
+		if newE != creds.RealKUID && newE != creds.EffectiveKUID && newE != creds.SavedKUID {
 			return syserror.EPERM
 		}
 		// "Unprivileged users may only set the real user ID to the real user
 		// ID or the effective user ID."
-		if newR != t.creds.RealKUID && newR != t.creds.EffectiveKUID {
+		if newR != creds.RealKUID && newR != creds.EffectiveKUID {
 			return syserror.EPERM
 		}
 	}
 	// "If the real user ID is set (i.e., ruid is not -1) or the effective user
 	// ID is set to a value not equal to the previous real user ID, the saved
 	// set-user-ID will be set to the new effective user ID."
-	newS := t.creds.SavedKUID
-	if r.Ok() || (e.Ok() && newE != t.creds.EffectiveKUID) {
+	newS := creds.SavedKUID
+	if r.Ok() || (e.Ok() && newE != creds.EffectiveKUID) {
 		newS = newE
 	}
 	t.setKUIDsUncheckedLocked(newR, newE, newS)
@@ -136,23 +132,24 @@ func (t *Task) SetRESUID(r, e, s auth.UID) error {
 	// arguments equals -1, the corresponding value is not changed." -
 	// setresuid(2)
 	var err error
-	newR := t.creds.RealKUID
+	creds := t.Credentials()
+	newR := creds.RealKUID
 	if r.Ok() {
-		newR, err = t.creds.UseUID(r)
+		newR, err = creds.UseUID(r)
 		if err != nil {
 			return err
 		}
 	}
-	newE := t.creds.EffectiveKUID
+	newE := creds.EffectiveKUID
 	if e.Ok() {
-		newE, err = t.creds.UseUID(e)
+		newE, err = creds.UseUID(e)
 		if err != nil {
 			return err
 		}
 	}
-	newS := t.creds.SavedKUID
+	newS := creds.SavedKUID
 	if s.Ok() {
-		newS, err = t.creds.UseUID(s)
+		newS, err = creds.UseUID(s)
 		if err != nil {
 			return err
 		}
@@ -163,10 +160,10 @@ func (t *Task) SetRESUID(r, e, s auth.UID) error {
 
 // Preconditions: t.mu must be locked.
 func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
-	root := t.creds.UserNamespace.MapToKUID(auth.RootUID)
-	oldR, oldE, oldS := t.creds.RealKUID, t.creds.EffectiveKUID, t.creds.SavedKUID
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.RealKUID, t.creds.EffectiveKUID, t.creds.SavedKUID = newR, newE, newS
+	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
+	root := creds.UserNamespace.MapToKUID(auth.RootUID)
+	oldR, oldE, oldS := creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID
+	creds.RealKUID, creds.EffectiveKUID, creds.SavedKUID = newR, newE, newS
 
 	// "1. If one or more of the real, effective or saved set user IDs was
 	// previously 0, and as a result of the UID changes all of these IDs have a
@@ -184,9 +181,9 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 		// being cleared." (A thread's effective capability set is always
 		// cleared when such a credential change is made,
 		// regardless of the setting of the "keep capabilities" flag.)
-		if !t.creds.KeepCaps {
-			t.creds.PermittedCaps = 0
-			t.creds.EffectiveCaps = 0
+		if !creds.KeepCaps {
+			creds.PermittedCaps = 0
+			creds.EffectiveCaps = 0
 		}
 	}
 	// """
@@ -197,9 +194,9 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 	// permitted set is copied to the effective set.
 	// """
 	if oldE == root && newE != root {
-		t.creds.EffectiveCaps = 0
+		creds.EffectiveCaps = 0
 	} else if oldE != root && newE == root {
-		t.creds.EffectiveCaps = t.creds.PermittedCaps
+		creds.EffectiveCaps = creds.PermittedCaps
 	}
 	// "4. If the filesystem user ID is changed from 0 to nonzero (see
 	// setfsuid(2)), then the following capabilities are cleared from the
@@ -220,6 +217,7 @@ func (t *Task) setKUIDsUncheckedLocked(newR, newE, newS auth.KUID) {
 		// Not documented, but compare Linux's kernel/cred.c:commit_creds().
 		t.parentDeathSignal = 0
 	}
+	t.creds.Store(creds)
 }
 
 // SetGID implements the semantics of setgid(2).
@@ -227,20 +225,23 @@ func (t *Task) SetGID(gid auth.GID) error {
 	if !gid.Ok() {
 		return syserror.EINVAL
 	}
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	kgid := t.creds.UserNamespace.MapToKGID(gid)
+
+	creds := t.Credentials()
+	kgid := creds.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
 		return syserror.EINVAL
 	}
-	if t.creds.HasCapability(linux.CAP_SETGID) {
+	if creds.HasCapability(linux.CAP_SETGID) {
 		t.setKGIDsUncheckedLocked(kgid, kgid, kgid)
 		return nil
 	}
-	if kgid != t.creds.RealKGID && kgid != t.creds.SavedKGID {
+	if kgid != creds.RealKGID && kgid != creds.SavedKGID {
 		return syserror.EPERM
 	}
-	t.setKGIDsUncheckedLocked(t.creds.RealKGID, kgid, t.creds.SavedKGID)
+	t.setKGIDsUncheckedLocked(creds.RealKGID, kgid, creds.SavedKGID)
 	return nil
 }
 
@@ -248,30 +249,32 @@ func (t *Task) SetGID(gid auth.GID) error {
 func (t *Task) SetREGID(r, e auth.GID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	newR := t.creds.RealKGID
+
+	creds := t.Credentials()
+	newR := creds.RealKGID
 	if r.Ok() {
-		newR = t.creds.UserNamespace.MapToKGID(r)
+		newR = creds.UserNamespace.MapToKGID(r)
 		if !newR.Ok() {
 			return syserror.EINVAL
 		}
 	}
-	newE := t.creds.EffectiveKGID
+	newE := creds.EffectiveKGID
 	if e.Ok() {
-		newE = t.creds.UserNamespace.MapToKGID(e)
+		newE = creds.UserNamespace.MapToKGID(e)
 		if !newE.Ok() {
 			return syserror.EINVAL
 		}
 	}
-	if !t.creds.HasCapability(linux.CAP_SETGID) {
-		if newE != t.creds.RealKGID && newE != t.creds.EffectiveKGID && newE != t.creds.SavedKGID {
+	if !creds.HasCapability(linux.CAP_SETGID) {
+		if newE != creds.RealKGID && newE != creds.EffectiveKGID && newE != creds.SavedKGID {
 			return syserror.EPERM
 		}
-		if newR != t.creds.RealKGID && newR != t.creds.EffectiveKGID {
+		if newR != creds.RealKGID && newR != creds.EffectiveKGID {
 			return syserror.EPERM
 		}
 	}
-	newS := t.creds.SavedKGID
-	if r.Ok() || (e.Ok() && newE != t.creds.EffectiveKGID) {
+	newS := creds.SavedKGID
+	if r.Ok() || (e.Ok() && newE != creds.EffectiveKGID) {
 		newS = newE
 	}
 	t.setKGIDsUncheckedLocked(newR, newE, newS)
@@ -280,26 +283,29 @@ func (t *Task) SetREGID(r, e auth.GID) error {
 
 // SetRESGID implements the semantics of the setresgid(2) syscall.
 func (t *Task) SetRESGID(r, e, s auth.GID) error {
+	var err error
+
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	var err error
-	newR := t.creds.RealKGID
+
+	creds := t.Credentials()
+	newR := creds.RealKGID
 	if r.Ok() {
-		newR, err = t.creds.UseGID(r)
+		newR, err = creds.UseGID(r)
 		if err != nil {
 			return err
 		}
 	}
-	newE := t.creds.EffectiveKGID
+	newE := creds.EffectiveKGID
 	if e.Ok() {
-		newE, err = t.creds.UseGID(e)
+		newE, err = creds.UseGID(e)
 		if err != nil {
 			return err
 		}
 	}
-	newS := t.creds.SavedKGID
+	newS := creds.SavedKGID
 	if s.Ok() {
-		newS, err = t.creds.UseGID(s)
+		newS, err = creds.UseGID(s)
 		if err != nil {
 			return err
 		}
@@ -309,9 +315,9 @@ func (t *Task) SetRESGID(r, e, s auth.GID) error {
 }
 
 func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
-	oldE := t.creds.EffectiveKGID
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.RealKGID, t.creds.EffectiveKGID, t.creds.SavedKGID = newR, newE, newS
+	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
+	oldE := creds.EffectiveKGID
+	creds.RealKGID, creds.EffectiveKGID, creds.SavedKGID = newR, newE, newS
 
 	if oldE != newE {
 		// "[dumpability] is reset to the current value contained in
@@ -327,6 +333,7 @@ func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
 		// kernel/cred.c:commit_creds().
 		t.parentDeathSignal = 0
 	}
+	t.creds.Store(creds)
 }
 
 // SetExtraGIDs attempts to change t's supplemental groups. All IDs are
@@ -334,19 +341,21 @@ func (t *Task) setKGIDsUncheckedLocked(newR, newE, newS auth.KGID) {
 func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.creds.HasCapability(linux.CAP_SETGID) {
+	creds := t.Credentials()
+	if !creds.HasCapability(linux.CAP_SETGID) {
 		return syserror.EPERM
 	}
 	kgids := make([]auth.KGID, len(gids))
 	for i, gid := range gids {
-		kgid := t.creds.UserNamespace.MapToKGID(gid)
+		kgid := creds.UserNamespace.MapToKGID(gid)
 		if !kgid.Ok() {
 			return syserror.EINVAL
 		}
 		kgids[i] = kgid
 	}
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.ExtraKGIDs = kgids
+	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.ExtraKGIDs = kgids
+	t.creds.Store(creds)
 	return nil
 }
 
@@ -360,27 +369,29 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 	if effective & ^permitted != 0 {
 		return syserror.EPERM
 	}
+	creds := t.Credentials()
 	// "It is also a limiting superset for the capabilities that may be added
 	// to the inheritable set by a thread that does not have the CAP_SETPCAP
 	// capability in its effective set."
-	if !t.creds.HasCapability(linux.CAP_SETPCAP) && (inheritable & ^(t.creds.InheritableCaps|t.creds.PermittedCaps) != 0) {
+	if !creds.HasCapability(linux.CAP_SETPCAP) && (inheritable & ^(creds.InheritableCaps|creds.PermittedCaps) != 0) {
 		return syserror.EPERM
 	}
 	// "If a thread drops a capability from its permitted set, it can never
 	// reacquire that capability (unless it execve(2)s ..."
-	if permitted & ^t.creds.PermittedCaps != 0 {
+	if permitted & ^creds.PermittedCaps != 0 {
 		return syserror.EPERM
 	}
 	// "... if a capability is not in the bounding set, then a thread can't add
 	// this capability to its inheritable set, even if it was in its permitted
 	// capabilities ..."
-	if inheritable & ^(t.creds.InheritableCaps|t.creds.BoundingCaps) != 0 {
+	if inheritable & ^(creds.InheritableCaps|creds.BoundingCaps) != 0 {
 		return syserror.EPERM
 	}
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.PermittedCaps = permitted
-	t.creds.InheritableCaps = inheritable
-	t.creds.EffectiveCaps = effective
+	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.PermittedCaps = permitted
+	creds.InheritableCaps = inheritable
+	creds.EffectiveCaps = effective
+	t.creds.Store(creds)
 	return nil
 }
 
@@ -389,11 +400,13 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 func (t *Task) DropBoundingCapability(cp linux.Capability) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if !t.creds.HasCapability(linux.CAP_SETPCAP) {
+	creds := t.Credentials()
+	if !creds.HasCapability(linux.CAP_SETPCAP) {
 		return syserror.EPERM
 	}
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.BoundingCaps &^= auth.CapabilitySetOf(cp)
+	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.BoundingCaps &^= auth.CapabilitySetOf(cp)
+	t.creds.Store(creds)
 	return nil
 }
 
@@ -402,31 +415,33 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	creds := t.Credentials()
 	// "A process reassociating itself with a user namespace must have the
 	// CAP_SYS_ADMIN capability in the target user namespace." - setns(2)
 	//
 	// If t just created ns, then t.creds is guaranteed to have CAP_SYS_ADMIN
 	// in ns (by rule 3 in auth.Credentials.HasCapability).
-	if !t.creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
+	if !creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns) {
 		return syserror.EPERM
 	}
 
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.UserNamespace = ns
+	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
+	creds.UserNamespace = ns
 	// "The child process created by clone(2) with the CLONE_NEWUSER flag
 	// starts out with a complete set of capabilities in the new user
 	// namespace. Likewise, a process that creates a new user namespace using
 	// unshare(2) or joins an existing user namespace using setns(2) gains a
 	// full set of capabilities in that namespace."
-	t.creds.PermittedCaps = auth.AllCapabilities
-	t.creds.InheritableCaps = 0
-	t.creds.EffectiveCaps = auth.AllCapabilities
-	t.creds.BoundingCaps = auth.AllCapabilities
+	creds.PermittedCaps = auth.AllCapabilities
+	creds.InheritableCaps = 0
+	creds.EffectiveCaps = auth.AllCapabilities
+	creds.BoundingCaps = auth.AllCapabilities
 	// "A call to clone(2), unshare(2), or setns(2) using the CLONE_NEWUSER
 	// flag sets the "securebits" flags (see capabilities(7)) to their default
 	// values (all flags disabled) in the child (for clone(2)) or caller (for
 	// unshare(2), or setns(2)." - user_namespaces(7)
-	t.creds.KeepCaps = false
+	creds.KeepCaps = false
+	t.creds.Store(creds)
 
 	return nil
 }
@@ -435,8 +450,9 @@ func (t *Task) SetUserNamespace(ns *auth.UserNamespace) error {
 func (t *Task) SetKeepCaps(k bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.creds = t.creds.Fork() // See doc for creds.
-	t.creds.KeepCaps = k
+	creds := t.Credentials().Fork() // The credentials object is immutable. See doc for creds.
+	creds.KeepCaps = k
+	t.creds.Store(creds)
 }
 
 // updateCredsForExec updates t.creds to reflect an execve().
@@ -512,15 +528,16 @@ func (t *Task) updateCredsForExecLocked() {
 	// the effective user ID.
 	var newPermitted auth.CapabilitySet // since F(inheritable) == F(permitted) == 0
 	fileEffective := false
-	root := t.creds.UserNamespace.MapToKUID(auth.RootUID)
-	if t.creds.EffectiveKUID == root || t.creds.RealKUID == root {
-		newPermitted = t.creds.InheritableCaps | t.creds.BoundingCaps
-		if t.creds.EffectiveKUID == root {
+	creds := t.Credentials()
+	root := creds.UserNamespace.MapToKUID(auth.RootUID)
+	if creds.EffectiveKUID == root || creds.RealKUID == root {
+		newPermitted = creds.InheritableCaps | creds.BoundingCaps
+		if creds.EffectiveKUID == root {
 			fileEffective = true
 		}
 	}
 
-	t.creds = t.creds.Fork() // See doc for creds.
+	creds = creds.Fork() // The credentials object is immutable. See doc for creds.
 
 	// Now we enter poorly-documented, somewhat confusing territory. (The
 	// accompanying comment in Linux's security/commoncap.c:cap_bprm_set_creds
@@ -562,27 +579,28 @@ func (t *Task) updateCredsForExecLocked() {
 	// But since no_new_privs is always set (A3 is always true), this becomes
 	// much simpler. If B1 and B2 are false, C2 is a no-op. If B3 is false, C1
 	// is a no-op. So we can just do C1 and C2 unconditionally.
-	if t.creds.EffectiveKUID != t.creds.RealKUID || t.creds.EffectiveKGID != t.creds.RealKGID {
-		t.creds.EffectiveKUID = t.creds.RealKUID
-		t.creds.EffectiveKGID = t.creds.RealKGID
+	if creds.EffectiveKUID != creds.RealKUID || creds.EffectiveKGID != creds.RealKGID {
+		creds.EffectiveKUID = creds.RealKUID
+		creds.EffectiveKGID = creds.RealKGID
 		t.parentDeathSignal = 0
 	}
 	// (Saved set-user-ID is always set to the new effective user ID, and saved
 	// set-group-ID is always set to the new effective group ID, regardless of
 	// the above.)
-	t.creds.SavedKUID = t.creds.RealKUID
-	t.creds.SavedKGID = t.creds.RealKGID
-	t.creds.PermittedCaps &= newPermitted
+	creds.SavedKUID = creds.RealKUID
+	creds.SavedKGID = creds.RealKGID
+	creds.PermittedCaps &= newPermitted
 	if fileEffective {
-		t.creds.EffectiveCaps = t.creds.PermittedCaps
+		creds.EffectiveCaps = creds.PermittedCaps
 	} else {
-		t.creds.EffectiveCaps = 0
+		creds.EffectiveCaps = 0
 	}
 
 	// prctl(2): The "keep capabilities" value will be reset to 0 on subsequent
 	// calls to execve(2).
-	t.creds.KeepCaps = false
+	creds.KeepCaps = false
 
 	// "The bounding set is inherited at fork(2) from the thread's parent, and
 	// is preserved across an execve(2)". So we're done.
+	t.creds.Store(creds)
 }

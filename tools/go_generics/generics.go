@@ -222,7 +222,11 @@ func main() {
 				// Modify the state tag appropriately.
 				if m := stateTagRegexp.FindStringSubmatch(ident.Name); m != nil {
 					if t := identifierRegexp.FindStringSubmatch(m[2]); t != nil {
-						ident.Name = m[1] + `state:".(` + t[1] + *prefix + t[2] + *suffix + t[3] + `)"` + m[3]
+						typeName := *prefix + t[2] + *suffix
+						if n, ok := types[t[2]]; ok {
+							typeName = n
+						}
+						ident.Name = m[1] + `state:".(` + t[1] + typeName + t[3] + `)"` + m[3]
 					}
 				}
 			}

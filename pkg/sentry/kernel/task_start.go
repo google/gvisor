@@ -119,7 +119,6 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		ptraceTracees:   make(map[*Task]struct{}),
 		allowedCPUMask:  cfg.AllowedCPUMask.Copy(),
 		ioUsage:         &usage.IO{},
-		creds:           cfg.Credentials,
 		niceness:        cfg.Niceness,
 		netns:           cfg.NetworkNamespaced,
 		utsns:           cfg.UTSNamespace,
@@ -129,6 +128,7 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		futexWaiter:     futex.NewWaiter(),
 		containerID:     cfg.ContainerID,
 	}
+	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.ptraceTracer.Store((*Task)(nil))
 	// We don't construct t.blockingTimer until Task.run(); see that function

@@ -21,8 +21,18 @@ type Value struct{}
 // Note that copying AtomicPtr by value performs a non-atomic read of the
 // stored pointer, which is unsafe if Store() can be called concurrently; in
 // this case, do `dst.Store(src.Load())` instead.
+//
+// +stateify savable
 type AtomicPtr struct {
-	ptr unsafe.Pointer
+	ptr unsafe.Pointer `state:".(*Value)"`
+}
+
+func (p *AtomicPtr) savePtr() *Value {
+	return p.Load()
+}
+
+func (p *AtomicPtr) loadPtr(v *Value) {
+	p.Store(v)
 }
 
 // Load returns the value set by the most recent Store. It returns nil if there

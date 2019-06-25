@@ -4,6 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
+    name = "atomicptr_credentials",
+    out = "atomicptr_credentials.go",
+    package = "auth",
+    suffix = "Credentials",
+    template = "//third_party/gvsync:generic_atomicptr",
+    types = {
+        "Value": "Credentials",
+    },
+)
+
+go_template_instance(
     name = "id_map_range",
     out = "id_map_range.go",
     package = "auth",
@@ -34,6 +45,7 @@ go_template_instance(
 go_library(
     name = "auth",
     srcs = [
+        "atomicptr_credentials.go",
         "auth.go",
         "capability_set.go",
         "context.go",
