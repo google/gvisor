@@ -370,13 +370,16 @@ func (t *thread) destroy() {
 
 // init initializes trace options.
 func (t *thread) init() {
-	// Set our TRACESYSGOOD option to differeniate real SIGTRAP.
+	// Set our TRACESYSGOOD option to differeniate real SIGTRAP. We also
+	// set PTRACE_O_EXITKILL to ensure that the unexpected exit of the
+	// sentry will immediately kill the associated stubs.
+	const PTRACE_O_EXITKILL = 0x100000
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,
 		syscall.PTRACE_SETOPTIONS,
 		uintptr(t.tid),
 		0,
-		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT,
+		syscall.PTRACE_O_TRACESYSGOOD|syscall.PTRACE_O_TRACEEXIT|PTRACE_O_EXITKILL,
 		0, 0)
 	if errno != 0 {
 		panic(fmt.Sprintf("ptrace set options failed: %v", errno))
