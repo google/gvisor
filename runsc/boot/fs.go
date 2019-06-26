@@ -85,6 +85,19 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	if err != nil {
 		return nil, fmt.Errorf("creating tmpfs overlay: %v", err)
 	}
+
+	// Replicate permissions and owner from lower to upper mount point.
+	attr, err := lower.UnstableAttr(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("reading attributes from lower mount point: %v", err)
+	}
+	if !upper.InodeOperations.SetPermissions(ctx, upper, attr.Perms) {
+		return nil, fmt.Errorf("error setting permission to upper mount point")
+	}
+	if err := upper.InodeOperations.SetOwner(ctx, upper, attr.Owner); err != nil {
+		return nil, fmt.Errorf("setting owner to upper mount point: %v", err)
+	}
+
 	return fs.NewOverlayRoot(ctx, upper, lower, upperFlags)
 }
 
