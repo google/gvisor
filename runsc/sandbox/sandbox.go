@@ -438,15 +438,10 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 
 		// Set the TTY as a controlling TTY on the sandbox process.
 		cmd.SysProcAttr.Setctty = true
-		cmd.SysProcAttr.Ctty = int(tty.Fd())
-		// TODO(b/133868570): Delete this check once Go 1.12 is no
-		// longer supported.
-		if console.CttyFdIsPostShuffle {
-			// In go1.12 and before, the Ctty FD must be the FD in
-			// the child process's FD table, which will be "nextFD"
-			// in this case.
-			cmd.SysProcAttr.Ctty = nextFD
-		}
+		// The Ctty FD must be the FD in the child process's FD table,
+		// which will be nextFD in this case.
+		// See https://github.com/golang/go/issues/29458.
+		cmd.SysProcAttr.Ctty = nextFD
 
 		// Pass the tty as all stdio fds to sandbox.
 		for i := 0; i < 3; i++ {

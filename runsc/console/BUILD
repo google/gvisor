@@ -6,8 +6,6 @@ go_library(
     name = "console",
     srcs = [
         "console.go",
-        "ctty_1_12.go",
-        "ctty_1_13.go",
     ],
     importpath = "gvisor.dev/gvisor/runsc/console",
     visibility = [
