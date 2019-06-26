@@ -272,6 +272,77 @@ TEST(SymlinkTest, ChmodSymlink) {
   EXPECT_EQ(FilePermission(newpath), 0777);
 }
 
+class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};
+
+// Test that creating an existing symlink with creat will create the target.
+TEST_P(ParamSymlinkTest, CreatLinkCreatesTarget) {
+  const std::string target = GetParam();
+  const std::string linkpath = NewTempAbsPath();
+
+  ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  int fd;
+  EXPECT_THAT(fd = creat(linkpath.c_str(), 0666), SyscallSucceeds());
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+  struct stat st;
+  EXPECT_THAT(stat(target.c_str(), &st), SyscallSucceeds());
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+  ASSERT_THAT(unlink(target.c_str()), SyscallSucceeds());
+}
+
+// Test that opening an existing symlink with O_CREAT will create the target.
+TEST_P(ParamSymlinkTest, OpenLinkCreatesTarget) {
+  const std::string target = GetParam();
+  const std::string linkpath = NewTempAbsPath();
+
+  ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  int fd;
+  EXPECT_THAT(fd = open(linkpath.c_str(), O_CREAT, 0666), SyscallSucceeds());
+  ASSERT_THAT(close(fd), SyscallSucceeds());
+
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+  struct stat st;
+  EXPECT_THAT(stat(target.c_str(), &st), SyscallSucceeds());
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+  ASSERT_THAT(unlink(target.c_str()), SyscallSucceeds());
+}
+
+// Test that opening an existing symlink with O_CREAT|O_EXCL will fail with
+// EEXIST.
+TEST_P(ParamSymlinkTest, OpenLinkExclFails) {
+  const std::string target = GetParam();
+  const std::string linkpath = NewTempAbsPath();
+
+  ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(linkpath.c_str(), O_CREAT | O_EXCL, 0666),
+              SyscallFailsWithErrno(EEXIST));
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+}
+
+// Test that opening an existing symlink with O_CREAT|O_NOFOLLOW will fail with
+// ELOOP.
+TEST_P(ParamSymlinkTest, OpenLinkNoFollowFails) {
+  const std::string target = GetParam();
+  const std::string linkpath = NewTempAbsPath();
+
+  ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(linkpath.c_str(), O_CREAT | O_NOFOLLOW, 0666),
+              SyscallFailsWithErrno(ELOOP));
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+}
+
+INSTANTIATE_TEST_SUITE_P(AbsAndRelTarget, ParamSymlinkTest,
+                         ::testing::Values(NewTempAbsPath(), NewTempRelPath()));
+
 }  // namespace
 
 }  // namespace testing
