@@ -133,6 +133,9 @@ func (f *Filesystem) Mount(ctx context.Context, device string, flags fs.MountSou
 	}
 
 	// Construct a mount which will follow the cache options provided.
+	//
+	// TODO(gvisor.dev/issue/179): There should be no reason to disable
+	// caching once bind mounts are properly supported.
 	var msrc *fs.MountSource
 	switch options[cacheKey] {
 	case "", cacheAll:
