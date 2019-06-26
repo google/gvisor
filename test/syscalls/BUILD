@@ -240,7 +240,7 @@ syscall_test(
 syscall_test(test = "//test/syscalls/linux:munmap_test")
 
 syscall_test(
-    add_overlay = False,  # TODO(gvisor.dev/issue/316): enable when fixed.
+    add_overlay = True,
     test = "//test/syscalls/linux:open_create_test",
 )
 
