@@ -39,7 +39,7 @@ func init() {
 	fs.RegisterFilesystem(&filesystem{})
 }
 
-// FilesystemName is the name underwhich the filesystem is registered.
+// FilesystemName is the name under which the filesystem is registered.
 // Name matches drivers/base/devtmpfs.c:dev_fs_type.name.
 const FilesystemName = "devtmpfs"
 

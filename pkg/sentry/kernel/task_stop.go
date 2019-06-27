@@ -172,7 +172,7 @@ func (t *Task) beginStopLocked() {
 	}
 }
 
-// endStopLocked decerements t.stopCount to indicate that an existing internal
+// endStopLocked decrements t.stopCount to indicate that an existing internal
 // or external stop no longer applies to t.
 //
 // Preconditions: The signal mutex must be locked.

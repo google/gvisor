@@ -1189,7 +1189,7 @@ func (s *vmaSet) String() string {
 	return s.root.String()
 }
 
-// String stringifes a node (and all of its children) for debugging.
+// String stringifies a node (and all of its children) for debugging.
 func (n *vmanode) String() string {
 	var buf bytes.Buffer
 	n.writeDebugString(&buf, "")

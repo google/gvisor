@@ -16,7 +16,7 @@
 // sockets allow applications to:
 //
 //   * manually write and inspect transport layer headers and payloads
-//   * receive all traffic of a given transport protcol (e.g. ICMP or UDP)
+//   * receive all traffic of a given transport protocol (e.g. ICMP or UDP)
 //   * optionally write and inspect network layer and link layer headers for
 //     packets
 //

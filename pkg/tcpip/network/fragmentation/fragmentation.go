@@ -60,7 +60,7 @@ type Fragmentation struct {
 // lowMemoryLimit specifies the limit on which we will reach by dropping
 // fragments after reaching highMemoryLimit.
 //
-// reassemblingTimeout specifes the maximum time allowed to reassemble a packet.
+// reassemblingTimeout specifies the maximum time allowed to reassemble a packet.
 // Fragments are lazily evicted only when a new a packet with an
 // already existing fragmentation-id arrives after the timeout.
 func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout time.Duration) *Fragmentation {
@@ -80,7 +80,7 @@ func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout t
 	}
 }
 
-// Process processes an incoming fragment beloning to an ID
+// Process processes an incoming fragment belonging to an ID
 // and returns a complete packet when all the packets belonging to that ID have been received.
 func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool) {
 	f.mu.Lock()

@@ -40,7 +40,7 @@ func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 	}
 }
 
-// SemaphoreRegistry returns the semanphore set registry for this namespace.
+// SemaphoreRegistry returns the semaphore set registry for this namespace.
 func (i *IPCNamespace) SemaphoreRegistry() *semaphore.Registry {
 	return i.semaphores
 }

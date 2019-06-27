@@ -21,7 +21,7 @@ import (
 )
 
 // instrumentationFilters returns additional filters for syscalls used by
-// Go intrumentation tools, e.g. -race, -msan.
+// Go instrumentation tools, e.g. -race, -msan.
 // Returns empty when disabled.
 func instrumentationFilters() seccomp.SyscallRules {
 	return nil

@@ -206,7 +206,7 @@ func findContainerRoot(rootDir, partialID string) (string, error) {
 	}
 
 	// Now see whether id could be an abbreviation of exactly 1 of the
-	// container ids. If id is ambigious (it could match more than 1
+	// container ids. If id is ambiguous (it could match more than 1
 	// container), it is an error.
 	cRoot = ""
 	ids, err := List(rootDir)
@@ -273,7 +273,7 @@ type Args struct {
 	Attached bool
 }
 
-// Create creates the container in a new Sandbox process, unless the metadata
+// New creates the container in a new Sandbox process, unless the metadata
 // indicates that an existing Sandbox should be used. The caller must call
 // Destroy() on the container.
 func New(conf *boot.Config, args Args) (*Container, error) {
@@ -329,7 +329,7 @@ func New(conf *boot.Config, args Args) (*Container, error) {
 		log.Debugf("Creating new sandbox for container %q", args.ID)
 
 		// Create and join cgroup before processes are created to ensure they are
-		// part of the cgroup from the start (and all tneir children processes).
+		// part of the cgroup from the start (and all their children processes).
 		cg, err := cgroup.New(args.Spec)
 		if err != nil {
 			return nil, err
@@ -446,7 +446,7 @@ func (c *Container) Start(conf *boot.Config) error {
 		}
 	} else {
 		// Join cgroup to strt gofer process to ensure it's part of the cgroup from
-		// the start (and all tneir children processes).
+		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.Cgroup, func() error {
 			// Create the gofer process.
 			ioFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir)
@@ -514,7 +514,7 @@ func Run(conf *boot.Config, args Args) (syscall.WaitStatus, error) {
 	if err != nil {
 		return 0, fmt.Errorf("creating container: %v", err)
 	}
-	// Clean up partially created container if an error ocurrs.
+	// Clean up partially created container if an error occurs.
 	// Any errors returned by Destroy() itself are ignored.
 	cu := specutils.MakeCleanup(func() {
 		c.Destroy()

@@ -204,7 +204,7 @@ func SetUIDGIDMappings(cmd *exec.Cmd, s *specs.Spec) {
 	}
 }
 
-// HasCapabilities returns true if the user has all capabilties in 'cs'.
+// HasCapabilities returns true if the user has all capabilities in 'cs'.
 func HasCapabilities(cs ...capability.Cap) bool {
 	caps, err := capability.NewPid2(os.Getpid())
 	if err != nil {

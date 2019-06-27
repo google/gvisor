@@ -1189,7 +1189,7 @@ func (s *usageSet) String() string {
 	return s.root.String()
 }
 
-// String stringifes a node (and all of its children) for debugging.
+// String stringifies a node (and all of its children) for debugging.
 func (n *usagenode) String() string {
 	var buf bytes.Buffer
 	n.writeDebugString(&buf, "")

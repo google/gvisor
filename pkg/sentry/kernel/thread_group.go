@@ -268,7 +268,7 @@ func (k *Kernel) newThreadGroup(mounts *fs.MountNamespace, ns *PIDNamespace, sh 
 	return tg
 }
 
-// saveRscr is invopked by stateify.
+// saveRscr is invoked by stateify.
 func (tg *ThreadGroup) saveRscr() *RSEQCriticalRegion {
 	return tg.rscr.Load().(*RSEQCriticalRegion)
 }

@@ -34,7 +34,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		panic(fmt.Sprintf("Non-effective MaxPerms %s cannot be enforced", opts.MaxPerms))
 	}
 
-	// Find a useable range.
+	// Find a usable range.
 	addr, err := mm.findAvailableLocked(opts.Length, findAvailableOpts{
 		Addr:     opts.Addr,
 		Fixed:    opts.Fixed,
