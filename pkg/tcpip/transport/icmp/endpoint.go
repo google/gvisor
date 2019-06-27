@@ -353,19 +353,19 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 }
 
 func (e *endpoint) send4(r *stack.Route, data buffer.View) *tcpip.Error {
-	if len(data) < header.ICMPv4EchoMinimumSize {
+	if len(data) < header.ICMPv4MinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
 
 	// Set the ident to the user-specified port. Sequence number should
 	// already be set by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv4MinimumSize:], e.id.LocalPort)
+	binary.BigEndian.PutUint16(data[header.ICMPv4PayloadOffset:], e.id.LocalPort)
 
-	hdr := buffer.NewPrependable(header.ICMPv4EchoMinimumSize + int(r.MaxHeaderLength()))
+	hdr := buffer.NewPrependable(header.ICMPv4MinimumSize + int(r.MaxHeaderLength()))
 
-	icmpv4 := header.ICMPv4(hdr.Prepend(header.ICMPv4EchoMinimumSize))
+	icmpv4 := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 	copy(icmpv4, data)
-	data = data[header.ICMPv4EchoMinimumSize:]
+	data = data[header.ICMPv4MinimumSize:]
 
 	// Linux performs these basic checks.
 	if icmpv4.Type() != header.ICMPv4Echo || icmpv4.Code() != 0 {
