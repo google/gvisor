@@ -145,14 +145,19 @@ func (s *session) Destroy() {
 	s.client.Close()
 }
 
-// Revalidate implements MountSource.Revalidate.
+// Revalidate implements MountSourceOperations.Revalidate.
 func (s *session) Revalidate(ctx context.Context, name string, parent, child *fs.Inode) bool {
 	return s.cachePolicy.revalidate(ctx, name, parent, child)
 }
 
-// Keep implements MountSource.Keep.
+// Keep implements MountSourceOperations.Keep.
 func (s *session) Keep(d *fs.Dirent) bool {
 	return s.cachePolicy.keep(d)
+}
+
+// CacheReaddir implements MountSourceOperations.CacheReaddir.
+func (s *session) CacheReaddir() bool {
+	return s.cachePolicy.cacheReaddir()
 }
 
 // ResetInodeMappings implements fs.MountSourceOperations.ResetInodeMappings.

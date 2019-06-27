@@ -94,6 +94,13 @@ func (superOperations) Keep(*fs.Dirent) bool {
 	return false
 }
 
+// CacheReaddir implements fs.DirentOperations.CacheReaddir.
+//
+// CacheReaddir returns false because entries change on master operations.
+func (superOperations) CacheReaddir() bool {
+	return false
+}
+
 // ResetInodeMappings implements MountSourceOperations.ResetInodeMappings.
 func (superOperations) ResetInodeMappings() {}
 

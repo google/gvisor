@@ -285,7 +285,7 @@ func NewStaticDirFileOperations(dentries *fs.SortedDentryMap) *StaticDirFileOper
 }
 
 // IterateDir implements DirIterator.IterateDir.
-func (sdfo *StaticDirFileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx, offset int) (int, error) {
+func (sdfo *StaticDirFileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
 	n, err := fs.GenericReaddir(dirCtx, sdfo.dentryMap)
 	return offset + n, err
 }

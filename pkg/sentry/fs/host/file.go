@@ -179,7 +179,7 @@ func (f *fileOperations) Readdir(ctx context.Context, file *fs.File, serializer 
 }
 
 // IterateDir implements fs.DirIterator.IterateDir.
-func (f *fileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx, offset int) (int, error) {
+func (f *fileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
 	if f.dirinfo == nil {
 		f.dirinfo = new(dirInfo)
 		f.dirinfo.buf = make([]byte, usermem.PageSize)

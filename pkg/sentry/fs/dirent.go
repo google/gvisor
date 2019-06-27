@@ -918,7 +918,7 @@ type DirIterator interface {
 	// calls, and must start with the given offset.
 	//
 	// The caller must ensure that this operation is permitted.
-	IterateDir(ctx context.Context, dirCtx *DirCtx, offset int) (int, error)
+	IterateDir(ctx context.Context, d *Dirent, dirCtx *DirCtx, offset int) (int, error)
 }
 
 // DirentReaddir serializes the directory entries of d including "." and "..".
@@ -988,7 +988,7 @@ func direntReaddir(ctx context.Context, d *Dirent, it DirIterator, root *Dirent,
 	// it.IterateDir should be passed an offset that does not include the
 	// initial dot elements.  We will add them back later.
 	offset -= 2
-	newOffset, err := it.IterateDir(ctx, dirCtx, int(offset))
+	newOffset, err := it.IterateDir(ctx, d, dirCtx, int(offset))
 	if int64(newOffset) < offset {
 		panic(fmt.Sprintf("node.Readdir returned offset %v less than input offset %v", newOffset, offset))
 	}

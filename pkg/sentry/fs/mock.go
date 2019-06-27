@@ -75,6 +75,12 @@ func (n *MockMountSourceOps) Keep(dirent *Dirent) bool {
 	return n.keep
 }
 
+// CacheReaddir implements fs.MountSourceOperations.CacheReaddir.
+func (n *MockMountSourceOps) CacheReaddir() bool {
+	// Common case: cache readdir results if there is a dirent cache.
+	return n.keep
+}
+
 // WriteOut implements fs.InodeOperations.WriteOut.
 func (n *MockInodeOperations) WriteOut(context.Context, *Inode) error {
 	return nil

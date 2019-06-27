@@ -64,12 +64,12 @@ func TestMultipleReaddir(t *testing.T) {
 	defer openFile.DecRef()
 
 	c1 := &fs.DirCtx{DirCursor: new(string)}
-	if _, err := openFile.FileOperations.(*fileOperations).IterateDir(ctx, c1, 0); err != nil {
+	if _, err := openFile.FileOperations.(*fileOperations).IterateDir(ctx, dirent, c1, 0); err != nil {
 		t.Fatalf("First Readdir failed: %v", err)
 	}
 
 	c2 := &fs.DirCtx{DirCursor: new(string)}
-	if _, err := openFile.FileOperations.(*fileOperations).IterateDir(ctx, c2, 0); err != nil {
+	if _, err := openFile.FileOperations.(*fileOperations).IterateDir(ctx, dirent, c2, 0); err != nil {
 		t.Errorf("Second Readdir failed: %v", err)
 	}
 

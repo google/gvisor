@@ -431,7 +431,7 @@ func (dfo *dirFileOperations) Seek(ctx context.Context, file *fs.File, whence fs
 }
 
 // IterateDir implements DirIterator.IterateDir.
-func (dfo *dirFileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx, offset int) (int, error) {
+func (dfo *dirFileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
 	dfo.dir.mu.Lock()
 	defer dfo.dir.mu.Unlock()
 
