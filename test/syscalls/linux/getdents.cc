@@ -437,6 +437,19 @@ TYPED_TEST(GetdentsTest, SeekResetsCursor) {
   EXPECT_EQ(expect, this->ReadAndCountAllEntries(&dirents));
 }
 
+// Test that getdents() after SEEK_END succeeds.
+// This is a regression test for #128.
+TYPED_TEST(GetdentsTest, Issue128ProcSeekEnd) {
+  auto fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self", O_RDONLY | O_DIRECTORY));
+  typename TestFixture::DirentBufferType dirents(256);
+
+  ASSERT_THAT(lseek(fd.get(), 0, SEEK_END), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  dirents.Size()),
+              SyscallSucceeds());
+}
+
 // Some tests using the glibc readdir interface.
 TEST(ReaddirTest, OpenDir) {
   DIR* dev;
