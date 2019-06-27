@@ -235,6 +235,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			return nil, fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 		}
 		t.attach()
+		t.grabInitRegs()
 
 		return t, nil
 	}

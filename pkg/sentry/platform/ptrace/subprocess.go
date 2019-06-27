@@ -155,6 +155,7 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 			errChan <- err
 			return
 		}
+		firstThread.grabInitRegs()
 
 		// Ready to handle requests.
 		errChan <- nil
@@ -179,6 +180,7 @@ func newSubprocess(create func() (*thread, error)) (*subprocess, error) {
 
 			// Detach the thread.
 			t.detach()
+			t.initRegs = firstThread.initRegs
 
 			// Return the thread.
 			r <- t
@@ -269,7 +271,9 @@ func (t *thread) attach() {
 
 	// Initialize options.
 	t.init()
+}
 
+func (t *thread) grabInitRegs() {
 	// Grab registers.
 	//
 	// Note that we adjust the current register RIP value to be just before
