@@ -61,8 +61,8 @@ func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
 // destroy is the destructor for an FSContext.
 //
 // This will call DecRef on both root and cwd Dirents.  If either call to
-// DecRef returns an error, then it will be propigated.  If both calls to
-// DecRef return an error, then the one from root.DecRef will be propigated.
+// DecRef returns an error, then it will be propagated.  If both calls to
+// DecRef return an error, then the one from root.DecRef will be propagated.
 //
 // Note that there may still be calls to WorkingDirectory() or RootDirectory()
 // (that return nil).  This is because valid references may still be held via

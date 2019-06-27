@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Utilities for testing capabilties.
+// Utilities for testing capabilities.
 
 #ifndef GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_
 #define GVISOR_TEST_UTIL_CAPABILITY_UTIL_H_

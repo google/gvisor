@@ -47,7 +47,7 @@ func TestMutualExclusion(t *testing.T) {
 	// goroutines ran concurrently within the critical section.
 	//
 	// If one of the goroutines doesn't complete, it's likely a bug that
-	// causes to to wait forever.
+	// causes it to wait forever.
 	const gr = 1000
 	const iters = 100000
 	v := 0

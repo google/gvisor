@@ -146,7 +146,7 @@ func (c *DirentCache) contains(d *Dirent) bool {
 	return c.list.Front() == d
 }
 
-// Invalidate removes all Dirents from the cache, caling DecRef on each.
+// Invalidate removes all Dirents from the cache, calling DecRef on each.
 func (c *DirentCache) Invalidate() {
 	if c == nil {
 		return
@@ -159,7 +159,7 @@ func (c *DirentCache) Invalidate() {
 }
 
 // setMaxSize sets cache max size. If current size is larger than max size, the
-// cache shrinks to acommodate the new max.
+// cache shrinks to accommodate the new max.
 func (c *DirentCache) setMaxSize(max uint64) {
 	c.mu.Lock()
 	c.maxSize = max

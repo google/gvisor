@@ -29,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// rpcInetInode implments fs.InodeOperations.
+// rpcInetInode implements fs.InodeOperations.
 type rpcInetInode struct {
 	fsutil.SimpleFileInode
 

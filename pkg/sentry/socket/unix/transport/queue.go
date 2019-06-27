@@ -100,7 +100,7 @@ func (q *queue) IsWritable() bool {
 
 // Enqueue adds an entry to the data queue if room is available.
 //
-// If truncate is true, Enqueue may truncate the message beforing enqueuing it.
+// If truncate is true, Enqueue may truncate the message before enqueuing it.
 // Otherwise, the entire message must fit. If n < e.Length(), err indicates why.
 //
 // If notify is true, ReaderQueue.Notify must be called:

@@ -220,7 +220,7 @@ TEST_P(UnixSocketPairCmsgTest, BasicFDPassNoSpaceMsgCtrunc) {
 
 // BasicFDPassNullControlMsgCtrunc sends an FD and sets contradictory values for
 // msg_controllen and msg_control. msg_controllen is set to the correct size to
-// accomidate the FD, but msg_control is set to NULL. In this case, msg_control
+// accommodate the FD, but msg_control is set to NULL. In this case, msg_control
 // should override msg_controllen.
 TEST_P(UnixSocketPairCmsgTest, BasicFDPassNullControlMsgCtrunc) {
   // FIXME(gvisor.dev/issue/207): Fix handling of NULL msg_control.
@@ -531,7 +531,7 @@ TEST_P(UnixSocketPairCmsgTest, FDPassInterspersed1) {
 }
 
 // FDPassInterspersed2 checks that sent control messages cannot be read after
-// their assocated data has been read while ignoring the control message by
+// their associated data has been read while ignoring the control message by
 // using read(2) instead of recvmsg(2).
 TEST_P(UnixSocketPairCmsgTest, FDPassInterspersed2) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

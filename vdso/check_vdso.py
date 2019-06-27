@@ -30,7 +30,7 @@ def PageRoundDown(addr):
     addr: An address.
 
   Returns:
-    The address rounded down to thie nearest page.
+    The address rounded down to the nearest page.
   """
   return addr & ~(PAGE_SIZE - 1)
 

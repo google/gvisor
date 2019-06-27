@@ -534,7 +534,7 @@ type BroadcastOption int
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
-// masked target address matches the destination adddress in the row.
+// masked target address matches the destination address in the row.
 type Route struct {
 	// Destination is the address that must be matched against the masked
 	// target address to check if this row is viable.

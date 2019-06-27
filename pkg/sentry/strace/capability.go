@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// CapabilityBitset is the set of capabilties in a bitset.
+// CapabilityBitset is the set of capabilities in a bitset.
 var CapabilityBitset = abi.FlagSet{
 	{
 		Flag: 1 << uint32(linux.CAP_CHOWN),

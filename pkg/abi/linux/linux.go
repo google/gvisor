@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package linux contains the constants and types needed to inferface with a Linux kernel.
+// Package linux contains the constants and types needed to interface with a Linux kernel.
 package linux
 
 // NumSoftIRQ is the number of software IRQs, exposed via /proc/stat.

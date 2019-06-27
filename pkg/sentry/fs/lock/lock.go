@@ -134,7 +134,7 @@ const (
 // LockRegion attempts to acquire a typed lock for the uid on a region
 // of a file. Returns true if successful in locking the region. If false
 // is returned, the caller should normally interpret this as "try again later" if
-// accquiring the lock in a non-blocking mode or "interrupted" if in a blocking mode.
+// acquiring the lock in a non-blocking mode or "interrupted" if in a blocking mode.
 // Blocker is the interface used to provide blocking behavior, passing a nil Blocker
 // will result in non-blocking behavior.
 func (l *Locks) LockRegion(uid UniqueID, t LockType, r LockRange, block Blocker) bool {

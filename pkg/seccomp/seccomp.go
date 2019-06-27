@@ -244,7 +244,7 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action linux.BPFAc
 	return nil
 }
 
-// buildBSTProgram converts a binary tree started in 'root' into BPF code. The ouline of the code
+// buildBSTProgram converts a binary tree started in 'root' into BPF code. The outline of the code
 // is as follows:
 //
 // // SYS_PIPE(22), root

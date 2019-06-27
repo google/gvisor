@@ -132,7 +132,7 @@ func (v *globalsVisitor) visitFields(l *ast.FieldList, kind SymKind) {
 	}
 }
 
-// visitGenDecl is called when a generic declation is encountered, for example,
+// visitGenDecl is called when a generic declaration is encountered, for example,
 // on variable, constant and type declarations. It adds all newly defined
 // symbols to the current scope and reports them if the current scope is the
 // global one.
@@ -490,7 +490,7 @@ func (v *globalsVisitor) visitBlockStmt(s *ast.BlockStmt) {
 	v.popScope()
 }
 
-// visitFuncDecl is called when a function or method declation is encountered.
+// visitFuncDecl is called when a function or method declaration is encountered.
 // it creates a new scope for the function [optional] receiver, parameters and
 // results, and visits all children nodes.
 func (v *globalsVisitor) visitFuncDecl(d *ast.FuncDecl) {

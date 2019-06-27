@@ -679,7 +679,7 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 		return ctx.args.Credentials
 	case fs.CtxRoot:
 		if ctx.args.Root != nil {
-			// Take a refernce on the root dirent that will be
+			// Take a reference on the root dirent that will be
 			// given to the caller.
 			ctx.args.Root.IncRef()
 			return ctx.args.Root

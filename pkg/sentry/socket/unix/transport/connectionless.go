@@ -23,7 +23,7 @@ import (
 )
 
 // connectionlessEndpoint is a unix endpoint for unix sockets that support operating in
-// a conectionless fashon.
+// a connectionless fashon.
 //
 // Specifically, this means datagram unix sockets not created with
 // socketpair(2).

@@ -92,7 +92,7 @@ func (o OpenFlags) String() string {
 	}
 }
 
-// Tag is a messsage tag.
+// Tag is a message tag.
 type Tag uint16
 
 // FID is a file identifier.

@@ -72,7 +72,7 @@ type FilePayload struct {
 	Files []*os.File `json:"-"`
 }
 
-// ReleaseFD releases the indexth FD.
+// ReleaseFD releases the FD at the specified index.
 func (f *FilePayload) ReleaseFD(index int) (*fd.FD, error) {
 	return fd.NewFromFile(f.Files[index])
 }

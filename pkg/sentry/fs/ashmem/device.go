@@ -44,7 +44,7 @@ type Device struct {
 
 var _ fs.InodeOperations = (*Device)(nil)
 
-// NewDevice creates and intializes a Device structure.
+// NewDevice creates and initializes a Device structure.
 func NewDevice(ctx context.Context, owner fs.FileOwner, fp fs.FilePermissions) *Device {
 	return &Device{
 		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, owner, fp, linux.ANON_INODE_FS_MAGIC),

@@ -30,7 +30,7 @@
 namespace gvisor {
 namespace testing {
 
-// MonotonicTimer is a simple timer that uses a monotic clock.
+// MonotonicTimer is a simple timer that uses a monotonic clock.
 class MonotonicTimer {
  public:
   MonotonicTimer() {}

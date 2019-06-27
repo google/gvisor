@@ -29,7 +29,7 @@ namespace {
 using UnixStreamSocketPairTest = SocketPairTest;
 
 // FDPassPartialRead checks that sent control messages cannot be read after
-// any of their assocated data has been read while ignoring the control message
+// any of their associated data has been read while ignoring the control message
 // by using read(2) instead of recvmsg(2).
 TEST_P(UnixStreamSocketPairTest, FDPassPartialRead) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());

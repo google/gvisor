@@ -1,4 +1,4 @@
-# Package linux contains the constants and types needed to inferface with a
+# Package linux contains the constants and types needed to interface with a
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
