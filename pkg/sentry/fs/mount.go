@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/context"
 )
 
-// DirentOperations provide file systems greater control over how long a Dirent stays pinned
-// in core. Implementations must not take Dirent.mu.
+// DirentOperations provide file systems greater control over how long a Dirent
+// stays pinned in core. Implementations must not take Dirent.mu.
 type DirentOperations interface {
 	// Revalidate is called during lookup each time we encounter a Dirent
 	// in the cache. Implementations may update stale properties of the
@@ -37,6 +37,12 @@ type DirentOperations interface {
 	// Keep returns true if the Dirent should be kept in memory for as long
 	// as possible beyond any active references.
 	Keep(dirent *Dirent) bool
+
+	// CacheReaddir returns true if directory entries returned by
+	// FileOperations.Readdir may be cached for future use.
+	//
+	// Postconditions: This method must always return the same value.
+	CacheReaddir() bool
 }
 
 // MountSourceOperations contains filesystem specific operations.
@@ -190,25 +196,28 @@ func (msrc *MountSource) SetDirentCacheLimiter(l *DirentCacheLimiter) {
 // aggressively.
 func NewCachingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(ctx, &SimpleMountSourceOperations{
-		keep:       true,
-		revalidate: false,
+		keep:         true,
+		revalidate:   false,
+		cacheReaddir: true,
 	}, filesystem, flags)
 }
 
 // NewNonCachingMountSource returns a generic mount that will never cache dirents.
 func NewNonCachingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(ctx, &SimpleMountSourceOperations{
-		keep:       false,
-		revalidate: false,
+		keep:         false,
+		revalidate:   false,
+		cacheReaddir: false,
 	}, filesystem, flags)
 }
 
 // NewRevalidatingMountSource returns a generic mount that will cache dirents,
-// but will revalidate them on each lookup.
+// but will revalidate them on each lookup and always perform uncached readdir.
 func NewRevalidatingMountSource(ctx context.Context, filesystem Filesystem, flags MountSourceFlags) *MountSource {
 	return NewMountSource(ctx, &SimpleMountSourceOperations{
-		keep:       true,
-		revalidate: true,
+		keep:         true,
+		revalidate:   true,
+		cacheReaddir: false,
 	}, filesystem, flags)
 }
 
@@ -216,8 +225,9 @@ func NewRevalidatingMountSource(ctx context.Context, filesystem Filesystem, flag
 // an actual filesystem. It is always non-caching.
 func NewPseudoMountSource(ctx context.Context) *MountSource {
 	return NewMountSource(ctx, &SimpleMountSourceOperations{
-		keep:       false,
-		revalidate: false,
+		keep:         false,
+		revalidate:   false,
+		cacheReaddir: false,
 	}, nil, MountSourceFlags{})
 }
 
@@ -225,8 +235,9 @@ func NewPseudoMountSource(ctx context.Context) *MountSource {
 //
 // +stateify savable
 type SimpleMountSourceOperations struct {
-	keep       bool
-	revalidate bool
+	keep         bool
+	revalidate   bool
+	cacheReaddir bool
 }
 
 // Revalidate implements MountSourceOperations.Revalidate.
@@ -237,6 +248,11 @@ func (smo *SimpleMountSourceOperations) Revalidate(context.Context, string, *Ino
 // Keep implements MountSourceOperations.Keep.
 func (smo *SimpleMountSourceOperations) Keep(*Dirent) bool {
 	return smo.keep
+}
+
+// CacheReaddir implements MountSourceOperations.CacheReaddir.
+func (smo *SimpleMountSourceOperations) CacheReaddir() bool {
+	return smo.cacheReaddir
 }
 
 // ResetInodeMappings implements MountSourceOperations.ResetInodeMappings.

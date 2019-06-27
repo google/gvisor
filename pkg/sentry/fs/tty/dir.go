@@ -307,7 +307,7 @@ type dirFileOperations struct {
 var _ fs.FileOperations = (*dirFileOperations)(nil)
 
 // IterateDir implements DirIterator.IterateDir.
-func (df *dirFileOperations) IterateDir(ctx context.Context, dirCtx *fs.DirCtx, offset int) (int, error) {
+func (df *dirFileOperations) IterateDir(ctx context.Context, d *fs.Dirent, dirCtx *fs.DirCtx, offset int) (int, error) {
 	df.di.mu.Lock()
 	defer df.di.mu.Unlock()
 

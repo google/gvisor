@@ -239,7 +239,11 @@ func mustFindFilesystem(name string) fs.Filesystem {
 // addSubmountOverlay overlays the inode over a ramfs tree containing the given
 // paths.
 func addSubmountOverlay(ctx context.Context, inode *fs.Inode, submounts []string) (*fs.Inode, error) {
-	msrc := fs.NewPseudoMountSource(ctx)
+	// Construct a ramfs tree of mount points. The contents never
+	// change, so this can be fully caching. There's no real
+	// filesystem backing this tree, so we set the filesystem to
+	// nil.
+	msrc := fs.NewCachingMountSource(ctx, nil, fs.MountSourceFlags{})
 	mountTree, err := ramfs.MakeDirectoryTree(ctx, msrc, submounts)
 	if err != nil {
 		return nil, fmt.Errorf("creating mount tree: %v", err)

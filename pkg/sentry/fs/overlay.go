@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // The virtual filesystem implements an overlay configuration. For a high-level
@@ -196,6 +197,12 @@ type overlayEntry struct {
 	// these locks is sufficient to read upper; holding all three for writing
 	// is required to mutate it.
 	upper *Inode
+
+	// dirCacheMu protects dirCache.
+	dirCacheMu gvsync.DowngradableRWMutex `state:"nosave"`
+
+	// dirCache is cache of DentAttrs from upper and lower Inodes.
+	dirCache *SortedDentryMap
 }
 
 // newOverlayEntry returns a new overlayEntry.
@@ -256,6 +263,17 @@ func (o *overlayEntry) inodeLocked() *Inode {
 // Preconditions: At least one of o.copyMu, o.mapsMu, or o.dataMu must be locked.
 func (o *overlayEntry) isMappableLocked() bool {
 	return o.inodeLocked().Mappable() != nil
+}
+
+// markDirectoryDirty marks any cached data dirty for this directory. This is
+// necessary in order to ensure that this node does not retain stale state
+// throughout its lifetime across multiple open directory handles.
+//
+// Currently this means invalidating any readdir caches.
+func (o *overlayEntry) markDirectoryDirty() {
+	o.dirCacheMu.Lock()
+	o.dirCache = nil
+	o.dirCacheMu.Unlock()
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.

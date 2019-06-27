@@ -81,6 +81,17 @@ func (o *overlayMountSourceOperations) Keep(dirent *Dirent) bool {
 	return o.upper.Keep(dirent)
 }
 
+// CacheReaddir implements MountSourceOperations.CacheReaddir for an overlay by
+// performing the logical AND of the upper and lower filesystems' CacheReaddir
+// methods.
+//
+// N.B. This is fs-global instead of inode-specific because it must always
+// return the same value. If it was inode-specific, we couldn't guarantee that
+// property across copy up.
+func (o *overlayMountSourceOperations) CacheReaddir() bool {
+	return o.lower.CacheReaddir() && o.upper.CacheReaddir()
+}
+
 // ResetInodeMappings propagates the call to both upper and lower MountSource.
 func (o *overlayMountSourceOperations) ResetInodeMappings() {
 	o.upper.ResetInodeMappings()

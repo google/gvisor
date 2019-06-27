@@ -296,7 +296,6 @@ func (x *overlayFileOperations) save(m state.Map) {
 	m.Save("upper", &x.upper)
 	m.Save("lower", &x.lower)
 	m.Save("dirCursor", &x.dirCursor)
-	m.Save("dirCache", &x.dirCache)
 }
 
 func (x *overlayFileOperations) afterLoad() {}
@@ -304,7 +303,6 @@ func (x *overlayFileOperations) load(m state.Map) {
 	m.Load("upper", &x.upper)
 	m.Load("lower", &x.lower)
 	m.Load("dirCursor", &x.dirCursor)
-	m.Load("dirCache", &x.dirCache)
 }
 
 func (x *overlayMappingIdentity) beforeSave() {}
@@ -508,12 +506,14 @@ func (x *SimpleMountSourceOperations) save(m state.Map) {
 	x.beforeSave()
 	m.Save("keep", &x.keep)
 	m.Save("revalidate", &x.revalidate)
+	m.Save("cacheReaddir", &x.cacheReaddir)
 }
 
 func (x *SimpleMountSourceOperations) afterLoad() {}
 func (x *SimpleMountSourceOperations) load(m state.Map) {
 	m.Load("keep", &x.keep)
 	m.Load("revalidate", &x.revalidate)
+	m.Load("cacheReaddir", &x.cacheReaddir)
 }
 
 func (x *overlayMountSourceOperations) beforeSave() {}
@@ -581,6 +581,7 @@ func (x *overlayEntry) save(m state.Map) {
 	m.Save("lower", &x.lower)
 	m.Save("mappings", &x.mappings)
 	m.Save("upper", &x.upper)
+	m.Save("dirCache", &x.dirCache)
 }
 
 func (x *overlayEntry) afterLoad() {}
@@ -589,6 +590,7 @@ func (x *overlayEntry) load(m state.Map) {
 	m.Load("lower", &x.lower)
 	m.Load("mappings", &x.mappings)
 	m.Load("upper", &x.upper)
+	m.Load("dirCache", &x.dirCache)
 }
 
 func init() {
