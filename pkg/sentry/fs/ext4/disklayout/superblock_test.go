@@ -18,9 +18,10 @@ import (
 	"testing"
 )
 
-// TestBlockGroupSize tests that the block group descriptor structs are of the
-// correct size.
-func TestBlockGroupSize(t *testing.T) {
-	assertSize(t, BlockGroup32Bit{}, 32)
-	assertSize(t, BlockGroup64Bit{}, 64)
+// TestSuperBlockSize tests that the superblock structs are of the correct
+// size.
+func TestSuperBlockSize(t *testing.T) {
+	assertSize(t, SuperBlockOld{}, 84)
+	assertSize(t, SuperBlock32Bit{}, 336)
+	assertSize(t, SuperBlock64Bit{}, 1024)
 }

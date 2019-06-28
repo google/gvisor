@@ -15,12 +15,16 @@
 package disklayout
 
 import (
+	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/binary"
 )
 
-// TestBlockGroupSize tests that the block group descriptor structs are of the
-// correct size.
-func TestBlockGroupSize(t *testing.T) {
-	assertSize(t, BlockGroup32Bit{}, 32)
-	assertSize(t, BlockGroup64Bit{}, 64)
+func assertSize(t *testing.T, v interface{}, want uintptr) {
+	t.Helper()
+
+	if got := binary.Size(v); got != want {
+		t.Errorf("struct %s should be exactly %d bytes but is %d bytes", reflect.TypeOf(v).Name(), want, got)
+	}
 }
