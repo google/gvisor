@@ -8,6 +8,7 @@ go_library(
         "block_group.go",
         "block_group_32.go",
         "block_group_64.go",
+        "superblock.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/fs/ext4/disklayout",
 )

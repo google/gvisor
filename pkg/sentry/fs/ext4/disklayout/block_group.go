@@ -128,8 +128,8 @@ func (f BGFlags) ToInt() uint16 {
 // BGFlagsFromInt converts the 16-bit flag representation to a BGFlags struct.
 func BGFlagsFromInt(flags uint16) BGFlags {
 	return BGFlags{
-		InodeUninit: (flags & BgInodeUninit) > 0,
-		BlockUninit: (flags & BgBlockUninit) > 0,
-		InodeZeroed: (flags & BgInodeZeroed) > 0,
+		InodeUninit: flags&BgInodeUninit > 0,
+		BlockUninit: flags&BgBlockUninit > 0,
+		InodeZeroed: flags&BgInodeZeroed > 0,
 	}
 }
