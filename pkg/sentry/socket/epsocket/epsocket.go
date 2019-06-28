@@ -1993,7 +1993,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// SIOCGSTAMP is implemented by epsocket rather than all commonEndpoint
 	// sockets.
 	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.

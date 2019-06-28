@@ -397,9 +397,49 @@ func (f *overlayFileOperations) UnstableAttr(ctx context.Context, file *File) (U
 	return f.lower.UnstableAttr(ctx)
 }
 
-// Ioctl implements fs.FileOperations.Ioctl and always returns ENOTTY.
-func (*overlayFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return 0, syserror.ENOTTY
+// Ioctl implements fs.FileOperations.Ioctl.
+func (f *overlayFileOperations) Ioctl(ctx context.Context, overlayFile *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+	f.upperMu.Lock()
+	defer f.upperMu.Unlock()
+
+	if f.upper == nil {
+		// It's possible that ioctl changes the file. Since we don't know all
+		// possible ioctls, only allow them to propagate to the upper. Triggering a
+		// copy up on any ioctl would be too drastic. In the future, it can have a
+		// list of ioctls that are safe to send to lower and a list that triggers a
+		// copy up.
+		return 0, syserror.ENOTTY
+	}
+	return f.upper.FileOperations.Ioctl(ctx, f.upper, io, args)
+}
+
+// FifoSize implements FifoSizer.FifoSize.
+func (f *overlayFileOperations) FifoSize(ctx context.Context, overlayFile *File) (rv int64, err error) {
+	err = f.onTop(ctx, overlayFile, func(file *File, ops FileOperations) error {
+		sz, ok := ops.(FifoSizer)
+		if !ok {
+			return syserror.EINVAL
+		}
+		rv, err = sz.FifoSize(ctx, file)
+		return err
+	})
+	return
+}
+
+// SetFifoSize implements FifoSizer.SetFifoSize.
+func (f *overlayFileOperations) SetFifoSize(size int64) (rv int64, err error) {
+	f.upperMu.Lock()
+	defer f.upperMu.Unlock()
+
+	if f.upper == nil {
+		// Named pipes cannot be copied up and changes to the lower are prohibited.
+		return 0, syserror.EINVAL
+	}
+	sz, ok := f.upper.FileOperations.(FifoSizer)
+	if !ok {
+		return 0, syserror.EINVAL
+	}
+	return sz.SetFifoSize(size)
 }
 
 // readdirEntries returns a sorted map of directory entries from the

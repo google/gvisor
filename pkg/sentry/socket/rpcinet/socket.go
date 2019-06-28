@@ -564,7 +564,7 @@ func ifconfIoctlFromStack(ctx context.Context, io usermem.IO, ifc *linux.IFConf)
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (s *socketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (s *socketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	t := ctx.(*kernel.Task)
 
 	cmd := uint32(args[1].Int())

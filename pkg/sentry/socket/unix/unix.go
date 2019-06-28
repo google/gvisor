@@ -152,7 +152,7 @@ func (s *SocketOperations) GetSockName(t *kernel.Task) (interface{}, uint32, *sy
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (s *SocketOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	return epsocket.Ioctl(ctx, s.ep, io, args)
 }
 

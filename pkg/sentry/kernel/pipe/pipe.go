@@ -39,19 +39,6 @@ const (
 	MaximumPipeSize = 8 << 20
 )
 
-// Sizer is an interface for setting and getting the size of a pipe.
-//
-// It is implemented by Pipe and, through embedding, all other types.
-type Sizer interface {
-	// PipeSize returns the pipe capacity in bytes.
-	PipeSize() int64
-
-	// SetPipeSize sets the new pipe capacity in bytes.
-	//
-	// The new size is returned (which may be capped).
-	SetPipeSize(int64) (int64, error)
-}
-
 // Pipe is an encapsulation of a platform-independent pipe.
 // It manages a buffered byte queue shared between a reader/writer
 // pair.
@@ -399,15 +386,15 @@ func (p *Pipe) queued() int64 {
 	return p.size
 }
 
-// PipeSize implements PipeSizer.PipeSize.
-func (p *Pipe) PipeSize() int64 {
+// FifoSize implements fs.FifoSizer.FifoSize.
+func (p *Pipe) FifoSize(context.Context, *fs.File) (int64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.max
+	return p.max, nil
 }
 
-// SetPipeSize implements PipeSize.SetPipeSize.
-func (p *Pipe) SetPipeSize(size int64) (int64, error) {
+// SetFifoSize implements fs.FifoSizer.SetFifoSize.
+func (p *Pipe) SetFifoSize(size int64) (int64, error) {
 	if size < 0 {
 		return 0, syserror.EINVAL
 	}

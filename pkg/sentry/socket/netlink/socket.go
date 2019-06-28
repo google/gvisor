@@ -173,7 +173,7 @@ func (s *Socket) EventUnregister(e *waiter.Entry) {
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (s *Socket) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (*Socket) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
 	return 0, syserror.ENOTTY
 }

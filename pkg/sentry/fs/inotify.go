@@ -202,7 +202,7 @@ func (i *Inotify) UnstableAttr(ctx context.Context, file *File) (UnstableAttr, e
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (i *Inotify) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (i *Inotify) Ioctl(ctx context.Context, _ *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch args[1].Int() {
 	case linux.FIONREAD:
 		i.evMu.Lock()

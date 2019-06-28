@@ -77,7 +77,7 @@ func (rw *ReaderWriter) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (rw *ReaderWriter) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (rw *ReaderWriter) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch int(args[1].Int()) {
 	case linux.FIONREAD:

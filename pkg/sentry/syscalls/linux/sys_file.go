@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -627,7 +626,7 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 
 	default:
-		ret, err := file.FileOperations.Ioctl(t, t.MemoryManager(), args)
+		ret, err := file.FileOperations.Ioctl(t, file, t.MemoryManager(), args)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -1000,17 +999,18 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		err := tmpfs.AddSeals(file.Dirent.Inode, args[2].Uint())
 		return 0, nil, err
 	case linux.F_GETPIPE_SZ:
-		sz, ok := file.FileOperations.(pipe.Sizer)
+		sz, ok := file.FileOperations.(fs.FifoSizer)
 		if !ok {
 			return 0, nil, syserror.EINVAL
 		}
-		return uintptr(sz.PipeSize()), nil, nil
+		size, err := sz.FifoSize(t, file)
+		return uintptr(size), nil, err
 	case linux.F_SETPIPE_SZ:
-		sz, ok := file.FileOperations.(pipe.Sizer)
+		sz, ok := file.FileOperations.(fs.FifoSizer)
 		if !ok {
 			return 0, nil, syserror.EINVAL
 		}
-		n, err := sz.SetPipeSize(int64(args[2].Int()))
+		n, err := sz.SetFifoSize(int64(args[2].Int()))
 		return uintptr(n), nil, err
 	default:
 		// Everything else is not yet supported.
