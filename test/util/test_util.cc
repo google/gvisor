@@ -73,7 +73,7 @@ Platform GvisorPlatform() {
 CPUVendor GetCPUVendor() {
   uint32_t eax, ebx, ecx, edx;
   std::string vendor_str;
-  // Get vendor std::string (issue CPUID with eax = 0)
+  // Get vendor string (issue CPUID with eax = 0)
   GETCPUID(eax, ebx, ecx, edx, 0, 0);
   vendor_str.append(reinterpret_cast<char*>(&ebx), 4);
   vendor_str.append(reinterpret_cast<char*>(&edx), 4);
@@ -93,7 +93,8 @@ bool operator==(const KernelVersion& first, const KernelVersion& second) {
 
 PosixErrorOr<KernelVersion> ParseKernelVersion(absl::string_view vers_str) {
   KernelVersion version = {};
-  std::vector<std::string> values = absl::StrSplit(vers_str, absl::ByAnyChar(".-"));
+  std::vector<std::string> values =
+      absl::StrSplit(vers_str, absl::ByAnyChar(".-"));
   if (values.size() == 2) {
     ASSIGN_OR_RETURN_ERRNO(version.major, Atoi<int>(values[0]));
     ASSIGN_OR_RETURN_ERRNO(version.minor, Atoi<int>(values[1]));

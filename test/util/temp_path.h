@@ -30,7 +30,7 @@ namespace testing {
 // Distinct calls to NewTempAbsPathInDir from the same process, even from
 // multiple threads, are guaranteed to return different paths. Distinct calls to
 // NewTempAbsPathInDir from different processes are not synchronized.
-std::string NewTempAbsPathInDir(absl::string_view base);
+std::string NewTempAbsPathInDir(absl::string_view const dir);
 
 // Like NewTempAbsPathInDir, but the returned path is in the test's temporary
 // directory, as provided by the testing framework.
@@ -105,7 +105,7 @@ class TempPath {
 
   // Changes the path this TempPath represents. If the TempPath already
   // represented a path, deletes and returns that path. Otherwise returns the
-  // empty std::string.
+  // empty string.
   std::string reset(std::string newpath);
   std::string reset() { return reset(""); }
 

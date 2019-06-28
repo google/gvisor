@@ -53,7 +53,7 @@ SocketPairKind UnixDomainSocketPair(int type) {
 
 SocketPairKind FilesystemBoundUnixDomainSocketPair(int type) {
   std::string description = absl::StrCat(DescribeUnixDomainSocketType(type),
-                                    " created with filesystem binding");
+                                         " created with filesystem binding");
   if ((type & SOCK_DGRAM) == SOCK_DGRAM) {
     return SocketPairKind{
         description, AF_UNIX, type, 0,
@@ -65,8 +65,9 @@ SocketPairKind FilesystemBoundUnixDomainSocketPair(int type) {
 }
 
 SocketPairKind AbstractBoundUnixDomainSocketPair(int type) {
-  std::string description = absl::StrCat(DescribeUnixDomainSocketType(type),
-                                    " created with abstract namespace binding");
+  std::string description =
+      absl::StrCat(DescribeUnixDomainSocketType(type),
+                   " created with abstract namespace binding");
   if ((type & SOCK_DGRAM) == SOCK_DGRAM) {
     return SocketPairKind{
         description, AF_UNIX, type, 0,
@@ -78,7 +79,7 @@ SocketPairKind AbstractBoundUnixDomainSocketPair(int type) {
 
 SocketPairKind SocketpairGoferUnixDomainSocketPair(int type) {
   std::string description = absl::StrCat(DescribeUnixDomainSocketType(type),
-                                    " created with the socketpair gofer");
+                                         " created with the socketpair gofer");
   return SocketPairKind{description, AF_UNIX, type, 0,
                         SocketpairGoferSocketPairCreator(AF_UNIX, type, 0)};
 }

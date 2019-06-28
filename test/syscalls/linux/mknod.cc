@@ -90,7 +90,7 @@ TEST(MknodTest, Fifo) {
   ASSERT_THAT(stat(fifo.c_str(), &st), SyscallSucceeds());
   EXPECT_TRUE(S_ISFIFO(st.st_mode));
 
-  std::string msg = "some string";
+  std::string msg = "some std::string";
   std::vector<char> buf(512);
 
   // Read-end of the pipe.
@@ -116,7 +116,7 @@ TEST(MknodTest, FifoOtrunc) {
   ASSERT_THAT(stat(fifo.c_str(), &st), SyscallSucceeds());
   EXPECT_TRUE(S_ISFIFO(st.st_mode));
 
-  std::string msg = "some string";
+  std::string msg = "some std::string";
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {
@@ -144,7 +144,7 @@ TEST(MknodTest, FifoTruncNoOp) {
   ASSERT_THAT(stat(fifo.c_str(), &st), SyscallSucceeds());
   EXPECT_TRUE(S_ISFIFO(st.st_mode));
 
-  std::string msg = "some string";
+  std::string msg = "some std::string";
   std::vector<char> buf(512);
   // Read-end of the pipe.
   ScopedThread t([&fifo, &buf, &msg]() {

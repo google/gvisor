@@ -135,7 +135,7 @@ TEST(SendFileTest, SendTriviallyWithBothFilesReadWrite) {
 
 TEST(SendFileTest, SendAndUpdateFileOffset) {
   // Create temp files.
-  // Test input std::string length must be > 2 AND even.
+  // Test input string length must be > 2 AND even.
   constexpr char kData[] = "The slings and arrows of outrageous fortune,";
   constexpr int kDataSize = sizeof(kData) - 1;
   constexpr int kHalfDataSize = kDataSize / 2;
@@ -180,7 +180,7 @@ TEST(SendFileTest, SendAndUpdateFileOffset) {
 
 TEST(SendFileTest, SendAndUpdateFileOffsetFromNonzeroStartingPoint) {
   // Create temp files.
-  // Test input std::string length must be > 2 AND divisible by 4.
+  // Test input string length must be > 2 AND divisible by 4.
   constexpr char kData[] = "The slings and arrows of outrageous fortune,";
   constexpr int kDataSize = sizeof(kData) - 1;
   constexpr int kHalfDataSize = kDataSize / 2;
@@ -233,7 +233,7 @@ TEST(SendFileTest, SendAndUpdateFileOffsetFromNonzeroStartingPoint) {
 
 TEST(SendFileTest, SendAndUpdateGivenOffset) {
   // Create temp files.
-  // Test input std::string length must be >= 4 AND divisible by 4.
+  // Test input string length must be >= 4 AND divisible by 4.
   constexpr char kData[] = "Or to take Arms against a Sea of troubles,";
   constexpr int kDataSize = sizeof(kData) + 1;
   constexpr int kHalfDataSize = kDataSize / 2;

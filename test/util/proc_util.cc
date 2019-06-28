@@ -76,7 +76,8 @@ PosixErrorOr<ProcMapsEntry> ParseProcMapsLine(absl::string_view line) {
   if (parts.size() == 6) {
     // A filename is present. However, absl::StrSplit retained the whitespace
     // between the inode number and the filename.
-    map_entry.filename = std::string(absl::StripLeadingAsciiWhitespace(parts[5]));
+    map_entry.filename =
+        std::string(absl::StripLeadingAsciiWhitespace(parts[5]));
   }
 
   return map_entry;

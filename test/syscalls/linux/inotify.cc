@@ -122,8 +122,8 @@ std::string DumpEvents(const std::vector<Event>& events, int indent_level) {
                      (events.size() > 1) ? "s" : "");
   int i = 0;
   for (const Event& ev : events) {
-    ss << StreamFormat("%sevents[%d]: %s\n", std::string(indent_level, '\t'), i++,
-                       DumpEvent(ev));
+    ss << StreamFormat("%sevents[%d]: %s\n", std::string(indent_level, '\t'),
+                       i++, DumpEvent(ev));
   }
   return ss.str();
 }
@@ -295,10 +295,10 @@ PosixErrorOr<std::vector<Event>> DrainEvents(int fd) {
       if (event.len > 0) {
         TEST_CHECK(static_cast<int>(sizeof(struct inotify_event) + event.len) <=
                    readlen);
-        ev.name =
-            std::string(cursor + offsetof(struct inotify_event, name));  // NOLINT
+        ev.name = std::string(cursor +
+                              offsetof(struct inotify_event, name));  // NOLINT
         // Name field should always be smaller than event.len, otherwise we have
-        // a buffer overflow. The two sizes aren't equal because the std::string
+        // a buffer overflow. The two sizes aren't equal because the string
         // constructor will stop at the first null byte, while event.name may be
         // padded up to event.len using multiple null bytes.
         TEST_CHECK(ev.name.size() <= event.len);
@@ -319,7 +319,8 @@ PosixErrorOr<FileDescriptor> InotifyInit1(int flags) {
   return FileDescriptor(fd);
 }
 
-PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path, uint32_t mask) {
+PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path,
+                                  uint32_t mask) {
   int wd;
   EXPECT_THAT(wd = inotify_add_watch(fd, path.c_str(), mask),
               SyscallSucceeds());
@@ -980,8 +981,8 @@ TEST(Inotify, WatchOnRelativePath) {
   EXPECT_THAT(chdir(root.path().c_str()), SyscallSucceeds());
 
   // Add a watch on file1 with a relative path.
-  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), std::string(Basename(file1.path())), IN_ALL_EVENTS));
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(InotifyAddWatch(
+      fd.get(), std::string(Basename(file1.path())), IN_ALL_EVENTS));
 
   // Perform a read on file1, this should generate an IN_ACCESS event.
   char c;

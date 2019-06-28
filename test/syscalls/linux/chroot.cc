@@ -273,7 +273,8 @@ TEST(ChrootTest, ProcMemSelfMapsNoEscapeProcOpen) {
   ASSERT_GT(bytes_read, 0);
 
   // Finally we want to make sure the maps don't contain the chroot path
-  ASSERT_EQ(std::string(buf, bytes_read).find(temp_dir.path()), std::string::npos);
+  ASSERT_EQ(std::string(buf, bytes_read).find(temp_dir.path()),
+            std::string::npos);
 }
 
 // Test that mounts outside the chroot will not appear in /proc/self/mounts or

@@ -51,7 +51,7 @@ class ABSL_MUST_USE_RESULT PosixError {
 
   std::string error_message() const { return msg_; }
 
-  // ToString produces a full std::string representation of this posix error
+  // ToString produces a full string representation of this posix error
   // including the printable representation of the errno and the error message.
   std::string ToString() const;
 

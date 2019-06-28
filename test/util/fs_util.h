@@ -61,7 +61,7 @@ PosixError SetContents(absl::string_view path, absl::string_view contents);
 PosixError CreateWithContents(absl::string_view path,
                               absl::string_view contents, int mode = 0666);
 
-// Attempts to read the entire contents of the file into the provided std::string
+// Attempts to read the entire contents of the file into the provided string
 // buffer or returns an error.
 PosixError GetContents(absl::string_view path, std::string* output);
 
@@ -69,7 +69,7 @@ PosixError GetContents(absl::string_view path, std::string* output);
 PosixErrorOr<std::string> GetContents(absl::string_view path);
 
 // Attempts to read the entire contents of the provided fd into the provided
-// std::string or returns an error.
+// string or returns an error.
 PosixError GetContentsFD(int fd, std::string* output);
 
 // Attempts to read the entire contents of the provided fd or returns an error.
@@ -94,7 +94,7 @@ PosixError WalkTree(
 // method does not walk the tree recursively it only returns the elements
 // in that directory.
 PosixErrorOr<std::vector<std::string>> ListDir(absl::string_view abspath,
-                                          bool skipdots);
+                                               bool skipdots);
 
 // Attempt to recursively delete a directory or file. Returns an error and
 // the number of undeleted directories and files. If either
@@ -108,20 +108,20 @@ PosixError RecursivelyCreateDir(absl::string_view path);
 // Makes a path absolute with respect to an optional base. If no base is
 // provided it will use the current working directory.
 PosixErrorOr<std::string> MakeAbsolute(absl::string_view filename,
-                                  absl::string_view base);
+                                       absl::string_view base);
 
 // Generates a relative path from the source directory to the destination
 // (dest) file or directory.  This uses ../ when necessary for destinations
 // which are not nested within the source.  Both source and dest are required
-// to be absolute paths, and an empty std::string will be returned if they are not.
+// to be absolute paths, and an empty string will be returned if they are not.
 PosixErrorOr<std::string> GetRelativePath(absl::string_view source,
-                                     absl::string_view dest);
+                                          absl::string_view dest);
 
 // Returns the part of the path before the final "/", EXCEPT:
 // * If there is a single leading "/" in the path, the result will be the
 //   leading "/".
 // * If there is no "/" in the path, the result is the empty prefix of the
-//   input std::string.
+//   input string.
 absl::string_view Dirname(absl::string_view path);
 
 // Return the parts of the path, split on the final "/".  If there is no
@@ -135,7 +135,7 @@ std::pair<absl::string_view, absl::string_view> SplitPath(
 // "/" in the path, the result is the same as the input.
 // Note that this function's behavior differs from the Unix basename
 // command if path ends with "/". For such paths, this function returns the
-// empty std::string.
+// empty string.
 absl::string_view Basename(absl::string_view path);
 
 // Collapse duplicate "/"s, resolve ".." and "." path elements, remove
@@ -144,7 +144,7 @@ absl::string_view Basename(absl::string_view path);
 // NOTE: This respects relative vs. absolute paths, but does not
 // invoke any system calls (getcwd(2)) in order to resolve relative
 // paths wrt actual working directory.  That is, this is purely a
-// std::string manipulation, completely independent of process state.
+// string manipulation, completely independent of process state.
 std::string CleanPath(absl::string_view path);
 
 // Returns the full path to the executable of the given pid or a PosixError.
@@ -174,7 +174,7 @@ inline std::string JoinPath(absl::string_view path) {
 std::string JoinPath(absl::string_view path1, absl::string_view path2);
 template <typename... T>
 inline std::string JoinPath(absl::string_view path1, absl::string_view path2,
-                       absl::string_view path3, const T&... args) {
+                            absl::string_view path3, const T&... args) {
   return internal::JoinPathImpl({path1, path2, path3, args...});
 }
 }  // namespace testing

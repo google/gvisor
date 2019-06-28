@@ -50,7 +50,7 @@ int WriteNumber(int fd, uint32_t val) {
   constexpr int kBufferSize = 11;
   char buf[kBufferSize];
 
-  // Convert the number to std::string.
+  // Convert the number to string.
   char* s = buf + sizeof(buf) - 1;
   size_t size = 0;
 

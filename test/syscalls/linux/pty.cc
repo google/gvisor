@@ -105,7 +105,7 @@ struct Field {
   uint64_t value;
 };
 
-// ParseFields returns a std::string representation of value, using the names in
+// ParseFields returns a string representation of value, using the names in
 // fields.
 std::string ParseFields(const Field* fields, size_t len, uint64_t value) {
   bool first = true;

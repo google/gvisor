@@ -67,7 +67,7 @@ std::string ExtractPath(const struct sockaddr* addr) {
     // Abstract socket paths are null padded to the end of the struct
     // sockaddr. However, these null bytes may or may not show up in
     // /proc/net/unix depending on the kernel version. Truncate after the first
-    // null byte (by treating path as a c-std::string).
+    // null byte (by treating path as a c-string).
     return StrCat("@", &path[1]);
   }
   return std::string(path);
@@ -80,7 +80,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
 
   bool skipped_header = false;
   std::vector<UnixEntry> entries;
-  std::vector<std::string> lines = absl::StrSplit(content, absl::ByAnyChar("\n"));
+  std::vector<std::string> lines = absl::StrSplit(content, '\n');
   std::cerr << "<contents of /proc/net/unix>" << std::endl;
   for (std::string line : lines) {
     // Emit the proc entry to the test output to provide context for the test
@@ -123,7 +123,8 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
     UnixEntry entry;
 
     // Process the first 6 fields, up to but not including "Inode".
-    std::vector<std::string> fields = absl::StrSplit(line, absl::MaxSplits(' ', 6));
+    std::vector<std::string> fields =
+        absl::StrSplit(line, absl::MaxSplits(' ', 6));
 
     if (fields.size() < 7) {
       return PosixError(EINVAL, StrFormat("Invalid entry: '%s'\n", line));

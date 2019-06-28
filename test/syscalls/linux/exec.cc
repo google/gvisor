@@ -255,7 +255,8 @@ TEST(ExecDeathTest, InterpreterScriptArgNUL) {
 
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(),
-      absl::StrCat("#!", link.path(), " foo", std::string(1, '\0'), "bar"), 0755));
+      absl::StrCat("#!", link.path(), " foo", std::string(1, '\0'), "bar"),
+      0755));
 
   CheckOutput(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
               absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));

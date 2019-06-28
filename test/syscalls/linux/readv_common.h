@@ -20,7 +20,7 @@
 namespace gvisor {
 namespace testing {
 
-// A NUL-terminated std::string containing the data used by tests using the following
+// A NUL-terminated string containing the data used by tests using the following
 // test helpers.
 extern const char kReadvTestData[];
 

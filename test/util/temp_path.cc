@@ -70,13 +70,16 @@ std::string NewTempAbsPathInDir(absl::string_view const dir) {
   return JoinPath(dir, NextTempBasename());
 }
 
-std::string NewTempAbsPath() { return NewTempAbsPathInDir(GetAbsoluteTestTmpdir()); }
+std::string NewTempAbsPath() {
+  return NewTempAbsPathInDir(GetAbsoluteTestTmpdir());
+}
 
 std::string NewTempRelPath() { return NextTempBasename(); }
 
 std::string GetAbsoluteTestTmpdir() {
   char* env_tmpdir = getenv("TEST_TMPDIR");
-  std::string tmp_dir = env_tmpdir != nullptr ? std::string(env_tmpdir) : "/tmp";
+  std::string tmp_dir =
+      env_tmpdir != nullptr ? std::string(env_tmpdir) : "/tmp";
 
   return MakeAbsolute(tmp_dir, "").ValueOrDie();
 }

@@ -29,7 +29,8 @@ namespace {
 
 TEST(FsUtilTest, RecursivelyCreateDirManualDelete) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const std::string base_path = JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
+  const std::string base_path =
+      JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
 
   ASSERT_THAT(Exists(base_path), IsPosixErrorOkAndHolds(false));
   ASSERT_NO_ERRNO(RecursivelyCreateDir(base_path));
@@ -48,7 +49,8 @@ TEST(FsUtilTest, RecursivelyCreateDirManualDelete) {
 
 TEST(FsUtilTest, RecursivelyCreateAndDeleteDir) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const std::string base_path = JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
+  const std::string base_path =
+      JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
 
   ASSERT_THAT(Exists(base_path), IsPosixErrorOkAndHolds(false));
   ASSERT_NO_ERRNO(RecursivelyCreateDir(base_path));
@@ -60,7 +62,8 @@ TEST(FsUtilTest, RecursivelyCreateAndDeleteDir) {
 
 TEST(FsUtilTest, RecursivelyCreateAndDeletePartial) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const std::string base_path = JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
+  const std::string base_path =
+      JoinPath(root.path(), "/a/b/c/d/e/f/g/h/i/j/k/l/m");
 
   ASSERT_THAT(Exists(base_path), IsPosixErrorOkAndHolds(false));
   ASSERT_NO_ERRNO(RecursivelyCreateDir(base_path));

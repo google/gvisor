@@ -160,7 +160,7 @@ class SocketTest : public ::testing::Test {
 
 // MatchesStringLength checks that a tuple argument of (struct iovec *, int)
 // corresponding to an iovec array and its length, contains data that matches
-// the std::string length strlen.
+// the string length strlen.
 MATCHER_P(MatchesStringLength, strlen, "") {
   struct iovec* iovs = arg.first;
   int niov = arg.second;
@@ -177,7 +177,7 @@ MATCHER_P(MatchesStringLength, strlen, "") {
 
 // MatchesStringValue checks that a tuple argument of (struct iovec *, int)
 // corresponding to an iovec array and its length, contains data that matches
-// the std::string value str.
+// the string value str.
 MATCHER_P(MatchesStringValue, str, "") {
   struct iovec* iovs = arg.first;
   int len = strlen(str);

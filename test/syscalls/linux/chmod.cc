@@ -140,7 +140,8 @@ TEST(ChmodTest, FchmodatFile) {
       SyscallSucceeds());
 
   ASSERT_THAT(
-      fchmodat(parent_fd, std::string(Basename(temp_file.path())).c_str(), 0444, 0),
+      fchmodat(parent_fd, std::string(Basename(temp_file.path())).c_str(), 0444,
+               0),
       SyscallSucceeds());
   EXPECT_THAT(close(parent_fd), SyscallSucceeds());
 
@@ -165,8 +166,9 @@ TEST(ChmodTest, FchmodatDir) {
               SyscallSucceeds());
   EXPECT_THAT(close(fd), SyscallSucceeds());
 
-  ASSERT_THAT(fchmodat(parent_fd, std::string(Basename(dir.path())).c_str(), 0, 0),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      fchmodat(parent_fd, std::string(Basename(dir.path())).c_str(), 0, 0),
+      SyscallSucceeds());
   EXPECT_THAT(close(parent_fd), SyscallSucceeds());
 
   EXPECT_THAT(open(dir.path().c_str(), O_RDONLY | O_DIRECTORY),

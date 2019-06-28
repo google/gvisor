@@ -206,8 +206,8 @@ PosixError WithSubprocess(SubprocessCallback const& running,
 }
 
 // Access the file returned by name when a subprocess is running.
-PosixError AccessWhileRunning(std::function<std::string(int pid)> name, int flags,
-                              std::function<void(int fd)> access) {
+PosixError AccessWhileRunning(std::function<std::string(int pid)> name,
+                              int flags, std::function<void(int fd)> access) {
   FileDescriptor fd;
   return WithSubprocess(
       [&](int pid) -> PosixError {
@@ -221,8 +221,8 @@ PosixError AccessWhileRunning(std::function<std::string(int pid)> name, int flag
 }
 
 // Access the file returned by name when the a subprocess is zombied.
-PosixError AccessWhileZombied(std::function<std::string(int pid)> name, int flags,
-                              std::function<void(int fd)> access) {
+PosixError AccessWhileZombied(std::function<std::string(int pid)> name,
+                              int flags, std::function<void(int fd)> access) {
   FileDescriptor fd;
   return WithSubprocess(
       [&](int pid) -> PosixError {
@@ -239,8 +239,8 @@ PosixError AccessWhileZombied(std::function<std::string(int pid)> name, int flag
 }
 
 // Access the file returned by name when the a subprocess is exited.
-PosixError AccessWhileExited(std::function<std::string(int pid)> name, int flags,
-                             std::function<void(int fd)> access) {
+PosixError AccessWhileExited(std::function<std::string(int pid)> name,
+                             int flags, std::function<void(int fd)> access) {
   FileDescriptor fd;
   return WithSubprocess(
       [&](int pid) -> PosixError {
@@ -704,7 +704,8 @@ TEST(ProcSelfExe, Absolute) {
 
 // Sanity check for /proc/cpuinfo fields that must be present.
 TEST(ProcCpuinfo, RequiredFieldsArePresent) {
-  std::string proc_cpuinfo = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cpuinfo"));
+  std::string proc_cpuinfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/cpuinfo"));
   ASSERT_FALSE(proc_cpuinfo.empty());
   std::vector<std::string> cpuinfo_fields = absl::StrSplit(proc_cpuinfo, '\n');
 
@@ -743,7 +744,8 @@ TEST(ProcCpuinfo, DeniesWrite) {
 
 // Sanity checks that uptime is present.
 TEST(ProcUptime, IsPresent) {
-  std::string proc_uptime = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/uptime"));
+  std::string proc_uptime =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/uptime"));
   ASSERT_FALSE(proc_uptime.empty());
   std::vector<std::string> uptime_parts = absl::StrSplit(proc_uptime, ' ');
 
@@ -775,7 +777,8 @@ TEST(ProcUptime, IsPresent) {
 }
 
 TEST(ProcMeminfo, ContainsBasicFields) {
-  std::string proc_meminfo = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/meminfo"));
+  std::string proc_meminfo =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/meminfo"));
   EXPECT_THAT(proc_meminfo, AllOf(ContainsRegex(R"(MemTotal:\s+[0-9]+ kB)"),
                                   ContainsRegex(R"(MemFree:\s+[0-9]+ kB)")));
 }
@@ -853,12 +856,14 @@ TEST(ProcStat, Fields) {
 }
 
 TEST(ProcLoadavg, EndsWithNewline) {
-  std::string proc_loadvg = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
+  std::string proc_loadvg =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
   EXPECT_EQ(proc_loadvg.back(), '\n');
 }
 
 TEST(ProcLoadavg, Fields) {
-  std::string proc_loadvg = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
+  std::string proc_loadvg =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/loadavg"));
   std::vector<std::string> lines = absl::StrSplit(proc_loadvg, '\n');
 
   // Single line.
@@ -1238,10 +1243,12 @@ TEST(ProcPidStatTest, VmStats) {
   EXPECT_NE('0', data_str[0]);
 }
 
-// Parse an array of NUL-terminated char* arrays, returning a vector of strings.
+// Parse an array of NUL-terminated char* arrays, returning a vector of
+// strings.
 std::vector<std::string> ParseNulTerminatedStrings(std::string contents) {
   EXPECT_EQ('\0', contents.back());
-  // The split will leave an empty std::string if the NUL-byte remains, so pop it.
+  // The split will leave an empty string if the NUL-byte remains, so pop
+  // it.
   contents.pop_back();
 
   return absl::StrSplit(contents, '\0');
@@ -1491,7 +1498,8 @@ TEST(ProcPidFile, SubprocessExited) {
 }
 
 PosixError DirContainsImpl(absl::string_view path,
-                           const std::vector<std::string>& targets, bool strict) {
+                           const std::vector<std::string>& targets,
+                           bool strict) {
   ASSIGN_OR_RETURN_ERRNO(auto listing, ListDir(path, false));
   bool success = true;
 
@@ -1530,8 +1538,8 @@ PosixError DirContainsExactly(absl::string_view path,
   return DirContainsImpl(path, targets, true);
 }
 
-PosixError EventuallyDirContainsExactly(absl::string_view path,
-                                        const std::vector<std::string>& targets) {
+PosixError EventuallyDirContainsExactly(
+    absl::string_view path, const std::vector<std::string>& targets) {
   constexpr int kRetryCount = 100;
   const absl::Duration kRetryDelay = absl::Milliseconds(100);
 
@@ -1553,11 +1561,13 @@ TEST(ProcTask, Basic) {
       DirContains("/proc/self/task", {".", "..", absl::StrCat(getpid())}));
 }
 
-std::vector<std::string> TaskFiles(const std::vector<std::string>& initial_contents,
-                              const std::vector<pid_t>& pids) {
+std::vector<std::string> TaskFiles(
+    const std::vector<std::string>& initial_contents,
+    const std::vector<pid_t>& pids) {
   return VecCat<std::string>(
       initial_contents,
-      ApplyVec<std::string>([](const pid_t p) { return absl::StrCat(p); }, pids));
+      ApplyVec<std::string>([](const pid_t p) { return absl::StrCat(p); },
+                            pids));
 }
 
 std::vector<std::string> TaskFiles(const std::vector<pid_t>& pids) {
@@ -1894,7 +1904,8 @@ void CheckDuplicatesRecursively(std::string path) {
       continue;
     }
 
-    ASSERT_EQ(children.find(std::string(dp->d_name)), children.end()) << dp->d_name;
+    ASSERT_EQ(children.find(std::string(dp->d_name)), children.end())
+        << dp->d_name;
     children.insert(std::string(dp->d_name));
 
     ASSERT_NE(dp->d_type, DT_UNKNOWN);

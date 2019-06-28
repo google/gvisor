@@ -151,8 +151,8 @@ TEST(NetlinkRouteTest, GetPeerName) {
 //    the value is considered ok.
 // 2: A description of what the sockopt value is expected to be. Should complete
 //    the sentence "<value> was unexpected, expected <description>"
-using SockOptTest =
-    ::testing::TestWithParam<std::tuple<int, std::function<bool(int)>, std::string>>;
+using SockOptTest = ::testing::TestWithParam<
+    std::tuple<int, std::function<bool(int)>, std::string>>;
 
 TEST_P(SockOptTest, GetSockOpt) {
   int sockopt = std::get<0>(GetParam());

@@ -21,7 +21,7 @@
 namespace gvisor {
 namespace testing {
 
-// DescribeUnixDomainSocketType returns a human-readable std::string explaining the
+// DescribeUnixDomainSocketType returns a human-readable string explaining the
 // given Unix domain socket type.
 std::string DescribeUnixDomainSocketType(int type);
 

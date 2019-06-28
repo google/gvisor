@@ -60,7 +60,8 @@ int memfd_create(const std::string& name, unsigned int flags) {
   return syscall(__NR_memfd_create, name.c_str(), flags);
 }
 
-PosixErrorOr<FileDescriptor> MemfdCreate(const std::string& name, uint32_t flags) {
+PosixErrorOr<FileDescriptor> MemfdCreate(const std::string& name,
+                                         uint32_t flags) {
   int fd = memfd_create(name, flags);
   if (fd < 0) {
     return PosixError(

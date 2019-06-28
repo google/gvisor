@@ -162,7 +162,8 @@ TEST(MadviseDontforkTest, DontforkShared) {
   // Mmap two shared file-backed pages and MADV_DONTFORK the second page.
   TempPath f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       /* parent = */ GetAbsoluteTestTmpdir(),
-      /* content = */ std::string(kPageSize * 2, 2), TempPath::kDefaultFileMode));
+      /* content = */ std::string(kPageSize * 2, 2),
+      TempPath::kDefaultFileMode));
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDWR));
 
   Mapping m = ASSERT_NO_ERRNO_AND_VALUE(Mmap(

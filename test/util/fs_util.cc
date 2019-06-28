@@ -290,7 +290,7 @@ PosixError WalkTree(
 }
 
 PosixErrorOr<std::vector<std::string>> ListDir(absl::string_view abspath,
-                                          bool skipdots) {
+                                               bool skipdots) {
   std::vector<std::string> files;
 
   DIR* dir = opendir(std::string(abspath).c_str());
@@ -381,7 +381,7 @@ PosixError RecursivelyCreateDir(absl::string_view path) {
 // Makes a path absolute with respect to an optional base. If no base is
 // provided it will use the current working directory.
 PosixErrorOr<std::string> MakeAbsolute(absl::string_view filename,
-                                  absl::string_view base) {
+                                       absl::string_view base) {
   if (filename.empty()) {
     return PosixError(EINVAL, "filename cannot be empty.");
   }
@@ -494,7 +494,7 @@ std::string CleanPath(const absl::string_view unclean_path) {
 }
 
 PosixErrorOr<std::string> GetRelativePath(absl::string_view source,
-                                     absl::string_view dest) {
+                                          absl::string_view dest) {
   if (!absl::StartsWith(source, "/") || !absl::StartsWith(dest, "/")) {
     // At least one of the inputs is not an absolute path.
     return PosixError(

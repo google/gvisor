@@ -186,10 +186,10 @@ INSTANTIATE_TEST_SUITE_P(
           return errorFromReturn("fchownat-fd", rc);
         },
         [](const std::string& path, uid_t owner, gid_t group) -> PosixError {
-          ASSIGN_OR_RETURN_ERRNO(
-              auto dirfd, Open(std::string(Dirname(path)), O_DIRECTORY | O_RDONLY));
-          int rc = fchownat(dirfd.get(), std::string(Basename(path)).c_str(), owner,
-                            group, 0);
+          ASSIGN_OR_RETURN_ERRNO(auto dirfd, Open(std::string(Dirname(path)),
+                                                  O_DIRECTORY | O_RDONLY));
+          int rc = fchownat(dirfd.get(), std::string(Basename(path)).c_str(),
+                            owner, group, 0);
           MaybeSave();
           return errorFromReturn("fchownat-dirfd", rc);
         }));
