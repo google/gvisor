@@ -184,6 +184,7 @@ func (f *subtasksFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dentry
 		taskInts = append(taskInts, int(tid))
 	}
 
+	sort.Sort(sort.IntSlice(taskInts))
 	// Find the task to start at.
 	idx := sort.SearchInts(taskInts, int(offset))
 	if idx == len(taskInts) {
