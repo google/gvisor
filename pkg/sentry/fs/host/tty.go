@@ -114,7 +114,7 @@ func (t *TTYFileOperations) Release() {
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (t *TTYFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Ignore arg[0].  This is the real FD:
 	fd := t.fileOperations.iops.fileState.FD()
 	ioctl := args[1].Uint64()

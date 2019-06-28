@@ -339,11 +339,13 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
   SKIP_IF(!CreateBlocking());
 
   ScopedThread t([this]() {
-    std::vector<char> buf(2 * Size());
+    const int pipe_size = Size();
+    std::vector<char> buf(2 * pipe_size);
+
     // Write more than fits in the buffer. Blocks then returns partial write
     // when the other end is closed. The next call returns EPIPE.
     ASSERT_THAT(write(wfd_.get(), buf.data(), buf.size()),
-                SyscallSucceedsWithValue(Size()));
+                SyscallSucceedsWithValue(pipe_size));
     EXPECT_THAT(write(wfd_.get(), buf.data(), buf.size()),
                 SyscallFailsWithErrno(EPIPE));
   });

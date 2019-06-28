@@ -219,7 +219,7 @@ func GenericConfigureMMap(file *fs.File, m memmap.Mappable, opts *memmap.MMapOpt
 type FileNoIoctl struct{}
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (FileNoIoctl) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (FileNoIoctl) Ioctl(context.Context, *fs.File, usermem.IO, arch.SyscallArguments) (uintptr, error) {
 	return 0, syserror.ENOTTY
 }
 

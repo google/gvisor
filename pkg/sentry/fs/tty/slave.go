@@ -128,7 +128,7 @@ func (sf *slaveFileOperations) Write(ctx context.Context, _ *fs.File, src userme
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (sf *slaveFileOperations) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (sf *slaveFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := args[1].Uint(); cmd {
 	case linux.FIONREAD: // linux.FIONREAD == linux.TIOCINQ
 		// Get the number of bytes in the input queue read buffer.

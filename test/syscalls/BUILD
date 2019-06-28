@@ -255,7 +255,7 @@ syscall_test(test = "//test/syscalls/linux:pause_test")
 
 syscall_test(
     size = "large",
-    add_overlay = False,  # TODO(gvisor.dev/issue/318): enable when fixed.
+    add_overlay = True,
     shard_count = 5,
     test = "//test/syscalls/linux:pipe_test",
 )

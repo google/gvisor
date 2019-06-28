@@ -155,5 +155,16 @@ type FileOperations interface {
 	// refer.
 	//
 	// Preconditions: The AddressSpace (if any) that io refers to is activated.
-	Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
+	Ioctl(ctx context.Context, file *File, io usermem.IO, args arch.SyscallArguments) (uintptr, error)
+}
+
+// FifoSizer is an interface for setting and getting the size of a pipe.
+type FifoSizer interface {
+	// FifoSize returns the pipe capacity in bytes.
+	FifoSize(ctx context.Context, file *File) (int64, error)
+
+	// SetFifoSize sets the new pipe capacity in bytes.
+	//
+	// The new size is returned (which may be capped).
+	SetFifoSize(size int64) (int64, error)
 }

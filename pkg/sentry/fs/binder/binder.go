@@ -162,7 +162,7 @@ func (bp *Proc) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.M
 // Ioctl implements fs.FileOperations.Ioctl.
 //
 // TODO(b/30946773): Implement.
-func (bp *Proc) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (bp *Proc) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch uint32(args[1].Int()) {
 	case linux.BinderVersionIoctl:

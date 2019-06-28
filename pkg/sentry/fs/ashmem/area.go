@@ -139,7 +139,7 @@ func (a *Area) ConfigureMMap(ctx context.Context, file *fs.File, opts *memmap.MM
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
-func (a *Area) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (a *Area) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch args[1].Uint() {
 	case linux.AshmemSetNameIoctl:
