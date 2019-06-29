@@ -17,6 +17,8 @@
 package refs
 
 import (
+	"bytes"
+	"fmt"
 	"reflect"
 	"runtime"
 	"sync"
@@ -197,6 +199,11 @@ type AtomicRefCount struct {
 	// name is immutable after EnableLeakCheck is called.
 	name string
 
+	// stack optionally records the caller of EnableLeakCheck.
+	//
+	// stack is immutable after EnableLeakCheck is called.
+	stack []uintptr
+
 	// mu protects the list below.
 	mu sync.Mutex `state:"nosave"`
 
@@ -218,6 +225,10 @@ const (
 	// LeaksLogWarning indicates that a warning should be logged when leaks
 	// are found.
 	LeaksLogWarning
+
+	// LeaksLogTraces indicates that a trace collected during allocation
+	// should be logged when leaks are found.
+	LeaksLogTraces
 )
 
 // leakMode stores the current mode for the reference leak checker.
@@ -232,6 +243,76 @@ func SetLeakMode(mode LeakMode) {
 	atomic.StoreUint32(&leakMode, uint32(mode))
 }
 
+const maxStackFrames = 40
+
+type fileLine struct {
+	file string
+	line int
+}
+
+// A stackKey is a representation of a stack frame for use as a map key.
+//
+// The fileLine type is used as PC values seem to vary across collections, even
+// for the same call stack.
+type stackKey [maxStackFrames]fileLine
+
+var stackCache = struct {
+	sync.Mutex
+	entries map[stackKey][]uintptr
+}{entries: map[stackKey][]uintptr{}}
+
+func makeStackKey(pcs []uintptr) stackKey {
+	frames := runtime.CallersFrames(pcs)
+	var key stackKey
+	keySlice := key[:0]
+	for {
+		frame, more := frames.Next()
+		keySlice = append(keySlice, fileLine{frame.File, frame.Line})
+
+		if !more || len(keySlice) == len(key) {
+			break
+		}
+	}
+	return key
+}
+
+func recordStack() []uintptr {
+	pcs := make([]uintptr, maxStackFrames)
+	n := runtime.Callers(1, pcs)
+	if n == 0 {
+		// No pcs available. Stop now.
+		//
+		// This can happen if the first argument to runtime.Callers
+		// is large.
+		return nil
+	}
+	pcs = pcs[:n]
+	key := makeStackKey(pcs)
+	stackCache.Lock()
+	v, ok := stackCache.entries[key]
+	if !ok {
+		// Reallocate to prevent pcs from escaping.
+		v = append([]uintptr(nil), pcs...)
+		stackCache.entries[key] = v
+	}
+	stackCache.Unlock()
+	return v
+}
+
+func formatStack(pcs []uintptr) string {
+	frames := runtime.CallersFrames(pcs)
+	var trace bytes.Buffer
+	for {
+		frame, more := frames.Next()
+		fmt.Fprintf(&trace, "%s:%d: %s\n", frame.File, frame.Line, frame.Function)
+
+		if !more {
+			break
+		}
+	}
+	return trace.String()
+}
+
 func (r *AtomicRefCount) finalize() {
 	var note string
 	switch LeakMode(atomic.LoadUint32(&leakMode)) {
@@ -241,7 +322,11 @@ func (r *AtomicRefCount) finalize() {
 		note = "(Leak checker uninitialized): "
 	}
 	if n := r.ReadRefs(); n != 0 {
-		log.Warningf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
+		msg := fmt.Sprintf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
+		if len(r.stack) != 0 {
+			msg += ":\nCaller:\n" + formatStack(r.stack)
+		}
+		log.Warningf(msg)
 	}
 }
 
@@ -258,8 +343,11 @@ func (r *AtomicRefCount) EnableLeakCheck(name string) {
 	if name == "" {
 		panic("invalid name")
 	}
-	if LeakMode(atomic.LoadUint32(&leakMode)) == NoLeakChecking {
+	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	case NoLeakChecking:
 		return
+	case LeaksLogTraces:
+		r.stack = recordStack()
 	}
 	r.name = name
 	runtime.SetFinalizer(r, (*AtomicRefCount).finalize)
