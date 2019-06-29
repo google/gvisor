@@ -20,8 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ashmem"
-	"gvisor.dev/gvisor/pkg/sentry/fs/binder"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -81,7 +79,7 @@ func newSymlink(ctx context.Context, target string, msrc *fs.MountSource) *fs.In
 }
 
 // New returns the root node of a device filesystem.
-func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEnabled bool) *fs.Inode {
+func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	contents := map[string]*fs.Inode{
 		"fd":     newSymlink(ctx, "/proc/self/fd", msrc),
 		"stdin":  newSymlink(ctx, "/proc/self/fd/0", msrc),
@@ -116,16 +114,6 @@ func New(ctx context.Context, msrc *fs.MountSource, binderEnabled bool, ashmemEn
 		// If no devpts is mounted, this will simply be a dangling
 		// symlink, which is fine.
 		"ptmx": newSymlink(ctx, "pts/ptmx", msrc),
-	}
-
-	if binderEnabled {
-		binder := binder.NewDevice(ctx, fs.RootOwner, fs.FilePermsFromMode(0666))
-		contents["binder"] = newCharacterDevice(ctx, binder, msrc)
-	}
-
-	if ashmemEnabled {
-		ashmem := ashmem.NewDevice(ctx, fs.RootOwner, fs.FilePermsFromMode(0666))
-		contents["ashmem"] = newCharacterDevice(ctx, ashmem, msrc)
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))

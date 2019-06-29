@@ -20,8 +20,6 @@ go_library(
         "//pkg/sentry/context",
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
-        "//pkg/sentry/fs/ashmem",
-        "//pkg/sentry/fs/binder",
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/ramfs",
         "//pkg/sentry/fs/tmpfs",
