@@ -86,12 +86,14 @@ type LockCtx struct {
 // NewInode takes a reference on msrc.
 func NewInode(ctx context.Context, iops InodeOperations, msrc *MountSource, sattr StableAttr) *Inode {
 	msrc.IncRef()
-	return &Inode{
+	i := Inode{
 		InodeOperations: iops,
 		StableAttr:      sattr,
 		Watches:         newWatches(),
 		MountSource:     msrc,
 	}
+	i.EnableLeakCheck("fs.Inode")
+	return &i
 }
 
 // DecRef drops a reference on the Inode.

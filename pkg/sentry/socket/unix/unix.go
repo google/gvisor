@@ -69,10 +69,13 @@ func New(ctx context.Context, endpoint transport.Endpoint, stype linux.SockType)
 
 // NewWithDirent creates a new unix socket using an existing dirent.
 func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, stype linux.SockType, flags fs.FileFlags) *fs.File {
-	return fs.NewFile(ctx, d, flags, &SocketOperations{
+	s := SocketOperations{
 		ep:    ep,
 		stype: stype,
-	})
+	}
+	s.EnableLeakCheck("unix.SocketOperations")
+
+	return fs.NewFile(ctx, d, flags, &s)
 }
 
 // DecRef implements RefCounter.DecRef.

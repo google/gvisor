@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
@@ -1005,4 +1006,9 @@ func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host
 		return nil, nil, fmt.Errorf("container not started")
 	}
 	return ep.tg, ep.tty, nil
+}
+
+func init() {
+	// TODO(gvisor.dev/issue/365): Make this configurable.
+	refs.SetLeakMode(refs.NoLeakChecking)
 }

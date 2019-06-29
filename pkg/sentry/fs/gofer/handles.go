@@ -79,11 +79,12 @@ func newHandles(ctx context.Context, file contextFile, flags fs.FileFlags) (*han
 		newFile.close(ctx)
 		return nil, err
 	}
-	h := &handles{
+	h := handles{
 		File: newFile,
 		Host: hostFile,
 	}
-	return h, nil
+	h.EnableLeakCheck("gofer.handles")
+	return &h, nil
 }
 
 type handleReadWriter struct {

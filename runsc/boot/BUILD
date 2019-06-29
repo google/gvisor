@@ -34,6 +34,7 @@ go_library(
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/rand",
+        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/context",

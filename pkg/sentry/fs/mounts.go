@@ -181,12 +181,14 @@ func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error
 		d: newRootMount(1, d),
 	}
 
-	return &MountNamespace{
+	mns := MountNamespace{
 		userns:  creds.UserNamespace,
 		root:    d,
 		mounts:  mnts,
 		mountID: 2,
-	}, nil
+	}
+	mns.EnableLeakCheck("fs.MountNamespace")
+	return &mns, nil
 }
 
 // UserNamespace returns the user namespace associated with this mount manager.

@@ -294,6 +294,7 @@ func (tg *ThreadGroup) createSession() error {
 		id:     SessionID(id),
 		leader: tg,
 	}
+	s.refs.EnableLeakCheck("kernel.Session")
 
 	// Create a new ProcessGroup, belonging to that Session.
 	// This also has a single reference (assigned below).
@@ -307,6 +308,7 @@ func (tg *ThreadGroup) createSession() error {
 		session:    s,
 		ancestors:  0,
 	}
+	pg.refs.EnableLeakCheck("kernel.ProcessGroup")
 
 	// Tie them and return the result.
 	s.processGroups.PushBack(pg)
@@ -378,11 +380,13 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	// We manually adjust the ancestors if the parent is in the same
 	// session.
 	tg.processGroup.session.incRef()
-	pg := &ProcessGroup{
+	pg := ProcessGroup{
 		id:         ProcessGroupID(id),
 		originator: tg,
 		session:    tg.processGroup.session,
 	}
+	pg.refs.EnableLeakCheck("kernel.ProcessGroup")
+
 	if tg.leader.parent != nil && tg.leader.parent.tg.processGroup.session == pg.session {
 		pg.ancestors++
 	}
@@ -390,20 +394,20 @@ func (tg *ThreadGroup) CreateProcessGroup() error {
 	// Assign the new process group; adjust children.
 	oldParentPG := tg.parentPG()
 	tg.forEachChildThreadGroupLocked(func(childTG *ThreadGroup) {
-		childTG.processGroup.incRefWithParent(pg)
+		childTG.processGroup.incRefWithParent(&pg)
 		childTG.processGroup.decRefWithParent(oldParentPG)
 	})
 	tg.processGroup.decRefWithParent(oldParentPG)
-	tg.processGroup = pg
+	tg.processGroup = &pg
 
 	// Add the new process group to the session.
-	pg.session.processGroups.PushBack(pg)
+	pg.session.processGroups.PushBack(&pg)
 
 	// Ensure this translation is added to all namespaces.
 	for ns := tg.pidns; ns != nil; ns = ns.parent {
 		local := ns.tgids[tg]
-		ns.pgids[pg] = ProcessGroupID(local)
-		ns.processGroups[ProcessGroupID(local)] = pg
+		ns.pgids[&pg] = ProcessGroupID(local)
+		ns.processGroups[ProcessGroupID(local)] = &pg
 	}
 
 	return nil

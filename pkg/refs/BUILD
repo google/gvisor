@@ -24,6 +24,9 @@ go_library(
     ],
     importpath = "gvisor.dev/gvisor/pkg/refs",
     visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/log",
+    ],
 )
 
 go_test(

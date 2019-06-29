@@ -143,7 +143,9 @@ func NewPair(ctx context.Context, stype linux.SockType, uid UniqueIDProvider) (E
 	}
 
 	q1 := &queue{ReaderQueue: a.Queue, WriterQueue: b.Queue, limit: initialLimit}
+	q1.EnableLeakCheck("transport.queue")
 	q2 := &queue{ReaderQueue: b.Queue, WriterQueue: a.Queue, limit: initialLimit}
+	q2.EnableLeakCheck("transport.queue")
 
 	if stype == linux.SOCK_STREAM {
 		a.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{q1}}
@@ -294,12 +296,14 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	}
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: initialLimit}
+	readQueue.EnableLeakCheck("transport.queue")
 	ne.connected = &connectedEndpoint{
 		endpoint:   ce,
 		writeQueue: readQueue,
 	}
 
 	writeQueue := &queue{ReaderQueue: ne.Queue, WriterQueue: ce.WaiterQueue(), limit: initialLimit}
+	writeQueue.EnableLeakCheck("transport.queue")
 	if e.stype == linux.SOCK_STREAM {
 		ne.receiver = &streamQueueReceiver{queueReceiver: queueReceiver{readQueue: writeQueue}}
 	} else {

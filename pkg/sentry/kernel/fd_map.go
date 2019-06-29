@@ -98,11 +98,13 @@ func (f *FDMap) ID() uint64 {
 
 // NewFDMap allocates a new FDMap that may be used by tasks in k.
 func (k *Kernel) NewFDMap() *FDMap {
-	return &FDMap{
+	f := FDMap{
 		k:     k,
 		files: make(map[kdefs.FD]descriptor),
 		uid:   atomic.AddUint64(&k.fdMapUids, 1),
 	}
+	f.EnableLeakCheck("kernel.FDMap")
+	return &f
 }
 
 // destroy removes all of the file descriptors from the map.

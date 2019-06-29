@@ -347,13 +347,14 @@ func (*overlayFileOperations) ConfigureMMap(ctx context.Context, file *File, opt
 		// preventing us from saving a proper inode mapping for the
 		// file.
 		file.IncRef()
-		id := &overlayMappingIdentity{
+		id := overlayMappingIdentity{
 			id:          opts.MappingIdentity,
 			overlayFile: file,
 		}
+		id.EnableLeakCheck("fs.overlayMappingIdentity")
 
 		// Swap out the old MappingIdentity for the wrapped one.
-		opts.MappingIdentity = id
+		opts.MappingIdentity = &id
 		return nil
 	}
 

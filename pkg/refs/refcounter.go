@@ -18,8 +18,11 @@ package refs
 
 import (
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
+
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // RefCounter is the interface to be implemented by objects that are reference
@@ -189,11 +192,77 @@ type AtomicRefCount struct {
 	// how these fields are used.
 	refCount int64
 
+	// name is the name of the type which owns this ref count.
+	//
+	// name is immutable after EnableLeakCheck is called.
+	name string
+
 	// mu protects the list below.
 	mu sync.Mutex `state:"nosave"`
 
 	// weakRefs is our collection of weak references.
 	weakRefs weakRefList `state:"nosave"`
+}
+
+// LeakMode configures the leak checker.
+type LeakMode uint32
+
+const (
+	// uninitializedLeakChecking indicates that the leak checker has not yet been initialized.
+	uninitializedLeakChecking LeakMode = iota
+
+	// NoLeakChecking indicates that no effort should be made to check for
+	// leaks.
+	NoLeakChecking
+
+	// LeaksLogWarning indicates that a warning should be logged when leaks
+	// are found.
+	LeaksLogWarning
+)
+
+// leakMode stores the current mode for the reference leak checker.
+//
+// Values must be one of the LeakMode values.
+//
+// leakMode must be accessed atomically.
+var leakMode uint32
+
+// SetLeakMode configures the reference leak checker.
+func SetLeakMode(mode LeakMode) {
+	atomic.StoreUint32(&leakMode, uint32(mode))
+}
+
+func (r *AtomicRefCount) finalize() {
+	var note string
+	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	case NoLeakChecking:
+		return
+	case uninitializedLeakChecking:
+		note = "(Leak checker uninitialized): "
+	}
+	if n := r.ReadRefs(); n != 0 {
+		log.Warningf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
+	}
+}
+
+// EnableLeakCheck checks for reference leaks when the AtomicRefCount gets
+// garbage collected.
+//
+// This function adds a finalizer to the AtomicRefCount, so the AtomicRefCount
+// must be at the beginning of its parent.
+//
+// name is a friendly name that will be listed as the owner of the
+// AtomicRefCount in logs. It should be the name of the parent type, including
+// package.
+func (r *AtomicRefCount) EnableLeakCheck(name string) {
+	if name == "" {
+		panic("invalid name")
+	}
+	if LeakMode(atomic.LoadUint32(&leakMode)) == NoLeakChecking {
+		return
+	}
+	r.name = name
+	runtime.SetFinalizer(r, (*AtomicRefCount).finalize)
 }
 
 // ReadRefs returns the current number of references. The returned count is

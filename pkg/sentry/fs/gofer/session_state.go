@@ -111,5 +111,4 @@ func (s *session) afterLoad() {
 			panic("failed to restore endpoint maps: " + err.Error())
 		}
 	}
-
 }
