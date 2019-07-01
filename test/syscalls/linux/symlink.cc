@@ -312,6 +312,19 @@ TEST_P(ParamSymlinkTest, OpenLinkCreatesTarget) {
   ASSERT_THAT(unlink(target.c_str()), SyscallSucceeds());
 }
 
+// Test that opening a self-symlink with O_CREAT will fail with ELOOP.
+TEST_P(ParamSymlinkTest, CreateExistingSelfLink) {
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+
+  const std::string linkpath = GetParam();
+  ASSERT_THAT(symlink(linkpath.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(linkpath.c_str(), O_CREAT, 0666),
+              SyscallFailsWithErrno(ELOOP));
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+}
+
 // Test that opening an existing symlink with O_CREAT|O_EXCL will fail with
 // EEXIST.
 TEST_P(ParamSymlinkTest, OpenLinkExclFails) {

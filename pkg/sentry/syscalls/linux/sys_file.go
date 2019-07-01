@@ -354,6 +354,12 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 				break
 			}
 
+			// Are we able to resolve further?
+			if remainingTraversals == 0 {
+				found.DecRef()
+				return syscall.ELOOP
+			}
+
 			// Resolve the symlink to a path via Readlink.
 			path, err := found.Inode.Readlink(t)
 			if err != nil {
