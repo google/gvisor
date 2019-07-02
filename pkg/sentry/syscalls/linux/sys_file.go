@@ -326,6 +326,7 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			if err != nil {
 				break
 			}
+			defer found.DecRef()
 
 			// We found something (possibly a symlink). If the
 			// O_EXCL flag was passed, then we can immediately
@@ -346,17 +347,18 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			}
 
 			// Try to resolve the symlink directly to a Dirent.
-			resolved, err := found.Inode.Getlink(t)
-			if err == nil || err != fs.ErrResolveViaReadlink {
+			var resolved *fs.Dirent
+			resolved, err = found.Inode.Getlink(t)
+			if err == nil {
 				// No more resolution necessary.
-				found.DecRef()
-				found = resolved
+				defer resolved.DecRef()
 				break
+			} else if err != fs.ErrResolveViaReadlink {
+				return err
 			}
 
 			// Are we able to resolve further?
 			if remainingTraversals == 0 {
-				found.DecRef()
 				return syscall.ELOOP
 			}
 
@@ -373,10 +375,10 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			if err != nil {
 				break
 			}
+			defer newParent.DecRef()
 
 			// Repeat the process with the parent and name of the
 			// symlink target.
-			parent.DecRef()
 			parent = newParent
 			name = newName
 		}
@@ -384,9 +386,6 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		var newFile *fs.File
 		switch err {
 		case nil:
-			// The file existed.
-			defer found.DecRef()
-
 			// Like sys_open, check for a few things about the
 			// filesystem before trying to get a reference to the
 			// fs.File. The same constraints on Check apply.
