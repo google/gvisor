@@ -12,26 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package disklayout provides ext4 disk level structures which can be directly
-// filled with bytes from the underlying device. All structures on disk are in
-// little-endian order. Only jbd2 (journal) structures are in big-endian order.
-// Structs aim to emulate structures `exactly` how they are layed out on disk.
-//
-// Note: All fields in these structs are exported because binary.Read would
-// panic otherwise.
 package disklayout
 
-// BlockGroup represents Linux struct ext4_group_desc which is internally
-// called a block group descriptor. An ext4 file system is split into a series
-// of block groups. This provides an access layer to information needed to
-// access and use a block group.
+// BlockGroup represents a Linux ext block group descriptor. An ext file system
+// is split into a series of block groups. This provides an access layer to
+// information needed to access and use a block group.
 //
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/globals.html#block-group-descriptors.
 type BlockGroup interface {
 	// InodeTable returns the absolute block number of the block containing the
 	// inode table. This points to an array of Inode structs. Inode tables are
 	// statically allocated at mkfs time. The superblock records the number of
-	// inodes per group (length of this table).
+	// inodes per group (length of this table) and the size of each inode struct.
 	InodeTable() uint64
 
 	// BlockBitmap returns the absolute block number of the block containing the
@@ -73,15 +65,15 @@ type BlockGroup interface {
 
 	// Checksum returns this block group's checksum.
 	//
-	// If RO_COMPAT_METADATA_CSUM feature is set:
+	// If SbMetadataCsum feature is set:
 	//     - checksum is crc32c(FS UUID + group number + group descriptor
 	//       structure) & 0xFFFF.
 	//
-	// If RO_COMPAT_GDT_CSUM feature is set:
+	// If SbGdtCsum feature is set:
 	//     - checksum is crc16(FS UUID + group number + group descriptor
 	//       structure).
 	//
-	// RO_COMPAT_METADATA_CSUM and RO_COMPAT_GDT_CSUM should not be both set.
+	// SbMetadataCsum and SbGdtCsum should not be both set.
 	// If they are, Linux warns and asks to run fsck.
 	Checksum() uint16
 

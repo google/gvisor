@@ -12,9 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package disklayout provides Linux ext file system's disk level structures
+// which can be directly read into from the underlying device. All structures
+// on disk are in little-endian order. Only jbd2 (journal) structures are in
+// big-endian order. Structs aim to emulate structures `exactly` how they are
+// layed out on disk.
+//
+// This library aims to be compatible with all ext(2/3/4) systems so it
+// provides a generic interface for all major structures and various
+// implementations (for different versions). The user code is responsible for
+// using appropriate implementations based on the underlying device.
+//
+// Notes:
+//   - All fields in these structs are exported because binary.Read would
+//     panic otherwise.
+//   - All OS dependent fields in these structures will be interpretted using
+//     the Linux version of that field.
 package disklayout
 
-// SuperBlock should be implemented by structs representing ext4 superblock.
+// SuperBlock should be implemented by structs representing the ext superblock.
 // The superblock holds a lot of information about the enclosing filesystem.
 // This interface aims to provide access methods to important information held
 // by the superblock. It does NOT expose all fields of the superblock, only the
@@ -23,11 +39,11 @@ package disklayout
 // Location and replication:
 //     - The superblock is located at offset 1024 in block group 0.
 //     - Redundant copies of the superblock and group descriptors are kept in
-//       all groups if sparse_super feature flag is NOT set. If it is set, the
+//       all groups if SbSparse feature flag is NOT set. If it is set, the
 //       replicas only exist in groups whose group number is either 0 or a
 //       power of 3, 5, or 7.
 //     - There is also a sparse superblock feature v2 in which there are just
-//       two replicas saved in block groups pointed by the s_backup_bgs field.
+//       two replicas saved in the block groups pointed by sb.s_backup_bgs.
 //
 // Replicas should eventually be updated if the superblock is updated.
 //

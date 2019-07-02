@@ -15,8 +15,8 @@
 package disklayout
 
 // BlockGroup32Bit emulates the first half of struct ext4_group_desc in
-// fs/ext4/ext4.h. It is the block group descriptor struct for 32-bit ext4
-// filesystems. It implements BlockGroup interface.
+// fs/ext4/ext4.h. It is the block group descriptor struct for ext2, ext3 and
+// 32-bit ext4 filesystems. It implements BlockGroup interface.
 //
 // The suffix `Lo` here stands for lower bits because this is also used in the
 // 64-bit version where these fields represent the lower half of the fields.
