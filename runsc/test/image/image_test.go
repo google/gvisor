@@ -209,11 +209,14 @@ func TestMysql(t *testing.T) {
 }
 
 func TestPythonHello(t *testing.T) {
-	if err := testutil.Pull("google/python-hello"); err != nil {
+	// TODO(b/136503277): Once we have more complete python runtime tests,
+	// we can drop this one.
+	const img = "gcr.io/gvisor-presubmit/python-hello"
+	if err := testutil.Pull(img); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
 	d := testutil.MakeDocker("python-hello-test")
-	if err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+	if err := d.Run("-p", "8080", img); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()

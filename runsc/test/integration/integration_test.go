@@ -86,16 +86,17 @@ func TestLifeCycle(t *testing.T) {
 }
 
 func TestPauseResume(t *testing.T) {
+	const img = "gcr.io/gvisor-presubmit/python-hello"
 	if !testutil.IsPauseResumeSupported() {
 		t.Log("Pause/resume is not supported, skipping test.")
 		return
 	}
 
-	if err := testutil.Pull("google/python-hello"); err != nil {
+	if err := testutil.Pull(img); err != nil {
 		t.Fatal("docker pull failed:", err)
 	}
 	d := testutil.MakeDocker("pause-resume-test")
-	if err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+	if err := d.Run("-p", "8080", img); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
@@ -149,15 +150,16 @@ func TestPauseResume(t *testing.T) {
 }
 
 func TestCheckpointRestore(t *testing.T) {
+	const img = "gcr.io/gvisor-presubmit/python-hello"
 	if !testutil.IsPauseResumeSupported() {
 		t.Log("Pause/resume is not supported, skipping test.")
 		return
 	}
-	if err := testutil.Pull("google/python-hello"); err != nil {
+	if err := testutil.Pull(img); err != nil {
 		t.Fatal("docker pull failed:", err)
 	}
 	d := testutil.MakeDocker("save-restore-test")
-	if err := d.Run("-p", "8080", "google/python-hello"); err != nil {
+	if err := d.Run("-p", "8080", img); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 	defer d.CleanUp()
