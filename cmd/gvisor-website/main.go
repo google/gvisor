@@ -37,7 +37,7 @@ var redirects = map[string]string{
 
 	// Redirects to compatibility docs.
 	"/c":             "/docs/user_guide/compatibility",
-	"/c/linux/amd64": "/docs/user_guide/compatibility/amd64",
+	"/c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64",
 
 	// Deprecated, but links continue to work.
 	"/cl": "https://gvisor-review.googlesource.com",
@@ -49,7 +49,7 @@ var prefixHelpers = map[string]string{
 	"pr":     "https://github.com/google/gvisor/pull/%s",
 
 	// Redirects to compatibility docs.
-	"c/linux/amd64": "/docs/user_guide/compatibility/amd64/#%s",
+	"c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/#%s",
 
 	// Deprecated, but links continue to work.
 	"cl": "https://gvisor-review.googlesource.com/c/gvisor/+/%s",
