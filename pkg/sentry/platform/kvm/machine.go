@@ -426,7 +426,12 @@ func (c *vCPU) unlock() {
 		// Normal state.
 	case vCPUUser | vCPUGuest | vCPUWaiter:
 		// Force a transition: this must trigger a notification when we
-		// return from guest mode.
+		// return from guest mode. We must clear vCPUWaiter here
+		// anyways, because BounceToKernel will force a transition only
+		// from ring3 to ring0, which will not clear this bit. Halt may
+		// workaround the issue, but if there is no exception or
+		// syscall in this period, BounceToKernel will hang.
+		atomicbitops.AndUint32(&c.state, ^vCPUWaiter)
 		c.notify()
 	case vCPUUser | vCPUWaiter:
 		// Waiting for the lock to be released; the responsibility is
