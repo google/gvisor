@@ -422,6 +422,11 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if addr.Addr == "" {
+		// AF_UNSPEC isn't supported.
+		return tcpip.ErrAddressFamilyNotSupported
+	}
+
 	nicid := addr.NIC
 	localPort := uint16(0)
 	switch e.state {

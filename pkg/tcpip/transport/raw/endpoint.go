@@ -298,6 +298,11 @@ func (ep *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
+	if addr.Addr == "" {
+		// AF_UNSPEC isn't supported.
+		return tcpip.ErrAddressFamilyNotSupported
+	}
+
 	if ep.closed {
 		return tcpip.ErrInvalidEndpointState
 	}
