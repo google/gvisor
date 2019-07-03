@@ -13,15 +13,62 @@
 # limitations under the License.
 
 steps:
+  - name: 'bash'
+    args: ['bash', '-c', 'mkdir -p upstream/']
+  # Clone the upstream repos
+  - name: 'gcr.io/cloud-builders/git'
+    args: ['clone', 'https://github.com/google/gvisor.git']
+    dir: 'upstream'
+  - name: 'gcr.io/cloud-builders/git'
+    args: ['clone', 'https://gvisor.googlesource.com/community']
+    dir: 'upstream'
+  # Build runsc
+  - name: 'gcr.io/cloud-builders/bazel'
+    args: 
+      - 'build'
+      - '--show_timestamps'
+      - '--test_output=errors'
+      - '--keep_going'
+      - '--verbose_failures'
+      - 'runsc'
+    dir: 'upstream/gvisor'
+  # Build the compatibility doc generator tool
+  - name: 'golang'
+    env: ['GO111MODULE=on']
+    args: 
+      - 'go'
+      - 'build'
+      - '-o'
+      - 'bin/generate-syscall-docs'
+      - 'gvisor.dev/website/cmd/generate-syscall-docs'
+  # Generate compatibility docs.
+  - name: 'bash'
+    args: 
+      - 'bash'
+      - '-c'
+      - > 
+        ./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json |
+        ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
+  # Pull npm dependencies for scss
+  - name: 'gcr.io/cloud-builders/npm'
+    args: ['ci']
   # Generate the website.
   - name: 'gcr.io/gvisor-website/hugo:0.53'
-    args: ["make"]
+    env: ['HUGO_ENV=production']
+    args: ["hugo"]
   # Test the HTML for issues.
   - name: 'gcr.io/gvisor-website/html-proofer:3.10.2'
-    args: ["htmlproofer", "--disable-external", "--check-html", "public/static"]
+    args: 
+      - "htmlproofer"
+      - "--disable-external"
+      - "--check-html"
+      -  "public/static"
   # Deploy to App Engine only for master branch.
   - name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
-    args:
+    args: 
       - '-c'
-      - 'if [[ "$PROJECT_ID" == "gvisor-website" && "$BRANCH_NAME" == "master" ]]; then gcloud app deploy public/app.yaml; fi'
+      - >
+        if [[ "$PROJECT_ID" == "gvisor-website" && "$BRANCH_NAME" == "master" ]]; then
+        gcloud app deploy public/app.yaml;
+        fi

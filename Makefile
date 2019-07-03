@@ -6,6 +6,7 @@ GCLOUD := gcloud
 GCP_PROJECT := gvisor-website
 
 # Source Go files, example: main.go, foo/bar.go.
+GEN_SOURCE = $(wildcard cmd/generate-syscall-docs/*)
 APP_SOURCE = $(wildcard cmd/gvisor-website/*)
 # Target Go files, example: public/main.go, public/foo/bar.go.
 APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
@@ -40,7 +41,7 @@ content/docs/community/sigs: upstream/community $(wildcard upstream/community/si
 $(APP_TARGET): public $(APP_SOURCE)
 	cp -a cmd/gvisor-website/$(patsubst public/%,%,$@) public/
 
-public/static: node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
+public/static: compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	HUGO_ENV="production" $(HUGO)
 
 node_modules: package.json package-lock.json
@@ -48,8 +49,19 @@ node_modules: package.json package-lock.json
 	# See: https://github.com/npm/npm/issues/18286
 	$(NPM) ci
 
+upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc: upstream-gvisor
+	cd upstream/gvisor && bazel build runsc
+
+bin/generate-syscall-docs: $(GEN_SOURCE)
+	mkdir -p bin/
+	go build -o bin/generate-syscall-docs gvisor.dev/website/cmd/generate-syscall-docs
+
+.PHONY: compatibility-docs
+compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc
+	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
+
 # Run a local content development server. Redirects will not be supported.
-server: all-upstream
+server: all-upstream compatibility-docs
 	$(HUGO) server -FD --port 8080
 .PHONY: server
 
@@ -63,7 +75,7 @@ deploy: $(APP_TARGET)
 
 # Submit a build to Cloud Build manually. Used to test cloudbuild.yaml changes.
 cloud-build:
-	gcloud builds submit --config cloudbuild/cloudbuild.yaml .
+	gcloud builds submit --config cloudbuild.yaml .
 
 # Build and push the hugo Docker image used by Cloud Build.
 hugo-docker-image:
@@ -78,5 +90,5 @@ htmlproofer-docker-image:
 .PHONY: htmlproofer-docker-image
 
 clean:
-	rm -rf public/ resources/ node_modules/ upstream/
+	rm -rf public/ resources/ node_modules/ upstream/ content/docs/user_guide/compatibility/linux/
 .PHONY: clean
