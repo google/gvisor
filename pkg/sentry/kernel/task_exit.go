@@ -265,8 +265,8 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
 
-	t.fsc.DecRef()
-	t.fds.DecRef()
+	t.fsContext.DecRef()
+	t.fdTable.DecRef()
 
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.

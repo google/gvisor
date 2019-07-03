@@ -15,7 +15,6 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/epoll",
-        "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/time",
         "//pkg/syserror",
         "//pkg/waiter",

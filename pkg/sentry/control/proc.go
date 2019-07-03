@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -123,9 +122,8 @@ func ExecAsync(proc *Proc, args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID
 // TTYFileOperations that wraps the TTY is also returned.
 func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadID, *host.TTYFileOperations, error) {
 	// Import file descriptors.
-	l := limits.NewLimitSet()
-	fdm := proc.Kernel.NewFDMap()
-	defer fdm.DecRef()
+	fdTable := proc.Kernel.NewFDTable()
+	defer fdTable.DecRef()
 
 	// No matter what happens, we should close all files in the FilePayload
 	// before returning. Any files that are imported will be duped.
@@ -149,9 +147,9 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		WorkingDirectory:        args.WorkingDirectory,
 		Root:                    args.Root,
 		Credentials:             creds,
-		FDMap:                   fdm,
+		FDTable:                 fdTable,
 		Umask:                   0022,
-		Limits:                  l,
+		Limits:                  limits.NewLimitSet(),
 		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
 		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
@@ -212,7 +210,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		}
 
 		// Add the file to the FD map.
-		if err := fdm.NewFDAt(kdefs.FD(appFD), appFile, kernel.FDFlags{}, l); err != nil {
+		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
 			return nil, 0, nil, err
 		}
 	}

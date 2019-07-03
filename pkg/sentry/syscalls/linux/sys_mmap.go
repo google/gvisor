@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -40,7 +39,7 @@ func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	prot := args[2].Int()
 	flags := args[3].Int()
-	fd := kdefs.FD(args[4].Int())
+	fd := args[4].Int()
 	fixed := flags&linux.MAP_FIXED != 0
 	private := flags&linux.MAP_PRIVATE != 0
 	shared := flags&linux.MAP_SHARED != 0
@@ -80,7 +79,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	if !anon {
 		// Convert the passed FD to a file reference.
-		file := t.FDMap().GetFile(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}

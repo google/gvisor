@@ -20,20 +20,18 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // CreateEpoll implements the epoll_create(2) linux syscall.
-func CreateEpoll(t *kernel.Task, closeOnExec bool) (kdefs.FD, error) {
+func CreateEpoll(t *kernel.Task, closeOnExec bool) (int32, error) {
 	file := epoll.NewEventPoll(t)
 	defer file.DecRef()
 
-	flags := kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: closeOnExec,
-	}
-	fd, err := t.FDMap().NewFDFrom(0, file, flags, t.ThreadGroup().Limits())
+	})
 	if err != nil {
 		return 0, err
 	}
@@ -42,16 +40,16 @@ func CreateEpoll(t *kernel.Task, closeOnExec bool) (kdefs.FD, error) {
 }
 
 // AddEpoll implements the epoll_ctl(2) linux syscall when op is EPOLL_CTL_ADD.
-func AddEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD, flags epoll.EntryFlags, mask waiter.EventMask, userData [2]int32) error {
+func AddEpoll(t *kernel.Task, epfd int32, fd int32, flags epoll.EntryFlags, mask waiter.EventMask, userData [2]int32) error {
 	// Get epoll from the file descriptor.
-	epollfile := t.FDMap().GetFile(epfd)
+	epollfile := t.GetFile(epfd)
 	if epollfile == nil {
 		return syscall.EBADF
 	}
 	defer epollfile.DecRef()
 
 	// Get the target file id.
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return syscall.EBADF
 	}
@@ -68,16 +66,16 @@ func AddEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD, flags epoll.EntryFlags
 }
 
 // UpdateEpoll implements the epoll_ctl(2) linux syscall when op is EPOLL_CTL_MOD.
-func UpdateEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD, flags epoll.EntryFlags, mask waiter.EventMask, userData [2]int32) error {
+func UpdateEpoll(t *kernel.Task, epfd int32, fd int32, flags epoll.EntryFlags, mask waiter.EventMask, userData [2]int32) error {
 	// Get epoll from the file descriptor.
-	epollfile := t.FDMap().GetFile(epfd)
+	epollfile := t.GetFile(epfd)
 	if epollfile == nil {
 		return syscall.EBADF
 	}
 	defer epollfile.DecRef()
 
 	// Get the target file id.
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return syscall.EBADF
 	}
@@ -94,16 +92,16 @@ func UpdateEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD, flags epoll.EntryFl
 }
 
 // RemoveEpoll implements the epoll_ctl(2) linux syscall when op is EPOLL_CTL_DEL.
-func RemoveEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD) error {
+func RemoveEpoll(t *kernel.Task, epfd int32, fd int32) error {
 	// Get epoll from the file descriptor.
-	epollfile := t.FDMap().GetFile(epfd)
+	epollfile := t.GetFile(epfd)
 	if epollfile == nil {
 		return syscall.EBADF
 	}
 	defer epollfile.DecRef()
 
 	// Get the target file id.
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return syscall.EBADF
 	}
@@ -120,9 +118,9 @@ func RemoveEpoll(t *kernel.Task, epfd kdefs.FD, fd kdefs.FD) error {
 }
 
 // WaitEpoll implements the epoll_wait(2) linux syscall.
-func WaitEpoll(t *kernel.Task, fd kdefs.FD, max int, timeout int) ([]epoll.Event, error) {
+func WaitEpoll(t *kernel.Task, fd int32, max int, timeout int) ([]epoll.Event, error) {
 	// Get epoll from the file descriptor.
-	epollfile := t.FDMap().GetFile(fd)
+	epollfile := t.GetFile(fd)
 	if epollfile == nil {
 		return nil, syscall.EBADF
 	}

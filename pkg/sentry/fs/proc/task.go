@@ -580,8 +580,8 @@ func (s *statusData) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) (
 	var fds int
 	var vss, rss, data uint64
 	s.t.WithMuLocked(func(t *kernel.Task) {
-		if fdm := t.FDMap(); fdm != nil {
-			fds = fdm.Size()
+		if fdTable := t.FDTable(); fdTable != nil {
+			fds = fdTable.Size()
 		}
 		if mm := t.MemoryManager(); mm != nil {
 			vss = mm.VirtualMemorySize()

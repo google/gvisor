@@ -25,8 +25,10 @@ import (
 
 	// Include filesystem types that OCI spec might mount.
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
+	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
@@ -36,8 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"

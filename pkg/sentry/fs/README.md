@@ -69,7 +69,7 @@ Specifically this state is:
 
 -   An `fs.MountManager` containing mount points.
 
--   A `kernel.FDMap` containing pointers to open files.
+-   A `kernel.FDTable` containing pointers to open files.
 
 Anything else managed by the VFS that can be easily loaded into memory from a
 filesystem is synced back to those filesystems and is not saved. Examples are

@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 )
 
 const allFlags = int(linux.IN_NONBLOCK | linux.IN_CLOEXEC)
@@ -44,9 +43,9 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	n := fs.NewFile(t, dirent, fileFlags, fs.NewInotify(t))
 	defer n.DecRef()
 
-	fd, err := t.FDMap().NewFDFrom(0, n, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, n, kernel.FDFlags{
 		CloseOnExec: flags&linux.IN_CLOEXEC != 0,
-	}, t.ThreadGroup().Limits())
+	})
 
 	if err != nil {
 		return 0, nil, err
@@ -63,8 +62,8 @@ func InotifyInit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // fdToInotify resolves an fd to an inotify object. If successful, the file will
 // have an extra ref and the caller is responsible for releasing the ref.
-func fdToInotify(t *kernel.Task, fd kdefs.FD) (*fs.Inotify, *fs.File, error) {
-	file := t.FDMap().GetFile(fd)
+func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
+	file := t.GetFile(fd)
 	if file == nil {
 		// Invalid fd.
 		return nil, nil, syscall.EBADF
@@ -82,7 +81,7 @@ func fdToInotify(t *kernel.Task, fd kdefs.FD) (*fs.Inotify, *fs.File, error) {
 
 // InotifyAddWatch implements the inotify_add_watch() syscall.
 func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	mask := args[2].Uint()
 
@@ -114,7 +113,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 		}
 
 		// Copy out to the return frame.
-		fd = kdefs.FD(ino.AddWatch(dirent, mask))
+		fd = ino.AddWatch(dirent, mask)
 
 		return nil
 	})
@@ -123,7 +122,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 
 // InotifyRmWatch implements the inotify_rm_watch() syscall.
 func InotifyRmWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	wd := args[1].Int()
 
 	ino, file, err := fdToInotify(t, fd)

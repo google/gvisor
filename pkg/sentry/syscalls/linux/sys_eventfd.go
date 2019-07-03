@@ -47,10 +47,9 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	})
 	defer event.DecRef()
 
-	fd, err := t.FDMap().NewFDFrom(0, event, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, event, kernel.FDFlags{
 		CloseOnExec: flags&EFD_CLOEXEC != 0,
-	},
-		t.ThreadGroup().Limits())
+	})
 	if err != nil {
 		return 0, nil, err
 	}

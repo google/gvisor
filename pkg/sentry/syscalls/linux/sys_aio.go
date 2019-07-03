@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/eventfd"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -55,7 +54,7 @@ type ioCallback struct {
 
 	OpCode  uint16
 	ReqPrio int16
-	FD      uint32
+	FD      int32
 
 	Buf    uint64
 	Bytes  uint64
@@ -65,7 +64,7 @@ type ioCallback struct {
 	Flags     uint32
 
 	// eventfd to signal if IOCB_FLAG_RESFD is set in flags.
-	ResFD uint32
+	ResFD int32
 }
 
 // ioEvent describes an I/O result.
@@ -292,7 +291,7 @@ func performCallback(t *kernel.Task, file *fs.File, cbAddr usermem.Addr, cb *ioC
 
 // submitCallback processes a single callback.
 func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Addr) error {
-	file := t.FDMap().GetFile(kdefs.FD(cb.FD))
+	file := t.GetFile(cb.FD)
 	if file == nil {
 		// File not found.
 		return syserror.EBADF
@@ -302,7 +301,7 @@ func submitCallback(t *kernel.Task, id uint64, cb *ioCallback, cbAddr usermem.Ad
 	// Was there an eventFD? Extract it.
 	var eventFile *fs.File
 	if cb.Flags&_IOCB_FLAG_RESFD != 0 {
-		eventFile = t.FDMap().GetFile(kdefs.FD(cb.ResFD))
+		eventFile = t.GetFile(cb.ResFD)
 		if eventFile == nil {
 			// Bad FD.
 			return syserror.EBADF

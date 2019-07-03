@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/conn"
@@ -286,7 +285,7 @@ func rpcAccept(t *kernel.Task, fd uint32, peer bool) (*pb.AcceptResponse_ResultP
 }
 
 // Accept implements socket.Socket.Accept.
-func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
+func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error) {
 	payload, se := rpcAccept(t, s.fd, peerRequested)
 
 	// Check if we need to block.
@@ -336,10 +335,9 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	})
 	defer file.DecRef()
 
-	fdFlags := kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.SOCK_CLOEXEC != 0,
-	}
-	fd, err := t.FDMap().NewFDFrom(0, file, fdFlags, t.ThreadGroup().Limits())
+	})
 	if err != nil {
 		return 0, nil, 0, syserr.FromError(err)
 	}

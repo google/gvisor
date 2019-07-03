@@ -31,7 +31,6 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	pb "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -133,7 +132,7 @@ func path(t *kernel.Task, addr usermem.Addr) string {
 	return fmt.Sprintf("%#x %s", addr, path)
 }
 
-func fd(t *kernel.Task, fd kdefs.FD) string {
+func fd(t *kernel.Task, fd int32) string {
 	root := t.FSContext().RootDirectory()
 	if root != nil {
 		defer root.DecRef()
@@ -151,7 +150,7 @@ func fd(t *kernel.Task, fd kdefs.FD) string {
 		return fmt.Sprintf("AT_FDCWD %s", name)
 	}
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		// Cast FD to uint64 to avoid printing negative hex.
 		return fmt.Sprintf("%#x (bad FD)", uint64(fd))
@@ -375,7 +374,7 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 		}
 		switch i.format[arg] {
 		case FD:
-			output = append(output, fd(t, kdefs.FD(args[arg].Int())))
+			output = append(output, fd(t, args[arg].Int()))
 		case WriteBuffer:
 			output = append(output, dump(t, args[arg].Pointer(), args[arg+1].SizeT(), maximumBlobSize))
 		case WriteIOVec:

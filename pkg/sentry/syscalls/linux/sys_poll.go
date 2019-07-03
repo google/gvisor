@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -64,7 +63,7 @@ func initReadiness(t *kernel.Task, pfd *linux.PollFD, state *pollState, ch chan 
 		return
 	}
 
-	file := t.FDMap().GetFile(kdefs.FD(pfd.FD))
+	file := t.GetFile(pfd.FD)
 	if file == nil {
 		pfd.REvents = linux.POLLNVAL
 		return
@@ -265,7 +264,7 @@ func doSelect(t *kernel.Task, nfds int, readFDs, writeFDs, exceptFDs usermem.Add
 				// immediately to ensure we don't leak. Note, another thread
 				// might be about to close fd. This is racy, but that's
 				// OK. Linux is racy in the same way.
-				file := t.FDMap().GetFile(kdefs.FD(fd))
+				file := t.GetFile(fd)
 				if file == nil {
 					return 0, syserror.EBADF
 				}

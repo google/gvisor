@@ -365,6 +365,8 @@ func (r *AtomicRefCount) ReadRefs() int64 {
 //
 // The sanity check here is limited to real references, since if they have
 // dropped beneath zero then the object should have been destroyed.
+//
+//go:nosplit
 func (r *AtomicRefCount) IncRef() {
 	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
 		panic("Incrementing non-positive ref count")
@@ -379,6 +381,8 @@ func (r *AtomicRefCount) IncRef() {
 // To do this safely without a loop, a speculative reference is first acquired
 // on the object. This allows multiple concurrent TryIncRef calls to
 // distinguish other TryIncRef calls from genuine references held.
+//
+//go:nosplit
 func (r *AtomicRefCount) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	v := atomic.AddInt64(&r.refCount, speculativeRef)
@@ -420,6 +424,7 @@ func (r *AtomicRefCount) dropWeakRef(w *WeakRef) {
 //	B: DecRef [real decrease]
 //	A: TryIncRef [transform speculative to real]
 //
+//go:nosplit
 func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 	switch v := atomic.AddInt64(&r.refCount, -1); {
 	case v < -1:
@@ -455,6 +460,8 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 }
 
 // DecRef decrements this object's reference count.
+//
+//go:nosplit
 func (r *AtomicRefCount) DecRef() {
 	r.DecRefWithDestructor(nil)
 }

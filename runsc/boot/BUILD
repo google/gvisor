@@ -52,7 +52,6 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel:uncaught_signal_go_proto",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",
         "//pkg/sentry/pgalloc",

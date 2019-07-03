@@ -21,32 +21,23 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
-	"gvisor.dev/gvisor/pkg/sentry/limits"
 )
 
-// createFDMap creates an FD map that contains stdin, stdout, and stderr. If
-// console is true, then ioctl calls will be passed through to the host FD.
+// createFDTable creates an FD table that contains stdin, stdout, and stderr.
+// If console is true, then ioctl calls will be passed through to the host FD.
 // Upon success, createFDMap dups then closes stdioFDs.
-func createFDMap(ctx context.Context, l *limits.LimitSet, console bool, stdioFDs []int) (*kernel.FDMap, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []int) (*kernel.FDTable, error) {
 	if len(stdioFDs) != 3 {
 		return nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
 
 	k := kernel.KernelFromContext(ctx)
-	fdm := k.NewFDMap()
-	defer fdm.DecRef()
+	fdTable := k.NewFDTable()
+	defer fdTable.DecRef()
 	mounter := fs.FileOwnerFromContext(ctx)
 
-	// Maps sandbox FD to host FD.
-	fdMap := map[int]int{
-		0: stdioFDs[0],
-		1: stdioFDs[1],
-		2: stdioFDs[2],
-	}
-
 	var ttyFile *fs.File
-	for appFD, hostFD := range fdMap {
+	for appFD, hostFD := range stdioFDs {
 		var appFile *fs.File
 
 		if console && appFD < 3 {
@@ -80,11 +71,11 @@ func createFDMap(ctx context.Context, l *limits.LimitSet, console bool, stdioFDs
 		}
 
 		// Add the file to the FD map.
-		if err := fdm.NewFDAt(kdefs.FD(appFD), appFile, kernel.FDFlags{}, l); err != nil {
+		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, kernel.FDFlags{}); err != nil {
 			return nil, err
 		}
 	}
 
-	fdm.IncRef()
-	return fdm, nil
+	fdTable.IncRef()
+	return fdTable, nil
 }

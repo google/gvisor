@@ -40,7 +40,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -537,7 +536,7 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (tcpip.Endpoint, *wait
 
 // Accept implements the linux syscall accept(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
+func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error) {
 	// Issue the accept request to get the new endpoint.
 	ep, wq, terr := s.Endpoint.Accept()
 	if terr != nil {
@@ -575,10 +574,9 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		}
 	}
 
-	fdFlags := kernel.FDFlags{
+	fd, e := t.NewFDFrom(0, ns, kernel.FDFlags{
 		CloseOnExec: flags&linux.SOCK_CLOEXEC != 0,
-	}
-	fd, e := t.FDMap().NewFDFrom(0, ns, fdFlags, t.ThreadGroup().Limits())
+	})
 
 	t.Kernel().RecordSocket(ns)
 

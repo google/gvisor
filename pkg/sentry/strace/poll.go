@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
@@ -50,7 +49,7 @@ func pollFD(t *kernel.Task, pfd *linux.PollFD, post bool) string {
 	if post {
 		revents = PollEventSet.Parse(uint64(pfd.REvents))
 	}
-	return fmt.Sprintf("{FD: %s, Events: %s, REvents: %s}", fd(t, kdefs.FD(pfd.FD)), PollEventSet.Parse(uint64(pfd.Events)), revents)
+	return fmt.Sprintf("{FD: %s, Events: %s, REvents: %s}", fd(t, pfd.FD), PollEventSet.Parse(uint64(pfd.Events)), revents)
 }
 
 func pollFDs(t *kernel.Task, addr usermem.Addr, nfds uint, post bool) string {

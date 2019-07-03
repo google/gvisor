@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -42,8 +41,8 @@ func walkDescriptors(t *kernel.Task, p string, toInode func(*fs.File, kernel.FDF
 	var file *fs.File
 	var fdFlags kernel.FDFlags
 	t.WithMuLocked(func(t *kernel.Task) {
-		if fdm := t.FDMap(); fdm != nil {
-			file, fdFlags = fdm.GetDescriptor(kdefs.FD(n))
+		if fdTable := t.FDTable(); fdTable != nil {
+			file, fdFlags = fdTable.Get(int32(n))
 		}
 	})
 	if file == nil {
@@ -56,36 +55,31 @@ func walkDescriptors(t *kernel.Task, p string, toInode func(*fs.File, kernel.FDF
 // toDentAttr callback for each to get a DentAttr, which it then emits. This is
 // a helper for implementing fs.InodeOperations.Readdir.
 func readDescriptors(t *kernel.Task, c *fs.DirCtx, offset int64, toDentAttr func(int) fs.DentAttr) (int64, error) {
-	var fds kernel.FDs
+	var fds []int32
 	t.WithMuLocked(func(t *kernel.Task) {
-		if fdm := t.FDMap(); fdm != nil {
-			fds = fdm.GetFDs()
+		if fdTable := t.FDTable(); fdTable != nil {
+			fds = fdTable.GetFDs()
 		}
 	})
 
-	fdInts := make([]int, 0, len(fds))
-	for _, fd := range fds {
-		fdInts = append(fdInts, int(fd))
-	}
-
-	// Find the fd to start at.
-	idx := sort.SearchInts(fdInts, int(offset))
-	if idx == len(fdInts) {
+	// Find the appropriate starting point.
+	idx := sort.Search(len(fds), func(i int) bool { return fds[i] >= int32(offset) })
+	if idx == len(fds) {
 		return offset, nil
 	}
-	fdInts = fdInts[idx:]
+	fds = fds[idx:]
 
-	var fd int
-	for _, fd = range fdInts {
+	// Serialize all FDs.
+	for _, fd := range fds {
 		name := strconv.FormatUint(uint64(fd), 10)
-		if err := c.DirEmit(name, toDentAttr(fd)); err != nil {
+		if err := c.DirEmit(name, toDentAttr(int(fd))); err != nil {
 			// Returned offset is the next fd to serialize.
 			return int64(fd), err
 		}
 	}
 	// We serialized them all.  Next offset should be higher than last
 	// serialized fd.
-	return int64(fd + 1), nil
+	return int64(fds[len(fds)-1] + 1), nil
 }
 
 // fd implements fs.InodeOperations for a file in /proc/TID/fd/.
@@ -154,9 +148,9 @@ func (f *fd) Close() error {
 type fdDir struct {
 	ramfs.Dir
 
-	// We hold a reference on the task's fdmap but only keep an indirect
-	// task pointer to avoid Dirent loading circularity caused by fdmap's
-	// potential back pointers into the dirent tree.
+	// We hold a reference on the task's FDTable but only keep an indirect
+	// task pointer to avoid Dirent loading circularity caused by the
+	// table's back pointers into the dirent tree.
 	t *kernel.Task
 }
 

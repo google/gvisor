@@ -23,14 +23,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getdents implements linux syscall getdents(2) for 64bit systems.
 func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := int(args[2].Uint())
 
@@ -46,7 +45,7 @@ func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 // Getdents64 implements linux syscall getdents64(2).
 func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := int(args[2].Uint())
 
@@ -62,8 +61,8 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getdents implements the core of getdents(2)/getdents64(2).
 // f is the syscall implementation dirent serialization function.
-func getdents(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
-	dir := t.FDMap().GetFile(fd)
+func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
+	dir := t.GetFile(fd)
 	if dir == nil {
 		return 0, syserror.EBADF
 	}

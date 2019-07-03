@@ -96,7 +96,8 @@ go_library(
     srcs = [
         "abstract_socket_namespace.go",
         "context.go",
-        "fd_map.go",
+        "fd_table.go",
+        "fd_table_unsafe.go",
         "fs_context.go",
         "ipc_namespace.go",
         "kernel.go",
@@ -179,7 +180,6 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/futex",
-        "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/semaphore",
         "//pkg/sentry/kernel/shm",
@@ -214,7 +214,7 @@ go_test(
     name = "kernel_test",
     size = "small",
     srcs = [
-        "fd_map_test.go",
+        "fd_table_test.go",
         "table_test.go",
         "task_test.go",
         "timekeeper_test.go",
@@ -223,9 +223,10 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/sentry/arch",
+        "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/fs",
         "//pkg/sentry/fs/filetest",
-        "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/limits",
         "//pkg/sentry/pgalloc",

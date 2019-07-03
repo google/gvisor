@@ -19,8 +19,8 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
@@ -38,24 +38,17 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	w.SetFlags(linuxToFlags(flags).Settable())
 	defer w.DecRef()
 
-	rfd, err := t.FDMap().NewFDFrom(0, r, kernel.FDFlags{
-		CloseOnExec: flags&linux.O_CLOEXEC != 0},
-		t.ThreadGroup().Limits())
+	fds, err := t.NewFDs(0, []*fs.File{r, w}, kernel.FDFlags{
+		CloseOnExec: flags&linux.O_CLOEXEC != 0,
+	})
 	if err != nil {
 		return 0, err
 	}
 
-	wfd, err := t.FDMap().NewFDFrom(0, w, kernel.FDFlags{
-		CloseOnExec: flags&linux.O_CLOEXEC != 0},
-		t.ThreadGroup().Limits())
-	if err != nil {
-		t.FDMap().Remove(rfd)
-		return 0, err
-	}
-
-	if _, err := t.CopyOut(addr, []kdefs.FD{rfd, wfd}); err != nil {
-		t.FDMap().Remove(rfd)
-		t.FDMap().Remove(wfd)
+	if _, err := t.CopyOut(addr, fds); err != nil {
+		// The files are not closed in this case, the exact semantics
+		// of this error case are not well defined, but they could have
+		// already been observed by user space.
 		return 0, syscall.EFAULT
 	}
 	return 0, nil

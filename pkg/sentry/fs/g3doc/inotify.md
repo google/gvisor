@@ -9,7 +9,7 @@ For the most part, the sentry implementation of inotify mirrors the Linux
 architecture. Inotify instances (i.e. the fd returned by inotify_init(2)) are
 backed by a pseudo-filesystem. Events are generated from various places in the
 sentry, including the [syscall layer][syscall_dir], the [vfs layer][dirent] and
-the [process fd table][fd_map]. Watches are stored in inodes and generated
+the [process fd table][fd_table]. Watches are stored in inodes and generated
 events are queued to the inotify instance owning the watches for delivery to the
 user.
 
@@ -114,7 +114,7 @@ ordering.
 
 [dirent]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/dirent.go
 [event]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inotify_event.go
-[fd_map]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/kernel/fd_map.go
+[fd_table]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/kernel/fd_table.go
 [inode]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inode.go
 [inode_watches]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inode_inotify.go
 [inotify]: https://github.com/google/gvisor/blob/master/+/master/pkg/sentry/fs/inotify.go

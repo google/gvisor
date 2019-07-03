@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 )
 
@@ -122,9 +121,9 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 		switch args[1].Int() {
 		case linux.PR_SET_MM_EXE_FILE:
-			fd := kdefs.FD(args[2].Int())
+			fd := args[2].Int()
 
-			file := t.FDMap().GetFile(fd)
+			file := t.GetFile(fd)
 			if file == nil {
 				return 0, nil, syscall.EBADF
 			}

@@ -214,20 +214,20 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		}
 	}
 
-	var fsc *FSContext
+	var fsContext *FSContext
 	if opts.NewFSContext {
-		fsc = t.fsc.Fork()
+		fsContext = t.fsContext.Fork()
 	} else {
-		fsc = t.fsc
-		fsc.IncRef()
+		fsContext = t.fsContext
+		fsContext.IncRef()
 	}
 
-	var fds *FDMap
+	var fdTable *FDTable
 	if opts.NewFiles {
-		fds = t.fds.Fork()
+		fdTable = t.fdTable.Fork()
 	} else {
-		fds = t.fds
-		fds.IncRef()
+		fdTable = t.fdTable
+		fdTable.IncRef()
 	}
 
 	pidns := t.tg.pidns
@@ -251,8 +251,8 @@ func (t *Task) Clone(opts *CloneOptions) (ThreadID, *SyscallControl, error) {
 		ThreadGroup:             tg,
 		SignalMask:              t.SignalMask(),
 		TaskContext:             tc,
-		FSContext:               fsc,
-		FDMap:                   fds,
+		FSContext:               fsContext,
+		FDTable:                 fdTable,
 		Credentials:             creds,
 		Niceness:                t.Niceness(),
 		NetworkNamespaced:       t.netns,
@@ -485,22 +485,22 @@ func (t *Task) Unshare(opts *SharingOptions) error {
 		// namespace"
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
 	}
-	var oldfds *FDMap
+	var oldFDTable *FDTable
 	if opts.NewFiles {
-		oldfds = t.fds
-		t.fds = oldfds.Fork()
+		oldFDTable = t.fdTable
+		t.fdTable = oldFDTable.Fork()
 	}
-	var oldfsc *FSContext
+	var oldFSContext *FSContext
 	if opts.NewFSContext {
-		oldfsc = t.fsc
-		t.fsc = oldfsc.Fork()
+		oldFSContext = t.fsContext
+		t.fsContext = oldFSContext.Fork()
 	}
 	t.mu.Unlock()
-	if oldfds != nil {
-		oldfds.DecRef()
+	if oldFDTable != nil {
+		oldFDTable.DecRef()
 	}
-	if oldfsc != nil {
-		oldfsc.DecRef()
+	if oldFSContext != nil {
+		oldFSContext.DecRef()
 	}
 	return nil
 }

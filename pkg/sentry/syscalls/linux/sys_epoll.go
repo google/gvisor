@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/epoll"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -61,9 +60,9 @@ func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 
 // EpollCtl implements the epoll_ctl(2) linux syscall.
 func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	epfd := kdefs.FD(args[0].Int())
+	epfd := args[0].Int()
 	op := args[1].Int()
-	fd := kdefs.FD(args[2].Int())
+	fd := args[2].Int()
 	eventAddr := args[3].Pointer()
 
 	// Capture the event state if needed.
@@ -132,7 +131,7 @@ func copyOutEvents(t *kernel.Task, addr usermem.Addr, e []epoll.Event) error {
 
 // EpollWait implements the epoll_wait(2) linux syscall.
 func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	epfd := kdefs.FD(args[0].Int())
+	epfd := args[0].Int()
 	eventsAddr := args[1].Pointer()
 	maxEvents := int(args[2].Int())
 	timeout := int(args[3].Int())

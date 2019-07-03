@@ -30,7 +30,6 @@ go_library(
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel/kdefs",
         "//pkg/sentry/socket/control",
         "//pkg/sentry/socket/epsocket",
         "//pkg/sentry/socket/netlink",
