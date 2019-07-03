@@ -40,16 +40,7 @@ func Supported(name string, fn kernel.SyscallFn) kernel.Syscall {
 		Name:         name,
 		Fn:           fn,
 		SupportLevel: kernel.SupportFull,
-		Note:         "Full Support",
-	}
-}
-
-// Undocumented returns a syscall that is undocumented.
-func Undocumented(name string, fn kernel.SyscallFn) kernel.Syscall {
-	return kernel.Syscall{
-		Name:         name,
-		Fn:           fn,
-		SupportLevel: kernel.SupportUndocumented,
+		Note:         "Fully Supported.",
 	}
 }
 
@@ -75,7 +66,7 @@ func Error(name string, err syscall.Errno, note string, urls []string) kernel.Sy
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q", note, err.Error()),
+		Note:         fmt.Sprintf("%sReturns %q.", note, err.Error()),
 		URLs:         urls,
 	}
 }
@@ -93,7 +84,7 @@ func ErrorWithEvent(name string, err syscall.Errno, note string, urls []string) 
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q", note, err.Error()),
+		Note:         fmt.Sprintf("%sReturns %q.", note, err.Error()),
 		URLs:         urls,
 	}
 }
@@ -115,7 +106,7 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 			return 0, nil, syserror.ENOSYS
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise", note, syserror.EPERM, c.String(), syserror.ENOSYS),
+		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, syserror.EPERM, c.String(), syserror.ENOSYS),
 		URLs:         urls,
 	}
 }
