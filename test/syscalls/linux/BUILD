@@ -3001,6 +3001,8 @@ cc_binary(
     testonly = 1,
     srcs = ["timers.cc"],
     linkstatic = 1,
+    # FIXME(b/136599201)
+    tags = ["flaky"],
     deps = [
         "//test/util:cleanup",
         "//test/util:logging",
