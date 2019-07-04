@@ -168,7 +168,7 @@ var AMD64 = &kernel.SyscallTable{
 		117: syscalls.Supported("setresuid", Setresuid),
 		118: syscalls.Supported("getresuid", Getresuid),
 		119: syscalls.Supported("setresgid", Setresgid),
-		120: syscalls.Supported("setresgid", Getresgid),
+		120: syscalls.Supported("getresgid", Getresgid),
 		121: syscalls.Supported("getpgid", Getpgid),
 		122: syscalls.ErrorWithEvent("setfsuid", syscall.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
 		123: syscalls.ErrorWithEvent("setfsgid", syscall.ENOSYS, "", []string{"gvisor.dev/issue/260"}), // TODO(b/112851702)
