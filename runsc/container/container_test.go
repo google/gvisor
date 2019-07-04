@@ -36,6 +36,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/test/testutil"
 )
@@ -256,7 +257,7 @@ func configs(opts ...configOption) []*boot.Config {
 			if testutil.RaceEnabled {
 				continue
 			}
-			c.Platform = boot.PlatformKVM
+			c.Platform = platforms.KVM
 		case nonExclusiveFS:
 			c.FileAccess = boot.FileAccessShared
 		default:

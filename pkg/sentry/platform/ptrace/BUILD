@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "ptrace",
     srcs = [
+        "filters.go",
         "ptrace.go",
         "ptrace_unsafe.go",
         "stub_amd64.s",

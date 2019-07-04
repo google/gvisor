@@ -45,6 +45,7 @@
 package ptrace
 
 import (
+	"os"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -235,4 +236,18 @@ func (p *PTrace) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan s
 // NewContext returns an interruptible context.
 func (*PTrace) NewContext() platform.Context {
 	return &context{}
+}
+
+type constructor struct{}
+
+func (*constructor) New(*os.File) (platform.Platform, error) {
+	return New()
+}
+
+func (*constructor) OpenDevice() (*os.File, error) {
+	return nil, nil
+}
+
+func init() {
+	platform.Register("ptrace", &constructor{})
 }

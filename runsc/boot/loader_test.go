@@ -47,6 +47,7 @@ func testConfig() *Config {
 		RootDir:        "unused_root_dir",
 		Network:        NetworkNone,
 		DisableSeccomp: true,
+		Platform:       "ptrace",
 	}
 }
 

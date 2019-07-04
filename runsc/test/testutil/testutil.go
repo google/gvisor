@@ -132,6 +132,7 @@ func TestConfig() *boot.Config {
 		LogPackets: true,
 		Network:    boot.NetworkNone,
 		Strace:     true,
+		Platform:   "ptrace",
 		FileAccess: boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 		NumNetworkChannels:                         1,

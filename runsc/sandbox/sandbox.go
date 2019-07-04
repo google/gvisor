@@ -32,9 +32,10 @@ import (
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -491,7 +492,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		{Type: specs.UTSNamespace},
 	}
 
-	if conf.Platform == boot.PlatformPtrace {
+	if conf.Platform == platforms.Ptrace {
 		// TODO(b/75837838): Also set a new PID namespace so that we limit
 		// access to other host processes.
 		log.Infof("Sandbox will be started in the current PID namespace")
@@ -1046,19 +1047,15 @@ func (s *Sandbox) waitForStopped() error {
 
 // deviceFileForPlatform opens the device file for the given platform. If the
 // platform does not need a device file, then nil is returned.
-func deviceFileForPlatform(p boot.PlatformType) (*os.File, error) {
-	var (
-		f   *os.File
-		err error
-	)
-	switch p {
-	case boot.PlatformKVM:
-		f, err = kvm.OpenDevice()
-	default:
-		return nil, nil
+func deviceFileForPlatform(name string) (*os.File, error) {
+	p, err := platform.Lookup(name)
+	if err != nil {
+		return nil, err
 	}
+
+	f, err := p.OpenDevice()
 	if err != nil {
 		return nil, fmt.Errorf("opening device file for platform %q: %v", p, err)
 	}
-	return f, err
+	return f, nil
 }
