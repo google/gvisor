@@ -82,7 +82,11 @@
 // Note that the second call to g() kept "b" as an argument because it refers to
 // the local variable "b".
 //
-// Unfortunately, go_generics does not handle anonymous fields with renamed types.
+// Note that go_generics can handle anonymous fields with renamed types if -anon is passed in,
+// however it does not perform strict checking on parameter types that share the same name
+// as the global type and therefore will rename them as well.
+//
+// You can see an example in the tools/go_generics/generics_tests/interface test.
 package main
 
 import (
@@ -108,6 +112,7 @@ var (
 	prefix      = flag.String("prefix", "", "`prefix` to add to each global symbol")
 	packageName = flag.String("p", "main", "output package `name`")
 	printAST    = flag.Bool("ast", false, "prints the AST")
+	processAnon = flag.Bool("anon", false, "process anonymous fields")
 	types       = make(mapValue)
 	consts      = make(mapValue)
 	imports     = make(mapValue)
@@ -231,7 +236,7 @@ func main() {
 				}
 			}
 		}
-	})
+	}, *processAnon)
 
 	// Remove the definition of all types that are being remapped.
 	set := make(typeSet)

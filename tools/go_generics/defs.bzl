@@ -93,6 +93,9 @@ def _go_template_instance_impl(ctx):
     args += [("-c=%s=%s" % (p[0], p[1])) for p in ctx.attr.consts.items()]
     args += [("-import=%s=%s" % (p[0], p[1])) for p in ctx.attr.imports.items()]
 
+    if ctx.attr.anon:
+        args += ["-anon"]
+
     ctx.actions.run(
         inputs = [template.file],
         outputs = [output],
@@ -129,6 +132,7 @@ go_template_instance = rule(
         "types": attr.string_dict(),
         "consts": attr.string_dict(),
         "imports": attr.string_dict(),
+        "anon": attr.bool(mandatory=False, default=False),
         "package": attr.string(mandatory = True),
         "out": attr.output(mandatory = True),
         "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),

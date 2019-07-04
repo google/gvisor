@@ -47,6 +47,11 @@ type globalsVisitor struct {
 
 	// scope is the current scope as nodes are visited.
 	scope *scope
+
+	// processAnon indicates whether we should process anonymous struct fields.
+	// It does not perform strict checking on parameter types that share the same name
+	// as the global type and therefore will rename them as well.
+	processAnon bool
 }
 
 // unexpected is called when an unexpected node appears in the AST. It dumps
@@ -307,6 +312,9 @@ func (v *globalsVisitor) visitExpr(ge ast.Expr) {
 
 	case *ast.SelectorExpr:
 		v.visitExpr(e.X)
+		if v.processAnon {
+			v.visitExpr(e.Sel)
+		}
 
 	case *ast.SliceExpr:
 		v.visitExpr(e.X)
@@ -577,11 +585,12 @@ func (v *globalsVisitor) visit() {
 //
 // The function f() is allowed to modify the identifier, for example, to rename
 // uses of global references.
-func Visit(fset *token.FileSet, file *ast.File, f func(*ast.Ident, SymKind)) {
+func Visit(fset *token.FileSet, file *ast.File, f func(*ast.Ident, SymKind), processAnon bool) {
 	v := globalsVisitor{
-		fset: fset,
-		file: file,
-		f:    f,
+		fset:        fset,
+		file:        file,
+		f:           f,
+		processAnon: processAnon,
 	}
 
 	v.visit()
