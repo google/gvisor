@@ -63,7 +63,7 @@ type Walker struct {
 // non-canonical ranges. If they do, a panic will result.
 //
 //go:nosplit
-func (w *Walker) iterateRange(start, end uintptr) {
+func (w *Walker) iterateRange(pageTables *PageTables, start, end uintptr) {
 	if start%pteSize != 0 {
 		panic("unaligned start")
 	}
@@ -83,7 +83,9 @@ func (w *Walker) iterateRange(start, end uintptr) {
 				panic("alloc spans non-canonical range")
 			}
 			w.iterateRangeCanonical(start, lowerTop)
-			w.iterateRangeCanonical(upperBottom, end)
+			if pageTables == kPageTable {
+				w.iterateRangeCanonical(upperBottom, end)
+			}
 		}
 	} else if start < upperBottom {
 		if end <= upperBottom {
@@ -94,7 +96,9 @@ func (w *Walker) iterateRange(start, end uintptr) {
 			if w.visitor.requiresAlloc() {
 				panic("alloc spans non-canonical range")
 			}
-			w.iterateRangeCanonical(upperBottom, end)
+			if pageTables == kPageTable {
+				w.iterateRangeCanonical(upperBottom, end)
+			}
 		}
 	} else {
 		w.iterateRangeCanonical(start, end)

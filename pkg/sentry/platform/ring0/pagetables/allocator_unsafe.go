@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/sentry/platform/safecopy"
 )
 
 // newAlignedPTEs returns a set of aligned PTEs.
@@ -50,4 +51,12 @@ func physicalFor(ptes *PTEs) uintptr {
 //go:nosplit
 func fromPhysical(physical uintptr) *PTEs {
 	return (*PTEs)(unsafe.Pointer(physical))
+}
+
+func mirrorKernelPgds(dptes, sptes *PTEs) {
+	// Mirror upper half address space page table entry,
+	// all user tasks share the same page table entry with
+	// sentry kernel.
+	safecopy.Copy(unsafe.Pointer(dptes), unsafe.Pointer(sptes), usermem.PageSize)
+	safecopy.ZeroOut(unsafe.Pointer(dptes), usermem.PageSize/2)
 }

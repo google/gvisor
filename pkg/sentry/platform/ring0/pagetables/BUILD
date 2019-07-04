@@ -89,7 +89,7 @@ go_library(
         "//pkg/sentry/platform/kvm:__subpackages__",
         "//pkg/sentry/platform/ring0:__subpackages__",
     ],
-    deps = ["//pkg/sentry/usermem"],
+    deps = ["//pkg/sentry/usermem","//pkg/sentry/platform/safecopy"],
 )
 
 go_test(

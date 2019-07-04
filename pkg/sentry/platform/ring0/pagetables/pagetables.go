@@ -41,6 +41,22 @@ type PageTables struct {
 	archPageTables
 }
 
+
+var kPageTable *PageTables
+
+// MirrorInit set kernel page table as the mirror source.
+func (p *PageTables) SetKernelPageTable() {
+	if kPageTable != nil {
+		panic("PageTables: mirror initialize failed")
+	}
+	kPageTable = p
+}
+
+// Mirror the kernel upper address space page tables.
+func (p *PageTables) MirrorKernelPageTable() {
+	mirrorKernelPgds(p.root, kPageTable.root)
+}
+
 // New returns new PageTables.
 func New(a Allocator) *PageTables {
 	p := new(PageTables)
@@ -108,7 +124,7 @@ func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physic
 			opts:     opts,
 		},
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
+	w.iterateRange(p, uintptr(addr), uintptr(addr)+length)
 	return w.visitor.prev
 }
 
@@ -145,7 +161,7 @@ func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
 			count: 0,
 		},
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
+	w.iterateRange(p, uintptr(addr), uintptr(addr)+length)
 	return w.visitor.count > 0
 }
 
@@ -176,7 +192,7 @@ func (p *PageTables) IsEmpty(addr usermem.Addr, length uintptr) bool {
 	w := emptyWalker{
 		pageTables: p,
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
+	w.iterateRange(p, uintptr(addr), uintptr(addr)+length)
 	return w.visitor.count == 0
 }
 
@@ -216,6 +232,6 @@ func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) 
 			target: uintptr(addr &^ usermem.Addr(mask)),
 		},
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+1)
+	w.iterateRange(p, uintptr(addr), uintptr(addr)+1)
 	return w.visitor.physical + offset, w.visitor.opts
 }

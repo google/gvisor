@@ -194,6 +194,8 @@ func newMachine(vm int) (*machine, error) {
 	}
 	log.Debugf("The maximum number of vCPUs is %d.", m.maxVCPUs)
 
+	m.kernel.PageTables.SetKernelPageTable()
+
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
 	// physical pages are mapped on demand, see kernel_unsafe.go.
