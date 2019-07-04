@@ -53,6 +53,7 @@ go_test(
         "//pkg/unet",
         "//pkg/urpc",
         "//runsc/boot",
+        "//runsc/boot/platforms",
         "//runsc/specutils",
         "//runsc/test/testutil",
         "@com_github_cenkalti_backoff//:go_default_library",

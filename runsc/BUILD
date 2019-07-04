@@ -16,6 +16,7 @@ go_binary(
     x_defs = {"main.version": "{VERSION}"},
     deps = [
         "//pkg/log",
+        "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
         "//runsc/specutils",
@@ -47,6 +48,7 @@ go_binary(
     x_defs = {"main.version": "{VERSION}"},
     deps = [
         "//pkg/log",
+        "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
         "//runsc/specutils",

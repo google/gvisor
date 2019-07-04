@@ -437,29 +437,6 @@ func hostInetFilters() seccomp.SyscallRules {
 	}
 }
 
-// ptraceFilters returns syscalls made exclusively by the ptrace platform.
-func ptraceFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		unix.SYS_GETCPU:            {},
-		unix.SYS_SCHED_SETAFFINITY: {},
-		syscall.SYS_PTRACE:         {},
-		syscall.SYS_TGKILL:         {},
-		syscall.SYS_WAIT4:          {},
-	}
-}
-
-// kvmFilters returns syscalls made exclusively by the KVM platform.
-func kvmFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		syscall.SYS_ARCH_PRCTL:      {},
-		syscall.SYS_IOCTL:           {},
-		syscall.SYS_MMAP:            {},
-		syscall.SYS_RT_SIGSUSPEND:   {},
-		syscall.SYS_RT_SIGTIMEDWAIT: {},
-		0xffffffffffffffff:          {}, // KVM uses syscall -1 to transition to host.
-	}
-}
-
 func controlServerFilters(fd int) seccomp.SyscallRules {
 	return seccomp.SyscallRules{
 		syscall.SYS_ACCEPT: []seccomp.Rule{

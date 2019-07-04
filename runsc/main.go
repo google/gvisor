@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -61,7 +62,7 @@ var (
 	straceLogSize  = flag.Uint("strace-log-size", 1024, "default size (in bytes) to log data argument blobs")
 
 	// Flags that control sandbox runtime behavior.
-	platform           = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
+	platformName       = flag.String("platform", "ptrace", "specifies which platform to use: ptrace (default), kvm")
 	network            = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
 	gso                = flag.Bool("gso", true, "enable generic segmenation offload")
 	fileAccess         = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
@@ -139,8 +140,8 @@ func main() {
 	}
 	cmd.ErrorLogger = errorLogger
 
-	platformType, err := boot.MakePlatformType(*platform)
-	if err != nil {
+	platformType := *platformName
+	if _, err := platform.Lookup(platformType); err != nil {
 		cmd.Fatalf("%v", err)
 	}
 

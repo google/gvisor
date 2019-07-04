@@ -28,6 +28,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/log",
+        "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/platform/safecopy",
