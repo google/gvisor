@@ -18,9 +18,6 @@ package disklayout
 // It is the block group descriptor struct for 64-bit ext4 filesystems.
 // It implements BlockGroup interface. It is an extension of the 32-bit
 // version of BlockGroup.
-//
-// The suffix `Hi` here stands for upper bits because they represent the upper
-// half of the fields.
 type BlockGroup64Bit struct {
 	// We embed the 32-bit struct here because 64-bit version is just an extension
 	// of the 32-bit version.
@@ -39,6 +36,9 @@ type BlockGroup64Bit struct {
 	InodeBitmapChecksumHi uint16
 	_                     uint32 // Padding to 64 bytes.
 }
+
+// Compiles only if BlockGroup64Bit implements BlockGroup.
+var _ BlockGroup = (*BlockGroup64Bit)(nil)
 
 // Methods to override. Checksum() and Flags() are not overridden.
 
