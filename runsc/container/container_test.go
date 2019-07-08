@@ -17,6 +17,7 @@ package container
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -409,6 +410,46 @@ func TestLifecycle(t *testing.T) {
 
 // Test the we can execute the application with different path formats.
 func TestExePath(t *testing.T) {
+	// Create two directories that will be prepended to PATH.
+	firstPath, err := ioutil.TempDir(testutil.TmpDir(), "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondPath, err := ioutil.TempDir(testutil.TmpDir(), "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create two minimal executables in the second path, two of which
+	// will be masked by files in first path.
+	for _, p := range []string{"unmasked", "masked1", "masked2"} {
+		path := filepath.Join(secondPath, p)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0777)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := io.WriteString(f, "#!/bin/true\n"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create a non-executable file in the first path which masks a healthy
+	// executable in the second.
+	nonExecutable := filepath.Join(firstPath, "masked1")
+	f2, err := os.OpenFile(nonExecutable, os.O_CREATE|os.O_EXCL, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2.Close()
+
+	// Create a non-regular file in the first path which masks a healthy
+	// executable in the second.
+	nonRegular := filepath.Join(firstPath, "masked2")
+	if err := os.Mkdir(nonRegular, 0777); err != nil {
+		t.Fatal(err)
+	}
+
 	for _, conf := range configs(overlay) {
 		t.Logf("Running test with conf: %+v", conf)
 		for _, test := range []struct {
@@ -421,8 +462,24 @@ func TestExePath(t *testing.T) {
 			{path: "thisfiledoesntexit", success: false},
 			{path: "bin/thisfiledoesntexit", success: false},
 			{path: "/bin/thisfiledoesntexit", success: false},
+
+			{path: "unmasked", success: true},
+			{path: filepath.Join(firstPath, "unmasked"), success: false},
+			{path: filepath.Join(secondPath, "unmasked"), success: true},
+
+			{path: "masked1", success: true},
+			{path: filepath.Join(firstPath, "masked1"), success: false},
+			{path: filepath.Join(secondPath, "masked1"), success: true},
+
+			{path: "masked2", success: true},
+			{path: filepath.Join(firstPath, "masked2"), success: false},
+			{path: filepath.Join(secondPath, "masked2"), success: true},
 		} {
 			spec := testutil.NewSpecWithArgs(test.path)
+			spec.Process.Env = []string{
+				fmt.Sprintf("PATH=%s:%s:%s", firstPath, secondPath, os.Getenv("PATH")),
+			}
+
 			rootDir, bundleDir, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("exec: %s, error setting up container: %v", test.path, err)
