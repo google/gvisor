@@ -12,22 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package disklayout provides Linux ext file system's disk level structures
-// which can be directly read into from the underlying device. All structures
-// on disk are in little-endian order. Only jbd2 (journal) structures are in
-// big-endian order. Structs aim to emulate structures `exactly` how they are
-// layed out on disk.
-//
-// This library aims to be compatible with all ext(2/3/4) systems so it
-// provides a generic interface for all major structures and various
-// implementations (for different versions). The user code is responsible for
-// using appropriate implementations based on the underlying device.
-//
-// Notes:
-//   - All fields in these structs are exported because binary.Read would
-//     panic otherwise.
-//   - All OS dependent fields in these structures will be interpretted using
-//     the Linux version of that field.
 package disklayout
 
 // SuperBlock should be implemented by structs representing the ext superblock.
@@ -109,7 +93,7 @@ type SuperBlock interface {
 	//     - Inode disk record size = sb.s_inode_size (function return value).
 	//                              = 256 (default)
 	//     - Inode struct size = 128 + inode.i_extra_isize.
-	//                         = 128 + 28 = 156 (default)
+	//                         = 128 + 32 = 160 (default)
 	InodeSize() uint16
 
 	// InodesPerGroup returns the number of inodes in a block group.

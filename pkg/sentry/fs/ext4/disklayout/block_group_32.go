@@ -17,12 +17,6 @@ package disklayout
 // BlockGroup32Bit emulates the first half of struct ext4_group_desc in
 // fs/ext4/ext4.h. It is the block group descriptor struct for ext2, ext3 and
 // 32-bit ext4 filesystems. It implements BlockGroup interface.
-//
-// The suffix `Lo` here stands for lower bits because this is also used in the
-// 64-bit version where these fields represent the lower half of the fields.
-// The suffix `Raw` has been added to indicate that the field does not have a
-// counterpart in the 64-bit version and to resolve name collision with the
-// interface.
 type BlockGroup32Bit struct {
 	BlockBitmapLo         uint32
 	InodeBitmapLo         uint32
@@ -37,6 +31,9 @@ type BlockGroup32Bit struct {
 	ItableUnusedLo        uint16
 	ChecksumRaw           uint16
 }
+
+// Compiles only if BlockGroup32Bit implements BlockGroup.
+var _ BlockGroup = (*BlockGroup32Bit)(nil)
 
 // InodeTable implements BlockGroup.InodeTable.
 func (bg *BlockGroup32Bit) InodeTable() uint64 { return uint64(bg.InodeTableLo) }

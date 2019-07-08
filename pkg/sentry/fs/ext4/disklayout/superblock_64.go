@@ -18,9 +18,6 @@ package disklayout
 // the ext4_super_block struct in fs/ext4/ext4.h. This sums up to be exactly
 // 1024 bytes (smallest possible block size) and hence the superblock always
 // fits in no more than one data block.
-//
-// The suffix `Hi` here stands for upper bits because they represent the upper
-// half of the fields.
 type SuperBlock64Bit struct {
 	// We embed the 32-bit struct here because 64-bit version is just an extension
 	// of the 32-bit version.
@@ -77,6 +74,9 @@ type SuperBlock64Bit struct {
 	_                       [95]uint32
 	Checksum                uint32
 }
+
+// Compiles only if SuperBlock64Bit implements SuperBlock.
+var _ SuperBlock = (*SuperBlock64Bit)(nil)
 
 // Only override methods which change based on the 64-bit feature.
 

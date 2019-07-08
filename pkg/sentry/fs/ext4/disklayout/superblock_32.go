@@ -16,10 +16,6 @@ package disklayout
 
 // SuperBlock32Bit implements SuperBlock and represents the 32-bit version of
 // the ext4_super_block struct in fs/ext4/ext4.h.
-//
-// The suffix `Raw` has been added to indicate that the field does not have a
-// counterpart in the 64-bit version and to resolve name collision with the
-// interface.
 type SuperBlock32Bit struct {
 	// We embed the old superblock struct here because the 32-bit version is just
 	// an extension of the old version.
@@ -51,6 +47,9 @@ type SuperBlock32Bit struct {
 	MkfsTime           uint32
 	JnlBlocks          [17]uint32
 }
+
+// Compiles only if SuperBlock32Bit implements SuperBlock.
+var _ SuperBlock = (*SuperBlock32Bit)(nil)
 
 // Only override methods which change based on the additional fields above.
 // Not overriding SuperBlock.BgDescSize because it would still return 32 here.
