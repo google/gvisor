@@ -325,6 +325,21 @@ TEST_P(ParamSymlinkTest, CreateExistingSelfLink) {
   ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
 }
 
+// Test that opening a file that is a symlink to its parent directory fails
+// with ELOOP.
+TEST_P(ParamSymlinkTest, CreateExistingParentLink) {
+  ASSERT_THAT(chdir(GetAbsoluteTestTmpdir().c_str()), SyscallSucceeds());
+
+  const std::string linkpath = GetParam();
+  const std::string target = JoinPath(linkpath, "child");
+  ASSERT_THAT(symlink(target.c_str(), linkpath.c_str()), SyscallSucceeds());
+
+  EXPECT_THAT(open(linkpath.c_str(), O_CREAT, 0666),
+              SyscallFailsWithErrno(ELOOP));
+
+  ASSERT_THAT(unlink(linkpath.c_str()), SyscallSucceeds());
+}
+
 // Test that opening an existing symlink with O_CREAT|O_EXCL will fail with
 // EEXIST.
 TEST_P(ParamSymlinkTest, OpenLinkExclFails) {

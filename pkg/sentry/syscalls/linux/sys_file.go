@@ -353,7 +353,8 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 				// No more resolution necessary.
 				defer resolved.DecRef()
 				break
-			} else if err != fs.ErrResolveViaReadlink {
+			}
+			if err != fs.ErrResolveViaReadlink {
 				return err
 			}
 
@@ -363,15 +364,17 @@ func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode l
 			}
 
 			// Resolve the symlink to a path via Readlink.
-			path, err := found.Inode.Readlink(t)
+			var path string
+			path, err = found.Inode.Readlink(t)
 			if err != nil {
 				break
 			}
 			remainingTraversals--
 
 			// Get the new parent from the target path.
+			var newParent *fs.Dirent
 			newParentPath, newName := fs.SplitLast(path)
-			newParent, err := t.MountNamespace().FindInode(t, root, parent, newParentPath, &remainingTraversals)
+			newParent, err = t.MountNamespace().FindInode(t, root, parent, newParentPath, &remainingTraversals)
 			if err != nil {
 				break
 			}
