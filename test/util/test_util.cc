@@ -231,6 +231,7 @@ void TestInit(int* argc, char*** argv) {
   sa.sa_handler = SIG_IGN;
   TEST_CHECK(sigaction(SIGPIPE, &sa, nullptr) == 0);
 }
+   gvisor:case-end
 
 }  // namespace testing
 }  // namespace gvisor
