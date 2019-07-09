@@ -15,12 +15,11 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/eventfd"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -38,7 +37,7 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	allOps := uint(EFD_SEMAPHORE | EFD_NONBLOCK | EFD_CLOEXEC)
 
 	if flags & ^allOps != 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	event := eventfd.New(t, uint64(initVal), flags&EFD_SEMAPHORE != 0)

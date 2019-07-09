@@ -17,8 +17,8 @@ package linux
 import (
 	"bytes"
 	"io"
-	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -82,7 +82,7 @@ func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dir
 
 	switch err := handleIOError(t, ds.Written() > 0, rerr, kernel.ERESTARTSYS, "getdents", dir); err {
 	case nil:
-		dir.Dirent.InotifyEvent(syscall.IN_ACCESS, 0)
+		dir.Dirent.InotifyEvent(linux.IN_ACCESS, 0)
 		return uintptr(ds.Written()), nil
 	case io.EOF:
 		return 0, nil
@@ -146,21 +146,21 @@ func smallestDirent64(a arch.Context) uint {
 func toType(nodeType fs.InodeType) uint8 {
 	switch nodeType {
 	case fs.RegularFile, fs.SpecialFile:
-		return syscall.DT_REG
+		return linux.DT_REG
 	case fs.Symlink:
-		return syscall.DT_LNK
+		return linux.DT_LNK
 	case fs.Directory, fs.SpecialDirectory:
-		return syscall.DT_DIR
+		return linux.DT_DIR
 	case fs.Pipe:
-		return syscall.DT_FIFO
+		return linux.DT_FIFO
 	case fs.CharacterDevice:
-		return syscall.DT_CHR
+		return linux.DT_CHR
 	case fs.BlockDevice:
-		return syscall.DT_BLK
+		return linux.DT_BLK
 	case fs.Socket:
-		return syscall.DT_SOCK
+		return linux.DT_SOCK
 	default:
-		return syscall.DT_UNKNOWN
+		return linux.DT_UNKNOWN
 	}
 }
 

@@ -15,13 +15,12 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const allFlags = int(linux.IN_NONBLOCK | linux.IN_CLOEXEC)
@@ -31,7 +30,7 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	flags := int(args[0].Int())
 
 	if flags&^allFlags != 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	dirent := fs.NewDirent(t, anon.NewInode(t), "inotify")
@@ -66,14 +65,14 @@ func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
 	file := t.GetFile(fd)
 	if file == nil {
 		// Invalid fd.
-		return nil, nil, syscall.EBADF
+		return nil, nil, syserror.EBADF
 	}
 
 	ino, ok := file.FileOperations.(*fs.Inotify)
 	if !ok {
 		// Not an inotify fd.
 		file.DecRef()
-		return nil, nil, syscall.EINVAL
+		return nil, nil, syserror.EINVAL
 	}
 
 	return ino, file, nil
@@ -92,7 +91,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	// "EINVAL: The given event mask contains no valid events."
 	// -- inotify_add_watch(2)
 	if validBits := mask & linux.ALL_INOTIFY_BITS; validBits == 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	ino, file, err := fdToInotify(t, fd)
@@ -109,7 +108,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 	err = fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, dirent *fs.Dirent, _ uint) error {
 		// "IN_ONLYDIR: Only watch pathname if it is a directory." -- inotify(7)
 		if onlyDir := mask&linux.IN_ONLYDIR != 0; onlyDir && !fs.IsDir(dirent.Inode.StableAttr) {
-			return syscall.ENOTDIR
+			return syserror.ENOTDIR
 		}
 
 		// Copy out to the return frame.

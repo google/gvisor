@@ -15,20 +15,19 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // pipe2 implements the actual system call with flags.
 func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
-		return 0, syscall.EINVAL
+		return 0, syserror.EINVAL
 	}
 	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize, usermem.PageSize)
 
@@ -49,7 +48,7 @@ func pipe2(t *kernel.Task, addr usermem.Addr, flags uint) (uintptr, error) {
 		// The files are not closed in this case, the exact semantics
 		// of this error case are not well defined, but they could have
 		// already been observed by user space.
-		return 0, syscall.EFAULT
+		return 0, syserror.EFAULT
 	}
 	return 0, nil
 }

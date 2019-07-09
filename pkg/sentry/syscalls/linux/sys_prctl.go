@@ -16,7 +16,6 @@ package linux
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -24,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Prctl implements linux syscall prctl(2).
@@ -36,7 +36,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_SET_PDEATHSIG:
 		sig := linux.Signal(args[1].Int())
 		if sig != 0 && !sig.IsValid() {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		t.SetParentDeathSignal(sig)
 		return 0, nil, nil
@@ -67,7 +67,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			d = mm.UserDumpable
 		default:
 			// N.B. Userspace may not pass SUID_DUMP_ROOT.
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		t.MemoryManager().SetDumpability(d)
 		return 0, nil, nil
@@ -88,7 +88,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		} else if val == 1 {
 			t.SetKeepCaps(true)
 		} else {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 
 		return 0, nil, nil
@@ -96,7 +96,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_SET_NAME:
 		addr := args[1].Pointer()
 		name, err := t.CopyInString(addr, linux.TASK_COMM_LEN-1)
-		if err != nil && err != syscall.ENAMETOOLONG {
+		if err != nil && err != syserror.ENAMETOOLONG {
 			return 0, nil, err
 		}
 		t.SetName(name)
@@ -116,7 +116,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_SET_MM:
 		if !t.HasCapability(linux.CAP_SYS_RESOURCE) {
-			return 0, nil, syscall.EPERM
+			return 0, nil, syserror.EPERM
 		}
 
 		switch args[1].Int() {
@@ -125,13 +125,13 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 			file := t.GetFile(fd)
 			if file == nil {
-				return 0, nil, syscall.EBADF
+				return 0, nil, syserror.EBADF
 			}
 			defer file.DecRef()
 
 			// They trying to set exe to a non-file?
 			if !fs.IsFile(file.Dirent.Inode.StableAttr) {
-				return 0, nil, syscall.EBADF
+				return 0, nil, syserror.EBADF
 			}
 
 			// Set the underlying executable.
@@ -153,12 +153,12 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			t.Kernel().EmitUnimplementedEvent(t)
 			fallthrough
 		default:
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 
 	case linux.PR_SET_NO_NEW_PRIVS:
 		if args[1].Int() != 1 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		// no_new_privs is assumed to always be set. See
 		// kernel.Task.updateCredsForExec.
@@ -166,14 +166,14 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_GET_NO_NEW_PRIVS:
 		if args[1].Int() != 0 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		return 1, nil, nil
 
 	case linux.PR_SET_SECCOMP:
 		if args[1].Int() != linux.SECCOMP_MODE_FILTER {
 			// Unsupported mode.
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 
 		return 0, nil, seccomp(t, linux.SECCOMP_SET_MODE_FILTER, 0, args[2].Pointer())
@@ -184,7 +184,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_CAPBSET_READ:
 		cp := linux.Capability(args[1].Uint64())
 		if !cp.Ok() {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		var rv uintptr
 		if auth.CapabilitySetOf(cp)&t.Credentials().BoundingCaps != 0 {
@@ -195,7 +195,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_CAPBSET_DROP:
 		cp := linux.Capability(args[1].Uint64())
 		if !cp.Ok() {
-			return 0, nil, syscall.EINVAL
+			return 0, nil, syserror.EINVAL
 		}
 		return 0, nil, t.DropBoundingCapability(cp)
 
@@ -220,7 +220,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		t.Kernel().EmitUnimplementedEvent(t)
 		fallthrough
 	default:
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	return 0, nil, nil

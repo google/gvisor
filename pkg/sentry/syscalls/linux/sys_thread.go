@@ -123,29 +123,29 @@ func ExitGroup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 func clone(t *kernel.Task, flags int, stack usermem.Addr, parentTID usermem.Addr, childTID usermem.Addr, tls usermem.Addr) (uintptr, *kernel.SyscallControl, error) {
 	opts := kernel.CloneOptions{
 		SharingOptions: kernel.SharingOptions{
-			NewAddressSpace:     flags&syscall.CLONE_VM == 0,
-			NewSignalHandlers:   flags&syscall.CLONE_SIGHAND == 0,
-			NewThreadGroup:      flags&syscall.CLONE_THREAD == 0,
+			NewAddressSpace:     flags&linux.CLONE_VM == 0,
+			NewSignalHandlers:   flags&linux.CLONE_SIGHAND == 0,
+			NewThreadGroup:      flags&linux.CLONE_THREAD == 0,
 			TerminationSignal:   linux.Signal(flags & exitSignalMask),
-			NewPIDNamespace:     flags&syscall.CLONE_NEWPID == syscall.CLONE_NEWPID,
-			NewUserNamespace:    flags&syscall.CLONE_NEWUSER == syscall.CLONE_NEWUSER,
-			NewNetworkNamespace: flags&syscall.CLONE_NEWNET == syscall.CLONE_NEWNET,
-			NewFiles:            flags&syscall.CLONE_FILES == 0,
-			NewFSContext:        flags&syscall.CLONE_FS == 0,
-			NewUTSNamespace:     flags&syscall.CLONE_NEWUTS == syscall.CLONE_NEWUTS,
-			NewIPCNamespace:     flags&syscall.CLONE_NEWIPC == syscall.CLONE_NEWIPC,
+			NewPIDNamespace:     flags&linux.CLONE_NEWPID == linux.CLONE_NEWPID,
+			NewUserNamespace:    flags&linux.CLONE_NEWUSER == linux.CLONE_NEWUSER,
+			NewNetworkNamespace: flags&linux.CLONE_NEWNET == linux.CLONE_NEWNET,
+			NewFiles:            flags&linux.CLONE_FILES == 0,
+			NewFSContext:        flags&linux.CLONE_FS == 0,
+			NewUTSNamespace:     flags&linux.CLONE_NEWUTS == linux.CLONE_NEWUTS,
+			NewIPCNamespace:     flags&linux.CLONE_NEWIPC == linux.CLONE_NEWIPC,
 		},
 		Stack:         stack,
-		SetTLS:        flags&syscall.CLONE_SETTLS == syscall.CLONE_SETTLS,
+		SetTLS:        flags&linux.CLONE_SETTLS == linux.CLONE_SETTLS,
 		TLS:           tls,
-		ChildClearTID: flags&syscall.CLONE_CHILD_CLEARTID == syscall.CLONE_CHILD_CLEARTID,
-		ChildSetTID:   flags&syscall.CLONE_CHILD_SETTID == syscall.CLONE_CHILD_SETTID,
+		ChildClearTID: flags&linux.CLONE_CHILD_CLEARTID == linux.CLONE_CHILD_CLEARTID,
+		ChildSetTID:   flags&linux.CLONE_CHILD_SETTID == linux.CLONE_CHILD_SETTID,
 		ChildTID:      childTID,
-		ParentSetTID:  flags&syscall.CLONE_PARENT_SETTID == syscall.CLONE_PARENT_SETTID,
+		ParentSetTID:  flags&linux.CLONE_PARENT_SETTID == linux.CLONE_PARENT_SETTID,
 		ParentTID:     parentTID,
-		Vfork:         flags&syscall.CLONE_VFORK == syscall.CLONE_VFORK,
-		Untraced:      flags&syscall.CLONE_UNTRACED == syscall.CLONE_UNTRACED,
-		InheritTracer: flags&syscall.CLONE_PTRACE == syscall.CLONE_PTRACE,
+		Vfork:         flags&linux.CLONE_VFORK == linux.CLONE_VFORK,
+		Untraced:      flags&linux.CLONE_UNTRACED == linux.CLONE_UNTRACED,
+		InheritTracer: flags&linux.CLONE_PTRACE == linux.CLONE_PTRACE,
 	}
 	ntid, ctrl, err := t.Clone(&opts)
 	return uintptr(ntid), ctrl, err
@@ -168,7 +168,7 @@ func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 func Fork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// "A call to fork() is equivalent to a call to clone(2) specifying flags
 	// as just SIGCHLD." - fork(2)
-	return clone(t, int(syscall.SIGCHLD), 0, 0, 0, 0)
+	return clone(t, int(linux.SIGCHLD), 0, 0, 0, 0)
 }
 
 // Vfork implements Linux syscall vfork(2).
@@ -178,7 +178,7 @@ func Vfork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	//
 	//     CLONE_VM | CLONE_VFORK | SIGCHLD
 	// """ - vfork(2)
-	return clone(t, syscall.CLONE_VM|syscall.CLONE_VFORK|int(syscall.SIGCHLD), 0, 0, 0, 0)
+	return clone(t, linux.CLONE_VM|linux.CLONE_VFORK|int(linux.SIGCHLD), 0, 0, 0, 0)
 }
 
 // parseCommonWaitOptions applies the options common to wait4 and waitid to
@@ -193,7 +193,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 		wopts.NonCloneTasks = true
 		wopts.CloneTasks = true
 	default:
-		return syscall.EINVAL
+		return syserror.EINVAL
 	}
 	if options&linux.WCONTINUED != 0 {
 		wopts.Events |= kernel.EventGroupContinue
@@ -210,7 +210,7 @@ func parseCommonWaitOptions(wopts *kernel.WaitOptions, options int) error {
 // wait4 waits for the given child process to exit.
 func wait4(t *kernel.Task, pid int, statusAddr usermem.Addr, options int, rusageAddr usermem.Addr) (uintptr, error) {
 	if options&^(linux.WNOHANG|linux.WUNTRACED|linux.WCONTINUED|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
-		return 0, syscall.EINVAL
+		return 0, syserror.EINVAL
 	}
 	wopts := kernel.WaitOptions{
 		Events:       kernel.EventExit | kernel.EventTraceeStop,
@@ -291,10 +291,10 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	rusageAddr := args[4].Pointer()
 
 	if options&^(linux.WNOHANG|linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED|linux.WNOWAIT|linux.WNOTHREAD|linux.WALL|linux.WCLONE) != 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if options&(linux.WEXITED|linux.WSTOPPED|linux.WCONTINUED) == 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	wopts := kernel.WaitOptions{
 		Events:       kernel.EventTraceeStop,
@@ -307,7 +307,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case linux.P_PGID:
 		wopts.SpecificPGID = kernel.ProcessGroupID(id)
 	default:
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	if err := parseCommonWaitOptions(&wopts, options); err != nil {
@@ -347,12 +347,12 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, nil
 	}
 	si := arch.SignalInfo{
-		Signo: int32(syscall.SIGCHLD),
+		Signo: int32(linux.SIGCHLD),
 	}
 	si.SetPid(int32(wr.TID))
 	si.SetUid(int32(wr.UID))
 	// TODO(b/73541790): convert kernel.ExitStatus to functions and make
-	// WaitResult.Status a linux.WaitStatus
+	// WaitResult.Status a linux.WaitStatus.
 	s := syscall.WaitStatus(wr.Status)
 	switch {
 	case s.Exited():
@@ -374,7 +374,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	case s.Continued():
 		si.Code = arch.CLD_CONTINUED
-		si.SetStatus(int32(syscall.SIGCONT))
+		si.SetStatus(int32(linux.SIGCONT))
 	default:
 		t.Warningf("waitid got incomprehensible wait status %d", s)
 	}
@@ -395,16 +395,16 @@ func SetTidAddress(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 func Unshare(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 	opts := kernel.SharingOptions{
-		NewAddressSpace:     flags&syscall.CLONE_VM == syscall.CLONE_VM,
-		NewSignalHandlers:   flags&syscall.CLONE_SIGHAND == syscall.CLONE_SIGHAND,
-		NewThreadGroup:      flags&syscall.CLONE_THREAD == syscall.CLONE_THREAD,
-		NewPIDNamespace:     flags&syscall.CLONE_NEWPID == syscall.CLONE_NEWPID,
-		NewUserNamespace:    flags&syscall.CLONE_NEWUSER == syscall.CLONE_NEWUSER,
-		NewNetworkNamespace: flags&syscall.CLONE_NEWNET == syscall.CLONE_NEWNET,
-		NewFiles:            flags&syscall.CLONE_FILES == syscall.CLONE_FILES,
-		NewFSContext:        flags&syscall.CLONE_FS == syscall.CLONE_FS,
-		NewUTSNamespace:     flags&syscall.CLONE_NEWUTS == syscall.CLONE_NEWUTS,
-		NewIPCNamespace:     flags&syscall.CLONE_NEWIPC == syscall.CLONE_NEWIPC,
+		NewAddressSpace:     flags&linux.CLONE_VM == linux.CLONE_VM,
+		NewSignalHandlers:   flags&linux.CLONE_SIGHAND == linux.CLONE_SIGHAND,
+		NewThreadGroup:      flags&linux.CLONE_THREAD == linux.CLONE_THREAD,
+		NewPIDNamespace:     flags&linux.CLONE_NEWPID == linux.CLONE_NEWPID,
+		NewUserNamespace:    flags&linux.CLONE_NEWUSER == linux.CLONE_NEWUSER,
+		NewNetworkNamespace: flags&linux.CLONE_NEWNET == linux.CLONE_NEWNET,
+		NewFiles:            flags&linux.CLONE_FILES == linux.CLONE_FILES,
+		NewFSContext:        flags&linux.CLONE_FS == linux.CLONE_FS,
+		NewUTSNamespace:     flags&linux.CLONE_NEWUTS == linux.CLONE_NEWUTS,
+		NewIPCNamespace:     flags&linux.CLONE_NEWIPC == linux.CLONE_NEWIPC,
 	}
 	// "CLONE_NEWPID automatically implies CLONE_THREAD as well." - unshare(2)
 	if opts.NewPIDNamespace {
@@ -623,7 +623,7 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	who := kernel.ThreadID(args[1].Int())
 
 	switch which {
-	case syscall.PRIO_PROCESS:
+	case linux.PRIO_PROCESS:
 		// Look for who, return ESRCH if not found.
 		var task *kernel.Task
 		if who == 0 {
@@ -633,7 +633,7 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		if task == nil {
-			return 0, nil, syscall.ESRCH
+			return 0, nil, syserror.ESRCH
 		}
 
 		// From kernel/sys.c:getpriority:
@@ -641,13 +641,13 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		// will not return the normal nice-value, but a negated
 		// value that has been offset by 20"
 		return uintptr(20 - task.Niceness()), nil, nil
-	case syscall.PRIO_USER:
+	case linux.PRIO_USER:
 		fallthrough
-	case syscall.PRIO_PGRP:
+	case linux.PRIO_PGRP:
 		// PRIO_USER and PRIO_PGRP have no further implementation yet.
 		return 0, nil, nil
 	default:
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 }
 
@@ -669,7 +669,7 @@ func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	}
 
 	switch which {
-	case syscall.PRIO_PROCESS:
+	case linux.PRIO_PROCESS:
 		// Look for who, return ESRCH if not found.
 		var task *kernel.Task
 		if who == 0 {
@@ -679,17 +679,17 @@ func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		}
 
 		if task == nil {
-			return 0, nil, syscall.ESRCH
+			return 0, nil, syserror.ESRCH
 		}
 
 		task.SetNiceness(niceval)
-	case syscall.PRIO_USER:
+	case linux.PRIO_USER:
 		fallthrough
-	case syscall.PRIO_PGRP:
+	case linux.PRIO_PGRP:
 		// PRIO_USER and PRIO_PGRP have no further implementation yet.
 		return 0, nil, nil
 	default:
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	return 0, nil, nil

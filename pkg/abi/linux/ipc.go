@@ -44,10 +44,10 @@ type IPCPerm struct {
 	CUID    uint32
 	CGID    uint32
 	Mode    uint16
-	pad1    uint16
+	_       uint16
 	Seq     uint16
-	pad2    uint16
-	pad3    uint32
+	_       uint16
+	_       uint32
 	unused1 uint64
 	unused2 uint64
 }

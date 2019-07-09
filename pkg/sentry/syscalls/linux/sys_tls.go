@@ -17,11 +17,10 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ArchPrctl implements linux syscall arch_prctl(2).
@@ -39,14 +38,14 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.ARCH_SET_FS:
 		fsbase := args[1].Uint64()
 		if !t.Arch().SetTLS(uintptr(fsbase)) {
-			return 0, nil, syscall.EPERM
+			return 0, nil, syserror.EPERM
 		}
 
 	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
 		t.Kernel().EmitUnimplementedEvent(t)
 		fallthrough
 	default:
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 
 	return 0, nil, nil
