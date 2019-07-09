@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_template_instance(
     name = "atomicptr_bucket",
-    out = "atomicptr_bucket.go",
+    out = "atomicptr_bucket_unsafe.go",
     package = "futex",
     suffix = "Bucket",
     template = "//third_party/gvsync:generic_atomicptr",
@@ -29,7 +29,7 @@ go_template_instance(
 go_library(
     name = "futex",
     srcs = [
-        "atomicptr_bucket.go",
+        "atomicptr_bucket_unsafe.go",
         "futex.go",
         "waiter_list.go",
     ],

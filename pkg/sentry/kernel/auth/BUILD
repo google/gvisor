@@ -5,7 +5,7 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_template_instance(
     name = "atomicptr_credentials",
-    out = "atomicptr_credentials.go",
+    out = "atomicptr_credentials_unsafe.go",
     package = "auth",
     suffix = "Credentials",
     template = "//third_party/gvsync:generic_atomicptr",
@@ -45,7 +45,7 @@ go_template_instance(
 go_library(
     name = "auth",
     srcs = [
-        "atomicptr_credentials.go",
+        "atomicptr_credentials_unsafe.go",
         "auth.go",
         "capability_set.go",
         "context.go",

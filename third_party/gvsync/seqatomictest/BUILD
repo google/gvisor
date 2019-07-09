@@ -6,7 +6,7 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "seqatomic_int",
-    out = "seqatomic_int.go",
+    out = "seqatomic_int_unsafe.go",
     package = "seqatomic",
     suffix = "Int",
     template = "//third_party/gvsync:generic_seqatomic",
@@ -17,7 +17,7 @@ go_template_instance(
 
 go_library(
     name = "seqatomic",
-    srcs = ["seqatomic_int.go"],
+    srcs = ["seqatomic_int_unsafe.go"],
     importpath = "gvisor.dev/gvisor/third_party/gvsync/seqatomic",
     deps = [
         "//third_party/gvsync",

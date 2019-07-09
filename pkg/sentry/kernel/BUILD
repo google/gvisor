@@ -31,7 +31,7 @@ go_template_instance(
 
 go_template_instance(
     name = "seqatomic_taskgoroutineschedinfo",
-    out = "seqatomic_taskgoroutineschedinfo.go",
+    out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
     package = "kernel",
     suffix = "TaskGoroutineSchedInfo",
     template = "//third_party/gvsync:generic_seqatomic",
@@ -112,7 +112,7 @@ go_library(
         "ptrace_arm64.go",
         "rseq.go",
         "seccomp.go",
-        "seqatomic_taskgoroutineschedinfo.go",
+        "seqatomic_taskgoroutineschedinfo_unsafe.go",
         "session_list.go",
         "sessions.go",
         "signal.go",

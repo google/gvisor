@@ -20,7 +20,10 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_to
 
 go_rules_dependencies()
 
-go_register_toolchains(go_version = "1.12.6")
+go_register_toolchains(
+    go_version = "1.12.6",
+    nogo = "@//:nogo",
+)
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
@@ -139,6 +142,12 @@ go_repository(
     name = "org_golang_x_sys",
     commit = "d0b11bdaac8a",
     importpath = "golang.org/x/sys",
+)
+
+go_repository(
+    name = "org_golang_x_tools",
+    commit = "aa82965741a9fecd12b026fbb3d3c6ed3231b8f8",
+    importpath = "golang.org/x/tools",
 )
 
 go_repository(
