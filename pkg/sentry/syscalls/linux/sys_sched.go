@@ -15,11 +15,10 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -37,13 +36,13 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	pid := args[0].Int()
 	param := args[1].Pointer()
 	if param == 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if pid < 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syscall.ESRCH
+		return 0, nil, syserror.ESRCH
 	}
 	r := SchedParam{schedPriority: onlyPriority}
 	if _, err := t.CopyOut(param, r); err != nil {
@@ -57,10 +56,10 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 func SchedGetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	if pid < 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syscall.ESRCH
+		return 0, nil, syserror.ESRCH
 	}
 	return onlyScheduler, nil, nil
 }
@@ -71,20 +70,20 @@ func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 	policy := args[1].Int()
 	param := args[2].Pointer()
 	if pid < 0 {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if policy != onlyScheduler {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syscall.ESRCH
+		return 0, nil, syserror.ESRCH
 	}
 	var r SchedParam
 	if _, err := t.CopyIn(param, &r); err != nil {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	if r.schedPriority != onlyPriority {
-		return 0, nil, syscall.EINVAL
+		return 0, nil, syserror.EINVAL
 	}
 	return 0, nil, nil
 }

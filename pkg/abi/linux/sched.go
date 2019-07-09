@@ -28,3 +28,9 @@ const (
 	// reverted back to SCHED_NORMAL on fork.
 	SCHED_RESET_ON_FORK = 0x40000000
 )
+
+const (
+	PRIO_PGRP    = 0x1
+	PRIO_PROCESS = 0x0
+	PRIO_USER    = 0x2
+)

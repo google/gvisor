@@ -26,7 +26,6 @@ package syscalls
 
 import (
 	"fmt"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -56,7 +55,7 @@ func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []st
 }
 
 // Error returns a syscall handler that will always give the passed error.
-func Error(name string, err syscall.Errno, note string, urls []string) kernel.Syscall {
+func Error(name string, err error, note string, urls []string) kernel.Syscall {
 	if note != "" {
 		note = note + "; "
 	}
@@ -73,7 +72,7 @@ func Error(name string, err syscall.Errno, note string, urls []string) kernel.Sy
 
 // ErrorWithEvent gives a syscall function that sends an unimplemented
 // syscall event via the event channel and returns the passed error.
-func ErrorWithEvent(name string, err syscall.Errno, note string, urls []string) kernel.Syscall {
+func ErrorWithEvent(name string, err error, note string, urls []string) kernel.Syscall {
 	if note != "" {
 		note = note + "; "
 	}
