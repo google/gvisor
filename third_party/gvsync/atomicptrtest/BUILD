@@ -6,7 +6,7 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "atomicptr_int",
-    out = "atomicptr_int.go",
+    out = "atomicptr_int_unsafe.go",
     package = "atomicptr",
     suffix = "Int",
     template = "//third_party/gvsync:generic_atomicptr",
@@ -17,7 +17,7 @@ go_template_instance(
 
 go_library(
     name = "atomicptr",
-    srcs = ["atomicptr_int.go"],
+    srcs = ["atomicptr_int_unsafe.go"],
     importpath = "gvisor.dev/gvisor/third_party/gvsync/atomicptr",
 )
 

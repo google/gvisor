@@ -6,7 +6,7 @@ load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "seqatomic_parameters",
-    out = "seqatomic_parameters.go",
+    out = "seqatomic_parameters_unsafe.go",
     package = "time",
     suffix = "Parameters",
     template = "//third_party/gvsync:generic_seqatomic",
@@ -27,7 +27,7 @@ go_library(
         "parameters.go",
         "sampler.go",
         "sampler_unsafe.go",
-        "seqatomic_parameters.go",
+        "seqatomic_parameters_unsafe.go",
         "tsc_amd64.s",
         "tsc_arm64.s",
     ],

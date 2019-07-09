@@ -1,6 +1,6 @@
 package(licenses = ["notice"])  # Apache 2.0
 
-load("@io_bazel_rules_go//go:def.bzl", "go_path")
+load("@io_bazel_rules_go//go:def.bzl", "go_path", "nogo")
 load("@bazel_gazelle//:def.bzl", "gazelle")
 
 # The sandbox filegroup is used for sandbox-internal dependencies.
@@ -29,3 +29,15 @@ go_path(
 # To update the WORKSPACE from go.mod, use:
 #   bazel run //:gazelle -- update-repos -from_file=go.mod
 gazelle(name = "gazelle")
+
+# nogo applies checks to all Go source in this repository, enforcing code
+# guidelines and restrictions. Note that the tool libraries themselves should
+# live in the tools subdirectory (unless they are standard).
+nogo(
+    name = "nogo",
+    config = "tools/nogo.js",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tools/checkunsafe",
+    ],
+)
