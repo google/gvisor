@@ -8,6 +8,9 @@ go_library(
         "block_group.go",
         "block_group_32.go",
         "block_group_64.go",
+        "dirent.go",
+        "dirent_new.go",
+        "dirent_old.go",
         "disklayout.go",
         "inode.go",
         "inode_new.go",
@@ -22,6 +25,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/sentry/fs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
     ],
@@ -32,6 +36,7 @@ go_test(
     size = "small",
     srcs = [
         "block_group_test.go",
+        "dirent_test.go",
         "inode_test.go",
         "superblock_test.go",
     ],
