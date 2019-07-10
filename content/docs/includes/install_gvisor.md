@@ -19,9 +19,9 @@ a good place to put the `runsc` binary.
   wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
   wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
   sha512sum -c runsc.sha512
-  chmod a+x runsc
   sudo mv runsc /usr/local/bin
   sudo chown root:root /usr/local/bin/runsc
+  chmod 0755 /usr/local/bin/runsc
 )
 ```
 
