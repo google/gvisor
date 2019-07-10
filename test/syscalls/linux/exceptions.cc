@@ -56,6 +56,26 @@ void inline Int3Normal() { asm(".byte 0xcd, 0x03\r\n"); }
 
 void inline Int3Compact() { asm(".byte 0xcc\r\n"); }
 
+void InIOHelper(int width, int value) {
+  EXPECT_EXIT(
+      {
+        switch (width) {
+          case 1:
+            asm volatile("inb %%dx, %%al" ::"d"(value) : "%eax");
+            break;
+          case 2:
+            asm volatile("inw %%dx, %%ax" ::"d"(value) : "%eax");
+            break;
+          case 4:
+            asm volatile("inl %%dx, %%eax" ::"d"(value) : "%eax");
+            break;
+          default:
+            FAIL() << "invalid input width, only 1, 2 or 4 is allowed";
+        }
+      },
+      ::testing::KilledBySignal(SIGSEGV), "");
+}
+
 TEST(ExceptionTest, Halt) {
   // In order to prevent the regular handler from messing with things (and
   // perhaps refaulting until some other signal occurs), we reset the handler to
@@ -85,6 +105,20 @@ TEST(ExceptionTest, DivideByZero) {
         TEST_CHECK(quotient > 0);  // Force dependency.
       },
       ::testing::KilledBySignal(SIGFPE), "");
+}
+
+TEST(ExceptionTest, IOAccessFault) {
+  // See above.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_DFL;
+  auto const cleanup = ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGSEGV, sa));
+
+  InIOHelper(1, 0x0);
+  InIOHelper(2, 0x7);
+  InIOHelper(4, 0x6);
+  InIOHelper(1, 0xffff);
+  InIOHelper(2, 0xffff);
+  InIOHelper(4, 0xfffd);
 }
 
 TEST(ExceptionTest, Alignment) {
