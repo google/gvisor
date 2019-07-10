@@ -213,7 +213,7 @@ for data that transitions across the sandbox boundary. This manifests as
 **structural costs** in some cases, since these operations must be routed
 through the [Gofer](../) as a result of our [security model](../security/), but
 in most cases are dominated by **implementation costs**, due to an internal
-[Virtual File System][vfs] (VFS) implementation the needs improvement.
+[Virtual File System][vfs] (VFS) implementation that needs improvement.
 
 {{< graph id="fio-bw" url="/performance/fio.csv" title="perf.py fio --engine=sync --runtime=runc --runtime=runsc" log="true" >}}
 
