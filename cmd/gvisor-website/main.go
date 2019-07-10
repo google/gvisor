@@ -36,8 +36,11 @@ var redirects = map[string]string{
 	"/pr":        "https://github.com/google/gvisor/pulls",
 
 	// Redirects to compatibility docs.
-	"/c":             "/docs/user_guide/compatibility",
-	"/c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64",
+	"/c":             "/docs/user_guide/compatibility/",
+	"/c/linux/amd64": "/docs/user_guide/compatibility/linux/amd64/",
+	// Redirect for old url
+	"/docs/user_guide/compatibility/amd64":  "/docs/user_guide/compatibility/linux/amd64/",
+	"/docs/user_guide/compatibility/amd64/": "/docs/user_guide/compatibility/linux/amd64/",
 
 	// Deprecated, but links continue to work.
 	"/cl": "https://gvisor-review.googlesource.com",
@@ -230,5 +233,6 @@ func main() {
 	registerRebuild(nil)
 	registerStatic(nil, *staticDir)
 
+	log.Printf("Listening on %s...", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
