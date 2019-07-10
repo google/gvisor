@@ -14,8 +14,11 @@ APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
 default: website
 .PHONY: default
 
-website: all-upstream $(APP_TARGET) public/static
+website: all-upstream app public/static
 .PHONY: website
+
+app: $(APP_TARGET)
+.PHONY: app
 
 public:
 	mkdir -p public
@@ -56,9 +59,9 @@ bin/generate-syscall-docs: $(GEN_SOURCE)
 	mkdir -p bin/
 	go build -o bin/generate-syscall-docs gvisor.dev/website/cmd/generate-syscall-docs
 
-.PHONY: compatibility-docs
 compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc
 	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
+.PHONY: compatibility-docs
 
 # Run a local content development server. Redirects will not be supported.
 server: all-upstream compatibility-docs
