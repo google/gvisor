@@ -75,5 +75,4 @@ steps:
         if [[ "$PROJECT_ID" == "gvisor-website" && "$BRANCH_NAME" == "master" ]]; then
         gcloud app deploy public/app.yaml;
         fi
-# 15min
 timeout: 900s
