@@ -145,6 +145,57 @@ TEST_P(SocketInetLoopbackTest, TCP) {
   ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
 }
 
+TEST_P(SocketInetLoopbackTest, TCPListenClose) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+
+  DisableSave ds;  // Too many system calls.
+  constexpr int kFDs = 32;
+  FileDescriptor clients[kFDs];
+
+  ASSERT_THAT(listen(listen_fd.get(), kFDs / 2), SyscallSucceeds());
+
+  for (int i = 0; i < kFDs; i++) {
+    clients[i] = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  }
+  for (int i = 0; i < kFDs; i++) {
+    int ret = connect(clients[i].get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                      connector.addr_len);
+    if (ret != 0) {
+      EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+    }
+  }
+  for (int i = 0; i < kFDs / 10; i++) {
+    auto accepted =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+  }
+
+  ds.reset();
+  listen_fd.reset();
+}
+
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
   auto const& param = GetParam();
 
