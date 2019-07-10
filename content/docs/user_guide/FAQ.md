@@ -35,7 +35,7 @@ If you’re having problems running a container with `runsc` it’s most likely 
 to a compatibility issue or a missing feature in gVisor. See
 [Debugging](../debugging/).
 
-### When I run my container, docker fails with `open /run/containerd/.../<containerid>/log.json: no such file or directory`.
+### When I run my container, docker fails with: `open /run/containerd/.../<containerid>/log.json: no such file or directory`
 
 You are using an older version of Linux which doesn't support `memfd_create`.
 gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
@@ -60,6 +60,15 @@ This bug is tracked in [bug #4](https://github.com/google/gvisor/issues/4).
 Note that `kubectl cp` works because it does the copy by exec'ing inside the
 sandbox, and thus gVisor's internal cache is made aware of the new files and
 directories.
+
+### I'm getting an error like: `panic: unable to attach: operation not permitted`
+
+Make sure that permissions and the owner is correct on the `runsc` binary.
+
+```bash
+sudo chown root:root /usr/local/bin/runsc
+sudo chmod 0755 /usr/local/bin/runsc
+```
 
 ### What's the security model?
 
