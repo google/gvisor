@@ -65,6 +65,11 @@ func ConfigureExePath() error {
 	if err != nil {
 		return err
 	}
+
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return err
+	}
 	specutils.ExePath = path
 	return nil
 }

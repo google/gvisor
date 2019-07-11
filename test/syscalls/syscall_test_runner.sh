@@ -30,5 +30,14 @@ fi
 # Get location of syscall_test_runner binary.
 readonly runner=$(find "${TEST_SRCDIR}" -name syscall_test_runner)
 
+find "${TEST_SRCDIR}" -name runsc | xargs ls -l || true
+
+find "${TEST_SRCDIR}" -name runsc | xargs chmod agu+wrx || true
+
+cat /proc/self/status
+
+"${TEST_SRCDIR}"/__main__/runsc/linux_amd64_pure_stripped/runsc help run
+"${TEST_SRCDIR}"/__main__/runsc/linux_amd64_pure_stripped/runsc --network none --rootless -TESTONLY-unsafe-nonroot=true do ls
+exit 1
 # Pass the arguments of this script directly to the runner.
 exec "${runner}" "$@"

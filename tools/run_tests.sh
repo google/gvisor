@@ -279,7 +279,9 @@ main() {
   # Build and run the simple tests.
   sanity_checks
   build_everything opt
-  run_simple_tests
+  #run_simple_tests
+
+  run_syscall_tests
 
   # So far so good. Install more deps and run the integration tests.
   install_runtime
@@ -287,7 +289,6 @@ main() {
   run_docker_tests
   run_root_tests
 
-  run_syscall_tests
   run_runsc_do_tests
 
   build_runsc_debian
