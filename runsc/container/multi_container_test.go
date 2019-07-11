@@ -35,7 +35,7 @@ import (
 )
 
 func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
-	var specs []*specs.Spec
+	var testSpecs []*specs.Spec
 	var ids []string
 	rootID := testutil.UniqueContainerID()
 
@@ -51,11 +51,20 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 				specutils.ContainerdContainerTypeAnnotation: specutils.ContainerdContainerTypeContainer,
 				specutils.ContainerdSandboxIDAnnotation:     rootID,
 			}
+			if i != 1 {
+				spec.Linux = &specs.Linux{
+					Namespaces: []specs.LinuxNamespace{
+						{
+							Type: "pid",
+						},
+					},
+				}
+			}
 			ids = append(ids, testutil.UniqueContainerID())
 		}
-		specs = append(specs, spec)
+		testSpecs = append(testSpecs, spec)
 	}
-	return specs, ids
+	return testSpecs, ids
 }
 
 func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
@@ -142,7 +151,7 @@ func TestMultiContainerSanity(t *testing.T) {
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
-		specs, ids := createSpecs(sleep, sleep)
+		specs, ids := createSpecs(sleep, sleep, sleep)
 		containers, cleanup, err := startContainers(conf, specs, ids)
 		if err != nil {
 			t.Fatalf("error starting containers: %v", err)
@@ -154,6 +163,9 @@ func TestMultiContainerSanity(t *testing.T) {
 			{PID: 1, Cmd: "sleep"},
 		}
 		if err := waitForProcessList(containers[0], expectedPL); err != nil {
+			t.Errorf("failed to wait for sleep to start: %v", err)
+		}
+		if err := waitForProcessList(containers[2], expectedPL); err != nil {
 			t.Errorf("failed to wait for sleep to start: %v", err)
 		}
 		expectedPL = []*control.Process{

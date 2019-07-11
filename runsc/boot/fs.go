@@ -509,6 +509,7 @@ func (c *containerMounter) setupFS(ctx context.Context, conf *Config, procArgs *
 		Credentials:          auth.NewRootCredentials(creds.UserNamespace),
 		Umask:                0022,
 		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		PIDNamespace:         procArgs.PIDNamespace,
 	}
 	rootCtx := rootProcArgs.NewContext(c.k)
 
