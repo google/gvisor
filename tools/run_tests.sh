@@ -45,7 +45,8 @@ readonly TEST_PACKAGES=("//pkg/..." "//runsc/..." "//tools/...")
 #######################
 
 # Install the latest version of Bazel and log the version.
-(which use_bazel.sh && use_bazel.sh latest) || which bazel
+# FIXME(b/137285694): Unable to build runsc with bazel 0.28.0.
+(which use_bazel.sh && use_bazel.sh 0.27.1) || which bazel
 bazel version
 
 # Load the kvm module.
