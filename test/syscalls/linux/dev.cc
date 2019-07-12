@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <vector>
 
@@ -141,6 +143,11 @@ TEST(DevTest, WriteDevFull) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/full", O_WRONLY));
   EXPECT_THAT(WriteFd(fd.get(), "a", 1), SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(DevTest, TTYExists) {
+  struct stat statbuf = {};
+  ASSERT_THAT(stat("/dev/tty", &statbuf), SyscallSucceeds());
 }
 
 }  // namespace
