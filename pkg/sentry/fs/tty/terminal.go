@@ -38,9 +38,11 @@ type Terminal struct {
 
 func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal {
 	termios := linux.DefaultSlaveTermios
-	return &Terminal{
+	t := Terminal{
 		d:  d,
 		n:  n,
 		ld: newLineDiscipline(termios),
 	}
+	t.EnableLeakCheck("tty.Terminal")
+	return &t
 }

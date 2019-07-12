@@ -72,28 +72,3 @@ const (
 	SIOCGMIIPHY   = 0x8947
 	SIOCGMIIREG   = 0x8948
 )
-
-// ioctl(2) requests provided by uapi/linux/android/binder.h
-const (
-	BinderWriteReadIoctl       = 0xc0306201
-	BinderSetIdleTimeoutIoctl  = 0x40086203
-	BinderSetMaxThreadsIoctl   = 0x40046205
-	BinderSetIdlePriorityIoctl = 0x40046206
-	BinderSetContextMgrIoctl   = 0x40046207
-	BinderThreadExitIoctl      = 0x40046208
-	BinderVersionIoctl         = 0xc0046209
-)
-
-// ioctl(2) requests provided by drivers/staging/android/uapi/ashmem.h
-const (
-	AshmemSetNameIoctl        = 0x41007701
-	AshmemGetNameIoctl        = 0x81007702
-	AshmemSetSizeIoctl        = 0x40087703
-	AshmemGetSizeIoctl        = 0x00007704
-	AshmemSetProtMaskIoctl    = 0x40087705
-	AshmemGetProtMaskIoctl    = 0x00007706
-	AshmemPinIoctl            = 0x40087707
-	AshmemUnpinIoctl          = 0x40087708
-	AshmemGetPinStatusIoctl   = 0x00007709
-	AshmemPurgeAllCachesIoctl = 0x0000770a
-)

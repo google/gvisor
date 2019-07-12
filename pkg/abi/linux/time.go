@@ -241,3 +241,9 @@ func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
 		Nsec: uint32(nsec % 1e9),
 	}
 }
+
+// Utime represents struct utimbuf used by utimes(2).
+type Utime struct {
+	Actime  int64
+	Modtime int64
+}

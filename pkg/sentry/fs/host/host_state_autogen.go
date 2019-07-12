@@ -95,17 +95,17 @@ func (x *inodeFileState) load(m state.Map) {
 
 func (x *ConnectedEndpoint) save(m state.Map) {
 	x.beforeSave()
+	m.Save("ref", &x.ref)
 	m.Save("queue", &x.queue)
 	m.Save("path", &x.path)
-	m.Save("ref", &x.ref)
 	m.Save("srfd", &x.srfd)
 	m.Save("stype", &x.stype)
 }
 
 func (x *ConnectedEndpoint) load(m state.Map) {
+	m.Load("ref", &x.ref)
 	m.Load("queue", &x.queue)
 	m.Load("path", &x.path)
-	m.Load("ref", &x.ref)
 	m.LoadWait("srfd", &x.srfd)
 	m.Load("stype", &x.stype)
 	m.AfterLoad(x.afterLoad)

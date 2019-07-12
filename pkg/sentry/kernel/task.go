@@ -236,15 +236,15 @@ type Task struct {
 	// tc is protected by mu, and is owned by the task goroutine.
 	tc TaskContext
 
-	// fsc is the task's filesystem context.
+	// fsContext is the task's filesystem context.
 	//
-	// fsc is protected by mu, and is owned by the task goroutine.
-	fsc *FSContext
+	// fsContext is protected by mu, and is owned by the task goroutine.
+	fsContext *FSContext
 
-	// fds is the task's file descriptor table.
+	// fdTable is the task's file descriptor table.
 	//
-	// fds is protected by mu, and is owned by the task goroutine.
-	fds *FDMap
+	// fdTable is protected by mu, and is owned by the task goroutine.
+	fdTable *FDTable
 
 	// If vforkParent is not nil, it is the task that created this task with
 	// vfork() or clone(CLONE_VFORK), and should have its vforkStop ended when
@@ -602,7 +602,7 @@ func (t *Task) Value(key interface{}) interface{} {
 	case context.CtxThreadGroupID:
 		return int32(t.ThreadGroup().ID())
 	case fs.CtxRoot:
-		return t.fsc.RootDirectory()
+		return t.fsContext.RootDirectory()
 	case fs.CtxDirentCacheLimiter:
 		return t.k.DirentCacheLimiter
 	case inet.CtxStack:
@@ -668,7 +668,7 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 func (t *Task) IsChrooted() bool {
 	realRoot := t.tg.mounts.Root()
 	defer realRoot.DecRef()
-	root := t.fsc.RootDirectory()
+	root := t.fsContext.RootDirectory()
 	if root != nil {
 		defer root.DecRef()
 	}
@@ -689,16 +689,55 @@ func (t *Task) TaskContext() *TaskContext {
 // Precondition: The caller must be running on the task goroutine, or t.mu must
 // be locked.
 func (t *Task) FSContext() *FSContext {
-	return t.fsc
+	return t.fsContext
 }
 
-// FDMap returns t's FDMap. FDMap does not take an additional reference on the
-// returned FDMap.
+// FDTable returns t's FDTable. FDMTable does not take an additional reference
+// on the returned FDMap.
 //
 // Precondition: The caller must be running on the task goroutine, or t.mu must
 // be locked.
-func (t *Task) FDMap() *FDMap {
-	return t.fds
+func (t *Task) FDTable() *FDTable {
+	return t.fdTable
+}
+
+// GetFile is a convenience wrapper t.FDTable().GetFile.
+//
+// Precondition: same as FDTable.
+func (t *Task) GetFile(fd int32) *fs.File {
+	f, _ := t.fdTable.Get(fd)
+	return f
+}
+
+// NewFDs is a convenience wrapper for t.FDTable().NewFDs.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDs(fd int32, files []*fs.File, flags FDFlags) ([]int32, error) {
+	return t.fdTable.NewFDs(t, fd, files, flags)
+}
+
+// NewFDFrom is a convenience wrapper for t.FDTable().NewFDs with a single file.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDFrom(fd int32, file *fs.File, flags FDFlags) (int32, error) {
+	fds, err := t.fdTable.NewFDs(t, fd, []*fs.File{file}, flags)
+	if err != nil {
+		return 0, err
+	}
+	return fds[0], nil
+}
+
+// NewFDAt is a convenience wrapper for t.FDTable().NewFDAt.
+//
+// This automatically passes the task as the context.
+//
+// Precondition: same as FDTable.
+func (t *Task) NewFDAt(fd int32, file *fs.File, flags FDFlags) error {
+	return t.fdTable.NewFDAt(t, fd, file, flags)
 }
 
 // WithMuLocked executes f with t.mu locked.

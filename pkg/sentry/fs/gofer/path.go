@@ -145,16 +145,17 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	defer d.DecRef()
 
 	// Construct the new file, caching the handles if allowed.
-	h := &handles{
+	h := handles{
 		File: newFile,
 		Host: hostFile,
 	}
+	h.EnableLeakCheck("gofer.handles")
 	if iops.fileState.canShareHandles() {
 		iops.fileState.handlesMu.Lock()
-		iops.fileState.setSharedHandlesLocked(flags, h)
+		iops.fileState.setSharedHandlesLocked(flags, &h)
 		iops.fileState.handlesMu.Unlock()
 	}
-	return NewFile(ctx, d, name, flags, iops, h), nil
+	return NewFile(ctx, d, name, flags, iops, &h), nil
 }
 
 // CreateLink uses Create to create a symlink between oldname and newname.

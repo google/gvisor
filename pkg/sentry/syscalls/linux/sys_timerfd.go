@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/timerfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -49,9 +48,9 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		NonBlocking: flags&linux.TFD_NONBLOCK != 0,
 	})
 
-	fd, err := t.FDMap().NewFDFrom(0, f, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, f, kernel.FDFlags{
 		CloseOnExec: flags&linux.TFD_CLOEXEC != 0,
-	}, t.ThreadGroup().Limits())
+	})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -61,7 +60,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 // TimerfdSettime implements Linux syscall timerfd_settime(2).
 func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	flags := args[1].Int()
 	newValAddr := args[2].Pointer()
 	oldValAddr := args[3].Pointer()
@@ -70,7 +69,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		return 0, nil, syserror.EINVAL
 	}
 
-	f := t.FDMap().GetFile(fd)
+	f := t.GetFile(fd)
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -101,10 +100,10 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 
 // TimerfdGettime implements Linux syscall timerfd_gettime(2).
 func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	curValAddr := args[1].Pointer()
 
-	f := t.FDMap().GetFile(fd)
+	f := t.GetFile(fd)
 	if f == nil {
 		return 0, nil, syserror.EBADF
 	}

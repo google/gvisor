@@ -241,7 +241,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 	}
 
 	// Construct the session.
-	s := &session{
+	s := session{
 		connID:          dev,
 		msize:           o.msize,
 		version:         o.version,
@@ -250,13 +250,14 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 		superBlockFlags: superBlockFlags,
 		mounter:         mounter,
 	}
+	s.EnableLeakCheck("gofer.session")
 
 	if o.privateunixsocket {
 		s.endpoints = newEndpointMaps()
 	}
 
 	// Construct the MountSource with the session and superBlockFlags.
-	m := fs.NewMountSource(ctx, s, filesystem, superBlockFlags)
+	m := fs.NewMountSource(ctx, &s, filesystem, superBlockFlags)
 
 	// Given that gofer files can consume host FDs, restrict the number
 	// of files that can be held by the cache.
@@ -290,7 +291,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 		return nil, err
 	}
 
-	sattr, iops := newInodeOperations(ctx, s, s.attach, qid, valid, attr, false)
+	sattr, iops := newInodeOperations(ctx, &s, s.attach, qid, valid, attr, false)
 	return fs.NewInode(ctx, iops, m, sattr), nil
 }
 

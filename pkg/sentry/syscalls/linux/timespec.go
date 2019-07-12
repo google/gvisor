@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"syscall"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -70,7 +69,7 @@ func copyTimevalIn(t *kernel.Task, addr usermem.Addr) (linux.Timeval, error) {
 		tv.Usec = int64(usermem.ByteOrder.Uint64(in[8:]))
 		return tv, nil
 	default:
-		return linux.Timeval{}, syscall.ENOSYS
+		return linux.Timeval{}, syserror.ENOSYS
 	}
 }
 
@@ -84,7 +83,7 @@ func copyTimevalOut(t *kernel.Task, addr usermem.Addr, tv *linux.Timeval) error 
 		_, err := t.CopyOutBytes(addr, out)
 		return err
 	default:
-		return syscall.ENOSYS
+		return syserror.ENOSYS
 	}
 }
 
@@ -104,7 +103,7 @@ func copyTimespecInToDuration(t *kernel.Task, timespecAddr usermem.Addr) (time.D
 			return 0, err
 		}
 		if !timespec.Valid() {
-			return 0, syscall.EINVAL
+			return 0, syserror.EINVAL
 		}
 		timeout = time.Duration(timespec.ToNsecCapped())
 	}

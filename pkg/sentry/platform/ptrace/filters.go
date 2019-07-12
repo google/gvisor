@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package kdefs defines common kernel definitions.
-//
-package kdefs
+package ptrace
 
-// FD is a File Descriptor.
-type FD int32
+import (
+	"syscall"
+
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/seccomp"
+)
+
+// SyscallFilters returns syscalls made exclusively by the ptrace platform.
+func (*PTrace) SyscallFilters() seccomp.SyscallRules {
+	return seccomp.SyscallRules{
+		unix.SYS_GETCPU:            {},
+		unix.SYS_SCHED_SETAFFINITY: {},
+		syscall.SYS_PTRACE:         {},
+		syscall.SYS_TGKILL:         {},
+		syscall.SYS_WAIT4:          {},
+	}
+}

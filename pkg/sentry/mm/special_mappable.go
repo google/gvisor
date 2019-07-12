@@ -45,7 +45,9 @@ type SpecialMappable struct {
 //
 // Preconditions: fr.Length() != 0.
 func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr platform.FileRange) *SpecialMappable {
-	return &SpecialMappable{mfp: mfp, fr: fr, name: name}
+	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
+	m.EnableLeakCheck("mm.SpecialMappable")
+	return &m
 }
 
 // DecRef implements refs.RefCounter.DecRef.

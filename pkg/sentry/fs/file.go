@@ -130,14 +130,15 @@ type File struct {
 // to false respectively.
 func NewFile(ctx context.Context, dirent *Dirent, flags FileFlags, fops FileOperations) *File {
 	dirent.IncRef()
-	f := &File{
+	f := File{
 		UniqueID:       uniqueid.GlobalFromContext(ctx),
 		Dirent:         dirent,
 		FileOperations: fops,
 		flags:          flags,
 	}
 	f.mu.Init()
-	return f
+	f.EnableLeakCheck("fs.File")
+	return &f
 }
 
 // DecRef destroys the File when it is no longer referenced.

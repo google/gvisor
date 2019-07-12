@@ -52,9 +52,10 @@ type TaskConfig struct {
 	// succeeds.
 	FSContext *FSContext
 
-	// FDMap is the FDMap of the new task. A reference must be held on FDMap,
-	// which is transferred to TaskSet.NewTask whether or not it succeeds.
-	FDMap *FDMap
+	// FDTable is the FDTableof the new task. A reference must be held on
+	// FDMap, which is transferred to TaskSet.NewTask whether or not it
+	// succeeds.
+	FDTable *FDTable
 
 	// Credentials is the Credentials of the new task.
 	Credentials *auth.Credentials
@@ -90,7 +91,7 @@ func (ts *TaskSet) NewTask(cfg *TaskConfig) (*Task, error) {
 	if err != nil {
 		cfg.TaskContext.release()
 		cfg.FSContext.DecRef()
-		cfg.FDMap.DecRef()
+		cfg.FDTable.DecRef()
 		return nil, err
 	}
 	return t, nil
@@ -112,8 +113,8 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		signalMask:      cfg.SignalMask,
 		signalStack:     arch.SignalStack{Flags: arch.SignalStackFlagDisable},
 		tc:              *tc,
-		fsc:             cfg.FSContext,
-		fds:             cfg.FDMap,
+		fsContext:       cfg.FSContext,
+		fdTable:         cfg.FDTable,
 		p:               cfg.Kernel.Platform.NewContext(),
 		k:               cfg.Kernel,
 		ptraceTracees:   make(map[*Task]struct{}),

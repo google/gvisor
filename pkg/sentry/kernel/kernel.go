@@ -155,7 +155,7 @@ type Kernel struct {
 	// cpuClockTicker increments cpuClock.
 	cpuClockTicker *ktime.Timer `state:"nosave"`
 
-	// fdMapUids is an ever-increasing counter for generating FDMap uids.
+	// fdMapUids is an ever-increasing counter for generating FDTable uids.
 	//
 	// fdMapUids is mutable, and is accessed using atomic memory operations.
 	fdMapUids uint64
@@ -400,8 +400,8 @@ func (k *Kernel) flushMountSourceRefs() error {
 
 	// There may be some open FDs whose filesystems have been unmounted. We
 	// must flush those as well.
-	return k.tasks.forEachFDPaused(func(desc descriptor) error {
-		desc.file.Dirent.Inode.MountSource.FlushDirentRefs()
+	return k.tasks.forEachFDPaused(func(file *fs.File) error {
+		file.Dirent.Inode.MountSource.FlushDirentRefs()
 		return nil
 	})
 }
@@ -410,35 +410,35 @@ func (k *Kernel) flushMountSourceRefs() error {
 // task.
 //
 // Precondition: Must be called with the kernel paused.
-func (ts *TaskSet) forEachFDPaused(f func(descriptor) error) error {
+func (ts *TaskSet) forEachFDPaused(f func(*fs.File) error) (err error) {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if t.fds == nil {
+		if t.fdTable == nil {
 			continue
 		}
-		for _, desc := range t.fds.files {
-			if err := f(desc); err != nil {
-				return err
+		t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+			if lastErr := f(file); lastErr != nil && err == nil {
+				err = lastErr
 			}
-		}
+		})
 	}
-	return nil
+	return err
 }
 
 func (ts *TaskSet) flushWritesToFiles(ctx context.Context) error {
-	return ts.forEachFDPaused(func(desc descriptor) error {
-		if flags := desc.file.Flags(); !flags.Write {
+	return ts.forEachFDPaused(func(file *fs.File) error {
+		if flags := file.Flags(); !flags.Write {
 			return nil
 		}
-		if sattr := desc.file.Dirent.Inode.StableAttr; !fs.IsFile(sattr) && !fs.IsDir(sattr) {
+		if sattr := file.Dirent.Inode.StableAttr; !fs.IsFile(sattr) && !fs.IsDir(sattr) {
 			return nil
 		}
 		// Here we need all metadata synced.
-		syncErr := desc.file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
+		syncErr := file.Fsync(ctx, 0, fs.FileMaxOffset, fs.SyncAll)
 		if err := fs.SaveFileFsyncError(syncErr); err != nil {
-			name, _ := desc.file.Dirent.FullName(nil /* root */)
+			name, _ := file.Dirent.FullName(nil /* root */)
 			// Wrap this error in ErrSaveRejection
 			// so that it will trigger a save
 			// error, rather than a panic. This
@@ -483,14 +483,12 @@ func (ts *TaskSet) unregisterEpollWaiters() {
 	defer ts.mu.RUnlock()
 	for t := range ts.Root.tids {
 		// We can skip locking Task.mu here since the kernel is paused.
-		if fdmap := t.fds; fdmap != nil {
-			for _, desc := range fdmap.files {
-				if desc.file != nil {
-					if e, ok := desc.file.FileOperations.(*epoll.EventPoll); ok {
-						e.UnregisterEpollWaiters()
-					}
+		if t.fdTable != nil {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+				if e, ok := file.FileOperations.(*epoll.EventPoll); ok {
+					e.UnregisterEpollWaiters()
 				}
-			}
+			})
 		}
 	}
 }
@@ -537,6 +535,8 @@ func (k *Kernel) LoadFrom(r io.Reader, net inet.Stack) error {
 		return err
 	}
 	log.Infof("Memory load took [%s].", time.Since(memoryStart))
+
+	log.Infof("Overall load took [%s]", time.Since(loadStart))
 
 	// Ensure that all pending asynchronous work is complete:
 	//   - namedpipe opening
@@ -602,9 +602,9 @@ type CreateProcessArgs struct {
 	// Credentials is the initial credentials.
 	Credentials *auth.Credentials
 
-	// FDMap is the initial set of file descriptors. If CreateProcess succeeds,
-	// it takes a reference on FDMap.
-	FDMap *FDMap
+	// FDTable is the initial set of file descriptors. If CreateProcess succeeds,
+	// it takes a reference on FDTable.
+	FDTable *FDTable
 
 	// Umask is the initial umask.
 	Umask uint
@@ -789,9 +789,9 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		return nil, 0, errors.New(se.String())
 	}
 
-	// Take a reference on the FDMap, which will be transferred to
+	// Take a reference on the FDTable, which will be transferred to
 	// TaskSet.NewTask().
-	args.FDMap.IncRef()
+	args.FDTable.IncRef()
 
 	// Create the task.
 	config := &TaskConfig{
@@ -799,7 +799,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		ThreadGroup:             tg,
 		TaskContext:             tc,
 		FSContext:               newFSContext(root, wd, args.Umask),
-		FDMap:                   args.FDMap,
+		FDTable:                 args.FDTable,
 		Credentials:             args.Credentials,
 		AllowedCPUMask:          sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:            args.UTSNamespace,
@@ -871,7 +871,7 @@ func (k *Kernel) pauseTimeLocked() {
 	}
 
 	// By precondition, nothing else can be interacting with PIDNamespace.tids
-	// or FDMap.files, so we can iterate them without synchronization. (We
+	// or FDTable.files, so we can iterate them without synchronization. (We
 	// can't hold the TaskSet mutex when pausing thread group timers because
 	// thread group timers call ThreadGroup.SendSignal, which takes the TaskSet
 	// mutex, while holding the Timer mutex.)
@@ -882,14 +882,14 @@ func (k *Kernel) pauseTimeLocked() {
 				it.PauseTimer()
 			}
 		}
-		// This means we'll iterate FDMaps shared by multiple tasks repeatedly,
+		// This means we'll iterate FDTables shared by multiple tasks repeatedly,
 		// but ktime.Timer.Pause is idempotent so this is harmless.
-		if fdm := t.fds; fdm != nil {
-			for _, desc := range fdm.files {
-				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
+		if t.fdTable != nil {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.PauseTimer()
 				}
-			}
+			})
 		}
 	}
 	k.timekeeper.PauseUpdates()
@@ -914,12 +914,12 @@ func (k *Kernel) resumeTimeLocked() {
 				it.ResumeTimer()
 			}
 		}
-		if fdm := t.fds; fdm != nil {
-			for _, desc := range fdm.files {
-				if tfd, ok := desc.file.FileOperations.(*timerfd.TimerOperations); ok {
+		if t.fdTable != nil {
+			t.fdTable.forEach(func(_ int32, file *fs.File, _ FDFlags) {
+				if tfd, ok := file.FileOperations.(*timerfd.TimerOperations); ok {
 					tfd.ResumeTimer()
 				}
-			}
+			})
 		}
 	}
 }

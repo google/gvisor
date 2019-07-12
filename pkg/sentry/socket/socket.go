@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -53,7 +52,7 @@ type Socket interface {
 	// Accept implements the accept4(2) linux syscall.
 	// Returns fd, real peer address length and error. Real peer address
 	// length is only set if len(peer) > 0.
-	Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error)
+	Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error)
 
 	// Bind implements the bind(2) linux syscall.
 	Bind(t *kernel.Task, sockaddr []byte) *syserr.Error

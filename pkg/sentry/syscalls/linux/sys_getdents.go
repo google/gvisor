@@ -17,20 +17,19 @@ package linux
 import (
 	"bytes"
 	"io"
-	"syscall"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Getdents implements linux syscall getdents(2) for 64bit systems.
 func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := int(args[2].Uint())
 
@@ -46,7 +45,7 @@ func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 // Getdents64 implements linux syscall getdents64(2).
 func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := int(args[2].Uint())
 
@@ -62,8 +61,8 @@ func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getdents implements the core of getdents(2)/getdents64(2).
 // f is the syscall implementation dirent serialization function.
-func getdents(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
-	dir := t.FDMap().GetFile(fd)
+func getdents(t *kernel.Task, fd int32, addr usermem.Addr, size int, f func(*dirent, io.Writer) (int, error)) (uintptr, error) {
+	dir := t.GetFile(fd)
 	if dir == nil {
 		return 0, syserror.EBADF
 	}
@@ -83,7 +82,7 @@ func getdents(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, size int, f func(*
 
 	switch err := handleIOError(t, ds.Written() > 0, rerr, kernel.ERESTARTSYS, "getdents", dir); err {
 	case nil:
-		dir.Dirent.InotifyEvent(syscall.IN_ACCESS, 0)
+		dir.Dirent.InotifyEvent(linux.IN_ACCESS, 0)
 		return uintptr(ds.Written()), nil
 	case io.EOF:
 		return 0, nil
@@ -147,21 +146,21 @@ func smallestDirent64(a arch.Context) uint {
 func toType(nodeType fs.InodeType) uint8 {
 	switch nodeType {
 	case fs.RegularFile, fs.SpecialFile:
-		return syscall.DT_REG
+		return linux.DT_REG
 	case fs.Symlink:
-		return syscall.DT_LNK
+		return linux.DT_LNK
 	case fs.Directory, fs.SpecialDirectory:
-		return syscall.DT_DIR
+		return linux.DT_DIR
 	case fs.Pipe:
-		return syscall.DT_FIFO
+		return linux.DT_FIFO
 	case fs.CharacterDevice:
-		return syscall.DT_CHR
+		return linux.DT_CHR
 	case fs.BlockDevice:
-		return syscall.DT_BLK
+		return linux.DT_BLK
 	case fs.Socket:
-		return syscall.DT_SOCK
+		return linux.DT_SOCK
 	default:
-		return syscall.DT_UNKNOWN
+		return linux.DT_UNKNOWN
 	}
 }
 

@@ -15,8 +15,6 @@
 package linux
 
 import (
-	"syscall"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -27,7 +25,7 @@ import (
 // STOP are clear.
 func copyInSigSet(t *kernel.Task, sigSetAddr usermem.Addr, size uint) (linux.SignalSet, error) {
 	if size != linux.SignalSetSize {
-		return 0, syscall.EINVAL
+		return 0, syserror.EINVAL
 	}
 	b := t.CopyScratchBuffer(8)
 	if _, err := t.CopyInBytes(sigSetAddr, b); err != nil {

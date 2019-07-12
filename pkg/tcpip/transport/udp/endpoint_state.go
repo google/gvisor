@@ -92,8 +92,6 @@ func (e *endpoint) afterLoad() {
 		if err != nil {
 			panic(*err)
 		}
-
-		e.id.LocalAddress = e.route.LocalAddress
 	} else if len(e.id.LocalAddress) != 0 { // stateBound
 		if e.stack.CheckLocalAddress(e.regNICID, netProto, e.id.LocalAddress) == 0 {
 			panic(tcpip.ErrBadLocalAddress)

@@ -1,19 +1,20 @@
-package kernel
+package time
 
 import (
+	"unsafe"
+
 	"fmt"
 	"gvisor.dev/gvisor/third_party/gvsync"
 	"reflect"
 	"strings"
-	"unsafe"
 )
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
 // with any writer critical sections in sc.
-func SeqAtomicLoadTaskGoroutineSchedInfo(sc *gvsync.SeqCount, ptr *TaskGoroutineSchedInfo) TaskGoroutineSchedInfo {
+func SeqAtomicLoadParameters(sc *gvsync.SeqCount, ptr *Parameters) Parameters {
 	// This function doesn't use SeqAtomicTryLoad because doing so is
 	// measurably, significantly (~20%) slower; Go is awful at inlining.
-	var val TaskGoroutineSchedInfo
+	var val Parameters
 	for {
 		epoch := sc.BeginRead()
 		if gvsync.RaceEnabled {
@@ -34,8 +35,8 @@ func SeqAtomicLoadTaskGoroutineSchedInfo(sc *gvsync.SeqCount, ptr *TaskGoroutine
 // in sc initiated by a call to sc.BeginRead() that returned epoch. If the read
 // would race with a writer critical section, SeqAtomicTryLoad returns
 // (unspecified, false).
-func SeqAtomicTryLoadTaskGoroutineSchedInfo(sc *gvsync.SeqCount, epoch gvsync.SeqCountEpoch, ptr *TaskGoroutineSchedInfo) (TaskGoroutineSchedInfo, bool) {
-	var val TaskGoroutineSchedInfo
+func SeqAtomicTryLoadParameters(sc *gvsync.SeqCount, epoch gvsync.SeqCountEpoch, ptr *Parameters) (Parameters, bool) {
+	var val Parameters
 	if gvsync.RaceEnabled {
 		gvsync.Memmove(unsafe.Pointer(&val), unsafe.Pointer(ptr), unsafe.Sizeof(val))
 	} else {
@@ -44,8 +45,8 @@ func SeqAtomicTryLoadTaskGoroutineSchedInfo(sc *gvsync.SeqCount, epoch gvsync.Se
 	return val, sc.ReadOk(epoch)
 }
 
-func initTaskGoroutineSchedInfo() {
-	var val TaskGoroutineSchedInfo
+func initParameters() {
+	var val Parameters
 	typ := reflect.TypeOf(val)
 	name := typ.Name()
 	if ptrs := gvsync.PointersInType(typ, name); len(ptrs) != 0 {

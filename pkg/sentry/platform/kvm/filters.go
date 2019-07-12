@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,9 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package linux
+package kvm
 
-// BinderVersion structure is used for BINDER_VERSION ioctl.
-type BinderVersion struct {
-	ProtocolVersion int32
+import (
+	"syscall"
+
+	"gvisor.dev/gvisor/pkg/seccomp"
+)
+
+// SyscallFilters returns syscalls made exclusively by the KVM platform.
+func (*KVM) SyscallFilters() seccomp.SyscallRules {
+	return seccomp.SyscallRules{
+		syscall.SYS_ARCH_PRCTL:      {},
+		syscall.SYS_IOCTL:           {},
+		syscall.SYS_MMAP:            {},
+		syscall.SYS_RT_SIGSUSPEND:   {},
+		syscall.SYS_RT_SIGTIMEDWAIT: {},
+		0xffffffffffffffff:          {}, // KVM uses syscall -1 to transition to host.
+	}
 }

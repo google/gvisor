@@ -48,6 +48,7 @@ var (
 	EMSGSIZE     = error(syscall.EMSGSIZE)
 	ENAMETOOLONG = error(syscall.ENAMETOOLONG)
 	ENOATTR      = ENODATA
+	ENOBUFS      = error(syscall.ENOBUFS)
 	ENODATA      = error(syscall.ENODATA)
 	ENODEV       = error(syscall.ENODEV)
 	ENOENT       = error(syscall.ENOENT)
@@ -59,6 +60,7 @@ var (
 	ENOSYS       = error(syscall.ENOSYS)
 	ENOTDIR      = error(syscall.ENOTDIR)
 	ENOTEMPTY    = error(syscall.ENOTEMPTY)
+	ENOTSOCK     = error(syscall.ENOTSOCK)
 	ENOTSUP      = error(syscall.ENOTSUP)
 	ENOTTY       = error(syscall.ENOTTY)
 	ENXIO        = error(syscall.ENXIO)
