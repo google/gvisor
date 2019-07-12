@@ -86,6 +86,11 @@ Code changes are accepted via [pull request][github].
 When approved, the change will be submitted by a team member and automatically
 merged into the repository.
 
+### Presubmit checks
+
+Accessing check logs may require membership in the
+[gvisor-dev mailing list][gvisor-dev-list], which is public.
+
 ### Bug IDs
 
 Some TODOs and NOTEs sprinkled throughout the code have associated IDs of the
@@ -103,5 +108,6 @@ one above, the
 [gcla]: https://cla.developers.google.com/about/google-individual
 [gccla]: https://cla.developers.google.com/about/google-corporate
 [github]: https://github.com/google/gvisor/compare
+[gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [gostyle]: https://github.com/golang/go/wiki/CodeReviewComments
 [teststyle]: ./test/
