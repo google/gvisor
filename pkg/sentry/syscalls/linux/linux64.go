@@ -234,9 +234,9 @@ var AMD64 = &kernel.SyscallTable{
 		185: syscalls.Error("security", syserror.ENOSYS, "Not implemented in Linux.", nil),
 		186: syscalls.Supported("gettid", Gettid),
 		187: syscalls.ErrorWithEvent("readahead", syserror.ENOSYS, "", []string{"gvisor.dev/issue/261"}), // TODO(b/29351341)
-		188: syscalls.ErrorWithEvent("setxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		189: syscalls.ErrorWithEvent("lsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
-		190: syscalls.ErrorWithEvent("fsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
+		188: syscalls.Error("setxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
+		189: syscalls.Error("lsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
+		190: syscalls.Error("fsetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
 		191: syscalls.ErrorWithEvent("getxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
 		192: syscalls.ErrorWithEvent("lgetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
 		193: syscalls.ErrorWithEvent("fgetxattr", syserror.ENOTSUP, "Requires filesystem support.", nil),
