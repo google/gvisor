@@ -867,6 +867,18 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 
 		return int32(v), nil
 
+	case linux.TCP_MAXSEG:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+
+		var v tcpip.MaxSegOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		return int32(v), nil
+
 	case linux.TCP_KEEPIDLE:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -1218,6 +1230,14 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.QuickAckOption(v)))
+
+	case linux.TCP_MAXSEG:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+
+		v := usermem.ByteOrder.Uint32(optVal)
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.MaxSegOption(v)))
 
 	case linux.TCP_KEEPIDLE:
 		if len(optVal) < sizeOfInt32 {
