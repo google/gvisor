@@ -496,6 +496,10 @@ type AvailableCongestionControlOption string
 // buffer moderation.
 type ModerateReceiveBufferOption bool
 
+// MaxSegOption is used by SetSockOpt/GetSockOpt to set/get the current
+// Maximum Segment Size(MSS) value as specified using the TCP_MAXSEG option.
+type MaxSegOption int
+
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8
