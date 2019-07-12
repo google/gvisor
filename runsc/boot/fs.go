@@ -906,7 +906,10 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.Moun
 	}
 	defer target.DecRef()
 
+	// Take a ref on the inode that is about to be (re)-mounted.
+	source.root.IncRef()
 	if err := mns.Mount(ctx, target, source.root); err != nil {
+		source.root.DecRef()
 		return fmt.Errorf("bind mount %q error: %v", mount.Destination, err)
 	}
 
