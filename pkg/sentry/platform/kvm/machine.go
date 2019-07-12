@@ -424,7 +424,7 @@ func (c *vCPU) unlock() {
 	switch origState {
 	case vCPUUser:
 		// Normal state.
-	case vCPUUser | vCPUGuest | vCPUWaiter:
+	case vCPUGuest | vCPUWaiter, vCPUUser | vCPUGuest | vCPUWaiter:
 		// Force a transition: this must trigger a notification when we
 		// return from guest mode. We must clear vCPUWaiter here
 		// anyways, because BounceToKernel will force a transition only

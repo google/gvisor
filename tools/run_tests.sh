@@ -186,19 +186,28 @@ run_docker_tests() {
   #
   # The --nocache_test_results option is used here to eliminate cached results
   # from the previous run for the runc runtime.
+#  bazel test \
+#    "${BAZEL_BUILD_FLAGS[@]}" \
+#    --test_env=RUNSC_RUNTIME="${RUNTIME}" \
+#    --test_output=all \
+#    --nocache_test_results \
+#    --test_output=streamed \
+#    //runsc/test/integration:integration_test \
+#    //runsc/test/integration:integration_test_hostnet \
+#    //runsc/test/integration:integration_test_overlay \
+#    //runsc/test/integration:integration_test_kvm \
+#    //runsc/test/image:image_test \
+#    //runsc/test/image:image_test_overlay \
+#    //runsc/test/image:image_test_hostnet \
+#    //runsc/test/image:image_test_kvm
   bazel test \
     "${BAZEL_BUILD_FLAGS[@]}" \
     --test_env=RUNSC_RUNTIME="${RUNTIME}" \
     --test_output=all \
     --nocache_test_results \
     --test_output=streamed \
-    //runsc/test/integration:integration_test \
-    //runsc/test/integration:integration_test_hostnet \
-    //runsc/test/integration:integration_test_overlay \
+    --runs_per_test=10 \
     //runsc/test/integration:integration_test_kvm \
-    //runsc/test/image:image_test \
-    //runsc/test/image:image_test_overlay \
-    //runsc/test/image:image_test_hostnet \
     //runsc/test/image:image_test_kvm
 }
 
@@ -286,6 +295,7 @@ main() {
   install_crictl_test_deps
   run_docker_tests
   run_root_tests
+  return
 
   run_syscall_tests
   run_runsc_do_tests
