@@ -117,6 +117,7 @@ const (
 	notifyDrain
 	notifyReset
 	notifyKeepaliveChanged
+	notifyMSSChanged
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
@@ -218,8 +219,6 @@ type endpoint struct {
 	mu sync.RWMutex `state:"nosave"`
 	id stack.TransportEndpointID
 
-	// state             endpointState `state:".(endpointState)"`
-	// pState            ProtocolState
 	state EndpointState `state:".(EndpointState)"`
 
 	isPortReserved    bool `state:"manual"`
@@ -312,6 +311,10 @@ type endpoint struct {
 	// synRcvdCount is the number of connections for this endpoint that are
 	// in SYN-RCVD state.
 	synRcvdCount int
+
+	// userMSS if non-zero is the MSS value explicitly set by the user
+	// for this endpoint using the TCP_MAXSEG setsockopt.
+	userMSS int
 
 	// The following fields are used to manage the send buffer. When
 	// segments are ready to be sent, they are added to sndQueue and the
@@ -917,6 +920,17 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		return nil
 
+	case tcpip.MaxSegOption:
+		userMSS := v
+		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
+			return tcpip.ErrInvalidOptionValue
+		}
+		e.mu.Lock()
+		e.userMSS = int(userMSS)
+		e.mu.Unlock()
+		e.notifyProtocolGoroutine(notifyMSSChanged)
+		return nil
+
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -1095,6 +1109,14 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.lastError = nil
 		e.lastErrorMu.Unlock()
 		return err
+
+	case *tcpip.MaxSegOption:
+		// This is just stubbed out. Linux never returns the user_mss
+		// value as it either returns the defaultMSS or returns the
+		// actual current MSS. Netstack just returns the defaultMSS
+		// always for now.
+		*o = header.TCPDefaultMSS
+		return nil
 
 	case *tcpip.SendBufferSizeOption:
 		e.sndBufMu.Lock()

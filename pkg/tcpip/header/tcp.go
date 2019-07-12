@@ -176,6 +176,21 @@ const (
 
 	// TCPProtocolNumber is TCP's transport protocol number.
 	TCPProtocolNumber tcpip.TransportProtocolNumber = 6
+
+	// TCPMinimumMSS is the minimum acceptable value for MSS. This is the
+	// same as the value TCP_MIN_MSS defined net/tcp.h.
+	TCPMinimumMSS = IPv4MaximumHeaderSize + TCPHeaderMaximumSize + MinIPFragmentPayloadSize - IPv4MinimumSize - TCPMinimumSize
+
+	// TCPMaximumMSS is the maximum acceptable value for MSS.
+	TCPMaximumMSS = 0xffff
+
+	// TCPDefaultMSS is the MSS value that should be used if an MSS option
+	// is not received from the peer. It's also the value returned by
+	// TCP_MAXSEG option for a socket in an unconnected state.
+	//
+	// Per RFC 1122, page 85: "If an MSS option is not received at
+	// connection setup, TCP MUST assume a default send MSS of 536."
+	TCPDefaultMSS = 536
 )
 
 // SourcePort returns the "source port" field of the tcp header.
@@ -306,7 +321,7 @@ func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 	synOpts := TCPSynOptions{
 		// Per RFC 1122, page 85: "If an MSS option is not received at
 		// connection setup, TCP MUST assume a default send MSS of 536."
-		MSS: 536,
+		MSS: TCPDefaultMSS,
 		// If no window scale option is specified, WS in options is
 		// returned as -1; this is because the absence of the option
 		// indicates that the we cannot use window scaling on the

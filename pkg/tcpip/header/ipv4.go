@@ -85,6 +85,10 @@ const (
 	// units, the header cannot exceed 15*4 = 60 bytes.
 	IPv4MaximumHeaderSize = 60
 
+	// MinIPFragmentPayloadSize is the minimum number of payload bytes that
+	// the first fragment must carry when an IPv4 packet is fragmented.
+	MinIPFragmentPayloadSize = 8
+
 	// IPv4AddressSize is the size, in bytes, of an IPv4 address.
 	IPv4AddressSize = 4
 

@@ -890,6 +890,61 @@ TEST_P(SimpleTcpSocketTest, SetCongestionControlFailsForUnsupported) {
   EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(kTcpCaNameMax)));
 }
 
+TEST_P(SimpleTcpSocketTest, MaxSegDefault) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  constexpr int kDefaultMSS = 536;
+  int tcp_max_seg;
+  socklen_t optlen = sizeof(tcp_max_seg);
+  ASSERT_THAT(
+      getsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &tcp_max_seg, &optlen),
+      SyscallSucceedsWithValue(0));
+
+  EXPECT_EQ(kDefaultMSS, tcp_max_seg);
+  EXPECT_EQ(sizeof(tcp_max_seg), optlen);
+}
+
+TEST_P(SimpleTcpSocketTest, SetMaxSeg) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  constexpr int kDefaultMSS = 536;
+  constexpr int kTCPMaxSeg = 1024;
+  ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &kTCPMaxSeg,
+                         sizeof(kTCPMaxSeg)),
+              SyscallSucceedsWithValue(0));
+
+  // Linux actually never returns the user_mss value. It will always return the
+  // default MSS value defined above for an unconnected socket and always return
+  // the actual current MSS for a connected one.
+  int optval;
+  socklen_t optlen = sizeof(optval);
+  ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &optval, &optlen),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_EQ(kDefaultMSS, optval);
+  EXPECT_EQ(sizeof(optval), optlen);
+}
+
+TEST_P(SimpleTcpSocketTest, SetMaxSegFailsForInvalidMSSValues) {
+  FileDescriptor s =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  {
+    constexpr int tcp_max_seg = 10;
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &tcp_max_seg,
+                           sizeof(tcp_max_seg)),
+                SyscallFailsWithErrno(EINVAL));
+  }
+  {
+    constexpr int tcp_max_seg = 75000;
+    ASSERT_THAT(setsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &tcp_max_seg,
+                           sizeof(tcp_max_seg)),
+                SyscallFailsWithErrno(EINVAL));
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
