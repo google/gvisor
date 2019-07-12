@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs/host"
@@ -41,8 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	"gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
 	"gvisor.dev/gvisor/pkg/sentry/sighandling"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -58,6 +57,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
+	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
@@ -262,7 +262,7 @@ func New(args Args) (*Loader, error) {
 		// Adjust the total memory returned by the Sentry so that applications that
 		// use /proc/meminfo can make allocations based on this limit.
 		usage.MinimumTotalMemoryBytes = args.TotalMem
-		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(2^30))
+		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1<<30))
 	}
 
 	// Initiate the Kernel object, which is required by the Context passed
@@ -415,19 +415,12 @@ func (l *Loader) Destroy() {
 }
 
 func createPlatform(conf *Config, deviceFile *os.File) (platform.Platform, error) {
-	switch conf.Platform {
-	case PlatformPtrace:
-		log.Infof("Platform: ptrace")
-		return ptrace.New()
-	case PlatformKVM:
-		log.Infof("Platform: kvm")
-		if deviceFile == nil {
-			return nil, fmt.Errorf("kvm device file must be provided")
-		}
-		return kvm.New(deviceFile)
-	default:
-		return nil, fmt.Errorf("invalid platform %v", conf.Platform)
+	p, err := platform.Lookup(conf.Platform)
+	if err != nil {
+		panic(fmt.Sprintf("invalid platform %v: %v", conf.Platform, err))
 	}
+	log.Infof("Platform: %s", conf.Platform)
+	return p.New(deviceFile)
 }
 
 func createMemoryFile() (*pgalloc.MemoryFile, error) {
@@ -516,13 +509,13 @@ func (l *Loader) run() error {
 		// Create the FD map, which will set stdin, stdout, and stderr.  If console
 		// is true, then ioctl calls will be passed through to the host fd.
 		ctx := l.rootProcArgs.NewContext(l.k)
-		fdm, err := createFDMap(ctx, l.rootProcArgs.Limits, l.console, l.stdioFDs)
+		fdTable, err := createFDTable(ctx, l.console, l.stdioFDs)
 		if err != nil {
 			return fmt.Errorf("importing fds: %v", err)
 		}
 		// CreateProcess takes a reference on FDMap if successful. We won't need
 		// ours either way.
-		l.rootProcArgs.FDMap = fdm
+		l.rootProcArgs.FDTable = fdTable
 
 		// cid for root container can be empty. Only subcontainers need it to set
 		// the mount location.
@@ -561,13 +554,13 @@ func (l *Loader) run() error {
 			return fmt.Errorf("creating init process: %v", err)
 		}
 
-		// CreateProcess takes a reference on FDMap if successful.
-		l.rootProcArgs.FDMap.DecRef()
+		// CreateProcess takes a reference on FDTable if successful.
+		l.rootProcArgs.FDTable.DecRef()
 	}
 
 	ep.tg = l.k.GlobalInit()
 	if l.console {
-		ttyFile := l.rootProcArgs.FDMap.GetFile(0)
+		ttyFile, _ := l.rootProcArgs.FDTable.Get(0)
 		defer ttyFile.DecRef()
 		ep.tty = ttyFile.FileOperations.(*host.TTYFileOperations)
 
@@ -647,13 +640,13 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := procArgs.NewContext(l.k)
-	fdm, err := createFDMap(ctx, procArgs.Limits, false, stdioFDs)
+	fdTable, err := createFDTable(ctx, false, stdioFDs)
 	if err != nil {
 		return fmt.Errorf("importing fds: %v", err)
 	}
-	// CreateProcess takes a reference on FDMap if successful. We won't need ours
-	// either way.
-	procArgs.FDMap = fdm
+	// CreateProcess takes a reference on fdTable if successful. We won't
+	// need ours either way.
+	procArgs.FDTable = fdTable
 
 	// Can't take ownership away from os.File. dup them to get a new FDs.
 	var goferFDs []int
@@ -682,8 +675,8 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 	}
 	l.k.StartProcess(tg)
 
-	// CreateProcess takes a reference on FDMap if successful.
-	procArgs.FDMap.DecRef()
+	// CreateProcess takes a reference on FDTable if successful.
+	procArgs.FDTable.DecRef()
 
 	l.processes[eid].tg = tg
 	return nil
@@ -1005,4 +998,9 @@ func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host
 		return nil, nil, fmt.Errorf("container not started")
 	}
 	return ep.tg, ep.tty, nil
+}
+
+func init() {
+	// TODO(gvisor.dev/issue/365): Make this configurable.
+	refs.SetLeakMode(refs.NoLeakChecking)
 }

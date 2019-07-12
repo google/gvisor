@@ -17,7 +17,6 @@ package linux
 import (
 	"io"
 	"sync"
-	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -54,7 +53,7 @@ func handleIOError(t *kernel.Task, partialResult bool, err, intr error, op strin
 		// Do not consume the error and return it as EFBIG.
 		// Simultaneously send a SIGXFSZ per setrlimit(2).
 		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
-		return syscall.EFBIG
+		return syserror.EFBIG
 	case syserror.ErrInterrupted:
 		// The syscall was interrupted. Return nil if it completed
 		// partially, otherwise return the error code that the syscall

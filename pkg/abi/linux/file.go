@@ -161,22 +161,35 @@ const (
 
 // Stat represents struct stat.
 type Stat struct {
-	Dev      uint64
-	Ino      uint64
-	Nlink    uint64
-	Mode     uint32
-	UID      uint32
-	GID      uint32
-	X_pad0   int32
-	Rdev     uint64
-	Size     int64
-	Blksize  int64
-	Blocks   int64
-	ATime    Timespec
-	MTime    Timespec
-	CTime    Timespec
-	X_unused [3]int64
+	Dev     uint64
+	Ino     uint64
+	Nlink   uint64
+	Mode    uint32
+	UID     uint32
+	GID     uint32
+	_       int32
+	Rdev    uint64
+	Size    int64
+	Blksize int64
+	Blocks  int64
+	ATime   Timespec
+	MTime   Timespec
+	CTime   Timespec
+	_       [3]int64
 }
+
+// File types.
+const (
+	DT_BLK     = 0x6
+	DT_CHR     = 0x2
+	DT_DIR     = 0x4
+	DT_FIFO    = 0x1
+	DT_LNK     = 0xa
+	DT_REG     = 0x8
+	DT_SOCK    = 0xc
+	DT_UNKNOWN = 0x0
+	DT_WHT     = 0xe
+)
 
 // SizeOfStat is the size of a Stat struct.
 var SizeOfStat = binary.Size(Stat{})

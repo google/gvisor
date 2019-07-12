@@ -22,40 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
-// PlatformType tells which platform to use.
-type PlatformType int
-
-const (
-	// PlatformPtrace runs the sandbox with the ptrace platform.
-	PlatformPtrace PlatformType = iota
-
-	// PlatformKVM runs the sandbox with the KVM platform.
-	PlatformKVM
-)
-
-// MakePlatformType converts type from string.
-func MakePlatformType(s string) (PlatformType, error) {
-	switch s {
-	case "ptrace":
-		return PlatformPtrace, nil
-	case "kvm":
-		return PlatformKVM, nil
-	default:
-		return 0, fmt.Errorf("invalid platform type %q", s)
-	}
-}
-
-func (p PlatformType) String() string {
-	switch p {
-	case PlatformPtrace:
-		return "ptrace"
-	case PlatformKVM:
-		return "kvm"
-	default:
-		return fmt.Sprintf("unknown(%d)", p)
-	}
-}
-
 // FileAccessType tells how the filesystem is accessed.
 type FileAccessType int
 
@@ -187,7 +153,7 @@ type Config struct {
 	LogPackets bool
 
 	// Platform is the platform to run on.
-	Platform PlatformType
+	Platform string
 
 	// Strace indicates that strace should be enabled.
 	Strace bool
@@ -247,7 +213,7 @@ func (c *Config) ToFlags() []string {
 		"--overlay=" + strconv.FormatBool(c.Overlay),
 		"--network=" + c.Network.String(),
 		"--log-packets=" + strconv.FormatBool(c.LogPackets),
-		"--platform=" + c.Platform.String(),
+		"--platform=" + c.Platform,
 		"--strace=" + strconv.FormatBool(c.Strace),
 		"--strace-syscalls=" + strings.Join(c.StraceSyscalls, ","),
 		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),

@@ -25,8 +25,10 @@ import (
 
 	// Include filesystem types that OCI spec might mount.
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
+	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
@@ -36,8 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -85,19 +85,6 @@ func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string,
 	if err != nil {
 		return nil, fmt.Errorf("creating tmpfs overlay: %v", err)
 	}
-
-	// Replicate permissions and owner from lower to upper mount point.
-	attr, err := lower.UnstableAttr(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("reading attributes from lower mount point: %v", err)
-	}
-	if !upper.InodeOperations.SetPermissions(ctx, upper, attr.Perms) {
-		return nil, fmt.Errorf("error setting permission to upper mount point")
-	}
-	if err := upper.InodeOperations.SetOwner(ctx, upper, attr.Owner); err != nil {
-		return nil, fmt.Errorf("setting owner to upper mount point: %v", err)
-	}
-
 	return fs.NewOverlayRoot(ctx, upper, lower, upperFlags)
 }
 

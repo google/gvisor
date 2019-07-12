@@ -224,6 +224,7 @@ func (r *Registry) newShm(ctx context.Context, pid int32, key Key, creator fs.Fi
 		creatorPID:    pid,
 		changeTime:    ktime.NowFromContext(ctx),
 	}
+	shm.EnableLeakCheck("kernel.Shm")
 
 	// Find the next available ID.
 	for id := r.lastIDUsed + 1; id != r.lastIDUsed; id++ {

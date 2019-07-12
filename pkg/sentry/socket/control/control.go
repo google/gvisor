@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -63,7 +62,7 @@ type RightsFiles []*fs.File
 func NewSCMRights(t *kernel.Task, fds []int32) (SCMRights, error) {
 	files := make(RightsFiles, 0, len(fds))
 	for _, fd := range fds {
-		file, _ := t.FDMap().GetDescriptor(kdefs.FD(fd))
+		file := t.GetFile(fd)
 		if file == nil {
 			files.Release()
 			return nil, syserror.EBADF
@@ -109,7 +108,9 @@ func rightsFDs(t *kernel.Task, rights SCMRights, cloexec bool, max int) ([]int32
 	files, trunc := rights.Files(t, max)
 	fds := make([]int32, 0, len(files))
 	for i := 0; i < max && len(files) > 0; i++ {
-		fd, err := t.FDMap().NewFDFrom(0, files[0], kernel.FDFlags{cloexec}, t.ThreadGroup().Limits())
+		fd, err := t.NewFDFrom(0, files[0], kernel.FDFlags{
+			CloseOnExec: cloexec,
+		})
 		files[0].DecRef()
 		files = files[1:]
 		if err != nil {
@@ -315,8 +316,7 @@ func PackTimestamp(t *kernel.Task, timestamp int64, buf []byte) []byte {
 // Parse parses a raw socket control message into portable objects.
 func Parse(t *kernel.Task, socketOrEndpoint interface{}, buf []byte) (transport.ControlMessages, error) {
 	var (
-		fds linux.ControlMessageRights
-
+		fds       linux.ControlMessageRights
 		haveCreds bool
 		creds     linux.ControlMessageCredentials
 	)

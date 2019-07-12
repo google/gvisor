@@ -28,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
@@ -69,10 +68,13 @@ func New(ctx context.Context, endpoint transport.Endpoint, stype linux.SockType)
 
 // NewWithDirent creates a new unix socket using an existing dirent.
 func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, stype linux.SockType, flags fs.FileFlags) *fs.File {
-	return fs.NewFile(ctx, d, flags, &SocketOperations{
+	s := SocketOperations{
 		ep:    ep,
 		stype: stype,
-	})
+	}
+	s.EnableLeakCheck("unix.SocketOperations")
+
+	return fs.NewFile(ctx, d, flags, &s)
 }
 
 // DecRef implements RefCounter.DecRef.
@@ -108,7 +110,7 @@ func (s *SocketOperations) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, err := epsocket.GetAddress(linux.AF_UNIX, sockaddr)
+	addr, err := epsocket.GetAddress(linux.AF_UNIX, sockaddr, true /* strict */)
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +193,7 @@ func (s *SocketOperations) blockingAccept(t *kernel.Task) (transport.Endpoint, *
 
 // Accept implements the linux syscall accept(2) for sockets backed by
 // a transport.Endpoint.
-func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
+func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error) {
 	// Issue the accept request to get the new endpoint.
 	ep, err := s.ep.Accept()
 	if err != nil {
@@ -226,10 +228,9 @@ func (s *SocketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 		}
 	}
 
-	fdFlags := kernel.FDFlags{
+	fd, e := t.NewFDFrom(0, ns, kernel.FDFlags{
 		CloseOnExec: flags&linux.SOCK_CLOEXEC != 0,
-	}
-	fd, e := t.FDMap().NewFDFrom(0, ns, fdFlags, t.ThreadGroup().Limits())
+	})
 	if e != nil {
 		return 0, nil, 0, syserr.FromError(e)
 	}

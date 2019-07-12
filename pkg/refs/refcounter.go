@@ -17,9 +17,14 @@
 package refs
 
 import (
+	"bytes"
+	"fmt"
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
+
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // RefCounter is the interface to be implemented by objects that are reference
@@ -189,11 +194,163 @@ type AtomicRefCount struct {
 	// how these fields are used.
 	refCount int64
 
+	// name is the name of the type which owns this ref count.
+	//
+	// name is immutable after EnableLeakCheck is called.
+	name string
+
+	// stack optionally records the caller of EnableLeakCheck.
+	//
+	// stack is immutable after EnableLeakCheck is called.
+	stack []uintptr
+
 	// mu protects the list below.
 	mu sync.Mutex `state:"nosave"`
 
 	// weakRefs is our collection of weak references.
 	weakRefs weakRefList `state:"nosave"`
+}
+
+// LeakMode configures the leak checker.
+type LeakMode uint32
+
+const (
+	// uninitializedLeakChecking indicates that the leak checker has not yet been initialized.
+	uninitializedLeakChecking LeakMode = iota
+
+	// NoLeakChecking indicates that no effort should be made to check for
+	// leaks.
+	NoLeakChecking
+
+	// LeaksLogWarning indicates that a warning should be logged when leaks
+	// are found.
+	LeaksLogWarning
+
+	// LeaksLogTraces indicates that a trace collected during allocation
+	// should be logged when leaks are found.
+	LeaksLogTraces
+)
+
+// leakMode stores the current mode for the reference leak checker.
+//
+// Values must be one of the LeakMode values.
+//
+// leakMode must be accessed atomically.
+var leakMode uint32
+
+// SetLeakMode configures the reference leak checker.
+func SetLeakMode(mode LeakMode) {
+	atomic.StoreUint32(&leakMode, uint32(mode))
+}
+
+const maxStackFrames = 40
+
+type fileLine struct {
+	file string
+	line int
+}
+
+// A stackKey is a representation of a stack frame for use as a map key.
+//
+// The fileLine type is used as PC values seem to vary across collections, even
+// for the same call stack.
+type stackKey [maxStackFrames]fileLine
+
+var stackCache = struct {
+	sync.Mutex
+	entries map[stackKey][]uintptr
+}{entries: map[stackKey][]uintptr{}}
+
+func makeStackKey(pcs []uintptr) stackKey {
+	frames := runtime.CallersFrames(pcs)
+	var key stackKey
+	keySlice := key[:0]
+	for {
+		frame, more := frames.Next()
+		keySlice = append(keySlice, fileLine{frame.File, frame.Line})
+
+		if !more || len(keySlice) == len(key) {
+			break
+		}
+	}
+	return key
+}
+
+func recordStack() []uintptr {
+	pcs := make([]uintptr, maxStackFrames)
+	n := runtime.Callers(1, pcs)
+	if n == 0 {
+		// No pcs available. Stop now.
+		//
+		// This can happen if the first argument to runtime.Callers
+		// is large.
+		return nil
+	}
+	pcs = pcs[:n]
+	key := makeStackKey(pcs)
+	stackCache.Lock()
+	v, ok := stackCache.entries[key]
+	if !ok {
+		// Reallocate to prevent pcs from escaping.
+		v = append([]uintptr(nil), pcs...)
+		stackCache.entries[key] = v
+	}
+	stackCache.Unlock()
+	return v
+}
+
+func formatStack(pcs []uintptr) string {
+	frames := runtime.CallersFrames(pcs)
+	var trace bytes.Buffer
+	for {
+		frame, more := frames.Next()
+		fmt.Fprintf(&trace, "%s:%d: %s\n", frame.File, frame.Line, frame.Function)
+
+		if !more {
+			break
+		}
+	}
+	return trace.String()
+}
+
+func (r *AtomicRefCount) finalize() {
+	var note string
+	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	case NoLeakChecking:
+		return
+	case uninitializedLeakChecking:
+		note = "(Leak checker uninitialized): "
+	}
+	if n := r.ReadRefs(); n != 0 {
+		msg := fmt.Sprintf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
+		if len(r.stack) != 0 {
+			msg += ":\nCaller:\n" + formatStack(r.stack)
+		}
+		log.Warningf(msg)
+	}
+}
+
+// EnableLeakCheck checks for reference leaks when the AtomicRefCount gets
+// garbage collected.
+//
+// This function adds a finalizer to the AtomicRefCount, so the AtomicRefCount
+// must be at the beginning of its parent.
+//
+// name is a friendly name that will be listed as the owner of the
+// AtomicRefCount in logs. It should be the name of the parent type, including
+// package.
+func (r *AtomicRefCount) EnableLeakCheck(name string) {
+	if name == "" {
+		panic("invalid name")
+	}
+	switch LeakMode(atomic.LoadUint32(&leakMode)) {
+	case NoLeakChecking:
+		return
+	case LeaksLogTraces:
+		r.stack = recordStack()
+	}
+	r.name = name
+	runtime.SetFinalizer(r, (*AtomicRefCount).finalize)
 }
 
 // ReadRefs returns the current number of references. The returned count is
@@ -208,6 +365,8 @@ func (r *AtomicRefCount) ReadRefs() int64 {
 //
 // The sanity check here is limited to real references, since if they have
 // dropped beneath zero then the object should have been destroyed.
+//
+//go:nosplit
 func (r *AtomicRefCount) IncRef() {
 	if v := atomic.AddInt64(&r.refCount, 1); v <= 0 {
 		panic("Incrementing non-positive ref count")
@@ -222,6 +381,8 @@ func (r *AtomicRefCount) IncRef() {
 // To do this safely without a loop, a speculative reference is first acquired
 // on the object. This allows multiple concurrent TryIncRef calls to
 // distinguish other TryIncRef calls from genuine references held.
+//
+//go:nosplit
 func (r *AtomicRefCount) TryIncRef() bool {
 	const speculativeRef = 1 << 32
 	v := atomic.AddInt64(&r.refCount, speculativeRef)
@@ -263,6 +424,7 @@ func (r *AtomicRefCount) dropWeakRef(w *WeakRef) {
 //	B: DecRef [real decrease]
 //	A: TryIncRef [transform speculative to real]
 //
+//go:nosplit
 func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 	switch v := atomic.AddInt64(&r.refCount, -1); {
 	case v < -1:
@@ -298,6 +460,8 @@ func (r *AtomicRefCount) DecRefWithDestructor(destroy func()) {
 }
 
 // DecRef decrements this object's reference count.
+//
+//go:nosplit
 func (r *AtomicRefCount) DecRef() {
 	r.DecRefWithDestructor(nil)
 }

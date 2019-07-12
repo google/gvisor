@@ -41,7 +41,9 @@ var (
 // NewConnectionless creates a new unbound dgram endpoint.
 func NewConnectionless(ctx context.Context) Endpoint {
 	ep := &connectionlessEndpoint{baseEndpoint{Queue: &waiter.Queue{}}}
-	ep.receiver = &queueReceiver{readQueue: &queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}}
+	q := queue{ReaderQueue: ep.Queue, WriterQueue: &waiter.Queue{}, limit: initialLimit}
+	q.EnableLeakCheck("transport.queue")
+	ep.receiver = &queueReceiver{readQueue: &q}
 	return ep
 }
 
@@ -52,29 +54,24 @@ func (e *connectionlessEndpoint) isBound() bool {
 
 // Close puts the endpoint in a closed state and frees all resources associated
 // with it.
-//
-// The socket will be a fresh state after a call to close and may be reused.
-// That is, close may be used to "unbind" or "disconnect" the socket in error
-// paths.
 func (e *connectionlessEndpoint) Close() {
 	e.Lock()
-	var r Receiver
-	if e.Connected() {
-		e.receiver.CloseRecv()
-		r = e.receiver
-		e.receiver = nil
-
+	if e.connected != nil {
 		e.connected.Release()
 		e.connected = nil
 	}
+
 	if e.isBound() {
 		e.path = ""
 	}
+
+	e.receiver.CloseRecv()
+	r := e.receiver
+	e.receiver = nil
 	e.Unlock()
-	if r != nil {
-		r.CloseNotify()
-		r.Release()
-	}
+
+	r.CloseNotify()
+	r.Release()
 }
 
 // BidirectionalConnect implements BoundEndpoint.BidirectionalConnect.
@@ -137,6 +134,9 @@ func (e *connectionlessEndpoint) Connect(ctx context.Context, server BoundEndpoi
 	}
 
 	e.Lock()
+	if e.connected != nil {
+		e.connected.Release()
+	}
 	e.connected = connected
 	e.Unlock()
 

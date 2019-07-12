@@ -15,18 +15,9 @@
 package dev
 
 import (
-	"strconv"
-
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-// Optional key containing boolean flag which specifies if Android Binder IPC should be enabled.
-const binderEnabledKey = "binder_enabled"
-
-// Optional key containing boolean flag which specifies if Android ashmem should be enabled.
-const ashmemEnabledKey = "ashmem_enabled"
 
 // filesystem is a devtmpfs.
 //
@@ -67,33 +58,7 @@ func (*filesystem) Flags() fs.FilesystemFlags {
 
 // Mount returns a devtmpfs root that can be positioned in the vfs.
 func (f *filesystem) Mount(ctx context.Context, device string, flags fs.MountSourceFlags, data string, _ interface{}) (*fs.Inode, error) {
-	// device is always ignored.
 	// devtmpfs backed by ramfs ignores bad options. See fs/ramfs/inode.c:ramfs_parse_options.
 	//  -> we should consider parsing the mode and backing devtmpfs by this.
-
-	// Parse generic comma-separated key=value options.
-	options := fs.GenericMountSourceOptions(data)
-
-	// binerEnabledKey is optional and binder is disabled by default.
-	binderEnabled := false
-	if beStr, exists := options[binderEnabledKey]; exists {
-		var err error
-		binderEnabled, err = strconv.ParseBool(beStr)
-		if err != nil {
-			return nil, syserror.EINVAL
-		}
-	}
-
-	// ashmemEnabledKey is optional and ashmem is disabled by default.
-	ashmemEnabled := false
-	if aeStr, exists := options[ashmemEnabledKey]; exists {
-		var err error
-		ashmemEnabled, err = strconv.ParseBool(aeStr)
-		if err != nil {
-			return nil, syserror.EINVAL
-		}
-	}
-
-	// Construct the devtmpfs root.
-	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags), binderEnabled, ashmemEnabled), nil
+	return New(ctx, fs.NewNonCachingMountSource(ctx, f, flags)), nil
 }

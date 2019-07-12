@@ -342,6 +342,7 @@ func loadError(s string) *tcpip.Error {
 			tcpip.ErrNoBufferSpace,
 			tcpip.ErrBroadcastDisabled,
 			tcpip.ErrNotPermitted,
+			tcpip.ErrAddressFamilyNotSupported,
 		}
 
 		messageToError = make(map[string]*tcpip.Error)

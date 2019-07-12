@@ -86,12 +86,12 @@ const (
 
 // InterfaceInfoMessage is struct ifinfomsg, from uapi/linux/rtnetlink.h.
 type InterfaceInfoMessage struct {
-	Family  uint8
-	Padding uint8
-	Type    uint16
-	Index   int32
-	Flags   uint32
-	Change  uint32
+	Family uint8
+	_      uint8
+	Type   uint16
+	Index  int32
+	Flags  uint32
+	Change uint32
 }
 
 // Interface flags, from uapi/linux/if.h.

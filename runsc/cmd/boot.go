@@ -26,6 +26,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
+	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -172,7 +173,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 		if caps == nil {
 			caps = &specs.LinuxCapabilities{}
 		}
-		if conf.Platform == boot.PlatformPtrace {
+		if conf.Platform == platforms.Ptrace {
 			// Ptrace platform requires extra capabilities.
 			const c = "CAP_SYS_PTRACE"
 			caps.Bounding = append(caps.Bounding, c)

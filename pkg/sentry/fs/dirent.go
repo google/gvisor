@@ -229,11 +229,13 @@ func newDirent(inode *Inode, name string) *Dirent {
 	if inode != nil {
 		inode.MountSource.IncDirentRefs()
 	}
-	return &Dirent{
+	d := Dirent{
 		Inode:    inode,
 		name:     name,
 		children: make(map[string]*refs.WeakRef),
 	}
+	d.EnableLeakCheck("fs.Dirent")
+	return &d
 }
 
 // NewNegativeDirent returns a new root negative Dirent. Otherwise same as NewDirent.

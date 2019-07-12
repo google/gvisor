@@ -61,21 +61,24 @@ func (x *descriptor) load(m state.Map) {
 	m.Load("flags", &x.flags)
 }
 
-func (x *FDMap) beforeSave() {}
-func (x *FDMap) save(m state.Map) {
+func (x *FDTable) beforeSave() {}
+func (x *FDTable) save(m state.Map) {
 	x.beforeSave()
+	var descriptorTable map[int32]descriptor = x.saveDescriptorTable()
+	m.SaveValue("descriptorTable", descriptorTable)
 	m.Save("AtomicRefCount", &x.AtomicRefCount)
 	m.Save("k", &x.k)
-	m.Save("files", &x.files)
 	m.Save("uid", &x.uid)
+	m.Save("used", &x.used)
 }
 
-func (x *FDMap) afterLoad() {}
-func (x *FDMap) load(m state.Map) {
+func (x *FDTable) afterLoad() {}
+func (x *FDTable) load(m state.Map) {
 	m.Load("AtomicRefCount", &x.AtomicRefCount)
 	m.Load("k", &x.k)
-	m.Load("files", &x.files)
 	m.Load("uid", &x.uid)
+	m.Load("used", &x.used)
+	m.LoadValue("descriptorTable", new(map[int32]descriptor), func(y interface{}) { x.loadDescriptorTable(y.(map[int32]descriptor)) })
 }
 
 func (x *FSContext) beforeSave() {}
@@ -536,8 +539,8 @@ func (x *Task) save(m state.Map) {
 	m.Save("k", &x.k)
 	m.Save("containerID", &x.containerID)
 	m.Save("tc", &x.tc)
-	m.Save("fsc", &x.fsc)
-	m.Save("fds", &x.fds)
+	m.Save("fsContext", &x.fsContext)
+	m.Save("fdTable", &x.fdTable)
 	m.Save("vforkParent", &x.vforkParent)
 	m.Save("exitState", &x.exitState)
 	m.Save("exitTracerNotified", &x.exitTracerNotified)
@@ -592,8 +595,8 @@ func (x *Task) load(m state.Map) {
 	m.Load("k", &x.k)
 	m.Load("containerID", &x.containerID)
 	m.Load("tc", &x.tc)
-	m.Load("fsc", &x.fsc)
-	m.Load("fds", &x.fds)
+	m.Load("fsContext", &x.fsContext)
+	m.Load("fdTable", &x.fdTable)
 	m.Load("vforkParent", &x.vforkParent)
 	m.Load("exitState", &x.exitState)
 	m.Load("exitTracerNotified", &x.exitTracerNotified)
@@ -1118,7 +1121,7 @@ func init() {
 	state.Register("kernel.AbstractSocketNamespace", (*AbstractSocketNamespace)(nil), state.Fns{Save: (*AbstractSocketNamespace).save, Load: (*AbstractSocketNamespace).load})
 	state.Register("kernel.FDFlags", (*FDFlags)(nil), state.Fns{Save: (*FDFlags).save, Load: (*FDFlags).load})
 	state.Register("kernel.descriptor", (*descriptor)(nil), state.Fns{Save: (*descriptor).save, Load: (*descriptor).load})
-	state.Register("kernel.FDMap", (*FDMap)(nil), state.Fns{Save: (*FDMap).save, Load: (*FDMap).load})
+	state.Register("kernel.FDTable", (*FDTable)(nil), state.Fns{Save: (*FDTable).save, Load: (*FDTable).load})
 	state.Register("kernel.FSContext", (*FSContext)(nil), state.Fns{Save: (*FSContext).save, Load: (*FSContext).load})
 	state.Register("kernel.IPCNamespace", (*IPCNamespace)(nil), state.Fns{Save: (*IPCNamespace).save, Load: (*IPCNamespace).load})
 	state.Register("kernel.Kernel", (*Kernel)(nil), state.Fns{Save: (*Kernel).save, Load: (*Kernel).load})

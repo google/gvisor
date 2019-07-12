@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -34,7 +33,7 @@ import (
 )
 
 // fileOpAt performs an operation on the second last component in the path.
-func fileOpAt(t *kernel.Task, dirFD kdefs.FD, path string, fn func(root *fs.Dirent, d *fs.Dirent, name string, remainingTraversals uint) error) error {
+func fileOpAt(t *kernel.Task, dirFD int32, path string, fn func(root *fs.Dirent, d *fs.Dirent, name string, remainingTraversals uint) error) error {
 	// Extract the last component.
 	dir, name := fs.SplitLast(path)
 	if dir == "/" {
@@ -60,7 +59,7 @@ func fileOpAt(t *kernel.Task, dirFD kdefs.FD, path string, fn func(root *fs.Dire
 }
 
 // fileOpOn performs an operation on the last entry of the path.
-func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error) error {
+func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error) error {
 	var (
 		d   *fs.Dirent // The file.
 		wd  *fs.Dirent // The working directory (if required.)
@@ -78,7 +77,7 @@ func fileOpOn(t *kernel.Task, dirFD kdefs.FD, path string, resolve bool, fn func
 		rel = wd
 	} else {
 		// Need to extract the given FD.
-		f = t.FDMap().GetFile(dirFD)
+		f = t.GetFile(dirFD)
 		if f == nil {
 			return syserror.EBADF
 		}
@@ -131,7 +130,7 @@ func copyInPath(t *kernel.Task, addr usermem.Addr, allowEmpty bool) (path string
 	return path, dirPath, nil
 }
 
-func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd uintptr, err error) {
+func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -184,8 +183,9 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 		defer file.DecRef()
 
 		// Success.
-		fdFlags := kernel.FDFlags{CloseOnExec: flags&linux.O_CLOEXEC != 0}
-		newFD, err := t.FDMap().NewFDFrom(0, file, fdFlags, t.ThreadGroup().Limits())
+		newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{
+			CloseOnExec: flags&linux.O_CLOEXEC != 0,
+		})
 		if err != nil {
 			return err
 		}
@@ -201,7 +201,7 @@ func openAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint) (fd u
 	return fd, err // Use result in frame.
 }
 
-func mknodAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileMode) error {
+func mknodAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -285,7 +285,7 @@ func Mknod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Mknodat implements the linux syscall mknodat(2).
 func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	path := args[1].Pointer()
 	mode := linux.FileMode(args[2].ModeT())
 	// We don't need this argument until we support creation of device nodes.
@@ -294,7 +294,7 @@ func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	return 0, nil, mknodAt(t, dirFD, path, mode)
 }
 
-func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mode linux.FileMode) (fd uintptr, err error) {
+func createAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint, mode linux.FileMode) (fd uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -326,6 +326,7 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			if err != nil {
 				break
 			}
+			defer found.DecRef()
 
 			// We found something (possibly a symlink). If the
 			// O_EXCL flag was passed, then we can immediately
@@ -346,31 +347,41 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 			}
 
 			// Try to resolve the symlink directly to a Dirent.
-			resolved, err := found.Inode.Getlink(t)
-			if err == nil || err != fs.ErrResolveViaReadlink {
+			var resolved *fs.Dirent
+			resolved, err = found.Inode.Getlink(t)
+			if err == nil {
 				// No more resolution necessary.
-				found.DecRef()
-				found = resolved
+				defer resolved.DecRef()
 				break
+			}
+			if err != fs.ErrResolveViaReadlink {
+				return err
+			}
+
+			// Are we able to resolve further?
+			if remainingTraversals == 0 {
+				return syscall.ELOOP
 			}
 
 			// Resolve the symlink to a path via Readlink.
-			path, err := found.Inode.Readlink(t)
+			var path string
+			path, err = found.Inode.Readlink(t)
 			if err != nil {
 				break
 			}
 			remainingTraversals--
 
 			// Get the new parent from the target path.
+			var newParent *fs.Dirent
 			newParentPath, newName := fs.SplitLast(path)
-			newParent, err := t.MountNamespace().FindInode(t, root, parent, newParentPath, &remainingTraversals)
+			newParent, err = t.MountNamespace().FindInode(t, root, parent, newParentPath, &remainingTraversals)
 			if err != nil {
 				break
 			}
+			defer newParent.DecRef()
 
 			// Repeat the process with the parent and name of the
 			// symlink target.
-			parent.DecRef()
 			parent = newParent
 			name = newName
 		}
@@ -378,9 +389,6 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		var newFile *fs.File
 		switch err {
 		case nil:
-			// The file existed.
-			defer found.DecRef()
-
 			// Like sys_open, check for a few things about the
 			// filesystem before trying to get a reference to the
 			// fs.File. The same constraints on Check apply.
@@ -423,8 +431,9 @@ func createAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, flags uint, mod
 		}
 
 		// Success.
-		fdFlags := kernel.FDFlags{CloseOnExec: flags&linux.O_CLOEXEC != 0}
-		newFD, err := t.FDMap().NewFDFrom(0, newFile, fdFlags, t.ThreadGroup().Limits())
+		newFD, err := t.NewFDFrom(0, newFile, kernel.FDFlags{
+			CloseOnExec: flags&linux.O_CLOEXEC != 0,
+		})
 		if err != nil {
 			return err
 		}
@@ -458,7 +467,7 @@ func Open(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 // Openat implements linux syscall openat(2).
 func Openat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	flags := uint(args[2].Uint())
 	if flags&linux.O_CREAT != 0 {
@@ -497,7 +506,7 @@ func (ac accessContext) Value(key interface{}) interface{} {
 	}
 }
 
-func accessAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, resolve bool, mode uint) error {
+func accessAt(t *kernel.Task, dirFD int32, addr usermem.Addr, resolve bool, mode uint) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
@@ -552,7 +561,7 @@ func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Faccessat implements linux syscall faccessat(2).
 func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	mode := args[2].ModeT()
 	flags := args[3].Int()
@@ -562,10 +571,10 @@ func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // Ioctl implements linux syscall ioctl(2).
 func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	request := int(args[1].Int())
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -574,12 +583,12 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// Shared flags between file and socket.
 	switch request {
 	case linux.FIONCLEX:
-		t.FDMap().SetFlags(fd, kernel.FDFlags{
+		t.FDTable().SetFlags(fd, kernel.FDFlags{
 			CloseOnExec: false,
 		})
 		return 0, nil, nil
 	case linux.FIOCLEX:
-		t.FDMap().SetFlags(fd, kernel.FDFlags{
+		t.FDTable().SetFlags(fd, kernel.FDFlags{
 			CloseOnExec: true,
 		})
 		return 0, nil, nil
@@ -723,9 +732,9 @@ func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Fchdir implements the linux syscall fchdir(2).
 func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -747,44 +756,47 @@ func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Close implements linux syscall close(2).
 func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 
-	file, ok := t.FDMap().Remove(fd)
-	if !ok {
-		return 0, nil, syserror.EBADF
-	}
-	defer file.DecRef()
-
-	err := file.Flush(t)
-	return 0, nil, handleIOError(t, false /* partial */, err, syscall.EINTR, "close", file)
-}
-
-// Dup implements linux syscall dup(2).
-func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
-
-	file := t.FDMap().GetFile(fd)
+	// Note that Remove provides a reference on the file that we may use to
+	// flush. It is still active until we drop the final reference below
+	// (and other reference-holding operations complete).
+	file := t.FDTable().Remove(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
 	defer file.DecRef()
 
-	newfd, err := t.FDMap().NewFDFrom(0, file, kernel.FDFlags{}, t.ThreadGroup().Limits())
+	err := file.Flush(t)
+	return 0, nil, handleIOError(t, false /* partial */, err, syserror.EINTR, "close", file)
+}
+
+// Dup implements linux syscall dup(2).
+func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{})
 	if err != nil {
 		return 0, nil, syserror.EMFILE
 	}
-	return uintptr(newfd), nil, nil
+	return uintptr(newFD), nil, nil
 }
 
 // Dup2 implements linux syscall dup2(2).
 func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldfd := kdefs.FD(args[0].Int())
-	newfd := kdefs.FD(args[1].Int())
+	oldfd := args[0].Int()
+	newfd := args[1].Int()
 
 	// If oldfd is a valid file descriptor, and newfd has the same value as oldfd,
 	// then dup2() does nothing, and returns newfd.
 	if oldfd == newfd {
-		oldFile := t.FDMap().GetFile(oldfd)
+		oldFile := t.GetFile(oldfd)
 		if oldFile == nil {
 			return 0, nil, syserror.EBADF
 		}
@@ -800,21 +812,21 @@ func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 // Dup3 implements linux syscall dup3(2).
 func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldfd := kdefs.FD(args[0].Int())
-	newfd := kdefs.FD(args[1].Int())
+	oldfd := args[0].Int()
+	newfd := args[1].Int()
 	flags := args[2].Uint()
 
 	if oldfd == newfd {
 		return 0, nil, syserror.EINVAL
 	}
 
-	oldFile := t.FDMap().GetFile(oldfd)
+	oldFile := t.GetFile(oldfd)
 	if oldFile == nil {
 		return 0, nil, syserror.EBADF
 	}
 	defer oldFile.DecRef()
 
-	err := t.FDMap().NewFDAt(newfd, oldFile, kernel.FDFlags{CloseOnExec: flags&linux.O_CLOEXEC != 0}, t.ThreadGroup().Limits())
+	err := t.NewFDAt(newfd, oldFile, kernel.FDFlags{CloseOnExec: flags&linux.O_CLOEXEC != 0})
 	if err != nil {
 		return 0, nil, err
 	}
@@ -857,10 +869,10 @@ func fSetOwn(t *kernel.Task, file *fs.File, who int32) {
 
 // Fcntl implements linux syscall fcntl(2).
 func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	cmd := args[1].Int()
 
-	file, flags := t.FDMap().GetDescriptor(fd)
+	file, flags := t.FDTable().Get(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -868,9 +880,10 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	switch cmd {
 	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC:
-		from := kdefs.FD(args[2].Int())
-		fdFlags := kernel.FDFlags{CloseOnExec: cmd == linux.F_DUPFD_CLOEXEC}
-		fd, err := t.FDMap().NewFDFrom(from, file, fdFlags, t.ThreadGroup().Limits())
+		from := args[2].Int()
+		fd, err := t.NewFDFrom(from, file, kernel.FDFlags{
+			CloseOnExec: cmd == linux.F_DUPFD_CLOEXEC,
+		})
 		if err != nil {
 			return 0, nil, err
 		}
@@ -879,7 +892,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return uintptr(flags.ToLinuxFDFlags()), nil, nil
 	case linux.F_SETFD:
 		flags := args[2].Uint()
-		t.FDMap().SetFlags(fd, kernel.FDFlags{
+		t.FDTable().SetFlags(fd, kernel.FDFlags{
 			CloseOnExec: flags&linux.FD_CLOEXEC != 0,
 		})
 	case linux.F_GETFL:
@@ -897,7 +910,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 		// Copy in the lock request.
 		flockAddr := args[2].Pointer()
-		var flock syscall.Flock_t
+		var flock linux.Flock
 		if _, err := t.CopyIn(flockAddr, &flock); err != nil {
 			return 0, nil, err
 		}
@@ -940,17 +953,17 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, err
 		}
 
-		// The lock uid is that of the Task's FDMap.
-		lockUniqueID := lock.UniqueID(t.FDMap().ID())
+		// The lock uid is that of the Task's FDTable.
+		lockUniqueID := lock.UniqueID(t.FDTable().ID())
 
 		// These locks don't block; execute the non-blocking operation using the inode's lock
 		// context directly.
 		switch flock.Type {
-		case syscall.F_RDLCK:
+		case linux.F_RDLCK:
 			if !file.Flags().Read {
 				return 0, nil, syserror.EBADF
 			}
-			if cmd == syscall.F_SETLK {
+			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
 				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.ReadLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
@@ -962,11 +975,11 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 				}
 			}
 			return 0, nil, nil
-		case syscall.F_WRLCK:
+		case linux.F_WRLCK:
 			if !file.Flags().Write {
 				return 0, nil, syserror.EBADF
 			}
-			if cmd == syscall.F_SETLK {
+			if cmd == linux.F_SETLK {
 				// Non-blocking lock, provide a nil lock.Blocker.
 				if !file.Dirent.Inode.LockCtx.Posix.LockRegion(lockUniqueID, lock.WriteLock, rng, nil) {
 					return 0, nil, syserror.EAGAIN
@@ -978,7 +991,7 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 				}
 			}
 			return 0, nil, nil
-		case syscall.F_UNLCK:
+		case linux.F_UNLCK:
 			file.Dirent.Inode.LockCtx.Posix.UnlockRegion(lockUniqueID, rng)
 			return 0, nil, nil
 		default:
@@ -1031,7 +1044,7 @@ const (
 // Fadvise64 implements linux syscall fadvise64(2).
 // This implementation currently ignores the provided advice.
 func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	length := args[2].Int64()
 	advice := args[3].Int()
 
@@ -1040,7 +1053,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, syserror.EINVAL
 	}
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -1066,7 +1079,7 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, nil
 }
 
-func mkdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, mode linux.FileMode) error {
+func mkdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1111,14 +1124,14 @@ func Mkdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Mkdirat implements linux syscall mkdirat(2).
 func Mkdirat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	mode := linux.FileMode(args[2].ModeT())
 
 	return 0, nil, mkdirAt(t, dirFD, addr, mode)
 }
 
-func rmdirAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr) error {
+func rmdirAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1158,7 +1171,7 @@ func Rmdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	return 0, nil, rmdirAt(t, linux.AT_FDCWD, addr)
 }
 
-func symlinkAt(t *kernel.Task, dirFD kdefs.FD, newAddr usermem.Addr, oldAddr usermem.Addr) error {
+func symlinkAt(t *kernel.Task, dirFD int32, newAddr usermem.Addr, oldAddr usermem.Addr) error {
 	newPath, dirPath, err := copyInPath(t, newAddr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1201,7 +1214,7 @@ func Symlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 // Symlinkat implements linux syscall symlinkat(2).
 func Symlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	oldAddr := args[0].Pointer()
-	dirFD := kdefs.FD(args[1].Int())
+	dirFD := args[1].Int()
 	newAddr := args[2].Pointer()
 
 	return 0, nil, symlinkAt(t, dirFD, newAddr, oldAddr)
@@ -1243,7 +1256,7 @@ func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
 // linkAt creates a hard link to the target specified by oldDirFD and oldAddr,
 // specified by newDirFD and newAddr.  If resolve is true, then the symlinks
 // will be followed when evaluating the target.
-func linkAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD kdefs.FD, newAddr usermem.Addr, resolve, allowEmpty bool) error {
+func linkAt(t *kernel.Task, oldDirFD int32, oldAddr usermem.Addr, newDirFD int32, newAddr usermem.Addr, resolve, allowEmpty bool) error {
 	oldPath, _, err := copyInPath(t, oldAddr, allowEmpty)
 	if err != nil {
 		return err
@@ -1257,7 +1270,7 @@ func linkAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD kd
 	}
 
 	if allowEmpty && oldPath == "" {
-		target := t.FDMap().GetFile(oldDirFD)
+		target := t.GetFile(oldDirFD)
 		if target == nil {
 			return syserror.EBADF
 		}
@@ -1319,9 +1332,9 @@ func Link(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 // Linkat implements linux syscall linkat(2).
 func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldDirFD := kdefs.FD(args[0].Int())
+	oldDirFD := args[0].Int()
 	oldAddr := args[1].Pointer()
-	newDirFD := kdefs.FD(args[2].Int())
+	newDirFD := args[2].Int()
 	newAddr := args[3].Pointer()
 
 	// man linkat(2):
@@ -1346,7 +1359,7 @@ func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	return 0, nil, linkAt(t, oldDirFD, oldAddr, newDirFD, newAddr, resolve, allowEmpty)
 }
 
-func readlinkAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, bufAddr usermem.Addr, size uint) (copied uintptr, err error) {
+func readlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr, bufAddr usermem.Addr, size uint) (copied uintptr, err error) {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return 0, err
@@ -1396,7 +1409,7 @@ func Readlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 // Readlinkat implements linux syscall readlinkat(2).
 func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	bufAddr := args[2].Pointer()
 	size := args[3].SizeT()
@@ -1405,7 +1418,7 @@ func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	return n, nil, err
 }
 
-func unlinkAt(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr) error {
+func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1435,7 +1448,7 @@ func Unlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Unlinkat implements linux syscall unlinkat(2).
 func Unlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	flags := args[2].Uint()
 	if flags&linux.AT_REMOVEDIR != 0 {
@@ -1463,7 +1476,7 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
 		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(syscall.SIGXFSZ),
+			Signo: int32(linux.SIGXFSZ),
 			Code:  arch.SignalInfoUser,
 		})
 		return 0, nil, syserror.EFBIG
@@ -1496,10 +1509,10 @@ func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 // Ftruncate implements linux syscall ftruncate(2).
 func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	length := args[1].Int64()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -1523,7 +1536,7 @@ func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
 		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(syscall.SIGXFSZ),
+			Signo: int32(linux.SIGXFSZ),
 			Code:  arch.SignalInfoUser,
 		})
 		return 0, nil, syserror.EFBIG
@@ -1614,7 +1627,7 @@ func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
 	return nil
 }
 
-func chownAt(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, resolve, allowEmpty bool, uid auth.UID, gid auth.GID) error {
+func chownAt(t *kernel.Task, fd int32, addr usermem.Addr, resolve, allowEmpty bool, uid auth.UID, gid auth.GID) error {
 	path, _, err := copyInPath(t, addr, allowEmpty)
 	if err != nil {
 		return err
@@ -1622,7 +1635,7 @@ func chownAt(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, resolve, allowEmpty
 
 	if path == "" {
 		// Annoying. What's wrong with fchown?
-		file := t.FDMap().GetFile(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return syserror.EBADF
 		}
@@ -1656,11 +1669,11 @@ func Lchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Fchown implements linux syscall fchown(2).
 func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	uid := auth.UID(args[1].Uint())
 	gid := auth.GID(args[2].Uint())
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -1671,7 +1684,7 @@ func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Fchownat implements Linux syscall fchownat(2).
 func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	addr := args[1].Pointer()
 	uid := auth.UID(args[2].Uint())
 	gid := auth.GID(args[3].Uint())
@@ -1701,7 +1714,7 @@ func chmod(t *kernel.Task, d *fs.Dirent, mode linux.FileMode) error {
 	return nil
 }
 
-func chmodAt(t *kernel.Task, fd kdefs.FD, addr usermem.Addr, mode linux.FileMode) error {
+func chmodAt(t *kernel.Task, fd int32, addr usermem.Addr, mode linux.FileMode) error {
 	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1722,10 +1735,10 @@ func Chmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Fchmod implements linux syscall fchmod(2).
 func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	mode := linux.FileMode(args[1].ModeT())
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -1736,7 +1749,7 @@ func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Fchmodat implements linux syscall fchmodat(2).
 func Fchmodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	mode := linux.FileMode(args[2].ModeT())
 
@@ -1752,7 +1765,7 @@ func defaultSetToSystemTimeSpec() fs.TimeSpec {
 	}
 }
 
-func utimes(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, ts fs.TimeSpec, resolve bool) error {
+func utimes(t *kernel.Task, dirFD int32, addr usermem.Addr, ts fs.TimeSpec, resolve bool) error {
 	setTimestamp := func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
 		// Does the task own the file?
 		if !d.Inode.CheckOwnership(t) {
@@ -1785,7 +1798,7 @@ func utimes(t *kernel.Task, dirFD kdefs.FD, addr usermem.Addr, ts fs.TimeSpec, r
 			// Linux returns EINVAL in this case. See utimes.c.
 			return syserror.EINVAL
 		}
-		f := t.FDMap().GetFile(dirFD)
+		f := t.GetFile(dirFD)
 		if f == nil {
 			return syserror.EBADF
 		}
@@ -1813,7 +1826,7 @@ func Utime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// No timesAddr argument will be interpreted as current system time.
 	ts := defaultSetToSystemTimeSpec()
 	if timesAddr != 0 {
-		var times syscall.Utimbuf
+		var times linux.Utime
 		if _, err := t.CopyIn(timesAddr, &times); err != nil {
 			return 0, nil, err
 		}
@@ -1853,7 +1866,7 @@ func timespecIsValid(ts linux.Timespec) bool {
 
 // Utimensat implements linux syscall utimensat(2).
 func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	pathnameAddr := args[1].Pointer()
 	timesAddr := args[2].Pointer()
 	flags := args[3].Int()
@@ -1888,7 +1901,7 @@ func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // Futimesat implements linux syscall futimesat(2).
 func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := kdefs.FD(args[0].Int())
+	dirFD := args[0].Int()
 	pathnameAddr := args[1].Pointer()
 	timesAddr := args[2].Pointer()
 
@@ -1912,7 +1925,7 @@ func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	return 0, nil, utimes(t, dirFD, pathnameAddr, ts, true)
 }
 
-func renameAt(t *kernel.Task, oldDirFD kdefs.FD, oldAddr usermem.Addr, newDirFD kdefs.FD, newAddr usermem.Addr) error {
+func renameAt(t *kernel.Task, oldDirFD int32, oldAddr usermem.Addr, newDirFD int32, newAddr usermem.Addr) error {
 	newPath, _, err := copyInPath(t, newAddr, false /* allowEmpty */)
 	if err != nil {
 		return err
@@ -1960,21 +1973,21 @@ func Rename(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Renameat implements linux syscall renameat(2).
 func Renameat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldDirFD := kdefs.FD(args[0].Int())
+	oldDirFD := args[0].Int()
 	oldPathAddr := args[1].Pointer()
-	newDirFD := kdefs.FD(args[2].Int())
+	newDirFD := args[2].Int()
 	newPathAddr := args[3].Pointer()
 	return 0, nil, renameAt(t, oldDirFD, oldPathAddr, newDirFD, newPathAddr)
 }
 
 // Fallocate implements linux system call fallocate(2).
 func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	mode := args[1].Int64()
 	offset := args[2].Int64()
 	length := args[3].Int64()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -2005,7 +2018,7 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	if uint64(size) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
 		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(syscall.SIGXFSZ),
+			Signo: int32(linux.SIGXFSZ),
 			Code:  arch.SignalInfoUser,
 		})
 		return 0, nil, syserror.EFBIG
@@ -2023,10 +2036,10 @@ func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 // Flock implements linux syscall flock(2).
 func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	operation := args[1].Int()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		// flock(2): EBADF fd is not an open file descriptor.
 		return 0, nil, syserror.EBADF
@@ -2133,8 +2146,9 @@ func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	defer dirent.DecRef()
 	defer file.DecRef()
 
-	fdFlags := kernel.FDFlags{CloseOnExec: cloExec}
-	newFD, err := t.FDMap().NewFDFrom(0, file, fdFlags, t.ThreadGroup().Limits())
+	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{
+		CloseOnExec: cloExec,
+	})
 	if err != nil {
 		return 0, nil, err
 	}

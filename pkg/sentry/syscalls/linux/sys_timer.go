@@ -15,13 +15,13 @@
 package linux
 
 import (
-	"syscall"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const nsecPerSec = int64(time.Second)
@@ -47,7 +47,7 @@ func copyItimerValIn(t *kernel.Task, addr usermem.Addr) (linux.ItimerVal, error)
 
 		return itv, nil
 	default:
-		return linux.ItimerVal{}, syscall.ENOSYS
+		return linux.ItimerVal{}, syserror.ENOSYS
 	}
 }
 
@@ -65,7 +65,7 @@ func copyItimerValOut(t *kernel.Task, addr usermem.Addr, itv *linux.ItimerVal) e
 		_, err := t.CopyOut(addr, itv)
 		return err
 	default:
-		return syscall.ENOSYS
+		return syserror.ENOSYS
 	}
 }
 

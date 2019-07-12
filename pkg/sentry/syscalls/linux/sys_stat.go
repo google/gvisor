@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -42,7 +41,7 @@ func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 // Fstatat implements linux syscall newfstatat, i.e. fstatat(2).
 func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	addr := args[1].Pointer()
 	statAddr := args[2].Pointer()
 	flags := args[3].Int()
@@ -54,7 +53,7 @@ func Fstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 
 	if path == "" {
 		// Annoying. What's wrong with fstat?
-		file := t.FDMap().GetFile(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
@@ -93,10 +92,10 @@ func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 // Fstat implements linux syscall fstat(2).
 func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	statAddr := args[1].Pointer()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}
@@ -178,7 +177,7 @@ func copyOutStat(t *kernel.Task, dst usermem.Addr, sattr fs.StableAttr, uattr fs
 
 // Statx implements linux syscall statx(2).
 func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	pathAddr := args[1].Pointer()
 	flags := args[2].Int()
 	mask := args[3].Uint()
@@ -197,7 +196,7 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	}
 
 	if path == "" {
-		file := t.FDMap().GetFile(fd)
+		file := t.GetFile(fd)
 		if file == nil {
 			return 0, nil, syserror.EBADF
 		}
@@ -285,10 +284,10 @@ func Statfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 
 // Fstatfs implements linux syscall fstatfs(2).
 func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := kdefs.FD(args[0].Int())
+	fd := args[0].Int()
 	statfsAddr := args[1].Pointer()
 
-	file := t.FDMap().GetFile(fd)
+	file := t.GetFile(fd)
 	if file == nil {
 		return 0, nil, syserror.EBADF
 	}

@@ -24,11 +24,15 @@ func (x *AtomicRefCount) beforeSave() {}
 func (x *AtomicRefCount) save(m state.Map) {
 	x.beforeSave()
 	m.Save("refCount", &x.refCount)
+	m.Save("name", &x.name)
+	m.Save("stack", &x.stack)
 }
 
 func (x *AtomicRefCount) afterLoad() {}
 func (x *AtomicRefCount) load(m state.Map) {
 	m.Load("refCount", &x.refCount)
+	m.Load("name", &x.name)
+	m.Load("stack", &x.stack)
 }
 
 func (x *savedReference) beforeSave() {}

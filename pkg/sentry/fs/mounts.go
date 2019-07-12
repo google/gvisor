@@ -181,12 +181,14 @@ func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error
 		d: newRootMount(1, d),
 	}
 
-	return &MountNamespace{
+	mns := MountNamespace{
 		userns:  creds.UserNamespace,
 		root:    d,
 		mounts:  mnts,
 		mountID: 2,
-	}, nil
+	}
+	mns.EnableLeakCheck("fs.MountNamespace")
+	return &mns, nil
 }
 
 // UserNamespace returns the user namespace associated with this mount manager.
@@ -660,6 +662,11 @@ func (mns *MountNamespace) ResolveExecutablePath(ctx context.Context, wd, name s
 			return "", err
 		}
 		defer d.DecRef()
+
+		// Check that it is a regular file.
+		if !IsRegular(d.Inode.StableAttr) {
+			continue
+		}
 
 		// Check whether we can read and execute the found file.
 		if err := d.Inode.CheckPermission(ctx, PermMask{Read: true, Execute: true}); err != nil {

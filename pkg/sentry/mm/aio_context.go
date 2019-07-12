@@ -213,7 +213,9 @@ func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &aioMappable{mfp: mfp, fr: fr}, nil
+	m := aioMappable{mfp: mfp, fr: fr}
+	m.EnableLeakCheck("mm.aioMappable")
+	return &m, nil
 }
 
 // DecRef implements refs.RefCounter.DecRef.

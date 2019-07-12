@@ -54,7 +54,7 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 // openPath opens name for loading.
 //
 // openPath returns the fs.Dirent and an *fs.File for name, which is not
-// installed in the Task FDMap. The caller takes ownership of both.
+// installed in the Task FDTable. The caller takes ownership of both.
 //
 // name must be a readable, executable, regular file.
 func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, name string) (*fs.Dirent, *fs.File, error) {

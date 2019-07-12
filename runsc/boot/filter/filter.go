@@ -18,13 +18,9 @@
 package filter
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	"gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
 )
 
 // Options are seccomp filter related options.
@@ -53,14 +49,7 @@ func Install(opt Options) error {
 		s.Merge(profileFilters())
 	}
 
-	switch p := opt.Platform.(type) {
-	case *ptrace.PTrace:
-		s.Merge(ptraceFilters())
-	case *kvm.KVM:
-		s.Merge(kvmFilters())
-	default:
-		return fmt.Errorf("unknown platform type %T", p)
-	}
+	s.Merge(opt.Platform.SyscallFilters())
 
 	return seccomp.Install(s)
 }

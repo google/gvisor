@@ -51,11 +51,13 @@ type FSContext struct {
 func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
 	root.IncRef()
 	cwd.IncRef()
-	return &FSContext{
+	f := FSContext{
 		root:  root,
 		cwd:   cwd,
 		umask: umask,
 	}
+	f.EnableLeakCheck("kernel.FSContext")
+	return &f
 }
 
 // destroy is the destructor for an FSContext.

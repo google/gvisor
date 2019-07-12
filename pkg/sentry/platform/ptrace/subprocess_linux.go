@@ -306,7 +306,7 @@ func (s *subprocess) createStub() (*thread, error) {
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating stub process: %v", err)
 	}
 
 	// Wait for child to enter group-stop, so we don't stop its
@@ -325,7 +325,7 @@ func (s *subprocess) createStub() (*thread, error) {
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("waiting on stub process: %v", err)
 	}
 
 	childT := &thread{

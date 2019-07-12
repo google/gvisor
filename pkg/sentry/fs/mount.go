@@ -138,12 +138,14 @@ func NewMountSource(ctx context.Context, mops MountSourceOperations, filesystem 
 	if filesystem != nil {
 		fsType = filesystem.Name()
 	}
-	return &MountSource{
+	msrc := MountSource{
 		MountSourceOperations: mops,
 		Flags:                 flags,
 		FilesystemType:        fsType,
 		fscache:               NewDirentCache(DefaultDirentCacheSize),
 	}
+	msrc.EnableLeakCheck("fs.MountSource")
+	return &msrc
 }
 
 // DirentRefs returns the current mount direntRefs.

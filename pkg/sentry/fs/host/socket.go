@@ -47,11 +47,11 @@ const maxSendBufferSize = 8 << 20
 //
 // +stateify savable
 type ConnectedEndpoint struct {
-	queue *waiter.Queue
-	path  string
-
 	// ref keeps track of references to a connectedEndpoint.
 	ref refs.AtomicRefCount
+
+	queue *waiter.Queue
+	path  string
 
 	// If srfd >= 0, it is the host FD that file was imported from.
 	srfd int `state:"wait"`
@@ -132,6 +132,8 @@ func NewConnectedEndpoint(ctx context.Context, file *fd.FD, queue *waiter.Queue,
 
 	// AtomicRefCounters start off with a single reference. We need two.
 	e.ref.IncRef()
+
+	e.ref.EnableLeakCheck("host.ConnectedEndpoint")
 
 	return &e, nil
 }

@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -61,7 +60,7 @@ const (
 // +stateify savable
 type FileIdentifier struct {
 	File *fs.File `state:"wait"`
-	Fd   kdefs.FD
+	Fd   int32
 }
 
 // pollEntry holds all the state associated with an event poll entry, that is,

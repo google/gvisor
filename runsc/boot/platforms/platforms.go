@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package linux
+// Package platforms imports all available platform packages.
+package platforms
 
-// Constants used by ashmem in pin-related ioctls.
-const (
-	AshmemNotPurged  = 0
-	AshmemWasPurged  = 1
-	AshmemIsUnpinned = 0
-	AshmemIsPinned   = 1
+import (
+	// Import platforms that runsc might use.
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
 )
 
-// AshmemPin structure is used for pin-related ioctls.
-type AshmemPin struct {
-	Offset uint32
-	Len    uint32
-}
+const (
+	// Ptrace runs the sandbox with the ptrace platform.
+	Ptrace = "ptrace"
+
+	// KVM runs the sandbox with the KVM platform.
+	KVM = "kvm"
+)

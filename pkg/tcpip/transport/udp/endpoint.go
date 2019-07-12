@@ -698,8 +698,44 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 	return netProto, nil
 }
 
+func (e *endpoint) disconnect() *tcpip.Error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.state != stateConnected {
+		return nil
+	}
+	id := stack.TransportEndpointID{}
+	// Exclude ephemerally bound endpoints.
+	if e.bindNICID != 0 || e.id.LocalAddress == "" {
+		var err *tcpip.Error
+		id = stack.TransportEndpointID{
+			LocalPort:    e.id.LocalPort,
+			LocalAddress: e.id.LocalAddress,
+		}
+		id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
+		if err != nil {
+			return err
+		}
+		e.state = stateBound
+	} else {
+		e.state = stateInitial
+	}
+
+	e.stack.UnregisterTransportEndpoint(e.regNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+	e.id = id
+	e.route.Release()
+	e.route = stack.Route{}
+	e.dstPort = 0
+
+	return nil
+}
+
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+	if addr.Addr == "" {
+		return e.disconnect()
+	}
 	if addr.Port == 0 {
 		// We don't support connecting to port zero.
 		return tcpip.ErrInvalidEndpointState
@@ -734,10 +770,14 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	defer r.Release()
 
 	id := stack.TransportEndpointID{
-		LocalAddress:  r.LocalAddress,
+		LocalAddress:  e.id.LocalAddress,
 		LocalPort:     localPort,
 		RemotePort:    addr.Port,
 		RemoteAddress: r.RemoteAddress,
+	}
+
+	if e.state == stateInitial {
+		id.LocalAddress = r.LocalAddress
 	}
 
 	// Even if we're connected, this endpoint can still be used to send

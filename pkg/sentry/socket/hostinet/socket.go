@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/kdefs"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -190,7 +189,7 @@ func (s *socketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 }
 
 // Accept implements socket.Socket.Accept.
-func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (kdefs.FD, interface{}, uint32, *syserr.Error) {
+func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error) {
 	var peerAddr []byte
 	var peerAddrlen uint32
 	var peerAddrPtr *byte
@@ -236,11 +235,11 @@ func (s *socketOperations) Accept(t *kernel.Task, peerRequested bool, flags int,
 	}
 	defer f.DecRef()
 
-	fdFlags := kernel.FDFlags{
+	kfd, kerr := t.NewFDFrom(0, f, kernel.FDFlags{
 		CloseOnExec: flags&syscall.SOCK_CLOEXEC != 0,
-	}
-	kfd, kerr := t.FDMap().NewFDFrom(0, f, fdFlags, t.ThreadGroup().Limits())
+	})
 	t.Kernel().RecordSocket(f)
+
 	return kfd, peerAddr, peerAddrlen, syserr.FromError(kerr)
 }
 
