@@ -148,6 +148,10 @@ TEST(DevTest, WriteDevFull) {
 TEST(DevTest, TTYExists) {
   struct stat statbuf = {};
   ASSERT_THAT(stat("/dev/tty", &statbuf), SyscallSucceeds());
+  // Check that it's a character device with rw-rw-rw- permissions.
+  EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
+  // Check that it's owned by root.
+  EXPECT_EQ(statbuf.st_uid, 0);
 }
 
 }  // namespace
