@@ -1964,6 +1964,22 @@ TEST(ProcPid, RootDumpableOwner) {
   EXPECT_THAT(st.st_gid, AnyOf(Eq(0), Eq(65534)));
 }
 
+TEST(Proc, GetdentsEnoent) {
+  FileDescriptor fd;
+  ASSERT_NO_ERRNO(WithSubprocess(
+      [&](int pid) -> PosixError {
+        // Running.
+        ASSIGN_OR_RETURN_ERRNO(fd, Open(absl::StrCat("/proc/", pid, "/task"),
+                                        O_RDONLY | O_DIRECTORY));
+
+        return NoError();
+      },
+      nullptr, nullptr));
+  char buf[1024];
+  ASSERT_THAT(syscall(SYS_getdents, fd.get(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(ENOENT));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
