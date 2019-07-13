@@ -67,6 +67,7 @@ type endpoint struct {
 	netProto    tcpip.NetworkProtocolNumber
 	transProto  tcpip.TransportProtocolNumber
 	waiterQueue *waiter.Queue
+	associated  bool
 
 	// The following fields are used to manage the receive queue and are
 	// protected by rcvMu.
@@ -97,8 +98,12 @@ type endpoint struct {
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
-// TODO(b/129292371): IP_HDRINCL, IPPROTO_RAW, and AF_PACKET.
+// TODO(b/129292371): IP_HDRINCL and AF_PACKET.
 func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	return newEndpoint(stack, netProto, transProto, waiterQueue, true /* associated */)
+}
+
+func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
 	if netProto != header.IPv4ProtocolNumber {
 		return nil, tcpip.ErrUnknownProtocol
 	}
@@ -110,6 +115,16 @@ func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, trans
 		waiterQueue:   waiterQueue,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
+		associated:    associated,
+	}
+
+	// Unassociated endpoints are write-only and users call Write() with IP
+	// headers included. Because they're write-only, We don't need to
+	// register with the stack.
+	if !associated {
+		ep.rcvBufSizeMax = 0
+		ep.waiterQueue = nil
+		return ep, nil
 	}
 
 	if err := ep.stack.RegisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep); err != nil {
@@ -124,7 +139,7 @@ func (ep *endpoint) Close() {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	if ep.closed {
+	if ep.closed || !ep.associated {
 		return
 	}
 
@@ -142,7 +157,10 @@ func (ep *endpoint) Close() {
 
 	if ep.connected {
 		ep.route.Release()
+		ep.connected = false
 	}
+
+	ep.closed = true
 
 	ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 }
@@ -152,6 +170,10 @@ func (ep *endpoint) ModerateRecvBuf(copied int) {}
 
 // Read implements tcpip.Endpoint.Read.
 func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	if !ep.associated {
+		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidOptionValue
+	}
+
 	ep.rcvMu.Lock()
 
 	// If there's no data to read, return that read would block or that the
@@ -192,6 +214,33 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 		return 0, nil, tcpip.ErrInvalidEndpointState
 	}
 
+	payloadBytes, err := payload.Get(payload.Size())
+	if err != nil {
+		ep.mu.RUnlock()
+		return 0, nil, err
+	}
+
+	// If this is an unassociated socket and callee provided a nonzero
+	// destination address, route using that address.
+	if !ep.associated {
+		ip := header.IPv4(payloadBytes)
+		if !ip.IsValid(payload.Size()) {
+			ep.mu.RUnlock()
+			return 0, nil, tcpip.ErrInvalidOptionValue
+		}
+		dstAddr := ip.DestinationAddress()
+		// Update dstAddr with the address in the IP header, unless
+		// opts.To is set (e.g. if sendto specifies a specific
+		// address).
+		if dstAddr != tcpip.Address([]byte{0, 0, 0, 0}) && opts.To == nil {
+			opts.To = &tcpip.FullAddress{
+				NIC:  0,       // NIC is unset.
+				Addr: dstAddr, // The address from the payload.
+				Port: 0,       // There are no ports here.
+			}
+		}
+	}
+
 	// Did the user caller provide a destination? If not, use the connected
 	// destination.
 	if opts.To == nil {
@@ -216,12 +265,12 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 				return 0, nil, tcpip.ErrInvalidEndpointState
 			}
 
-			n, ch, err := ep.finishWrite(payload, savedRoute)
+			n, ch, err := ep.finishWrite(payloadBytes, savedRoute)
 			ep.mu.Unlock()
 			return n, ch, err
 		}
 
-		n, ch, err := ep.finishWrite(payload, &ep.route)
+		n, ch, err := ep.finishWrite(payloadBytes, &ep.route)
 		ep.mu.RUnlock()
 		return n, ch, err
 	}
@@ -248,7 +297,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 		return 0, nil, err
 	}
 
-	n, ch, err := ep.finishWrite(payload, &route)
+	n, ch, err := ep.finishWrite(payloadBytes, &route)
 	route.Release()
 	ep.mu.RUnlock()
 	return n, ch, err
@@ -256,7 +305,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 
 // finishWrite writes the payload to a route. It resolves the route if
 // necessary. It's really just a helper to make defer unnecessary in Write.
-func (ep *endpoint) finishWrite(payload tcpip.Payload, route *stack.Route) (uintptr, <-chan struct{}, *tcpip.Error) {
+func (ep *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (uintptr, <-chan struct{}, *tcpip.Error) {
 	// We may need to resolve the route (match a link layer address to the
 	// network address). If that requires blocking (e.g. to use ARP),
 	// return a channel on which the caller can wait.
@@ -269,13 +318,14 @@ func (ep *endpoint) finishWrite(payload tcpip.Payload, route *stack.Route) (uint
 		}
 	}
 
-	payloadBytes, err := payload.Get(payload.Size())
-	if err != nil {
-		return 0, nil, err
-	}
-
 	switch ep.netProto {
 	case header.IPv4ProtocolNumber:
+		if !ep.associated {
+			if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView()); err != nil {
+				return 0, nil, err
+			}
+			break
+		}
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
 		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), ep.transProto, route.DefaultTTL()); err != nil {
 			return 0, nil, err
@@ -335,15 +385,17 @@ func (ep *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 	defer route.Release()
 
-	// Re-register the endpoint with the appropriate NIC.
-	if err := ep.stack.RegisterRawTransportEndpoint(addr.NIC, ep.netProto, ep.transProto, ep); err != nil {
-		return err
+	if ep.associated {
+		// Re-register the endpoint with the appropriate NIC.
+		if err := ep.stack.RegisterRawTransportEndpoint(addr.NIC, ep.netProto, ep.transProto, ep); err != nil {
+			return err
+		}
+		ep.stack.UnregisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep)
+		ep.registeredNIC = nic
 	}
-	ep.stack.UnregisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep)
 
-	// Save the route and NIC we've connected via.
+	// Save the route we've connected via.
 	ep.route = route.Clone()
-	ep.registeredNIC = nic
 	ep.connected = true
 
 	return nil
@@ -386,14 +438,16 @@ func (ep *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrBadLocalAddress
 	}
 
-	// Re-register the endpoint with the appropriate NIC.
-	if err := ep.stack.RegisterRawTransportEndpoint(addr.NIC, ep.netProto, ep.transProto, ep); err != nil {
-		return err
+	if ep.associated {
+		// Re-register the endpoint with the appropriate NIC.
+		if err := ep.stack.RegisterRawTransportEndpoint(addr.NIC, ep.netProto, ep.transProto, ep); err != nil {
+			return err
+		}
+		ep.stack.UnregisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep)
+		ep.registeredNIC = addr.NIC
+		ep.boundNIC = addr.NIC
 	}
-	ep.stack.UnregisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep)
 
-	ep.registeredNIC = addr.NIC
-	ep.boundNIC = addr.NIC
 	ep.boundAddr = addr.Addr
 	ep.bound = true
 

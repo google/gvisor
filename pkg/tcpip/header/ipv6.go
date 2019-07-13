@@ -184,6 +184,10 @@ func (b IPv6) IsValid(pktSize int) bool {
 		return false
 	}
 
+	if IPVersion(b) != IPv6Version {
+		return false
+	}
+
 	return true
 }
 

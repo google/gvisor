@@ -120,6 +120,13 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber)
 }
 
+// WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
+// supported by IPv6.
+func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+	// TODO(b/119580726): Support IPv6 header-included packets.
+	return tcpip.ErrNotSupported
+}
+
 // HandlePacket is called by the link layer when new ipv6 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
