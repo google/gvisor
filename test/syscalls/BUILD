@@ -319,6 +319,10 @@ syscall_test(
     test = "//test/syscalls/linux:pwrite64_test",
 )
 
+syscall_test(test = "//test/syscalls/linux:raw_socket_hdrincl_test")
+
+syscall_test(test = "//test/syscalls/linux:raw_socket_icmp_test")
+
 syscall_test(test = "//test/syscalls/linux:raw_socket_ipv4_test")
 
 syscall_test(

@@ -40,42 +40,49 @@ type provider struct {
 }
 
 // getTransportProtocol figures out transport protocol. Currently only TCP,
-// UDP, and ICMP are supported.
-func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol int) (tcpip.TransportProtocolNumber, *syserr.Error) {
+// UDP, and ICMP are supported. The bool return value is true when this socket
+// is associated with a transport protocol. This is only false for SOCK_RAW,
+// IPPROTO_IP sockets.
+func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol int) (tcpip.TransportProtocolNumber, bool, *syserr.Error) {
 	switch stype {
 	case linux.SOCK_STREAM:
 		if protocol != 0 && protocol != syscall.IPPROTO_TCP {
-			return 0, syserr.ErrInvalidArgument
+			return 0, true, syserr.ErrInvalidArgument
 		}
-		return tcp.ProtocolNumber, nil
+		return tcp.ProtocolNumber, true, nil
 
 	case linux.SOCK_DGRAM:
 		switch protocol {
 		case 0, syscall.IPPROTO_UDP:
-			return udp.ProtocolNumber, nil
+			return udp.ProtocolNumber, true, nil
 		case syscall.IPPROTO_ICMP:
-			return header.ICMPv4ProtocolNumber, nil
+			return header.ICMPv4ProtocolNumber, true, nil
 		case syscall.IPPROTO_ICMPV6:
-			return header.ICMPv6ProtocolNumber, nil
+			return header.ICMPv6ProtocolNumber, true, nil
 		}
 
 	case linux.SOCK_RAW:
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
-			return 0, syserr.ErrPermissionDenied
+			return 0, true, syserr.ErrPermissionDenied
 		}
 
 		switch protocol {
 		case syscall.IPPROTO_ICMP:
-			return header.ICMPv4ProtocolNumber, nil
+			return header.ICMPv4ProtocolNumber, true, nil
 		case syscall.IPPROTO_UDP:
-			return header.UDPProtocolNumber, nil
+			return header.UDPProtocolNumber, true, nil
 		case syscall.IPPROTO_TCP:
-			return header.TCPProtocolNumber, nil
+			return header.TCPProtocolNumber, true, nil
+		// IPPROTO_RAW signifies that the raw socket isn't assigned to
+		// a transport protocol. Users will be able to write packets'
+		// IP headers and won't receive anything.
+		case syscall.IPPROTO_RAW:
+			return tcpip.TransportProtocolNumber(0), false, nil
 		}
 	}
-	return 0, syserr.ErrProtocolNotSupported
+	return 0, true, syserr.ErrProtocolNotSupported
 }
 
 // Socket creates a new socket object for the AF_INET or AF_INET6 family.
@@ -93,7 +100,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	}
 
 	// Figure out the transport protocol.
-	transProto, err := getTransportProtocol(t, stype, protocol)
+	transProto, associated, err := getTransportProtocol(t, stype, protocol)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +110,7 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	var e *tcpip.Error
 	wq := &waiter.Queue{}
 	if stype == linux.SOCK_RAW {
-		ep, e = eps.Stack.NewRawEndpoint(transProto, p.netProto, wq)
+		ep, e = eps.Stack.NewRawEndpoint(transProto, p.netProto, wq, associated)
 	} else {
 		ep, e = eps.Stack.NewEndpoint(transProto, p.netProto, wq)
 	}
