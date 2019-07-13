@@ -163,6 +163,18 @@ func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.Vec
 	return err
 }
 
+// WriteHeaderIncludedPacket writes a packet already containing a network
+// header through the given route.
+func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.Error {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.loop); err != nil {
+		r.Stats().IP.OutgoingPacketErrors.Increment()
+		return err
+	}
+	r.ref.nic.stats.Tx.Packets.Increment()
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payload.Size()))
+	return nil
+}
+
 // DefaultTTL returns the default TTL of the underlying network endpoint.
 func (r *Route) DefaultTTL() uint8 {
 	return r.ref.ep.DefaultTTL()
