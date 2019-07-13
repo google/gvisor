@@ -137,6 +137,10 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr bu
 	return f.linkEP.WritePacket(r, gso, hdr, payload, fakeNetNumber)
 }
 
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+	return tcpip.ErrNotSupported
+}
+
 func (*fakeNetworkEndpoint) Close() {}
 
 type fakeNetGoodOption bool

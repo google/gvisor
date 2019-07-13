@@ -21,6 +21,7 @@ go_library(
         "endpoint.go",
         "endpoint_state.go",
         "packet_list.go",
+        "protocol.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/raw",
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],

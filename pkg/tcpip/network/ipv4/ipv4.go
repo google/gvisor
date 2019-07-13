@@ -232,6 +232,55 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return nil
 }
 
+// WriteHeaderIncludedPacket writes a packet already containing a network
+// header through the given route.
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+	// The packet already has an IP header, but there are a few required
+	// checks.
+	ip := header.IPv4(payload.First())
+	if !ip.IsValid(payload.Size()) {
+		return tcpip.ErrInvalidOptionValue
+	}
+
+	// Always set the total length.
+	ip.SetTotalLength(uint16(payload.Size()))
+
+	// Set the source address when zero.
+	if ip.SourceAddress() == tcpip.Address(([]byte{0, 0, 0, 0})) {
+		ip.SetSourceAddress(r.LocalAddress)
+	}
+
+	// Set the destination. If the packet already included a destination,
+	// it will be part of the route.
+	ip.SetDestinationAddress(r.RemoteAddress)
+
+	// Set the packet ID when zero.
+	if ip.ID() == 0 {
+		id := uint32(0)
+		if payload.Size() > header.IPv4MaximumHeaderSize+8 {
+			// Packets of 68 bytes or less are required by RFC 791 to not be
+			// fragmented, so we only assign ids to larger packets.
+			id = atomic.AddUint32(&ids[hashRoute(r, 0 /* protocol */)%buckets], 1)
+		}
+		ip.SetID(uint16(id))
+	}
+
+	// Always set the checksum.
+	ip.SetChecksum(0)
+	ip.SetChecksum(^ip.CalculateChecksum())
+
+	if loop&stack.PacketLoop != 0 {
+		e.HandlePacket(r, payload)
+	}
+	if loop&stack.PacketOut == 0 {
+		return nil
+	}
+
+	hdr := buffer.NewPrependableFromView(payload.ToView())
+	r.Stats().IP.PacketsSent.Increment()
+	return e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+}
+
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {

@@ -340,6 +340,8 @@ type Stack struct {
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
+	unassociatedFactory UnassociatedEndpointFactory
+
 	demux *transportDemuxer
 
 	stats tcpip.Stats
@@ -441,6 +443,8 @@ func New(network []string, transport []string, opts Options) *Stack {
 			proto: transProto,
 		}
 	}
+
+	s.unassociatedFactory = unassociatedFactory
 
 	// Create the global transport demuxer.
 	s.demux = newTransportDemuxer(s)
@@ -574,9 +578,13 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // NewRawEndpoint creates a new raw transport layer endpoint of the given
 // protocol. Raw endpoints receive all traffic for a given protocol regardless
 // of address.
-func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
 	if !s.raw {
 		return nil, tcpip.ErrNotPermitted
+	}
+
+	if !associated {
+		return s.unassociatedFactory.NewUnassociatedRawEndpoint(s, network, transport, waiterQueue)
 	}
 
 	t, ok := s.transportProtocols[transport]

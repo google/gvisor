@@ -174,6 +174,10 @@ type NetworkEndpoint interface {
 	// protocol.
 	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop PacketLooping) *tcpip.Error
 
+	// WriteHeaderIncludedPacket writes a packet that includes a network
+	// header to the given destination address.
+	WriteHeaderIncludedPacket(r *Route, payload buffer.VectorisedView, loop PacketLooping) *tcpip.Error
+
 	// ID returns the network protocol endpoint ID.
 	ID() *NetworkEndpointID
 
@@ -357,9 +361,18 @@ type TransportProtocolFactory func() TransportProtocol
 // instantiate network protocols.
 type NetworkProtocolFactory func() NetworkProtocol
 
+// UnassociatedEndpointFactory produces endpoints for writing packets not
+// associated with a particular transport protocol. Such endpoints can be used
+// to write arbitrary packets that include the IP header.
+type UnassociatedEndpointFactory interface {
+	NewUnassociatedRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
+}
+
 var (
 	transportProtocols = make(map[string]TransportProtocolFactory)
 	networkProtocols   = make(map[string]NetworkProtocolFactory)
+
+	unassociatedFactory UnassociatedEndpointFactory
 
 	linkEPMu           sync.RWMutex
 	nextLinkEndpointID tcpip.LinkEndpointID = 1
@@ -378,6 +391,13 @@ func RegisterTransportProtocolFactory(name string, p TransportProtocolFactory) {
 // is intended to be called by init() functions of the protocols.
 func RegisterNetworkProtocolFactory(name string, p NetworkProtocolFactory) {
 	networkProtocols[name] = p
+}
+
+// RegisterUnassociatedFactory registers a factory to produce endpoints not
+// associated with any particular transport protocol. This function is intended
+// to be called by init() functions of the protocols.
+func RegisterUnassociatedFactory(f UnassociatedEndpointFactory) {
+	unassociatedFactory = f
 }
 
 // RegisterLinkEndpoint register a link-layer protocol endpoint and returns an
