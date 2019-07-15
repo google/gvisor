@@ -175,7 +175,7 @@ TEST(SigaltstackTest, WalksOffBottom) {
 
   // Trigger a single fault.
   badhandler_low_water_mark =
-      reinterpret_cast<char*>(&stack.ss_sp) + SIGSTKSZ;  // Expected top.
+      static_cast<char*>(stack.ss_sp) + SIGSTKSZ;        // Expected top.
   badhandler_recursive_faults = 0;                       // Disable refault.
   Fault();
   EXPECT_TRUE(badhandler_on_sigaltstack);
