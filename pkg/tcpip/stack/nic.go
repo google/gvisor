@@ -650,7 +650,7 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 
 	// We could not find an appropriate destination for this packet, so
 	// deliver it to the global handler.
-	if !transProto.HandleUnknownDestinationPacket(r, id, vv) {
+	if !transProto.HandleUnknownDestinationPacket(n.stack.Clock, r, id, vv) {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 	}
 }

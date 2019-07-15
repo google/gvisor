@@ -20,7 +20,7 @@
 package tcpip
 
 import (
-	_ "time"   // Used with go:linkname.
+	"time"     // Used with go:linkname.
 	_ "unsafe" // Required for go:linkname.
 )
 
@@ -32,14 +32,24 @@ var _ Clock = (*StdClock)(nil)
 //go:linkname now time.now
 func now() (sec int64, nsec int32, mono int64)
 
-// NowNanoseconds implements Clock.NowNanoseconds.
-func (*StdClock) NowNanoseconds() int64 {
+// Now implements Clock.Now.
+func (*StdClock) Now() time.Time {
 	sec, nsec, _ := now()
-	return sec*1e9 + int64(nsec)
+	return time.Unix(sec, int64(nsec))
 }
 
 // NowMonotonic implements Clock.NowMonotonic.
-func (*StdClock) NowMonotonic() int64 {
+func (*StdClock) NowMonotonic() MonotonicTime {
 	_, _, mono := now()
-	return mono
+	return NewMonotonicTime(0, mono)
+}
+
+// Since implements Clock.Since.
+func (s *StdClock) Since(since time.Time) time.Duration {
+	return s.Now().Sub(since)
+}
+
+// SinceMonotonic implements Clock.SinceMonotonic.
+func (s *StdClock) SinceMonotonic(since MonotonicTime) time.Duration {
+	return s.NowMonotonic().Sub(since)
 }

@@ -21,7 +21,6 @@ go_library(
         "accept.go",
         "connect.go",
         "cubic.go",
-        "cubic_state.go",
         "endpoint.go",
         "endpoint_state.go",
         "forwarder.go",

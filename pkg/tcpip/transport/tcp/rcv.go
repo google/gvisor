@@ -16,7 +16,6 @@ package tcp
 
 import (
 	"container/heap"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -232,7 +231,7 @@ func (r *receiver) updateRTT() {
 	r.ep.rcvListMu.Lock()
 	if r.ep.rcvAutoParams.rttMeasureTime.IsZero() {
 		// New measurement.
-		r.ep.rcvAutoParams.rttMeasureTime = time.Now()
+		r.ep.rcvAutoParams.rttMeasureTime = r.ep.stack.Clock.NowMonotonic()
 		r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
 		r.ep.rcvListMu.Unlock()
 		return
@@ -241,14 +240,14 @@ func (r *receiver) updateRTT() {
 		r.ep.rcvListMu.Unlock()
 		return
 	}
-	rtt := time.Since(r.ep.rcvAutoParams.rttMeasureTime)
+	rtt := r.ep.stack.Clock.SinceMonotonic(r.ep.rcvAutoParams.rttMeasureTime)
 	// We only store the minimum observed RTT here as this is only used in
 	// absence of a SRTT available from either timestamps or a sender
 	// measurement of RTT.
 	if r.ep.rcvAutoParams.rtt == 0 || rtt < r.ep.rcvAutoParams.rtt {
 		r.ep.rcvAutoParams.rtt = rtt
 	}
-	r.ep.rcvAutoParams.rttMeasureTime = time.Now()
+	r.ep.rcvAutoParams.rttMeasureTime = r.ep.stack.Clock.NowMonotonic()
 	r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
 	r.ep.rcvListMu.Unlock()
 }
@@ -291,8 +290,8 @@ func (r *receiver) handleRcvdSegment(s *segment) {
 		return
 	}
 
-	// Since we consumed a segment update the receiver's RTT estimate
-	// if required.
+	// Since we consumed a segment update the receiver's RTT estimate if
+	// required.
 	if segLen > 0 {
 		r.updateRTT()
 	}

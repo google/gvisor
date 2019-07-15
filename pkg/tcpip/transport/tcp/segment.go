@@ -16,8 +16,8 @@ package tcp
 
 import (
 	"sync/atomic"
-	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -54,24 +54,24 @@ type segment struct {
 	parsedOptions  header.TCPOptions
 	options        []byte `state:".([]byte)"`
 	hasNewSACKInfo bool
-	rcvdTime       time.Time `state:".(unixTime)"`
+	rcvdTime       tcpip.MonotonicTime
 	// xmitTime is the last transmit time of this segment. A zero value
 	// indicates that the segment has yet to be transmitted.
-	xmitTime time.Time `state:".(unixTime)"`
+	xmitTime tcpip.MonotonicTime
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
+func newSegment(c tcpip.Clock, r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
 		route:  r.Clone(),
 	}
 	s.data = vv.Clone(s.views[:])
-	s.rcvdTime = time.Now()
+	s.rcvdTime = c.NowMonotonic()
 	return s
 }
 
-func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.View) *segment {
+func newSegmentFromView(c tcpip.Clock, r *stack.Route, id stack.TransportEndpointID, v buffer.View) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
@@ -79,7 +79,7 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 	}
 	s.views[0] = v
 	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
-	s.rcvdTime = time.Now()
+	s.rcvdTime = c.NowMonotonic()
 	return s
 }
 

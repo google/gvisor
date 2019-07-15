@@ -38,6 +38,7 @@ type Forwarder struct {
 	mu       sync.Mutex
 	inFlight map[stack.TransportEndpointID]struct{}
 	listen   *listenContext
+	clock    tcpip.Clock
 }
 
 // NewForwarder allocates and initializes a new forwarder with the given
@@ -54,6 +55,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 		handler:     handler,
 		inFlight:    make(map[stack.TransportEndpointID]struct{}),
 		listen:      newListenContext(s, nil /* listenEP */, seqnum.Size(rcvWnd), true, 0),
+		clock:       s.Clock,
 	}
 }
 
@@ -64,7 +66,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
 func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool {
-	s := newSegment(r, id, vv)
+	s := newSegment(f.clock, r, id, vv)
 	defer s.decRef()
 
 	// We only care about well-formed SYN packets.

@@ -124,6 +124,44 @@ func (e ErrSaveRejection) Error() string {
 	return "save rejected due to unsupported networking state: " + e.Err.Error()
 }
 
+// MonotonicTime presents a time value from a monotonic clock.
+//
+// While a monotonic time is internally encoded as nanoseconds since the unix
+// epoch, it is *not* a unix timestamp. An absolute point in monotonic time
+// represents an arbitrary point in real-world time and has no relation to a
+// wall clock. Do not compare MonotonicTime values to time.Time values and
+// interpreting it as a unix timestamp will not yield meaningful real-world
+// times.
+//
+// +stateify savable
+type MonotonicTime struct {
+	nanos int64
+}
+
+// NewMonotonicTime constructs a new monotonic time from components. An nsec
+// value outside the range [0,999999999] is valid and will be converted into
+// whole seconds as required.
+func NewMonotonicTime(sec, nsec int64) MonotonicTime {
+	return MonotonicTime{nanos: sec*int64(time.Second) + nsec}
+}
+
+// TotalNanoseconds returns the total number of nanoseconds since the monotonic
+// time epoch.
+func (t MonotonicTime) TotalNanoseconds() int64 {
+	return t.nanos
+}
+
+// Sub returns the duration between this monotonic time and an earlier one.
+func (t MonotonicTime) Sub(earlier MonotonicTime) time.Duration {
+	return time.Duration(t.nanos-earlier.nanos) * time.Nanosecond
+}
+
+// IsZero returns true if the time represented by this monotonic time is
+// equivalent to the monotonic time epoch.
+func (t MonotonicTime) IsZero() bool {
+	return t.nanos == 0
+}
+
 // A Clock provides the current time.
 //
 // Times returned by a Clock should always be used for application-visible
@@ -131,10 +169,16 @@ func (e ErrSaveRejection) Error() string {
 type Clock interface {
 	// NowNanoseconds returns the current real time as a number of
 	// nanoseconds since the Unix epoch.
-	NowNanoseconds() int64
+	Now() time.Time
 
-	// NowMonotonic returns a monotonic time value.
-	NowMonotonic() int64
+	// NowMonotonic returns a monotonic time value in nanoseconds.
+	NowMonotonic() MonotonicTime
+
+	// Since returns the time elapsed since t.
+	Since(t time.Time) time.Duration
+
+	// SinceMontonic returns the monotonic time elapsed since t.
+	SinceMonotonic(t MonotonicTime) time.Duration
 }
 
 // Address is a byte slice cast as a string that represents the address of a

@@ -89,7 +89,7 @@ type sender struct {
 	ep *endpoint
 
 	// lastSendTime is the timestamp when the last packet was sent.
-	lastSendTime time.Time `state:".(unixTime)"`
+	lastSendTime tcpip.MonotonicTime
 
 	// dupAckCount is the number of duplicated acks received. It is used for
 	// fast retransmit.
@@ -132,7 +132,7 @@ type sender struct {
 	rttMeasureSeqNum seqnum.Value
 
 	// rttMeasureTime is the time when the rttMeasureSeqNum was sent.
-	rttMeasureTime time.Time `state:".(unixTime)"`
+	rttMeasureTime tcpip.MonotonicTime
 
 	closed      bool
 	writeNext   *segment
@@ -225,7 +225,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		sndNxtList:       iss + 1,
 		rto:              1 * time.Second,
 		rttMeasureSeqNum: iss + 1,
-		lastSendTime:     time.Now(),
+		lastSendTime:     ep.stack.Clock.NowMonotonic(),
 		maxPayloadSize:   maxPayloadSize,
 		maxSentAck:       irs + 1,
 		fr: fastRecovery{
@@ -789,7 +789,7 @@ func (s *sender) sendData() {
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
 	// the retrasmission timeout."
-	if !s.fr.active && time.Now().Sub(s.lastSendTime) > s.rto {
+	if !s.fr.active && s.ep.stack.Clock.SinceMonotonic(s.lastSendTime) > s.rto {
 		if s.sndCwnd > InitialCwnd {
 			s.sndCwnd = InitialCwnd
 		}
@@ -1033,7 +1033,7 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 func (s *sender) handleRcvdSegment(seg *segment) {
 	// Check if we can extract an RTT measurement from this ack.
 	if !seg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
-		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
+		s.updateRTO(s.ep.stack.Clock.NowMonotonic().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
 
@@ -1185,14 +1185,14 @@ func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
 	}
-	seg.xmitTime = time.Now()
+	seg.xmitTime = s.ep.stack.Clock.NowMonotonic()
 	return s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 }
 
 // sendSegmentFromView sends a new segment containing the given payload, flags
 // and sequence number.
 func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
-	s.lastSendTime = time.Now()
+	s.lastSendTime = s.ep.stack.Clock.NowMonotonic()
 	if seq == s.rttMeasureSeqNum {
 		s.rttMeasureTime = s.lastSendTime
 	}

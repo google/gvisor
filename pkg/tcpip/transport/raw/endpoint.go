@@ -606,7 +606,7 @@ func (ep *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv b
 	combinedVV := netHeader.ToVectorisedView()
 	combinedVV.Append(vv)
 	packet.data = combinedVV.Clone(packet.views[:])
-	packet.timestampNS = ep.stack.NowNanoseconds()
+	packet.timestampNS = ep.stack.Clock.NowMonotonic().TotalNanoseconds()
 
 	ep.rcvList.PushBack(packet)
 	ep.rcvBufSize += packet.data.Size()

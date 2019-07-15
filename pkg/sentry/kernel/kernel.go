@@ -1096,22 +1096,32 @@ func (k *Kernel) SetSaveError(err error) {
 
 var _ tcpip.Clock = (*Kernel)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
-func (k *Kernel) NowNanoseconds() int64 {
+// Now implements tcpip.Clock.Now.
+func (k *Kernel) Now() time.Time {
 	now, err := k.timekeeper.GetTime(sentrytime.Realtime)
 	if err != nil {
-		panic("Kernel.NowNanoseconds: " + err.Error())
+		panic("Kernel.Now: " + err.Error())
 	}
-	return now
+	return time.Unix(0, now)
 }
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (k *Kernel) NowMonotonic() int64 {
+func (k *Kernel) NowMonotonic() tcpip.MonotonicTime {
 	now, err := k.timekeeper.GetTime(sentrytime.Monotonic)
 	if err != nil {
 		panic("Kernel.NowMonotonic: " + err.Error())
 	}
-	return now
+	return tcpip.NewMonotonicTime(0, now)
+}
+
+// Since implements tcpip.Clock.Since.
+func (k *Kernel) Since(since time.Time) time.Duration {
+	return k.Now().Sub(since)
+}
+
+// SinceMonotonic implements tcpip.Clock.SinceMonotonic.
+func (k *Kernel) SinceMonotonic(since tcpip.MonotonicTime) time.Duration {
+	return k.NowMonotonic().Sub(since)
 }
 
 // SetMemoryFile sets Kernel.mf. SetMemoryFile must be called before Init or
