@@ -49,6 +49,9 @@ type Stack interface {
 	// SetTCPSACKEnabled attempts to change TCP selective acknowledgement
 	// settings.
 	SetTCPSACKEnabled(enabled bool) error
+
+	// Statistics reports stack statistics.
+	Statistics(stat interface{}, arg string) error
 }
 
 // Interface contains information about a network interface.
@@ -102,3 +105,7 @@ type TCPBufferSize struct {
 	// Max is the maximum size.
 	Max int
 }
+
+// StatDev describes one line of /proc/net/dev, i.e., stats for one network
+// interface.
+type StatDev [16]uint64

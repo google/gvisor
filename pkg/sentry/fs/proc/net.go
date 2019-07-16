@@ -155,37 +155,40 @@ func (n *netDev) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	contents[1] = " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed\n"
 
 	for _, i := range interfaces {
-		// TODO(b/71872867): Collect stats from each inet.Stack
-		// implementation (hostinet, epsocket, and rpcinet).
-
 		// Implements the same format as
 		// net/core/net-procfs.c:dev_seq_printf_stats.
-		l := fmt.Sprintf("%6s: %7d %7d %4d %4d %4d %5d %10d %9d %8d %7d %4d %4d %4d %5d %7d %10d\n",
+		var stats inet.StatDev
+		if err := n.s.Statistics(&stats, i.Name); err != nil {
+			log.Warningf("Failed to retrieve interface statistics for %v: %v", i.Name, err)
+			continue
+		}
+		l := fmt.Sprintf(
+			"%6s: %7d %7d %4d %4d %4d %5d %10d %9d %8d %7d %4d %4d %4d %5d %7d %10d\n",
 			i.Name,
 			// Received
-			0, // bytes
-			0, // packets
-			0, // errors
-			0, // dropped
-			0, // fifo
-			0, // frame
-			0, // compressed
-			0, // multicast
+			stats[0], // bytes
+			stats[1], // packets
+			stats[2], // errors
+			stats[3], // dropped
+			stats[4], // fifo
+			stats[5], // frame
+			stats[6], // compressed
+			stats[7], // multicast
 			// Transmitted
-			0, // bytes
-			0, // packets
-			0, // errors
-			0, // dropped
-			0, // fifo
-			0, // frame
-			0, // compressed
-			0) // multicast
+			stats[8],  // bytes
+			stats[9],  // packets
+			stats[10], // errors
+			stats[11], // dropped
+			stats[12], // fifo
+			stats[13], // frame
+			stats[14], // compressed
+			stats[15]) // multicast
 		contents = append(contents, l)
 	}
 
 	var data []seqfile.SeqData
 	for _, l := range contents {
-		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*ifinet6)(nil)})
+		data = append(data, seqfile.SeqData{Buf: []byte(l), Handle: (*netDev)(nil)})
 	}
 
 	return data, 0
