@@ -271,7 +271,7 @@ func (c *Context) GetPacketNonBlocking() []byte {
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
 func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byte, maxTotalSize int) {
 	// Allocate a buffer data and headers.
-	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4MinimumSize + len(p1) + len(p2))
+	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + len(p1) + len(p2))
 	if len(buf) > maxTotalSize {
 		buf = buf[:maxTotalSize]
 	}
@@ -291,8 +291,8 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	icmp.SetType(typ)
 	icmp.SetCode(code)
 
-	copy(icmp[header.ICMPv4MinimumSize:], p1)
-	copy(icmp[header.ICMPv4MinimumSize+len(p1):], p2)
+	copy(icmp[header.ICMPv4PayloadOffset:], p1)
+	copy(icmp[header.ICMPv4PayloadOffset+len(p1):], p2)
 
 	// Inject packet.
 	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())

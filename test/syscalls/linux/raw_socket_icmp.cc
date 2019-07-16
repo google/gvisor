@@ -282,6 +282,88 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
       0);
 }
 
+// A raw ICMP socket should be able to send a malformed short ICMP Echo Request,
+// while ping socket should not.
+// Neither should be able to receieve a short malformed packet.
+TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  FileDescriptor ping_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
+
+  struct icmphdr icmp;
+  icmp.type = ICMP_ECHO;
+  icmp.code = 0;
+  icmp.un.echo.sequence = 0;
+  icmp.un.echo.id = 6789;
+  icmp.checksum = 0;
+  icmp.checksum = Checksum(&icmp);
+
+  // Omit 2 bytes from ICMP packet.
+  constexpr int kShortICMPSize = sizeof(icmp) - 2;
+
+  // Sending a malformed short ICMP message to a ping socket should fail.
+  ASSERT_THAT(RetryEINTR(sendto)(ping_sock.get(), &icmp, kShortICMPSize, 0,
+                                 reinterpret_cast<struct sockaddr*>(&addr_),
+                                 sizeof(addr_)),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Sending a malformed short ICMP message to a raw socket should not fail.
+  ASSERT_THAT(RetryEINTR(sendto)(s_, &icmp, kShortICMPSize, 0,
+                                 reinterpret_cast<struct sockaddr*>(&addr_),
+                                 sizeof(addr_)),
+              SyscallSucceedsWithValue(kShortICMPSize));
+
+  // Neither Ping nor Raw socket should have anything to read.
+  char recv_buf[kEmptyICMPSize];
+  EXPECT_THAT(RetryEINTR(recv)(ping_sock.get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(RetryEINTR(recv)(s_, recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// A raw ICMP socket should be able to send a malformed short ICMP Echo Reply,
+// while ping socket should not.
+// Neither should be able to receieve a short malformed packet.
+TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+
+  FileDescriptor ping_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
+
+  struct icmphdr icmp;
+  icmp.type = ICMP_ECHOREPLY;
+  icmp.code = 0;
+  icmp.un.echo.sequence = 0;
+  icmp.un.echo.id = 6789;
+  icmp.checksum = 0;
+  icmp.checksum = Checksum(&icmp);
+
+  // Omit 2 bytes from ICMP packet.
+  constexpr int kShortICMPSize = sizeof(icmp) - 2;
+
+  // Sending a malformed short ICMP message to a ping socket should fail.
+  ASSERT_THAT(RetryEINTR(sendto)(ping_sock.get(), &icmp, kShortICMPSize, 0,
+                                 reinterpret_cast<struct sockaddr*>(&addr_),
+                                 sizeof(addr_)),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Sending a malformed short ICMP message to a raw socket should not fail.
+  ASSERT_THAT(RetryEINTR(sendto)(s_, &icmp, kShortICMPSize, 0,
+                                 reinterpret_cast<struct sockaddr*>(&addr_),
+                                 sizeof(addr_)),
+              SyscallSucceedsWithValue(kShortICMPSize));
+
+  // Neither Ping nor Raw socket should have anything to read.
+  char recv_buf[kEmptyICMPSize];
+  EXPECT_THAT(RetryEINTR(recv)(ping_sock.get(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(RetryEINTR(recv)(s_, recv_buf, sizeof(recv_buf), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
 // Test that connect() sends packets to the right place.
 TEST_F(RawSocketICMPTest, SendAndReceiveViaConnect) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
