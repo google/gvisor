@@ -138,3 +138,8 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 	return syserr.TranslateNetstackError(s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SACKEnabled(enabled))).ToError()
 }
+
+// Statistics implements inet.Stack.Statistics.
+func (s *Stack) Statistics(stat interface{}, arg string) error {
+	return syserr.ErrEndpointOperation.ToError()
+}
