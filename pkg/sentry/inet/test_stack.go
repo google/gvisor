@@ -81,3 +81,8 @@ func (s *TestStack) SetTCPSACKEnabled(enabled bool) error {
 	s.TCPSACKFlag = enabled
 	return nil
 }
+
+// Statistics implements inet.Stack.Statistics.
+func (s *TestStack) Statistics(stat interface{}, arg string) error {
+	return nil
+}
