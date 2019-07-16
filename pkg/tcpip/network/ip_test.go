@@ -282,10 +282,10 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		{"Truncated (10 bytes missing)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, 10},
 		{"Truncated (missing IPv4 header)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, header.IPv4MinimumSize + 8},
 		{"Truncated (missing 'extra info')", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, 4 + header.IPv4MinimumSize + 8},
-		{"Truncated (missing ICMP header)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, header.ICMPv4DstUnreachableMinimumSize + header.IPv4MinimumSize + 8},
+		{"Truncated (missing ICMP header)", 0, 0, header.ICMPv4FragmentationNeeded, stack.ControlPacketTooBig, mtu, header.ICMPv4MinimumSize + header.IPv4MinimumSize + 8},
 		{"Port unreachable", 1, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
 		{"Non-zero fragment offset", 0, 100, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
-		{"Zero-length packet", 0, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv4MinimumSize + header.ICMPv4DstUnreachableMinimumSize + 8},
+		{"Zero-length packet", 0, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv4MinimumSize + header.ICMPv4MinimumSize + 8},
 	}
 	r, err := buildIPv4Route(localIpv4Addr, "\x0a\x00\x00\xbb")
 	if err != nil {
@@ -301,7 +301,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			}
 			defer ep.Close()
 
-			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize + 4
+			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
 			view := buffer.NewView(dataOffset + 8)
 
 			// Create the outer IPv4 header.
@@ -319,10 +319,10 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			icmp := header.ICMPv4(view[header.IPv4MinimumSize:])
 			icmp.SetType(header.ICMPv4DstUnreachable)
 			icmp.SetCode(c.code)
-			copy(view[header.IPv4MinimumSize+header.ICMPv4MinimumSize:], []byte{0xde, 0xad, 0xbe, 0xef})
+			copy(view[header.IPv4MinimumSize+header.ICMPv4PayloadOffset:], []byte{0xde, 0xad, 0xbe, 0xef})
 
 			// Create the inner IPv4 header.
-			ip = header.IPv4(view[header.IPv4MinimumSize+header.ICMPv4MinimumSize+4:])
+			ip = header.IPv4(view[header.IPv4MinimumSize+header.ICMPv4MinimumSize:])
 			ip.Encode(&header.IPv4Fields{
 				IHL:            header.IPv4MinimumSize,
 				TotalLength:    100,
