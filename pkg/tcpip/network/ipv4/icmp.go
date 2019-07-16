@@ -68,10 +68,6 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 	switch h.Type() {
 	case header.ICMPv4Echo:
 		received.Echo.Increment()
-		if len(v) < header.ICMPv4EchoMinimumSize {
-			received.Invalid.Increment()
-			return
-		}
 
 		// Only send a reply if the checksum is valid.
 		wantChecksum := h.Checksum()
@@ -93,9 +89,9 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 		vv := vv.Clone(nil)
-		vv.TrimFront(header.ICMPv4EchoMinimumSize)
-		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4EchoMinimumSize)
-		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4EchoMinimumSize))
+		vv.TrimFront(header.ICMPv4MinimumSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4MinimumSize)
+		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv4EchoReply)
 		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
@@ -108,25 +104,19 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 
 	case header.ICMPv4EchoReply:
 		received.EchoReply.Increment()
-		if len(v) < header.ICMPv4EchoMinimumSize {
-			received.Invalid.Increment()
-			return
-		}
+
 		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
 
 	case header.ICMPv4DstUnreachable:
 		received.DstUnreachable.Increment()
-		if len(v) < header.ICMPv4DstUnreachableMinimumSize {
-			received.Invalid.Increment()
-			return
-		}
-		vv.TrimFront(header.ICMPv4DstUnreachableMinimumSize)
+
+		vv.TrimFront(header.ICMPv4MinimumSize)
 		switch h.Code() {
 		case header.ICMPv4PortUnreachable:
 			e.handleControl(stack.ControlPortUnreachable, 0, vv)
 
 		case header.ICMPv4FragmentationNeeded:
-			mtu := uint32(binary.BigEndian.Uint16(v[header.ICMPv4DstUnreachableMinimumSize-2:]))
+			mtu := uint32(binary.BigEndian.Uint16(v[header.ICMPv4PayloadOffset+2:]))
 			e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), vv)
 		}
 
