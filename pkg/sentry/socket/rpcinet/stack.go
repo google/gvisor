@@ -133,3 +133,8 @@ func (s *Stack) TCPSACKEnabled() (bool, error) {
 func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 	panic("rpcinet handles procfs directly this method should not be called")
 }
+
+// Statistics implements inet.Stack.Statistics.
+func (s *Stack) Statistics(stat interface{}, arg string) error {
+	return syserr.ErrEndpointOperation.ToError()
+}
