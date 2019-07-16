@@ -44,21 +44,24 @@ PosixErrorOr<FileDescriptor> TimerfdCreate(int clockid, int flags) {
 //
 // - Because clock_gettime(CLOCK_MONOTONIC) is implemented through the VDSO,
 // it technically uses a closely-related, but distinct, time domain from the
-// CLOCK_MONOTONIC used to trigger timerfd expirations.
+// CLOCK_MONOTONIC used to trigger timerfd expirations. The same applies to
+// CLOCK_BOOTTIME which is an alias for CLOCK_MONOTONIC.
 absl::Duration TimerSlack() { return absl::Milliseconds(500); }
 
-TEST(TimerfdTest, IsInitiallyStopped) {
-  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, 0));
+class TimerfdTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(TimerfdTest, IsInitiallyStopped) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   struct itimerspec its = {};
   ASSERT_THAT(timerfd_gettime(tfd.get(), &its), SyscallSucceeds());
   EXPECT_EQ(0, its.it_value.tv_sec);
   EXPECT_EQ(0, its.it_value.tv_nsec);
 }
 
-TEST(TimerfdTest, SingleShot) {
+TEST_P(TimerfdTest, SingleShot) {
   constexpr absl::Duration kDelay = absl::Seconds(1);
 
-  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, 0));
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   struct itimerspec its = {};
   its.it_value = absl::ToTimespec(kDelay);
   ASSERT_THAT(timerfd_settime(tfd.get(), /* flags = */ 0, &its, nullptr),
@@ -72,11 +75,11 @@ TEST(TimerfdTest, SingleShot) {
   EXPECT_EQ(1, val);
 }
 
-TEST(TimerfdTest, Periodic) {
+TEST_P(TimerfdTest, Periodic) {
   constexpr absl::Duration kDelay = absl::Seconds(1);
   constexpr int kPeriods = 3;
 
-  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, 0));
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   struct itimerspec its = {};
   its.it_value = absl::ToTimespec(kDelay);
   its.it_interval = absl::ToTimespec(kDelay);
@@ -92,10 +95,10 @@ TEST(TimerfdTest, Periodic) {
   EXPECT_GE(val, kPeriods);
 }
 
-TEST(TimerfdTest, BlockingRead) {
+TEST_P(TimerfdTest, BlockingRead) {
   constexpr absl::Duration kDelay = absl::Seconds(3);
 
-  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, 0));
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   struct itimerspec its = {};
   its.it_value.tv_sec = absl::ToInt64Seconds(kDelay);
   auto const start_time = absl::Now();
@@ -111,11 +114,11 @@ TEST(TimerfdTest, BlockingRead) {
   EXPECT_GE((end_time - start_time) + TimerSlack(), kDelay);
 }
 
-TEST(TimerfdTest, NonblockingRead_NoRandomSave) {
+TEST_P(TimerfdTest, NonblockingRead_NoRandomSave) {
   constexpr absl::Duration kDelay = absl::Seconds(5);
 
   auto const tfd =
-      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, TFD_NONBLOCK));
+      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
 
   // Since the timer is initially disabled and has never fired, read should
   // return EAGAIN.
@@ -148,11 +151,11 @@ TEST(TimerfdTest, NonblockingRead_NoRandomSave) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
-TEST(TimerfdTest, BlockingPoll_SetTimeResetsExpirations) {
+TEST_P(TimerfdTest, BlockingPoll_SetTimeResetsExpirations) {
   constexpr absl::Duration kDelay = absl::Seconds(3);
 
   auto const tfd =
-      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, TFD_NONBLOCK));
+      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
   struct itimerspec its = {};
   its.it_value.tv_sec = absl::ToInt64Seconds(kDelay);
   auto const start_time = absl::Now();
@@ -181,15 +184,15 @@ TEST(TimerfdTest, BlockingPoll_SetTimeResetsExpirations) {
               SyscallFailsWithErrno(EAGAIN));
 }
 
-TEST(TimerfdTest, SetAbsoluteTime) {
+TEST_P(TimerfdTest, SetAbsoluteTime) {
   constexpr absl::Duration kDelay = absl::Seconds(3);
 
   // Use a non-blocking timerfd so that if TFD_TIMER_ABSTIME is incorrectly
   // non-functional, we get EAGAIN rather than a test timeout.
   auto const tfd =
-      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, TFD_NONBLOCK));
+      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
   struct itimerspec its = {};
-  ASSERT_THAT(clock_gettime(CLOCK_MONOTONIC, &its.it_value), SyscallSucceeds());
+  ASSERT_THAT(clock_gettime(GetParam(), &its.it_value), SyscallSucceeds());
   its.it_value.tv_sec += absl::ToInt64Seconds(kDelay);
   ASSERT_THAT(timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME, &its, nullptr),
               SyscallSucceeds());
@@ -201,7 +204,35 @@ TEST(TimerfdTest, SetAbsoluteTime) {
   EXPECT_EQ(1, val);
 }
 
-TEST(TimerfdTest, ClockRealtime) {
+TEST_P(TimerfdTest, IllegalReadWrite) {
+  auto const tfd =
+      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), TFD_NONBLOCK));
+  uint64_t val = 0;
+  EXPECT_THAT(PreadFd(tfd.get(), &val, sizeof(val), 0),
+              SyscallFailsWithErrno(ESPIPE));
+  EXPECT_THAT(WriteFd(tfd.get(), &val, sizeof(val)),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(PwriteFd(tfd.get(), &val, sizeof(val), 0),
+              SyscallFailsWithErrno(ESPIPE));
+}
+
+std::string PrintClockId(::testing::TestParamInfo<int> info) {
+  switch (info.param) {
+    case CLOCK_MONOTONIC:
+      return "CLOCK_MONOTONIC";
+    case CLOCK_BOOTTIME:
+      return "CLOCK_BOOTTIME";
+    default:
+      return absl::StrCat(info.param);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AllTimerTypes,
+                         TimerfdTest,
+                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_BOOTTIME),
+                         PrintClockId);
+
+TEST(TimerfdClockRealtimeTest, ClockRealtime) {
   // Since CLOCK_REALTIME can, by definition, change, we can't make any
   // non-flaky assertions about the amount of time it takes for a
   // CLOCK_REALTIME-based timer to expire. Just check that it expires at all,
@@ -218,18 +249,6 @@ TEST(TimerfdTest, ClockRealtime) {
   ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
               SyscallSucceedsWithValue(sizeof(uint64_t)));
   EXPECT_EQ(1, val);
-}
-
-TEST(TimerfdTest, IllegalReadWrite) {
-  auto const tfd =
-      ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_MONOTONIC, TFD_NONBLOCK));
-  uint64_t val = 0;
-  EXPECT_THAT(PreadFd(tfd.get(), &val, sizeof(val), 0),
-              SyscallFailsWithErrno(ESPIPE));
-  EXPECT_THAT(WriteFd(tfd.get(), &val, sizeof(val)),
-              SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(PwriteFd(tfd.get(), &val, sizeof(val), 0),
-              SyscallFailsWithErrno(ESPIPE));
 }
 
 }  // namespace
