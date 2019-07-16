@@ -195,7 +195,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
 
   // Receive on socket 1.
   constexpr int kBufSize = kEmptyICMPSize;
-  std::vector<char[kBufSize]> recv_buf1(2);
+  char recv_buf1[2][kBufSize];
   struct sockaddr_in src;
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(ReceiveICMP(recv_buf1[i],
@@ -205,7 +205,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
   }
 
   // Receive on socket 2.
-  std::vector<char[kBufSize]> recv_buf2(2);
+  char recv_buf2[2][kBufSize];
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(
         ReceiveICMPFrom(recv_buf2[i], ABSL_ARRAYSIZE(recv_buf2[i]),
@@ -221,14 +221,14 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
           reinterpret_cast<struct icmphdr*>(buf + sizeof(struct iphdr));
       return icmp->type == type;
     };
-    const char* icmp1 =
-        *std::find_if(recv_buf1.begin(), recv_buf1.end(), match_type);
-    const char* icmp2 =
-        *std::find_if(recv_buf2.begin(), recv_buf2.end(), match_type);
-    ASSERT_NE(icmp1, *recv_buf1.end());
-    ASSERT_NE(icmp2, *recv_buf2.end());
-    EXPECT_EQ(memcmp(icmp1 + sizeof(struct iphdr), icmp2 + sizeof(struct iphdr),
-                     sizeof(icmp)),
+    auto icmp1_it =
+        std::find_if(std::begin(recv_buf1), std::end(recv_buf1), match_type);
+    auto icmp2_it =
+        std::find_if(std::begin(recv_buf2), std::end(recv_buf2), match_type);
+    ASSERT_NE(icmp1_it, std::end(recv_buf1));
+    ASSERT_NE(icmp2_it, std::end(recv_buf2));
+    EXPECT_EQ(memcmp(*icmp1_it + sizeof(struct iphdr),
+                     *icmp2_it + sizeof(struct iphdr), sizeof(icmp)),
               0);
   }
 }
@@ -254,7 +254,7 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
   // Receive on socket 1, which receives the echo request and reply in
   // indeterminate order.
   constexpr int kBufSize = kEmptyICMPSize;
-  std::vector<char[kBufSize]> recv_buf1(2);
+  char recv_buf1[2][kBufSize];
   struct sockaddr_in src;
   for (int i = 0; i < 2; i++) {
     ASSERT_NO_FATAL_FAILURE(
@@ -274,11 +274,12 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
         reinterpret_cast<struct icmphdr*>(buf + sizeof(struct iphdr));
     return icmp->type == ICMP_ECHOREPLY;
   };
-  char* raw_reply =
-      *std::find_if(recv_buf1.begin(), recv_buf1.end(), match_type_raw);
-  ASSERT_NE(raw_reply, *recv_buf1.end());
+  auto raw_reply_it =
+      std::find_if(std::begin(recv_buf1), std::end(recv_buf1), match_type_raw);
+  ASSERT_NE(raw_reply_it, std::end(recv_buf1));
   EXPECT_EQ(
-      memcmp(raw_reply + sizeof(struct iphdr), ping_recv_buf, sizeof(icmp)), 0);
+      memcmp(*raw_reply_it + sizeof(struct iphdr), ping_recv_buf, sizeof(icmp)),
+      0);
 }
 
 // Test that connect() sends packets to the right place.
