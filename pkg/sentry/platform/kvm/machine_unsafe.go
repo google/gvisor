@@ -21,6 +21,7 @@ package kvm
 
 import (
 	"fmt"
+	"math"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -134,7 +135,7 @@ func (c *vCPU) notify() {
 		syscall.SYS_FUTEX,
 		uintptr(unsafe.Pointer(&c.state)),
 		linux.FUTEX_WAKE|linux.FUTEX_PRIVATE_FLAG,
-		^uintptr(0), // Number of waiters.
+		math.MaxInt32, // Number of waiters.
 		0, 0, 0)
 	if errno != 0 {
 		throw("futex wake error")
