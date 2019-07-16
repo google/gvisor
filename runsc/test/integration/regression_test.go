@@ -32,7 +32,7 @@ func TestBindOverlay(t *testing.T) {
 	}
 	d := testutil.MakeDocker("bind-overlay-test")
 
-	cmd := "nc -l -U /var/run/sock& sleep 1 && echo foobar-asdf | nc -U /var/run/sock"
+	cmd := "nc -l -U /var/run/sock & p=$! && sleep 1 && echo foobar-asdf | nc -U /var/run/sock && wait $p"
 	got, err := d.RunFg("ubuntu:trusty", "bash", "-c", cmd)
 	if err != nil {
 		t.Fatal("docker run failed:", err)
