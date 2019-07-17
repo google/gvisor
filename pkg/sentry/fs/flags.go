@@ -28,7 +28,11 @@ type FileFlags struct {
 	// NonBlocking indicates that I/O should not block.
 	NonBlocking bool
 
-	// Sync indicates that any writes should be synchronous.
+	// DSync indicates that each write will flush data and metadata required to
+	// read the file's contents.
+	DSync bool
+
+	// Sync indicates that each write will flush data and all file metadata.
 	Sync bool
 
 	// Append indicates this file is append only.
@@ -95,6 +99,9 @@ func (f FileFlags) ToLinux() (mask uint) {
 	}
 	if f.NonBlocking {
 		mask |= linux.O_NONBLOCK
+	}
+	if f.DSync {
+		mask |= linux.O_DSYNC
 	}
 	if f.Sync {
 		mask |= linux.O_SYNC

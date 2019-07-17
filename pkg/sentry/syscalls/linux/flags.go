@@ -41,6 +41,7 @@ func flagsToPermissions(mask uint) (p fs.PermMask) {
 func linuxToFlags(mask uint) fs.FileFlags {
 	return fs.FileFlags{
 		Direct:      mask&linux.O_DIRECT != 0,
+		DSync:       mask&(linux.O_DSYNC|linux.O_SYNC) != 0,
 		Sync:        mask&linux.O_SYNC != 0,
 		NonBlocking: mask&linux.O_NONBLOCK != 0,
 		Read:        (mask & linux.O_ACCMODE) != linux.O_WRONLY,
