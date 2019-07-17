@@ -18,6 +18,16 @@ package disklayout
 // is split into a series of block groups. This provides an access layer to
 // information needed to access and use a block group.
 //
+// Location:
+//   - The block group descriptor table is always placed in the blocks
+//     immediately after the block containing the superblock.
+//   - The 1st block group descriptor in the original table is in the
+//      (sb.FirstDataBlock() + 1)th block.
+//   - See SuperBlock docs to see where the block group descriptor table is
+//     replicated.
+//   - sb.BgDescSize() must be used as the block group descriptor entry size
+//     while reading the table from disk.
+//
 // See https://www.kernel.org/doc/html/latest/filesystems/ext4/globals.html#block-group-descriptors.
 type BlockGroup interface {
 	// InodeTable returns the absolute block number of the block containing the

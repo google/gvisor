@@ -19,7 +19,9 @@ import (
 	"io"
 	"sync"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Filesystem implements vfs.FilesystemImpl.
@@ -46,4 +48,28 @@ type Filesystem struct {
 	// bgs represents all the block group descriptors for the filesystem.
 	// Immutable after initialization.
 	bgs []disklayout.BlockGroup
+}
+
+// newFilesystem is the Filesystem constructor.
+func newFilesystem(dev io.ReadSeeker) (*Filesystem, error) {
+	fs := Filesystem{dev: dev}
+	var err error
+
+	fs.sb, err = readSuperBlock(dev)
+	if err != nil {
+		return nil, err
+	}
+
+	if fs.sb.Magic() != linux.EXT_SUPER_MAGIC {
+		// mount(2) specifies that EINVAL should be returned if the superblock is
+		// invalid.
+		return nil, syserror.EINVAL
+	}
+
+	fs.bgs, err = readBlockGroups(dev, fs.sb)
+	if err != nil {
+		return nil, err
+	}
+
+	return &fs, nil
 }
