@@ -12,6 +12,7 @@ go_library(
         "dirent_new.go",
         "dirent_old.go",
         "disklayout.go",
+        "extent.go",
         "inode.go",
         "inode_new.go",
         "inode_old.go",
@@ -38,6 +39,7 @@ go_test(
     srcs = [
         "block_group_test.go",
         "dirent_test.go",
+        "extent_test.go",
         "inode_test.go",
         "superblock_test.go",
     ],
