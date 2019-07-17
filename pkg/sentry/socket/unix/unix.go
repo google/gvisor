@@ -68,6 +68,12 @@ func New(ctx context.Context, endpoint transport.Endpoint, stype linux.SockType)
 
 // NewWithDirent creates a new unix socket using an existing dirent.
 func NewWithDirent(ctx context.Context, d *fs.Dirent, ep transport.Endpoint, stype linux.SockType, flags fs.FileFlags) *fs.File {
+	// You can create AF_UNIX, SOCK_RAW sockets. They're the same as
+	// SOCK_DGRAM and don't require CAP_NET_RAW.
+	if stype == linux.SOCK_RAW {
+		stype = linux.SOCK_DGRAM
+	}
+
 	s := SocketOperations{
 		ep:    ep,
 		stype: stype,
@@ -639,7 +645,7 @@ func (*provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs
 	// Create the endpoint and socket.
 	var ep transport.Endpoint
 	switch stype {
-	case linux.SOCK_DGRAM:
+	case linux.SOCK_DGRAM, linux.SOCK_RAW:
 		ep = transport.NewConnectionless(t)
 	case linux.SOCK_SEQPACKET, linux.SOCK_STREAM:
 		ep = transport.NewConnectioned(t, stype, t.Kernel())
@@ -658,7 +664,7 @@ func (*provider) Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.F
 	}
 
 	switch stype {
-	case linux.SOCK_STREAM, linux.SOCK_DGRAM, linux.SOCK_SEQPACKET:
+	case linux.SOCK_STREAM, linux.SOCK_DGRAM, linux.SOCK_SEQPACKET, linux.SOCK_RAW:
 		// Ok
 	default:
 		return nil, nil, syserr.ErrInvalidArgument
