@@ -44,6 +44,9 @@ type SuperBlockOld struct {
 	DefResGID           uint16
 }
 
+// Compiles only if SuperBlockOld implements SuperBlock.
+var _ SuperBlock = (*SuperBlockOld)(nil)
+
 // InodesCount implements SuperBlock.InodesCount.
 func (sb *SuperBlockOld) InodesCount() uint32 { return sb.InodesCountRaw }
 

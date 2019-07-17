@@ -14,6 +14,11 @@
 
 package disklayout
 
+const (
+	// SbOffset is the absolute offset at which the superblock is placed.
+	SbOffset = 1024
+)
+
 // SuperBlock should be implemented by structs representing the ext superblock.
 // The superblock holds a lot of information about the enclosing filesystem.
 // This interface aims to provide access methods to important information held
@@ -57,8 +62,6 @@ type SuperBlock interface {
 	//
 	// If the filesystem has 1kb data blocks then this should return 1. For all
 	// other configurations, this typically returns 0.
-	//
-	// The first block group descriptor is in (FirstDataBlock() + 1)th block.
 	FirstDataBlock() uint32
 
 	// BlockSize returns the size of one data block in this filesystem.
@@ -128,7 +131,7 @@ type SuperBlock interface {
 }
 
 // SbRevision is the type for superblock revisions.
-type SbRevision int
+type SbRevision uint32
 
 // Super block revisions.
 const (
