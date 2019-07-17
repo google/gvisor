@@ -250,8 +250,20 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 		}
 
 		// Is it available?
-		_, ok := ns.tasks[tid]
-		if !ok {
+		tidInUse := func() bool {
+			if _, ok := ns.tasks[tid]; ok {
+				return true
+			}
+			if _, ok := ns.processGroups[ProcessGroupID(tid)]; ok {
+				return true
+			}
+			if _, ok := ns.sessions[SessionID(tid)]; ok {
+				return true
+			}
+			return false
+		}()
+
+		if !tidInUse {
 			ns.last = tid
 			return tid, nil
 		}
