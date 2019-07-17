@@ -342,6 +342,7 @@ func (x *FileFlags) save(m state.Map) {
 	x.beforeSave()
 	m.Save("Direct", &x.Direct)
 	m.Save("NonBlocking", &x.NonBlocking)
+	m.Save("DSync", &x.DSync)
 	m.Save("Sync", &x.Sync)
 	m.Save("Append", &x.Append)
 	m.Save("Read", &x.Read)
@@ -358,6 +359,7 @@ func (x *FileFlags) afterLoad() {}
 func (x *FileFlags) load(m state.Map) {
 	m.Load("Direct", &x.Direct)
 	m.Load("NonBlocking", &x.NonBlocking)
+	m.Load("DSync", &x.DSync)
 	m.Load("Sync", &x.Sync)
 	m.Load("Append", &x.Append)
 	m.Load("Read", &x.Read)

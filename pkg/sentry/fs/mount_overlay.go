@@ -66,13 +66,17 @@ func (o *overlayMountSourceOperations) Revalidate(ctx context.Context, name stri
 		panic("an overlay cannot revalidate file objects from the lower fs")
 	}
 
-	// Do we have anything to revalidate?
-	if child.overlay.upper == nil {
-		return false
+	var revalidate bool
+	child.overlay.copyMu.RLock()
+	if child.overlay.upper != nil {
+		// Does the upper require revalidation?
+		revalidate = o.upper.Revalidate(ctx, name, parent.overlay.upper, child.overlay.upper)
+	} else {
+		// Nothing to revalidate.
+		revalidate = false
 	}
-
-	// Does the upper require revalidation?
-	return o.upper.Revalidate(ctx, name, parent.overlay.upper, child.overlay.upper)
+	child.overlay.copyMu.RUnlock()
+	return revalidate
 }
 
 // Keep implements MountSourceOperations by delegating to the upper
