@@ -81,7 +81,9 @@ type FDTable struct {
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
-	// used contains the number of non-nil entries.
+	// used contains the number of non-nil entries. It must be accessed
+	// atomically. It may be read atomically without holding mu (but not
+	// written).
 	used int32
 
 	// descriptorTable holds descriptors.
@@ -317,7 +319,7 @@ func (f *FDTable) Get(fd int32) (*fs.File, FDFlags) {
 
 // GetFDs returns a list of valid fds.
 func (f *FDTable) GetFDs() []int32 {
-	fds := make([]int32, 0, f.used)
+	fds := make([]int32, 0, int(atomic.LoadInt32(&f.used)))
 	f.forEach(func(fd int32, file *fs.File, flags FDFlags) {
 		fds = append(fds, fd)
 	})
