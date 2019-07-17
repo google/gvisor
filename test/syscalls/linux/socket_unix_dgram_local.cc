@@ -28,15 +28,15 @@ std::vector<SocketPairKind> GetSocketPairs() {
   return VecCat<SocketPairKind>(VecCat<SocketPairKind>(
       ApplyVec<SocketPairKind>(
           UnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM},
+          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_RAW},
                                  List<int>{0, SOCK_NONBLOCK})),
       ApplyVec<SocketPairKind>(
           FilesystemBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM},
+          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_RAW},
                                  List<int>{0, SOCK_NONBLOCK})),
       ApplyVec<SocketPairKind>(
           AbstractBoundUnixDomainSocketPair,
-          AllBitwiseCombinations(List<int>{SOCK_DGRAM},
+          AllBitwiseCombinations(List<int>{SOCK_DGRAM, SOCK_RAW},
                                  List<int>{0, SOCK_NONBLOCK}))));
 }
 
