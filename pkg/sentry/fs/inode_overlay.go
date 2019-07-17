@@ -339,7 +339,9 @@ func overlayRemove(ctx context.Context, o *overlayEntry, parent *Dirent, child *
 		}
 	}
 	if child.Inode.overlay.lowerExists {
-		return overlayCreateWhiteout(o.upper, child.name)
+		if err := overlayCreateWhiteout(o.upper, child.name); err != nil {
+			return err
+		}
 	}
 	// We've removed from the directory so we must drop the cache.
 	o.markDirectoryDirty()
@@ -418,10 +420,12 @@ func overlayRename(ctx context.Context, o *overlayEntry, oldParent *Dirent, rena
 		return err
 	}
 	if renamed.Inode.overlay.lowerExists {
-		return overlayCreateWhiteout(oldParent.Inode.overlay.upper, oldName)
+		if err := overlayCreateWhiteout(oldParent.Inode.overlay.upper, oldName); err != nil {
+			return err
+		}
 	}
 	// We've changed the directory so we must drop the cache.
-	o.markDirectoryDirty()
+	oldParent.Inode.overlay.markDirectoryDirty()
 	return nil
 }
 
