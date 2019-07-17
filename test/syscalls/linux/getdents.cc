@@ -40,6 +40,7 @@
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
+using ::testing::Contains;
 using ::testing::IsEmpty;
 using ::testing::IsSupersetOf;
 using ::testing::Not;
@@ -482,6 +483,44 @@ TEST(ReaddirTest, Bug33429925Proc) {
 TEST(ReaddirTest, Bug35110122Root) {
   auto contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir("/", true));
   EXPECT_THAT(contents, Not(IsEmpty()));
+}
+
+// Unlink should invalidate getdents cache.
+TEST(ReaddirTest, GoneAfterRemoveCache) {
+  TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
+  std::string name = std::string(Basename(file.path()));
+
+  auto contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dir.path(), true));
+  EXPECT_THAT(contents, Contains(name));
+
+  file.reset();
+
+  contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dir.path(), true));
+  EXPECT_THAT(contents, Not(Contains(name)));
+}
+
+// Regression test for b/137398511. Rename should invalidate getdents cache.
+TEST(ReaddirTest, GoneAfterRenameCache) {
+  TempPath src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  TempPath dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(src.path()));
+  std::string name = std::string(Basename(file.path()));
+
+  auto contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(src.path(), true));
+  EXPECT_THAT(contents, Contains(name));
+
+  ASSERT_THAT(rename(file.path().c_str(), JoinPath(dst.path(), name).c_str()),
+              SyscallSucceeds());
+  // Release file since it was renamed. dst cleanup will ultimately delete it.
+  file.release();
+
+  contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(src.path(), true));
+  EXPECT_THAT(contents, Not(Contains(name)));
+
+  contents = ASSERT_NO_ERRNO_AND_VALUE(ListDir(dst.path(), true));
+  EXPECT_THAT(contents, Contains(name));
 }
 
 }  // namespace
