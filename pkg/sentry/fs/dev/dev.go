@@ -38,12 +38,20 @@ const (
 	urandomDevMinor uint32 = 9
 )
 
-func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource) *fs.Inode {
+// TTY major device number comes from include/uapi/linux/major.h.
+const (
+	ttyDevMinor = 0
+	ttyDevMajor = 5
+)
+
+func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, major uint16, minor uint32) *fs.Inode {
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
-		DeviceID:  devDevice.DeviceID(),
-		InodeID:   devDevice.NextIno(),
-		BlockSize: usermem.PageSize,
-		Type:      fs.CharacterDevice,
+		DeviceID:        devDevice.DeviceID(),
+		InodeID:         devDevice.NextIno(),
+		BlockSize:       usermem.PageSize,
+		Type:            fs.CharacterDevice,
+		DeviceFileMajor: major,
+		DeviceFileMinor: minor,
 	})
 }
 
@@ -114,6 +122,8 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 		// If no devpts is mounted, this will simply be a dangling
 		// symlink, which is fine.
 		"ptmx": newSymlink(ctx, "pts/ptmx", msrc),
+
+		"tty": newCharacterDevice(ctx, newTTYDevice(ctx, fs.RootOwner, 0666), msrc, ttyDevMajor, ttyDevMinor),
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
