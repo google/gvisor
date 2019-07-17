@@ -95,6 +95,26 @@ func (x *randomFileOperations) afterLoad() {}
 func (x *randomFileOperations) load(m state.Map) {
 }
 
+func (x *ttyInodeOperations) beforeSave() {}
+func (x *ttyInodeOperations) save(m state.Map) {
+	x.beforeSave()
+	m.Save("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+}
+
+func (x *ttyInodeOperations) afterLoad() {}
+func (x *ttyInodeOperations) load(m state.Map) {
+	m.Load("InodeSimpleAttributes", &x.InodeSimpleAttributes)
+}
+
+func (x *ttyFileOperations) beforeSave() {}
+func (x *ttyFileOperations) save(m state.Map) {
+	x.beforeSave()
+}
+
+func (x *ttyFileOperations) afterLoad() {}
+func (x *ttyFileOperations) load(m state.Map) {
+}
+
 func init() {
 	state.Register("dev.filesystem", (*filesystem)(nil), state.Fns{Save: (*filesystem).save, Load: (*filesystem).load})
 	state.Register("dev.fullDevice", (*fullDevice)(nil), state.Fns{Save: (*fullDevice).save, Load: (*fullDevice).load})
@@ -105,4 +125,6 @@ func init() {
 	state.Register("dev.zeroFileOperations", (*zeroFileOperations)(nil), state.Fns{Save: (*zeroFileOperations).save, Load: (*zeroFileOperations).load})
 	state.Register("dev.randomDevice", (*randomDevice)(nil), state.Fns{Save: (*randomDevice).save, Load: (*randomDevice).load})
 	state.Register("dev.randomFileOperations", (*randomFileOperations)(nil), state.Fns{Save: (*randomFileOperations).save, Load: (*randomFileOperations).load})
+	state.Register("dev.ttyInodeOperations", (*ttyInodeOperations)(nil), state.Fns{Save: (*ttyInodeOperations).save, Load: (*ttyInodeOperations).load})
+	state.Register("dev.ttyFileOperations", (*ttyFileOperations)(nil), state.Fns{Save: (*ttyFileOperations).save, Load: (*ttyFileOperations).load})
 }
