@@ -13,7 +13,10 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
+
 #include <vector>
 
 #include "gmock/gmock.h"
@@ -141,6 +144,13 @@ TEST(DevTest, WriteDevFull) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/full", O_WRONLY));
   EXPECT_THAT(WriteFd(fd.get(), "a", 1), SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(DevTest, TTYExists) {
+  struct stat statbuf = {};
+  ASSERT_THAT(stat("/dev/tty", &statbuf), SyscallSucceeds());
+  // Check that it's a character device with rw-rw-rw- permissions.
+  EXPECT_EQ(statbuf.st_mode, S_IFCHR | 0666);
 }
 
 }  // namespace

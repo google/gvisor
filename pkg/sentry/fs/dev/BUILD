@@ -11,6 +11,7 @@ go_library(
         "full.go",
         "null.go",
         "random.go",
+        "tty.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/fs/dev",
     visibility = ["//pkg/sentry:internal"],
