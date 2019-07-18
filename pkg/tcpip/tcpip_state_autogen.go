@@ -26,12 +26,16 @@ func (x *ControlMessages) save(m state.Map) {
 	x.beforeSave()
 	m.Save("HasTimestamp", &x.HasTimestamp)
 	m.Save("Timestamp", &x.Timestamp)
+	m.Save("HasInq", &x.HasInq)
+	m.Save("Inq", &x.Inq)
 }
 
 func (x *ControlMessages) afterLoad() {}
 func (x *ControlMessages) load(m state.Map) {
 	m.Load("HasTimestamp", &x.HasTimestamp)
 	m.Load("Timestamp", &x.Timestamp)
+	m.Load("HasInq", &x.HasInq)
+	m.Load("Inq", &x.Inq)
 }
 
 func init() {
