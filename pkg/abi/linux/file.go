@@ -24,25 +24,27 @@ import (
 
 // Constants for open(2).
 const (
-	O_ACCMODE   = 00000003
-	O_RDONLY    = 00000000
-	O_WRONLY    = 00000001
-	O_RDWR      = 00000002
-	O_CREAT     = 00000100
-	O_EXCL      = 00000200
-	O_NOCTTY    = 00000400
-	O_TRUNC     = 00001000
-	O_APPEND    = 00002000
-	O_NONBLOCK  = 00004000
-	O_DSYNC     = 00010000
-	O_ASYNC     = 00020000
-	O_DIRECT    = 00040000
-	O_LARGEFILE = 00100000
-	O_DIRECTORY = 00200000
-	O_NOFOLLOW  = 00400000
-	O_CLOEXEC   = 02000000
-	O_SYNC      = 04000000
+	O_ACCMODE   = 000000003
+	O_RDONLY    = 000000000
+	O_WRONLY    = 000000001
+	O_RDWR      = 000000002
+	O_CREAT     = 000000100
+	O_EXCL      = 000000200
+	O_NOCTTY    = 000000400
+	O_TRUNC     = 000001000
+	O_APPEND    = 000002000
+	O_NONBLOCK  = 000004000
+	O_DSYNC     = 000010000
+	O_ASYNC     = 000020000
+	O_DIRECT    = 000040000
+	O_LARGEFILE = 000100000
+	O_DIRECTORY = 000200000
+	O_NOFOLLOW  = 000400000
+	O_NOATIME   = 001000000
+	O_CLOEXEC   = 002000000
+	O_SYNC      = 004000000 // __O_SYNC in Linux
 	O_PATH      = 010000000
+	O_TMPFILE   = 020000000 // __O_TMPFILE in Linux
 )
 
 // Constants for fstatat(2).
@@ -124,14 +126,23 @@ const (
 
 // Values for mode_t.
 const (
-	FileTypeMask        = 0170000
-	ModeSocket          = 0140000
-	ModeSymlink         = 0120000
-	ModeRegular         = 0100000
-	ModeBlockDevice     = 060000
-	ModeDirectory       = 040000
-	ModeCharacterDevice = 020000
-	ModeNamedPipe       = 010000
+	S_IFMT   = 0170000
+	S_IFSOCK = 0140000
+	S_IFLNK  = 0120000
+	S_IFREG  = 0100000
+	S_IFBLK  = 060000
+	S_IFDIR  = 040000
+	S_IFCHR  = 020000
+	S_IFIFO  = 010000
+
+	FileTypeMask        = S_IFMT
+	ModeSocket          = S_IFSOCK
+	ModeSymlink         = S_IFLNK
+	ModeRegular         = S_IFREG
+	ModeBlockDevice     = S_IFBLK
+	ModeDirectory       = S_IFDIR
+	ModeCharacterDevice = S_IFCHR
+	ModeNamedPipe       = S_IFIFO
 
 	ModeSetUID = 04000
 	ModeSetGID = 02000
@@ -150,6 +161,19 @@ const (
 	ModeOtherWrite  = 0002
 	ModeOtherExec   = 0001
 	PermissionsMask = 0777
+)
+
+// Values for linux_dirent64.d_type.
+const (
+	DT_UNKNOWN = 0
+	DT_FIFO    = 1
+	DT_CHR     = 2
+	DT_DIR     = 4
+	DT_BLK     = 6
+	DT_REG     = 8
+	DT_LNK     = 10
+	DT_SOCK    = 12
+	DT_WHT     = 14
 )
 
 // Values for preadv2/pwritev2.
@@ -178,19 +202,6 @@ type Stat struct {
 	CTime   Timespec
 	_       [3]int64
 }
-
-// File types.
-const (
-	DT_BLK     = 0x6
-	DT_CHR     = 0x2
-	DT_DIR     = 0x4
-	DT_FIFO    = 0x1
-	DT_LNK     = 0xa
-	DT_REG     = 0x8
-	DT_SOCK    = 0xc
-	DT_UNKNOWN = 0x0
-	DT_WHT     = 0xe
-)
 
 // SizeOfStat is the size of a Stat struct.
 var SizeOfStat = binary.Size(Stat{})
@@ -222,6 +233,17 @@ const (
 	STATX__RESERVED   = 0x80000000
 )
 
+// Bitmasks for Statx.Attributes and Statx.AttributesMask, from
+// include/uapi/linux/stat.h.
+const (
+	STATX_ATTR_COMPRESSED = 0x00000004
+	STATX_ATTR_IMMUTABLE  = 0x00000010
+	STATX_ATTR_APPEND     = 0x00000020
+	STATX_ATTR_NODUMP     = 0x00000040
+	STATX_ATTR_ENCRYPTED  = 0x00000800
+	STATX_ATTR_AUTOMOUNT  = 0x00001000
+)
+
 // Statx represents struct statx.
 type Statx struct {
 	Mask           uint32
@@ -231,7 +253,6 @@ type Statx struct {
 	UID            uint32
 	GID            uint32
 	Mode           uint16
-	_              uint16
 	Ino            uint64
 	Size           uint64
 	Blocks         uint64

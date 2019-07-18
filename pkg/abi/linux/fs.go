@@ -77,6 +77,15 @@ type Statfs struct {
 	Spare [4]uint64
 }
 
+// Whence argument to lseek(2), from include/uapi/linux/fs.h.
+const (
+	SEEK_SET  = 0
+	SEEK_CUR  = 1
+	SEEK_END  = 2
+	SEEK_DATA = 3
+	SEEK_HOLE = 4
+)
+
 // Sync_file_range flags, from include/uapi/linux/fs.h
 const (
 	SYNC_FILE_RANGE_WAIT_BEFORE = 1
