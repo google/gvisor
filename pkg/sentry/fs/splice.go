@@ -172,6 +172,8 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		}
 
 		// Copy between the two.
+		//
+		// FIXME(gvisor.dev/issue/565): This will lose data if the write fails.
 		n, err = io.Copy(w, r)
 	}
 

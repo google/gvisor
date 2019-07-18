@@ -168,6 +168,20 @@ TEST_P(PipeTest, Write) {
   EXPECT_EQ(wbuf, rbuf);
 }
 
+TEST_P(PipeTest, WritePage) {
+  SKIP_IF(!CreateBlocking());
+
+  std::vector<char> wbuf(kPageSize);
+  RandomizeBuffer(wbuf.data(), wbuf.size());
+  std::vector<char> rbuf(wbuf.size());
+
+  ASSERT_THAT(write(wfd_.get(), wbuf.data(), wbuf.size()),
+              SyscallSucceedsWithValue(wbuf.size()));
+  ASSERT_THAT(read(rfd_.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(rbuf.size()));
+  EXPECT_EQ(memcmp(rbuf.data(), wbuf.data(), wbuf.size()), 0);
+}
+
 TEST_P(PipeTest, NonBlocking) {
   SKIP_IF(!CreateNonBlocking());
 

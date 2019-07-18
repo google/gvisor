@@ -23,8 +23,16 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+type blockingMode uint8
+
+const (
+	useArgBlocking blockingMode = iota
+	neverBlocking
+	useOutArgBlocking
+)
+
 // doSplice implements a blocking splice operation.
-func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonBlocking bool) (int64, error) {
+func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, blocking blockingMode) (int64, error) {
 	var (
 		total int64
 		n     int64
@@ -33,39 +41,42 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		inW   bool
 		outW  bool
 	)
+
+	inBlocking := blocking == useArgBlocking && !inFile.Flags().NonBlocking && !outFile.Flags().NonBlocking
+	outBlocking := inBlocking || blocking == useOutArgBlocking && !outFile.Flags().NonBlocking
+
 	for opts.Length > 0 {
 		n, err = fs.Splice(t, outFile, inFile, opts)
 		opts.Length -= n
 		total += n
-		if err != syserror.ErrWouldBlock {
-			break
-		} else if err == syserror.ErrWouldBlock && nonBlocking {
+		if err != syserror.ErrWouldBlock || !outBlocking {
 			break
 		}
 
 		// Are we a registered waiter?
 		if ch == nil {
-			ch = make(chan struct{}, 1)
+			ch = make(chan struct{}, 2)
 		}
-		if !inW && !inFile.Flags().NonBlocking {
+		var justRegistered bool
+		if !inW && inBlocking {
 			w, _ := waiter.NewChannelEntry(ch)
 			inFile.EventRegister(&w, EventMaskRead)
 			defer inFile.EventUnregister(&w)
 			inW = true // Registered.
-		} else if !outW && !outFile.Flags().NonBlocking {
+			justRegistered = true
+		}
+		if !outW && outBlocking {
 			w, _ := waiter.NewChannelEntry(ch)
 			outFile.EventRegister(&w, EventMaskWrite)
 			defer outFile.EventUnregister(&w)
 			outW = true // Registered.
+			justRegistered = true
 		}
 
-		// Was anything registered? If no, everything is non-blocking.
-		if !inW && !outW {
-			break
-		}
-
-		if (!inW || inFile.Readiness(EventMaskRead) != 0) && (!outW || outFile.Readiness(EventMaskWrite) != 0) {
-			// Something became ready, try again without blocking.
+		if justRegistered {
+			// We just registered. The files could have become ready
+			// between when we last checked and when we registered.
+			// Try again to be sure.
 			continue
 		}
 
@@ -142,7 +153,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			Length:    count,
 			SrcOffset: true,
 			SrcStart:  offset,
-		}, false)
+		}, useOutArgBlocking)
 
 		// Copy out the new offset.
 		if _, err := t.CopyOut(offsetAddr, n+offset); err != nil {
@@ -152,7 +163,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Send data using splice.
 		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
 			Length: count,
-		}, false)
+		}, useOutArgBlocking)
 	}
 
 	// We can only pass a single file to handleIOError, so pick inFile
@@ -174,11 +185,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, syserror.EINVAL
 	}
 
-	// Only non-blocking is meaningful. Note that unlike in Linux, this
-	// flag is applied consistently. We will have either fully blocking or
-	// non-blocking behavior below, regardless of the underlying files
-	// being spliced to. It's unclear if this is a bug or not yet.
-	nonBlocking := (flags & linux.SPLICE_F_NONBLOCK) != 0
+	// We implement the documented behavior which is slightly different
+	// than the actual behavior in Linux (which has changed at least once).
+	blocking := useArgBlocking
+	if (flags & linux.SPLICE_F_NONBLOCK) != 0 {
+		blocking = neverBlocking
+	}
 
 	// Get files.
 	outFile := t.GetFile(outFD)
@@ -250,13 +262,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Splice data.
-	n, err := doSplice(t, outFile, inFile, opts, nonBlocking)
+	n, err := doSplice(t, outFile, inFile, opts, blocking)
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)
 }
 
-// Tee imlements tee(2).
+// Tee implements tee(2).
 func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	inFD := args[0].Int()
 	outFD := args[1].Int()
@@ -268,8 +280,12 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 		return 0, nil, syserror.EINVAL
 	}
 
-	// Only non-blocking is meaningful.
-	nonBlocking := (flags & linux.SPLICE_F_NONBLOCK) != 0
+	// We implement the documented behavior which is slightly different
+	// than the actual behavior in Linux (which has changed at least once).
+	blocking := useArgBlocking
+	if (flags & linux.SPLICE_F_NONBLOCK) != 0 {
+		blocking = neverBlocking
+	}
 
 	// Get files.
 	outFile := t.GetFile(outFD)
@@ -298,7 +314,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	n, err := doSplice(t, outFile, inFile, fs.SpliceOpts{
 		Length: count,
 		Dup:    true,
-	}, nonBlocking)
+	}, blocking)
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "tee", inFile)

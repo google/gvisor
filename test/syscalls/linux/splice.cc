@@ -12,14 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
 #include <fcntl.h>
 #include <sys/eventfd.h>
 #include <sys/sendfile.h>
+#include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -371,23 +376,72 @@ TEST(SpliceTest, TwoPipes) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
 }
 
-TEST(SpliceTest, Blocking) {
-  // Create two new pipes.
+// Linux changed this behavior in ee5e001196d1345b8fee25925ff5f1d67936081e.
+//
+// Previously, blocking flags were not respected on pipes. Blocking flags are
+// now respected on pipes as of kernel version 5.1+. In addition, blocking flags
+// were mostly respected for sockets prior to version 5.1, but are less
+// respected in version 5.1+.
+
+struct BlockingParam {
+  bool input_is_socket;
+  int input_flags;
+  bool output_is_socket;
+  int output_flags;
+  bool should_block;
+  bool skip_on_old_linux;
+  bool skip_on_new_linux;
+};
+
+class BlockingRead : public ::testing::TestWithParam<BlockingParam> {};
+
+TEST_P(BlockingRead, Splice) {
+  auto param = GetParam();
+
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(param.skip_on_old_linux &&
+            (version.major < 5 || (version.major == 5 && version.minor < 1)));
+    SKIP_IF(param.skip_on_new_linux &&
+            (version.major > 5 || (version.major == 5 && version.minor >= 1)));
+  }
+
+  // Create two new pipes/sockets.
   int first[2], second[2];
-  ASSERT_THAT(pipe(first), SyscallSucceeds());
+  if (param.input_is_socket) {
+    ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM | param.input_flags, 0, first),
+                SyscallSucceeds());
+  } else {
+    ASSERT_THAT(pipe2(first, param.input_flags), SyscallSucceeds());
+  }
   const FileDescriptor rfd1(first[0]);
   const FileDescriptor wfd1(first[1]);
-  ASSERT_THAT(pipe(second), SyscallSucceeds());
+  if (param.output_is_socket) {
+    ASSERT_THAT(
+        socketpair(AF_UNIX, SOCK_STREAM | param.output_flags, 0, second),
+        SyscallSucceeds());
+  } else {
+    ASSERT_THAT(pipe2(second, param.output_flags), SyscallSucceeds());
+  }
   const FileDescriptor rfd2(second[0]);
   const FileDescriptor wfd2(second[1]);
 
-  // This thread writes to the main pipe.
+  // This thread writes to the input.
   std::vector<char> buf(kPageSize);
   RandomizeBuffer(buf.data(), buf.size());
   ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
     ASSERT_THAT(write(wfd1.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(kPageSize));
   });
+
+  if (!param.should_block) {
+    EXPECT_THAT(splice(rfd1.get(), nullptr, wfd2.get(), nullptr, kPageSize, 0),
+                SyscallFailsWithErrno(EWOULDBLOCK));
+
+    // We're done.
+    return;
+  }
 
   // Attempt a splice immediately; it should block.
   EXPECT_THAT(splice(rfd1.get(), nullptr, wfd2.get(), nullptr, kPageSize, 0),
@@ -398,12 +452,329 @@ TEST(SpliceTest, Blocking) {
 
   // Content should reflect the splice.
   std::vector<char> rbuf(kPageSize);
+  EXPECT_THAT(fcntl(rfd2.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
   ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
 }
 
-TEST(TeeTest, Blocking) {
+INSTANTIATE_TEST_SUITE_P(TestBlockingRead, BlockingRead,
+                         ::testing::Values(
+                             BlockingParam{
+                                 false,  // input_is_socket
+                                 0,      // input_flags
+                                 false,  // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 false,  // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 false,       // output_is_socket
+                                 0,           // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 0,           // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,   // input_is_socket
+                                 0,      // input_flags
+                                 false,  // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 false,  // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,           // input_is_socket
+                                 SOCK_NONBLOCK,  // input_flags
+                                 false,          // output_is_socket
+                                 0,              // output_flags
+                                 false,          // should_block
+                                 false,          // skip_on_old_linux
+                                 false,          // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,        // input_is_socket
+                                 0,           // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,           // input_is_socket
+                                 SOCK_NONBLOCK,  // input_flags
+                                 false,          // output_is_socket
+                                 O_NONBLOCK,     // output_flags
+                                 false,          // should_block
+                                 false,          // skip_on_old_linux
+                                 false,          // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,  // input_is_socket
+                                 0,      // input_flags
+                                 true,   // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 false,  // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 true,        // output_is_socket
+                                 0,           // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,          // input_is_socket
+                                 0,              // input_flags
+                                 true,           // output_is_socket
+                                 SOCK_NONBLOCK,  // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 true,           // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,          // input_is_socket
+                                 O_NONBLOCK,     // input_flags
+                                 true,           // output_is_socket
+                                 SOCK_NONBLOCK,  // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 false,          // skip_on_new_linux
+                             }));
+
+class BlockingWrite : public ::testing::TestWithParam<BlockingParam> {};
+
+TEST_P(BlockingWrite, Splice) {
+  auto param = GetParam();
+
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(param.skip_on_old_linux &&
+            (version.major < 5 || (version.major == 5 && version.minor < 1)));
+    SKIP_IF(param.skip_on_new_linux &&
+            (version.major > 5 || (version.major == 5 && version.minor >= 1)));
+  }
+
+  // FIXME(gvisor.dev/issue/565): Splice will lose data if the write fails.
+  SKIP_IF(param.should_block && IsRunningOnGvisor());
+
+  // Create two new pipes/sockets.
+  int first[2], second[2];
+  if (param.input_is_socket) {
+    ASSERT_THAT(socketpair(AF_UNIX, SOCK_STREAM | param.input_flags, 0, first),
+                SyscallSucceeds());
+  } else {
+    ASSERT_THAT(pipe2(first, param.input_flags), SyscallSucceeds());
+  }
+  const FileDescriptor rfd1(first[0]);
+  const FileDescriptor wfd1(first[1]);
+  if (param.output_is_socket) {
+    ASSERT_THAT(
+        socketpair(AF_UNIX, SOCK_STREAM | param.output_flags, 0, second),
+        SyscallSucceeds());
+  } else {
+    ASSERT_THAT(pipe2(second, param.output_flags), SyscallSucceeds());
+  }
+  const FileDescriptor rfd2(second[0]);
+  const FileDescriptor wfd2(second[1]);
+
+  // Make some data available to be read.
+  std::vector<char> buf1(kPageSize);
+  RandomizeBuffer(buf1.data(), buf1.size());
+  ASSERT_THAT(write(wfd1.get(), buf1.data(), buf1.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  int pipe_size = 0;
+  if (param.output_is_socket) {
+    std::vector<char> buf(100);
+    for (;;) {
+      int ret = send(wfd2.get(), buf.data(), buf.size(), MSG_DONTWAIT);
+      if (ret > 0) {
+        pipe_size += ret;
+        continue;
+      }
+      if (errno == EWOULDBLOCK) {
+        break;
+      }
+      ASSERT_THAT(ret, SyscallSucceeds());
+    }
+  } else {
+    // Fill up the write pipe's buffer.
+    ASSERT_THAT(pipe_size = fcntl(wfd2.get(), F_GETPIPE_SZ), SyscallSucceeds());
+    std::vector<char> buf(pipe_size);
+    ASSERT_THAT(write(wfd2.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(pipe_size));
+  }
+
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    std::vector<char> buf(pipe_size);
+    ASSERT_THAT(read(rfd2.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(pipe_size));
+  });
+
+  if (!param.should_block) {
+    EXPECT_THAT(splice(rfd1.get(), nullptr, wfd2.get(), nullptr, kPageSize, 0),
+                SyscallFailsWithErrno(EWOULDBLOCK));
+
+    // We're done.
+    return;
+  }
+
+  // Attempt a splice immediately; it should block.
+  EXPECT_THAT(splice(rfd1.get(), nullptr, wfd2.get(), nullptr, kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Thread should be joinable.
+  t.Join();
+
+  // Content should reflect the splice.
+  std::vector<char> rbuf(kPageSize);
+  EXPECT_THAT(fcntl(rfd2.get(), F_SETFL, O_NONBLOCK), SyscallSucceeds());
+  ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_EQ(memcmp(rbuf.data(), buf1.data(), kPageSize), 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(TestBlockingWrite, BlockingWrite,
+                         ::testing::Values(
+                             BlockingParam{
+                                 false,  // input_is_socket
+                                 0,      // input_flags
+                                 false,  // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 false,  // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 false,       // output_is_socket
+                                 0,           // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 0,           // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,   // input_is_socket
+                                 0,      // input_flags
+                                 false,  // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 true,   // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,           // input_is_socket
+                                 SOCK_NONBLOCK,  // input_flags
+                                 false,          // output_is_socket
+                                 0,              // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 true,           // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,        // input_is_socket
+                                 0,           // input_flags
+                                 false,       // output_is_socket
+                                 O_NONBLOCK,  // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 false,       // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 true,           // input_is_socket
+                                 SOCK_NONBLOCK,  // input_flags
+                                 false,          // output_is_socket
+                                 O_NONBLOCK,     // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 false,          // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,  // input_is_socket
+                                 0,      // input_flags
+                                 true,   // output_is_socket
+                                 0,      // output_flags
+                                 true,   // should_block
+                                 false,  // skip_on_old_linux
+                                 false,  // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,       // input_is_socket
+                                 O_NONBLOCK,  // input_flags
+                                 true,        // output_is_socket
+                                 0,           // output_flags
+                                 false,       // should_block
+                                 true,        // skip_on_old_linux
+                                 true,        // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,          // input_is_socket
+                                 0,              // input_flags
+                                 true,           // output_is_socket
+                                 SOCK_NONBLOCK,  // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 true,           // skip_on_new_linux
+                             },
+                             BlockingParam{
+                                 false,          // input_is_socket
+                                 O_NONBLOCK,     // input_flags
+                                 true,           // output_is_socket
+                                 SOCK_NONBLOCK,  // output_flags
+                                 false,          // should_block
+                                 true,           // skip_on_old_linux
+                                 true,           // skip_on_new_linux
+                             }));
+
+TEST(TeeTest, BlockingRead) {
   SKIP_IF(IsRunningOnGvisor());
 
   // Create two new pipes.
@@ -419,6 +790,7 @@ TEST(TeeTest, Blocking) {
   std::vector<char> buf(kPageSize);
   RandomizeBuffer(buf.data(), buf.size());
   ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
     ASSERT_THAT(write(wfd1.get(), buf.data(), buf.size()),
                 SyscallSucceedsWithValue(kPageSize));
   });
@@ -430,7 +802,7 @@ TEST(TeeTest, Blocking) {
   // Thread should be joinable.
   t.Join();
 
-  // Content should reflect the splice, in both pipes.
+  // Content should reflect the tee, in both pipes.
   std::vector<char> rbuf(kPageSize);
   ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
@@ -438,6 +810,51 @@ TEST(TeeTest, Blocking) {
   ASSERT_THAT(read(rfd1.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
+}
+
+TEST(TeeTest, BlockingWrite) {
+  SKIP_IF(IsRunningOnGvisor());
+
+  // Create two new pipes.
+  int first[2], second[2];
+  ASSERT_THAT(pipe(first), SyscallSucceeds());
+  const FileDescriptor rfd1(first[0]);
+  const FileDescriptor wfd1(first[1]);
+  ASSERT_THAT(pipe(second), SyscallSucceeds());
+  const FileDescriptor rfd2(second[0]);
+  const FileDescriptor wfd2(second[1]);
+
+  // Make some data available to be read.
+  std::vector<char> buf1(kPageSize);
+  RandomizeBuffer(buf1.data(), buf1.size());
+  ASSERT_THAT(write(wfd1.get(), buf1.data(), buf1.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Fill up the write pipe's buffer.
+  int pipe_size = -1;
+  ASSERT_THAT(pipe_size = fcntl(wfd2.get(), F_GETPIPE_SZ), SyscallSucceeds());
+  std::vector<char> buf2(pipe_size);
+  ASSERT_THAT(write(wfd2.get(), buf2.data(), buf2.size()),
+              SyscallSucceedsWithValue(pipe_size));
+
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(read(rfd2.get(), buf2.data(), buf2.size()),
+                SyscallSucceedsWithValue(pipe_size));
+  });
+
+  // Attempt a tee immediately; it should block.
+  EXPECT_THAT(tee(rfd1.get(), wfd2.get(), kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Thread should be joinable.
+  t.Join();
+
+  // Content should reflect the tee.
+  std::vector<char> rbuf(kPageSize);
+  ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_EQ(memcmp(rbuf.data(), buf1.data(), kPageSize), 0);
 }
 
 TEST(SpliceTest, NonBlocking) {
