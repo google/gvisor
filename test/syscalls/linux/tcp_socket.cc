@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -518,6 +519,143 @@ TEST_P(TcpSocketTest, SetNoDelay) {
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
   EXPECT_EQ(get, kSockOptOff);
+}
+
+#ifndef TCP_INQ
+#define TCP_INQ 36
+#endif
+
+TEST_P(TcpSocketTest, TcpInqSetSockOpt) {
+  char buf[1024];
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  // TCP_INQ is disabled by default.
+  int val = -1;
+  socklen_t slen = sizeof(val);
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
+              SyscallSucceedsWithValue(0));
+  ASSERT_EQ(val, 0);
+
+  // Try to set TCP_INQ.
+  val = 1;
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
+  val = -1;
+  slen = sizeof(val);
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
+              SyscallSucceedsWithValue(0));
+  ASSERT_EQ(val, 1);
+
+  // Try to unset TCP_INQ.
+  val = 0;
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
+  val = -1;
+  slen = sizeof(val);
+  EXPECT_THAT(getsockopt(t_, SOL_TCP, TCP_INQ, &val, &slen),
+              SyscallSucceedsWithValue(0));
+  ASSERT_EQ(val, 0);
+}
+
+TEST_P(TcpSocketTest, TcpInq) {
+  char buf[1024];
+  // Write more than one TCP segment.
+  int size = sizeof(buf);
+  int kChunk = sizeof(buf) / 4;
+  for (int i = 0; i < size; i += kChunk) {
+    ASSERT_THAT(RetryEINTR(write)(s_, buf, kChunk),
+                SyscallSucceedsWithValue(kChunk));
+  }
+
+  int val = 1;
+  kChunk = sizeof(buf) / 2;
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
+
+  // Wait when all data will be in the received queue.
+  while (true) {
+    ASSERT_THAT(ioctl(t_, TIOCINQ, &size), SyscallSucceeds());
+    if (size == sizeof(buf)) {
+      break;
+    }
+    usleep(10000);
+  }
+
+  struct msghdr msg = {};
+  std::vector<char> control(CMSG_SPACE(sizeof(int)));
+  size = sizeof(buf);
+  struct iovec iov;
+  for (int i = 0; size != 0; i += kChunk) {
+    msg.msg_control = &control[0];
+    msg.msg_controllen = control.size();
+
+    iov.iov_base = buf;
+    iov.iov_len = kChunk;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    ASSERT_THAT(RetryEINTR(recvmsg)(t_, &msg, 0),
+                SyscallSucceedsWithValue(kChunk));
+    size -= kChunk;
+
+    struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+    ASSERT_NE(cmsg, nullptr);
+    ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+    ASSERT_EQ(cmsg->cmsg_level, SOL_TCP);
+    ASSERT_EQ(cmsg->cmsg_type, TCP_INQ);
+
+    int inq = 0;
+    memcpy(&inq, CMSG_DATA(cmsg), sizeof(int));
+    ASSERT_EQ(inq, size);
+  }
+}
+
+TEST_P(TcpSocketTest, TcpSCMPriority) {
+  char buf[1024];
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  int val = 1;
+  EXPECT_THAT(setsockopt(t_, SOL_TCP, TCP_INQ, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_TIMESTAMP, &val, sizeof(val)),
+              SyscallSucceedsWithValue(0));
+
+  struct msghdr msg = {};
+  std::vector<char> control(
+      CMSG_SPACE(sizeof(struct timeval) + CMSG_SPACE(sizeof(int))));
+  struct iovec iov;
+  msg.msg_control = &control[0];
+  msg.msg_controllen = control.size();
+
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  ASSERT_THAT(RetryEINTR(recvmsg)(t_, &msg, 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  // TODO(b/78348848): SO_TIMESTAMP isn't implemented for TCP sockets.
+  if (!IsRunningOnGvisor() || cmsg->cmsg_level == SOL_SOCKET) {
+    ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+    ASSERT_EQ(cmsg->cmsg_type, SO_TIMESTAMP);
+    ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(struct timeval)));
+
+    cmsg = CMSG_NXTHDR(&msg, cmsg);
+    ASSERT_NE(cmsg, nullptr);
+  }
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(int)));
+  ASSERT_EQ(cmsg->cmsg_level, SOL_TCP);
+  ASSERT_EQ(cmsg->cmsg_type, TCP_INQ);
+
+  int inq = 0;
+  memcpy(&inq, CMSG_DATA(cmsg), sizeof(int));
+  ASSERT_EQ(inq, 0);
+
+  cmsg = CMSG_NXTHDR(&msg, cmsg);
+  ASSERT_EQ(cmsg, nullptr);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
