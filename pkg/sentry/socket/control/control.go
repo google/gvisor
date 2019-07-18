@@ -225,14 +225,14 @@ func putCmsg(buf []byte, flags int, msgType uint32, align uint, data []int32) ([
 	return alignSlice(buf, align), flags
 }
 
-func putCmsgStruct(buf []byte, msgType uint32, align uint, data interface{}) []byte {
+func putCmsgStruct(buf []byte, msgLevel, msgType uint32, align uint, data interface{}) []byte {
 	if cap(buf)-len(buf) < linux.SizeOfControlMessageHeader {
 		return buf
 	}
 	ob := buf
 
 	buf = putUint64(buf, uint64(linux.SizeOfControlMessageHeader))
-	buf = putUint32(buf, linux.SOL_SOCKET)
+	buf = putUint32(buf, msgLevel)
 	buf = putUint32(buf, msgType)
 
 	hdrBuf := buf
@@ -307,9 +307,21 @@ func alignSlice(buf []byte, align uint) []byte {
 func PackTimestamp(t *kernel.Task, timestamp int64, buf []byte) []byte {
 	return putCmsgStruct(
 		buf,
+		linux.SOL_SOCKET,
 		linux.SO_TIMESTAMP,
 		t.Arch().Width(),
 		linux.NsecToTimeval(timestamp),
+	)
+}
+
+// PackInq packs a TCP_INQ socket control message.
+func PackInq(t *kernel.Task, inq int32, buf []byte) []byte {
+	return putCmsgStruct(
+		buf,
+		linux.SOL_TCP,
+		linux.TCP_INQ,
+		4,
+		inq,
 	)
 }
 

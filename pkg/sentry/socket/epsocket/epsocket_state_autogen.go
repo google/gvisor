@@ -21,6 +21,7 @@ func (x *SocketOperations) save(m state.Map) {
 	m.Save("sockOptTimestamp", &x.sockOptTimestamp)
 	m.Save("timestampValid", &x.timestampValid)
 	m.Save("timestampNS", &x.timestampNS)
+	m.Save("sockOptInq", &x.sockOptInq)
 }
 
 func (x *SocketOperations) afterLoad() {}
@@ -37,6 +38,7 @@ func (x *SocketOperations) load(m state.Map) {
 	m.Load("sockOptTimestamp", &x.sockOptTimestamp)
 	m.Load("timestampValid", &x.timestampValid)
 	m.Load("timestampNS", &x.timestampNS)
+	m.Load("sockOptInq", &x.sockOptInq)
 }
 
 func (x *Stack) beforeSave() {}

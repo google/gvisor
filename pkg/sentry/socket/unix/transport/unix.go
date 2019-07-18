@@ -179,6 +179,10 @@ type Endpoint interface {
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
 
+	// GetSockOptInt gets a socket option for simple cases when a return
+	// value has the int type.
+	GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error)
+
 	// State returns the current state of the socket, as represented by Linux in
 	// procfs.
 	State() uint32
@@ -834,6 +838,26 @@ func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
+func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+	switch opt {
+	case tcpip.ReceiveQueueSizeOption:
+		v := 0
+		e.Lock()
+		if !e.Connected() {
+			e.Unlock()
+			return -1, tcpip.ErrNotConnected
+		}
+		v = int(e.receiver.RecvQueuedSize())
+		e.Unlock()
+		if v < 0 {
+			return -1, tcpip.ErrQueueSizeNotSupported
+		}
+		return v, nil
+	default:
+		return -1, tcpip.ErrUnknownProtocolOption
+	}
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
@@ -847,20 +871,6 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 			return tcpip.ErrNotConnected
 		}
 		qs := tcpip.SendQueueSizeOption(e.connected.SendQueuedSize())
-		e.Unlock()
-		if qs < 0 {
-			return tcpip.ErrQueueSizeNotSupported
-		}
-		*o = qs
-		return nil
-
-	case *tcpip.ReceiveQueueSizeOption:
-		e.Lock()
-		if !e.Connected() {
-			e.Unlock()
-			return tcpip.ErrNotConnected
-		}
-		qs := tcpip.ReceiveQueueSizeOption(e.receiver.RecvQueuedSize())
 		e.Unlock()
 		if qs < 0 {
 			return tcpip.ErrQueueSizeNotSupported

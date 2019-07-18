@@ -288,6 +288,12 @@ type ControlMessages struct {
 	// Timestamp is the time (in ns) that the last packed used to create
 	// the read data was received.
 	Timestamp int64
+
+	// HasInq indicates whether Inq is valid/set.
+	HasInq bool
+
+	// Inq is the number of bytes ready to be received.
+	Inq int32
 }
 
 // Endpoint is the interface implemented by transport protocols (e.g., tcp, udp)
@@ -383,6 +389,10 @@ type Endpoint interface {
 	// *Option types.
 	GetSockOpt(opt interface{}) *Error
 
+	// GetSockOptInt gets a socket option for simple cases where a return
+	// value has the int type.
+	GetSockOptInt(SockOpt) (int, *Error)
+
 	// State returns a socket's lifecycle state. The returned value is
 	// protocol-specific and is primarily used for diagnostics.
 	State() uint32
@@ -408,6 +418,18 @@ type WriteOptions struct {
 	EndOfRecord bool
 }
 
+// SockOpt represents socket options which values have the int type.
+type SockOpt int
+
+const (
+	// ReceiveQueueSizeOption is used in GetSockOpt to specify that the number of
+	// unread bytes in the input buffer should be returned.
+	ReceiveQueueSizeOption SockOpt = iota
+
+	// TODO(b/137664753): convert all int socket options to be handled via
+	// GetSockOptInt.
+)
+
 // ErrorOption is used in GetSockOpt to specify that the last error reported by
 // the endpoint should be cleared and returned.
 type ErrorOption struct{}
@@ -423,10 +445,6 @@ type ReceiveBufferSizeOption int
 // SendQueueSizeOption is used in GetSockOpt to specify that the number of
 // unread bytes in the output buffer should be returned.
 type SendQueueSizeOption int
-
-// ReceiveQueueSizeOption is used in GetSockOpt to specify that the number of
-// unread bytes in the input buffer should be returned.
-type ReceiveQueueSizeOption int
 
 // V6OnlyOption is used by SetSockOpt/GetSockOpt to specify whether an IPv6
 // socket is to be restricted to sending and receiving IPv6 packets only.
