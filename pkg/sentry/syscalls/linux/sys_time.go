@@ -125,9 +125,11 @@ func getClock(t *kernel.Task, clockID int32) (ktime.Clock, error) {
 		linux.CLOCK_MONOTONIC_RAW, linux.CLOCK_BOOTTIME:
 		// CLOCK_MONOTONIC approximates CLOCK_MONOTONIC_RAW.
 		// CLOCK_BOOTTIME is internally mapped to CLOCK_MONOTONIC, as:
-		// - CLOCK_BOOTTIME should behave as CLOCK_MONOTONIC while also including suspend time.
+		// - CLOCK_BOOTTIME should behave as CLOCK_MONOTONIC while also
+		//   including suspend time.
 		// - gVisor has no concept of suspend/resume.
-		// - CLOCK_MONOTONIC already includes save/restore time, which is the closest to suspend time.
+		// - CLOCK_MONOTONIC already includes save/restore time, which is
+		//   the closest to suspend time.
 		return t.Kernel().MonotonicClock(), nil
 	case linux.CLOCK_PROCESS_CPUTIME_ID:
 		return t.ThreadGroup().CPUClock(), nil
