@@ -90,6 +90,11 @@ func (*fakeTransportEndpoint) SetSockOpt(interface{}) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
+// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
+func (*fakeTransportEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+	return -1, tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (*fakeTransportEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch opt.(type) {

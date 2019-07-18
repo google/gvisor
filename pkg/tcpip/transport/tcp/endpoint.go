@@ -1100,6 +1100,15 @@ func (e *endpoint) readyReceiveSize() (int, *tcpip.Error) {
 	return e.rcvBufUsed, nil
 }
 
+// GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
+func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
+	switch opt {
+	case tcpip.ReceiveQueueSizeOption:
+		return e.readyReceiveSize()
+	}
+	return -1, tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
@@ -1128,15 +1137,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.rcvListMu.Lock()
 		*o = tcpip.ReceiveBufferSizeOption(e.rcvBufSize)
 		e.rcvListMu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveQueueSizeOption:
-		v, err := e.readyReceiveSize()
-		if err != nil {
-			return err
-		}
-
-		*o = tcpip.ReceiveQueueSizeOption(v)
 		return nil
 
 	case *tcpip.DelayOption:
