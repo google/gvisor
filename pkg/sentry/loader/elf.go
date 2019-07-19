@@ -19,6 +19,7 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -148,12 +149,17 @@ func parseHeader(ctx context.Context, f *fs.File) (elfInfo, error) {
 	}
 	binary.Unmarshal(hdrBuf, byteOrder, &hdr)
 
-	// We only support amd64.
-	if machine := elf.Machine(hdr.Machine); machine != elf.EM_X86_64 {
+	// We support amd64 and arm64.
+	var a arch.Arch
+	switch machine := elf.Machine(hdr.Machine); machine {
+	case elf.EM_X86_64:
+		a = arch.AMD64
+	case elf.EM_AARCH64:
+		a = arch.ARM64
+	default:
 		log.Infof("Unsupported ELF machine %d", machine)
 		return elfInfo{}, syserror.ENOEXEC
 	}
-	a := arch.AMD64
 
 	var sharedObject bool
 	elfType := elf.Type(hdr.Type)
@@ -558,6 +564,13 @@ func loadInitialELF(ctx context.Context, m *mm.MemoryManager, fs *cpuid.FeatureS
 	if err != nil {
 		ctx.Infof("Failed to parse initial ELF: %v", err)
 		return loadedELF{}, nil, err
+	}
+
+	// Check Image Compatibility.
+	ok := strings.EqualFold(arch.Host.String(), info.arch.String())
+	if !ok {
+		ctx.Warningf("Found mismatch for platform %s with ELF type %s", arch.Host.String(), info.arch.String())
+		return loadedELF{}, nil, syserror.ENOEXEC
 	}
 
 	// Create the arch.Context now so we can prepare the mmap layout before
