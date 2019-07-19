@@ -37,7 +37,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 	switch clockID {
 	case linux.CLOCK_REALTIME:
 		c = t.Kernel().RealtimeClock()
-	case linux.CLOCK_MONOTONIC:
+	case linux.CLOCK_MONOTONIC, linux.CLOCK_BOOTTIME:
 		c = t.Kernel().MonotonicClock()
 	default:
 		return 0, nil, syserror.EINVAL

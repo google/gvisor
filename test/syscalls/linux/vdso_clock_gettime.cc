@@ -39,6 +39,8 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
       return "CLOCK_MONOTONIC";
     case CLOCK_REALTIME:
       return "CLOCK_REALTIME";
+    case CLOCK_BOOTTIME:
+      return "CLOCK_BOOTTIME";
     default:
       return absl::StrCat(info.param);
   }
@@ -95,7 +97,8 @@ TEST_P(CorrectVDSOClockTest, IsCorrect) {
 }
 
 INSTANTIATE_TEST_SUITE_P(ClockGettime, CorrectVDSOClockTest,
-                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_REALTIME),
+                         ::testing::Values(CLOCK_MONOTONIC, CLOCK_REALTIME,
+                                           CLOCK_BOOTTIME),
                          PrintClockId);
 
 }  // namespace
