@@ -33,6 +33,8 @@ type Arch int
 const (
 	// AMD64 is the x86-64 architecture.
 	AMD64 Arch = iota
+	// ARM64 is the aarch64 architecture.
+	ARM64
 )
 
 // String implements fmt.Stringer.
@@ -40,6 +42,8 @@ func (a Arch) String() string {
 	switch a {
 	case AMD64:
 		return "amd64"
+	case ARM64:
+		return "arm64"
 	default:
 		return fmt.Sprintf("Arch(%d)", a)
 	}
