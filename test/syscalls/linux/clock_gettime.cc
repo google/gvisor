@@ -132,6 +132,9 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
       return "CLOCK_MONOTONIC_COARSE";
     case CLOCK_MONOTONIC_RAW:
       return "CLOCK_MONOTONIC_RAW";
+    case CLOCK_BOOTTIME:
+      // CLOCK_BOOTTIME is a monotonic clock.
+      return "CLOCK_BOOTTIME";
     default:
       return absl::StrCat(info.param);
   }
@@ -140,15 +143,13 @@ std::string PrintClockId(::testing::TestParamInfo<clockid_t> info) {
 INSTANTIATE_TEST_SUITE_P(ClockGettime, MonotonicClockTest,
                          ::testing::Values(CLOCK_MONOTONIC,
                                            CLOCK_MONOTONIC_COARSE,
-                                           CLOCK_MONOTONIC_RAW),
+                                           CLOCK_MONOTONIC_RAW, CLOCK_BOOTTIME),
                          PrintClockId);
 
 TEST(ClockGettime, UnimplementedReturnsEINVAL) {
   SKIP_IF(!IsRunningOnGvisor());
 
   struct timespec tp;
-  EXPECT_THAT(clock_gettime(CLOCK_BOOTTIME, &tp),
-              SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(clock_gettime(CLOCK_REALTIME_ALARM, &tp),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(clock_gettime(CLOCK_BOOTTIME_ALARM, &tp),
