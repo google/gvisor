@@ -15,7 +15,12 @@
 #ifndef GVISOR_TEST_SYSCALLS_IP_SOCKET_TEST_UTIL_H_
 #define GVISOR_TEST_SYSCALLS_IP_SOCKET_TEST_UTIL_H_
 
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <sys/types.h>
+
 #include <string>
+
 #include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {
@@ -65,6 +70,35 @@ SocketKind IPv4UDPUnboundSocket(int type);
 // IPv4TCPUnboundSocketPair returns a SocketKind that represents
 // a SimpleSocket created with AF_INET, SOCK_STREAM and the given type.
 SocketKind IPv4TCPUnboundSocket(int type);
+
+// IfAddrHelper is a helper class that determines the local interfaces present
+// and provides functions to obtain their names, index numbers, and IP address.
+class IfAddrHelper {
+ public:
+  IfAddrHelper() : ifaddr_(nullptr) {}
+  ~IfAddrHelper() { Release(); }
+
+  PosixError Load();
+  void Release();
+
+  std::vector<std::string> InterfaceList(int family);
+
+  struct sockaddr* GetAddr(int family, std::string name);
+  PosixErrorOr<int> GetIndex(std::string name);
+
+ private:
+  struct ifaddrs* ifaddr_;
+};
+
+// GetAddr4Str returns the given IPv4 network address structure as a string.
+std::string GetAddr4Str(in_addr* a);
+
+// GetAddr6Str returns the given IPv6 network address structure as a string.
+std::string GetAddr6Str(in6_addr* a);
+
+// GetAddrStr returns the given IPv4 or IPv6 network address structure as a
+// string.
+std::string GetAddrStr(sockaddr* a);
 
 }  // namespace testing
 }  // namespace gvisor

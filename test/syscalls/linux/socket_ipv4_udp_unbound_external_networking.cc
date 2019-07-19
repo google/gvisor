@@ -15,10 +15,13 @@
 #include "test/syscalls/linux/socket_ipv4_udp_unbound_external_networking.h"
 
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -31,6 +34,52 @@
 
 namespace gvisor {
 namespace testing {
+
+TestAddress V4EmptyAddress() {
+  TestAddress t("V4Empty");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  return t;
+}
+
+void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
+  got_if_infos_ = false;
+
+  // Get interface list.
+  std::vector<std::string> if_names;
+  ASSERT_NO_ERRNO(if_helper_.Load());
+  if_names = if_helper_.InterfaceList(AF_INET);
+  if (if_names.size() != 2) {
+    return;
+  }
+
+  // Figure out which interface is where.
+  int lo = 0, eth = 1;
+  if (if_names[lo] != "lo") {
+    lo = 1;
+    eth = 0;
+  }
+
+  if (if_names[lo] != "lo") {
+    return;
+  }
+
+  lo_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[lo]));
+  lo_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[lo]);
+  if (lo_if_addr_ == nullptr) {
+    return;
+  }
+  lo_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(lo_if_addr_)->sin_addr;
+
+  eth_if_idx_ = ASSERT_NO_ERRNO_AND_VALUE(if_helper_.GetIndex(if_names[eth]));
+  eth_if_addr_ = if_helper_.GetAddr(AF_INET, if_names[eth]);
+  if (eth_if_addr_ == nullptr) {
+    return;
+  }
+  eth_if_sin_addr_ = reinterpret_cast<sockaddr_in*>(eth_if_addr_)->sin_addr;
+
+  got_if_infos_ = true;
+}
 
 // Verifies that a newly instantiated UDP socket does not have the
 // broadcast socket option enabled.
@@ -658,7 +707,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                   sender->get(), reinterpret_cast<sockaddr*>(&sendto_addr.addr),
                   sendto_addr.addr_len),
               SyscallSucceeds());
-  TestAddress sender_addr("");
+  auto sender_addr = V4EmptyAddress();
   ASSERT_THAT(
       getsockname(sender->get(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
                   &sender_addr.addr_len),
@@ -674,7 +723,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 
   // Receive a multicast packet.
   char recv_buf[sizeof(send_buf)] = {};
-  TestAddress src_addr("");
+  auto src_addr = V4EmptyAddress();
   ASSERT_THAT(
       RetryEINTR(recvfrom)(receiver->get(), recv_buf, sizeof(recv_buf), 0,
                            reinterpret_cast<sockaddr*>(&src_addr.addr),
@@ -688,5 +737,113 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
   EXPECT_EQ(sender_addr_in->sin_addr.s_addr, src_addr_in->sin_addr.s_addr);
 }
 
+// Check that when setting the IP_MULTICAST_IF option to both an index pointing
+// to the loopback interface and an address pointing to the non-loopback
+// interface, a multicast packet sent out uses the latter as its source address.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       IpMulticastLoopbackIfNicAndAddr) {
+  // FIXME(b/137899561): Linux instance for syscall tests sometimes misses its
+  // IPv4 address on eth0.
+  SKIP_IF(!got_if_infos_);
+
+  // Create receiver, bind to ANY and join the multicast group.
+  auto receiver = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(
+      bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+           receiver_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(receiver->get(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+  int receiver_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = lo_if_idx_;
+  ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &group,
+                         sizeof(group)),
+              SyscallSucceeds());
+
+  // Set outgoing multicast interface config, with NIC and addr pointing to
+  // different interfaces.
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  ip_mreqn iface = {};
+  iface.imr_ifindex = lo_if_idx_;
+  iface.imr_address = eth_if_sin_addr_;
+  ASSERT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
+                         sizeof(iface)),
+              SyscallSucceeds());
+
+  // Send a multicast packet.
+  auto sendto_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port = receiver_port;
+  char send_buf[4] = {};
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                                 sendto_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Receive a multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  auto src_addr = V4EmptyAddress();
+  ASSERT_THAT(
+      RetryEINTR(recvfrom)(receiver->get(), recv_buf, sizeof(recv_buf), 0,
+                           reinterpret_cast<sockaddr*>(&src_addr.addr),
+                           &src_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(recv_buf)));
+  ASSERT_EQ(sizeof(struct sockaddr_in), src_addr.addr_len);
+  sockaddr_in* src_addr_in = reinterpret_cast<sockaddr_in*>(&src_addr.addr);
+
+  // FIXME (b/137781162): When sending a multicast packet use the proper logic
+  // to determine the packet's src-IP.
+  SKIP_IF(IsRunningOnGvisor());
+
+  // Verify the received source address.
+  EXPECT_EQ(eth_if_sin_addr_.s_addr, src_addr_in->sin_addr.s_addr);
+}
+
+// Check that when we are bound to one interface we can set IP_MULTICAST_IF to
+// another interface.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       IpMulticastLoopbackBindToOneIfSetMcastIfToAnother) {
+  // FIXME(b/137899561): Linux instance for syscall tests sometimes misses its
+  // IPv4 address on eth0.
+  SKIP_IF(!got_if_infos_);
+
+  // FIXME (b/137790511): When bound to one interface it is not possible to set
+  // IP_MULTICAST_IF to a different interface.
+  SKIP_IF(IsRunningOnGvisor());
+
+  // Create sender and bind to eth interface.
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  ASSERT_THAT(bind(sender->get(), eth_if_addr_, sizeof(sockaddr_in)),
+              SyscallSucceeds());
+
+  // Run through all possible combinations of index and address for
+  // IP_MULTICAST_IF that selects the loopback interface.
+  struct {
+    int imr_ifindex;
+    struct in_addr imr_address;
+  } test_data[] = {
+      {lo_if_idx_, {}},
+      {0, lo_if_sin_addr_},
+      {lo_if_idx_, lo_if_sin_addr_},
+      {lo_if_idx_, eth_if_sin_addr_},
+  };
+  for (auto t : test_data) {
+    ip_mreqn iface = {};
+    iface.imr_ifindex = t.imr_ifindex;
+    iface.imr_address = t.imr_address;
+    EXPECT_THAT(setsockopt(sender->get(), IPPROTO_IP, IP_MULTICAST_IF, &iface,
+                           sizeof(iface)),
+                SyscallSucceeds())
+        << "imr_index=" << iface.imr_ifindex
+        << " imr_address=" << GetAddr4Str(&iface.imr_address);
+  }
+}
 }  // namespace testing
 }  // namespace gvisor

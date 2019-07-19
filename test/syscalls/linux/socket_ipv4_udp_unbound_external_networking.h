@@ -15,6 +15,7 @@
 #ifndef GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IPV4_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {
@@ -22,7 +23,24 @@ namespace testing {
 
 // Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
 // with external networking support.
-using IPv4UDPUnboundExternalNetworkingSocketTest = SimpleSocketTest;
+class IPv4UDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {
+ protected:
+  void SetUp();
+
+  IfAddrHelper if_helper_;
+
+  // got_if_infos_ is set to false if SetUp() could not obtain all interface
+  // infos that we need.
+  bool got_if_infos_;
+
+  // Interface infos.
+  int lo_if_idx_;
+  int eth_if_idx_;
+  sockaddr* lo_if_addr_;
+  sockaddr* eth_if_addr_;
+  in_addr lo_if_sin_addr_;
+  in_addr eth_if_sin_addr_;
+};
 
 }  // namespace testing
 }  // namespace gvisor

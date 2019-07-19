@@ -40,7 +40,7 @@ TestAddress V4Multicast() {
   return t;
 }
 
-// Check that packets are not received without a group memebership. Default send
+// Check that packets are not received without a group membership. Default send
 // interface configured by bind.
 TEST_P(IPv4UDPUnboundSocketPairTest, IpMulticastLoopbackNoGroup) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
