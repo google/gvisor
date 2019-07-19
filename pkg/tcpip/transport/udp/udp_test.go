@@ -847,9 +847,7 @@ func TestWriteIncrementsPacketsSent(t *testing.T) {
 	}
 }
 
-func TestTTL(t *testing.T) {
-	payload := tcpip.SlicePayload(buffer.View(newPayload()))
-
+func setSockOptVariants(t *testing.T, optFunc func(*testing.T, string, tcpip.NetworkProtocolNumber, string)) {
 	for _, name := range []string{"v4", "v6", "dual"} {
 		t.Run(name, func(t *testing.T) {
 			var networkProtocolNumber tcpip.NetworkProtocolNumber
@@ -874,134 +872,219 @@ func TestTTL(t *testing.T) {
 
 			for _, variant := range variants {
 				t.Run(variant, func(t *testing.T) {
-					for _, typ := range []string{"unicast", "multicast"} {
-						t.Run(typ, func(t *testing.T) {
-							var addr tcpip.Address
-							var port uint16
-							switch typ {
-							case "unicast":
-								port = testPort
-								switch variant {
-								case "v4":
-									addr = testAddr
-								case "mapped":
-									addr = testV4MappedAddr
-								case "v6":
-									addr = testV6Addr
-								default:
-									t.Fatal("unknown test variant")
-								}
-							case "multicast":
-								port = multicastPort
-								switch variant {
-								case "v4":
-									addr = multicastAddr
-								case "mapped":
-									addr = multicastV4MappedAddr
-								case "v6":
-									addr = multicastV6Addr
-								default:
-									t.Fatal("unknown test variant")
-								}
-							default:
-								t.Fatal("unknown test variant")
-							}
-
-							c := newDualTestContext(t, defaultMTU)
-							defer c.cleanup()
-
-							var err *tcpip.Error
-							c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, networkProtocolNumber, &c.wq)
-							if err != nil {
-								c.t.Fatalf("NewEndpoint failed: %v", err)
-							}
-
-							switch name {
-							case "v4":
-							case "v6":
-								if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
-									c.t.Fatalf("SetSockOpt failed: %v", err)
-								}
-							case "dual":
-								if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(0)); err != nil {
-									c.t.Fatalf("SetSockOpt failed: %v", err)
-								}
-							default:
-								t.Fatal("unknown test variant")
-							}
-
-							const multicastTTL = 42
-							if err := c.ep.SetSockOpt(tcpip.MulticastTTLOption(multicastTTL)); err != nil {
-								c.t.Fatalf("SetSockOpt failed: %v", err)
-							}
-
-							n, _, err := c.ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: addr, Port: port}})
-							if err != nil {
-								c.t.Fatalf("Write failed: %v", err)
-							}
-							if n != uintptr(len(payload)) {
-								c.t.Fatalf("got c.ep.Write(...) = %d, want = %d", n, len(payload))
-							}
-
-							checkerFn := checker.IPv4
-							switch variant {
-							case "v4", "mapped":
-							case "v6":
-								checkerFn = checker.IPv6
-							default:
-								t.Fatal("unknown test variant")
-							}
-							var wantTTL uint8
-							var multicast bool
-							switch typ {
-							case "unicast":
-								multicast = false
-								switch variant {
-								case "v4", "mapped":
-									ep, err := ipv4.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
-									if err != nil {
-										t.Fatal(err)
-									}
-									wantTTL = ep.DefaultTTL()
-									ep.Close()
-								case "v6":
-									ep, err := ipv6.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
-									if err != nil {
-										t.Fatal(err)
-									}
-									wantTTL = ep.DefaultTTL()
-									ep.Close()
-								default:
-									t.Fatal("unknown test variant")
-								}
-							case "multicast":
-								wantTTL = multicastTTL
-								multicast = true
-							default:
-								t.Fatal("unknown test variant")
-							}
-
-							var networkProtocolNumber tcpip.NetworkProtocolNumber
-							switch variant {
-							case "v4", "mapped":
-								networkProtocolNumber = ipv4.ProtocolNumber
-							case "v6":
-								networkProtocolNumber = ipv6.ProtocolNumber
-							default:
-								t.Fatal("unknown test variant")
-							}
-
-							b := c.getPacket(networkProtocolNumber, multicast)
-							checkerFn(c.t, b,
-								checker.TTL(wantTTL),
-								checker.UDP(
-									checker.DstPort(port),
-								),
-							)
-						})
-					}
+					optFunc(t, name, networkProtocolNumber, variant)
 				})
 			}
 		})
 	}
+}
+
+func TestTTL(t *testing.T) {
+	payload := tcpip.SlicePayload(buffer.View(newPayload()))
+
+	setSockOptVariants(t, func(t *testing.T, name string, networkProtocolNumber tcpip.NetworkProtocolNumber, variant string) {
+		for _, typ := range []string{"unicast", "multicast"} {
+			t.Run(typ, func(t *testing.T) {
+				var addr tcpip.Address
+				var port uint16
+				switch typ {
+				case "unicast":
+					port = testPort
+					switch variant {
+					case "v4":
+						addr = testAddr
+					case "mapped":
+						addr = testV4MappedAddr
+					case "v6":
+						addr = testV6Addr
+					default:
+						t.Fatal("unknown test variant")
+					}
+				case "multicast":
+					port = multicastPort
+					switch variant {
+					case "v4":
+						addr = multicastAddr
+					case "mapped":
+						addr = multicastV4MappedAddr
+					case "v6":
+						addr = multicastV6Addr
+					default:
+						t.Fatal("unknown test variant")
+					}
+				default:
+					t.Fatal("unknown test variant")
+				}
+
+				c := newDualTestContext(t, defaultMTU)
+				defer c.cleanup()
+
+				var err *tcpip.Error
+				c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, networkProtocolNumber, &c.wq)
+				if err != nil {
+					c.t.Fatalf("NewEndpoint failed: %v", err)
+				}
+
+				switch name {
+				case "v4":
+				case "v6":
+					if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(1)); err != nil {
+						c.t.Fatalf("SetSockOpt failed: %v", err)
+					}
+				case "dual":
+					if err := c.ep.SetSockOpt(tcpip.V6OnlyOption(0)); err != nil {
+						c.t.Fatalf("SetSockOpt failed: %v", err)
+					}
+				default:
+					t.Fatal("unknown test variant")
+				}
+
+				const multicastTTL = 42
+				if err := c.ep.SetSockOpt(tcpip.MulticastTTLOption(multicastTTL)); err != nil {
+					c.t.Fatalf("SetSockOpt failed: %v", err)
+				}
+
+				n, _, err := c.ep.Write(payload, tcpip.WriteOptions{To: &tcpip.FullAddress{Addr: addr, Port: port}})
+				if err != nil {
+					c.t.Fatalf("Write failed: %v", err)
+				}
+				if n != uintptr(len(payload)) {
+					c.t.Fatalf("got c.ep.Write(...) = %d, want = %d", n, len(payload))
+				}
+
+				checkerFn := checker.IPv4
+				switch variant {
+				case "v4", "mapped":
+				case "v6":
+					checkerFn = checker.IPv6
+				default:
+					t.Fatal("unknown test variant")
+				}
+				var wantTTL uint8
+				var multicast bool
+				switch typ {
+				case "unicast":
+					multicast = false
+					switch variant {
+					case "v4", "mapped":
+						ep, err := ipv4.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						wantTTL = ep.DefaultTTL()
+						ep.Close()
+					case "v6":
+						ep, err := ipv6.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
+						if err != nil {
+							t.Fatal(err)
+						}
+						wantTTL = ep.DefaultTTL()
+						ep.Close()
+					default:
+						t.Fatal("unknown test variant")
+					}
+				case "multicast":
+					wantTTL = multicastTTL
+					multicast = true
+				default:
+					t.Fatal("unknown test variant")
+				}
+
+				var networkProtocolNumber tcpip.NetworkProtocolNumber
+				switch variant {
+				case "v4", "mapped":
+					networkProtocolNumber = ipv4.ProtocolNumber
+				case "v6":
+					networkProtocolNumber = ipv6.ProtocolNumber
+				default:
+					t.Fatal("unknown test variant")
+				}
+
+				b := c.getPacket(networkProtocolNumber, multicast)
+				checkerFn(c.t, b,
+					checker.TTL(wantTTL),
+					checker.UDP(
+						checker.DstPort(port),
+					),
+				)
+			})
+		}
+	})
+}
+
+func TestMulticastInterfaceOption(t *testing.T) {
+	setSockOptVariants(t, func(t *testing.T, name string, networkProtocolNumber tcpip.NetworkProtocolNumber, variant string) {
+		for _, bindTyp := range []string{"bound", "unbound"} {
+			t.Run(bindTyp, func(t *testing.T) {
+				for _, optTyp := range []string{"use local-addr", "use NICID", "use local-addr and NIC"} {
+					t.Run(optTyp, func(t *testing.T) {
+						var mcastAddr, localIfAddr tcpip.Address
+						switch variant {
+						case "v4":
+							mcastAddr = multicastAddr
+							localIfAddr = stackAddr
+						case "mapped":
+							mcastAddr = multicastV4MappedAddr
+							localIfAddr = stackAddr
+						case "v6":
+							mcastAddr = multicastV6Addr
+							localIfAddr = stackV6Addr
+						default:
+							t.Fatal("unknown test variant")
+						}
+
+						var ifoptSet tcpip.MulticastInterfaceOption
+						switch optTyp {
+						case "use local-addr":
+							ifoptSet.InterfaceAddr = localIfAddr
+						case "use NICID":
+							ifoptSet.NIC = 1
+						case "use local-addr and NIC":
+							ifoptSet.InterfaceAddr = localIfAddr
+							ifoptSet.NIC = 1
+						default:
+							t.Fatal("unknown test variant")
+						}
+
+						c := newDualTestContext(t, defaultMTU)
+						defer c.cleanup()
+
+						var err *tcpip.Error
+						c.ep, err = c.s.NewEndpoint(udp.ProtocolNumber, networkProtocolNumber, &c.wq)
+						if err != nil {
+							c.t.Fatalf("NewEndpoint failed: %v", err)
+						}
+
+						if bindTyp == "bound" {
+							// Bind the socket by connecting to the multicast address.
+							// This may have an influence on how the multicast interface
+							// is set.
+							addr := tcpip.FullAddress{
+								Addr: mcastAddr,
+								Port: multicastPort,
+							}
+							if err := c.ep.Connect(addr); err != nil {
+								c.t.Fatalf("Connect failed: %v", err)
+							}
+						}
+
+						if err := c.ep.SetSockOpt(ifoptSet); err != nil {
+							c.t.Fatalf("SetSockOpt failed: %v", err)
+						}
+
+						// Verify multicast interface addr and NIC were set correctly.
+						// Note that NIC must be 1 since this is our outgoing interface.
+						ifoptWant := tcpip.MulticastInterfaceOption{NIC: 1, InterfaceAddr: ifoptSet.InterfaceAddr}
+						var ifoptGot tcpip.MulticastInterfaceOption
+						if err := c.ep.GetSockOpt(&ifoptGot); err != nil {
+							c.t.Fatalf("GetSockOpt failed: %v", err)
+						}
+						if ifoptGot != ifoptWant {
+							c.t.Errorf("got GetSockOpt() = %#v, want = %#v", ifoptGot, ifoptWant)
+						}
+					})
+				}
+			})
+		}
+	})
 }

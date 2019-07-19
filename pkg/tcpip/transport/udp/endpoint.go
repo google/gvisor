@@ -252,7 +252,7 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress) (stac
 		if nicid == 0 {
 			nicid = e.multicastNICID
 		}
-		if localAddr == "" {
+		if localAddr == "" && nicid == 0 {
 			localAddr = e.multicastAddr
 		}
 	}
@@ -675,6 +675,9 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
 	netProto := e.netProto
+	if len(addr.Addr) == 0 {
+		return netProto, nil
+	}
 	if header.IsV4MappedAddress(addr.Addr) {
 		// Fail if using a v4 mapped address on a v6only endpoint.
 		if e.v6only {
