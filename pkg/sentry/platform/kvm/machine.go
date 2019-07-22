@@ -388,7 +388,10 @@ func (m *machine) Get() *vCPU {
 func (m *machine) Put(c *vCPU) {
 	c.unlock()
 	runtime.UnlockOSThread()
+
+	m.mu.RLock()
 	m.available.Signal()
+	m.mu.RUnlock()
 }
 
 // newDirtySet returns a new dirty set.
