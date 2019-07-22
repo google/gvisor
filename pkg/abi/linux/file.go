@@ -253,6 +253,7 @@ type Statx struct {
 	UID            uint32
 	GID            uint32
 	Mode           uint16
+	_              uint16
 	Ino            uint64
 	Size           uint64
 	Blocks         uint64
