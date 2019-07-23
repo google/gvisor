@@ -54,10 +54,6 @@ const (
 	// MountPrefix is the annotation prefix for mount hints.
 	MountPrefix = "gvisor.dev/spec/mount"
 
-	// ChildContainersDir is the directory where child container root
-	// filesystems are mounted.
-	ChildContainersDir = "/__runsc_containers__"
-
 	// Filesystems that runsc supports.
 	bind     = "bind"
 	devpts   = "devpts"
@@ -256,10 +252,10 @@ func subtargets(root string, mnts []specs.Mount) []string {
 
 // setExecutablePath sets the procArgs.Filename by searching the PATH for an
 // executable matching the procArgs.Argv[0].
-func setExecutablePath(ctx context.Context, mns *fs.MountNamespace, procArgs *kernel.CreateProcessArgs) error {
+func setExecutablePath(ctx context.Context, procArgs *kernel.CreateProcessArgs) error {
 	paths := fs.GetPath(procArgs.Envv)
 	exe := procArgs.Argv[0]
-	f, err := mns.ResolveExecutablePath(ctx, procArgs.WorkingDirectory, exe, paths)
+	f, err := procArgs.MountNamespace.ResolveExecutablePath(ctx, procArgs.WorkingDirectory, exe, paths)
 	if err != nil {
 		return fmt.Errorf("searching for executable %q, cwd: %q, $PATH=%q: %v", exe, procArgs.WorkingDirectory, strings.Join(paths, ":"), err)
 	}
@@ -514,11 +510,16 @@ func (c *containerMounter) setupFS(ctx context.Context, conf *Config, procArgs *
 
 	// If this is the root container, we also need to setup the root mount
 	// namespace.
-	mns := c.k.RootMountNamespace()
-	if mns == nil {
+	rootMNS := c.k.RootMountNamespace()
+	if rootMNS == nil {
 		// Setup the root container.
-		if err := c.setupRootContainer(ctx, rootCtx, conf, func(mns *fs.MountNamespace) {
-			c.k.SetRootMountNamespace(mns)
+		if err := c.setupRootContainer(ctx, rootCtx, conf, func(rootMNS *fs.MountNamespace) {
+			// The callback to setupRootContainer inherits a
+			// reference on the rootMNS, so we don't need to take
+			// an additional reference here.
+			procArgs.MountNamespace = rootMNS
+			procArgs.Root = rootMNS.Root()
+			c.k.SetRootMountNamespace(rootMNS)
 		}); err != nil {
 			return err
 		}
@@ -527,54 +528,26 @@ func (c *containerMounter) setupFS(ctx context.Context, conf *Config, procArgs *
 
 	// Setup a child container.
 	log.Infof("Creating new process in child container.")
-	globalRoot := mns.Root()
-	defer globalRoot.DecRef()
 
-	// Create mount point for the container's rootfs.
-	maxTraversals := uint(0)
-	contDir, err := mns.FindInode(ctx, globalRoot, nil, ChildContainersDir, &maxTraversals)
-	if err != nil {
-		return fmt.Errorf("couldn't find child container dir %q: %v", ChildContainersDir, err)
-	}
-	if err := contDir.CreateDirectory(ctx, globalRoot, c.cid, fs.FilePermsFromMode(0755)); err != nil {
-		return fmt.Errorf("create directory %q: %v", c.cid, err)
-	}
-	containerRoot, err := contDir.Walk(ctx, globalRoot, c.cid)
-	if err != nil {
-		return fmt.Errorf("walk to %q failed: %v", c.cid, err)
-	}
-	defer containerRoot.DecRef()
-
-	// Create the container's root filesystem mount.
+	// Create a new root inode and mount namespace for the container.
 	rootInode, err := c.createRootMount(rootCtx, conf)
 	if err != nil {
 		return fmt.Errorf("creating filesystem for container: %v", err)
 	}
-
-	// Mount the container's root filesystem to the newly created mount point.
-	if err := mns.Mount(ctx, containerRoot, rootInode); err != nil {
-		return fmt.Errorf("mount container root: %v", err)
-	}
-
-	// We have to re-walk to the dirent to find the mounted directory. The old
-	// dirent is invalid at this point.
-	containerRoot, err = contDir.Walk(ctx, globalRoot, c.cid)
+	mns, err := fs.NewMountNamespace(rootCtx, rootInode)
 	if err != nil {
-		return fmt.Errorf("find container mount point %q: %v", c.cid, err)
+		return fmt.Errorf("creating new mount namespace for container: %v", err)
 	}
-	cu := specutils.MakeCleanup(func() { containerRoot.DecRef() })
-	defer cu.Clean()
-
-	log.Infof("Mounted child's root fs to %q", filepath.Join(ChildContainersDir, c.cid))
 
 	// Set process root here, so 'rootCtx.Value(CtxRoot)' will return it.
-	procArgs.Root = containerRoot
+	// This will also donate a reference to procArgs, as required.
+	procArgs.MountNamespace = mns
+	procArgs.Root = mns.Root()
 
 	// Mount all submounts.
-	if err := c.mountSubmounts(rootCtx, conf, mns, containerRoot); err != nil {
+	if err := c.mountSubmounts(rootCtx, conf, mns, procArgs.Root); err != nil {
 		return err
 	}
-	cu.Release()
 	return c.checkDispenser()
 }
 
@@ -585,75 +558,11 @@ func (c *containerMounter) checkDispenser() error {
 	return nil
 }
 
-// destroyContainerFS cleans up the filesystem by unmounting all mounts for the
-// given container and deleting the container root directory.
-func destroyContainerFS(ctx context.Context, cid string, k *kernel.Kernel) error {
-	defer func() {
-		// Flushing dirent references triggers many async close
-		// operations. We must wait for those to complete before
-		// returning, otherwise the caller may kill the gofer before
-		// they complete, causing a cascade of failing RPCs.
-		//
-		// This must take place in the first deferred function, so that
-		// it runs after all the other deferred DecRef() calls in this
-		// function.
-		log.Infof("Waiting for async filesystem operations to complete")
-		fs.AsyncBarrier()
-	}()
-
-	// First get a reference to the container root directory.
-	mns := k.RootMountNamespace()
-	mnsRoot := mns.Root()
-	defer mnsRoot.DecRef()
-	containerRoot := path.Join(ChildContainersDir, cid)
-	maxTraversals := uint(0)
-	containerRootDirent, err := mns.FindInode(ctx, mnsRoot, nil, containerRoot, &maxTraversals)
-	if err == syserror.ENOENT {
-		// Container must have been destroyed already. That's fine.
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("finding container root directory %q: %v", containerRoot, err)
-	}
-	defer containerRootDirent.DecRef()
-
-	// Iterate through all submounts and unmount them. We unmount lazily by
-	// setting detach=true, so we can unmount in any order.
-	mnt := mns.FindMount(containerRootDirent)
-	for _, m := range mns.AllMountsUnder(mnt) {
-		root := m.Root()
-		defer root.DecRef()
-
-		// Do a best-effort unmount by flushing the refs and unmount
-		// with "detach only = true". Unmount returns EINVAL when the mount point
-		// doesn't exist, i.e. it has already been unmounted.
-		log.Debugf("Unmounting container mount %q", root.BaseName())
-		root.Inode.MountSource.FlushDirentRefs()
-		if err := mns.Unmount(ctx, root, true /* detach only */); err != nil && err != syserror.EINVAL {
-			return fmt.Errorf("unmounting container mount %q: %v", root.BaseName(), err)
-		}
-	}
-
-	// Get a reference to the parent directory and remove the root
-	// container directory.
-	maxTraversals = 0
-	containersDirDirent, err := mns.FindInode(ctx, mnsRoot, nil, ChildContainersDir, &maxTraversals)
-	if err != nil {
-		return fmt.Errorf("finding containers directory %q: %v", ChildContainersDir, err)
-	}
-	defer containersDirDirent.DecRef()
-	log.Debugf("Deleting container root %q", containerRoot)
-	if err := containersDirDirent.RemoveDirectory(ctx, mnsRoot, cid); err != nil {
-		return fmt.Errorf("removing directory %q: %v", containerRoot, err)
-	}
-
-	return nil
-}
-
 // setupRootContainer creates a mount namespace containing the root filesystem
 // and all mounts. 'rootCtx' is used to walk directories to find mount points.
-// 'setMountNS' is called after namespace is created. It must set the mount NS
-// to 'rootCtx'.
+// The 'setMountNS' callback is called after the mount namespace is created and
+// will get a reference on that namespace. The callback must ensure that the
+// rootCtx has the provided mount namespace.
 func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx context.Context, conf *Config, setMountNS func(*fs.MountNamespace)) error {
 	for _, hint := range c.hints.mounts {
 		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
@@ -663,13 +572,6 @@ func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx c
 		}
 		hint.root = inode
 	}
-
-	// Create a tmpfs mount where we create and mount a root filesystem for
-	// each child container.
-	c.mounts = append(c.mounts, specs.Mount{
-		Type:        tmpfs,
-		Destination: ChildContainersDir,
-	})
 
 	rootInode, err := c.createRootMount(rootCtx, conf)
 	if err != nil {
