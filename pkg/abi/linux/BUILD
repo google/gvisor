@@ -4,7 +4,7 @@
 
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 
 go_library(
     name = "linux",
@@ -60,5 +60,15 @@ go_library(
         "//pkg/abi",
         "//pkg/binary",
         "//pkg/bits",
+    ],
+)
+
+go_test(
+    name = "linux_test",
+    size = "small",
+    srcs = ["netfilter_test.go"],
+    embed = [":linux"],
+    deps = [
+        "//pkg/binary",
     ],
 )
