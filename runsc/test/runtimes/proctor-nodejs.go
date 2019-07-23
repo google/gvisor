@@ -42,18 +42,28 @@ func main() {
 		os.Exit(1)
 	}
 	if *list {
-		listTests()
+		tests, err := listTests()
+		if err != nil {
+			log.Fatalf("Failed to list tests: %v", err)
+		}
+		for _, test := range tests {
+			fmt.Println(test)
+		}
 		return
 	}
 	if *version {
 		fmt.Println("Node.js version: ", os.Getenv("LANG_VER"), " is installed.")
 		return
 	}
-	runTest(*test)
+	if *test != "" {
+		runTest(*test)
+		return
+	}
+	runAllTests()
 }
 
-func listTests() {
-	var files []string
+func listTests() ([]string, error) {
+	var testSlice []string
 	root := filepath.Join(dir, "test")
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -67,27 +77,32 @@ func listTests() {
 		if err != nil {
 			return err
 		}
-		files = append(files, relPath)
+		testSlice = append(testSlice, relPath)
 		return nil
 	})
 
 	if err != nil {
-		log.Fatalf("Failed to walk %q: %v", root, err)
+		return nil, fmt.Errorf("walking %q: %v", root, err)
 	}
 
-	for _, file := range files {
-		fmt.Println(file)
-	}
+	return testSlice, nil
 }
 
 func runTest(test string) {
-	args := []string{filepath.Join(dir, "tools", "test.py")}
-	if test != "" {
-		args = append(args, test)
-	}
+	args := []string{filepath.Join(dir, "tools", "test.py"), test}
 	cmd := exec.Command("/usr/bin/python", args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		log.Fatalf("Failed to run: %v", err)
+	}
+}
+
+func runAllTests() {
+	tests, err := listTests()
+	if err != nil {
+		log.Fatalf("Failed to list tests: %v", err)
+	}
+	for _, test := range tests {
+		runTest(test)
 	}
 }
