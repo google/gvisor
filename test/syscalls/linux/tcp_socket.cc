@@ -856,6 +856,54 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnect) {
   EXPECT_THAT(close(t), SyscallSucceeds());
 }
 
+TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {
+  const FileDescriptor listener =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+
+  // Initialize address to the loopback one.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  // Bind to some port then start listening.
+  ASSERT_THAT(
+      bind(listener.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+      SyscallSucceeds());
+
+  ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
+
+  FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+
+  ASSERT_THAT(getsockname(listener.get(),
+                          reinterpret_cast<struct sockaddr*>(&addr), &addrlen),
+              SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(connect)(
+                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallFailsWithErrno(EINPROGRESS));
+
+  int t;
+  ASSERT_THAT(t = RetryEINTR(accept)(listener.get(), nullptr, nullptr),
+              SyscallSucceeds());
+
+  EXPECT_THAT(close(t), SyscallSucceeds());
+
+  // Now polling on the FD with a timeout should return 0 corresponding to no
+  // FDs ready.
+  struct pollfd poll_fd = {s.get(), POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, 10000),
+              SyscallSucceedsWithValue(1));
+
+  ASSERT_THAT(RetryEINTR(connect)(
+                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(connect)(
+                  s.get(), reinterpret_cast<struct sockaddr*>(&addr), addrlen),
+              SyscallFailsWithErrno(EISCONN));
+}
+
 // Test that we get an ECONNREFUSED with a blocking socket when no one is
 // listening on the other end.
 TEST_P(SimpleTcpSocketTest, BlockingConnectRefused) {
