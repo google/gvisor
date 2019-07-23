@@ -107,16 +107,17 @@ type Inode interface {
 	// Flags returns InodeFlags which represents the inode flags.
 	Flags() InodeFlags
 
-	// Blocks returns the underlying inode.i_block array. This field is special
-	// and is used to store various kinds of things depending on the filesystem
-	// version and inode type.
+	// Data returns the underlying inode.i_block array as a slice so it's
+	// modifiable. This field is special and is used to store various kinds of
+	// things depending on the filesystem version and inode type. The underlying
+	// field name in Linux is a little misleading.
 	//   - In ext2/ext3, it contains the block map.
-	//   - In ext4, it contains the extent tree.
+	//   - In ext4, it contains the extent tree root node.
 	//   - For inline files, it contains the file contents.
 	//   - For symlinks, it contains the link path (if it fits here).
 	//
 	// See https://www.kernel.org/doc/html/latest/filesystems/ext4/dynamic.html#the-contents-of-inode-i-block.
-	Blocks() [60]byte
+	Data() []byte
 }
 
 // Inode flags. This is not comprehensive and flags which were not used in
