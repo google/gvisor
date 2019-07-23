@@ -50,6 +50,8 @@ func (e *endpoint) beforeSave() {
 
 	switch e.state {
 	case StateInitial, StateBound:
+		// TODO(b/138137272): this enumeration duplicates
+		// EndpointState.connected. remove it.
 	case StateEstablished, StateSynSent, StateSynRecv, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
 		if e.route.Capabilities()&stack.CapabilitySaveRestore == 0 {
 			if e.route.Capabilities()&stack.CapabilityDisconnectOk == 0 {
@@ -149,9 +151,10 @@ var connectingLoading sync.WaitGroup
 func (e *endpoint) loadState(state EndpointState) {
 	// This is to ensure that the loading wait groups include all applicable
 	// endpoints before any asynchronous calls to the Wait() methods.
-	switch state {
-	case StateEstablished, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
+	if state.connected() {
 		connectedLoading.Add(1)
+	}
+	switch state {
 	case StateListen:
 		listenLoading.Add(1)
 	case StateConnecting, StateSynSent, StateSynRecv:

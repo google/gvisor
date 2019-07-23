@@ -489,8 +489,8 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 				result |= waiter.EventIn
 			}
 		}
-
-	case StateEstablished, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
+	}
+	if e.state.connected() {
 		// Determine if the endpoint is writable if requested.
 		if (mask & waiter.EventOut) != 0 {
 			e.sndBufMu.Lock()
@@ -1323,6 +1323,17 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		return err
 	}
 
+	if e.state.connected() {
+		// The endpoint is already connected. If caller hasn't been
+		// notified yet, return success.
+		if !e.isConnectNotified {
+			e.isConnectNotified = true
+			return nil
+		}
+		// Otherwise return that it's already connected.
+		return tcpip.ErrAlreadyConnected
+	}
+
 	nicid := addr.NIC
 	switch e.state {
 	case StateBound:
@@ -1346,15 +1357,6 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		// A connection request has already been issued but hasn't completed
 		// yet.
 		return tcpip.ErrAlreadyConnecting
-
-	case StateEstablished:
-		// The endpoint is already connected. If caller hasn't been notified yet, return success.
-		if !e.isConnectNotified {
-			e.isConnectNotified = true
-			return nil
-		}
-		// Otherwise return that it's already connected.
-		return tcpip.ErrAlreadyConnected
 
 	case StateError:
 		return e.hardError
