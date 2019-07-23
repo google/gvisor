@@ -54,6 +54,12 @@ type ExecArgs struct {
 	// Envv is a list of environment variables.
 	Envv []string `json:"envv"`
 
+	// MountNamespace is the mount namespace to execute the new process in.
+	// A reference on MountNamespace must be held for the lifetime of the
+	// ExecArgs. If MountNamespace is nil, it will default to the kernel's
+	// root MountNamespace.
+	MountNamespace *fs.MountNamespace
+
 	// Root defines the root directory for the new process. A reference on
 	// Root must be held for the lifetime of the ExecArgs. If Root is nil,
 	// it will default to the VFS root.
@@ -145,6 +151,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Argv:                    args.Argv,
 		Envv:                    args.Envv,
 		WorkingDirectory:        args.WorkingDirectory,
+		MountNamespace:          args.MountNamespace,
 		Root:                    args.Root,
 		Credentials:             creds,
 		FDTable:                 fdTable,
@@ -157,16 +164,25 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		ContainerID:             args.ContainerID,
 	}
 	if initArgs.Root != nil {
-		// initArgs must hold a reference on Root. This ref is dropped
-		// in CreateProcess.
+		// initArgs must hold a reference on Root, which will be
+		// donated to the new process in CreateProcess.
 		initArgs.Root.IncRef()
+	}
+	if initArgs.MountNamespace != nil {
+		// initArgs must hold a reference on MountNamespace, which will
+		// be donated to the new process in CreateProcess.
+		initArgs.MountNamespace.IncRef()
 	}
 	ctx := initArgs.NewContext(proc.Kernel)
 
 	if initArgs.Filename == "" {
 		// Get the full path to the filename from the PATH env variable.
 		paths := fs.GetPath(initArgs.Envv)
-		f, err := proc.Kernel.RootMountNamespace().ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
+		mns := initArgs.MountNamespace
+		if mns == nil {
+			mns = proc.Kernel.RootMountNamespace()
+		}
+		f, err := mns.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 		if err != nil {
 			return nil, 0, nil, fmt.Errorf("error finding executable %q in PATH %v: %v", initArgs.Argv[0], paths, err)
 		}

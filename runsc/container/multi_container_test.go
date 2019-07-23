@@ -456,19 +456,6 @@ func TestMultiContainerDestroy(t *testing.T) {
 		}
 		defer cleanup()
 
-		// Exec in the root container to check for the existence of the
-		// second container's root filesystem directory.
-		contDir := path.Join(boot.ChildContainersDir, containers[1].ID)
-		dirArgs := &control.ExecArgs{
-			Filename: "/usr/bin/test",
-			Argv:     []string{"test", "-d", contDir},
-		}
-		if ws, err := containers[0].executeSync(dirArgs); err != nil {
-			t.Fatalf("error executing %+v: %v", dirArgs, err)
-		} else if ws.ExitStatus() != 0 {
-			t.Errorf("exec 'test -f %q' got exit status %d, wanted 0", contDir, ws.ExitStatus())
-		}
-
 		// Exec more processes to ensure signal all works for exec'd processes too.
 		args := &control.ExecArgs{
 			Filename: app,
@@ -494,13 +481,6 @@ func TestMultiContainerDestroy(t *testing.T) {
 		expectedPL := []*control.Process{{PID: 1, Cmd: "test_app"}}
 		if !procListsEqual(pss, expectedPL) {
 			t.Errorf("container got process list: %s, want: %s", procListToString(pss), procListToString(expectedPL))
-		}
-
-		// Now the container dir should be gone.
-		if ws, err := containers[0].executeSync(dirArgs); err != nil {
-			t.Fatalf("error executing %+v: %v", dirArgs, err)
-		} else if ws.ExitStatus() == 0 {
-			t.Errorf("exec 'test -f %q' got exit status 0, wanted non-zero", contDir)
 		}
 
 		// Check that cont.Destroy is safe to call multiple times.
@@ -784,6 +764,47 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestMultiContainerDifferentFilesystems tests that different containers have
+// different root filesystems.
+func TestMultiContainerDifferentFilesystems(t *testing.T) {
+	filename := "/foo"
+	// Root container will create file and then sleep.
+	cmdRoot := []string{"sh", "-c", fmt.Sprintf("touch %q && sleep 100", filename)}
+
+	// Child containers will assert that the file does not exist, and will
+	// then create it.
+	script := fmt.Sprintf("if [ -f %q ]; then exit 1; else touch %q; fi", filename, filename)
+	cmd := []string{"sh", "-c", script}
+
+	// Make sure overlay is enabled, and none of the root filesystems are
+	// read-only, otherwise we won't be able to create the file.
+	conf := testutil.TestConfig()
+	conf.Overlay = true
+	specs, ids := createSpecs(cmdRoot, cmd, cmd)
+	for _, s := range specs {
+		s.Root.Readonly = false
+	}
+
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Both child containers should exit successfully.
+	for i, c := range containers {
+		if i == 0 {
+			// Don't wait on the root.
+			continue
+		}
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
+		}
+	}
 }
 
 // TestMultiContainerGoferStop tests that IO operations continue to work after
@@ -1164,6 +1185,65 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 		}
 		if err := execMany(execs); err != nil {
 			t.Fatal(err.Error())
+		}
+	}
+}
+
+// Test that one container can send an FD to another container, even though
+// they have distinct MountNamespaces.
+func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	// We set up two containers with one shared mount that is used for a
+	// shared socket. The first container will send an FD over the socket
+	// to the second container. The FD corresponds to a file in the first
+	// container's mount namespace that is not part of the second
+	// container's mount namespace. However, the second container still
+	// should be able to read the FD.
+
+	// Create a shared mount where we will put the socket.
+	sharedMnt := specs.Mount{
+		Destination: "/mydir/test",
+		Type:        "tmpfs",
+		// Shared mounts need a Source, even for tmpfs. It is only used
+		// to match up different shared mounts inside the pod.
+		Source: "/some/dir",
+	}
+	socketPath := filepath.Join(sharedMnt.Destination, "socket")
+
+	// Create a writeable tmpfs mount where the FD sender app will create
+	// files to send. This will only be mounted in the FD sender.
+	writeableMnt := specs.Mount{
+		Destination: "/tmp",
+		Type:        "tmpfs",
+	}
+
+	// Create the specs.
+	specs, ids := createSpecs(
+		[]string{"sleep", "1000"},
+		[]string{app, "fd_sender", "--socket", socketPath},
+		[]string{app, "fd_receiver", "--socket", socketPath},
+	)
+	createSharedMount(sharedMnt, "shared-mount", specs...)
+	specs[1].Mounts = append(specs[2].Mounts, sharedMnt, writeableMnt)
+	specs[2].Mounts = append(specs[1].Mounts, sharedMnt)
+
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Both containers should exit successfully.
+	for _, c := range containers[1:] {
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
 		}
 	}
 }

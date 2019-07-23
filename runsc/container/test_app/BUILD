@@ -5,10 +5,14 @@ package(licenses = ["notice"])
 go_binary(
     name = "test_app",
     testonly = 1,
-    srcs = ["test_app.go"],
+    srcs = [
+        "fds.go",
+        "test_app.go",
+    ],
     pure = "on",
     visibility = ["//runsc/container:__pkg__"],
     deps = [
+        "//pkg/unet",
         "//runsc/test/testutil",
         "@com_github_google_subcommands//:go_default_library",
     ],
