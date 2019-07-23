@@ -100,6 +100,21 @@ type IPTEntry struct {
 	// Elems [0]byte
 }
 
+// SizeOfIPTEntry is the size of an IPTEntry.
+const SizeOfIPTEntry = 112
+
+// KernelIPTEntry is identical to IPTEntry, but includes the Elems field. This
+// struct marshaled via the binary package to write an IPTEntry to userspace.
+type KernelIPTEntry struct {
+	IPTEntry
+
+	// Elems holds the data for all this rule's matches followed by the
+	// target. It is variable length -- users have to iterate over any
+	// matches and use TargetOffset and NextOffset to make sense of the
+	// data.
+	Elems []byte
+}
+
 // IPTIP contains information for matching a packet's IP header.
 // It corresponds to struct ipt_ip in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
@@ -123,10 +138,10 @@ type IPTIP struct {
 	OutputInterface [IFNAMSIZ]byte
 
 	// InputInterfaceMask is the intput interface mask.
-	InputInterfaceMast [IFNAMSIZ]byte
+	InputInterfaceMask [IFNAMSIZ]byte
 
 	// OuputInterfaceMask is the output interface mask.
-	OuputInterfaceMask [IFNAMSIZ]byte
+	OutputInterfaceMask [IFNAMSIZ]byte
 
 	// Protocol is the transport protocol.
 	Protocol uint16
@@ -138,6 +153,9 @@ type IPTIP struct {
 	InverseFlags uint8
 }
 
+// SizeOfIPTIP is the size of an IPTIP.
+const SizeOfIPTIP = 84
+
 // XTCounters holds packet and byte counts for a rule. It corresponds to struct
 // xt_counters in include/uapi/linux/netfilter/x_tables.h.
 type XTCounters struct {
@@ -147,6 +165,9 @@ type XTCounters struct {
 	// Bcnt is the byte count.
 	Bcnt uint64
 }
+
+// SizeOfXTCounters is the size of an XTCounters.
+const SizeOfXTCounters = 16
 
 // XTEntryMatch holds a match for a rule. For example, a user using the
 // addrtype iptables match extension would put the data for that match into an
@@ -160,10 +181,13 @@ type XTEntryMatch struct {
 	MatchSize uint16
 	Name      [XT_EXTENSION_MAXNAMELEN]byte
 	Revision  uint8
-	// Data is omitted here because it would cause XTEntryTarget to be an
+	// Data is omitted here because it would cause XTEntryMatch to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
 	// Data [0]byte
 }
+
+// SizeOfXTEntryMatch is the size of an XTEntryMatch.
+const SizeOfXTEntryMatch = 32
 
 // XTEntryTarget holds a target for a rule. For example, it can specify that
 // packets matching the rule should DROP, ACCEPT, or use an extension target.
@@ -174,13 +198,16 @@ type XTEntryMatch struct {
 // exposing different data to the user and kernel, but this struct holds only
 // the user data.
 type XTEntryTarget struct {
-	MatchSize uint16
-	Name      [XT_EXTENSION_MAXNAMELEN]byte
-	Revision  uint8
+	TargetSize uint16
+	Name       [XT_EXTENSION_MAXNAMELEN]byte
+	Revision   uint8
 	// Data is omitted here because it would cause XTEntryTarget to be an
 	// extra byte larger (see http://www.catb.org/esr/structure-packing/).
 	// Data [0]byte
 }
+
+// SizeOfXTEntryTarget is the size of an XTEntryTarget.
+const SizeOfXTEntryTarget = 32
 
 // XTStandardTarget is a builtin target, one of ACCEPT, DROP, JUMP, QUEUE, or
 // RETURN. It corresponds to struct xt_standard_target in
@@ -188,7 +215,11 @@ type XTEntryTarget struct {
 type XTStandardTarget struct {
 	Target  XTEntryTarget
 	Verdict int32
+	_       [4]byte
 }
+
+// SizeOfXTStandardTarget is the size of an XTStandardTarget.
+const SizeOfXTStandardTarget = 40
 
 // XTErrorTarget triggers an error when reached. It is also used to mark the
 // beginning of user-defined chains by putting the name of the chain in
@@ -197,7 +228,11 @@ type XTStandardTarget struct {
 type XTErrorTarget struct {
 	Target    XTEntryTarget
 	ErrorName [XT_FUNCTION_MAXNAMELEN]byte
+	_         [2]byte
 }
+
+// SizeOfXTErrorTarget is the size of an XTErrorTarget.
+const SizeOfXTErrorTarget = 64
 
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
@@ -210,16 +245,48 @@ type IPTGetinfo struct {
 	Size       uint32
 }
 
+// SizeOfIPTGetinfo is the size of an IPTGetinfo.
+const SizeOfIPTGetinfo = 84
+
+// TableName returns the table name.
+func (info *IPTGetinfo) TableName() string {
+	return tableName(info.Name[:])
+}
+
 // IPTGetEntries is the argument for the IPT_SO_GET_ENTRIES sockopt. It
 // corresponds to struct ipt_get_entries in
 // include/uapi/linux/netfilter_ipv4/ip_tables.h.
 type IPTGetEntries struct {
 	Name [XT_TABLE_MAXNAMELEN]byte
 	Size uint32
+	_    [4]byte
 	// Entrytable is omitted here because it would cause IPTGetEntries to
 	// be an extra byte longer (see
 	// http://www.catb.org/esr/structure-packing/).
 	// Entrytable [0]IPTEntry
+}
+
+// TableName returns the entries' table name.
+func (entries *IPTGetEntries) TableName() string {
+	return tableName(entries.Name[:])
+}
+
+// SizeOfIPTGetEntries is the size of an IPTGetEntries.
+const SizeOfIPTGetEntries = 40
+
+// KernelIPTGetEntries is identical to IPTEntry, but includes the Elems field.
+// This struct marshaled via the binary package to write an KernelIPTGetEntries
+// to userspace.
+type KernelIPTGetEntries struct {
+	Name       [XT_TABLE_MAXNAMELEN]byte
+	Size       uint32
+	_          [4]byte
+	Entrytable []KernelIPTEntry
+}
+
+// TableName returns the entries' table name.
+func (entries *KernelIPTGetEntries) TableName() string {
+	return tableName(entries.Name[:])
 }
 
 // IPTReplace is the argument for the IPT_SO_SET_REPLACE sockopt. It
@@ -233,8 +300,20 @@ type IPTReplace struct {
 	HookEntry   [NF_INET_NUMHOOKS]uint32
 	Underflow   [NF_INET_NUMHOOKS]uint32
 	NumCounters uint32
-	Counters    *XTCounters
+	Counters    uint64 // This is really a *XTCounters.
 	// Entries is omitted here because it would cause IPTReplace to be an
 	// extra byte longer (see http://www.catb.org/esr/structure-packing/).
 	// Entries [0]IPTEntry
+}
+
+// SizeOfIPTReplace is the size of an IPTReplace.
+const SizeOfIPTReplace = 96
+
+func tableName(name []byte) string {
+	for i, c := range name {
+		if c == 0 {
+			return string(name[:i])
+		}
+	}
+	return string(name)
 }
