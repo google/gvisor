@@ -24,8 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// Filesystem implements vfs.FilesystemImpl.
-type Filesystem struct {
+// filesystem implements vfs.FilesystemImpl.
+type filesystem struct {
 	// dev is the ReadSeeker for the underlying fs device and is protected by mu.
 	dev io.ReadSeeker
 
@@ -50,9 +50,9 @@ type Filesystem struct {
 	bgs []disklayout.BlockGroup
 }
 
-// newFilesystem is the Filesystem constructor.
-func newFilesystem(dev io.ReadSeeker) (*Filesystem, error) {
-	fs := Filesystem{dev: dev}
+// newFilesystem is the filesystem constructor.
+func newFilesystem(dev io.ReadSeeker) (*filesystem, error) {
+	fs := filesystem{dev: dev}
 	var err error
 
 	fs.sb, err = readSuperBlock(dev)

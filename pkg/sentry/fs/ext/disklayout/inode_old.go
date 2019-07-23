@@ -47,7 +47,7 @@ type InodeOld struct {
 	BlocksCountLo uint32
 	FlagsRaw      uint32
 	VersionLo     uint32 // This is OS dependent.
-	BlocksRaw     [60]byte
+	DataRaw       [60]byte
 	Generation    uint32
 	FileACLLo     uint32
 	SizeHi        uint32
@@ -113,5 +113,5 @@ func (in *InodeOld) LinksCount() uint16 { return in.LinksCountRaw }
 // Flags implements Inode.Flags.
 func (in *InodeOld) Flags() InodeFlags { return InodeFlagsFromInt(in.FlagsRaw) }
 
-// Blocks implements Inode.Blocks.
-func (in *InodeOld) Blocks() [60]byte { return in.BlocksRaw }
+// Data implements Inode.Data.
+func (in *InodeOld) Data() []byte { return in.DataRaw[:] }
