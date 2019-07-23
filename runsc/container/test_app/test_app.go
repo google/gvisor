@@ -35,11 +35,13 @@ import (
 func main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
-	subcommands.Register(new(uds), "")
-	subcommands.Register(new(taskTree), "")
+	subcommands.Register(new(fdReceiver), "")
+	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
 	subcommands.Register(new(reaper), "")
 	subcommands.Register(new(syscall), "")
+	subcommands.Register(new(taskTree), "")
+	subcommands.Register(new(uds), "")
 
 	flag.Parse()
 
@@ -76,7 +78,7 @@ func (c *uds) SetFlags(f *flag.FlagSet) {
 // Execute implements subcommands.Command.Execute.
 func (c *uds) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	if c.fileName == "" || c.socketPath == "" {
-		log.Fatal("Flags cannot be empty, given: fileName: %q, socketPath: %q", c.fileName, c.socketPath)
+		log.Fatalf("Flags cannot be empty, given: fileName: %q, socketPath: %q", c.fileName, c.socketPath)
 		return subcommands.ExitFailure
 	}
 	outputFile, err := os.OpenFile(c.fileName, os.O_WRONLY|os.O_CREATE, 0666)
