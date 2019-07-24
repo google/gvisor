@@ -99,7 +99,11 @@ func TestICMPCounts(t *testing.T) {
 		}},
 	)
 
-	ep, err := s.NetworkProtocolInstance(ProtocolNumber).NewEndpoint(0, lladdr1, &stubLinkAddressCache{}, &stubDispatcher{}, nil)
+	netProto := s.NetworkProtocolInstance(ProtocolNumber)
+	if netProto == nil {
+		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
+	}
+	ep, err := netProto.NewEndpoint(0, tcpip.AddressWithPrefix{lladdr1, netProto.DefaultPrefixLen()}, &stubLinkAddressCache{}, &stubDispatcher{}, nil)
 	if err != nil {
 		t.Fatalf("NewEndpoint(_) = _, %s, want = _, nil", err)
 	}

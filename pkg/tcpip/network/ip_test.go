@@ -29,16 +29,18 @@ import (
 )
 
 const (
-	localIpv4Addr  = "\x0a\x00\x00\x01"
-	remoteIpv4Addr = "\x0a\x00\x00\x02"
-	ipv4SubnetAddr = "\x0a\x00\x00\x00"
-	ipv4SubnetMask = "\xff\xff\xff\x00"
-	ipv4Gateway    = "\x0a\x00\x00\x03"
-	localIpv6Addr  = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-	remoteIpv6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
-	ipv6SubnetAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-	ipv6SubnetMask = "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00"
-	ipv6Gateway    = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
+	localIpv4Addr      = "\x0a\x00\x00\x01"
+	localIpv4PrefixLen = 24
+	remoteIpv4Addr     = "\x0a\x00\x00\x02"
+	ipv4SubnetAddr     = "\x0a\x00\x00\x00"
+	ipv4SubnetMask     = "\xff\xff\xff\x00"
+	ipv4Gateway        = "\x0a\x00\x00\x03"
+	localIpv6Addr      = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+	localIpv6PrefixLen = 120
+	remoteIpv6Addr     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	ipv6SubnetAddr     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	ipv6SubnetMask     = "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00"
+	ipv6Gateway        = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
 )
 
 // testObject implements two interfaces: LinkEndpoint and TransportDispatcher.
@@ -197,7 +199,7 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 func TestIPv4Send(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, localIpv4Addr, nil, nil, &o)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, nil, &o)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -229,7 +231,7 @@ func TestIPv4Send(t *testing.T) {
 func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, localIpv4Addr, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -295,7 +297,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv4.NewProtocol()
-			ep, err := proto.NewEndpoint(1, localIpv4Addr, nil, &o, nil)
+			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %v", err)
 			}
@@ -359,7 +361,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 func TestIPv4FragmentationReceive(t *testing.T) {
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, localIpv4Addr, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -426,7 +428,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 func TestIPv6Send(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, localIpv6Addr, nil, nil, &o)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, nil, &o)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -458,7 +460,7 @@ func TestIPv6Send(t *testing.T) {
 func TestIPv6Receive(t *testing.T) {
 	o := testObject{t: t}
 	proto := ipv6.NewProtocol()
-	ep, err := proto.NewEndpoint(1, localIpv6Addr, nil, &o, nil)
+	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
@@ -532,7 +534,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}
 			proto := ipv6.NewProtocol()
-			ep, err := proto.NewEndpoint(1, localIpv6Addr, nil, &o, nil)
+			ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv6Addr, localIpv6PrefixLen}, nil, &o, nil)
 			if err != nil {
 				t.Fatalf("NewEndpoint failed: %v", err)
 			}
