@@ -46,7 +46,6 @@ const (
 // endpoint implements stack.NetworkEndpoint.
 type endpoint struct {
 	nicid         tcpip.NICID
-	addr          tcpip.Address
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 }
@@ -71,6 +70,10 @@ func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
 
 func (e *endpoint) ID() *stack.NetworkEndpointID {
 	return &stack.NetworkEndpointID{ProtocolAddress}
+}
+
+func (e *endpoint) PrefixLen() int {
+	return 0
 }
 
 func (e *endpoint) MaxHeaderLength() uint16 {
@@ -122,19 +125,19 @@ type protocol struct {
 
 func (p *protocol) Number() tcpip.NetworkProtocolNumber { return ProtocolNumber }
 func (p *protocol) MinimumPacketSize() int              { return header.ARPSize }
+func (p *protocol) DefaultPrefixLen() int               { return 0 }
 
 func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 	h := header.ARP(v)
 	return tcpip.Address(h.ProtocolAddressSender()), ProtocolAddress
 }
 
-func (p *protocol) NewEndpoint(nicid tcpip.NICID, addr tcpip.Address, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
-	if addr != ProtocolAddress {
+func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, sender stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+	if addrWithPrefix.Address != ProtocolAddress {
 		return nil, tcpip.ErrBadLocalAddress
 	}
 	return &endpoint{
 		nicid:         nicid,
-		addr:          addr,
 		linkEP:        sender,
 		linkAddrCache: linkAddrCache,
 	}, nil
