@@ -28,7 +28,7 @@ import (
 // All disk reads should use this helper so we avoid reading from stale
 // previously used offsets. This function forces the offset parameter.
 //
-// Precondition: Must have mutual exclusion on device fd.
+// Precondition: Must hold the mutex of the filesystem containing dev.
 func readFromDisk(dev io.ReadSeeker, abOff int64, v interface{}) error {
 	if _, err := dev.Seek(abOff, io.SeekStart); err != nil {
 		return syserror.EIO
@@ -45,7 +45,7 @@ func readFromDisk(dev io.ReadSeeker, abOff int64, v interface{}) error {
 // device. There are three versions of the superblock. This function identifies
 // and returns the correct version.
 //
-// Precondition: Must have mutual exclusion on device fd.
+// Precondition: Must hold the mutex of the filesystem containing dev.
 func readSuperBlock(dev io.ReadSeeker) (disklayout.SuperBlock, error) {
 	var sb disklayout.SuperBlock = &disklayout.SuperBlockOld{}
 	if err := readFromDisk(dev, disklayout.SbOffset, sb); err != nil {
@@ -87,7 +87,7 @@ func blockGroupsCount(sb disklayout.SuperBlock) uint64 {
 // readBlockGroups reads the block group descriptor table from block group 0 in
 // the underlying device.
 //
-// Precondition: Must have mutual exclusion on device fd.
+// Precondition: Must hold the mutex of the filesystem containing dev.
 func readBlockGroups(dev io.ReadSeeker, sb disklayout.SuperBlock) ([]disklayout.BlockGroup, error) {
 	bgCount := blockGroupsCount(sb)
 	bgdSize := uint64(sb.BgDescSize())

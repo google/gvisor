@@ -24,7 +24,7 @@ import (
 
 // TestInodeSize tests that the inode structs are of the correct size.
 func TestInodeSize(t *testing.T) {
-	assertSize(t, InodeOld{}, oldInodeSize)
+	assertSize(t, InodeOld{}, OldInodeSize)
 
 	// This was updated from 156 bytes to 160 bytes in Oct 2015.
 	assertSize(t, InodeNew{}, 160)

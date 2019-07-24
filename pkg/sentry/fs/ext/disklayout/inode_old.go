@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	// oldInodeSize is the inode size in ext2/ext3.
-	oldInodeSize = 128
+	// OldInodeSize is the inode size in ext2/ext3.
+	OldInodeSize = 128
 )
 
 // InodeOld implements Inode interface. It emulates ext2/ext3 inode struct.
@@ -85,7 +85,7 @@ func (in *InodeOld) Size() uint64 {
 }
 
 // InodeSize implements Inode.InodeSize.
-func (in *InodeOld) InodeSize() uint16 { return oldInodeSize }
+func (in *InodeOld) InodeSize() uint16 { return OldInodeSize }
 
 // AccessTime implements Inode.AccessTime.
 func (in *InodeOld) AccessTime() time.Time {
