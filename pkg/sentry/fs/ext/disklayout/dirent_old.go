@@ -17,8 +17,7 @@ package disklayout
 import "gvisor.dev/gvisor/pkg/sentry/fs"
 
 // DirentOld represents the old directory entry struct which does not contain
-// the file type. This emulates Linux's ext4_dir_entry struct. This is used in
-// ext2, ext3 and sometimes in ext4.
+// the file type. This emulates Linux's ext4_dir_entry struct.
 //
 // Note: This struct can be of variable size on disk. The one described below
 // is of maximum size and the FileName beyond NameLength bytes might contain

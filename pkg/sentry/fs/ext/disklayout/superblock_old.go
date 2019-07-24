@@ -15,7 +15,7 @@
 package disklayout
 
 // SuperBlockOld implements SuperBlock and represents the old version of the
-// superblock struct in ext2 and ext3 systems.
+// superblock struct. Should be used only if RevLevel = OldRev.
 type SuperBlockOld struct {
 	InodesCountRaw      uint32
 	BlocksCountLo       uint32
