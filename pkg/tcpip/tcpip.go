@@ -1059,14 +1059,23 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 	return LinkAddress(addr), nil
 }
 
+// AddressWithPrefix is an address with its subnet prefix length.
+type AddressWithPrefix struct {
+	// Address is a network address.
+	Address Address
+
+	// PrefixLen is the subnet prefix length.
+	PrefixLen int
+}
+
 // ProtocolAddress is an address and the network protocol it is associated
 // with.
 type ProtocolAddress struct {
 	// Protocol is the protocol of the address.
 	Protocol NetworkProtocolNumber
 
-	// Address is a network address.
-	Address Address
+	// AddressWithPrefix is a network address with its subnet prefix length.
+	AddressWithPrefix AddressWithPrefix
 }
 
 // danglingEndpointsMu protects access to danglingEndpoints.
