@@ -145,7 +145,8 @@ func TestExtentTree(t *testing.T) {
 		t.Fatalf("inode.buildExtTree failed: %v", err)
 	}
 
-	if diff := cmp.Diff(&mockInode.root, node0, cmpopts.IgnoreUnexported(disklayout.ExtentNode{})); diff != "" {
+	opt := cmpopts.IgnoreUnexported(disklayout.ExtentIdx{}, disklayout.ExtentHeader{})
+	if diff := cmp.Diff(&mockInode.root, node0, opt); diff != "" {
 		t.Errorf("extent tree mismatch (-want +got):\n%s", diff)
 	}
 }
