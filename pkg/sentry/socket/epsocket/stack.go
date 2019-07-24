@@ -75,8 +75,8 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 
 			addrs = append(addrs, inet.InterfaceAddr{
 				Family:    family,
-				PrefixLen: uint8(len(a.Address) * 8),
-				Addr:      []byte(a.Address),
+				PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
+				Addr:      []byte(a.AddressWithPrefix.Address),
 				// TODO(b/68878065): Other fields.
 			})
 		}

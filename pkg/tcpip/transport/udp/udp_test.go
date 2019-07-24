@@ -967,14 +967,14 @@ func TestTTL(t *testing.T) {
 					multicast = false
 					switch variant {
 					case "v4", "mapped":
-						ep, err := ipv4.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
+						ep, err := ipv4.NewProtocol().NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
 						if err != nil {
 							t.Fatal(err)
 						}
 						wantTTL = ep.DefaultTTL()
 						ep.Close()
 					case "v6":
-						ep, err := ipv6.NewProtocol().NewEndpoint(0, "", nil, nil, nil)
+						ep, err := ipv6.NewProtocol().NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
 						if err != nil {
 							t.Fatal(err)
 						}
