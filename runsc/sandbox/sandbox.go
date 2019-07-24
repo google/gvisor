@@ -36,7 +36,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -416,9 +415,13 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 
-	// If the platform needs a device FD we must pass it in.
-	if deviceFile, err := deviceFileForPlatform(conf.Platform); err != nil {
+	gPlatform, err := platform.Lookup(conf.Platform)
+	if err != nil {
 		return err
+	}
+
+	if deviceFile, err := gPlatform.OpenDevice(); err != nil {
+		return fmt.Errorf("opening device file for platform %q: %v", gPlatform, err)
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, deviceFile)
@@ -503,7 +506,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		{Type: specs.UTSNamespace},
 	}
 
-	if conf.Platform == platforms.Ptrace {
+	if gPlatform.Flags()&platform.FlagCurrentPidNS != 0 {
 		// TODO(b/75837838): Also set a new PID namespace so that we limit
 		// access to other host processes.
 		log.Infof("Sandbox will be started in the current PID namespace")

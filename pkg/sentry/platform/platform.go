@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -148,6 +149,9 @@ type Context interface {
 	// Interrupt interrupts a concurrent call to Switch(), causing it to return
 	// ErrContextInterrupt.
 	Interrupt()
+
+	// Release() releases any resources associated with this context.
+	Release()
 }
 
 var (
@@ -353,10 +357,41 @@ func (fr FileRange) String() string {
 	return fmt.Sprintf("[%#x, %#x)", fr.Start, fr.End)
 }
 
+// MemoryFile is a file which can be mappped into the host and
+// application address spaces (see `pgalloc.MemoryFile` for more details).
+type MemoryFile interface {
+	File
+
+	// Allocate returns a range of initially-zeroed pages of the given
+	// length with a single reference held by the caller.
+	Allocate(length uint64, kind usage.MemoryKind) (FileRange, error)
+}
+
+// Flags is used to specify platform specific features.
+type Flags uint64
+
+const (
+	// FlagCurrentPidNS indicates that the sandbox has to be started in the
+	// current pid namespace.
+	FlagCurrentPidNS Flags = 1 << iota
+	// FlagCapSysPtrace indicates that the sandbox has to be started with
+	// the CAP_SYS_PTRACE capability.
+	FlagCapSysPtrace
+)
+
 // Constructor represents a platform type.
 type Constructor interface {
-	New(deviceFile *os.File) (Platform, error)
+	// New returns a new platform instance.
+	//
+	// Arguments:
+	//
+	// * deviceFile - the device file (e.g. /dev/kvm for the KVM platform).
+	// * memFile - the instance of pgalloc.MemoryFile which is used to
+	//             create shared memory regions between host and application
+	//             address spaces.
+	New(deviceFile *os.File, memFile MemoryFile) (Platform, error)
 	OpenDevice() (*os.File, error)
+	Flags() Flags
 }
 
 // platforms contains all available platform types.

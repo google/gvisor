@@ -23,7 +23,6 @@ go_library(
         "//pkg/tcpip/stack",
         "//pkg/urpc",
         "//runsc/boot",
-        "//runsc/boot/platforms",
         "//runsc/cgroup",
         "//runsc/console",
         "//runsc/specutils",

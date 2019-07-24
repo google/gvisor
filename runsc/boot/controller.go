@@ -329,16 +329,16 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.conf, deviceFile)
+	mf, err := createMemoryFile()
+	if err != nil {
+		return fmt.Errorf("creating memory file: %v", err)
+	}
+	p, err := createPlatform(cm.l.conf, deviceFile, mf)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
-	}
-	mf, err := createMemoryFile()
-	if err != nil {
-		return fmt.Errorf("creating memory file: %v", err)
 	}
 	k.SetMemoryFile(mf)
 	networkStack := cm.l.k.NetworkStack()

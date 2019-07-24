@@ -151,12 +151,16 @@ func (k *KVM) NewContext() platform.Context {
 
 type constructor struct{}
 
-func (*constructor) New(f *os.File) (platform.Platform, error) {
+func (*constructor) New(f *os.File, _ platform.MemoryFile) (platform.Platform, error) {
 	return New(f)
 }
 
 func (*constructor) OpenDevice() (*os.File, error) {
 	return OpenDevice()
+}
+
+func (*constructor) Flags() platform.Flags {
+	return 0
 }
 
 func init() {
