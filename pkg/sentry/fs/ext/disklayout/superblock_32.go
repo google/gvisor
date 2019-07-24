@@ -15,7 +15,8 @@
 package disklayout
 
 // SuperBlock32Bit implements SuperBlock and represents the 32-bit version of
-// the ext4_super_block struct in fs/ext4/ext4.h.
+// the ext4_super_block struct in fs/ext4/ext4.h. Should be used only if
+// RevLevel = DynamicRev and 64-bit feature is disabled.
 type SuperBlock32Bit struct {
 	// We embed the old superblock struct here because the 32-bit version is just
 	// an extension of the old version.

@@ -14,10 +14,34 @@
 
 package ext
 
+import (
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
 // dentry implements vfs.DentryImpl.
 type dentry struct {
+	vfsd vfs.Dentry
+
 	// inode is the inode represented by this dentry. Multiple Dentries may
 	// share a single non-directory Inode (with hard links). inode is
 	// immutable.
 	inode *inode
+}
+
+// Compiles only if dentry implements vfs.DentryImpl.
+var _ vfs.DentryImpl = (*dentry)(nil)
+
+// IncRef implements vfs.DentryImpl.IncRef.
+func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
+	d.inode.incRef()
+}
+
+// TryIncRef implements vfs.DentryImpl.TryIncRef.
+func (d *dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
+	return d.inode.tryIncRef()
+}
+
+// DecRef implements vfs.DentryImpl.DecRef.
+func (d *dentry) DecRef(vfsfs *vfs.Filesystem) {
+	d.inode.decRef(vfsfs.Impl().(*filesystem))
 }
