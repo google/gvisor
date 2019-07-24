@@ -21,13 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// sockFprog is sock_fprog taken from <linux/filter.h>.
-type sockFprog struct {
-	Len    uint16
-	pad    [6]byte
-	Filter *linux.BPFInstruction
-}
-
 // SetFilter installs the given BPF program.
 //
 // This is safe to call from an afterFork context.
@@ -39,7 +32,7 @@ func SetFilter(instrs []linux.BPFInstruction) syscall.Errno {
 		return errno
 	}
 
-	sockProg := sockFprog{
+	sockProg := linux.SockFprog{
 		Len:    uint16(len(instrs)),
 		Filter: (*linux.BPFInstruction)(unsafe.Pointer(&instrs[0])),
 	}

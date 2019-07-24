@@ -16,7 +16,6 @@
 package contexttest
 
 import (
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -39,11 +38,10 @@ import (
 // this test context does not provide. For such tests, see kernel/contexttest.
 func Context(tb testing.TB) context.Context {
 	const memfileName = "contexttest-memory"
-	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	memfile, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
 		tb.Fatalf("error creating application memory file: %v", err)
 	}
-	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		memfile.Close()

@@ -120,11 +120,10 @@ type MemoryLocked struct {
 // Init initializes global 'MemoryAccounting'.
 func Init() error {
 	const name = "memory-usage"
-	fd, err := memutil.CreateMemFD(name, 0)
+	file, err := memutil.CreateMemFD(name, 0)
 	if err != nil {
 		return fmt.Errorf("error creating usage file: %v", err)
 	}
-	file := os.NewFile(uintptr(fd), name)
 	if err := file.Truncate(int64(RTMemoryStatsSize)); err != nil {
 		return fmt.Errorf("error truncating usage file: %v", err)
 	}

@@ -69,7 +69,7 @@ func roundUpToPage(x int) int {
 // A PacketWindowAllocator owns a shared memory file, and allocates packet
 // windows from it.
 type PacketWindowAllocator struct {
-	fd        int
+	file      *os.File
 	nextAlloc int64
 	fileSize  int64
 }
@@ -78,18 +78,18 @@ type PacketWindowAllocator struct {
 // If it succeeds, Destroy() must be called once the PacketWindowAllocator is
 // no longer in use.
 func (pwa *PacketWindowAllocator) Init() error {
-	fd, err := memutil.CreateMemFD("flipcall_packet_windows", linux.MFD_CLOEXEC|linux.MFD_ALLOW_SEALING)
+	file, err := memutil.CreateMemFD("flipcall_packet_windows", linux.MFD_CLOEXEC|linux.MFD_ALLOW_SEALING)
 	if err != nil {
 		return fmt.Errorf("failed to create memfd: %v", err)
 	}
 	// Apply F_SEAL_SHRINK to prevent either party from causing SIGBUS in the
 	// other by truncating the file, and F_SEAL_SEAL to prevent either party
 	// from applying F_SEAL_GROW or F_SEAL_WRITE.
-	if _, _, e := syscall.RawSyscall(syscall.SYS_FCNTL, uintptr(fd), linux.F_ADD_SEALS, linux.F_SEAL_SHRINK|linux.F_SEAL_SEAL); e != 0 {
-		syscall.Close(fd)
+	if _, _, e := syscall.RawSyscall(syscall.SYS_FCNTL, uintptr(file.Fd()), linux.F_ADD_SEALS, linux.F_SEAL_SHRINK|linux.F_SEAL_SEAL); e != 0 {
+		file.Close()
 		return fmt.Errorf("failed to apply memfd seals: %v", e)
 	}
-	pwa.fd = fd
+	pwa.file = file
 	return nil
 }
 
@@ -106,12 +106,12 @@ func NewPacketWindowAllocator() (*PacketWindowAllocator, error) {
 // Destroy releases resources owned by pwa. This invalidates file descriptors
 // previously returned by pwa.FD() and pwd.Allocate().
 func (pwa *PacketWindowAllocator) Destroy() {
-	syscall.Close(pwa.fd)
+	pwa.file.Close()
 }
 
 // FD represents the file descriptor of the shared memory file backing pwa.
 func (pwa *PacketWindowAllocator) FD() int {
-	return pwa.fd
+	return int(pwa.file.Fd())
 }
 
 // Allocate allocates a new packet window of at least the given size and
@@ -134,7 +134,7 @@ func (pwa *PacketWindowAllocator) Allocate(size int) (PacketWindowDescriptor, er
 	start := pwa.nextAlloc
 	pwa.nextAlloc = end
 	return PacketWindowDescriptor{
-		FD:     pwa.fd,
+		FD:     pwa.FD(),
 		Offset: start,
 		Length: size,
 	}, nil
@@ -158,7 +158,7 @@ func (pwa *PacketWindowAllocator) ensureFileSize(min int64) error {
 		}
 		newSize = newNewSize
 	}
-	if err := syscall.Ftruncate(pwa.fd, newSize); err != nil {
+	if err := syscall.Ftruncate(pwa.FD(), newSize); err != nil {
 		return fmt.Errorf("ftruncate failed: %v", err)
 	}
 	pwa.fileSize = newSize

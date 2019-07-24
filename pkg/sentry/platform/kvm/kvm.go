@@ -159,6 +159,11 @@ func (*constructor) OpenDevice() (*os.File, error) {
 	return OpenDevice()
 }
 
+// Flags implements platform.Constructor.Flags().
+func (*constructor) Requirements() platform.Requirements {
+	return platform.Requirements{}
+}
+
 func init() {
 	platform.Register("kvm", &constructor{})
 }

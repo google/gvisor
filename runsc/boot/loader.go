@@ -412,11 +412,10 @@ func createPlatform(conf *Config, deviceFile *os.File) (platform.Platform, error
 
 func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
-	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	memfile, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
-	memfile := os.NewFile(uintptr(memfd), memfileName)
 	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
 	// there are memory cgroups specified, because at this point we're already
 	// in a mount namespace in which the relevant cgroupfs is not visible.

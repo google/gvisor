@@ -17,7 +17,6 @@ package testutil
 import (
 	"flag"
 	"fmt"
-	"os"
 	"runtime"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -141,11 +140,10 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 
 func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	const memfileName = "test-memory"
-	memfd, err := memutil.CreateMemFD(memfileName, 0)
+	memfile, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating memfd: %v", err)
 	}
-	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
 		memfile.Close()
