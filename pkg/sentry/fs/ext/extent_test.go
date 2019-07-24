@@ -146,7 +146,7 @@ func TestExtentTree(t *testing.T) {
 	}
 
 	opt := cmpopts.IgnoreUnexported(disklayout.ExtentIdx{}, disklayout.ExtentHeader{})
-	if diff := cmp.Diff(&mockInode.root, node0, opt); diff != "" {
+	if diff := cmp.Diff(mockInode.root, node0, opt); diff != "" {
 		t.Errorf("extent tree mismatch (-want +got):\n%s", diff)
 	}
 }

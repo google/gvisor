@@ -62,7 +62,7 @@ func (in *InodeNew) Size() uint64 {
 
 // InodeSize implements Inode.InodeSize.
 func (in *InodeNew) InodeSize() uint16 {
-	return oldInodeSize + in.ExtraInodeSize
+	return OldInodeSize + in.ExtraInodeSize
 }
 
 // ChangeTime implements Inode.ChangeTime.
