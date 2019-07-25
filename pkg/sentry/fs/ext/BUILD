@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "dentry.go",
         "ext.go",
+        "filesystem.go",
         "inode.go",
         "utils.go",
     ],
