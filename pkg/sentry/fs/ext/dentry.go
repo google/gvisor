@@ -31,6 +31,15 @@ type dentry struct {
 // Compiles only if dentry implements vfs.DentryImpl.
 var _ vfs.DentryImpl = (*dentry)(nil)
 
+// newDentry is the dentry constructor.
+func newDentry(in *inode) *dentry {
+	d := &dentry{
+		inode: in,
+	}
+	d.vfsd.Init(d)
+	return d
+}
+
 // IncRef implements vfs.DentryImpl.IncRef.
 func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
 	d.inode.incRef()

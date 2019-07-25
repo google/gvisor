@@ -131,7 +131,12 @@ func (fstype filesystemType) NewFilesystem(ctx context.Context, creds *auth.Cred
 		return nil, nil, err
 	}
 
-	return &fs.vfsfs, nil, nil
+	rootInode, err := fs.getOrCreateInode(disklayout.RootDirInode)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &fs.vfsfs, &newDentry(rootInode).vfsd, nil
 }
 
 // getOrCreateInode gets the inode corresponding to the inode number passed in.
