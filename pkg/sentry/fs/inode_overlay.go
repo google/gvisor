@@ -571,12 +571,6 @@ func overlayCheck(ctx context.Context, o *overlayEntry, p PermMask) error {
 	if o.upper != nil {
 		err = o.upper.check(ctx, p)
 	} else {
-		if p.Write {
-			// Since writes will be redirected to the upper filesystem, the lower
-			// filesystem need not be writable, but must be readable for copy-up.
-			p.Write = false
-			p.Read = true
-		}
 		err = o.lower.check(ctx, p)
 	}
 	o.copyMu.RUnlock()
