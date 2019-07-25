@@ -20,6 +20,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
+// Special inodes. See https://www.kernel.org/doc/html/latest/filesystems/ext4/overview.html#special-inodes.
+const (
+	// RootDirInode is the inode number of the root directory inode.
+	RootDirInode = 2
+)
+
 // The Inode interface must be implemented by structs representing ext inodes.
 // The inode stores all the metadata pertaining to the file (except for the
 // file name which is held by the directory entry). It does NOT expose all

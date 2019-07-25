@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
 	"gvisor.dev/gvisor/runsc/test/testutil"
@@ -80,6 +81,90 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.Filesystem, *v
 		}
 	}
 	return mockCtx, fs, d, tearDown, nil
+}
+
+// TestRootDir tests that the root directory inode is correctly initialized and
+// returned from setUp.
+func TestRootDir(t *testing.T) {
+	type inodeProps struct {
+		Mode      linux.FileMode
+		UID       auth.KUID
+		GID       auth.KGID
+		Size      uint64
+		InodeSize uint16
+		Links     uint16
+		Flags     disklayout.InodeFlags
+	}
+
+	type rootDirTest struct {
+		name      string
+		image     string
+		wantInode inodeProps
+	}
+
+	tests := []rootDirTest{
+		{
+			name:  "ext4 root dir",
+			image: ext4ImagePath,
+			wantInode: inodeProps{
+				Mode:      linux.ModeDirectory | 0755,
+				Size:      0x400,
+				InodeSize: 0x80,
+				Links:     3,
+				Flags:     disklayout.InodeFlags{Extents: true},
+			},
+		},
+		{
+			name:  "ext3 root dir",
+			image: ext3ImagePath,
+			wantInode: inodeProps{
+				Mode:      linux.ModeDirectory | 0755,
+				Size:      0x400,
+				InodeSize: 0x80,
+				Links:     3,
+			},
+		},
+		{
+			name:  "ext2 root dir",
+			image: ext2ImagePath,
+			wantInode: inodeProps{
+				Mode:      linux.ModeDirectory | 0755,
+				Size:      0x400,
+				InodeSize: 0x80,
+				Links:     3,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, _, vfsd, tearDown, err := setUp(t, test.image)
+			if err != nil {
+				t.Fatalf("setUp failed: %v", err)
+			}
+			defer tearDown()
+
+			d, ok := vfsd.Impl().(*dentry)
+			if !ok {
+				t.Fatalf("ext dentry of incorrect type: %T", vfsd.Impl())
+			}
+
+			// Offload inode contents into local structs for comparison.
+			gotInode := inodeProps{
+				Mode:      d.inode.diskInode.Mode(),
+				UID:       d.inode.diskInode.UID(),
+				GID:       d.inode.diskInode.GID(),
+				Size:      d.inode.diskInode.Size(),
+				InodeSize: d.inode.diskInode.InodeSize(),
+				Links:     d.inode.diskInode.LinksCount(),
+				Flags:     d.inode.diskInode.Flags(),
+			}
+
+			if diff := cmp.Diff(gotInode, test.wantInode); diff != "" {
+				t.Errorf("inode mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 // TestFilesystemInit tests that the filesystem superblock and block group
