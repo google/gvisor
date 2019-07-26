@@ -90,9 +90,9 @@ type TaskSet struct {
 }
 
 // newTaskSet returns a new, empty TaskSet.
-func newTaskSet() *TaskSet {
-	ts := &TaskSet{}
-	ts.Root = newPIDNamespace(ts, nil /* parent */, auth.NewRootUserNamespace())
+func newTaskSet(pidns *PIDNamespace) *TaskSet {
+	ts := &TaskSet{Root: pidns}
+	pidns.owner = ts
 	return ts
 }
 
@@ -184,6 +184,12 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		processGroups: make(map[ProcessGroupID]*ProcessGroup),
 		pgids:         make(map[*ProcessGroup]ProcessGroupID),
 	}
+}
+
+// NewRootPIDNamespace creates the root PID namespace. 'owner' is not available
+// yet when root namespace is created and must be set by caller.
+func NewRootPIDNamespace(userns *auth.UserNamespace) *PIDNamespace {
+	return newPIDNamespace(nil, nil, userns)
 }
 
 // NewChild returns a new, empty PID namespace that is a child of ns. Authority
