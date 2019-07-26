@@ -31,16 +31,19 @@ elif [[ -v KOKORO_GIT_COMMIT ]] && [[ -d github/repo ]]; then
 fi
 
 # Build runsc.
-bazel build //runsc
+bazel build -c opt --strip=never //runsc
 
 # Move the runsc binary into "latest" directory, and also a directory with the
 # current date.
 if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
   latest_dir="${KOKORO_ARTIFACTS_DIR}"/latest
   today_dir="${KOKORO_ARTIFACTS_DIR}"/"$(date -Idate)"
+  runsc="bazel-bin/runsc/linux_amd64_pure/runsc"
+
   mkdir -p "${latest_dir}" "${today_dir}"
-  cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${latest_dir}"
+  cp "${runsc}" "${latest_dir}"
+  cp "${runsc}" "${today_dir}"
+
   sha512sum "${latest_dir}"/runsc | awk '{print $1 "  runsc"}' > "${latest_dir}"/runsc.sha512
-  cp bazel-bin/runsc/linux_amd64_pure_stripped/runsc "${today_dir}"
-  sha512sum "${today_dir}"/runsc | awk '{print $1 "  runsc"}' > "${today_dir}"/runsc.sha512
+  cp "${latest_dir}"/runsc.sha512 "${today_dir}"/runsc.sha512
 fi
