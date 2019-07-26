@@ -240,6 +240,9 @@ type InitKernelArgs struct {
 
 	// RootAbstractSocketNamespace is the root Abstract Socket namespace.
 	RootAbstractSocketNamespace *AbstractSocketNamespace
+
+	// PIDNamespace is the root PID namespace.
+	PIDNamespace *PIDNamespace
 }
 
 // Init initialize the Kernel with no tasks.
@@ -262,7 +265,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 	k.featureSet = args.FeatureSet
 	k.timekeeper = args.Timekeeper
-	k.tasks = newTaskSet()
+	k.tasks = newTaskSet(args.PIDNamespace)
 	k.rootUserNamespace = args.RootUserNamespace
 	k.rootUTSNamespace = args.RootUTSNamespace
 	k.rootIPCNamespace = args.RootIPCNamespace
@@ -622,6 +625,9 @@ type CreateProcessArgs struct {
 	// IPCNamespace is the initial IPC namespace.
 	IPCNamespace *IPCNamespace
 
+	// PIDNamespace is the initial PID Namespace.
+	PIDNamespace *PIDNamespace
+
 	// AbstractSocketNamespace is the initial Abstract Socket namespace.
 	AbstractSocketNamespace *AbstractSocketNamespace
 
@@ -668,9 +674,7 @@ func (ctx *createProcessContext) Value(key interface{}) interface{} {
 	case CtxKernel:
 		return ctx.k
 	case CtxPIDNamespace:
-		// "The new task ... is in the root PID namespace." -
-		// Kernel.CreateProcess
-		return ctx.k.tasks.Root
+		return ctx.args.PIDNamespace
 	case CtxUTSNamespace:
 		return ctx.args.UTSNamespace
 	case CtxIPCNamespace:
@@ -745,7 +749,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		mounts.IncRef()
 	}
 
-	tg := k.newThreadGroup(mounts, k.tasks.Root, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
+	tg := k.newThreadGroup(mounts, args.PIDNamespace, NewSignalHandlers(), linux.SIGCHLD, args.Limits, k.monotonicClock)
 	ctx := args.NewContext(k)
 
 	// Grab the root directory.
@@ -1016,6 +1020,11 @@ func (k *Kernel) RootUTSNamespace() *UTSNamespace {
 // RootIPCNamespace returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
 	return k.rootIPCNamespace
+}
+
+// RootPIDNamespace returns the root PIDNamespace.
+func (k *Kernel) RootPIDNamespace() *PIDNamespace {
+	return k.tasks.Root
 }
 
 // RootAbstractSocketNamespace returns the root AbstractSocketNamespace.
