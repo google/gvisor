@@ -92,6 +92,9 @@ type ExecArgs struct {
 
 	// ContainerID is the container for the process being executed.
 	ContainerID string
+
+	// PIDNamespace is the pid namespace for the process being executed.
+	PIDNamespace *kernel.PIDNamespace
 }
 
 // String prints the arguments as a string.
@@ -162,6 +165,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 		ContainerID:             args.ContainerID,
+		PIDNamespace:            args.PIDNamespace,
 	}
 	if initArgs.Root != nil {
 		// initArgs must hold a reference on Root, which will be
@@ -341,7 +345,7 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 	ts := k.TaskSet()
 	now := k.RealtimeClock().Now()
 	for _, tg := range ts.Root.ThreadGroups() {
-		pid := ts.Root.IDOfThreadGroup(tg)
+		pid := tg.PIDNamespace().IDOfThreadGroup(tg)
 		// If tg has already been reaped ignore it.
 		if pid == 0 {
 			continue
@@ -352,7 +356,7 @@ func Processes(k *kernel.Kernel, containerID string, out *[]*Process) error {
 
 		ppid := kernel.ThreadID(0)
 		if p := tg.Leader().Parent(); p != nil {
-			ppid = ts.Root.IDOfThreadGroup(p.ThreadGroup())
+			ppid = p.PIDNamespace().IDOfThreadGroup(p.ThreadGroup())
 		}
 		*out = append(*out, &Process{
 			UID:   tg.Leader().Credentials().EffectiveKUID,
