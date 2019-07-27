@@ -20,6 +20,7 @@ go_library(
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/sentry/platform",
+        "//pkg/sentry/watchdog",
         "//pkg/tcpip/link/fdbased",
         "@org_golang_x_sys//unix:go_default_library",
     ],

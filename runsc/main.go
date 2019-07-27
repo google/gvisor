@@ -68,6 +68,7 @@ var (
 	fileAccess         = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	watchdogAction     = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
+	advanceWatchdog    = flag.Bool("advance-watchdog", false, "enable advance watchdog features which require less restrictive seccomp filters")
 	panicSignal        = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
 	profile            = flag.Bool("profile", false, "prepares the sandbox to use Golang profiler. Note that enabling profiler loosens the seccomp protection added to the sandbox (DO NOT USE IN PRODUCTION).")
 	netRaw             = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
@@ -185,6 +186,7 @@ func main() {
 		Strace:             *strace,
 		StraceLogSize:      *straceLogSize,
 		WatchdogAction:     wa,
+		AdvanceWatchdog:    *advanceWatchdog,
 		PanicSignal:        *panicSignal,
 		ProfileEnable:      *profile,
 		EnableRaw:          *netRaw,

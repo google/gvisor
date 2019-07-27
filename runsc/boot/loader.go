@@ -192,6 +192,9 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
 
+	// Initialize watchdog.
+	watchdog.AdvanceWatchdog(args.Conf.AdvanceWatchdog)
+
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {

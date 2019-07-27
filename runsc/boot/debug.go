@@ -16,6 +16,7 @@ package boot
 
 import (
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
 type debug struct {
@@ -23,7 +24,9 @@ type debug struct {
 
 // Stacks collects all sandbox stacks and copies them to 'stacks'.
 func (*debug) Stacks(_ *struct{}, stacks *string) error {
+	stopWatchdog := watchdog.StartTracebackAllWatchdog()
 	buf := log.Stacks(true)
+	stopWatchdog()
 	*stacks = string(buf)
 	return nil
 }

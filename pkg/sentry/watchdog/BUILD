@@ -11,6 +11,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/metric",
+        "//pkg/seccomp",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
     ],

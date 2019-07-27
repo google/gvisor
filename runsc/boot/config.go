@@ -169,6 +169,8 @@ type Config struct {
 	// disabled. Pardon the double negation, but default to enabled is important.
 	DisableSeccomp bool
 
+	AdvanceWatchdog bool
+
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action
 
@@ -221,6 +223,7 @@ func (c *Config) ToFlags() []string {
 		"--strace-syscalls=" + strings.Join(c.StraceSyscalls, ","),
 		"--strace-log-size=" + strconv.Itoa(int(c.StraceLogSize)),
 		"--watchdog-action=" + c.WatchdogAction.String(),
+		"--advance-watchdog=" + strconv.FormatBool(c.AdvanceWatchdog),
 		"--panic-signal=" + strconv.Itoa(c.PanicSignal),
 		"--profile=" + strconv.FormatBool(c.ProfileEnable),
 		"--net-raw=" + strconv.FormatBool(c.EnableRaw),

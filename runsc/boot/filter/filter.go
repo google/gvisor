@@ -21,6 +21,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
 // Options are seccomp filter related options.
@@ -50,6 +51,8 @@ func Install(opt Options) error {
 	}
 
 	s.Merge(opt.Platform.SyscallFilters())
+
+	s.Merge(watchdog.SyscallFilters())
 
 	return seccomp.Install(s)
 }

@@ -32,12 +32,15 @@ package watchdog
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
@@ -54,6 +57,13 @@ var stuckTasks = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detecte
 
 // Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
 var stackDumpSameTaskPeriod = time.Minute
+
+var advanceWatchdog = false
+
+// AdvanceWatchdog enables or disables advance watchdog features.
+func AdvanceWatchdog(enable bool) {
+	advanceWatchdog = enable
+}
 
 // Action defines what action to take when a stuck task is detected.
 type Action int
@@ -261,6 +271,8 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 		tid := w.k.TaskSet().Root.IDOfTask(t)
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (%#x), entered RunSys state %v ago.\n", tid, uint64(tid), now.Sub(o.lastUpdateTime)))
 	}
+	log.Warningf(buf.String())
+	buf = bytes.Buffer{}
 	buf.WriteString("Search for '(*Task).run(0x..., 0x<tid>)' in the stack dump to find the offending goroutine")
 	w.onStuckTask(newTaskFound, &buf)
 }
@@ -268,7 +280,57 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
 	buf.WriteString("Watchdog goroutine is stuck:\n")
+	log.Warningf(buf.String())
 	w.onStuckTask(true, &buf)
+}
+
+// SyscallFilters returns syscalls made exclusively by the ptrace platform.
+func SyscallFilters() seccomp.SyscallRules {
+	if advanceWatchdog {
+		return seccomp.SyscallRules{
+			syscall.SYS_KILL: {},
+			syscall.SYS_CLONE: {
+				{
+					seccomp.AllowValue(syscall.SIGCHLD),
+				},
+			},
+		}
+	}
+	return nil
+}
+
+// StartTracebackAllWatchdog forks a new process which sleeps for 10 seconds and
+// then calls panic() to print goroutine traces.
+//go:nosplit
+func StartTracebackAllWatchdog() func() {
+	if !advanceWatchdog {
+		return func() {}
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	pid, _, errno := syscall.RawSyscall6(syscall.SYS_CLONE, uintptr(syscall.SIGCHLD), 0, 0, 0, 0, 0)
+	if errno != 0 {
+		log.Warningf("Unable to fork a watchdog process: %v", errno)
+		return func() {}
+	}
+	if pid == 0 {
+		// Sleep for 10 seconds.
+		syscall.RawSyscall6(syscall.SYS_POLL, 0, 0, 10000, 0, 0, 0)
+		panic("Watchdog goroutine is stuck:\n")
+	}
+	return func() {
+		if pid != 0 {
+			syscall.Kill(int(pid), syscall.SIGKILL)
+		}
+	}
+}
+
+func tracebackAll(msg string) {
+	// log.TracebackAll() can stuck because it calls stopTheWorld(),
+	// so we need this second watchdog.
+	stopWatchdog := StartTracebackAllWatchdog()
+	log.TracebackAll(msg)
+	stopWatchdog()
 }
 
 func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
@@ -280,14 +342,14 @@ func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
 			msg.WriteString("\n...[stack dump skipped]...")
 			log.Warningf(msg.String())
 		} else {
-			log.TracebackAll(msg.String())
+			tracebackAll(msg.String())
 			w.lastStackDump = time.Now()
 		}
 
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
 		// dump all stacks before panic'ing.
-		log.TracebackAll(msg.String())
+		tracebackAll(msg.String())
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
 		metricsEmitted := make(chan struct{}, 1)
@@ -300,6 +362,7 @@ func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
 		case <-metricsEmitted:
 		case <-time.After(1 * time.Second):
 		}
-		panic(fmt.Sprintf("Stack for running G's are skipped while panicking.\n%s", msg.String()))
+		msg.WriteString("\nStack for running G's are skipped while panicking.")
+		panic(msg.String())
 	}
 }
