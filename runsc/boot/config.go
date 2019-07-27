@@ -198,6 +198,9 @@ type Config struct {
 	// sandbox and Gofer process run as root inside a user namespace with root
 	// mapped to the caller's user.
 	Rootless bool
+
+	// AlsoLogToStderr allows to send log messages to stderr.
+	AlsoLogToStderr bool
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -223,6 +226,7 @@ func (c *Config) ToFlags() []string {
 		"--net-raw=" + strconv.FormatBool(c.EnableRaw),
 		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
 		"--rootless=" + strconv.FormatBool(c.Rootless),
+		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.
