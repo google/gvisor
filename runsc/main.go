@@ -190,6 +190,7 @@ func main() {
 		EnableRaw:          *netRaw,
 		NumNetworkChannels: *numNetworkChannels,
 		Rootless:           *rootless,
+		AlsoLogToStderr:    *alsoLogToStderr,
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
 	}
