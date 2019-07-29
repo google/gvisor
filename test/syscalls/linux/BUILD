@@ -904,6 +904,14 @@ cc_binary(
     ],
 )
 
+cc_library(
+    name = "iptables_types",
+    testonly = 1,
+    hdrs = [
+        "iptables.h",
+    ],
+)
+
 cc_binary(
     name = "itimer_test",
     testonly = 1,
