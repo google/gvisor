@@ -8,7 +8,7 @@ package(licenses = ["notice"])
 go_library(
     name = "runtimes",
     srcs = ["runtimes.go"],
-    importpath = "gvisor.dev/gvisor/runsc/test/runtimes",
+    importpath = "gvisor.dev/gvisor/test/runtimes",
 )
 
 runtime_test(
