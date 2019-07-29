@@ -199,8 +199,6 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 	}
 
 	mf := mm.mfp.MemoryFile()
-	// Limit the range we allocate to ar, aligned to privateAllocUnit.
-	maskAR := privateAligned(ar)
 	didUnmapAS := false
 	// The range in which we iterate vmas and pmas is still limited to ar, to
 	// ensure that we don't allocate or COW-break a pma we don't need.
@@ -222,6 +220,8 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					}
 				}
 				if vma.mappable == nil {
+					// Limit the range we allocate to ar, aligned to privateAllocUnit.
+					maskAR := privateAligned(ar, false)
 					// Private anonymous mappings get pmas by allocating.
 					allocAR := optAR.Intersect(maskAR)
 					fr, err := mf.Allocate(uint64(allocAR.Length()), usage.Anonymous)
@@ -318,6 +318,8 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 							panic(fmt.Sprintf("pma %v needs to be copied for writing, but is not readable: %v", pseg.Range(), oldpma))
 						}
 					}
+					// Limit the range we allocate to ar, aligned to PageSize.
+					maskAR := privateAligned(ar, true)
 					// The majority of copy-on-write breaks on executable pages
 					// come from:
 					//
@@ -499,9 +501,15 @@ const (
 	privateAllocMask = privateAllocUnit - 1
 )
 
-func privateAligned(ar usermem.AddrRange) usermem.AddrRange {
-	aligned := usermem.AddrRange{ar.Start &^ privateAllocMask, ar.End}
-	if end := (ar.End + privateAllocMask) &^ privateAllocMask; end >= ar.End {
+func privateAligned(ar usermem.AddrRange, iscow bool) usermem.AddrRange {
+	allocUnit := usermem.Addr(privateAllocUnit)
+	allocMask := usermem.Addr(privateAllocMask)
+	if iscow {
+		allocUnit = usermem.Addr(usermem.PageSize)
+		allocMask = usermem.Addr(allocUnit - 1)
+	}
+	aligned := usermem.AddrRange{ar.Start &^ allocMask, ar.End}
+	if end := (ar.End + allocMask) &^ allocMask; end >= ar.End {
 		aligned.End = end
 	}
 	if checkInvariants {
