@@ -539,9 +539,8 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
   ASSERT_THAT(fstat(fd1.get(), &st1), SyscallSucceeds());
   ASSERT_THAT(fstat(fd2.get(), &st2), SyscallSucceeds());
 
-  // The two fds should have different inode numbers. Specifically, since fd2
-  // was created later, it should have a higher inode number.
-  EXPECT_GT(st2.st_ino, st1.st_ino);
+  // The two fds should have different inode numbers.
+  EXPECT_NE(st2.st_ino, st1.st_ino);
 
   // Verify again after another S/R cycle. The inode numbers should remain the
   // same.
