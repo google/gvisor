@@ -94,10 +94,11 @@ var defaultActions = map[linux.Signal]SignalAction{
 // In the event the signal is not one of these, act.Handler determines what
 // happens next.
 // If act.Handler is:
-// 0, the default action is taken;
+// 0, then the default action is taken, unless the receiver is the reaper
+//    of the pid namespace, in which case the signal is ignored;
 // 1, the signal is ignored;
 // anything else, the function returns SignalActionHandler.
-func computeAction(sig linux.Signal, act arch.SignalAct) SignalAction {
+func computeAction(sig linux.Signal, act arch.SignalAct, reaper bool) SignalAction {
 	switch sig {
 	case linux.SIGSTOP:
 		return SignalActionStop
@@ -109,6 +110,10 @@ func computeAction(sig linux.Signal, act arch.SignalAct) SignalAction {
 
 	switch act.Handler {
 	case arch.SignalActDefault:
+		// Ignore blockable signals for reaper process of the namespace.
+		if reaper && linux.SignalSetOf(sig)&UnblockableSignals==0 {
+			return SignalActionIgnore
+		}
 		return defaultActions[sig]
 	case arch.SignalActIgnore:
 		return SignalActionIgnore
@@ -156,7 +161,7 @@ func (t *Task) PendingSignals() linux.SignalSet {
 
 // deliverSignal delivers the given signal and returns the following run state.
 func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunState {
-	sigact := computeAction(linux.Signal(info.Signo), act)
+	sigact := computeAction(linux.Signal(info.Signo), act, t.tg.reaper)
 
 	if t.haveSyscallReturn {
 		if sre, ok := SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
@@ -229,7 +234,7 @@ func (t *Task) deliverSignal(info *arch.SignalInfo, act arch.SignalAct) taskRunS
 		}
 
 	default:
-		panic(fmt.Sprintf("Unknown signal action %+v, %d?", info, computeAction(linux.Signal(info.Signo), act)))
+		panic(fmt.Sprintf("Unknown signal action %+v, %d?", info, computeAction(linux.Signal(info.Signo), act, t.tg.reaper)))
 	}
 	return (*runInterrupt)(nil)
 }
@@ -414,7 +419,7 @@ func (t *Task) sendSignalTimerLocked(info *arch.SignalInfo, group bool, timer *I
 	// originally-targeted task's signal mask and tracer that matter; compare
 	// Linux's kernel/signal.c:__send_signal() => prepare_signal() =>
 	// sig_ignored().
-	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
+	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig], t.tg.reaper) == SignalActionIgnore
 	if sigset := linux.SignalSetOf(sig); sigset&t.signalMask == 0 && sigset&t.realSignalMask == 0 && ignored && !t.hasTracer() {
 		t.Debugf("Discarding ignored signal %d", sig)
 		if timer != nil {
@@ -693,7 +698,7 @@ func (tg *ThreadGroup) SetSignalAct(sig linux.Signal, actptr *arch.SignalAct) (a
 		// whose default action is to ignore the signal (for example, SIGCHLD),
 		// shall cause the pending signal to be discarded, whether or not it is
 		// blocked."
-		if computeAction(sig, act) == SignalActionIgnore {
+		if computeAction(sig, act, tg.reaper) == SignalActionIgnore {
 			tg.discardSpecificLocked(sig)
 		}
 	}

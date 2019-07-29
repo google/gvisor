@@ -103,6 +103,111 @@ TEST(KillTest, CanKillAllPIDs) {
   EXPECT_EQ(0, WEXITSTATUS(status));
 }
 
+class KillSpecificReaperTest
+    : public ::testing::TestWithParam<int (*)(void *)> {
+};
+
+constexpr pid_t kReaperPid = 1;
+
+// Reaper process of pid namespace will ignore blockable
+// signal with SIG_DFL action, such as SIGTERM.
+static int KillCannotTermReaper(void *args) {
+  if (getpid() != kReaperPid) {
+    exit(1);
+  }
+  if (kill(kReaperPid, SIGTERM) != 0) {
+    exit(1);
+  }
+  // Make sure the reaper process still alive.
+  if (kill(kReaperPid, 0) != 0) {
+    exit(1);
+  }
+  exit(0);
+}
+
+// Nonreaper process of pid namespace can recieve blockable
+// signal with SIG_DFL action, such as SIGTERM.
+static int KillCanTermNonReaper(void *args) {
+  int status;
+  if (getpid() != kReaperPid) {
+    exit(1);
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    exit(1);
+  }
+  if (pid == 0) {
+    while (true) {
+      pause();
+    }
+  }
+  if (kill(pid, SIGTERM) != 0) {
+    exit(1);
+  }
+  if (RetryEINTR(waitpid)(pid, &status, 0) != pid) {
+      exit(1);
+  }
+  // NonReaper process killed by SIGTERM.
+  if (WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM) {
+      exit(0);
+  }
+  exit(1);
+}
+
+static bool ReaperActed = false;
+
+static void ReaperSigHandler(int sig, siginfo_t* info, void* context) { ReaperActed = true; }
+
+PosixErrorOr<Cleanup> KillReaperSetup(){
+  struct sigaction sa;
+  sa.sa_sigaction = ReaperSigHandler;
+  return ScopedSigaction(SIGTERM, sa);
+}
+
+// Reaper process of pid namespace can recieve blockable
+// signal with not SIG_DFL action, such as SIGTERM.
+static int KillCanTermReaperAction(void *args) {
+  if (getpid() != kReaperPid) {
+    exit(1);
+  }
+  const auto cleanup_sigact = KillReaperSetup();
+  if (kill(kReaperPid, SIGTERM) != 0) {
+    exit(1);
+  }
+  if (kill(kReaperPid, 0) != 0) {
+    exit(1);
+  }
+  // Reaper Process have process SIGTERM.
+  if (!ReaperActed) {
+    exit(1);
+  }
+  exit(0);
+}
+
+TEST_P(KillSpecificReaperTest, KillSigterm) {
+  int stack_size = kPageSize*4;
+  char * stack = reinterpret_cast<char*>(malloc(stack_size));
+  int child_pid;
+  // Run real case under new pid namespace.
+  ASSERT_THAT(
+      child_pid = clone(
+          GetParam(),
+          reinterpret_cast<void*>(stack + stack_size),
+          CLONE_NEWPID | SIGCHLD,
+          /* arg = */ nullptr),
+      SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << "status = " << status;
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    KillReapers, KillSpecificReaperTest,
+    ::testing::Values(KillCannotTermReaper, KillCanTermNonReaper, KillCanTermReaperAction));
+
 TEST(KillTest, CannotKillInvalidPID) {
   // We need an unused pid to verify that kill fails when given one.
   //
