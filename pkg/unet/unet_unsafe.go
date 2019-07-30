@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"golang.org/x/sys/unix"
 )
 
 // wait blocks until the socket FD is ready for reading or writing, depending
@@ -37,20 +37,20 @@ func (s *Socket) wait(write bool) error {
 			return errClosing
 		}
 
-		events := []linux.PollFD{
+		events := []unix.PollFd{
 			{
 				// The actual socket FD.
-				FD:     fd,
-				Events: linux.POLLIN,
+				Fd:     fd,
+				Events: unix.POLLIN,
 			},
 			{
 				// The eventfd, signaled when we are closing.
-				FD:     int32(s.efd),
-				Events: linux.POLLIN,
+				Fd:     int32(s.efd),
+				Events: unix.POLLIN,
 			},
 		}
 		if write {
-			events[0].Events = linux.POLLOUT
+			events[0].Events = unix.POLLOUT
 		}
 
 		_, _, e := syscall.Syscall(syscall.SYS_POLL, uintptr(unsafe.Pointer(&events[0])), 2, uintptr(math.MaxUint64))
@@ -61,7 +61,7 @@ func (s *Socket) wait(write bool) error {
 			return e
 		}
 
-		if events[1].REvents&linux.POLLIN == linux.POLLIN {
+		if events[1].Revents&unix.POLLIN == unix.POLLIN {
 			// eventfd signaled, we're closing.
 			return errClosing
 		}
