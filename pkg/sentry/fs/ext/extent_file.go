@@ -16,6 +16,7 @@ package ext
 
 import (
 	"io"
+	"sort"
 
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
@@ -36,7 +37,12 @@ var _ fileReader = (*extentFile)(nil)
 
 // Read implements fileReader.getFileReader.
 func (f *extentFile) getFileReader(dev io.ReadSeeker, blkSize uint64, offset uint64) io.Reader {
-	panic("unimplemented")
+	return &extentReader{
+		dev:     dev,
+		file:    f,
+		fileOff: offset,
+		blkSize: blkSize,
+	}
 }
 
 // newExtentFile is the extent file constructor. It reads the entire extent
@@ -144,4 +150,114 @@ func buildExtTreeFromDisk(dev io.ReadSeeker, entry disklayout.ExtentEntry, blkSi
 	}
 
 	return &disklayout.ExtentNode{header, entries}, nil
+}
+
+// extentReader implements io.Reader which can traverse the extent tree and
+// read file data. This is not thread safe.
+type extentReader struct {
+	dev     io.ReadSeeker
+	file    *extentFile
+	fileOff uint64 // Represents the current file offset being read from.
+	blkSize uint64
+}
+
+// Compiles only if inlineReader implements io.Reader.
+var _ io.Reader = (*extentReader)(nil)
+
+// Read implements io.Reader.Read.
+func (r *extentReader) Read(dst []byte) (int, error) {
+	if len(dst) == 0 {
+		return 0, nil
+	}
+
+	if r.fileOff >= r.file.regFile.inode.diskInode.Size() {
+		return 0, io.EOF
+	}
+
+	return r.read(&r.file.root, dst)
+}
+
+// read is a helper which traverses the extent tree and reads data.
+func (r *extentReader) read(node *disklayout.ExtentNode, dst []byte) (int, error) {
+	// Perform a binary search for the node covering bytes starting at r.fileOff.
+	// A highly fragmented filesystem can have upto 340 entries and so linear
+	// search should be avoided. Finds the first entry which does not cover the
+	// file block we want and subtracts 1 to get the desired index.
+	fileBlk := r.fileBlock()
+	n := len(node.Entries)
+	found := sort.Search(n, func(i int) bool {
+		return node.Entries[i].Entry.FileBlock() > fileBlk
+	}) - 1
+
+	// We should be in this recursive step only if the data we want exists under
+	// the current node.
+	if found < 0 {
+		panic("searching for a file block in an extent entry which does not cover it")
+	}
+
+	read := 0
+	toRead := len(dst)
+	var curR int
+	var err error
+	for i := found; i < n && read < toRead; i++ {
+		if node.Header.Height == 0 {
+			curR, err = r.readFromExtent(node.Entries[i].Entry.(*disklayout.Extent), dst[read:])
+		} else {
+			curR, err = r.read(node.Entries[i].Node, dst[read:])
+		}
+
+		read += curR
+		if err != nil {
+			return read, err
+		}
+	}
+
+	return read, nil
+}
+
+// readFromExtent reads file data from the extent. It takes advantage of the
+// sequential nature of extents and reads file data from multiple blocks in one
+// call. Also updates the file offset.
+//
+// A non-nil error indicates that this is a partial read and there is probably
+// more to read from this extent. The caller should propagate the error upward
+// and not move to the next extent in the tree.
+//
+// A subsequent call to extentReader.Read should continue reading from where we
+// left off as expected.
+func (r *extentReader) readFromExtent(ex *disklayout.Extent, dst []byte) (int, error) {
+	curFileBlk := r.fileBlock()
+	exFirstFileBlk := ex.FileBlock()
+	exLastFileBlk := exFirstFileBlk + uint32(ex.Length) // This is exclusive.
+
+	// We should be in this recursive step only if the data we want exists under
+	// the current extent.
+	if curFileBlk < exFirstFileBlk || exLastFileBlk <= curFileBlk {
+		panic("searching for a file block in an extent which does not cover it")
+	}
+
+	curPhyBlk := uint64(curFileBlk-exFirstFileBlk) + ex.PhysicalBlock()
+	readStart := curPhyBlk*r.blkSize + r.fileBlockOff()
+
+	endPhyBlk := ex.PhysicalBlock() + uint64(ex.Length)
+	extentEnd := endPhyBlk * r.blkSize // This is exclusive.
+
+	toRead := int(extentEnd - readStart)
+	if len(dst) < toRead {
+		toRead = len(dst)
+	}
+
+	n, err := readFull(r.dev, int64(readStart), dst[:toRead])
+	r.fileOff += uint64(n)
+	return n, err
+}
+
+// fileBlock returns the file block number we are currently reading.
+func (r *extentReader) fileBlock() uint32 {
+	return uint32(r.fileOff / r.blkSize)
+}
+
+// fileBlockOff returns the current offset within the current file block.
+func (r *extentReader) fileBlockOff() uint64 {
+	return r.fileOff % r.blkSize
 }

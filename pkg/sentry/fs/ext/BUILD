@@ -42,6 +42,7 @@ go_library(
         "//pkg/sentry/fs/ext/disklayout",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
+        "//pkg/sentry/safemem",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
