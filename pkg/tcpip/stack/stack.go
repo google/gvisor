@@ -751,10 +751,10 @@ func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber,
 	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
 }
 
-// AddAddressWithPrefix adds a new network-layer address/prefixLen to the
+// AddProtocolAddress adds a new network-layer protocol address to the
 // specified NIC.
-func (s *Stack) AddAddressWithPrefix(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addrWithPrefix tcpip.AddressWithPrefix) *tcpip.Error {
-	return s.AddAddressWithPrefixAndOptions(id, protocol, addrWithPrefix, CanBePrimaryEndpoint)
+func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *tcpip.Error {
+	return s.AddProtocolAddressWithOptions(id, protocolAddress, CanBePrimaryEndpoint)
 }
 
 // AddAddressWithOptions is the same as AddAddress, but allows you to specify
@@ -764,13 +764,18 @@ func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProt
 	if !ok {
 		return tcpip.ErrUnknownProtocol
 	}
-	addrWithPrefix := tcpip.AddressWithPrefix{addr, netProto.DefaultPrefixLen()}
-	return s.AddAddressWithPrefixAndOptions(id, protocol, addrWithPrefix, peb)
+	return s.AddProtocolAddressWithOptions(id, tcpip.ProtocolAddress{
+		Protocol: protocol,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   addr,
+			PrefixLen: netProto.DefaultPrefixLen(),
+		},
+	}, peb)
 }
 
-// AddAddressWithPrefixAndOptions is the same as AddAddressWithPrefixLen,
-// but allows you to specify whether the new endpoint can be primary or not.
-func (s *Stack) AddAddressWithPrefixAndOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addrWithPrefix tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior) *tcpip.Error {
+// AddProtocolAddressWithOptions is the same as AddProtocolAddress, but allows
+// you to specify whether the new endpoint can be primary or not.
+func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -779,7 +784,7 @@ func (s *Stack) AddAddressWithPrefixAndOptions(id tcpip.NICID, protocol tcpip.Ne
 		return tcpip.ErrUnknownNICID
 	}
 
-	return nic.AddAddress(protocol, addrWithPrefix, peb)
+	return nic.AddAddress(protocolAddress, peb)
 }
 
 // AddSubnet adds a subnet range to the specified NIC.
