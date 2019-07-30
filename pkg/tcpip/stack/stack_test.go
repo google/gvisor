@@ -188,7 +188,7 @@ func (*fakeNetworkProtocol) ParseAddresses(v buffer.View) (src, dst tcpip.Addres
 func (f *fakeNetworkProtocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
 	return &fakeNetworkEndpoint{
 		nicid:      nicid,
-		id:         stack.NetworkEndpointID{addrWithPrefix.Address},
+		id:         stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
 		prefixLen:  addrWithPrefix.PrefixLen,
 		proto:      f,
 		dispatcher: dispatcher,
@@ -969,12 +969,18 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 								// prefixLen.
 								address := tcpip.Address(bytes.Repeat([]byte{byte(i)}, addrLen))
 								if behavior == stack.CanBePrimaryEndpoint {
-									addressWithPrefix := tcpip.AddressWithPrefix{address, addrLen * 8}
-									if err := s.AddAddressWithPrefixAndOptions(1, fakeNetNumber, addressWithPrefix, behavior); err != nil {
-										t.Fatal("AddAddressWithPrefixAndOptions failed:", err)
+									protocolAddress := tcpip.ProtocolAddress{
+										Protocol: fakeNetNumber,
+										AddressWithPrefix: tcpip.AddressWithPrefix{
+											Address:   address,
+											PrefixLen: addrLen * 8,
+										},
+									}
+									if err := s.AddProtocolAddressWithOptions(1, protocolAddress, behavior); err != nil {
+										t.Fatal("AddProtocolAddressWithOptions failed:", err)
 									}
 									// Remember the address/prefix.
-									primaryAddrAdded[addressWithPrefix] = struct{}{}
+									primaryAddrAdded[protocolAddress.AddressWithPrefix] = struct{}{}
 								} else {
 									if err := s.AddAddressWithOptions(1, fakeNetNumber, address, behavior); err != nil {
 										t.Fatal("AddAddressWithOptions failed:", err)
@@ -1024,20 +1030,25 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 		{"IPv6", "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01", 116},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			addressWithPrefix := tcpip.AddressWithPrefix{tc.address, tc.prefixLen}
-
-			if err := s.AddAddressWithPrefix(1, fakeNetNumber, addressWithPrefix); err != nil {
-				t.Fatal("AddAddressWithPrefix failed:", err)
+			protocolAddress := tcpip.ProtocolAddress{
+				Protocol: fakeNetNumber,
+				AddressWithPrefix: tcpip.AddressWithPrefix{
+					Address:   tc.address,
+					PrefixLen: tc.prefixLen,
+				},
+			}
+			if err := s.AddProtocolAddress(1, protocolAddress); err != nil {
+				t.Fatal("AddProtocolAddress failed:", err)
 			}
 
 			// Check that we get the right initial address and prefix length.
 			if gotAddressWithPrefix, err := s.GetMainNICAddress(1, fakeNetNumber); err != nil {
 				t.Fatal("GetMainNICAddress failed:", err)
-			} else if gotAddressWithPrefix != addressWithPrefix {
-				t.Fatalf("got GetMainNICAddress = %+v, want = %+v", gotAddressWithPrefix, addressWithPrefix)
+			} else if gotAddressWithPrefix != protocolAddress.AddressWithPrefix {
+				t.Fatalf("got GetMainNICAddress = %+v, want = %+v", gotAddressWithPrefix, protocolAddress.AddressWithPrefix)
 			}
 
-			if err := s.RemoveAddress(1, addressWithPrefix.Address); err != nil {
+			if err := s.RemoveAddress(1, protocolAddress.AddressWithPrefix.Address); err != nil {
 				t.Fatal("RemoveAddress failed:", err)
 			}
 
@@ -1102,7 +1113,7 @@ func TestAddAddress(t *testing.T) {
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
-func TestAddAddressWithPrefix(t *testing.T) {
+func TestAddProtocolAddress(t *testing.T) {
 	const nicid = 1
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
 	id, _ := channel.New(10, defaultMTU, "")
@@ -1116,14 +1127,17 @@ func TestAddAddressWithPrefix(t *testing.T) {
 	expectedAddresses := make([]tcpip.ProtocolAddress, 0, len(addrLenRange)*len(prefixLenRange))
 	for _, addrLen := range addrLenRange {
 		for _, prefixLen := range prefixLenRange {
-			address := addrGen.next(addrLen)
-			if err := s.AddAddressWithPrefix(nicid, fakeNetNumber, tcpip.AddressWithPrefix{address, prefixLen}); err != nil {
-				t.Errorf("AddAddressWithPrefix(address=%s, prefixLen=%d) failed: %s", address, prefixLen, err)
+			protocolAddress := tcpip.ProtocolAddress{
+				Protocol: fakeNetNumber,
+				AddressWithPrefix: tcpip.AddressWithPrefix{
+					Address:   addrGen.next(addrLen),
+					PrefixLen: prefixLen,
+				},
 			}
-			expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
-				Protocol:          fakeNetNumber,
-				AddressWithPrefix: tcpip.AddressWithPrefix{address, prefixLen},
-			})
+			if err := s.AddProtocolAddress(nicid, protocolAddress); err != nil {
+				t.Errorf("AddProtocolAddress(%+v) failed: %s", protocolAddress, err)
+			}
+			expectedAddresses = append(expectedAddresses, protocolAddress)
 		}
 	}
 
@@ -1160,7 +1174,7 @@ func TestAddAddressWithOptions(t *testing.T) {
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
-func TestAddAddressWithPrefixAndOptions(t *testing.T) {
+func TestAddProtocolAddressWithOptions(t *testing.T) {
 	const nicid = 1
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
 	id, _ := channel.New(10, defaultMTU, "")
@@ -1176,14 +1190,17 @@ func TestAddAddressWithPrefixAndOptions(t *testing.T) {
 	for _, addrLen := range addrLenRange {
 		for _, prefixLen := range prefixLenRange {
 			for _, behavior := range behaviorRange {
-				address := addrGen.next(addrLen)
-				if err := s.AddAddressWithPrefixAndOptions(nicid, fakeNetNumber, tcpip.AddressWithPrefix{address, prefixLen}, behavior); err != nil {
-					t.Fatalf("AddAddressWithPrefixAndOptions(address=%s, prefixLen=%d, behavior=%d) failed: %s", address, prefixLen, behavior, err)
+				protocolAddress := tcpip.ProtocolAddress{
+					Protocol: fakeNetNumber,
+					AddressWithPrefix: tcpip.AddressWithPrefix{
+						Address:   addrGen.next(addrLen),
+						PrefixLen: prefixLen,
+					},
 				}
-				expectedAddresses = append(expectedAddresses, tcpip.ProtocolAddress{
-					Protocol:          fakeNetNumber,
-					AddressWithPrefix: tcpip.AddressWithPrefix{address, prefixLen},
-				})
+				if err := s.AddProtocolAddressWithOptions(nicid, protocolAddress, behavior); err != nil {
+					t.Fatalf("AddProtocolAddressWithOptions(%+v, %d) failed: %s", protocolAddress, behavior, err)
+				}
+				expectedAddresses = append(expectedAddresses, protocolAddress)
 			}
 		}
 	}

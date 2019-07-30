@@ -209,8 +209,13 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 	ref = n.endpoints[id]
 	if ref == nil || !ref.tryIncRef() {
 		if netProto, ok := n.stack.networkProtocols[protocol]; ok {
-			addrWithPrefix := tcpip.AddressWithPrefix{address, netProto.DefaultPrefixLen()}
-			ref, _ = n.addAddressLocked(protocol, addrWithPrefix, peb, true)
+			ref, _ = n.addAddressLocked(tcpip.ProtocolAddress{
+				Protocol: protocol,
+				AddressWithPrefix: tcpip.AddressWithPrefix{
+					Address:   address,
+					PrefixLen: netProto.DefaultPrefixLen(),
+				},
+			}, peb, true)
 			if ref != nil {
 				ref.holdsInsertRef = false
 			}
@@ -220,14 +225,14 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 	return ref
 }
 
-func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addrWithPrefix tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior, replace bool) (*referencedNetworkEndpoint, *tcpip.Error) {
-	netProto, ok := n.stack.networkProtocols[protocol]
+func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, replace bool) (*referencedNetworkEndpoint, *tcpip.Error) {
+	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
 	// Create the new network endpoint.
-	ep, err := netProto.NewEndpoint(n.id, addrWithPrefix, n.stack, n, n.linkEP)
+	ep, err := netProto.NewEndpoint(n.id, protocolAddress.AddressWithPrefix, n.stack, n, n.linkEP)
 	if err != nil {
 		return nil, err
 	}
@@ -245,23 +250,23 @@ func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addrWithPre
 		refs:           1,
 		ep:             ep,
 		nic:            n,
-		protocol:       protocol,
+		protocol:       protocolAddress.Protocol,
 		holdsInsertRef: true,
 	}
 
 	// Set up cache if link address resolution exists for this protocol.
 	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
-		if _, ok := n.stack.linkAddrResolvers[protocol]; ok {
+		if _, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
 			ref.linkCache = n.stack
 		}
 	}
 
 	n.endpoints[id] = ref
 
-	l, ok := n.primary[protocol]
+	l, ok := n.primary[protocolAddress.Protocol]
 	if !ok {
 		l = &ilist.List{}
-		n.primary[protocol] = l
+		n.primary[protocolAddress.Protocol] = l
 	}
 
 	switch peb {
@@ -276,10 +281,10 @@ func (n *NIC) addAddressLocked(protocol tcpip.NetworkProtocolNumber, addrWithPre
 
 // AddAddress adds a new address to n, so that it starts accepting packets
 // targeted at the given address (and network protocol).
-func (n *NIC) AddAddress(protocol tcpip.NetworkProtocolNumber, addrWithPrefix tcpip.AddressWithPrefix, peb PrimaryEndpointBehavior) *tcpip.Error {
+func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.
 	n.mu.Lock()
-	_, err := n.addAddressLocked(protocol, addrWithPrefix, peb, false)
+	_, err := n.addAddressLocked(protocolAddress, peb, false)
 	n.mu.Unlock()
 
 	return err
@@ -414,8 +419,13 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 		if !ok {
 			return tcpip.ErrUnknownProtocol
 		}
-		addrWithPrefix := tcpip.AddressWithPrefix{addr, netProto.DefaultPrefixLen()}
-		if _, err := n.addAddressLocked(protocol, addrWithPrefix, NeverPrimaryEndpoint, false); err != nil {
+		if _, err := n.addAddressLocked(tcpip.ProtocolAddress{
+			Protocol: protocol,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   addr,
+				PrefixLen: netProto.DefaultPrefixLen(),
+			},
+		}, NeverPrimaryEndpoint, false); err != nil {
 			return err
 		}
 	}
@@ -577,8 +587,13 @@ func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *r
 			n.mu.Unlock()
 			return nil
 		}
-		addrWithPrefix := tcpip.AddressWithPrefix{dst, netProto.DefaultPrefixLen()}
-		ref, err := n.addAddressLocked(protocol, addrWithPrefix, CanBePrimaryEndpoint, true)
+		ref, err := n.addAddressLocked(tcpip.ProtocolAddress{
+			Protocol: protocol,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   dst,
+				PrefixLen: netProto.DefaultPrefixLen(),
+			},
+		}, CanBePrimaryEndpoint, true)
 		n.mu.Unlock()
 		if err == nil {
 			ref.holdsInsertRef = false
