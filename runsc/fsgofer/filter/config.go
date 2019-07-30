@@ -138,7 +138,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_NANOSLEEP:  {},
 	syscall.SYS_NEWFSTATAT: {},
 	syscall.SYS_OPENAT:     {},
-	syscall.SYS_POLL:       {},
+	syscall.SYS_PPOLL:      {},
 	syscall.SYS_PREAD64:    {},
 	syscall.SYS_PWRITE64:   {},
 	syscall.SYS_READ:       {},

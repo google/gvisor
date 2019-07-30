@@ -14,17 +14,18 @@
 
 #include "textflag.h"
 
-// BlockingPoll makes the poll() syscall while calling the version of
+// BlockingPoll makes the ppoll() syscall while calling the version of
 // entersyscall that relinquishes the P so that other Gs can run. This is meant
 // to be called in cases when the syscall is expected to block.
 //
-// func BlockingPoll(fds *PollEvent, nfds int, timeout int64) (n int, err syscall.Errno)
+// func BlockingPoll(fds *PollEvent, nfds int, timeout *syscall.Timespec) (n int, err syscall.Errno)
 TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
 	CALL	·callEntersyscallblock(SB)
 	MOVQ	fds+0(FP), DI
 	MOVQ	nfds+8(FP), SI
 	MOVQ	timeout+16(FP), DX
-	MOVQ	$0x7, AX // SYS_POLL
+	MOVQ	$0x0, R10  // sigmask parameter which isn't used here
+	MOVQ	$0x10f, AX // SYS_PPOLL
 	SYSCALL
 	CMPQ	AX, $0xfffffffffffff001
 	JLS	ok
