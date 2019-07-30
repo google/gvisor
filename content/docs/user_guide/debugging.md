@@ -56,6 +56,30 @@ sudo runsc --root /var/run/docker/runtime-runsc/moby debug --stacks 63254c6ab3a6
 > `/var/run/docker/runtime-[runtime-name]/moby`. If in doubt, `--root` is logged to
 > `runsc` logs.
 
+## Debugger
+
+You can debug gVisor like any other Golang program. If you're running with Docker,
+you'll need to find the sandbox PID and attach the debugger as root. Other than
+that, it's business as usual.
+
+```bash
+# Start the container you want to debug.
+docker run --runtime=runsc --rm --name=test -d alpine sleep 1000
+
+# Find the sandbox PID.
+docker inspect test | grep Pid | head -n 1
+
+# Attach your favorite debugger.
+sudo dlv attach <PID>
+
+# Set a breakpoint and resume.
+break mm.MemoryManager.MMap
+continue
+```
+
+> Note: if the debugger cannot find symbols, rebuild runsc in debug mode:
+> `bazel build -c dbg //runsc:runsc`
+
 ## Profiling
 
 `runsc` integrates with Go profiling tools and gives you easy commands to profile
