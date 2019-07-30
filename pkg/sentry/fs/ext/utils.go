@@ -76,12 +76,7 @@ func blockGroupsCount(sb disklayout.SuperBlock) uint64 {
 	blocksPerGroup := uint64(sb.BlocksPerGroup())
 
 	// Round up the result. float64 can compromise precision so do it manually.
-	bgCount := blocksCount / blocksPerGroup
-	if blocksCount%blocksPerGroup != 0 {
-		bgCount++
-	}
-
-	return bgCount
+	return (blocksCount + blocksPerGroup - 1) / blocksPerGroup
 }
 
 // readBlockGroups reads the block group descriptor table from block group 0 in

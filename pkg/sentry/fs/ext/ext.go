@@ -88,7 +88,7 @@ func (fstype filesystemType) NewFilesystem(ctx context.Context, creds *auth.Cred
 		return nil, nil, err
 	}
 
-	rootInode, err := fs.getOrCreateInode(disklayout.RootDirInode)
+	rootInode, err := fs.getOrCreateInode(ctx, disklayout.RootDirInode)
 	if err != nil {
 		return nil, nil, err
 	}

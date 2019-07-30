@@ -26,6 +26,8 @@ type dentry struct {
 	// share a single non-directory Inode (with hard links). inode is
 	// immutable.
 	inode *inode
+	// dentryEntry links Dentries into their parent directory.childList.
+	dentryEntry
 }
 
 // Compiles only if dentry implements vfs.DentryImpl.

@@ -47,7 +47,13 @@ import (
 func TestExtentTree(t *testing.T) {
 	blkSize := uint64(64) // No block has more than 1 header + 4 entries.
 	mockDisk := make([]byte, blkSize*10)
-	mockInode := &inode{diskInode: &disklayout.InodeNew{}}
+	mockExtentFile := extentFile{
+		regFile: regularFile{
+			inode: inode{
+				diskInode: &disklayout.InodeNew{},
+			},
+		},
+	}
 
 	node3 := &disklayout.ExtentNode{
 		Header: disklayout.ExtentHeader{
@@ -138,15 +144,15 @@ func TestExtentTree(t *testing.T) {
 		},
 	}
 
-	writeTree(mockInode, mockDisk, node0, blkSize)
+	writeTree(&mockExtentFile.regFile.inode, mockDisk, node0, blkSize)
 
 	r := bytes.NewReader(mockDisk)
-	if err := mockInode.buildExtTree(r, blkSize); err != nil {
+	if err := mockExtentFile.buildExtTree(r, blkSize); err != nil {
 		t.Fatalf("inode.buildExtTree failed: %v", err)
 	}
 
 	opt := cmpopts.IgnoreUnexported(disklayout.ExtentIdx{}, disklayout.ExtentHeader{})
-	if diff := cmp.Diff(mockInode.root, node0, opt); diff != "" {
+	if diff := cmp.Diff(&mockExtentFile.root, node0, opt); diff != "" {
 		t.Errorf("extent tree mismatch (-want +got):\n%s", diff)
 	}
 }

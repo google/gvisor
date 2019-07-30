@@ -70,12 +70,12 @@ var _ vfs.FilesystemImpl = (*filesystem)(nil)
 // It creates a new one with the given inode number if one does not exist.
 //
 // Preconditions: must be holding fs.mu.
-func (fs *filesystem) getOrCreateInode(inodeNum uint32) (*inode, error) {
+func (fs *filesystem) getOrCreateInode(ctx context.Context, inodeNum uint32) (*inode, error) {
 	if in, ok := fs.inodeCache[inodeNum]; ok {
 		return in, nil
 	}
 
-	in, err := newInode(fs.dev, fs.sb, fs.bgs, inodeNum)
+	in, err := newInode(ctx, fs.dev, fs.sb, fs.bgs, inodeNum)
 	if err != nil {
 		return nil, err
 	}
