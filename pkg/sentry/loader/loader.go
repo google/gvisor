@@ -67,8 +67,64 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Open file will take a reference to Dirent, so destroy this one.
 	defer d.DecRef()
 
+	return openFile(ctx, nil, d, name)
+}
+
+// openFile performs checks on a file to be executed. If provided a *fs.File,
+// openFile takes that file's Dirent and performs checks on it. If provided a
+// *fs.Dirent and not a *fs.File, it creates a *fs.File object from the Dirent's
+// Inode and performs checks on that.
+//
+// openFile returns an *fs.File and *fs.Dirent, and the caller takes ownership
+// of both.
+//
+// "dirent" and "file" must not both be nil and point to a readable, executable, regular file.
+func openFile(ctx context.Context, file *fs.File, dirent *fs.Dirent, name string) (*fs.Dirent, *fs.File, error) {
+	// file and dirent must not be nil.
+	if dirent == nil && file == nil {
+		ctx.Infof("dirent and file cannot both be nil.")
+		return nil, nil, syserror.ENOENT
+	}
+
+	if file != nil {
+		dirent = file.Dirent
+	}
+
+	// Perform permissions checks on the file.
+	if err := checkFile(ctx, dirent, name); err != nil {
+		return nil, nil, err
+	}
+
+	if file == nil {
+		var ferr error
+		if file, ferr = dirent.Inode.GetFile(ctx, dirent, fs.FileFlags{Read: true}); ferr != nil {
+			return nil, nil, ferr
+		}
+	} else {
+		// GetFile takes a reference to the created file, so make one in the case
+		// that the file reference already existed.
+		file.IncRef()
+	}
+
+	// We must be able to read at arbitrary offsets.
+	if !file.Flags().Pread {
+		file.DecRef()
+		ctx.Infof("%s cannot be read at an offset: %+v", file.MappedName(ctx), file.Flags())
+		return nil, nil, syserror.EACCES
+	}
+
+	// Grab reference for caller.
+	dirent.IncRef()
+	return dirent, file, nil
+}
+
+// checkFile performs file permissions checks for binaries called in openPath
+// and openFile
+func checkFile(ctx context.Context, d *fs.Dirent, name string) error {
 	perms := fs.PermMask{
 		// TODO(gvisor.dev/issue/160): Linux requires only execute
 		// permission, not read. However, our backing filesystems may
@@ -80,7 +136,7 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 		Execute: true,
 	}
 	if err := d.Inode.CheckPermission(ctx, perms); err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	// If they claim it's a directory, then make sure.
@@ -88,31 +144,17 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 	// N.B. we reject directories below, but we must first reject
 	// non-directories passed as directories.
 	if len(name) > 0 && name[len(name)-1] == '/' && !fs.IsDir(d.Inode.StableAttr) {
-		return nil, nil, syserror.ENOTDIR
+		return syserror.ENOTDIR
 	}
 
 	// No exec-ing directories, pipes, etc!
 	if !fs.IsRegular(d.Inode.StableAttr) {
 		ctx.Infof("%s is not regular: %v", name, d.Inode.StableAttr)
-		return nil, nil, syserror.EACCES
+		return syserror.EACCES
 	}
 
-	// Create a new file.
-	file, err := d.Inode.GetFile(ctx, d, fs.FileFlags{Read: true})
-	if err != nil {
-		return nil, nil, err
-	}
+	return nil
 
-	// We must be able to read at arbitrary offsets.
-	if !file.Flags().Pread {
-		file.DecRef()
-		ctx.Infof("%s cannot be read at an offset: %+v", name, file.Flags())
-		return nil, nil, syserror.EACCES
-	}
-
-	// Grab a reference for the caller.
-	d.IncRef()
-	return d, file, nil
 }
 
 // allocStack allocates and maps a stack in to any available part of the address space.
@@ -131,16 +173,30 @@ const (
 	maxLoaderAttempts = 6
 )
 
-// loadPath resolves filename to a binary and loads it.
+// loadBinary loads a binary that is pointed to by "file". If nil, the path
+// "filename" is resolved and loaded.
 //
 // It returns:
 //  * loadedELF, description of the loaded binary
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
 //  * Possibly updated argv
-func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, fs *cpuid.FeatureSet, filename string, argv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, features *cpuid.FeatureSet, filename string, passedFile *fs.File, argv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
-		d, f, err := openPath(ctx, mounts, root, wd, remainingTraversals, filename)
+		var (
+			d   *fs.Dirent
+			f   *fs.File
+			err error
+		)
+		if passedFile == nil {
+			d, f, err = openPath(ctx, mounts, root, wd, remainingTraversals, filename)
+
+		} else {
+			d, f, err = openFile(ctx, passedFile, nil, "")
+			// Set to nil in case we loop on a Interpreter Script.
+			passedFile = nil
+		}
+
 		if err != nil {
 			ctx.Infof("Error opening %s: %v", filename, err)
 			return loadedELF{}, nil, nil, nil, err
@@ -165,7 +221,7 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 
 		switch {
 		case bytes.Equal(hdr[:], []byte(elfMagic)):
-			loaded, ac, err := loadELF(ctx, m, mounts, root, wd, remainingTraversals, fs, f)
+			loaded, ac, err := loadELF(ctx, m, mounts, root, wd, remainingTraversals, features, f)
 			if err != nil {
 				ctx.Infof("Error loading ELF: %v", err)
 				return loadedELF{}, nil, nil, nil, err
@@ -190,7 +246,8 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 	return loadedELF{}, nil, nil, nil, syserror.ELOOP
 }
 
-// Load loads filename into a MemoryManager.
+// Load loads "file" into a MemoryManager. If file is nil, the path "filename"
+// is resolved and loaded instead.
 //
 // If Load returns ErrSwitchFile it should be called again with the returned
 // path and argv.
@@ -198,9 +255,9 @@ func loadPath(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespac
 // Preconditions:
 //  * The Task MemoryManager is empty.
 //  * Load is called on the Task goroutine.
-func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
+func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, file *fs.File, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the binary itself.
-	loaded, ac, d, argv, err := loadPath(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv)
+	loaded, ac, d, argv, err := loadBinary(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", filename, err), syserr.FromError(err).ToLinux())
 	}

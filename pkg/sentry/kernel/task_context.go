@@ -140,15 +140,22 @@ func (t *Task) Stack() *arch.Stack {
 //  * wd: Working directory to lookup filename under
 //  * maxTraversals: maximum number of symlinks to follow
 //  * filename: path to binary to load
+//  * file: an open fs.File object of the binary to load. If set,
+//  file will be loaded and not filename.
 //  * argv: Binary argv
 //  * envv: Binary envv
 //  * fs: Binary FeatureSet
-func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
+func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, file *fs.File, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
+	// If File is not nil, we should load that instead of resolving filename.
+	if file != nil {
+		filename = file.MappedName(ctx)
+	}
+
 	// Prepare a new user address space to load into.
 	m := mm.NewMemoryManager(k, k)
 	defer m.DecUsers(ctx)
 
-	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, argv, envv, k.extraAuxv, k.vdso)
+	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, envv, k.extraAuxv, k.vdso)
 	if err != nil {
 		return nil, err
 	}
