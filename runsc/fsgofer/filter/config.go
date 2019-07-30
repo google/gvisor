@@ -39,6 +39,8 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_SETSOCKOPT: []seccomp.Rule{
 		{
 			seccomp.AllowAny{},
+			seccomp.AllowValue(syscall.SOL_SOCKET),
+			seccomp.AllowValue(syscall.SO_BROADCAST),
 		},
 	},
 	syscall.SYS_GETSOCKNAME: []seccomp.Rule{
@@ -110,6 +112,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 		{
 			seccomp.AllowAny{},
+			seccomp.AllowValue(syscall.F_DUPFD_CLOEXEC),
 		},
 	},
 	syscall.SYS_FSTAT:     {},
