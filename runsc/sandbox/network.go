@@ -33,13 +33,6 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
-const (
-	// Annotations used to indicate whether the container corresponds to a
-	// pod or a container within a pod.
-	crioContainerTypeAnnotation       = "io.kubernetes.cri-o.ContainerType"
-	containerdContainerTypeAnnotation = "io.kubernetes.cri.container-type"
-)
-
 // setupNetwork configures the network stack to mimic the local network
 // configuration. Docker uses network namespaces with vnets to configure the
 // network for the container. The untrusted app expects to see the same network
