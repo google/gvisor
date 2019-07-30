@@ -107,19 +107,20 @@ func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 // copyOutEvents copies epoll events from the kernel to user memory.
 func copyOutEvents(t *kernel.Task, addr usermem.Addr, e []epoll.Event) error {
 	const itemLen = 12
-	if _, ok := addr.AddLength(uint64(len(e)) * itemLen); !ok {
+	buffLen := len(e) * itemLen
+	if _, ok := addr.AddLength(uint64(buffLen)); !ok {
 		return syserror.EFAULT
 	}
 
-	b := t.CopyScratchBuffer(itemLen)
+	b := t.CopyScratchBuffer(buffLen)
 	for i := range e {
-		usermem.ByteOrder.PutUint32(b[0:], e[i].Events)
-		usermem.ByteOrder.PutUint32(b[4:], uint32(e[i].Data[0]))
-		usermem.ByteOrder.PutUint32(b[8:], uint32(e[i].Data[1]))
-		if _, err := t.CopyOutBytes(addr, b); err != nil {
-			return err
-		}
-		addr += itemLen
+		usermem.ByteOrder.PutUint32(b[i*itemLen:], e[i].Events)
+		usermem.ByteOrder.PutUint32(b[i*itemLen+4:], uint32(e[i].Data[0]))
+		usermem.ByteOrder.PutUint32(b[i*itemLen+8:], uint32(e[i].Data[1]))
+	}
+
+	if _, err := t.CopyOutBytes(addr, b); err != nil {
+		return err
 	}
 
 	return nil
