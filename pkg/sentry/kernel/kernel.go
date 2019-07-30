@@ -197,6 +197,11 @@ type Kernel struct {
 	// caches. Not all caches use it, only the caches that use host resources use
 	// the limiter. It may be nil if disabled.
 	DirentCacheLimiter *fs.DirentCacheLimiter
+
+	// unimplementedSyscallEmitter is used to emit unimplemented syscall
+	// events. This is initialized lazily on the first unimplemented
+	// syscall.
+	unimplementedSyscallEmitter eventchannel.Emitter `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -290,7 +295,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.monotonicClock = &timekeeperClock{tk: args.Timekeeper, c: sentrytime.Monotonic}
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
-
 	return nil
 }
 
@@ -1168,16 +1172,6 @@ func (k *Kernel) SupervisorContext() context.Context {
 	}
 }
 
-// EmitUnimplementedEvent emits an UnimplementedSyscall event via the event
-// channel.
-func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
-	t := TaskFromContext(ctx)
-	eventchannel.Emit(&uspb.UnimplementedSyscall{
-		Tid:       int32(t.ThreadID()),
-		Registers: t.Arch().StateData().Proto(),
-	})
-}
-
 // SocketEntry represents a socket recorded in Kernel.sockets. It implements
 // refs.WeakRefUser for sockets stored in the socket table.
 //
@@ -1271,4 +1265,24 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 	default:
 		return nil
 	}
+}
+
+// Rate limits for the number of unimplemented syscall evants.
+const (
+	unimplementedSyscallsMaxRate = 100  // events per second
+	unimplementedSyscallBurst    = 1000 // events
+)
+
+// EmitUnimplementedEvent emits an UnimplementedSyscall event via the event
+// channel.
+func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
+	if k.unimplementedSyscallEmitter == nil {
+		k.unimplementedSyscallEmitter = eventchannel.RateLimitedEmitterFrom(eventchannel.DefaultEmitter, unimplementedSyscallsMaxRate, unimplementedSyscallBurst)
+	}
+
+	t := TaskFromContext(ctx)
+	k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
+		Tid:       int32(t.ThreadID()),
+		Registers: t.Arch().StateData().Proto(),
+	})
 }

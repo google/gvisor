@@ -43,18 +43,36 @@ type Emitter interface {
 	Close() error
 }
 
-var (
-	mu       sync.Mutex
-	emitters = make(map[Emitter]struct{})
-)
+// DefaultEmitter is the default emitter. Calls to Emit and AddEmitter are sent
+// to this Emitter.
+var DefaultEmitter = &multiEmitter{}
+
+// Emit is a helper method that calls DefaultEmitter.Emit.
+func Emit(msg proto.Message) error {
+	_, err := DefaultEmitter.Emit(msg)
+	return err
+}
+
+// AddEmitter is a helper method that calls DefaultEmitter.AddEmitter.
+func AddEmitter(e Emitter) {
+	DefaultEmitter.AddEmitter(e)
+}
+
+// multiEmitter is an Emitter that forwards messages to multiple Emitters.
+type multiEmitter struct {
+	// mu protects emitters.
+	mu sync.Mutex
+	// emitters is initialized lazily in AddEmitter.
+	emitters map[Emitter]struct{}
+}
 
 // Emit emits a message using all added emitters.
-func Emit(msg proto.Message) error {
-	mu.Lock()
-	defer mu.Unlock()
+func (me *multiEmitter) Emit(msg proto.Message) (bool, error) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
 
 	var err error
-	for e := range emitters {
+	for e := range me.emitters {
 		hangup, eerr := e.Emit(msg)
 		if eerr != nil {
 			if err == nil {
@@ -68,18 +86,36 @@ func Emit(msg proto.Message) error {
 		}
 		if hangup {
 			log.Infof("Hangup on eventchannel emitter %v.", e)
-			delete(emitters, e)
+			delete(me.emitters, e)
 		}
 	}
 
-	return err
+	return false, err
 }
 
 // AddEmitter adds a new emitter.
-func AddEmitter(e Emitter) {
-	mu.Lock()
-	defer mu.Unlock()
-	emitters[e] = struct{}{}
+func (me *multiEmitter) AddEmitter(e Emitter) {
+	me.mu.Lock()
+	defer me.mu.Unlock()
+	if me.emitters == nil {
+		me.emitters = make(map[Emitter]struct{})
+	}
+	me.emitters[e] = struct{}{}
+}
+
+// Close closes all emitters. If any Close call errors, it returns the first
+// one encountered.
+func (me *multiEmitter) Close() error {
+	me.mu.Lock()
+	defer me.mu.Unlock()
+	var err error
+	for e := range me.emitters {
+		if eerr := e.Close(); err == nil && eerr != nil {
+			err = eerr
+		}
+		delete(me.emitters, e)
+	}
+	return err
 }
 
 func marshal(msg proto.Message) ([]byte, error) {
