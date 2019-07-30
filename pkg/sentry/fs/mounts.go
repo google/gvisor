@@ -678,7 +678,7 @@ func (mns *MountNamespace) ResolveExecutablePath(ctx context.Context, wd, name s
 	return "", syserror.ENOENT
 }
 
-// GetPath returns the PATH as a slice of strings given the environemnt
+// GetPath returns the PATH as a slice of strings given the environment
 // variables.
 func GetPath(env []string) []string {
 	const prefix = "PATH="
