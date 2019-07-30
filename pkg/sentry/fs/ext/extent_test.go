@@ -201,7 +201,7 @@ func TestBuildExtentTree(t *testing.T) {
 // extentTreeSetUp writes the passed extent tree to a mock disk as an extent
 // tree. It also constucts a mock extent file with the same tree built in it.
 // It also writes random data file data and returns it.
-func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (io.ReadSeeker, *extentFile, []byte) {
+func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (io.ReaderAt, *extentFile, []byte) {
 	t.Helper()
 
 	mockDisk := make([]byte, mockExtentBlkSize*10)

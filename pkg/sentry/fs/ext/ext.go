@@ -19,9 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -35,11 +35,11 @@ type filesystemType struct{}
 // Compiles only if filesystemType implements vfs.FilesystemType.
 var _ vfs.FilesystemType = (*filesystemType)(nil)
 
-// getDeviceFd returns the read seeker to the underlying device.
+// getDeviceFd returns an io.ReaderAt to the underlying device.
 // Currently there are two ways of mounting an ext(2/3/4) fs:
 //   1. Specify a mount with our internal special MountType in the OCI spec.
 //   2. Expose the device to the container and mount it from application layer.
-func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReadSeeker, error) {
+func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReaderAt, error) {
 	if opts.InternalData == nil {
 		// User mount call.
 		// TODO(b/134676337): Open the device specified by `source` and return that.
@@ -47,20 +47,19 @@ func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReadSeeker, e
 	}
 
 	// NewFilesystem call originated from within the sentry.
-	fd, ok := opts.InternalData.(uintptr)
+	devFd, ok := opts.InternalData.(int)
 	if !ok {
-		return nil, errors.New("internal data for ext fs must be a uintptr containing the file descriptor to device")
+		return nil, errors.New("internal data for ext fs must be an int containing the file descriptor to device")
 	}
 
-	// We do not close this file because that would close the underlying device
-	// file descriptor (which is required for reading the fs from disk).
-	// TODO(b/134676337): Use pkg/fd instead.
-	deviceFile := os.NewFile(fd, source)
-	if deviceFile == nil {
-		return nil, fmt.Errorf("ext4 device file descriptor is not valid: %d", fd)
+	if devFd < 0 {
+		return nil, fmt.Errorf("ext device file descriptor is not valid: %d", devFd)
 	}
 
-	return deviceFile, nil
+	// The fd.ReadWriter returned from fd.NewReadWriter() does not take ownership
+	// of the file descriptor and hence will not close it when it is garbage
+	// collected.
+	return fd.NewReadWriter(devFd), nil
 }
 
 // NewFilesystem implements vfs.FilesystemType.NewFilesystem.

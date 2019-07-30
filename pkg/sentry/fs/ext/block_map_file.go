@@ -16,6 +16,7 @@ package ext
 
 import (
 	"io"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/binary"
 )
@@ -25,10 +26,13 @@ import (
 type blockMapFile struct {
 	regFile regularFile
 
+	// mu serializes changes to fileToPhysBlks.
+	mu sync.RWMutex
+
 	// fileToPhysBlks maps the file block numbers to the physical block numbers.
 	// the physical block number for the (i)th file block is stored in the (i)th
 	// index. This is initialized (at max) with the first 12 entries. The rest
-	// have to be read in from disk when required.
+	// have to be read in from disk when required. Protected by mu.
 	fileToPhysBlks []uint32
 }
 
@@ -36,7 +40,7 @@ type blockMapFile struct {
 var _ fileReader = (*blockMapFile)(nil)
 
 // Read implements fileReader.getFileReader.
-func (f *blockMapFile) getFileReader(dev io.ReadSeeker, blkSize uint64, offset uint64) io.Reader {
+func (f *blockMapFile) getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader {
 	panic("unimplemented")
 }
 

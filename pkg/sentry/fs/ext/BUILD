@@ -37,6 +37,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/binary",
+        "//pkg/fd",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/ext/disklayout",

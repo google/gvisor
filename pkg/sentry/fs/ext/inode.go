@@ -75,7 +75,7 @@ func (in *inode) tryIncRef() bool {
 // decRef decrements the inode ref count and releases the inode resources if
 // the ref count hits 0.
 //
-// Preconditions: Must have locked fs.mu.
+// Precondition: Must have locked fs.mu.
 func (in *inode) decRef(fs *filesystem) {
 	if refs := atomic.AddInt64(&in.refs, -1); refs == 0 {
 		delete(fs.inodeCache, in.inodeNum)
@@ -86,9 +86,7 @@ func (in *inode) decRef(fs *filesystem) {
 
 // newInode is the inode constructor. Reads the inode off disk. Identifies
 // inodes based on the absolute inode number on disk.
-//
-// Preconditions: Must hold the mutex of the filesystem containing dev.
-func newInode(ctx context.Context, dev io.ReadSeeker, sb disklayout.SuperBlock, bgs []disklayout.BlockGroup, inodeNum uint32) (*inode, error) {
+func newInode(ctx context.Context, dev io.ReaderAt, sb disklayout.SuperBlock, bgs []disklayout.BlockGroup, inodeNum uint32) (*inode, error) {
 	if inodeNum == 0 {
 		panic("inode number 0 on ext filesystems is not possible")
 	}
