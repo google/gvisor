@@ -1,4 +1,4 @@
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 
 package(licenses = ["notice"])
@@ -7,6 +7,7 @@ go_library(
     name = "eventchannel",
     srcs = [
         "event.go",
+        "rate.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/eventchannel",
     visibility = ["//:sandbox"],
@@ -16,6 +17,7 @@ go_library(
         "//pkg/unet",
         "@com_github_golang_protobuf//proto:go_default_library",
         "@com_github_golang_protobuf//ptypes:go_default_library_gen",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 
@@ -29,4 +31,13 @@ go_proto_library(
     importpath = "gvisor.dev/gvisor/pkg/eventchannel/eventchannel_go_proto",
     proto = ":eventchannel_proto",
     visibility = ["//:sandbox"],
+)
+
+go_test(
+    name = "eventchannel_test",
+    srcs = ["event_test.go"],
+    embed = [":eventchannel"],
+    deps = [
+        "@com_github_golang_protobuf//proto:go_default_library",
+    ],
 )

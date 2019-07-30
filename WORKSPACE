@@ -145,6 +145,12 @@ go_repository(
 )
 
 go_repository(
+    name = "org_golang_x_time",
+    commit = "9d24e82272b4f38b78bc8cff74fa936d31ccd8ef",
+    importpath = "golang.org/x/time",
+)
+
+go_repository(
     name = "org_golang_x_tools",
     commit = "aa82965741a9fecd12b026fbb3d3c6ed3231b8f8",
     importpath = "golang.org/x/tools",
