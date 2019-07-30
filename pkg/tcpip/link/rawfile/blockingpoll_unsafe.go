@@ -21,9 +21,11 @@ import (
 	"unsafe"
 )
 
-// BlockingPoll is just a stub function that forwards to the poll() system call
+// BlockingPoll is just a stub function that forwards to the ppoll() system call
 // on non-amd64 platforms.
-func BlockingPoll(fds *PollEvent, nfds int, timeout int64) (int, syscall.Errno) {
-	n, _, e := syscall.Syscall(syscall.SYS_POLL, uintptr(unsafe.Pointer(fds)), uintptr(nfds), uintptr(timeout))
+func BlockingPoll(fds *PollEvent, nfds int, timeout *syscall.Timespec) (int, syscall.Errno) {
+	n, _, e := syscall.Syscall6(syscall.SYS_PPOLL, uintptr(unsafe.Pointer(fds)),
+		uintptr(nfds), uintptr(unsafe.Pointer(timeout)), 0, 0, 0)
+
 	return int(n), e
 }

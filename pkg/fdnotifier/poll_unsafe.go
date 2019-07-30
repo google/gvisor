@@ -35,8 +35,14 @@ func NonBlockingPoll(fd int32, mask waiter.EventMask) waiter.EventMask {
 		events: int16(mask.ToLinux()),
 	}
 
+	ts := syscall.Timespec{
+		Sec:  0,
+		Nsec: 0,
+	}
+
 	for {
-		n, _, err := syscall.RawSyscall(syscall.SYS_POLL, uintptr(unsafe.Pointer(&e)), 1, 0)
+		n, _, err := syscall.RawSyscall6(syscall.SYS_PPOLL, uintptr(unsafe.Pointer(&e)), 1,
+			uintptr(unsafe.Pointer(&ts)), 0, 0, 0)
 		// Interrupted by signal, try again.
 		if err == syscall.EINTR {
 			continue
