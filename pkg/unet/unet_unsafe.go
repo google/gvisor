@@ -16,7 +16,6 @@ package unet
 
 import (
 	"io"
-	"math"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -53,7 +52,7 @@ func (s *Socket) wait(write bool) error {
 			events[0].Events = unix.POLLOUT
 		}
 
-		_, _, e := syscall.Syscall(syscall.SYS_POLL, uintptr(unsafe.Pointer(&events[0])), 2, uintptr(math.MaxUint64))
+		_, _, e := syscall.Syscall6(syscall.SYS_PPOLL, uintptr(unsafe.Pointer(&events[0])), 2, 0, 0, 0, 0)
 		if e == syscall.EINTR {
 			continue
 		}
