@@ -31,22 +31,16 @@ type filesystem struct {
 
 	vfsfs vfs.Filesystem
 
-	// mu serializes changes to the Dentry tree and the usage of the read seeker.
-	mu sync.Mutex
+	// mu serializes changes to the Dentry tree.
+	mu sync.RWMutex
 
-	// dev is the ReadSeeker for the underlying fs device. It is protected by mu.
-	//
-	// The ext filesystems aim to maximize locality, i.e. place all the data
-	// blocks of a file close together. On a spinning disk, locality reduces the
-	// amount of movement of the head hence speeding up IO operations. On an SSD
-	// there are no moving parts but locality increases the size of each transer
-	// request. Hence, having mutual exclusion on the read seeker while reading a
-	// file *should* help in achieving the intended performance gains.
-	//
-	// Note: This synchronization was not coupled with the ReadSeeker itself
-	// because we want to synchronize across read/seek operations for the
-	// performance gains mentioned above. Helps enforcing one-file-at-a-time IO.
-	dev io.ReadSeeker
+	// dev is the io.ReaderAt for the underlying fs device. It does not require
+	// protection because io.ReaderAt permits concurrent read calls to it. It
+	// translates to the pread syscall which passes on the read request directly
+	// to the device driver. Device drivers are intelligent in serving multiple
+	// concurrent read requests in the optimal order (taking locality into
+	// consideration).
+	dev io.ReaderAt
 
 	// inodeCache maps absolute inode numbers to the corresponding Inode struct.
 	// Inodes should be removed from this once their reference count hits 0.
@@ -69,7 +63,7 @@ var _ vfs.FilesystemImpl = (*filesystem)(nil)
 // getOrCreateInode gets the inode corresponding to the inode number passed in.
 // It creates a new one with the given inode number if one does not exist.
 //
-// Preconditions: must be holding fs.mu.
+// Precondition: must be holding fs.mu.
 func (fs *filesystem) getOrCreateInode(ctx context.Context, inodeNum uint32) (*inode, error) {
 	if in, ok := fs.inodeCache[inodeNum]; ok {
 		return in, nil

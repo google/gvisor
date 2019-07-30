@@ -15,55 +15,30 @@
 package ext
 
 import (
-	"encoding/binary"
 	"io"
 
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // readFromDisk performs a binary read from disk into the given struct from
 // the absolute offset provided.
-//
-// All disk reads should use this helper so we avoid reading from stale
-// previously used offsets. This function forces the offset parameter.
-//
-// Precondition: Must hold the mutex of the filesystem containing dev.
-func readFromDisk(dev io.ReadSeeker, abOff int64, v interface{}) error {
-	if _, err := dev.Seek(abOff, io.SeekStart); err != nil {
+func readFromDisk(dev io.ReaderAt, abOff int64, v interface{}) error {
+	n := binary.Size(v)
+	buf := make([]byte, n)
+	if read, _ := dev.ReadAt(buf, abOff); read < int(n) {
 		return syserror.EIO
 	}
 
-	if err := binary.Read(dev, binary.LittleEndian, v); err != nil {
-		return syserror.EIO
-	}
-
+	binary.Unmarshal(buf, binary.LittleEndian, v)
 	return nil
-}
-
-// readFull is a wrapper around io.ReadFull which enforces the absolute offset
-// parameter so that we can ensure that we do not perform incorrect reads from
-// stale previously used offsets.
-//
-// Precondition: Must hold the mutex of the filesystem containing dev.
-func readFull(dev io.ReadSeeker, abOff int64, dst []byte) (int, error) {
-	if _, err := dev.Seek(abOff, io.SeekStart); err != nil {
-		return 0, syserror.EIO
-	}
-
-	n, err := io.ReadFull(dev, dst)
-	if err != nil {
-		err = syserror.EIO
-	}
-	return n, err
 }
 
 // readSuperBlock reads the SuperBlock from block group 0 in the underlying
 // device. There are three versions of the superblock. This function identifies
 // and returns the correct version.
-//
-// Precondition: Must hold the mutex of the filesystem containing dev.
-func readSuperBlock(dev io.ReadSeeker) (disklayout.SuperBlock, error) {
+func readSuperBlock(dev io.ReaderAt) (disklayout.SuperBlock, error) {
 	var sb disklayout.SuperBlock = &disklayout.SuperBlockOld{}
 	if err := readFromDisk(dev, disklayout.SbOffset, sb); err != nil {
 		return nil, err
@@ -98,9 +73,7 @@ func blockGroupsCount(sb disklayout.SuperBlock) uint64 {
 
 // readBlockGroups reads the block group descriptor table from block group 0 in
 // the underlying device.
-//
-// Precondition: Must hold the mutex of the filesystem containing dev.
-func readBlockGroups(dev io.ReadSeeker, sb disklayout.SuperBlock) ([]disklayout.BlockGroup, error) {
+func readBlockGroups(dev io.ReaderAt, sb disklayout.SuperBlock) ([]disklayout.BlockGroup, error) {
 	bgCount := blockGroupsCount(sb)
 	bgdSize := uint64(sb.BgDescSize())
 	is64Bit := sb.IncompatibleFeatures().Is64Bit

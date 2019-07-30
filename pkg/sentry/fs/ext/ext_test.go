@@ -69,7 +69,7 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.Filesystem, *v
 
 	// Mount the ext4 fs and retrieve the inode structure for the file.
 	mockCtx := contexttest.Context(t)
-	fs, d, err := filesystemType{}.NewFilesystem(mockCtx, nil, localImagePath, vfs.NewFilesystemOptions{InternalData: f.Fd()})
+	fs, d, err := filesystemType{}.NewFilesystem(mockCtx, nil, localImagePath, vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err

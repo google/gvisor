@@ -28,9 +28,7 @@ type symlink struct {
 
 // newSymlink is the symlink constructor. It reads out the symlink target from
 // the inode (however it might have been stored).
-//
-// Preconditions: Must hold the mutex of the filesystem containing dev.
-func newSymlink(dev io.ReadSeeker, blkSize uint64, inode inode) (*symlink, error) {
+func newSymlink(dev io.ReaderAt, blkSize uint64, inode inode) (*symlink, error) {
 	var file *symlink
 	var link []byte
 

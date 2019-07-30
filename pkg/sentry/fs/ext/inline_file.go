@@ -28,7 +28,7 @@ type inlineFile struct {
 var _ fileReader = (*inlineFile)(nil)
 
 // getFileReader implements fileReader.getFileReader.
-func (f *inlineFile) getFileReader(_ io.ReadSeeker, _ uint64, offset uint64) io.Reader {
+func (f *inlineFile) getFileReader(_ io.ReaderAt, _ uint64, offset uint64) io.Reader {
 	diskInode := f.regFile.inode.diskInode
 	return &inlineReader{offset: offset, data: diskInode.Data()[:diskInode.Size()]}
 }

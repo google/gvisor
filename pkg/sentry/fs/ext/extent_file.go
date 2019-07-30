@@ -36,7 +36,7 @@ type extentFile struct {
 var _ fileReader = (*extentFile)(nil)
 
 // Read implements fileReader.getFileReader.
-func (f *extentFile) getFileReader(dev io.ReadSeeker, blkSize uint64, offset uint64) io.Reader {
+func (f *extentFile) getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader {
 	return &extentReader{
 		dev:     dev,
 		file:    f,
@@ -47,10 +47,8 @@ func (f *extentFile) getFileReader(dev io.ReadSeeker, blkSize uint64, offset uin
 
 // newExtentFile is the extent file constructor. It reads the entire extent
 // tree into memory.
-//
-// Preconditions: Must hold the mutex of the filesystem containing dev.
 // TODO(b/134676337): Build extent tree on demand to reduce memory usage.
-func newExtentFile(dev io.ReadSeeker, blkSize uint64, regFile regularFile) (*extentFile, error) {
+func newExtentFile(dev io.ReaderAt, blkSize uint64, regFile regularFile) (*extentFile, error) {
 	file := &extentFile{regFile: regFile}
 	file.regFile.impl = file
 	err := file.buildExtTree(dev, blkSize)
@@ -65,10 +63,8 @@ func newExtentFile(dev io.ReadSeeker, blkSize uint64, regFile regularFile) (*ext
 // memory. Then it recursively builds the rest of the tree by reading it off
 // disk.
 //
-// Preconditions:
-//   - Must hold the mutex of the filesystem containing dev.
-//   - Inode flag InExtents must be set.
-func (f *extentFile) buildExtTree(dev io.ReadSeeker, blkSize uint64) error {
+// Precondition: inode flag InExtents must be set.
+func (f *extentFile) buildExtTree(dev io.ReaderAt, blkSize uint64) error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
 	binary.Unmarshal(rootNodeData[:disklayout.ExtentStructsSize], binary.LittleEndian, &f.root.Header)
@@ -110,9 +106,7 @@ func (f *extentFile) buildExtTree(dev io.ReadSeeker, blkSize uint64) error {
 // buildExtTreeFromDisk reads the extent tree nodes from disk and recursively
 // builds the tree. Performs a simple DFS. It returns the ExtentNode pointed to
 // by the ExtentEntry.
-//
-// Preconditions: Must hold the mutex of the filesystem containing dev.
-func buildExtTreeFromDisk(dev io.ReadSeeker, entry disklayout.ExtentEntry, blkSize uint64) (*disklayout.ExtentNode, error) {
+func buildExtTreeFromDisk(dev io.ReaderAt, entry disklayout.ExtentEntry, blkSize uint64) (*disklayout.ExtentNode, error) {
 	var header disklayout.ExtentHeader
 	off := entry.PhysicalBlock() * blkSize
 	err := readFromDisk(dev, int64(off), &header)
@@ -155,7 +149,7 @@ func buildExtTreeFromDisk(dev io.ReadSeeker, entry disklayout.ExtentEntry, blkSi
 // extentReader implements io.Reader which can traverse the extent tree and
 // read file data. This is not thread safe.
 type extentReader struct {
-	dev     io.ReadSeeker
+	dev     io.ReaderAt
 	file    *extentFile
 	fileOff uint64 // Represents the current file offset being read from.
 	blkSize uint64
@@ -247,9 +241,12 @@ func (r *extentReader) readFromExtent(ex *disklayout.Extent, dst []byte) (int, e
 		toRead = len(dst)
 	}
 
-	n, err := readFull(r.dev, int64(readStart), dst[:toRead])
+	n, _ := r.dev.ReadAt(dst[:toRead], int64(readStart))
 	r.fileOff += uint64(n)
-	return n, err
+	if n < toRead {
+		return n, syserror.EIO
+	}
+	return n, nil
 }
 
 // fileBlock returns the file block number we are currently reading.

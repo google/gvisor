@@ -29,10 +29,7 @@ type fileReader interface {
 	//
 	// This reader is not meant to be retained across Read operations as it needs
 	// to be reinitialized with the correct offset for every Read.
-	//
-	// Precondition: Must hold the mutex of the filesystem containing dev while
-	//               using the Reader.
-	getFileReader(dev io.ReadSeeker, blkSize uint64, offset uint64) io.Reader
+	getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader
 }
 
 // regularFile represents a regular file's inode. This too follows the
@@ -48,9 +45,7 @@ type regularFile struct {
 
 // newRegularFile is the regularFile constructor. It figures out what kind of
 // file this is and initializes the fileReader.
-//
-// Preconditions: Must hold the mutex of the filesystem containing dev.
-func newRegularFile(dev io.ReadSeeker, blkSize uint64, inode inode) (*regularFile, error) {
+func newRegularFile(dev io.ReaderAt, blkSize uint64, inode inode) (*regularFile, error) {
 	regFile := regularFile{
 		inode: inode,
 	}
