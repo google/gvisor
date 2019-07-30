@@ -30,8 +30,7 @@ import (
 const _AUDIT_ARCH_X86_64 = 0xc000003e
 
 // AMD64 is a table of Linux amd64 syscall API with the corresponding syscall
-// numbers from Linux 4.4. The entries commented out are those syscalls we
-// don't currently support.
+// numbers from Linux 4.4.
 var AMD64 = &kernel.SyscallTable{
 	OS:   abi.Linux,
 	Arch: arch.AMD64,
