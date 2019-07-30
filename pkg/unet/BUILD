@@ -11,8 +11,8 @@ go_library(
     importpath = "gvisor.dev/gvisor/pkg/unet",
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/gate",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
