@@ -16,6 +16,8 @@ package ext
 
 import (
 	"bytes"
+	"io"
+	"math/rand"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -24,9 +26,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
 )
 
-// TestExtentTree tests the extent tree building logic.
+const (
+	// mockExtentBlkSize is the mock block size used for testing.
+	// No block has more than 1 header + 4 entries.
+	mockExtentBlkSize = uint64(64)
+)
+
+// The tree described below looks like:
 //
-// Test tree:
 //            0.{Head}[Idx][Idx]
 //                     /     \
 //                    /       \
@@ -44,18 +51,8 @@ import (
 //
 // Please note that ext4 might not construct extent trees looking like this.
 // This is purely for testing the tree traversal logic.
-func TestExtentTree(t *testing.T) {
-	blkSize := uint64(64) // No block has more than 1 header + 4 entries.
-	mockDisk := make([]byte, blkSize*10)
-	mockExtentFile := extentFile{
-		regFile: regularFile{
-			inode: inode{
-				diskInode: &disklayout.InodeNew{},
-			},
-		},
-	}
-
-	node3 := &disklayout.ExtentNode{
+var (
+	node3 = &disklayout.ExtentNode{
 		Header: disklayout.ExtentHeader{
 			Magic:      disklayout.ExtentMagic,
 			NumEntries: 1,
@@ -74,7 +71,7 @@ func TestExtentTree(t *testing.T) {
 		},
 	}
 
-	node2 := &disklayout.ExtentNode{
+	node2 = &disklayout.ExtentNode{
 		Header: disklayout.ExtentHeader{
 			Magic:      disklayout.ExtentMagic,
 			NumEntries: 1,
@@ -92,7 +89,7 @@ func TestExtentTree(t *testing.T) {
 		},
 	}
 
-	node1 := &disklayout.ExtentNode{
+	node1 = &disklayout.ExtentNode{
 		Header: disklayout.ExtentHeader{
 			Magic:      disklayout.ExtentMagic,
 			NumEntries: 2,
@@ -119,7 +116,7 @@ func TestExtentTree(t *testing.T) {
 		},
 	}
 
-	node0 := &disklayout.ExtentNode{
+	node0 = &disklayout.ExtentNode{
 		Header: disklayout.ExtentHeader{
 			Magic:      disklayout.ExtentMagic,
 			NumEntries: 2,
@@ -143,13 +140,57 @@ func TestExtentTree(t *testing.T) {
 			},
 		},
 	}
+)
 
-	writeTree(&mockExtentFile.regFile.inode, mockDisk, node0, blkSize)
-
-	r := bytes.NewReader(mockDisk)
-	if err := mockExtentFile.buildExtTree(r, blkSize); err != nil {
-		t.Fatalf("inode.buildExtTree failed: %v", err)
+// TestExtentReader tests extentReader functionality. We should be able to use
+// the file reader like any other io.Reader.
+func TestExtentReader(t *testing.T) {
+	type extentReaderTest struct {
+		name string
+		from func(uint64) uint64
+		to   func(uint64) uint64
 	}
+
+	tests := []extentReaderTest{
+		{
+			name: "read first half",
+			from: beginning,
+			to:   middle,
+		},
+		{
+			name: "read entire file",
+			from: beginning,
+			to:   end,
+		},
+		{
+			name: "read second half",
+			from: middle,
+			to:   end,
+		},
+	}
+
+	dev, mockExtentFile, want := extentTreeSetUp(t, node0)
+	size := mockExtentFile.regFile.inode.diskInode.Size()
+
+	for _, test := range tests {
+		from := test.from(size)
+		to := test.to(size)
+		fileReader := mockExtentFile.getFileReader(dev, mockExtentBlkSize, from)
+
+		got := make([]byte, to-from)
+		if _, err := io.ReadFull(fileReader, got); err != nil {
+			t.Errorf("file read failed: %v", err)
+		}
+
+		if diff := cmp.Diff(got, want[from:to]); diff != "" {
+			t.Errorf("file data mismatch (-want +got):\n%s", diff)
+		}
+	}
+}
+
+// TestBuildExtentTree tests the extent tree building logic.
+func TestBuildExtentTree(t *testing.T) {
+	_, mockExtentFile, _ := extentTreeSetUp(t, node0)
 
 	opt := cmpopts.IgnoreUnexported(disklayout.ExtentIdx{}, disklayout.ExtentHeader{})
 	if diff := cmp.Diff(&mockExtentFile.root, node0, opt); diff != "" {
@@ -157,8 +198,37 @@ func TestExtentTree(t *testing.T) {
 	}
 }
 
-// writeTree writes the tree represented by `root` to the inode and disk passed.
-func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, blkSize uint64) {
+// extentTreeSetUp writes the passed extent tree to a mock disk as an extent
+// tree. It also constucts a mock extent file with the same tree built in it.
+// It also writes random data file data and returns it.
+func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (io.ReadSeeker, *extentFile, []byte) {
+	t.Helper()
+
+	mockDisk := make([]byte, mockExtentBlkSize*10)
+	mockExtentFile := &extentFile{
+		regFile: regularFile{
+			inode: inode{
+				diskInode: &disklayout.InodeNew{
+					InodeOld: disklayout.InodeOld{
+						SizeLo: uint32(mockExtentBlkSize) * getNumPhyBlks(root),
+					},
+				},
+			},
+		},
+	}
+
+	fileData := writeTree(&mockExtentFile.regFile.inode, mockDisk, node0, mockExtentBlkSize)
+
+	r := bytes.NewReader(mockDisk)
+	if err := mockExtentFile.buildExtTree(r, mockExtentBlkSize); err != nil {
+		t.Fatalf("inode.buildExtTree failed: %v", err)
+	}
+	return r, mockExtentFile, fileData
+}
+
+// writeTree writes the tree represented by `root` to the inode and disk. It
+// also writes random file data on disk.
+func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, mockExtentBlkSize uint64) []byte {
 	rootData := binary.Marshal(nil, binary.LittleEndian, root.Header)
 	for _, ep := range root.Entries {
 		rootData = binary.Marshal(rootData, binary.LittleEndian, ep.Entry)
@@ -166,26 +236,57 @@ func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, blkSize uint
 
 	copy(in.diskInode.Data(), rootData)
 
-	if root.Header.Height > 0 {
-		for _, ep := range root.Entries {
-			writeTreeToDisk(disk, ep, blkSize)
+	var fileData []byte
+	for _, ep := range root.Entries {
+		if root.Header.Height == 0 {
+			fileData = append(fileData, writeRandomFileData(disk, ep.Entry.(*disklayout.Extent))...)
+		} else {
+			fileData = append(fileData, writeTreeToDisk(disk, ep)...)
 		}
 	}
+	return fileData
 }
 
 // writeTreeToDisk is the recursive step for writeTree which writes the tree
-// on the disk only.
-func writeTreeToDisk(disk []byte, curNode disklayout.ExtentEntryPair, blkSize uint64) {
+// on the disk only. Also writes random file data on disk.
+func writeTreeToDisk(disk []byte, curNode disklayout.ExtentEntryPair) []byte {
 	nodeData := binary.Marshal(nil, binary.LittleEndian, curNode.Node.Header)
 	for _, ep := range curNode.Node.Entries {
 		nodeData = binary.Marshal(nodeData, binary.LittleEndian, ep.Entry)
 	}
 
-	copy(disk[curNode.Entry.PhysicalBlock()*blkSize:], nodeData)
+	copy(disk[curNode.Entry.PhysicalBlock()*mockExtentBlkSize:], nodeData)
 
-	if curNode.Node.Header.Height > 0 {
-		for _, ep := range curNode.Node.Entries {
-			writeTreeToDisk(disk, ep, blkSize)
+	var fileData []byte
+	for _, ep := range curNode.Node.Entries {
+		if curNode.Node.Header.Height == 0 {
+			fileData = append(fileData, writeRandomFileData(disk, ep.Entry.(*disklayout.Extent))...)
+		} else {
+			fileData = append(fileData, writeTreeToDisk(disk, ep)...)
 		}
 	}
+	return fileData
+}
+
+// writeRandomFileData writes random bytes to the blocks on disk that the
+// passed extent points to.
+func writeRandomFileData(disk []byte, ex *disklayout.Extent) []byte {
+	phyExStartBlk := ex.PhysicalBlock()
+	phyExStartOff := phyExStartBlk * mockExtentBlkSize
+	phyExEndOff := phyExStartOff + uint64(ex.Length)*mockExtentBlkSize
+	rand.Read(disk[phyExStartOff:phyExEndOff])
+	return disk[phyExStartOff:phyExEndOff]
+}
+
+// getNumPhyBlks returns the number of physical blocks covered under the node.
+func getNumPhyBlks(node *disklayout.ExtentNode) uint32 {
+	var res uint32
+	for _, ep := range node.Entries {
+		if node.Header.Height == 0 {
+			res += uint32(ep.Entry.(*disklayout.Extent).Length)
+		} else {
+			res += getNumPhyBlks(ep.Node)
+		}
+	}
+	return res
 }

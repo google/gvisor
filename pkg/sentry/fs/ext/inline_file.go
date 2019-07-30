@@ -40,7 +40,8 @@ func newInlineFile(regFile regularFile) *inlineFile {
 	return file
 }
 
-// inlineReader implements io.Reader which can read the underlying data.
+// inlineReader implements io.Reader which can read the underlying data. This
+// is not thread safe.
 type inlineReader struct {
 	offset uint64
 	data   []byte

@@ -41,6 +41,23 @@ func readFromDisk(dev io.ReadSeeker, abOff int64, v interface{}) error {
 	return nil
 }
 
+// readFull is a wrapper around io.ReadFull which enforces the absolute offset
+// parameter so that we can ensure that we do not perform incorrect reads from
+// stale previously used offsets.
+//
+// Precondition: Must hold the mutex of the filesystem containing dev.
+func readFull(dev io.ReadSeeker, abOff int64, dst []byte) (int, error) {
+	if _, err := dev.Seek(abOff, io.SeekStart); err != nil {
+		return 0, syserror.EIO
+	}
+
+	n, err := io.ReadFull(dev, dst)
+	if err != nil {
+		err = syserror.EIO
+	}
+	return n, err
+}
+
 // readSuperBlock reads the SuperBlock from block group 0 in the underlying
 // device. There are three versions of the superblock. This function identifies
 // and returns the correct version.
