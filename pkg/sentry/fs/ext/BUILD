@@ -54,6 +54,7 @@ go_test(
     name = "ext_test",
     size = "small",
     srcs = [
+        "block_map_test.go",
         "ext_test.go",
         "extent_test.go",
     ],

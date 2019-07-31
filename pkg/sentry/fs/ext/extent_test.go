@@ -142,48 +142,22 @@ var (
 	}
 )
 
-// TestExtentReader tests extentReader functionality. We should be able to use
-// the file reader like any other io.Reader.
+// TestExtentReader stress tests extentReader functionality. It performs random
+// length reads from all possible positions in the extent tree.
 func TestExtentReader(t *testing.T) {
-	type extentReaderTest struct {
-		name string
-		from func(uint64) uint64
-		to   func(uint64) uint64
-	}
-
-	tests := []extentReaderTest{
-		{
-			name: "read first half",
-			from: beginning,
-			to:   middle,
-		},
-		{
-			name: "read entire file",
-			from: beginning,
-			to:   end,
-		},
-		{
-			name: "read second half",
-			from: middle,
-			to:   end,
-		},
-	}
-
 	dev, mockExtentFile, want := extentTreeSetUp(t, node0)
-	size := mockExtentFile.regFile.inode.diskInode.Size()
+	n := len(want)
 
-	for _, test := range tests {
-		from := test.from(size)
-		to := test.to(size)
-		fileReader := mockExtentFile.getFileReader(dev, mockExtentBlkSize, from)
+	for from := 0; from < n; from++ {
+		fileReader := mockExtentFile.getFileReader(dev, mockExtentBlkSize, uint64(from))
+		got := make([]byte, n-from)
 
-		got := make([]byte, to-from)
-		if _, err := io.ReadFull(fileReader, got); err != nil {
-			t.Errorf("file read failed: %v", err)
+		if read, err := io.ReadFull(fileReader, got); err != nil {
+			t.Fatalf("file read operation from offset %d to %d only read %d bytes: %v", from, n, read, err)
 		}
 
-		if diff := cmp.Diff(got, want[from:to]); diff != "" {
-			t.Errorf("file data mismatch (-want +got):\n%s", diff)
+		if diff := cmp.Diff(got, want[from:]); diff != "" {
+			t.Fatalf("file data from offset %d to %d mismatched (-want +got):\n%s", from, n, diff)
 		}
 	}
 }
@@ -239,7 +213,7 @@ func writeTree(in *inode, disk []byte, root *disklayout.ExtentNode, mockExtentBl
 	var fileData []byte
 	for _, ep := range root.Entries {
 		if root.Header.Height == 0 {
-			fileData = append(fileData, writeRandomFileData(disk, ep.Entry.(*disklayout.Extent))...)
+			fileData = append(fileData, writeFileDataToExtent(disk, ep.Entry.(*disklayout.Extent))...)
 		} else {
 			fileData = append(fileData, writeTreeToDisk(disk, ep)...)
 		}
@@ -260,7 +234,7 @@ func writeTreeToDisk(disk []byte, curNode disklayout.ExtentEntryPair) []byte {
 	var fileData []byte
 	for _, ep := range curNode.Node.Entries {
 		if curNode.Node.Header.Height == 0 {
-			fileData = append(fileData, writeRandomFileData(disk, ep.Entry.(*disklayout.Extent))...)
+			fileData = append(fileData, writeFileDataToExtent(disk, ep.Entry.(*disklayout.Extent))...)
 		} else {
 			fileData = append(fileData, writeTreeToDisk(disk, ep)...)
 		}
@@ -268,9 +242,9 @@ func writeTreeToDisk(disk []byte, curNode disklayout.ExtentEntryPair) []byte {
 	return fileData
 }
 
-// writeRandomFileData writes random bytes to the blocks on disk that the
+// writeFileDataToExtent writes random bytes to the blocks on disk that the
 // passed extent points to.
-func writeRandomFileData(disk []byte, ex *disklayout.Extent) []byte {
+func writeFileDataToExtent(disk []byte, ex *disklayout.Extent) []byte {
 	phyExStartBlk := ex.PhysicalBlock()
 	phyExStartOff := phyExStartBlk * mockExtentBlkSize
 	phyExEndOff := phyExStartOff + uint64(ex.Length)*mockExtentBlkSize
