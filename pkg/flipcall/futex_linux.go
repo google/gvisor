@@ -17,78 +17,95 @@
 package flipcall
 
 import (
+	"encoding/json"
 	"fmt"
-	"math"
+	"runtime"
 	"sync/atomic"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 )
 
-func (ep *Endpoint) doFutexRoundTrip() error {
-	ourSeq, err := ep.doFutexNotifySeq()
-	if err != nil {
-		return err
+func (ep *Endpoint) futexConnect(req *ctrlHandshakeRequest) (ctrlHandshakeResponse, error) {
+	var resp ctrlHandshakeResponse
+
+	// Write the handshake request.
+	w := ep.NewWriter()
+	if err := json.NewEncoder(w).Encode(req); err != nil {
+		return resp, fmt.Errorf("error writing handshake request: %v", err)
 	}
-	return ep.doFutexWaitSeq(ourSeq)
-}
+	*ep.dataLen() = w.Len()
 
-func (ep *Endpoint) doFutexWaitFirst() error {
-	return ep.doFutexWaitSeq(0)
-}
-
-func (ep *Endpoint) doFutexNotifyLast() error {
-	_, err := ep.doFutexNotifySeq()
-	return err
-}
-
-func (ep *Endpoint) doFutexNotifySeq() (uint32, error) {
-	ourSeq := atomic.AddUint32(ep.seq(), 1)
-	if err := ep.futexWake(1); err != nil {
-		return ourSeq, fmt.Errorf("failed to FUTEX_WAKE peer Endpoint: %v", err)
+	// Exchange control with the server.
+	if err := ep.futexSwitchToPeer(); err != nil {
+		return resp, err
 	}
-	return ourSeq, nil
+	if err := ep.futexSwitchFromPeer(); err != nil {
+		return resp, err
+	}
+
+	// Read the handshake response.
+	respLen := atomic.LoadUint32(ep.dataLen())
+	if respLen > ep.dataCap {
+		return resp, fmt.Errorf("invalid handshake response length %d (maximum %d)", respLen, ep.dataCap)
+	}
+	if err := json.NewDecoder(ep.NewReader(respLen)).Decode(&resp); err != nil {
+		return resp, fmt.Errorf("error reading handshake response: %v", err)
+	}
+
+	return resp, nil
 }
 
-func (ep *Endpoint) doFutexWaitSeq(prevSeq uint32) error {
-	nextSeq := prevSeq + 1
+func (ep *Endpoint) futexSwitchToPeer() error {
+	// Update connection state to indicate that the peer should be active.
+	if !atomic.CompareAndSwapUint32(ep.connState(), ep.activeState, ep.inactiveState) {
+		return fmt.Errorf("unexpected connection state before FUTEX_WAKE: %v", atomic.LoadUint32(ep.connState()))
+	}
+
+	// Wake the peer's Endpoint.futexSwitchFromPeer().
+	if err := ep.futexWakeConnState(1); err != nil {
+		return fmt.Errorf("failed to FUTEX_WAKE peer Endpoint: %v", err)
+	}
+	return nil
+}
+
+func (ep *Endpoint) futexSwitchFromPeer() error {
 	for {
-		if ep.isShutdown() {
-			return endpointShutdownError{}
+		switch cs := atomic.LoadUint32(ep.connState()); cs {
+		case ep.activeState:
+			return nil
+		case ep.inactiveState:
+			// Continue to FUTEX_WAIT.
+		default:
+			return fmt.Errorf("unexpected connection state before FUTEX_WAIT: %v", cs)
 		}
-		if err := ep.futexWait(prevSeq); err != nil {
+		if ep.isShutdownLocally() {
+			return shutdownError{}
+		}
+		if err := ep.futexWaitConnState(ep.inactiveState); err != nil {
 			return fmt.Errorf("failed to FUTEX_WAIT for peer Endpoint: %v", err)
 		}
-		seq := atomic.LoadUint32(ep.seq())
-		if seq == nextSeq {
-			return nil
-		}
-		if seq != prevSeq {
-			return fmt.Errorf("invalid packet sequence number %d (expected %d or %d)", seq, prevSeq, nextSeq)
-		}
 	}
 }
 
-func (ep *Endpoint) doFutexInterruptForShutdown() {
-	// Wake MaxInt32 threads to prevent a malicious or broken peer from
-	// swallowing our wakeup by FUTEX_WAITing from multiple threads.
-	if err := ep.futexWake(math.MaxInt32); err != nil {
-		log.Warningf("failed to FUTEX_WAKE Endpoint: %v", err)
-	}
-}
-
-func (ep *Endpoint) futexWake(numThreads int32) error {
-	if _, _, e := syscall.RawSyscall(syscall.SYS_FUTEX, uintptr(ep.packet), linux.FUTEX_WAKE, uintptr(numThreads)); e != 0 {
+func (ep *Endpoint) futexWakeConnState(numThreads int32) error {
+	if _, _, e := syscall.RawSyscall(syscall.SYS_FUTEX, ep.packet, linux.FUTEX_WAKE, uintptr(numThreads)); e != 0 {
 		return e
 	}
 	return nil
 }
 
-func (ep *Endpoint) futexWait(seq uint32) error {
-	_, _, e := syscall.Syscall6(syscall.SYS_FUTEX, uintptr(ep.packet), linux.FUTEX_WAIT, uintptr(seq), 0, 0, 0)
+func (ep *Endpoint) futexWaitConnState(curState uint32) error {
+	_, _, e := syscall.Syscall6(syscall.SYS_FUTEX, ep.packet, linux.FUTEX_WAIT, uintptr(curState), 0, 0, 0)
 	if e != 0 && e != syscall.EAGAIN && e != syscall.EINTR {
 		return e
 	}
 	return nil
+}
+
+func yieldThread() {
+	syscall.Syscall(syscall.SYS_SCHED_YIELD, 0, 0, 0)
+	// The thread we're trying to yield to may be waiting for a Go runtime P.
+	// runtime.Gosched() will hand off ours if necessary.
+	runtime.Gosched()
 }

@@ -15,197 +15,240 @@
 package flipcall
 
 import (
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
 
 var testPacketWindowSize = pageSize
 
-func testSendRecv(t *testing.T, ctrlMode ControlMode) {
-	pwa, err := NewPacketWindowAllocator()
-	if err != nil {
-		t.Fatalf("failed to create PacketWindowAllocator: %v", err)
-	}
-	defer pwa.Destroy()
-	pwd, err := pwa.Allocate(testPacketWindowSize)
-	if err != nil {
-		t.Fatalf("PacketWindowAllocator.Allocate() failed: %v", err)
-	}
+type testConnection struct {
+	pwa      PacketWindowAllocator
+	clientEP Endpoint
+	serverEP Endpoint
+}
 
-	sendEP, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		t.Fatalf("failed to create Endpoint: %v", err)
+func newTestConnectionWithOptions(tb testing.TB, clientOpts, serverOpts []EndpointOption) *testConnection {
+	c := &testConnection{}
+	if err := c.pwa.Init(); err != nil {
+		tb.Fatalf("failed to create PacketWindowAllocator: %v", err)
 	}
-	defer sendEP.Destroy()
-	recvEP, err := NewEndpoint(ctrlMode, pwd)
+	pwd, err := c.pwa.Allocate(testPacketWindowSize)
 	if err != nil {
-		t.Fatalf("failed to create Endpoint: %v", err)
+		c.pwa.Destroy()
+		tb.Fatalf("PacketWindowAllocator.Allocate() failed: %v", err)
 	}
-	defer recvEP.Destroy()
+	if err := c.clientEP.Init(pwd, clientOpts...); err != nil {
+		c.pwa.Destroy()
+		tb.Fatalf("failed to create client Endpoint: %v", err)
+	}
+	if err := c.serverEP.Init(pwd, serverOpts...); err != nil {
+		c.pwa.Destroy()
+		c.clientEP.Destroy()
+		tb.Fatalf("failed to create server Endpoint: %v", err)
+	}
+	return c
+}
 
-	otherThreadDone := make(chan struct{})
+func newTestConnection(tb testing.TB) *testConnection {
+	return newTestConnectionWithOptions(tb, nil, nil)
+}
+
+func (c *testConnection) destroy() {
+	c.pwa.Destroy()
+	c.clientEP.Destroy()
+	c.serverEP.Destroy()
+}
+
+func testSendRecv(t *testing.T, c *testConnection) {
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
 	go func() {
-		defer func() { otherThreadDone <- struct{}{} }()
-		t.Logf("initially-inactive Endpoint waiting for packet 1")
-		if _, err := recvEP.RecvFirst(); err != nil {
-			t.Fatalf("initially-inactive Endpoint.RecvFirst() failed: %v", err)
+		defer serverRun.Done()
+		t.Logf("server Endpoint waiting for packet 1")
+		if _, err := c.serverEP.RecvFirst(); err != nil {
+			t.Fatalf("server Endpoint.RecvFirst() failed: %v", err)
 		}
-		t.Logf("initially-inactive Endpoint got packet 1, sending packet 2 and waiting for packet 3")
-		if _, err := recvEP.SendRecv(0); err != nil {
-			t.Fatalf("initially-inactive Endpoint.SendRecv() failed: %v", err)
+		t.Logf("server Endpoint got packet 1, sending packet 2 and waiting for packet 3")
+		if _, err := c.serverEP.SendRecv(0); err != nil {
+			t.Fatalf("server Endpoint.SendRecv() failed: %v", err)
 		}
-		t.Logf("initially-inactive Endpoint got packet 3")
+		t.Logf("server Endpoint got packet 3")
 	}()
 	defer func() {
-		t.Logf("waiting for initially-inactive Endpoint goroutine to complete")
-		<-otherThreadDone
+		// Ensure that the server goroutine is cleaned up before
+		// c.serverEP.Destroy(), even if the test fails.
+		c.serverEP.Shutdown()
+		serverRun.Wait()
 	}()
 
-	t.Logf("initially-active Endpoint sending packet 1 and waiting for packet 2")
-	if _, err := sendEP.SendRecv(0); err != nil {
-		t.Fatalf("initially-active Endpoint.SendRecv() failed: %v", err)
+	t.Logf("client Endpoint establishing connection")
+	if err := c.clientEP.Connect(); err != nil {
+		t.Fatalf("client Endpoint.Connect() failed: %v", err)
 	}
-	t.Logf("initially-active Endpoint got packet 2, sending packet 3")
-	if err := sendEP.SendLast(0); err != nil {
-		t.Fatalf("initially-active Endpoint.SendLast() failed: %v", err)
+	t.Logf("client Endpoint sending packet 1 and waiting for packet 2")
+	if _, err := c.clientEP.SendRecv(0); err != nil {
+		t.Fatalf("client Endpoint.SendRecv() failed: %v", err)
 	}
+	t.Logf("client Endpoint got packet 2, sending packet 3")
+	if err := c.clientEP.SendLast(0); err != nil {
+		t.Fatalf("client Endpoint.SendLast() failed: %v", err)
+	}
+	t.Logf("waiting for server goroutine to complete")
+	serverRun.Wait()
 }
 
-func TestFutexSendRecv(t *testing.T) {
-	testSendRecv(t, ControlModeFutex)
+func TestSendRecv(t *testing.T) {
+	c := newTestConnection(t)
+	defer c.destroy()
+	testSendRecv(t, c)
 }
 
-func testRecvFirstShutdown(t *testing.T, ctrlMode ControlMode) {
-	pwa, err := NewPacketWindowAllocator()
-	if err != nil {
-		t.Fatalf("failed to create PacketWindowAllocator: %v", err)
-	}
-	defer pwa.Destroy()
-	pwd, err := pwa.Allocate(testPacketWindowSize)
-	if err != nil {
-		t.Fatalf("PacketWindowAllocator.Allocate() failed: %v", err)
-	}
-
-	ep, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		t.Fatalf("failed to create Endpoint: %v", err)
-	}
-	defer ep.Destroy()
-
-	otherThreadDone := make(chan struct{})
+func testShutdownConnect(t *testing.T, c *testConnection) {
+	var clientRun sync.WaitGroup
+	clientRun.Add(1)
 	go func() {
-		defer func() { otherThreadDone <- struct{}{} }()
-		_, err := ep.RecvFirst()
+		defer clientRun.Done()
+		if err := c.clientEP.Connect(); err == nil {
+			t.Errorf("client Endpoint.Connect() succeeded unexpectedly")
+		}
+	}()
+	time.Sleep(time.Second) // to allow c.clientEP.Connect() to block
+	c.clientEP.Shutdown()
+	clientRun.Wait()
+}
+
+func TestShutdownConnect(t *testing.T) {
+	c := newTestConnection(t)
+	defer c.destroy()
+	testShutdownConnect(t, c)
+}
+
+func testShutdownRecvFirstBeforeConnect(t *testing.T, c *testConnection) {
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
+	go func() {
+		defer serverRun.Done()
+		_, err := c.serverEP.RecvFirst()
 		if err == nil {
-			t.Errorf("Endpoint.RecvFirst() succeeded unexpectedly")
+			t.Errorf("server Endpoint.RecvFirst() succeeded unexpectedly")
 		}
 	}()
-
-	time.Sleep(time.Second) // to ensure ep.RecvFirst() has blocked
-	ep.Shutdown()
-	<-otherThreadDone
+	time.Sleep(time.Second) // to allow c.serverEP.RecvFirst() to block
+	c.serverEP.Shutdown()
+	serverRun.Wait()
 }
 
-func TestFutexRecvFirstShutdown(t *testing.T) {
-	testRecvFirstShutdown(t, ControlModeFutex)
+func TestShutdownRecvFirstBeforeConnect(t *testing.T) {
+	c := newTestConnection(t)
+	defer c.destroy()
+	testShutdownRecvFirstBeforeConnect(t, c)
 }
 
-func testSendRecvShutdown(t *testing.T, ctrlMode ControlMode) {
-	pwa, err := NewPacketWindowAllocator()
-	if err != nil {
-		t.Fatalf("failed to create PacketWindowAllocator: %v", err)
-	}
-	defer pwa.Destroy()
-	pwd, err := pwa.Allocate(testPacketWindowSize)
-	if err != nil {
-		t.Fatalf("PacketWindowAllocator.Allocate() failed: %v", err)
-	}
-
-	sendEP, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		t.Fatalf("failed to create Endpoint: %v", err)
-	}
-	defer sendEP.Destroy()
-	recvEP, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		t.Fatalf("failed to create Endpoint: %v", err)
-	}
-	defer recvEP.Destroy()
-
-	otherThreadDone := make(chan struct{})
+func testShutdownRecvFirstAfterConnect(t *testing.T, c *testConnection) {
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
 	go func() {
-		defer func() { otherThreadDone <- struct{}{} }()
-		if _, err := recvEP.RecvFirst(); err != nil {
-			t.Fatalf("initially-inactive Endpoint.RecvFirst() failed: %v", err)
-		}
-		if _, err := recvEP.SendRecv(0); err == nil {
-			t.Errorf("initially-inactive Endpoint.SendRecv() succeeded unexpectedly")
+		defer serverRun.Done()
+		if _, err := c.serverEP.RecvFirst(); err == nil {
+			t.Fatalf("server Endpoint.RecvFirst() succeeded unexpectedly")
 		}
 	}()
-
-	if _, err := sendEP.SendRecv(0); err != nil {
-		t.Fatalf("initially-active Endpoint.SendRecv() failed: %v", err)
+	defer func() {
+		// Ensure that the server goroutine is cleaned up before
+		// c.serverEP.Destroy(), even if the test fails.
+		c.serverEP.Shutdown()
+		serverRun.Wait()
+	}()
+	if err := c.clientEP.Connect(); err != nil {
+		t.Fatalf("client Endpoint.Connect() failed: %v", err)
 	}
-	time.Sleep(time.Second) // to ensure recvEP.SendRecv() has blocked
-	recvEP.Shutdown()
-	<-otherThreadDone
+	c.serverEP.Shutdown()
+	serverRun.Wait()
 }
 
-func TestFutexSendRecvShutdown(t *testing.T) {
-	testSendRecvShutdown(t, ControlModeFutex)
+func TestShutdownRecvFirstAfterConnect(t *testing.T) {
+	c := newTestConnection(t)
+	defer c.destroy()
+	testShutdownRecvFirstAfterConnect(t, c)
 }
 
-func benchmarkSendRecv(b *testing.B, ctrlMode ControlMode) {
-	pwa, err := NewPacketWindowAllocator()
-	if err != nil {
-		b.Fatalf("failed to create PacketWindowAllocator: %v", err)
-	}
-	defer pwa.Destroy()
-	pwd, err := pwa.Allocate(testPacketWindowSize)
-	if err != nil {
-		b.Fatalf("PacketWindowAllocator.Allocate() failed: %v", err)
-	}
-
-	sendEP, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		b.Fatalf("failed to create Endpoint: %v", err)
-	}
-	defer sendEP.Destroy()
-	recvEP, err := NewEndpoint(ctrlMode, pwd)
-	if err != nil {
-		b.Fatalf("failed to create Endpoint: %v", err)
-	}
-	defer recvEP.Destroy()
-
-	otherThreadDone := make(chan struct{})
+func testShutdownSendRecv(t *testing.T, c *testConnection) {
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
 	go func() {
-		defer func() { otherThreadDone <- struct{}{} }()
+		defer serverRun.Done()
+		if _, err := c.serverEP.RecvFirst(); err != nil {
+			t.Fatalf("server Endpoint.RecvFirst() failed: %v", err)
+		}
+		if _, err := c.serverEP.SendRecv(0); err == nil {
+			t.Errorf("server Endpoint.SendRecv() succeeded unexpectedly")
+		}
+	}()
+	defer func() {
+		// Ensure that the server goroutine is cleaned up before
+		// c.serverEP.Destroy(), even if the test fails.
+		c.serverEP.Shutdown()
+		serverRun.Wait()
+	}()
+	if err := c.clientEP.Connect(); err != nil {
+		t.Fatalf("client Endpoint.Connect() failed: %v", err)
+	}
+	if _, err := c.clientEP.SendRecv(0); err != nil {
+		t.Fatalf("client Endpoint.SendRecv() failed: %v", err)
+	}
+	time.Sleep(time.Second) // to allow serverEP.SendRecv() to block
+	c.serverEP.Shutdown()
+	serverRun.Wait()
+}
+
+func TestShutdownSendRecv(t *testing.T) {
+	c := newTestConnection(t)
+	defer c.destroy()
+	testShutdownSendRecv(t, c)
+}
+
+func benchmarkSendRecv(b *testing.B, c *testConnection) {
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
+	go func() {
+		defer serverRun.Done()
 		if b.N == 0 {
 			return
 		}
-		if _, err := recvEP.RecvFirst(); err != nil {
-			b.Fatalf("initially-inactive Endpoint.RecvFirst() failed: %v", err)
+		if _, err := c.serverEP.RecvFirst(); err != nil {
+			b.Fatalf("server Endpoint.RecvFirst() failed: %v", err)
 		}
 		for i := 1; i < b.N; i++ {
-			if _, err := recvEP.SendRecv(0); err != nil {
-				b.Fatalf("initially-inactive Endpoint.SendRecv() failed: %v", err)
+			if _, err := c.serverEP.SendRecv(0); err != nil {
+				b.Fatalf("server Endpoint.SendRecv() failed: %v", err)
 			}
 		}
-		if err := recvEP.SendLast(0); err != nil {
-			b.Fatalf("initially-inactive Endpoint.SendLast() failed: %v", err)
+		if err := c.serverEP.SendLast(0); err != nil {
+			b.Fatalf("server Endpoint.SendLast() failed: %v", err)
 		}
 	}()
-	defer func() { <-otherThreadDone }()
+	defer func() {
+		c.serverEP.Shutdown()
+		serverRun.Wait()
+	}()
 
+	if err := c.clientEP.Connect(); err != nil {
+		b.Fatalf("client Endpoint.Connect() failed: %v", err)
+	}
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := sendEP.SendRecv(0); err != nil {
-			b.Fatalf("initially-active Endpoint.SendRecv() failed: %v", err)
+		if _, err := c.clientEP.SendRecv(0); err != nil {
+			b.Fatalf("client Endpoint.SendRecv() failed: %v", err)
 		}
 	}
 	b.StopTimer()
 }
 
-func BenchmarkFutexSendRecv(b *testing.B) {
-	benchmarkSendRecv(b, ControlModeFutex)
+func BenchmarkSendRecv(b *testing.B) {
+	c := newTestConnection(b)
+	defer c.destroy()
+	benchmarkSendRecv(b, c)
 }
