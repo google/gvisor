@@ -94,7 +94,8 @@ func (g goRunner) ListTests() ([]string, error) {
 func (g goRunner) RunTest(test string) error {
 	// Check if test exists on disk by searching for file of the same name.
 	// This will determine whether or not it is a Go test on disk.
-	if _, err := os.Stat(test); err == nil {
+	if strings.HasSuffix(test, ".go") {
+		// Test has suffix ".go" which indicates a disk test, run it as such.
 		relPath, err := filepath.Rel(testDir, test)
 		if err != nil {
 			return fmt.Errorf("failed to get rel path: %v", err)
@@ -105,15 +106,13 @@ func (g goRunner) RunTest(test string) error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to run test: %v", err)
 		}
-	} else if os.IsNotExist(err) {
-		// File was not found, try running as Go tool test.
+	} else {
+		// No ".go" suffix, run as a tool test.
 		cmd := exec.Command(goBin, "tool", "dist", "test", "-run", test)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to run test: %v", err)
 		}
-	} else {
-		return fmt.Errorf("error searching for test: %v", err)
 	}
 	return nil
 }

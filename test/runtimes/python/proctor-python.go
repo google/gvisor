@@ -28,6 +28,7 @@ import (
 
 var (
 	dir       = os.Getenv("LANG_DIR")
+	testDir   = filepath.Join(dir, "Lib", "test")
 	testRegEx = regexp.MustCompile(`^test_.+\.py$`)
 )
 
@@ -42,16 +43,15 @@ func main() {
 
 func (p pythonRunner) ListTests() ([]string, error) {
 	var testSlice []string
-	root := filepath.Join(dir, "Lib/test")
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(testDir, func(path string, info os.FileInfo, err error) error {
 		name := filepath.Base(path)
 
 		if info.IsDir() || !testRegEx.MatchString(name) {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(root, path)
+		relPath, err := filepath.Rel(testDir, path)
 		if err != nil {
 			return err
 		}
@@ -60,15 +60,19 @@ func (p pythonRunner) ListTests() ([]string, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", root, err)
+		return nil, fmt.Errorf("walking %q: %v", testDir, err)
 	}
 
 	return testSlice, nil
 }
 
 func (p pythonRunner) RunTest(test string) error {
-	args := []string{"-m", "test", test}
+	// Python tests need to be run in the directory in which they exist.
+	// Split the filename from it's directory and execute in the correct directory.
+	relDir, file := filepath.Split(test)
+	args := []string{"-m", "test", file}
 	cmd := exec.Command(filepath.Join(dir, "python"), args...)
+	cmd.Dir = filepath.Join(testDir, relDir)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run: %v", err)

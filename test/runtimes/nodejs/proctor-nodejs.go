@@ -28,6 +28,7 @@ import (
 
 var (
 	dir       = os.Getenv("LANG_DIR")
+	testDir   = filepath.Join(dir, "test")
 	testRegEx = regexp.MustCompile(`^test-.+\.js$`)
 )
 
@@ -42,16 +43,15 @@ func main() {
 
 func (n nodejsRunner) ListTests() ([]string, error) {
 	var testSlice []string
-	root := filepath.Join(dir, "test")
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(testDir, func(path string, info os.FileInfo, err error) error {
 		name := filepath.Base(path)
 
 		if info.IsDir() || !testRegEx.MatchString(name) {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(root, path)
+		relPath, err := filepath.Rel(testDir, path)
 		if err != nil {
 			return err
 		}
@@ -60,7 +60,7 @@ func (n nodejsRunner) ListTests() ([]string, error) {
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", root, err)
+		return nil, fmt.Errorf("walking %q: %v", testDir, err)
 	}
 
 	return testSlice, nil
