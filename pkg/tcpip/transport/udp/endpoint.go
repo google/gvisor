@@ -241,12 +241,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // connectRoute establishes a route to the specified interface or the
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
-func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress) (stack.Route, tcpip.NICID, tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto, err := e.checkV4Mapped(&addr, false)
-	if err != nil {
-		return stack.Route{}, 0, 0, err
-	}
-
+func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
 	localAddr := e.id.LocalAddress
 	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
 		if nicid == 0 {
@@ -260,9 +255,9 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress) (stac
 	// Find a route to the desired destination.
 	r, err := e.stack.FindRoute(nicid, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
-		return stack.Route{}, 0, 0, err
+		return stack.Route{}, 0, err
 	}
-	return r, nicid, netProto, nil
+	return r, nicid, nil
 }
 
 // Write writes data to the endpoint's peer. This method does not block
@@ -336,7 +331,12 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 			return 0, nil, tcpip.ErrBroadcastDisabled
 		}
 
-		r, _, _, err := e.connectRoute(nicid, *to)
+		netProto, err := e.checkV4Mapped(to, false)
+		if err != nil {
+			return 0, nil, err
+		}
+
+		r, _, err := e.connectRoute(nicid, *to, netProto)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -740,6 +740,10 @@ func (e *endpoint) disconnect() *tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+	netProto, err := e.checkV4Mapped(&addr, false)
+	if err != nil {
+		return err
+	}
 	if addr.Addr == "" {
 		return e.disconnect()
 	}
@@ -770,7 +774,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	r, nicid, netProto, err := e.connectRoute(nicid, addr)
+	r, nicid, err := e.connectRoute(nicid, addr, netProto)
 	if err != nil {
 		return err
 	}
