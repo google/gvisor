@@ -5,4 +5,5 @@ package(licenses = ["notice"])
 go_binary(
     name = "proctor-php",
     srcs = ["proctor-php.go"],
+    deps = ["//test/runtimes/common"],
 )

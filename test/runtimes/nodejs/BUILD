@@ -5,4 +5,5 @@ package(licenses = ["notice"])
 go_binary(
     name = "proctor-nodejs",
     srcs = ["proctor-nodejs.go"],
+    deps = ["//test/runtimes/common"],
 )

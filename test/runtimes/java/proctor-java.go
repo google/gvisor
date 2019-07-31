@@ -16,7 +16,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -24,47 +23,26 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
 var (
-	list    = flag.Bool("list", false, "list all available tests")
-	test    = flag.String("test", "", "run a single test from the list of available tests")
-	version = flag.Bool("v", false, "print out the version of node that is installed")
-
 	dir      = os.Getenv("LANG_DIR")
 	jtreg    = filepath.Join(dir, "jtreg/bin/jtreg")
 	exclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(java\/time)| )`)
 )
 
-func main() {
-	flag.Parse()
-
-	if *list && *test != "" {
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-	if *list {
-		tests, err := listTests()
-		if err != nil {
-			log.Fatalf("Failed to list tests: %v", err)
-		}
-		for _, test := range tests {
-			fmt.Println(test)
-		}
-		return
-	}
-	if *version {
-		fmt.Println("Java version: ", os.Getenv("LANG_VER"), " is installed.")
-		return
-	}
-	if *test != "" {
-		runTest(*test)
-		return
-	}
-	runAllTests()
+type javaRunner struct {
 }
 
-func listTests() ([]string, error) {
+func main() {
+	if err := common.LaunchFunc(javaRunner{}); err != nil {
+		log.Fatalf("Failed to start: %v", err)
+	}
+}
+
+func (j javaRunner) ListTests() ([]string, error) {
 	args := []string{
 		"-dir:test/jdk",
 		"-ignore:quiet",
@@ -90,21 +68,12 @@ func listTests() ([]string, error) {
 	return testSlice, nil
 }
 
-func runTest(test string) {
+func (j javaRunner) RunTest(test string) error {
 	args := []string{"-dir:test/jdk/", test}
 	cmd := exec.Command(jtreg, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("Failed to run: %v", err)
+		return fmt.Errorf("failed to run: %v", err)
 	}
-}
-
-func runAllTests() {
-	tests, err := listTests()
-	if err != nil {
-		log.Fatalf("Failed to list tests: %v", err)
-	}
-	for _, test := range tests {
-		runTest(test)
-	}
+	return nil
 }
