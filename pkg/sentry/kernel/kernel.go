@@ -198,6 +198,10 @@ type Kernel struct {
 	// the limiter. It may be nil if disabled.
 	DirentCacheLimiter *fs.DirentCacheLimiter
 
+	// unimplementedSyscallEmitterOnce is used in the initialization of
+	// unimplementedSyscallEmitter.
+	unimplementedSyscallEmitterOnce sync.Once `state:"nosave"`
+
 	// unimplementedSyscallEmitter is used to emit unimplemented syscall
 	// events. This is initialized lazily on the first unimplemented
 	// syscall.
@@ -1283,7 +1287,7 @@ func (ctx supervisorContext) Value(key interface{}) interface{} {
 	}
 }
 
-// Rate limits for the number of unimplemented syscall evants.
+// Rate limits for the number of unimplemented syscall events.
 const (
 	unimplementedSyscallsMaxRate = 100  // events per second
 	unimplementedSyscallBurst    = 1000 // events
@@ -1292,9 +1296,9 @@ const (
 // EmitUnimplementedEvent emits an UnimplementedSyscall event via the event
 // channel.
 func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
-	if k.unimplementedSyscallEmitter == nil {
+	k.unimplementedSyscallEmitterOnce.Do(func() {
 		k.unimplementedSyscallEmitter = eventchannel.RateLimitedEmitterFrom(eventchannel.DefaultEmitter, unimplementedSyscallsMaxRate, unimplementedSyscallBurst)
-	}
+	})
 
 	t := TaskFromContext(ctx)
 	k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
