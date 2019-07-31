@@ -94,6 +94,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv4EchoReply)
+		pkt.SetChecksum(0)
 		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
 		sent := stats.ICMP.V4PacketsSent
 		if err := r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv4ProtocolNumber, r.DefaultTTL()); err != nil {
