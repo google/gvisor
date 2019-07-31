@@ -41,18 +41,6 @@ var (
 	ext4ImagePath = path.Join(assetsDir, "tiny.ext4")
 )
 
-func beginning(_ uint64) uint64 {
-	return 0
-}
-
-func middle(i uint64) uint64 {
-	return i / 2
-}
-
-func end(i uint64) uint64 {
-	return i
-}
-
 // setUp opens imagePath as an ext Filesystem and returns all necessary
 // elements required to run tests. If error is non-nil, it also returns a tear
 // down function which must be called after the test is run for clean up.
