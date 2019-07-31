@@ -34,10 +34,10 @@ func init() {
 		// This is depended on by roundUpToPage().
 		panic(fmt.Sprintf("system page size (%d) is not a power of 2", pageSize))
 	}
-	if uintptr(pageSize) < packetHeaderBytes {
+	if uintptr(pageSize) < PacketHeaderBytes {
 		// This is required since Endpoint.Init() imposes a minimum packet
 		// window size of 1 page.
-		panic(fmt.Sprintf("system page size (%d) is less than packet header size (%d)", pageSize, packetHeaderBytes))
+		panic(fmt.Sprintf("system page size (%d) is less than packet header size (%d)", pageSize, PacketHeaderBytes))
 	}
 }
 
@@ -59,7 +59,7 @@ type PacketWindowDescriptor struct {
 // PacketWindowLengthForDataCap returns the minimum packet window size required
 // to accommodate datagrams of the given size in bytes.
 func PacketWindowLengthForDataCap(dataCap uint32) int {
-	return roundUpToPage(int(dataCap) + int(packetHeaderBytes))
+	return roundUpToPage(int(dataCap) + int(PacketHeaderBytes))
 }
 
 func roundUpToPage(x int) int {

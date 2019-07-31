@@ -17,6 +17,7 @@ package flipcall
 import (
 	"bytes"
 	"fmt"
+	"sync"
 )
 
 func Example() {
@@ -36,20 +37,21 @@ func Example() {
 	if err != nil {
 		panic(err)
 	}
-	clientEP, err := NewEndpoint(ControlModeFutex, pwd)
-	if err != nil {
+	var clientEP Endpoint
+	if err := clientEP.Init(pwd); err != nil {
 		panic(err)
 	}
 	defer clientEP.Destroy()
-	serverEP, err := NewEndpoint(ControlModeFutex, pwd)
-	if err != nil {
+	var serverEP Endpoint
+	if err := serverEP.Init(pwd); err != nil {
 		panic(err)
 	}
 	defer serverEP.Destroy()
 
-	serverDone := make(chan struct{})
+	var serverRun sync.WaitGroup
+	serverRun.Add(1)
 	go func() {
-		defer func() { serverDone <- struct{}{} }()
+		defer serverRun.Done()
 		i := 0
 		var buf bytes.Buffer
 		// wait for first request
@@ -76,9 +78,13 @@ func Example() {
 	}()
 	defer func() {
 		serverEP.Shutdown()
-		<-serverDone
+		serverRun.Wait()
 	}()
 
+	// establish connection as client
+	if err := clientEP.Connect(); err != nil {
+		panic(err)
+	}
 	var buf bytes.Buffer
 	for i := 0; i < count; i++ {
 		// write request

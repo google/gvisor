@@ -5,10 +5,11 @@ package(licenses = ["notice"])
 go_library(
     name = "flipcall",
     srcs = [
-        "endpoint_futex.go",
-        "endpoint_unsafe.go",
+        "ctrl_futex.go",
         "flipcall.go",
+        "flipcall_unsafe.go",
         "futex_linux.go",
+        "io.go",
         "packet_window_allocator.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/flipcall",
