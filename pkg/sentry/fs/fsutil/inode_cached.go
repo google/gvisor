@@ -568,21 +568,30 @@ type inodeReadWriter struct {
 
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
+	mem := rw.c.mfp.MemoryFile()
+	fillCache := !rw.c.useHostPageCache() && mem.ShouldCacheEvictable()
+
 	// Hot path. Avoid defers.
-	rw.c.dataMu.RLock()
+	var unlock func()
+	if fillCache {
+		rw.c.dataMu.Lock()
+		unlock = rw.c.dataMu.Unlock
+	} else {
+		rw.c.dataMu.RLock()
+		unlock = rw.c.dataMu.RUnlock
+	}
 
 	// Compute the range to read.
 	if rw.offset >= rw.c.attr.Size {
-		rw.c.dataMu.RUnlock()
+		unlock()
 		return 0, io.EOF
 	}
 	end := fs.ReadEndOffset(rw.offset, int64(dsts.NumBytes()), rw.c.attr.Size)
 	if end == rw.offset { // dsts.NumBytes() == 0?
-		rw.c.dataMu.RUnlock()
+		unlock()
 		return 0, nil
 	}
 
-	mem := rw.c.mfp.MemoryFile()
 	var done uint64
 	seg, gap := rw.c.cache.Find(uint64(rw.offset))
 	for rw.offset < end {
@@ -592,7 +601,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 			// Get internal mappings from the cache.
 			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
 			if err != nil {
-				rw.c.dataMu.RUnlock()
+				unlock()
 				return done, err
 			}
 
@@ -602,7 +611,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 			rw.offset += int64(n)
 			dsts = dsts.DropFirst64(n)
 			if err != nil {
-				rw.c.dataMu.RUnlock()
+				unlock()
 				return done, err
 			}
 
@@ -610,27 +619,48 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 			seg, gap = seg.NextNonEmpty()
 
 		case gap.Ok():
-			// Read directly from the backing file.
-			gapmr := gap.Range().Intersect(mr)
-			dst := dsts.TakeFirst64(gapmr.Length())
-			n, err := rw.c.backingFile.ReadToBlocksAt(rw.ctx, dst, gapmr.Start)
-			done += n
-			rw.offset += int64(n)
-			dsts = dsts.DropFirst64(n)
-			// Partial reads are fine. But we must stop reading.
-			if n != dst.NumBytes() || err != nil {
-				rw.c.dataMu.RUnlock()
-				return done, err
-			}
+			gapMR := gap.Range().Intersect(mr)
+			if fillCache {
+				// Read into the cache, then re-enter the loop to read from the
+				// cache.
+				reqMR := memmap.MappableRange{
+					Start: uint64(usermem.Addr(gapMR.Start).RoundDown()),
+					End:   fs.OffsetPageEnd(int64(gapMR.End)),
+				}
+				optMR := gap.Range()
+				err := rw.c.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt)
+				mem.MarkEvictable(rw.c, pgalloc.EvictableRange{optMR.Start, optMR.End})
+				seg, gap = rw.c.cache.Find(uint64(rw.offset))
+				if !seg.Ok() {
+					unlock()
+					return done, err
+				}
+				// err might have occurred in part of gap.Range() outside
+				// gapMR. Forget about it for now; if the error matters and
+				// persists, we'll run into it again in a later iteration of
+				// this loop.
+			} else {
+				// Read directly from the backing file.
+				dst := dsts.TakeFirst64(gapMR.Length())
+				n, err := rw.c.backingFile.ReadToBlocksAt(rw.ctx, dst, gapMR.Start)
+				done += n
+				rw.offset += int64(n)
+				dsts = dsts.DropFirst64(n)
+				// Partial reads are fine. But we must stop reading.
+				if n != dst.NumBytes() || err != nil {
+					unlock()
+					return done, err
+				}
 
-			// Continue.
-			seg, gap = gap.NextSegment(), FileRangeGapIterator{}
+				// Continue.
+				seg, gap = gap.NextSegment(), FileRangeGapIterator{}
+			}
 
 		default:
 			break
 		}
 	}
-	rw.c.dataMu.RUnlock()
+	unlock()
 	return done, nil
 }
 
@@ -700,7 +730,10 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 			seg, gap = seg.NextNonEmpty()
 
 		case gap.Ok() && gap.Start() < mr.End:
-			// Write directly to the backing file.
+			// Write directly to the backing file. At present, we never fill
+			// the cache when writing, since doing so can convert small writes
+			// into inefficient read-modify-write cycles, and we have no
+			// mechanism for detecting or avoiding this.
 			gapmr := gap.Range().Intersect(mr)
 			src := srcs.TakeFirst64(gapmr.Length())
 			n, err := rw.c.backingFile.WriteFromBlocksAt(rw.ctx, src, gapmr.Start)
