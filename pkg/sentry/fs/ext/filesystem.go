@@ -34,12 +34,11 @@ type filesystem struct {
 	// mu serializes changes to the Dentry tree.
 	mu sync.RWMutex
 
-	// dev is the io.ReaderAt for the underlying fs device. It does not require
-	// protection because io.ReaderAt permits concurrent read calls to it. It
-	// translates to the pread syscall which passes on the read request directly
-	// to the device driver. Device drivers are intelligent in serving multiple
-	// concurrent read requests in the optimal order (taking locality into
-	// consideration).
+	// dev represents the underlying fs device. It does not require protection
+	// because io.ReaderAt permits concurrent read calls to it. It translates to
+	// the pread syscall which passes on the read request directly to the device
+	// driver. Device drivers are intelligent in serving multiple concurrent read
+	// requests in the optimal order (taking locality into consideration).
 	dev io.ReaderAt
 
 	// inodeCache maps absolute inode numbers to the corresponding Inode struct.
@@ -69,7 +68,7 @@ func (fs *filesystem) getOrCreateInode(ctx context.Context, inodeNum uint32) (*i
 		return in, nil
 	}
 
-	in, err := newInode(ctx, fs.dev, fs.sb, fs.bgs, inodeNum)
+	in, err := newInode(ctx, fs, inodeNum)
 	if err != nil {
 		return nil, err
 	}

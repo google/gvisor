@@ -24,14 +24,8 @@ type inlineFile struct {
 	regFile regularFile
 }
 
-// Compiles only if inlineFile implements fileReader.
-var _ fileReader = (*inlineFile)(nil)
-
-// getFileReader implements fileReader.getFileReader.
-func (f *inlineFile) getFileReader(_ io.ReaderAt, _ uint64, offset uint64) io.Reader {
-	diskInode := f.regFile.inode.diskInode
-	return &inlineReader{offset: offset, data: diskInode.Data()[:diskInode.Size()]}
-}
+// Compiles only if inlineFile implements io.ReaderAt.
+var _ io.ReaderAt = (*inlineFile)(nil)
 
 // newInlineFile is the inlineFile constructor.
 func newInlineFile(regFile regularFile) *inlineFile {
@@ -40,27 +34,22 @@ func newInlineFile(regFile regularFile) *inlineFile {
 	return file
 }
 
-// inlineReader implements io.Reader which can read the underlying data. This
-// is not thread safe.
-type inlineReader struct {
-	offset uint64
-	data   []byte
-}
-
-// Compiles only if inlineReader implements io.Reader.
-var _ io.Reader = (*inlineReader)(nil)
-
-// Read implements io.Reader.Read.
-func (r *inlineReader) Read(dst []byte) (int, error) {
+// ReadAt implements io.ReaderAt.ReadAt.
+func (f *inlineFile) ReadAt(dst []byte, off int64) (int, error) {
 	if len(dst) == 0 {
 		return 0, nil
 	}
 
-	if int(r.offset) >= len(r.data) {
+	size := f.regFile.inode.diskInode.Size()
+	if uint64(off) >= size {
 		return 0, io.EOF
 	}
 
-	n := copy(dst, r.data[r.offset:])
-	r.offset += uint64(n)
+	to := uint64(off) + uint64(len(dst))
+	if to > size {
+		to = size
+	}
+
+	n := copy(dst, f.regFile.inode.diskInode.Data()[off:to])
 	return n, nil
 }

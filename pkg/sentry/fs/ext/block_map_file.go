@@ -53,27 +53,17 @@ type blockMapFile struct {
 	coverage [4]uint64
 }
 
-// Compiles only if blockMapFile implements fileReader.
-var _ fileReader = (*blockMapFile)(nil)
-
-// Read implements fileReader.getFileReader.
-func (f *blockMapFile) getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader {
-	return &blockMapReader{
-		dev:     dev,
-		file:    f,
-		fileOff: offset,
-		blkSize: blkSize,
-	}
-}
+// Compiles only if blockMapFile implements io.ReaderAt.
+var _ io.ReaderAt = (*blockMapFile)(nil)
 
 // newBlockMapFile is the blockMapFile constructor. It initializes the file to
 // physical blocks map with (at most) the first 12 (direct) blocks.
-func newBlockMapFile(blkSize uint64, regFile regularFile) (*blockMapFile, error) {
+func newBlockMapFile(regFile regularFile) (*blockMapFile, error) {
 	file := &blockMapFile{regFile: regFile}
 	file.regFile.impl = file
 
 	for i := uint(0); i < 4; i++ {
-		file.coverage[i] = getCoverage(blkSize, i)
+		file.coverage[i] = getCoverage(regFile.inode.blkSize, i)
 	}
 
 	blkMap := regFile.inode.diskInode.Data()
@@ -84,40 +74,33 @@ func newBlockMapFile(blkSize uint64, regFile regularFile) (*blockMapFile, error)
 	return file, nil
 }
 
-// blockMapReader implements io.Reader which will fetch fill data from the
-// block maps and build the blockMapFile.fileToPhyBlks array if required.
-type blockMapReader struct {
-	dev     io.ReaderAt
-	file    *blockMapFile
-	fileOff uint64
-	blkSize uint64
-}
-
-// Compiles only if blockMapReader implements io.Reader.
-var _ io.Reader = (*blockMapReader)(nil)
-
-// Read implements io.Reader.Read.
-func (r *blockMapReader) Read(dst []byte) (int, error) {
+// ReadAt implements io.ReaderAt.ReadAt.
+func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 	if len(dst) == 0 {
 		return 0, nil
 	}
 
-	if r.fileOff >= r.file.regFile.inode.diskInode.Size() {
+	if off < 0 {
+		return 0, syserror.EINVAL
+	}
+
+	offset := uint64(off)
+	if offset >= f.regFile.inode.diskInode.Size() {
 		return 0, io.EOF
 	}
 
 	// dirBlksEnd is the file offset until which direct blocks cover file data.
 	// Direct blocks cover 0 <= file offset < dirBlksEnd.
-	dirBlksEnd := numDirectBlks * r.file.coverage[0]
+	dirBlksEnd := numDirectBlks * f.coverage[0]
 
 	// indirBlkEnd is the file offset until which the indirect block covers file
 	// data. The indirect block covers dirBlksEnd <= file offset < indirBlkEnd.
-	indirBlkEnd := dirBlksEnd + r.file.coverage[1]
+	indirBlkEnd := dirBlksEnd + f.coverage[1]
 
 	// doubIndirBlkEnd is the file offset until which the double indirect block
 	// covers file data. The double indirect block covers the range
 	// indirBlkEnd <= file offset < doubIndirBlkEnd.
-	doubIndirBlkEnd := indirBlkEnd + r.file.coverage[2]
+	doubIndirBlkEnd := indirBlkEnd + f.coverage[2]
 
 	read := 0
 	toRead := len(dst)
@@ -127,21 +110,22 @@ func (r *blockMapReader) Read(dst []byte) (int, error) {
 
 		// Figure out which block to delegate the read to.
 		switch {
-		case r.fileOff < dirBlksEnd:
+		case offset < dirBlksEnd:
 			// Direct block.
-			curR, err = r.read(r.file.directBlks[r.fileOff/r.blkSize], r.fileOff%r.blkSize, 0, dst[read:])
-		case r.fileOff < indirBlkEnd:
+			curR, err = f.read(f.directBlks[offset/f.regFile.inode.blkSize], offset%f.regFile.inode.blkSize, 0, dst[read:])
+		case offset < indirBlkEnd:
 			// Indirect block.
-			curR, err = r.read(r.file.indirectBlk, r.fileOff-dirBlksEnd, 1, dst[read:])
-		case r.fileOff < doubIndirBlkEnd:
+			curR, err = f.read(f.indirectBlk, offset-dirBlksEnd, 1, dst[read:])
+		case offset < doubIndirBlkEnd:
 			// Doubly indirect block.
-			curR, err = r.read(r.file.doubleIndirectBlk, r.fileOff-indirBlkEnd, 2, dst[read:])
+			curR, err = f.read(f.doubleIndirectBlk, offset-indirBlkEnd, 2, dst[read:])
 		default:
 			// Triply indirect block.
-			curR, err = r.read(r.file.tripleIndirectBlk, r.fileOff-doubIndirBlkEnd, 3, dst[read:])
+			curR, err = f.read(f.tripleIndirectBlk, offset-doubIndirBlkEnd, 3, dst[read:])
 		}
 
 		read += curR
+		offset += uint64(curR)
 		if err != nil {
 			return read, err
 		}
@@ -150,30 +134,29 @@ func (r *blockMapReader) Read(dst []byte) (int, error) {
 	return read, nil
 }
 
-// read is the recursive step of the Read function. It relies on knowing the
+// read is the recursive step of the ReadAt function. It relies on knowing the
 // current node's location on disk (curPhyBlk) and its height in the block map
 // tree. A height of 0 shows that the current node is actually holding file
 // data. relFileOff tells the offset from which we need to start to reading
 // under the current node. It is completely relative to the current node.
-func (r *blockMapReader) read(curPhyBlk uint32, relFileOff uint64, height uint, dst []byte) (int, error) {
-	curPhyBlkOff := int64(curPhyBlk) * int64(r.blkSize)
+func (f *blockMapFile) read(curPhyBlk uint32, relFileOff uint64, height uint, dst []byte) (int, error) {
+	curPhyBlkOff := int64(curPhyBlk) * int64(f.regFile.inode.blkSize)
 	if height == 0 {
-		toRead := int(r.blkSize - relFileOff)
+		toRead := int(f.regFile.inode.blkSize - relFileOff)
 		if len(dst) < toRead {
 			toRead = len(dst)
 		}
 
-		n, _ := r.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
-		r.fileOff += uint64(n)
+		n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], curPhyBlkOff+int64(relFileOff))
 		if n < toRead {
 			return n, syserror.EIO
 		}
 		return n, nil
 	}
 
-	childCov := r.file.coverage[height-1]
+	childCov := f.coverage[height-1]
 	startIdx := relFileOff / childCov
-	endIdx := r.blkSize / 4 // This is exclusive.
+	endIdx := f.regFile.inode.blkSize / 4 // This is exclusive.
 	wantEndIdx := (relFileOff + uint64(len(dst))) / childCov
 	wantEndIdx++ // Make this exclusive.
 	if wantEndIdx < endIdx {
@@ -184,11 +167,12 @@ func (r *blockMapReader) read(curPhyBlk uint32, relFileOff uint64, height uint, 
 	curChildOff := relFileOff % childCov
 	for i := startIdx; i < endIdx; i++ {
 		var childPhyBlk uint32
-		if err := readFromDisk(r.dev, curPhyBlkOff+int64(i*4), &childPhyBlk); err != nil {
+		err := readFromDisk(f.regFile.inode.dev, curPhyBlkOff+int64(i*4), &childPhyBlk)
+		if err != nil {
 			return read, err
 		}
 
-		n, err := r.read(childPhyBlk, curChildOff, height-1, dst[read:])
+		n, err := f.read(childPhyBlk, curChildOff, height-1, dst[read:])
 		read += n
 		if err != nil {
 			return read, err

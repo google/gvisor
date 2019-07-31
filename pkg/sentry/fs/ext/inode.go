@@ -46,6 +46,12 @@ type inode struct {
 	// identify inodes within the ext filesystem.
 	inodeNum uint32
 
+	// dev represents the underlying device. Same as filesystem.dev.
+	dev io.ReaderAt
+
+	// blkSize is the fs data block size. Same as filesystem.sb.BlockSize().
+	blkSize uint64
+
 	// diskInode gives us access to the inode struct on disk. Immutable.
 	diskInode disklayout.Inode
 
@@ -86,12 +92,12 @@ func (in *inode) decRef(fs *filesystem) {
 
 // newInode is the inode constructor. Reads the inode off disk. Identifies
 // inodes based on the absolute inode number on disk.
-func newInode(ctx context.Context, dev io.ReaderAt, sb disklayout.SuperBlock, bgs []disklayout.BlockGroup, inodeNum uint32) (*inode, error) {
+func newInode(ctx context.Context, fs *filesystem, inodeNum uint32) (*inode, error) {
 	if inodeNum == 0 {
 		panic("inode number 0 on ext filesystems is not possible")
 	}
 
-	inodeRecordSize := sb.InodeSize()
+	inodeRecordSize := fs.sb.InodeSize()
 	var diskInode disklayout.Inode
 	if inodeRecordSize == disklayout.OldInodeSize {
 		diskInode = &disklayout.InodeOld{}
@@ -100,12 +106,12 @@ func newInode(ctx context.Context, dev io.ReaderAt, sb disklayout.SuperBlock, bg
 	}
 
 	// Calculate where the inode is actually placed.
-	inodesPerGrp := sb.InodesPerGroup()
-	blkSize := sb.BlockSize()
-	inodeTableOff := bgs[getBGNum(inodeNum, inodesPerGrp)].InodeTable() * blkSize
+	inodesPerGrp := fs.sb.InodesPerGroup()
+	blkSize := fs.sb.BlockSize()
+	inodeTableOff := fs.bgs[getBGNum(inodeNum, inodesPerGrp)].InodeTable() * blkSize
 	inodeOff := inodeTableOff + uint64(uint32(inodeRecordSize)*getBGOff(inodeNum, inodesPerGrp))
 
-	if err := readFromDisk(dev, int64(inodeOff), diskInode); err != nil {
+	if err := readFromDisk(fs.dev, int64(inodeOff), diskInode); err != nil {
 		return nil, err
 	}
 
@@ -113,18 +119,20 @@ func newInode(ctx context.Context, dev io.ReaderAt, sb disklayout.SuperBlock, bg
 	inode := inode{
 		refs:      1,
 		inodeNum:  inodeNum,
+		dev:       fs.dev,
+		blkSize:   blkSize,
 		diskInode: diskInode,
 	}
 
 	switch diskInode.Mode().FileType() {
 	case linux.ModeSymlink:
-		f, err := newSymlink(dev, blkSize, inode)
+		f, err := newSymlink(inode)
 		if err != nil {
 			return nil, err
 		}
 		return &f.inode, nil
 	case linux.ModeRegular:
-		f, err := newRegularFile(dev, blkSize, inode)
+		f, err := newRegularFile(inode)
 		if err != nil {
 			return nil, err
 		}

@@ -18,20 +18,6 @@ import (
 	"io"
 )
 
-// fileReader is used to abstact away the complexity of how the file data is
-// stored under the hood. Provides a method to get a file reader which can be
-// used to read file data without worrying about how it is organized on disk.
-type fileReader interface {
-
-	// getFileReader returns a Reader implementation which can be used to read a
-	// file. It abstracts away the complexity of how the file is actually
-	// organized on disk. The reader is initialized with the passed offset.
-	//
-	// This reader is not meant to be retained across Read operations as it needs
-	// to be reinitialized with the correct offset for every Read.
-	getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader
-}
-
 // regularFile represents a regular file's inode. This too follows the
 // inheritance pattern prevelant in the vfs layer described in
 // pkg/sentry/vfs/README.md.
@@ -40,12 +26,12 @@ type regularFile struct {
 
 	// This is immutable. The first field of fileReader implementations must be
 	// regularFile to ensure temporality.
-	impl fileReader
+	impl io.ReaderAt
 }
 
 // newRegularFile is the regularFile constructor. It figures out what kind of
 // file this is and initializes the fileReader.
-func newRegularFile(dev io.ReaderAt, blkSize uint64, inode inode) (*regularFile, error) {
+func newRegularFile(inode inode) (*regularFile, error) {
 	regFile := regularFile{
 		inode: inode,
 	}
@@ -53,7 +39,7 @@ func newRegularFile(dev io.ReaderAt, blkSize uint64, inode inode) (*regularFile,
 	inodeFlags := inode.diskInode.Flags()
 
 	if inodeFlags.Extents {
-		file, err := newExtentFile(dev, blkSize, regFile)
+		file, err := newExtentFile(regFile)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +58,7 @@ func newRegularFile(dev io.ReaderAt, blkSize uint64, inode inode) (*regularFile,
 		return &file.regFile, nil
 	}
 
-	file, err := newBlockMapFile(blkSize, regFile)
+	file, err := newBlockMapFile(regFile)
 	if err != nil {
 		return nil, err
 	}

@@ -16,7 +16,6 @@ package ext
 
 import (
 	"bytes"
-	"io"
 	"math/rand"
 	"testing"
 
@@ -34,14 +33,13 @@ const (
 // TestBlockMapReader stress tests block map reader functionality. It performs
 // random length reads from all possible positions in the block map structure.
 func TestBlockMapReader(t *testing.T) {
-	dev, mockBMFile, want := blockMapSetUp(t)
+	mockBMFile, want := blockMapSetUp(t)
 	n := len(want)
 
 	for from := 0; from < n; from++ {
-		fileReader := mockBMFile.getFileReader(dev, uint64(mockBMBlkSize), uint64(from))
 		got := make([]byte, n-from)
 
-		if read, err := io.ReadFull(fileReader, got); err != nil {
+		if read, err := mockBMFile.ReadAt(got, int64(from)); err != nil {
 			t.Fatalf("file read operation from offset %d to %d only read %d bytes: %v", from, n, read, err)
 		}
 
@@ -85,7 +83,7 @@ func (n *blkNumGen) next() uint32 {
 // block and 1 triple indirect block (basically fill it till the rim). It
 // initializes the disk to reflect the inode. Also returns the file data that
 // the inode covers and that is written to disk.
-func blockMapSetUp(t *testing.T) (io.ReaderAt, *blockMapFile, []byte) {
+func blockMapSetUp(t *testing.T) (*blockMapFile, []byte) {
 	mockDisk := make([]byte, mockBMDiskSize)
 	regFile := regularFile{
 		inode: inode{
@@ -94,6 +92,8 @@ func blockMapSetUp(t *testing.T) (io.ReaderAt, *blockMapFile, []byte) {
 					SizeLo: getMockBMFileFize(),
 				},
 			},
+			dev:     bytes.NewReader(mockDisk),
+			blkSize: uint64(mockBMBlkSize),
 		},
 	}
 
@@ -125,11 +125,11 @@ func blockMapSetUp(t *testing.T) (io.ReaderAt, *blockMapFile, []byte) {
 
 	copy(regFile.inode.diskInode.Data(), data)
 
-	mockFile, err := newBlockMapFile(uint64(mockBMBlkSize), regFile)
+	mockFile, err := newBlockMapFile(regFile)
 	if err != nil {
 		t.Fatalf("newBlockMapFile failed: %v", err)
 	}
-	return bytes.NewReader(mockDisk), mockFile, fileData
+	return mockFile, fileData
 }
 
 // writeFileDataToBlock writes random bytes to the block on disk.

@@ -15,8 +15,6 @@
 package ext
 
 import (
-	"io"
-
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -28,7 +26,7 @@ type symlink struct {
 
 // newSymlink is the symlink constructor. It reads out the symlink target from
 // the inode (however it might have been stored).
-func newSymlink(dev io.ReaderAt, blkSize uint64, inode inode) (*symlink, error) {
+func newSymlink(inode inode) (*symlink, error) {
 	var file *symlink
 	var link []byte
 
@@ -39,14 +37,13 @@ func newSymlink(dev io.ReaderAt, blkSize uint64, inode inode) (*symlink, error) 
 		link = inode.diskInode.Data()[:size]
 	} else {
 		// Create a regular file out of this inode and read out the target.
-		regFile, err := newRegularFile(dev, blkSize, inode)
+		regFile, err := newRegularFile(inode)
 		if err != nil {
 			return nil, err
 		}
 
 		link = make([]byte, size)
-		reader := regFile.impl.getFileReader(dev, blkSize, 0)
-		if _, err := io.ReadFull(reader, link); err != nil {
+		if n, _ := regFile.impl.ReadAt(link, 0); uint64(n) < size {
 			return nil, syserror.EIO
 		}
 	}
