@@ -32,26 +32,16 @@ type extentFile struct {
 	root disklayout.ExtentNode
 }
 
-// Compiles only if extentFile implements fileReader.
-var _ fileReader = (*extentFile)(nil)
-
-// Read implements fileReader.getFileReader.
-func (f *extentFile) getFileReader(dev io.ReaderAt, blkSize uint64, offset uint64) io.Reader {
-	return &extentReader{
-		dev:     dev,
-		file:    f,
-		fileOff: offset,
-		blkSize: blkSize,
-	}
-}
+// Compiles only if extentFile implements io.ReaderAt.
+var _ io.ReaderAt = (*extentFile)(nil)
 
 // newExtentFile is the extent file constructor. It reads the entire extent
 // tree into memory.
 // TODO(b/134676337): Build extent tree on demand to reduce memory usage.
-func newExtentFile(dev io.ReaderAt, blkSize uint64, regFile regularFile) (*extentFile, error) {
+func newExtentFile(regFile regularFile) (*extentFile, error) {
 	file := &extentFile{regFile: regFile}
 	file.regFile.impl = file
-	err := file.buildExtTree(dev, blkSize)
+	err := file.buildExtTree()
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +54,7 @@ func newExtentFile(dev io.ReaderAt, blkSize uint64, regFile regularFile) (*exten
 // disk.
 //
 // Precondition: inode flag InExtents must be set.
-func (f *extentFile) buildExtTree(dev io.ReaderAt, blkSize uint64) error {
+func (f *extentFile) buildExtTree() error {
 	rootNodeData := f.regFile.inode.diskInode.Data()
 
 	binary.Unmarshal(rootNodeData[:disklayout.ExtentStructsSize], binary.LittleEndian, &f.root.Header)
@@ -94,7 +84,7 @@ func (f *extentFile) buildExtTree(dev io.ReaderAt, blkSize uint64) error {
 	if f.root.Header.Height > 0 {
 		for i := uint16(0); i < f.root.Header.NumEntries; i++ {
 			var err error
-			if f.root.Entries[i].Node, err = buildExtTreeFromDisk(dev, f.root.Entries[i].Entry, blkSize); err != nil {
+			if f.root.Entries[i].Node, err = f.buildExtTreeFromDisk(f.root.Entries[i].Entry); err != nil {
 				return err
 			}
 		}
@@ -106,10 +96,10 @@ func (f *extentFile) buildExtTree(dev io.ReaderAt, blkSize uint64) error {
 // buildExtTreeFromDisk reads the extent tree nodes from disk and recursively
 // builds the tree. Performs a simple DFS. It returns the ExtentNode pointed to
 // by the ExtentEntry.
-func buildExtTreeFromDisk(dev io.ReaderAt, entry disklayout.ExtentEntry, blkSize uint64) (*disklayout.ExtentNode, error) {
+func (f *extentFile) buildExtTreeFromDisk(entry disklayout.ExtentEntry) (*disklayout.ExtentNode, error) {
 	var header disklayout.ExtentHeader
-	off := entry.PhysicalBlock() * blkSize
-	err := readFromDisk(dev, int64(off), &header)
+	off := entry.PhysicalBlock() * f.regFile.inode.blkSize
+	err := readFromDisk(f.regFile.inode.dev, int64(off), &header)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +115,7 @@ func buildExtTreeFromDisk(dev io.ReaderAt, entry disklayout.ExtentEntry, blkSize
 			curEntry = &disklayout.ExtentIdx{}
 		}
 
-		err := readFromDisk(dev, int64(off), curEntry)
+		err := readFromDisk(f.regFile.inode.dev, int64(off), curEntry)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +126,7 @@ func buildExtTreeFromDisk(dev io.ReaderAt, entry disklayout.ExtentEntry, blkSize
 	if header.Height > 0 {
 		for i := uint16(0); i < header.NumEntries; i++ {
 			var err error
-			entries[i].Node, err = buildExtTreeFromDisk(dev, entries[i].Entry, blkSize)
+			entries[i].Node, err = f.buildExtTreeFromDisk(entries[i].Entry)
 			if err != nil {
 				return nil, err
 			}
@@ -146,38 +136,31 @@ func buildExtTreeFromDisk(dev io.ReaderAt, entry disklayout.ExtentEntry, blkSize
 	return &disklayout.ExtentNode{header, entries}, nil
 }
 
-// extentReader implements io.Reader which can traverse the extent tree and
-// read file data. This is not thread safe.
-type extentReader struct {
-	dev     io.ReaderAt
-	file    *extentFile
-	fileOff uint64 // Represents the current file offset being read from.
-	blkSize uint64
-}
-
-// Compiles only if inlineReader implements io.Reader.
-var _ io.Reader = (*extentReader)(nil)
-
-// Read implements io.Reader.Read.
-func (r *extentReader) Read(dst []byte) (int, error) {
+// ReadAt implements io.ReaderAt.ReadAt.
+func (f *extentFile) ReadAt(dst []byte, off int64) (int, error) {
 	if len(dst) == 0 {
 		return 0, nil
 	}
 
-	if r.fileOff >= r.file.regFile.inode.diskInode.Size() {
+	if off < 0 {
+		return 0, syserror.EINVAL
+	}
+
+	if uint64(off) >= f.regFile.inode.diskInode.Size() {
 		return 0, io.EOF
 	}
 
-	return r.read(&r.file.root, dst)
+	return f.read(&f.root, uint64(off), dst)
 }
 
-// read is a helper which traverses the extent tree and reads data.
-func (r *extentReader) read(node *disklayout.ExtentNode, dst []byte) (int, error) {
+// read is the recursive step of extentFile.ReadAt which traverses the extent
+// tree from the node passed and reads file data.
+func (f *extentFile) read(node *disklayout.ExtentNode, off uint64, dst []byte) (int, error) {
 	// Perform a binary search for the node covering bytes starting at r.fileOff.
 	// A highly fragmented filesystem can have upto 340 entries and so linear
 	// search should be avoided. Finds the first entry which does not cover the
 	// file block we want and subtracts 1 to get the desired index.
-	fileBlk := r.fileBlock()
+	fileBlk := uint32(off / f.regFile.inode.blkSize)
 	n := len(node.Entries)
 	found := sort.Search(n, func(i int) bool {
 		return node.Entries[i].Entry.FileBlock() > fileBlk
@@ -195,12 +178,13 @@ func (r *extentReader) read(node *disklayout.ExtentNode, dst []byte) (int, error
 	var err error
 	for i := found; i < n && read < toRead; i++ {
 		if node.Header.Height == 0 {
-			curR, err = r.readFromExtent(node.Entries[i].Entry.(*disklayout.Extent), dst[read:])
+			curR, err = f.readFromExtent(node.Entries[i].Entry.(*disklayout.Extent), off, dst[read:])
 		} else {
-			curR, err = r.read(node.Entries[i].Node, dst[read:])
+			curR, err = f.read(node.Entries[i].Node, off, dst[read:])
 		}
 
 		read += curR
+		off += uint64(curR)
 		if err != nil {
 			return read, err
 		}
@@ -211,7 +195,7 @@ func (r *extentReader) read(node *disklayout.ExtentNode, dst []byte) (int, error
 
 // readFromExtent reads file data from the extent. It takes advantage of the
 // sequential nature of extents and reads file data from multiple blocks in one
-// call. Also updates the file offset.
+// call.
 //
 // A non-nil error indicates that this is a partial read and there is probably
 // more to read from this extent. The caller should propagate the error upward
@@ -219,8 +203,8 @@ func (r *extentReader) read(node *disklayout.ExtentNode, dst []byte) (int, error
 //
 // A subsequent call to extentReader.Read should continue reading from where we
 // left off as expected.
-func (r *extentReader) readFromExtent(ex *disklayout.Extent, dst []byte) (int, error) {
-	curFileBlk := r.fileBlock()
+func (f *extentFile) readFromExtent(ex *disklayout.Extent, off uint64, dst []byte) (int, error) {
+	curFileBlk := uint32(off / f.regFile.inode.blkSize)
 	exFirstFileBlk := ex.FileBlock()
 	exLastFileBlk := exFirstFileBlk + uint32(ex.Length) // This is exclusive.
 
@@ -231,30 +215,19 @@ func (r *extentReader) readFromExtent(ex *disklayout.Extent, dst []byte) (int, e
 	}
 
 	curPhyBlk := uint64(curFileBlk-exFirstFileBlk) + ex.PhysicalBlock()
-	readStart := curPhyBlk*r.blkSize + r.fileBlockOff()
+	readStart := curPhyBlk*f.regFile.inode.blkSize + (off % f.regFile.inode.blkSize)
 
 	endPhyBlk := ex.PhysicalBlock() + uint64(ex.Length)
-	extentEnd := endPhyBlk * r.blkSize // This is exclusive.
+	extentEnd := endPhyBlk * f.regFile.inode.blkSize // This is exclusive.
 
 	toRead := int(extentEnd - readStart)
 	if len(dst) < toRead {
 		toRead = len(dst)
 	}
 
-	n, _ := r.dev.ReadAt(dst[:toRead], int64(readStart))
-	r.fileOff += uint64(n)
+	n, _ := f.regFile.inode.dev.ReadAt(dst[:toRead], int64(readStart))
 	if n < toRead {
 		return n, syserror.EIO
 	}
 	return n, nil
-}
-
-// fileBlock returns the file block number we are currently reading.
-func (r *extentReader) fileBlock() uint32 {
-	return uint32(r.fileOff / r.blkSize)
-}
-
-// fileBlockOff returns the current offset within the current file block.
-func (r *extentReader) fileBlockOff() uint64 {
-	return r.fileOff % r.blkSize
 }

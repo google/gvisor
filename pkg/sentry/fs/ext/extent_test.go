@@ -16,7 +16,6 @@ package ext
 
 import (
 	"bytes"
-	"io"
 	"math/rand"
 	"testing"
 
@@ -145,14 +144,13 @@ var (
 // TestExtentReader stress tests extentReader functionality. It performs random
 // length reads from all possible positions in the extent tree.
 func TestExtentReader(t *testing.T) {
-	dev, mockExtentFile, want := extentTreeSetUp(t, node0)
+	mockExtentFile, want := extentTreeSetUp(t, node0)
 	n := len(want)
 
 	for from := 0; from < n; from++ {
-		fileReader := mockExtentFile.getFileReader(dev, mockExtentBlkSize, uint64(from))
 		got := make([]byte, n-from)
 
-		if read, err := io.ReadFull(fileReader, got); err != nil {
+		if read, err := mockExtentFile.ReadAt(got, int64(from)); err != nil {
 			t.Fatalf("file read operation from offset %d to %d only read %d bytes: %v", from, n, read, err)
 		}
 
@@ -164,7 +162,7 @@ func TestExtentReader(t *testing.T) {
 
 // TestBuildExtentTree tests the extent tree building logic.
 func TestBuildExtentTree(t *testing.T) {
-	_, mockExtentFile, _ := extentTreeSetUp(t, node0)
+	mockExtentFile, _ := extentTreeSetUp(t, node0)
 
 	opt := cmpopts.IgnoreUnexported(disklayout.ExtentIdx{}, disklayout.ExtentHeader{})
 	if diff := cmp.Diff(&mockExtentFile.root, node0, opt); diff != "" {
@@ -175,7 +173,7 @@ func TestBuildExtentTree(t *testing.T) {
 // extentTreeSetUp writes the passed extent tree to a mock disk as an extent
 // tree. It also constucts a mock extent file with the same tree built in it.
 // It also writes random data file data and returns it.
-func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (io.ReaderAt, *extentFile, []byte) {
+func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (*extentFile, []byte) {
 	t.Helper()
 
 	mockDisk := make([]byte, mockExtentBlkSize*10)
@@ -187,17 +185,18 @@ func extentTreeSetUp(t *testing.T, root *disklayout.ExtentNode) (io.ReaderAt, *e
 						SizeLo: uint32(mockExtentBlkSize) * getNumPhyBlks(root),
 					},
 				},
+				blkSize: mockExtentBlkSize,
+				dev:     bytes.NewReader(mockDisk),
 			},
 		},
 	}
 
 	fileData := writeTree(&mockExtentFile.regFile.inode, mockDisk, node0, mockExtentBlkSize)
 
-	r := bytes.NewReader(mockDisk)
-	if err := mockExtentFile.buildExtTree(r, mockExtentBlkSize); err != nil {
+	if err := mockExtentFile.buildExtTree(); err != nil {
 		t.Fatalf("inode.buildExtTree failed: %v", err)
 	}
-	return r, mockExtentFile, fileData
+	return mockExtentFile, fileData
 }
 
 // writeTree writes the tree represented by `root` to the inode and disk. It
