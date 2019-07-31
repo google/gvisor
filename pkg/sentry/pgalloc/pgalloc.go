@@ -285,7 +285,10 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	switch opts.DelayedEviction {
 	case DelayedEvictionDefault:
 		opts.DelayedEviction = DelayedEvictionEnabled
-	case DelayedEvictionDisabled, DelayedEvictionEnabled, DelayedEvictionManual:
+	case DelayedEvictionDisabled, DelayedEvictionManual:
+		opts.UseHostMemcgPressure = false
+	case DelayedEvictionEnabled:
+		// ok
 	default:
 		return nil, fmt.Errorf("invalid MemoryFileOpts.DelayedEviction: %v", opts.DelayedEviction)
 	}
@@ -775,6 +778,14 @@ func (f *MemoryFile) MarkAllUnevictable(user EvictableMemoryUser) {
 	if !info.evicting {
 		delete(f.evictable, user)
 	}
+}
+
+// ShouldCacheEvictable returns true if f is meaningfully delaying evictions of
+// evictable memory, such that it may be advantageous to cache data in
+// evictable memory. The value returned by ShouldCacheEvictable may change
+// between calls.
+func (f *MemoryFile) ShouldCacheEvictable() bool {
+	return f.opts.DelayedEviction == DelayedEvictionManual || f.opts.UseHostMemcgPressure
 }
 
 // UpdateUsage ensures that the memory usage statistics in
