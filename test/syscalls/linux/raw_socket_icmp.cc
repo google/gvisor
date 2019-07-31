@@ -470,9 +470,8 @@ void RawSocketICMPTest::ExpectICMPSuccess(const struct icmphdr& icmp) {
         EXPECT_EQ(recvd_icmp->un.echo.id, icmp.un.echo.id);
         // A couple are different.
         EXPECT_EQ(recvd_icmp->type, ICMP_ECHOREPLY);
-        // The checksum is computed in such a way that it is guaranteed to have
-        // changed.
-        EXPECT_NE(recvd_icmp->checksum, icmp.checksum);
+        // The checksum computed over the reply should still be valid.
+        EXPECT_EQ(Checksum(recvd_icmp), 0);
         break;
     }
   }
