@@ -30,6 +30,7 @@ import (
 type Stack struct {
 	interfaces     map[int32]inet.Interface
 	interfaceAddrs map[int32][]inet.InterfaceAddr
+	routes         []inet.Route
 	rpcConn        *conn.RPCConnection
 	notifier       *notifier.Notifier
 }
@@ -69,6 +70,16 @@ func NewStack(fd int32) (*Stack, error) {
 		return nil, e
 	}
 
+	routes, err := stack.DoNetlinkRouteRequest(syscall.RTM_GETROUTE)
+	if err != nil {
+		return nil, fmt.Errorf("RTM_GETROUTE failed: %v", err)
+	}
+
+	stack.routes, e = hostinet.ExtractHostRoutes(routes)
+	if e != nil {
+		return nil, e
+	}
+
 	return stack, nil
 }
 
@@ -89,12 +100,20 @@ func (s *Stack) RPCWriteFile(path string, data []byte) (int64, *syserr.Error) {
 
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
-	return s.interfaces
+	interfaces := make(map[int32]inet.Interface)
+	for k, v := range s.interfaces {
+		interfaces[k] = v
+	}
+	return interfaces
 }
 
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
-	return s.interfaceAddrs
+	addrs := make(map[int32][]inet.InterfaceAddr)
+	for k, v := range s.interfaceAddrs {
+		addrs[k] = append([]inet.InterfaceAddr(nil), v...)
+	}
+	return addrs
 }
 
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
@@ -137,4 +156,9 @@ func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 // Statistics implements inet.Stack.Statistics.
 func (s *Stack) Statistics(stat interface{}, arg string) error {
 	return syserr.ErrEndpointOperation.ToError()
+}
+
+// RouteTable implements inet.Stack.RouteTable.
+func (s *Stack) RouteTable() []inet.Route {
+	return append([]inet.Route(nil), s.routes...)
 }
