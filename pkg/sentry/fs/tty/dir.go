@@ -114,6 +114,7 @@ func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 		InodeID: d.master.StableAttr.InodeID,
 	})
 
+	m.IncRef()
 	return fs.NewInode(ctx, d, m, fs.StableAttr{
 		DeviceID: ptsDevice.DeviceID(),
 		// N.B. Linux always uses inode id 1 for the directory. See

@@ -134,6 +134,7 @@ func NewSeqFileInode(ctx context.Context, source SeqSource, msrc *fs.MountSource
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, sattr)
 }
 

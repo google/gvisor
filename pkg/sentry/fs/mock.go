@@ -34,6 +34,7 @@ type MockInodeOperations struct {
 
 // NewMockInode returns a mock *Inode using MockInodeOperations.
 func NewMockInode(ctx context.Context, msrc *MountSource, sattr StableAttr) *Inode {
+	msrc.IncRef()
 	return NewInode(ctx, NewMockInodeOperations(ctx), msrc, sattr)
 }
 
@@ -99,6 +100,7 @@ func (n *MockInodeOperations) IsVirtual() bool {
 // Lookup implements fs.InodeOperations.Lookup.
 func (n *MockInodeOperations) Lookup(ctx context.Context, dir *Inode, p string) (*Dirent, error) {
 	n.walkCalled = true
+	dir.MountSource.IncRef()
 	return NewDirent(ctx, NewInode(ctx, &MockInodeOperations{}, dir.MountSource, StableAttr{}), p), nil
 }
 
@@ -120,6 +122,7 @@ func (n *MockInodeOperations) SetTimestamps(context.Context, *Inode, TimeSpec) e
 // Create implements fs.InodeOperations.Create.
 func (n *MockInodeOperations) Create(ctx context.Context, dir *Inode, p string, flags FileFlags, perms FilePermissions) (*File, error) {
 	n.createCalled = true
+	dir.MountSource.IncRef()
 	d := NewDirent(ctx, NewInode(ctx, &MockInodeOperations{}, dir.MountSource, StableAttr{}), p)
 	return &File{Dirent: d}, nil
 }

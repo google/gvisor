@@ -74,6 +74,7 @@ func newTCPMemInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack, dir
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
+	msrc.IncRef()
 	return fs.NewInode(ctx, tm, msrc, sattr)
 }
 
@@ -184,6 +185,7 @@ func newTCPSackInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *f
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
+	msrc.IncRef()
 	return fs.NewInode(ctx, ts, msrc, sattr)
 }
 

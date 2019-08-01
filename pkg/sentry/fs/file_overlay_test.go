@@ -156,6 +156,7 @@ func TestReaddirRevalidation(t *testing.T) {
 	if err := upperDir.Remove(ctx, upper, "a"); err != nil {
 		t.Fatalf("error removing child: %v", err)
 	}
+	upper.MountSource.IncRef()
 	upperDir.AddChild(ctx, "c", fs.NewInode(ctx, fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermissions{}, 0),
 		upper.MountSource, fs.StableAttr{Type: fs.RegularFile}))
 

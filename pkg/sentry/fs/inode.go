@@ -83,9 +83,8 @@ type LockCtx struct {
 
 // NewInode constructs an Inode from InodeOperations, a MountSource, and stable attributes.
 //
-// NewInode takes a reference on msrc.
+// NewInode inherits a reference on msrc.
 func NewInode(ctx context.Context, iops InodeOperations, msrc *MountSource, sattr StableAttr) *Inode {
-	msrc.IncRef()
 	i := Inode{
 		InodeOperations: iops,
 		StableAttr:      sattr,

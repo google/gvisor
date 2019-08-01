@@ -129,5 +129,6 @@ func newProcInode(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 	if t != nil {
 		iops = &taskOwnedInodeOps{iops, t}
 	}
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, sattr)
 }

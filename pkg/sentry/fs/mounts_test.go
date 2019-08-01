@@ -33,13 +33,16 @@ func createMountNamespace(ctx context.Context) (*fs.MountNamespace, error) {
 	m := fs.NewPseudoMountSource(ctx)
 
 	barFile := fsutil.NewSimpleFileInode(ctx, fs.RootOwner, perms, 0)
+	m.IncRef()
 	fooDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
 		"bar": fs.NewInode(ctx, barFile, m, fs.StableAttr{Type: fs.RegularFile}),
 	}, fs.RootOwner, perms)
+	m.IncRef()
 	rootDir := ramfs.NewDir(ctx, map[string]*fs.Inode{
 		"foo": fs.NewInode(ctx, fooDir, m, fs.StableAttr{Type: fs.Directory}),
 	}, fs.RootOwner, perms)
 
+	m.IncRef()
 	return fs.NewMountNamespace(ctx, fs.NewInode(ctx, rootDir, m, fs.StableAttr{Type: fs.Directory}))
 }
 

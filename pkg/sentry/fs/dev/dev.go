@@ -45,6 +45,7 @@ const (
 )
 
 func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, major uint16, minor uint32) *fs.Inode {
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:        devDevice.DeviceID(),
 		InodeID:         devDevice.NextIno(),
@@ -56,6 +57,7 @@ func newCharacterDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.M
 }
 
 func newMemDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSource, minor uint32) *fs.Inode {
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:        devDevice.DeviceID(),
 		InodeID:         devDevice.NextIno(),
@@ -68,6 +70,7 @@ func newMemDevice(ctx context.Context, iops fs.InodeOperations, msrc *fs.MountSo
 
 func newDirectory(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	iops := ramfs.NewDir(ctx, nil, fs.RootOwner, fs.FilePermsFromMode(0555))
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
@@ -78,6 +81,7 @@ func newDirectory(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 
 func newSymlink(ctx context.Context, target string, msrc *fs.MountSource) *fs.Inode {
 	iops := ramfs.NewSymlink(ctx, fs.RootOwner, target)
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),
@@ -127,6 +131,7 @@ func New(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	}
 
 	iops := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fs.StableAttr{
 		DeviceID:  devDevice.DeviceID(),
 		InodeID:   devDevice.NextIno(),

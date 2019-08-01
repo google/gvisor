@@ -442,6 +442,7 @@ func (f *dirFile) Readdir(ctx context.Context, file *fs.File, ser fs.DentrySeria
 }
 
 func newTestRamfsInode(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
+	msrc.IncRef()
 	inode := fs.NewInode(ctx, &inode{
 		InodeStaticFileGetter: fsutil.InodeStaticFileGetter{
 			Contents: []byte("foobar"),

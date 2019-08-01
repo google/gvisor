@@ -128,6 +128,7 @@ func TestSeqFile(t *testing.T) {
 	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
+	m.IncRef()
 	inode := fs.NewInode(ctx, root, m, fs.StableAttr{Type: fs.Directory})
 	dirent2, err := root.Lookup(ctx, inode, "foo")
 	if err != nil {
@@ -204,6 +205,7 @@ func TestSeqFileFileUpdated(t *testing.T) {
 	root := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0777))
 
 	// How about opening it?
+	m.IncRef()
 	inode := fs.NewInode(ctx, root, m, fs.StableAttr{Type: fs.Directory})
 	dirent2, err := root.Lookup(ctx, inode, "foo")
 	if err != nil {

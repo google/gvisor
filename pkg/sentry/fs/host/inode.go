@@ -205,6 +205,7 @@ func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, 
 	}
 
 	// Return the fs.Inode.
+	msrc.IncRef()
 	return fs.NewInode(ctx, iops, msrc, fileState.sattr), nil
 }
 

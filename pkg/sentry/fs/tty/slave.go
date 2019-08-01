@@ -51,6 +51,7 @@ func newSlaveInode(ctx context.Context, d *dirInodeOperations, t *Terminal, owne
 		t:               t,
 	}
 
+	d.msrc.IncRef()
 	return fs.NewInode(ctx, iops, d.msrc, fs.StableAttr{
 		DeviceID: ptsDevice.DeviceID(),
 		// N.B. Linux always uses inode id = tty index + 3. See

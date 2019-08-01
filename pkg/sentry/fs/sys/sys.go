@@ -29,11 +29,13 @@ func newFile(ctx context.Context, node fs.InodeOperations, msrc *fs.MountSource)
 		BlockSize: usermem.PageSize,
 		Type:      fs.SpecialFile,
 	}
+	msrc.IncRef()
 	return fs.NewInode(ctx, node, msrc, sattr)
 }
 
 func newDir(ctx context.Context, msrc *fs.MountSource, contents map[string]*fs.Inode) *fs.Inode {
 	d := ramfs.NewDir(ctx, contents, fs.RootOwner, fs.FilePermsFromMode(0555))
+	msrc.IncRef()
 	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  sysfsDevice.DeviceID(),
 		InodeID:   sysfsDevice.NextIno(),

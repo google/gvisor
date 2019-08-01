@@ -73,6 +73,7 @@ func (i *inodeOperations) Lookup(ctx context.Context, dir *fs.Inode, name string
 	sattr, node := newInodeOperations(ctx, i.fileState.s, newFile, qids[0], mask, p9attr, false)
 
 	// Construct a positive Dirent.
+	dir.MountSource.IncRef()
 	return fs.NewDirent(ctx, fs.NewInode(ctx, node, dir.MountSource, sattr), name), nil
 }
 
@@ -141,6 +142,7 @@ func (i *inodeOperations) Create(ctx context.Context, dir *fs.Inode, name string
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, p9attr, false)
 
 	// Construct the positive Dirent.
+	dir.MountSource.IncRef()
 	d := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
 	defer d.DecRef()
 
@@ -278,6 +280,7 @@ func (i *inodeOperations) Bind(ctx context.Context, dir *fs.Inode, name string, 
 	sattr, iops := newInodeOperations(ctx, i.fileState.s, unopened, qid, mask, attr, true)
 
 	// Construct the positive Dirent.
+	dir.MountSource.IncRef()
 	childDir := fs.NewDirent(ctx, fs.NewInode(ctx, iops, dir.MountSource, sattr), name)
 	i.session().endpoints.add(key, childDir, ep)
 	return childDir, nil

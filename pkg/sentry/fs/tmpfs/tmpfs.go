@@ -88,7 +88,7 @@ func NewDir(ctx context.Context, contents map[string]*fs.Inode, owner fs.FileOwn
 
 	// Manually set the CreateOps.
 	d.ramfsDir.CreateOps = d.newCreateOps()
-
+	msrc.IncRef()
 	return fs.NewInode(ctx, d, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
@@ -217,6 +217,7 @@ func (d *Dir) newCreateOps() *ramfs.CreateOps {
 				Links: 0,
 			})
 			iops := NewInMemoryFile(ctx, usage.Tmpfs, uattr)
+			dir.MountSource.IncRef()
 			return fs.NewInode(ctx, iops, dir.MountSource, fs.StableAttr{
 				DeviceID:  tmpfsDevice.DeviceID(),
 				InodeID:   tmpfsDevice.NextIno(),
@@ -266,6 +267,7 @@ type Symlink struct {
 // NewSymlink returns a new symlink with the provided permissions.
 func NewSymlink(ctx context.Context, target string, owner fs.FileOwner, msrc *fs.MountSource) *fs.Inode {
 	s := &Symlink{Symlink: *ramfs.NewSymlink(ctx, owner, target)}
+	msrc.IncRef()
 	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
@@ -296,6 +298,7 @@ type Socket struct {
 // NewSocket returns a new socket with the provided permissions.
 func NewSocket(ctx context.Context, socket transport.BoundEndpoint, owner fs.FileOwner, perms fs.FilePermissions, msrc *fs.MountSource) *fs.Inode {
 	s := &Socket{Socket: *ramfs.NewSocket(ctx, socket, owner, perms)}
+	msrc.IncRef()
 	return fs.NewInode(ctx, s, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),
@@ -333,6 +336,7 @@ func NewFifo(ctx context.Context, owner fs.FileOwner, perms fs.FilePermissions, 
 	fifoIops := &Fifo{iops}
 
 	// Build a new Inode.
+	msrc.IncRef()
 	return fs.NewInode(ctx, fifoIops, msrc, fs.StableAttr{
 		DeviceID:  tmpfsDevice.DeviceID(),
 		InodeID:   tmpfsDevice.NextIno(),

@@ -140,6 +140,7 @@ func NewOverlayRootFile(ctx context.Context, upperMS *MountSource, lower *Inode,
 // newOverlayInode creates a new Inode for an overlay.
 func newOverlayInode(ctx context.Context, o *overlayEntry, msrc *MountSource) *Inode {
 	var inode *Inode
+	msrc.IncRef()
 	if o.upper != nil {
 		inode = NewInode(ctx, nil, msrc, o.upper.StableAttr)
 	} else {
