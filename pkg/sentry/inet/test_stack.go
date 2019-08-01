@@ -18,6 +18,7 @@ package inet
 type TestStack struct {
 	InterfacesMap     map[int32]Interface
 	InterfaceAddrsMap map[int32][]InterfaceAddr
+	RouteList         []Route
 	SupportsIPv6Flag  bool
 	TCPRecvBufSize    TCPBufferSize
 	TCPSendBufSize    TCPBufferSize
@@ -85,4 +86,9 @@ func (s *TestStack) SetTCPSACKEnabled(enabled bool) error {
 // Statistics implements inet.Stack.Statistics.
 func (s *TestStack) Statistics(stat interface{}, arg string) error {
 	return nil
+}
+
+// RouteTable implements Stack.RouteTable.
+func (s *TestStack) RouteTable() []Route {
+	return s.RouteList
 }

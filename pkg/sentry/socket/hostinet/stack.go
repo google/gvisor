@@ -46,6 +46,7 @@ type Stack struct {
 	// Stack is immutable.
 	interfaces     map[int32]inet.Interface
 	interfaceAddrs map[int32][]inet.InterfaceAddr
+	routes         []inet.Route
 	supportsIPv6   bool
 	tcpRecvBufSize inet.TCPBufferSize
 	tcpSendBufSize inet.TCPBufferSize
@@ -63,6 +64,10 @@ func NewStack() *Stack {
 // Configure sets up the stack using the current state of the host network.
 func (s *Stack) Configure() error {
 	if err := addHostInterfaces(s); err != nil {
+		return err
+	}
+
+	if err := addHostRoutes(s); err != nil {
 		return err
 	}
 
@@ -161,6 +166,54 @@ func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.Netli
 	return nil
 }
 
+// ExtractHostRoutes populates the given routes slice with the data from the
+// host route table.
+func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error) {
+	var routes []inet.Route
+	for _, routeMsg := range routeMsgs {
+		if routeMsg.Header.Type != syscall.RTM_NEWROUTE {
+			continue
+		}
+
+		var ifRoute syscall.RtMsg
+		binary.Unmarshal(routeMsg.Data[:syscall.SizeofRtMsg], usermem.ByteOrder, &ifRoute)
+		inetRoute := inet.Route{
+			Family:   ifRoute.Family,
+			DstLen:   ifRoute.Dst_len,
+			SrcLen:   ifRoute.Src_len,
+			TOS:      ifRoute.Tos,
+			Table:    ifRoute.Table,
+			Protocol: ifRoute.Protocol,
+			Scope:    ifRoute.Scope,
+			Type:     ifRoute.Type,
+			Flags:    ifRoute.Flags,
+		}
+
+		// Not clearly documented: syscall.ParseNetlinkRouteAttr will check the
+		// syscall.NetlinkMessage.Header.Type and skip the struct rtmsg
+		// accordingly.
+		attrs, err := syscall.ParseNetlinkRouteAttr(&routeMsg)
+		if err != nil {
+			return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid rtattrs: %v", err)
+		}
+
+		for _, attr := range attrs {
+			switch attr.Attr.Type {
+			case syscall.RTA_DST:
+				inetRoute.DstAddr = attr.Value
+			case syscall.RTA_SRC:
+				inetRoute.SrcAddr = attr.Value
+			case syscall.RTA_OIF:
+				inetRoute.GatewayAddr = attr.Value
+			}
+		}
+
+		routes = append(routes, inetRoute)
+	}
+
+	return routes, nil
+}
+
 func addHostInterfaces(s *Stack) error {
 	links, err := doNetlinkRouteRequest(syscall.RTM_GETLINK)
 	if err != nil {
@@ -173,6 +226,20 @@ func addHostInterfaces(s *Stack) error {
 	}
 
 	return ExtractHostInterfaces(links, addrs, s.interfaces, s.interfaceAddrs)
+}
+
+func addHostRoutes(s *Stack) error {
+	routes, err := doNetlinkRouteRequest(syscall.RTM_GETROUTE)
+	if err != nil {
+		return fmt.Errorf("RTM_GETROUTE failed: %v", err)
+	}
+
+	s.routes, err = ExtractHostRoutes(routes)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func doNetlinkRouteRequest(req int) ([]syscall.NetlinkMessage, error) {
@@ -202,12 +269,20 @@ func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
-	return s.interfaces
+	interfaces := make(map[int32]inet.Interface)
+	for k, v := range s.interfaces {
+		interfaces[k] = v
+	}
+	return interfaces
 }
 
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
-	return s.interfaceAddrs
+	addrs := make(map[int32][]inet.InterfaceAddr)
+	for k, v := range s.interfaceAddrs {
+		addrs[k] = append([]inet.InterfaceAddr(nil), v...)
+	}
+	return addrs
 }
 
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
@@ -248,4 +323,9 @@ func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 // Statistics implements inet.Stack.Statistics.
 func (s *Stack) Statistics(stat interface{}, arg string) error {
 	return syserror.EOPNOTSUPP
+}
+
+// RouteTable implements inet.Stack.RouteTable.
+func (s *Stack) RouteTable() []inet.Route {
+	return append([]inet.Route(nil), s.routes...)
 }
