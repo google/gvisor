@@ -109,9 +109,17 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, syserror.EINVAL
 	}
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, targetPath, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+	if err := fileOpOn(t, linux.AT_FDCWD, targetPath, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+		// Mount will take a reference on rootInode if successful.
 		return t.MountNamespace().Mount(t, d, rootInode)
-	})
+	}); err != nil {
+		// Something went wrong. Drop our ref on rootInode before
+		// returning the error.
+		rootInode.DecRef()
+		return 0, nil, err
+	}
+
+	return 0, nil, nil
 }
 
 // Umount2 implements Linux syscall umount2(2).
