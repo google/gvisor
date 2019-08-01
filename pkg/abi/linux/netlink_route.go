@@ -189,3 +189,139 @@ const (
 const (
 	ARPHRD_LOOPBACK = 772
 )
+
+// RouteMessage struct rtmsg, from uapi/linux/rtnetlink.h.
+type RouteMessage struct {
+	Family uint8
+	DstLen uint8
+	SrcLen uint8
+	TOS    uint8
+
+	Table    uint8
+	Protocol uint8
+	Scope    uint8
+	Type     uint8
+
+	Flags uint32
+}
+
+// Route types, from uapi/linux/rtnetlink.h.
+const (
+	// RTN_UNSPEC represents an unspecified route type.
+	RTN_UNSPEC = 0
+
+	// RTN_UNICAST represents a unicast route.
+	RTN_UNICAST = 1
+
+	// RTN_LOCAL represents a route that is accepted locally.
+	RTN_LOCAL = 2
+
+	// RTN_BROADCAST represents a broadcast route (Traffic is accepted locally
+	// as broadcast, and sent as broadcast).
+	RTN_BROADCAST = 3
+
+	// RTN_ANYCAST represents a anycast route (Traffic is accepted locally as
+	// broadcast but sent as unicast).
+	RTN_ANYCAST = 6
+
+	// RTN_MULTICAST represents a multicast route.
+	RTN_MULTICAST = 5
+
+	// RTN_BLACKHOLE represents a route where all traffic is dropped.
+	RTN_BLACKHOLE = 6
+
+	// RTN_UNREACHABLE represents a route where the destination is unreachable.
+	RTN_UNREACHABLE = 7
+
+	RTN_PROHIBIT = 8
+	RTN_THROW    = 9
+	RTN_NAT      = 10
+	RTN_XRESOLVE = 11
+)
+
+// Route protocols/origins, from uapi/linux/rtnetlink.h.
+const (
+	RTPROT_UNSPEC   = 0
+	RTPROT_REDIRECT = 1
+	RTPROT_KERNEL   = 2
+	RTPROT_BOOT     = 3
+	RTPROT_STATIC   = 4
+	RTPROT_GATED    = 8
+	RTPROT_RA       = 9
+	RTPROT_MRT      = 10
+	RTPROT_ZEBRA    = 11
+	RTPROT_BIRD     = 12
+	RTPROT_DNROUTED = 13
+	RTPROT_XORP     = 14
+	RTPROT_NTK      = 15
+	RTPROT_DHCP     = 16
+	RTPROT_MROUTED  = 17
+	RTPROT_BABEL    = 42
+	RTPROT_BGP      = 186
+	RTPROT_ISIS     = 187
+	RTPROT_OSPF     = 188
+	RTPROT_RIP      = 189
+	RTPROT_EIGRP    = 192
+)
+
+// Route scopes, from uapi/linux/rtnetlink.h.
+const (
+	RT_SCOPE_UNIVERSE = 0
+	RT_SCOPE_SITE     = 200
+	RT_SCOPE_LINK     = 253
+	RT_SCOPE_HOST     = 254
+	RT_SCOPE_NOWHERE  = 255
+)
+
+// Route flags, from uapi/linux/rtnetlink.h.
+const (
+	RTM_F_NOTIFY       = 0x100
+	RTM_F_CLONED       = 0x200
+	RTM_F_EQUALIZE     = 0x400
+	RTM_F_PREFIX       = 0x800
+	RTM_F_LOOKUP_TABLE = 0x1000
+	RTM_F_FIB_MATCH    = 0x2000
+)
+
+// Route tables, from uapi/linux/rtnetlink.h.
+const (
+	RT_TABLE_UNSPEC  = 0
+	RT_TABLE_COMPAT  = 252
+	RT_TABLE_DEFAULT = 253
+	RT_TABLE_MAIN    = 254
+	RT_TABLE_LOCAL   = 255
+)
+
+// Route attributes, from uapi/linux/rtnetlink.h.
+const (
+	RTA_UNSPEC        = 0
+	RTA_DST           = 1
+	RTA_SRC           = 2
+	RTA_IIF           = 3
+	RTA_OIF           = 4
+	RTA_GATEWAY       = 5
+	RTA_PRIORITY      = 6
+	RTA_PREFSRC       = 7
+	RTA_METRICS       = 8
+	RTA_MULTIPATH     = 9
+	RTA_PROTOINFO     = 10
+	RTA_FLOW          = 11
+	RTA_CACHEINFO     = 12
+	RTA_SESSION       = 13
+	RTA_MP_ALGO       = 14
+	RTA_TABLE         = 15
+	RTA_MARK          = 16
+	RTA_MFC_STATS     = 17
+	RTA_VIA           = 18
+	RTA_NEWDST        = 19
+	RTA_PREF          = 20
+	RTA_ENCAP_TYPE    = 21
+	RTA_ENCAP         = 22
+	RTA_EXPIRES       = 23
+	RTA_PAD           = 24
+	RTA_UID           = 25
+	RTA_TTL_PROPAGATE = 26
+	RTA_IP_PROTO      = 27
+	RTA_SPORT         = 28
+	RTA_DPORT         = 29
+)

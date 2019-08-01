@@ -110,7 +110,7 @@ func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader
 		m.PutAttr(linux.IFLA_ADDRESS, mac)
 		m.PutAttr(linux.IFLA_BROADCAST, brd)
 
-		// TODO(b/68878065): There are many more attributes.
+		// TODO(gvisor.dev/issue/578): There are many more attributes.
 	}
 
 	return nil
@@ -151,8 +151,64 @@ func (p *Protocol) dumpAddrs(ctx context.Context, hdr linux.NetlinkMessageHeader
 
 			m.PutAttr(linux.IFA_ADDRESS, []byte(a.Addr))
 
-			// TODO(b/68878065): There are many more attributes.
+			// TODO(gvisor.dev/issue/578): There are many more attributes.
 		}
+	}
+
+	return nil
+}
+
+// dumpRoutes handles RTM_GETROUTE + NLM_F_DUMP requests.
+func (p *Protocol) dumpRoutes(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
+	// RTM_GETROUTE dump requests need not contain anything more than the
+	// netlink header and 1 byte protocol family common to all
+	// NETLINK_ROUTE requests.
+
+	// We always send back an NLMSG_DONE.
+	ms.Multi = true
+
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network routes.
+		return nil
+	}
+
+	for _, rt := range stack.RouteTable() {
+		m := ms.AddMessage(linux.NetlinkMessageHeader{
+			Type: linux.RTM_NEWROUTE,
+		})
+
+		m.Put(linux.RouteMessage{
+			Family: rt.Family,
+			DstLen: rt.DstLen,
+			SrcLen: rt.SrcLen,
+			TOS:    rt.TOS,
+
+			// Always return the main table since we don't have multiple
+			// routing tables.
+			Table:    linux.RT_TABLE_MAIN,
+			Protocol: rt.Protocol,
+			Scope:    rt.Scope,
+			Type:     rt.Type,
+
+			Flags: rt.Flags,
+		})
+
+		m.PutAttr(254, []byte{123})
+		if rt.DstLen > 0 {
+			m.PutAttr(linux.RTA_DST, rt.DstAddr)
+		}
+		if rt.SrcLen > 0 {
+			m.PutAttr(linux.RTA_SRC, rt.SrcAddr)
+		}
+		if rt.OutputInterface != 0 {
+			m.PutAttr(linux.RTA_OIF, rt.OutputInterface)
+		}
+		if len(rt.GatewayAddr) > 0 {
+			m.PutAttr(linux.RTA_GATEWAY, rt.GatewayAddr)
+		}
+
+		// TODO(gvisor.dev/issue/578): There are many more attributes.
 	}
 
 	return nil
@@ -186,6 +242,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, hdr linux.NetlinkMessageH
 		return p.dumpLinks(ctx, hdr, data, ms)
 	case linux.RTM_GETADDR:
 		return p.dumpAddrs(ctx, hdr, data, ms)
+	case linux.RTM_GETROUTE:
+		return p.dumpRoutes(ctx, hdr, data, ms)
 	default:
 		return syserr.ErrNotSupported
 	}
