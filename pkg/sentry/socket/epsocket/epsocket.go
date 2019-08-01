@@ -2252,19 +2252,19 @@ func interfaceIoctl(ctx context.Context, io usermem.IO, arg int, ifr *linux.IFRe
 
 	case syscall.SIOCGIFMAP:
 		// Gets the hardware parameters of the device.
-		// TODO(b/71872867): Implement.
+		// TODO(gvisor.dev/issue/505): Implement.
 
 	case syscall.SIOCGIFTXQLEN:
 		// Gets the transmit queue length of the device.
-		// TODO(b/71872867): Implement.
+		// TODO(gvisor.dev/issue/505): Implement.
 
 	case syscall.SIOCGIFDSTADDR:
 		// Gets the destination address of a point-to-point device.
-		// TODO(b/71872867): Implement.
+		// TODO(gvisor.dev/issue/505): Implement.
 
 	case syscall.SIOCGIFBRDADDR:
 		// Gets the broadcast address of a device.
-		// TODO(b/71872867): Implement.
+		// TODO(gvisor.dev/issue/505): Implement.
 
 	case syscall.SIOCGIFNETMASK:
 		// Gets the network mask of a device.

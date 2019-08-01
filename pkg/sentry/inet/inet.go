@@ -52,12 +52,13 @@ type Stack interface {
 
 	// Statistics reports stack statistics.
 	Statistics(stat interface{}, arg string) error
+
+	// RouteTable returns the network stack's route table.
+	RouteTable() []Route
 }
 
 // Interface contains information about a network interface.
 type Interface struct {
-	// Keep these fields sorted in the order they appear in rtnetlink(7).
-
 	// DeviceType is the device type, a Linux ARPHRD_* constant.
 	DeviceType uint16
 
@@ -77,8 +78,6 @@ type Interface struct {
 
 // InterfaceAddr contains information about a network interface address.
 type InterfaceAddr struct {
-	// Keep these fields sorted in the order they appear in rtnetlink(7).
-
 	// Family is the address family, a Linux AF_* constant.
 	Family uint8
 
@@ -109,3 +108,45 @@ type TCPBufferSize struct {
 // StatDev describes one line of /proc/net/dev, i.e., stats for one network
 // interface.
 type StatDev [16]uint64
+
+// Route contains information about a network route.
+type Route struct {
+	// Family is the address family, a Linux AF_* constant.
+	Family uint8
+
+	// DstLen is the length of the destination address.
+	DstLen uint8
+
+	// SrcLen is the length of the source address.
+	SrcLen uint8
+
+	// TOS is the Type of Service filter.
+	TOS uint8
+
+	// Table is the routing table ID.
+	Table uint8
+
+	// Protocol is the route origin, a Linux RTPROT_* constant.
+	Protocol uint8
+
+	// Scope is the distance to destination, a Linux RT_SCOPE_* constant.
+	Scope uint8
+
+	// Type is the route origin, a Linux RTN_* constant.
+	Type uint8
+
+	// Flags are route flags. See rtnetlink(7) under "rtm_flags".
+	Flags uint32
+
+	// DstAddr is the route destination address (RTA_DST).
+	DstAddr []byte
+
+	// SrcAddr is the route source address (RTA_SRC).
+	SrcAddr []byte
+
+	// OutputInterface is the output interface index (RTA_OIF).
+	OutputInterface int32
+
+	// GatewayAddr is the route gateway address (RTA_GATEWAY).
+	GatewayAddr []byte
+}
