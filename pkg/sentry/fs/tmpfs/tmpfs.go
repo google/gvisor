@@ -56,7 +56,6 @@ func rename(ctx context.Context, oldParent *fs.Inode, oldName string, newParent 
 type Dir struct {
 	fsutil.InodeGenericChecker `state:"nosave"`
 	fsutil.InodeIsDirTruncate  `state:"nosave"`
-	fsutil.InodeNoopRelease    `state:"nosave"`
 	fsutil.InodeNoopWriteOut   `state:"nosave"`
 	fsutil.InodeNotMappable    `state:"nosave"`
 	fsutil.InodeNotSocket      `state:"nosave"`
@@ -250,6 +249,11 @@ func (*Dir) StatFS(context.Context) (fs.Info, error) {
 // Allocate implements fs.InodeOperations.Allocate.
 func (d *Dir) Allocate(ctx context.Context, node *fs.Inode, offset, length int64) error {
 	return d.ramfsDir.Allocate(ctx, node, offset, length)
+}
+
+// Release implements fs.InodeOperations.Release.
+func (d *Dir) Release(ctx context.Context) {
+	d.ramfsDir.Release(ctx)
 }
 
 // Symlink is a symlink.
