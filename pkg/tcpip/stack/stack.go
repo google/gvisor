@@ -208,6 +208,10 @@ type TCPSenderState struct {
 
 	// Cubic holds the state related to CUBIC congestion control.
 	Cubic TCPCubicState
+
+	// MSS is the size of the largest segment that can be sent without
+	// fragmentation.
+	MSS int
 }
 
 // TCPSACKInfo holds TCP SACK related information for a given TCP endpoint.
@@ -219,6 +223,9 @@ type TCPSACKInfo struct {
 	// ReceivedBlocks are the SACK blocks received by this endpoint
 	// from the peer endpoint.
 	ReceivedBlocks []header.SACKBlock
+
+	// Sacked is the current number of bytes held in the SACK scoreboard.
+	Sacked seqnum.Size
 
 	// MaxSACKED is the highest sequence number that has been SACKED
 	// by the peer.
@@ -269,6 +276,14 @@ type TCPEndpointState struct {
 	// ID is a copy of the TransportEndpointID for the endpoint.
 	ID TCPEndpointID
 
+	// ProtocolState denotes the TCP state the endpoint is currently
+	// in, encoded in a netstack-specific manner. Should be translated
+	// to the Linux ABI before exposing to userspace.
+	ProtocolState uint32
+
+	// AMSS is the MSS advertised to the peer by this endpoint.
+	AMSS uint16
+
 	// SegTime denotes the absolute time when this segment was received.
 	SegTime time.Time
 
@@ -285,6 +300,18 @@ type TCPEndpointState struct {
 
 	// RcvClosed if true, indicates the endpoint has been closed for reading.
 	RcvClosed bool
+
+	// RcvLastAck is the time of receipt of the last packet with the
+	// ACK flag set.
+	RcvLastAckNanos int64
+
+	// RcvLastData is the time of reciept of the last packet
+	// containing data.
+	RcvLastDataNanos int64
+
+	// RcvMSS is the size of the largest segment the receiver is willing to
+	// accept, not including TCP headers and options.
+	RcvMSS int
 
 	// SendTSOk is used to indicate when the TS Option has been negotiated.
 	// When sendTSOk is true every non-RST segment should carry a TS as per
@@ -325,6 +352,9 @@ type TCPEndpointState struct {
 
 	// SndMTU is the smallest MTU seen in the control packets received.
 	SndMTU int
+
+	// MaxOptionSize is the maximum size of TCP options.
+	MaxOptionSize int
 
 	// Receiver holds variables related to the TCP receiver for the endpoint.
 	Receiver TCPReceiverState

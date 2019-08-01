@@ -476,14 +476,6 @@ type QuickAckOption int
 // Only supported on Unix sockets.
 type PasscredOption int
 
-// TCPInfoOption is used by GetSockOpt to expose TCP statistics.
-//
-// TODO(b/64800844): Add and populate stat fields.
-type TCPInfoOption struct {
-	RTT    time.Duration
-	RTTVar time.Duration
-}
-
 // KeepaliveEnabledOption is used by SetSockOpt/GetSockOpt to specify whether
 // TCP keepalive is enabled for this socket.
 type KeepaliveEnabledOption int

@@ -697,5 +697,28 @@ TEST_P(TCPSocketPairTest, SetCongestionControlFailsForUnsupported) {
   EXPECT_EQ(0, memcmp(got_cc, old_cc, sizeof(old_cc)));
 }
 
+TEST_P(TCPSocketPairTest, GetSockOptTCPInfo) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  struct tcp_info info;
+  socklen_t optlen = sizeof(info);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_TCP, TCP_INFO, &info, &optlen),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(optlen, sizeof(info));
+
+  EXPECT_EQ(info.tcpi_state, TCP_ESTABLISHED);
+
+  EXPECT_GT(info.tcpi_rto, 0);
+
+  // IPv4 MSS is 536 bytes by default, and IPv6 is 1220 bytes.
+  EXPECT_GE(info.tcpi_snd_mss, 536);
+  EXPECT_GE(info.tcpi_rcv_mss, 536);
+  EXPECT_GE(info.tcpi_advmss, 536);
+
+  // MTU is typically 1500 for ethernet, but this is highly protocol
+  // dependent. Opt for a safe lower bound.
+  EXPECT_GT(info.tcpi_pmtu, 500);
+}
+
 }  // namespace testing
 }  // namespace gvisor
