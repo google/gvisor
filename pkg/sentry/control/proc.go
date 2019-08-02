@@ -56,14 +56,9 @@ type ExecArgs struct {
 
 	// MountNamespace is the mount namespace to execute the new process in.
 	// A reference on MountNamespace must be held for the lifetime of the
-	// ExecArgs. If MountNamespace is nil, it will default to the kernel's
-	// root MountNamespace.
+	// ExecArgs. If MountNamespace is nil, it will default to the init
+	// process's MountNamespace.
 	MountNamespace *fs.MountNamespace
-
-	// Root defines the root directory for the new process. A reference on
-	// Root must be held for the lifetime of the ExecArgs. If Root is nil,
-	// it will default to the VFS root.
-	Root *fs.Dirent
 
 	// WorkingDirectory defines the working directory for the new process.
 	WorkingDirectory string `json:"wd"`
@@ -155,7 +150,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		Envv:                    args.Envv,
 		WorkingDirectory:        args.WorkingDirectory,
 		MountNamespace:          args.MountNamespace,
-		Root:                    args.Root,
 		Credentials:             creds,
 		FDTable:                 fdTable,
 		Umask:                   0022,
@@ -166,11 +160,6 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
 		ContainerID:             args.ContainerID,
 		PIDNamespace:            args.PIDNamespace,
-	}
-	if initArgs.Root != nil {
-		// initArgs must hold a reference on Root, which will be
-		// donated to the new process in CreateProcess.
-		initArgs.Root.IncRef()
 	}
 	if initArgs.MountNamespace != nil {
 		// initArgs must hold a reference on MountNamespace, which will
@@ -184,7 +173,7 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		paths := fs.GetPath(initArgs.Envv)
 		mns := initArgs.MountNamespace
 		if mns == nil {
-			mns = proc.Kernel.RootMountNamespace()
+			mns = proc.Kernel.GlobalInit().Leader().MountNamespace()
 		}
 		f, err := mns.ResolveExecutablePath(ctx, initArgs.WorkingDirectory, initArgs.Argv[0], paths)
 		if err != nil {
