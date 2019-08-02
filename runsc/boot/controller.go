@@ -328,10 +328,8 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("at most two files may be passed to Restore")
 	}
 
-	networkStack := cm.l.k.NetworkStack()
-	// Destroy the old kernel and create a new kernel.
+	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
-	cm.l.k.Destroy()
 
 	p, err := createPlatform(cm.l.conf, deviceFile)
 	if err != nil {
@@ -345,6 +343,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("creating memory file: %v", err)
 	}
 	k.SetMemoryFile(mf)
+	networkStack := cm.l.k.NetworkStack()
 	cm.l.k = k
 
 	// Set up the restore environment.
