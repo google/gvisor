@@ -169,7 +169,7 @@ func TestGetExecUserHome(t *testing.T) {
 				mns = m
 				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
 			}
-			mntr := newContainerMounter(spec, "", []int{sandEnd}, nil, &podMountHints{})
+			mntr := newContainerMounter(spec, []int{sandEnd}, nil, &podMountHints{})
 			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
 				t.Fatalf("failed to create mount namespace: %v", err)
 			}

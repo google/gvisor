@@ -492,3 +492,14 @@ func (c *Cleanup) Clean() {
 func (c *Cleanup) Release() {
 	c.clean = nil
 }
+
+// RetryEintr retries the function until an error different than EINTR is
+// returned.
+func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
+	for {
+		r1, r2, err := f()
+		if err != syscall.EINTR {
+			return r1, r2, err
+		}
+	}
+}

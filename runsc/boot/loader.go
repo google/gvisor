@@ -27,6 +27,7 @@ import (
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
@@ -524,11 +525,9 @@ func (l *Loader) run() error {
 		// ours either way.
 		l.rootProcArgs.FDTable = fdTable
 
-		// cid for root container can be empty. Only subcontainers need it to set
-		// the mount location.
-		mntr := newContainerMounter(l.spec, "", l.goferFDs, l.k, l.mountHints)
-
-		// Setup the root container.
+		// Setup the root container file system.
+		l.startGoferMonitor(l.sandboxID, l.goferFDs)
+		mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
 		if err := mntr.setupRootContainer(ctx, ctx, l.conf, func(mns *fs.MountNamespace) {
 			l.rootProcArgs.MountNamespace = mns
 		}); err != nil {
@@ -687,7 +686,9 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 		goferFDs = append(goferFDs, fd)
 	}
 
-	mntr := newContainerMounter(spec, cid, goferFDs, l.k, l.mountHints)
+	// Setup the child container file system.
+	l.startGoferMonitor(cid, goferFDs)
+	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
 	if err := mntr.setupChildContainer(conf, &procArgs); err != nil {
 		return fmt.Errorf("configuring container FS: %v", err)
 	}
@@ -710,17 +711,59 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 	return nil
 }
 
+// startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
+// the gofer FDs looking for disconnects, and destroys the container if a
+// disconnect occurs in any of the gofer FDs.
+func (l *Loader) startGoferMonitor(cid string, goferFDs []int) {
+	go func() {
+		log.Debugf("Monitoring gofer health for container %q", cid)
+		var events []unix.PollFd
+		for _, fd := range goferFDs {
+			events = append(events, unix.PollFd{
+				Fd:     int32(fd),
+				Events: unix.POLLHUP | unix.POLLRDHUP,
+			})
+		}
+		_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
+			// Use ppoll instead of poll because it's already whilelisted in seccomp.
+			n, err := unix.Ppoll(events, nil, nil)
+			return uintptr(n), 0, err
+		})
+		if err != nil {
+			panic(fmt.Sprintf("Error monitoring gofer FDs: %v", err))
+		}
+
+		// Check if the gofer has stopped as part of normal container destruction.
+		// This is done just to avoid sending an annoying error message to the log.
+		// Note that there is a small race window in between mu.Unlock() and the
+		// lock being reacquired in destroyContainer(), but it's harmless to call
+		// destroyContainer() multiple times.
+		l.mu.Lock()
+		_, ok := l.processes[execID{cid: cid}]
+		l.mu.Unlock()
+		if ok {
+			log.Infof("Gofer socket disconnected, destroying container %q", cid)
+			if err := l.destroyContainer(cid); err != nil {
+				log.Warningf("Error destroying container %q after gofer stopped: %v", cid, err)
+			}
+		}
+	}()
+}
+
 // destroyContainer stops a container if it is still running and cleans up its
 // filesystem.
 func (l *Loader) destroyContainer(cid string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Has the container started?
-	_, _, err := l.threadGroupFromIDLocked(execID{cid: cid})
+	_, _, started, err := l.threadGroupFromIDLocked(execID{cid: cid})
+	if err != nil {
+		// Container doesn't exist.
+		return err
+	}
 
-	// If the container has started, kill and wait for all processes.
-	if err == nil {
+	// The container exists, has it been started?
+	if started {
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
 			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
 		}
@@ -754,9 +797,12 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	tg, _, err := l.threadGroupFromIDLocked(execID{cid: args.ContainerID})
+	tg, _, started, err := l.threadGroupFromIDLocked(execID{cid: args.ContainerID})
 	if err != nil {
-		return 0, fmt.Errorf("no such container: %q", args.ContainerID)
+		return 0, err
+	}
+	if !started {
+		return 0, fmt.Errorf("container %q not started", args.ContainerID)
 	}
 
 	// Get the container MountNamespace from the Task.
@@ -1018,22 +1064,30 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 func (l *Loader) threadGroupFromID(key execID) (*kernel.ThreadGroup, *host.TTYFileOperations, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.threadGroupFromIDLocked(key)
+	tg, tty, ok, err := l.threadGroupFromIDLocked(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("container %q not started", key.cid)
+	}
+	return tg, tty, nil
 }
 
 // threadGroupFromIDLocked returns the thread group and TTY for the given
 // execution ID. TTY may be nil if the process is not attached to a terminal.
-// Returns error if execution ID is invalid or if container/process has not
-// started yet. Caller must hold 'mu'.
-func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host.TTYFileOperations, error) {
+// Also returns a boolean indicating whether the container has already started.
+// Returns error if execution ID is invalid or if the container cannot be
+// found (maybe it has been deleted). Caller must hold 'mu'.
+func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host.TTYFileOperations, bool, error) {
 	ep := l.processes[key]
 	if ep == nil {
-		return nil, nil, fmt.Errorf("container not found")
+		return nil, nil, false, fmt.Errorf("container %q not found", key.cid)
 	}
 	if ep.tg == nil {
-		return nil, nil, fmt.Errorf("container not started")
+		return nil, nil, false, nil
 	}
-	return ep.tg, ep.tty, nil
+	return ep.tg, ep.tty, true, nil
 }
 
 func init() {

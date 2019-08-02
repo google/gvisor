@@ -348,17 +348,6 @@ func StartReaper() func() {
 	return r.Stop
 }
 
-// RetryEintr retries the function until an error different than EINTR is
-// returned.
-func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
-	for {
-		r1, r2, err := f()
-		if err != syscall.EINTR {
-			return r1, r2, err
-		}
-	}
-}
-
 // WaitUntilRead reads from the given reader until the wanted string is found
 // or until timeout.
 func WaitUntilRead(r io.Reader, want string, split bufio.SplitFunc, timeout time.Duration) error {
