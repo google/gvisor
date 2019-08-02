@@ -1,12 +1,12 @@
 package kernel
 
 import (
-	"unsafe"
-
 	"fmt"
-	"gvisor.dev/gvisor/third_party/gvsync"
 	"reflect"
 	"strings"
+	"unsafe"
+
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
