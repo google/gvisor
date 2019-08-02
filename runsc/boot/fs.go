@@ -476,9 +476,6 @@ func (p *podMountHints) findMount(mount specs.Mount) *mountHint {
 }
 
 type containerMounter struct {
-	// cid is the container ID. May be set to empty for the root container.
-	cid string
-
 	root *specs.Root
 
 	// mounts is the set of submounts for the container. It's a copy from the spec
@@ -493,9 +490,8 @@ type containerMounter struct {
 	hints *podMountHints
 }
 
-func newContainerMounter(spec *specs.Spec, cid string, goferFDs []int, k *kernel.Kernel, hints *podMountHints) *containerMounter {
+func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hints *podMountHints) *containerMounter {
 	return &containerMounter{
-		cid:    cid,
 		root:   spec.Root,
 		mounts: compileMounts(spec),
 		fds:    fdDispenser{fds: goferFDs},
