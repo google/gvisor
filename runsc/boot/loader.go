@@ -630,7 +630,6 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 	// sentry currently supports only 1 mount namespace, which is tied to a
 	// single user namespace. Thus we must run in the same user namespace
 	// to access mounts.
-	// TODO(b/63601033): Create a new mount namespace for the container.
 	creds := auth.NewUserCredentials(
 		auth.KUID(spec.Process.User.UID),
 		auth.KGID(spec.Process.User.GID),
@@ -932,6 +931,8 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
 			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
 		}
+
+		s.FillDefaultIPTables()
 
 		return &s, nil
 
