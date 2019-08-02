@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tmutex"
@@ -681,6 +682,11 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 	e.rcvAutoParams.measureTime = now
 	e.rcvAutoParams.copied = 0
 	e.rcvListMu.Unlock()
+}
+
+// IPTables implements tcpip.Endpoint.IPTables.
+func (e *endpoint) IPTables() (iptables.IPTables, error) {
+	return e.stack.IPTables(), nil
 }
 
 // Read reads data from the endpoint.

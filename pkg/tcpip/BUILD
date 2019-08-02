@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/iptables",
         "//pkg/waiter",
     ],
 )

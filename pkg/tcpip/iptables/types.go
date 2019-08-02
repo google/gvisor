@@ -15,7 +15,6 @@
 package iptables
 
 import (
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
@@ -128,15 +127,29 @@ type Table struct {
 	// UserChains, and its purpose is to make looking up tables by name
 	// fast.
 	Chains map[string]*Chain
+
+	// Metadata holds information about the Table that is useful to users
+	// of IPTables, but not to the netstack IPTables code itself.
+	metadata interface{}
 }
 
 // ValidHooks returns a bitmap of the builtin hooks for the given table.
-func (table *Table) ValidHooks() (uint32, *tcpip.Error) {
+func (table *Table) ValidHooks() uint32 {
 	hooks := uint32(0)
 	for hook, _ := range table.BuiltinChains {
 		hooks |= 1 << hook
 	}
-	return hooks, nil
+	return hooks
+}
+
+// Metadata returns the metadata object stored in table.
+func (table *Table) Metadata() interface{} {
+	return table.metadata
+}
+
+// SetMetadata sets the metadata object stored in table.
+func (table *Table) SetMetadata(metadata interface{}) {
+	table.metadata = metadata
 }
 
 // A Chain defines a list of rules for packet processing. When a packet

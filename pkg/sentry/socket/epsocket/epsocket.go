@@ -43,6 +43,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -624,7 +625,7 @@ func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // tcpip.Endpoint.
-func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (interface{}, *syserr.Error) {
+func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
 	// implemented specifically for epsocket.SocketOperations rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
@@ -653,6 +654,33 @@ func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name, outLen int) (
 			val = 1
 		}
 		return val, nil
+	}
+
+	if s.skType == linux.SOCK_RAW && level == linux.IPPROTO_IP {
+		switch name {
+		case linux.IPT_SO_GET_INFO:
+			if outLen < linux.SizeOfIPTGetinfo {
+				return nil, syserr.ErrInvalidArgument
+			}
+
+			info, err := netfilter.GetInfo(t, s.Endpoint, outPtr)
+			if err != nil {
+				return nil, err
+			}
+			return info, nil
+
+		case linux.IPT_SO_GET_ENTRIES:
+			if outLen < linux.SizeOfIPTGetEntries {
+				return nil, syserr.ErrInvalidArgument
+			}
+
+			entries, err := netfilter.GetEntries(t, s.Endpoint, outPtr, outLen)
+			if err != nil {
+				return nil, err
+			}
+			return entries, nil
+
+		}
 	}
 
 	return GetSockOpt(t, s, s.Endpoint, s.family, s.skType, level, name, outLen)

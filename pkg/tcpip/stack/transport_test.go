@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -198,6 +199,10 @@ func (f *fakeTransportEndpoint) State() uint32 {
 }
 
 func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {
+}
+
+func (f *fakeTransportEndpoint) IPTables() (iptables.IPTables, error) {
+	return iptables.IPTables{}, nil
 }
 
 type fakeTransportGoodOption bool

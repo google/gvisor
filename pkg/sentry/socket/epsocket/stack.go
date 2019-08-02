@@ -18,9 +18,11 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -187,4 +189,15 @@ func (s *Stack) RouteTable() []inet.Route {
 	}
 
 	return routeTable
+}
+
+// IPTables returns the stack's iptables.
+func (s *Stack) IPTables() (iptables.IPTables, error) {
+	return s.Stack.IPTables(), nil
+}
+
+// FillDefaultIPTables sets the stack's iptables to the default tables, which
+// allow and do not modify all traffic.
+func (s *Stack) FillDefaultIPTables() error {
+	return netfilter.FillDefaultIPTables(s.Stack)
 }
