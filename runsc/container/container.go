@@ -475,7 +475,13 @@ func (c *Container) Start(conf *boot.Config) error {
 	}
 
 	c.changeStatus(Running)
-	return c.save()
+	if err := c.save(); err != nil {
+		return err
+	}
+
+	// Adjust the oom_score_adj for sandbox and gofers. This must be done after
+	// save().
+	return c.adjustOOMScoreAdj(conf)
 }
 
 // Restore takes a container and replaces its kernel and file system
@@ -1097,4 +1103,91 @@ func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
 		return err
 	}
 	return fn()
+}
+
+// adjustOOMScoreAdj sets the oom_score_adj for the sandbox and all gofers.
+// oom_score_adj is set to the lowest oom_score_adj among the containers
+// running in the sandbox.
+func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
+	// If this container's OOMScoreAdj is nil then we can exit early as no
+	// change should be made to oom_score_adj for the sandbox.
+	if c.Spec.Process.OOMScoreAdj == nil {
+		return nil
+	}
+
+	ids, err := List(conf.RootDir)
+	if err != nil {
+		return err
+	}
+
+	// Load the container metadata.
+	var containers []*Container
+	for _, id := range ids {
+		container, err := Load(conf.RootDir, id)
+		if err != nil {
+			return fmt.Errorf("loading container %q: %v", id, err)
+		}
+		if container.Sandbox.ID == c.Sandbox.ID {
+			containers = append(containers, container)
+		}
+	}
+
+	// Get the lowest score for all containers.
+	var lowScore int
+	scoreFound := false
+	for _, container := range containers {
+		if container.Spec.Process.OOMScoreAdj != nil && (!scoreFound || *container.Spec.Process.OOMScoreAdj < lowScore) {
+			scoreFound = true
+			lowScore = *container.Spec.Process.OOMScoreAdj
+		}
+	}
+
+	// Only set oom_score_adj if one of the containers has oom_score_adj set
+	// in the OCI bundle. If not, we need to inherit the parent process's
+	// oom_score_adj.
+	// See: https://github.com/opencontainers/runtime-spec/blob/master/config.md#linux-process
+	if !scoreFound {
+		return nil
+	}
+
+	// Set oom_score_adj for the sandbox.
+	if err := setOOMScoreAdj(c.Sandbox.Pid, lowScore); err != nil {
+		return fmt.Errorf("setting oom_score_adj for sandbox %q: %v", c.Sandbox.ID, err)
+	}
+
+	// Set the gofer's oom_score_adj to the minimum of -500 and the
+	// sandbox's oom_score_adj to better ensure that the sandbox is killed
+	// before the gofer.
+	//
+	// TODO(gvisor.dev/issue/601) Set oom_score_adj for the gofer to
+	// the same oom_score_adj as the sandbox.
+	goferScoreAdj := -500
+	if lowScore < goferScoreAdj {
+		goferScoreAdj = lowScore
+	}
+
+	// Set oom_score_adj for gofers for all containers in the sandbox.
+	for _, container := range containers {
+		err := setOOMScoreAdj(container.GoferPid, goferScoreAdj)
+		if err != nil {
+			return fmt.Errorf("setting oom_score_adj for container %q: %v", container.ID, err)
+		}
+	}
+
+	return nil
+}
+
+// setOOMScoreAdj sets oom_score_adj to the given value for the given PID.
+// /proc must be available and mounted read-write. scoreAdj should be between
+// -1000 and 1000.
+func setOOMScoreAdj(pid int, scoreAdj int) error {
+	f, err := os.OpenFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid), os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(strconv.Itoa(scoreAdj)); err != nil {
+		return err
+	}
+	return nil
 }
