@@ -208,12 +208,12 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 }
 
 // Copy provides a copy of the SACK scoreboard.
-func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, sacked seqnum.Size, maxSACKED seqnum.Value) {
+func (s *SACKScoreboard) Copy() (sackBlocks []header.SACKBlock, maxSACKED seqnum.Value) {
 	s.ranges.Ascend(func(i btree.Item) bool {
 		sackBlocks = append(sackBlocks, i.(header.SACKBlock))
 		return true
 	})
-	return sackBlocks, s.sacked, s.maxSACKED
+	return sackBlocks, s.maxSACKED
 }
 
 // IsRangeLost implements the IsLost(SeqNum) operation defined in RFC 6675
