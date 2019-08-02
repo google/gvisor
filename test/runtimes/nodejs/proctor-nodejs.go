@@ -42,27 +42,10 @@ func main() {
 }
 
 func (n nodejsRunner) ListTests() ([]string, error) {
-	var testSlice []string
-
-	err := filepath.Walk(testDir, func(path string, info os.FileInfo, err error) error {
-		name := filepath.Base(path)
-
-		if info.IsDir() || !testRegEx.MatchString(name) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(testDir, path)
-		if err != nil {
-			return err
-		}
-		testSlice = append(testSlice, relPath)
-		return nil
-	})
-
+	testSlice, err := common.Search(testDir, testRegEx)
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", testDir, err)
+		return nil, err
 	}
-
 	return testSlice, nil
 }
 

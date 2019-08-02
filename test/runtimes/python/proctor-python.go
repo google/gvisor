@@ -21,15 +21,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"strings"
 
 	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
 var (
-	dir       = os.Getenv("LANG_DIR")
-	testDir   = filepath.Join(dir, "Lib", "test")
-	testRegEx = regexp.MustCompile(`^test_.+\.py$`)
+	dir = os.Getenv("LANG_DIR")
 )
 
 type pythonRunner struct {
@@ -42,37 +40,23 @@ func main() {
 }
 
 func (p pythonRunner) ListTests() ([]string, error) {
-	var testSlice []string
-
-	err := filepath.Walk(testDir, func(path string, info os.FileInfo, err error) error {
-		name := filepath.Base(path)
-
-		if info.IsDir() || !testRegEx.MatchString(name) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(testDir, path)
-		if err != nil {
-			return err
-		}
-		testSlice = append(testSlice, relPath)
-		return nil
-	})
-
+	args := []string{"-m", "test", "--list-tests"}
+	cmd := exec.Command(filepath.Join(dir, "python"), args...)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", testDir, err)
+		return nil, fmt.Errorf("failed to list: %v", err)
 	}
-
-	return testSlice, nil
+	var toolSlice []string
+	for _, test := range strings.Split(string(out), "\n") {
+		toolSlice = append(toolSlice, test)
+	}
+	return toolSlice, nil
 }
 
 func (p pythonRunner) RunTest(test string) error {
-	// Python tests need to be run in the directory in which they exist.
-	// Split the filename from it's directory and execute in the correct directory.
-	relDir, file := filepath.Split(test)
-	args := []string{"-m", "test", file}
+	args := []string{"-m", "test", test}
 	cmd := exec.Command(filepath.Join(dir, "python"), args...)
-	cmd.Dir = filepath.Join(testDir, relDir)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run: %v", err)

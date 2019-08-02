@@ -19,6 +19,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 )
 
 var (
@@ -69,6 +71,33 @@ func LaunchFunc(tr TestRunner) error {
 		return fmt.Errorf("error running all tests: %v", err)
 	}
 	return nil
+}
+
+// Search uses filepath.Walk to perform a search of the disk for test files
+// and returns a string slice of tests.
+func Search(root string, testFilter *regexp.Regexp) ([]string, error) {
+	var testSlice []string
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		name := filepath.Base(path)
+
+		if info.IsDir() || !testFilter.MatchString(name) {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		testSlice = append(testSlice, relPath)
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("walking %q: %v", root, err)
+	}
+
+	return testSlice, nil
 }
 
 func runAllTests(tr TestRunner) error {
