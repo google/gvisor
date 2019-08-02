@@ -395,7 +395,7 @@ func (s *socketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outLen int) (interface{}, *syserr.Error) {
+func (s *socketOperations) GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
 	// SO_RCVTIMEO and SO_SNDTIMEO are special because blocking is performed
 	// within the sentry.
 	if level == linux.SOL_SOCKET && name == linux.SO_RCVTIMEO {

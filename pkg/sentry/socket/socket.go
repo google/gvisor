@@ -64,7 +64,7 @@ type Socket interface {
 	Shutdown(t *kernel.Task, how int) *syserr.Error
 
 	// GetSockOpt implements the getsockopt(2) linux syscall.
-	GetSockOpt(t *kernel.Task, level int, name int, outLen int) (interface{}, *syserr.Error)
+	GetSockOpt(t *kernel.Task, level int, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error)
 
 	// SetSockOpt implements the setsockopt(2) linux syscall.
 	SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error

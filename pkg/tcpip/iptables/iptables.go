@@ -32,8 +32,8 @@ const (
 
 // DefaultTables returns a default set of tables. Each chain is set to accept
 // all packets.
-func DefaultTables() *IPTables {
-	return &IPTables{
+func DefaultTables() IPTables {
+	return IPTables{
 		Tables: map[string]Table{
 			tablenameNat: Table{
 				BuiltinChains: map[Hook]Chain{
