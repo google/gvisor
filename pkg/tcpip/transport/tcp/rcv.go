@@ -220,24 +220,25 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	return true
 }
 
-// updateRTTLocked updates the receiver RTT measurement based on the sequence
-// number of the received segment.
-//
-// Precondition: Caller must hold r.ep.rcvListMu.
-func (r *receiver) updateRTTLocked() {
+// updateRTT updates the receiver RTT measurement based on the sequence number
+// of the received segment.
+func (r *receiver) updateRTT() {
 	// From: https://public.lanl.gov/radiant/pubs/drs/sc2001-poster.pdf
 	//
 	// A system that is only transmitting acknowledgements can still
 	// estimate the round-trip time by observing the time between when a byte
 	// is first acknowledged and the receipt of data that is at least one
 	// window beyond the sequence number that was acknowledged.
+	r.ep.rcvListMu.Lock()
 	if r.ep.rcvAutoParams.rttMeasureTime.IsZero() {
 		// New measurement.
 		r.ep.rcvAutoParams.rttMeasureTime = time.Now()
 		r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
+		r.ep.rcvListMu.Unlock()
 		return
 	}
 	if r.rcvNxt.LessThan(r.ep.rcvAutoParams.rttMeasureSeqNumber) {
+		r.ep.rcvListMu.Unlock()
 		return
 	}
 	rtt := time.Since(r.ep.rcvAutoParams.rttMeasureTime)
@@ -249,6 +250,7 @@ func (r *receiver) updateRTTLocked() {
 	}
 	r.ep.rcvAutoParams.rttMeasureTime = time.Now()
 	r.ep.rcvAutoParams.rttMeasureSeqNumber = r.rcvNxt.Add(r.rcvWnd)
+	r.ep.rcvListMu.Unlock()
 }
 
 // handleRcvdSegment handles TCP segments directed at the connection managed by
@@ -289,20 +291,11 @@ func (r *receiver) handleRcvdSegment(s *segment) {
 		return
 	}
 
-	r.ep.rcvListMu.Lock()
-	// FIXME(b/137581805): Using the runtime clock here is incorrect as it
-	// doesn't account for potentially virtualized time.
-	now := time.Now().UnixNano()
-	if s.flagIsSet(header.TCPFlagAck) {
-		r.ep.rcvLastAckNanos = now
-	}
+	// Since we consumed a segment update the receiver's RTT estimate
+	// if required.
 	if segLen > 0 {
-		// Since we consumed a segment update the receiver's RTT estimate if
-		// required.
-		r.ep.rcvLastDataNanos = now
-		r.updateRTTLocked()
+		r.updateRTT()
 	}
-	r.ep.rcvListMu.Unlock()
 
 	// By consuming the current segment, we may have filled a gap in the
 	// sequence number domain that allows pending segments to be consumed

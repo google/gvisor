@@ -124,10 +124,6 @@ type sender struct {
 	rtt rtt
 	rto time.Duration
 
-	// mss is the largest segment that can be sent without fragmentation.
-	// Initialized when then sender is created, read-only afterwards.
-	mss int
-
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
 	maxPayloadSize int
@@ -205,7 +201,6 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		rto:              1 * time.Second,
 		rttMeasureSeqNum: iss + 1,
 		lastSendTime:     time.Now(),
-		mss:              int(mss),
 		maxPayloadSize:   maxPayloadSize,
 		maxSentAck:       irs + 1,
 		fr: fastRecovery{
