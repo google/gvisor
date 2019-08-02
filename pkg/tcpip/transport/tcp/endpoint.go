@@ -108,9 +108,6 @@ func (s EndpointState) String() string {
 	}
 }
 
-// InfoOption is used by GetSockOpt to expose TCP endpoint state.
-type InfoOption stack.TCPEndpointState
-
 // Reasons for notifying the protocol goroutine.
 const (
 	notifyNonZeroReceiveWindow = 1 << iota
@@ -205,14 +202,12 @@ type endpoint struct {
 	// to indicate to users that no more data is coming.
 	//
 	// rcvListMu can be taken after the endpoint mu below.
-	rcvListMu        sync.Mutex  `state:"nosave"`
-	rcvList          segmentList `state:"wait"`
-	rcvClosed        bool
-	rcvBufSize       int
-	rcvBufUsed       int
-	rcvAutoParams    rcvBufAutoTuneParams
-	rcvLastAckNanos  int64 // timestamp
-	rcvLastDataNanos int64 // timestamp
+	rcvListMu     sync.Mutex  `state:"nosave"`
+	rcvList       segmentList `state:"wait"`
+	rcvClosed     bool
+	rcvBufSize    int
+	rcvBufUsed    int
+	rcvAutoParams rcvBufAutoTuneParams
 	// zeroWindow indicates that the window was closed due to receive buffer
 	// space being filled up. This is set by the worker goroutine before
 	// moving a segment to the rcvList. This setting is cleared by the
@@ -1203,10 +1198,17 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		return nil
 
-	case *InfoOption:
-		e.workMu.Lock()
-		*o = InfoOption(e.completeState())
-		e.workMu.Unlock()
+	case *tcpip.TCPInfoOption:
+		*o = tcpip.TCPInfoOption{}
+		e.mu.RLock()
+		snd := e.snd
+		e.mu.RUnlock()
+		if snd != nil {
+			snd.rtt.Lock()
+			o.RTT = snd.rtt.srtt
+			o.RTTVar = snd.rtt.rttvar
+			snd.rtt.Unlock()
+		}
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:
@@ -1931,27 +1933,22 @@ func (e *endpoint) maxOptionSize() (size int) {
 }
 
 // completeState makes a full copy of the endpoint and returns it. This is used
-// before invoking the probe and for getsockopt(TCP_INFO). The state returned
-// may not be fully consistent if there are intervening syscalls when the state
-// is being copied.
+// before invoking the probe. The state returned may not be fully consistent if
+// there are intervening syscalls when the state is being copied.
 func (e *endpoint) completeState() stack.TCPEndpointState {
 	var s stack.TCPEndpointState
 	s.SegTime = time.Now()
 
-	e.mu.RLock()
+	// Copy EndpointID.
+	e.mu.Lock()
 	s.ID = stack.TCPEndpointID(e.id)
-	s.ProtocolState = uint32(e.state)
-	s.AMSS = e.amss
-	s.RcvMSS = int(e.amss) - e.maxOptionSize()
-	e.mu.RUnlock()
+	e.mu.Unlock()
 
 	// Copy endpoint rcv state.
 	e.rcvListMu.Lock()
 	s.RcvBufSize = e.rcvBufSize
 	s.RcvBufUsed = e.rcvBufUsed
 	s.RcvClosed = e.rcvClosed
-	s.RcvLastAckNanos = e.rcvLastAckNanos
-	s.RcvLastDataNanos = e.rcvLastDataNanos
 	s.RcvAutoParams.MeasureTime = e.rcvAutoParams.measureTime
 	s.RcvAutoParams.CopiedBytes = e.rcvAutoParams.copied
 	s.RcvAutoParams.PrevCopiedBytes = e.rcvAutoParams.prevCopied
@@ -1959,7 +1956,6 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	s.RcvAutoParams.RTTMeasureSeqNumber = e.rcvAutoParams.rttMeasureSeqNumber
 	s.RcvAutoParams.RTTMeasureTime = e.rcvAutoParams.rttMeasureTime
 	s.RcvAutoParams.Disabled = e.rcvAutoParams.disabled
-
 	e.rcvListMu.Unlock()
 
 	// Endpoint TCP Option state.
@@ -1969,7 +1965,7 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	s.SACKPermitted = e.sackPermitted
 	s.SACK.Blocks = make([]header.SACKBlock, e.sack.NumBlocks)
 	copy(s.SACK.Blocks, e.sack.Blocks[:e.sack.NumBlocks])
-	s.SACK.ReceivedBlocks, s.SACK.Sacked, s.SACK.MaxSACKED = e.scoreboard.Copy()
+	s.SACK.ReceivedBlocks, s.SACK.MaxSACKED = e.scoreboard.Copy()
 
 	// Copy endpoint send state.
 	e.sndBufMu.Lock()
@@ -2013,14 +2009,12 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 		RTTMeasureTime:   e.snd.rttMeasureTime,
 		Closed:           e.snd.closed,
 		RTO:              e.snd.rto,
-		MSS:              e.snd.mss,
 		MaxPayloadSize:   e.snd.maxPayloadSize,
 		SndWndScale:      e.snd.sndWndScale,
 		MaxSentAck:       e.snd.maxSentAck,
 	}
 	e.snd.rtt.Lock()
 	s.Sender.SRTT = e.snd.rtt.srtt
-	s.Sender.RTTVar = e.snd.rtt.rttvar
 	s.Sender.SRTTInited = e.snd.rtt.srttInited
 	e.snd.rtt.Unlock()
 
@@ -2065,8 +2059,8 @@ func (e *endpoint) initGSO() {
 // State implements tcpip.Endpoint.State. It exports the endpoint's protocol
 // state for diagnostics.
 func (e *endpoint) State() uint32 {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return uint32(e.state)
 }
 
