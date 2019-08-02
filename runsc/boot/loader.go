@@ -527,12 +527,15 @@ func (l *Loader) run() error {
 		// cid for root container can be empty. Only subcontainers need it to set
 		// the mount location.
 		mntr := newContainerMounter(l.spec, "", l.goferFDs, l.k, l.mountHints)
-		if err := mntr.setupFS(ctx, l.conf, &l.rootProcArgs, l.rootProcArgs.Credentials); err != nil {
+
+		// Setup the root container.
+		if err := mntr.setupRootContainer(ctx, ctx, l.conf, func(mns *fs.MountNamespace) {
+			l.rootProcArgs.MountNamespace = mns
+		}); err != nil {
 			return err
 		}
 
-		rootCtx := l.rootProcArgs.NewContext(l.k)
-		if err := setExecutablePath(rootCtx, &l.rootProcArgs); err != nil {
+		if err := setExecutablePath(ctx, &l.rootProcArgs); err != nil {
 			return err
 		}
 
@@ -546,7 +549,7 @@ func (l *Loader) run() error {
 			}
 		}
 		if !hasHomeEnvv {
-			homeDir, err := getExecUserHome(rootCtx, l.rootProcArgs.MountNamespace, uint32(l.rootProcArgs.Credentials.RealKUID))
+			homeDir, err := getExecUserHome(ctx, l.rootProcArgs.MountNamespace, uint32(l.rootProcArgs.Credentials.RealKUID))
 			if err != nil {
 				return fmt.Errorf("error reading exec user: %v", err)
 			}
@@ -685,7 +688,7 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 	}
 
 	mntr := newContainerMounter(spec, cid, goferFDs, l.k, l.mountHints)
-	if err := mntr.setupFS(ctx, conf, &procArgs, creds); err != nil {
+	if err := mntr.setupChildContainer(conf, &procArgs); err != nil {
 		return fmt.Errorf("configuring container FS: %v", err)
 	}
 
@@ -756,22 +759,14 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		return 0, fmt.Errorf("no such container: %q", args.ContainerID)
 	}
 
-	// Get the container Root Dirent and MountNamespace from the Task.
+	// Get the container MountNamespace from the Task.
 	tg.Leader().WithMuLocked(func(t *kernel.Task) {
-		// FSContext.RootDirectory() will take an extra ref for us.
-		args.Root = t.FSContext().RootDirectory()
-
 		// task.MountNamespace() does not take a ref, so we must do so
 		// ourselves.
 		args.MountNamespace = t.MountNamespace()
 		args.MountNamespace.IncRef()
 	})
-	defer func() {
-		if args.Root != nil {
-			args.Root.DecRef()
-		}
-		args.MountNamespace.DecRef()
-	}()
+	defer args.MountNamespace.DecRef()
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}

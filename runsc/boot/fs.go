@@ -34,12 +34,10 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -506,44 +504,16 @@ func newContainerMounter(spec *specs.Spec, cid string, goferFDs []int, k *kernel
 	}
 }
 
-// setupFS is used to set up the file system for containers and amend
-// the procArgs accordingly. This is the main entry point for this rest of
-// functions in this file. procArgs are passed by reference and the FDMap field
-// is modified. It dups stdioFDs.
-func (c *containerMounter) setupFS(ctx context.Context, conf *Config, procArgs *kernel.CreateProcessArgs, creds *auth.Credentials) error {
-	// Use root user to configure mounts. The current user might not have
-	// permission to do so.
-	rootProcArgs := kernel.CreateProcessArgs{
-		WorkingDirectory:     "/",
-		Credentials:          auth.NewRootCredentials(creds.UserNamespace),
-		Umask:                0022,
-		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
-		PIDNamespace:         procArgs.PIDNamespace,
-	}
-	rootCtx := rootProcArgs.NewContext(c.k)
-
-	// If this is the root container, we also need to setup the root mount
-	// namespace.
-	rootMNS := c.k.RootMountNamespace()
-	if rootMNS == nil {
-		// Setup the root container.
-		if err := c.setupRootContainer(ctx, rootCtx, conf, func(rootMNS *fs.MountNamespace) {
-			// The callback to setupRootContainer inherits a
-			// reference on the rootMNS, so we don't need to take
-			// an additional reference here.
-			procArgs.MountNamespace = rootMNS
-			procArgs.Root = rootMNS.Root()
-			c.k.SetRootMountNamespace(rootMNS)
-		}); err != nil {
-			return err
-		}
-		return c.checkDispenser()
-	}
-
+// setupChildContainer is used to set up the file system for non-root containers
+// and amend the procArgs accordingly. This is the main entry point for this
+// rest of functions in this file. procArgs are passed by reference and the
+// FDMap field is modified. It dups stdioFDs.
+func (c *containerMounter) setupChildContainer(conf *Config, procArgs *kernel.CreateProcessArgs) error {
 	// Setup a child container.
 	log.Infof("Creating new process in child container.")
 
 	// Create a new root inode and mount namespace for the container.
+	rootCtx := c.k.SupervisorContext()
 	rootInode, err := c.createRootMount(rootCtx, conf)
 	if err != nil {
 		return fmt.Errorf("creating filesystem for container: %v", err)
@@ -552,14 +522,12 @@ func (c *containerMounter) setupFS(ctx context.Context, conf *Config, procArgs *
 	if err != nil {
 		return fmt.Errorf("creating new mount namespace for container: %v", err)
 	}
-
-	// Set process root here, so 'rootCtx.Value(CtxRoot)' will return it.
-	// This will also donate a reference to procArgs, as required.
 	procArgs.MountNamespace = mns
-	procArgs.Root = mns.Root()
+	root := mns.Root()
+	defer root.DecRef()
 
 	// Mount all submounts.
-	if err := c.mountSubmounts(rootCtx, conf, mns, procArgs.Root); err != nil {
+	if err := c.mountSubmounts(rootCtx, conf, mns, root); err != nil {
 		return err
 	}
 	return c.checkDispenser()
@@ -599,7 +567,10 @@ func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx c
 
 	root := mns.Root()
 	defer root.DecRef()
-	return c.mountSubmounts(rootCtx, conf, mns, root)
+	if err := c.mountSubmounts(rootCtx, conf, mns, root); err != nil {
+		return fmt.Errorf("mounting submounts: %v", err)
+	}
+	return c.checkDispenser()
 }
 
 // mountSharedMaster mounts the master of a volume that is shared among
