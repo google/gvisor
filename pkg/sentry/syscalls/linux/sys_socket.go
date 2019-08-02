@@ -460,7 +460,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	}
 
 	// Call syscall implementation then copy both value and value len out.
-	v, e := getSockOpt(t, s, int(level), int(name), int(optLen))
+	v, e := getSockOpt(t, s, int(level), int(name), optValAddr, int(optLen))
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
@@ -483,7 +483,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 
 // getSockOpt tries to handle common socket options, or dispatches to a specific
 // socket implementation.
-func getSockOpt(t *kernel.Task, s socket.Socket, level, name, len int) (interface{}, *syserr.Error) {
+func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr usermem.Addr, len int) (interface{}, *syserr.Error) {
 	if level == linux.SOL_SOCKET {
 		switch name {
 		case linux.SO_TYPE, linux.SO_DOMAIN, linux.SO_PROTOCOL:
@@ -505,7 +505,7 @@ func getSockOpt(t *kernel.Task, s socket.Socket, level, name, len int) (interfac
 		}
 	}
 
-	return s.GetSockOpt(t, level, name, len)
+	return s.GetSockOpt(t, level, name, optValAddr, len)
 }
 
 // SetSockOpt implements the linux syscall setsockopt(2).
