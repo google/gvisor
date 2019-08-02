@@ -29,6 +29,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/test/testutil"
@@ -488,7 +489,7 @@ func TestMultiContainerSignal(t *testing.T) {
 		if err := containers[1].Destroy(); err != nil {
 			t.Errorf("failed to destroy container: %v", err)
 		}
-		_, _, err = testutil.RetryEintr(func() (uintptr, uintptr, error) {
+		_, _, err = specutils.RetryEintr(func() (uintptr, uintptr, error) {
 			cpid, err := syscall.Wait4(goferPid, nil, 0, nil)
 			return uintptr(cpid), 0, err
 		})
@@ -905,9 +906,9 @@ func TestMultiContainerDifferentFilesystems(t *testing.T) {
 	}
 }
 
-// TestMultiContainerGoferStop tests that IO operations continue to work after
-// containers have been stopped and gofers killed.
-func TestMultiContainerGoferStop(t *testing.T) {
+// TestMultiContainerContainerDestroyStress tests that IO operations continue
+// to work after containers have been stopped and gofers killed.
+func TestMultiContainerContainerDestroyStress(t *testing.T) {
 	app, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
@@ -1342,6 +1343,83 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 			t.Errorf("failed to wait for process %s: %v", c.Spec.Process.Args, err)
 		} else if es := ws.ExitStatus(); es != 0 {
 			t.Errorf("process %s exited with non-zero status %d", c.Spec.Process.Args, es)
+		}
+	}
+}
+
+// Test that container is destroyed when Gofer is killed.
+func TestMultiContainerGoferKilled(t *testing.T) {
+	sleep := []string{"sleep", "100"}
+	specs, ids := createSpecs(sleep, sleep, sleep)
+	conf := testutil.TestConfig()
+	containers, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Ensure container is running
+	c := containers[2]
+	expectedPL := []*control.Process{
+		{PID: 3, Cmd: "sleep"},
+	}
+	if err := waitForProcessList(c, expectedPL); err != nil {
+		t.Errorf("failed to wait for sleep to start: %v", err)
+	}
+
+	// Kill container's gofer.
+	if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("syscall.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	}
+
+	// Wait until container stops.
+	if err := waitForProcessList(c, nil); err != nil {
+		t.Errorf("Container %q was not stopped after gofer death: %v", c.ID, err)
+	}
+
+	// Check that container isn't running anymore.
+	args := &control.ExecArgs{Argv: []string{"/bin/true"}}
+	if _, err := c.executeSync(args); err == nil {
+		t.Fatalf("Container %q was not stopped after gofer death", c.ID)
+	}
+
+	// Check that other containers are unaffected.
+	for i, c := range containers {
+		if i == 2 {
+			continue // container[2] has been killed.
+		}
+		pl := []*control.Process{
+			{PID: kernel.ThreadID(i + 1), Cmd: "sleep"},
+		}
+		if err := waitForProcessList(c, pl); err != nil {
+			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
+		}
+		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
+		if _, err := c.executeSync(args); err != nil {
+			t.Fatalf("Container %q was affected by another container: %v", c.ID, err)
+		}
+	}
+
+	// Kill root container's gofer to bring entire sandbox down.
+	c = containers[0]
+	if err := syscall.Kill(c.GoferPid, syscall.SIGKILL); err != nil {
+		t.Fatalf("syscall.Kill(%d, SIGKILL)=%v", c.GoferPid, err)
+	}
+
+	// Wait until sandbox stops. waitForProcessList will loop until sandbox exits
+	// and RPC errors out.
+	impossiblePL := []*control.Process{
+		{PID: 100, Cmd: "non-existent-process"},
+	}
+	if err := waitForProcessList(c, impossiblePL); err == nil {
+		t.Fatalf("Sandbox was not killed after gofer death")
+	}
+
+	// Check that entire sandbox isn't running anymore.
+	for _, c := range containers {
+		args := &control.ExecArgs{Argv: []string{"/bin/true"}}
+		if _, err := c.executeSync(args); err == nil {
+			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
 	}
 }

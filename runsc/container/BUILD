@@ -49,6 +49,7 @@ go_test(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/unet",
         "//pkg/urpc",

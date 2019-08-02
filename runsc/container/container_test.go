@@ -76,7 +76,7 @@ func waitForProcessCount(cont *Container, want int) error {
 }
 
 func blockUntilWaitable(pid int) error {
-	_, _, err := testutil.RetryEintr(func() (uintptr, uintptr, error) {
+	_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 		var err error
 		_, _, err1 := syscall.Syscall6(syscall.SYS_WAITID, 1, uintptr(pid), 0, syscall.WEXITED|syscall.WNOWAIT, 0, 0)
 		if err1 != 0 {
