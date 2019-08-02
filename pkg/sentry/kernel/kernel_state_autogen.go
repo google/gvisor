@@ -412,6 +412,7 @@ func (x *Session) save(m state.Map) {
 	m.Save("refs", &x.refs)
 	m.Save("leader", &x.leader)
 	m.Save("id", &x.id)
+	m.Save("foreground", &x.foreground)
 	m.Save("processGroups", &x.processGroups)
 	m.Save("sessionEntry", &x.sessionEntry)
 }
@@ -421,6 +422,7 @@ func (x *Session) load(m state.Map) {
 	m.Load("refs", &x.refs)
 	m.Load("leader", &x.leader)
 	m.Load("id", &x.id)
+	m.Load("foreground", &x.foreground)
 	m.Load("processGroups", &x.processGroups)
 	m.Load("sessionEntry", &x.sessionEntry)
 }
@@ -919,6 +921,7 @@ func (x *ThreadGroup) save(m state.Map) {
 	m.Save("processGroup", &x.processGroup)
 	m.Save("execed", &x.execed)
 	m.Save("mounts", &x.mounts)
+	m.Save("tty", &x.tty)
 }
 
 func (x *ThreadGroup) afterLoad() {}
@@ -953,6 +956,7 @@ func (x *ThreadGroup) load(m state.Map) {
 	m.Load("processGroup", &x.processGroup)
 	m.Load("execed", &x.execed)
 	m.Load("mounts", &x.mounts)
+	m.Load("tty", &x.tty)
 	m.LoadValue("rscr", new(*RSEQCriticalRegion), func(y interface{}) { x.loadRscr(y.(*RSEQCriticalRegion)) })
 }
 
@@ -1084,6 +1088,17 @@ func (x *timekeeperClock) load(m state.Map) {
 	m.Load("c", &x.c)
 }
 
+func (x *TTY) beforeSave() {}
+func (x *TTY) save(m state.Map) {
+	x.beforeSave()
+	m.Save("tg", &x.tg)
+}
+
+func (x *TTY) afterLoad() {}
+func (x *TTY) load(m state.Map) {
+	m.Load("tg", &x.tg)
+}
+
 func (x *UTSNamespace) beforeSave() {}
 func (x *UTSNamespace) save(m state.Map) {
 	x.beforeSave()
@@ -1177,6 +1192,7 @@ func init() {
 	state.Register("kernel.taskNode", (*taskNode)(nil), state.Fns{Save: (*taskNode).save, Load: (*taskNode).load})
 	state.Register("kernel.Timekeeper", (*Timekeeper)(nil), state.Fns{Save: (*Timekeeper).save, Load: (*Timekeeper).load})
 	state.Register("kernel.timekeeperClock", (*timekeeperClock)(nil), state.Fns{Save: (*timekeeperClock).save, Load: (*timekeeperClock).load})
+	state.Register("kernel.TTY", (*TTY)(nil), state.Fns{Save: (*TTY).save, Load: (*TTY).load})
 	state.Register("kernel.UTSNamespace", (*UTSNamespace)(nil), state.Fns{Save: (*UTSNamespace).save, Load: (*UTSNamespace).load})
 	state.Register("kernel.VDSOParamPage", (*VDSOParamPage)(nil), state.Fns{Save: (*VDSOParamPage).save, Load: (*VDSOParamPage).load})
 }
