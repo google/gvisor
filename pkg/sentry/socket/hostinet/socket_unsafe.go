@@ -90,26 +90,50 @@ func getsockopt(fd int, level, name int, optlen int) ([]byte, error) {
 	return opt[:optlen32], nil
 }
 
+// GetAddress reads an sockaddr struct from the given address and converts
+// it to the format of SockAddrInet or SockAddrInet6 or raw bytes depending
+// on family.
+func GetAddress(family int, addr []byte) (interface{}, uint32, *syserr.Error) {
+	switch family {
+	case linux.AF_INET:
+		var a linux.SockAddrInet
+		if len(addr) < int(sockAddrInetSize) {
+			return linux.SockAddrInet{}, sockAddrInetSize, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
+		return a, sockAddrInetSize, nil
+	case linux.AF_INET6:
+		var a linux.SockAddrInet6
+		if len(addr) < int(sockAddrInet6Size) {
+			return linux.SockAddrInet6{}, sockAddrInet6Size, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
+		return a, sockAddrInet6Size, nil
+	default:
+		return addr, uint32(len(addr)), nil
+	}
+}
+
 // GetSockName implements socket.Socket.GetSockName.
 func (s *socketOperations) GetSockName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
-	addr := make([]byte, sizeofSockaddr)
-	addrlen := uint32(len(addr))
+	addrlen := uint32(sizeofSockaddr)
+	addr := make([]byte, addrlen)
 	_, _, errno := syscall.Syscall(syscall.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
-	return addr[:addrlen], addrlen, nil
+	return GetAddress(s.family, addr[:addrlen])
 }
 
 // GetPeerName implements socket.Socket.GetPeerName.
 func (s *socketOperations) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
-	addr := make([]byte, sizeofSockaddr)
-	addrlen := uint32(len(addr))
+	addrlen := uint32(sizeofSockaddr)
+	addr := make([]byte, addrlen)
 	_, _, errno := syscall.Syscall(syscall.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
-	return addr[:addrlen], addrlen, nil
+	return GetAddress(s.family, addr[:addrlen])
 }
 
 func recvfrom(fd int, dst []byte, flags int, from *[]byte) (uint64, error) {

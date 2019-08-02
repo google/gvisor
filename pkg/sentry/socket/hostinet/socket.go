@@ -41,6 +41,10 @@ const (
 	// sizeofSockaddr is the size in bytes of the largest sockaddr type
 	// supported by this package.
 	sizeofSockaddr = syscall.SizeofSockaddrInet6 // sizeof(sockaddr_in6) > sizeof(sockaddr_in)
+
+	sockAddrInetSize = uint32(syscall.SizeofSockaddrInet4)
+
+	sockAddrInet6Size = uint32(syscall.SizeofSockaddrInet6)
 )
 
 // socketOperations implements fs.FileOperations and socket.Socket for a socket
