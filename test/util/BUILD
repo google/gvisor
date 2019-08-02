@@ -184,6 +184,17 @@ cc_test(
 )
 
 cc_library(
+    name = "pty_util",
+    testonly = 1,
+    srcs = ["pty_util.cc"],
+    hdrs = ["pty_util.h"],
+    deps = [
+        ":file_descriptor",
+        ":posix_error",
+    ],
+)
+
+cc_library(
     name = "signal_util",
     testonly = 1,
     srcs = ["signal_util.cc"],
