@@ -20,7 +20,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 
 	"gvisor.dev/gvisor/test/runtimes/common"
@@ -41,27 +40,10 @@ func main() {
 }
 
 func (p phpRunner) ListTests() ([]string, error) {
-	var testSlice []string
-
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		name := filepath.Base(path)
-
-		if info.IsDir() || !testRegEx.MatchString(name) {
-			return nil
-		}
-
-		relPath, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-		testSlice = append(testSlice, relPath)
-		return nil
-	})
-
+	testSlice, err := common.Search(dir, testRegEx)
 	if err != nil {
-		return nil, fmt.Errorf("walking %q: %v", dir, err)
+		return nil, err
 	}
-
 	return testSlice, nil
 }
 

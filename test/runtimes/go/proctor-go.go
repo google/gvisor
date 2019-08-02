@@ -40,7 +40,7 @@ var (
 
 	// Directories with .dir contain helper files for tests.
 	// Exclude benchmarks and stress tests.
-	exclDirs = regexp.MustCompile(`^.+\/(bench|stress)\/.+$|^.+\.dir.+$`)
+	dirFilter = regexp.MustCompile(`^(bench|stress)\/.+$|^.+\.dir.+$`)
 )
 
 type goRunner struct {
@@ -59,36 +59,27 @@ func (g goRunner) ListTests() ([]string, error) {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		log.Fatalf("Failed to list: %v", err)
+		return nil, fmt.Errorf("failed to list: %v", err)
 	}
-	var testSlice []string
+	var toolSlice []string
 	for _, test := range strings.Split(string(out), "\n") {
-		testSlice = append(testSlice, test)
+		toolSlice = append(toolSlice, test)
 	}
 
 	// Go tests on disk.
-	if err := filepath.Walk(testDir, func(path string, info os.FileInfo, err error) error {
-		name := filepath.Base(path)
-
-		if info.IsDir() {
-			return nil
+	diskSlice, err := common.Search(testDir, testRegEx)
+	if err != nil {
+		return nil, err
+	}
+	// Remove items from /bench/, /stress/ and .dir files
+	diskFiltered := diskSlice[:0]
+	for _, file := range diskSlice {
+		if !dirFilter.MatchString(file) {
+			diskFiltered = append(diskFiltered, file)
 		}
-
-		if !testRegEx.MatchString(name) {
-			return nil
-		}
-
-		if exclDirs.MatchString(path) {
-			return nil
-		}
-
-		testSlice = append(testSlice, path)
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("walking %q: %v", testDir, err)
 	}
 
-	return testSlice, nil
+	return append(toolSlice, diskFiltered...), nil
 }
 
 func (g goRunner) RunTest(test string) error {
@@ -96,11 +87,7 @@ func (g goRunner) RunTest(test string) error {
 	// This will determine whether or not it is a Go test on disk.
 	if strings.HasSuffix(test, ".go") {
 		// Test has suffix ".go" which indicates a disk test, run it as such.
-		relPath, err := filepath.Rel(testDir, test)
-		if err != nil {
-			return fmt.Errorf("failed to get rel path: %v", err)
-		}
-		cmd := exec.Command(goBin, "run", "run.go", "-v", "--", relPath)
+		cmd := exec.Command(goBin, "run", "run.go", "-v", "--", test)
 		cmd.Dir = testDir
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Run(); err != nil {
