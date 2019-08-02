@@ -219,6 +219,13 @@ func (mns *MountNamespace) flushMountSourceRefsLocked() {
 		}
 	}
 
+	if mns.root == nil {
+		// No root? This MountSource must have already been destroyed.
+		// This can happen when a Save is triggered while a process is
+		// exiting. There is nothing to flush.
+		return
+	}
+
 	// Flush root's MountSource references.
 	mns.root.Inode.MountSource.FlushDirentRefs()
 }
@@ -248,6 +255,10 @@ func (mns *MountNamespace) destroy() {
 
 	// Drop reference on the root.
 	mns.root.DecRef()
+
+	// Ensure that root cannot be accessed via this MountNamespace any
+	// more.
+	mns.root = nil
 
 	// Wait for asynchronous work (queued by dropping Dirent references
 	// above) to complete before destroying this MountNamespace.
