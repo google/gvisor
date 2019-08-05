@@ -191,6 +191,9 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %v", err)
 	}
 
+	// Sets the refs leak check mode
+	refs.SetLeakMode(args.Conf.ReferenceLeakMode)
+
 	// Create kernel and platform.
 	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {
@@ -1039,9 +1042,4 @@ func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host
 		return nil, nil, fmt.Errorf("container not started")
 	}
 	return ep.tg, ep.tty, nil
-}
-
-func init() {
-	// TODO(gvisor.dev/issue/365): Make this configurable.
-	refs.SetLeakMode(refs.NoLeakChecking)
 }
