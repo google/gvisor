@@ -22,8 +22,16 @@ import (
 	"gvisor.dev/gvisor/runsc/test/testutil"
 )
 
-func TestNodeJS(t *testing.T) {
-	const img = "gcr.io/gvisor-proctor/nodejs"
+// Wait time for each test to run.
+const timeout = 180 * time.Second
+
+// Helper function to execute the docker container associated with the
+// language passed.  Captures the output of the list function and executes
+// each test individually, supplying any errors recieved.
+func testLang(t *testing.T, lang string) {
+	t.Helper()
+
+	img := "gcr.io/gvisor-presubmit/" + lang
 	if err := testutil.Pull(img); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
@@ -49,7 +57,7 @@ func TestNodeJS(t *testing.T) {
 			}
 			defer d.CleanUp()
 
-			status, err := d.Wait(60 * time.Second)
+			status, err := d.Wait(timeout)
 			if err != nil {
 				t.Fatalf("docker test %q failed to wait: %v", tc, err)
 			}
@@ -64,4 +72,24 @@ func TestNodeJS(t *testing.T) {
 			t.Errorf("test %q failed: %v", tc, logs)
 		})
 	}
+}
+
+func TestGo(t *testing.T) {
+	testLang(t, "go")
+}
+
+func TestJava(t *testing.T) {
+	testLang(t, "java")
+}
+
+func TestNodejs(t *testing.T) {
+	testLang(t, "nodejs")
+}
+
+func TestPhp(t *testing.T) {
+	testLang(t, "php")
+}
+
+func TestPython(t *testing.T) {
+	testLang(t, "python")
 }
