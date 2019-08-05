@@ -11,5 +11,6 @@ go_library(
         "//pkg/sentry/socket/rpcinet:syscall_rpc_go_proto",
         "//pkg/sentry/socket/rpcinet/conn",
         "//pkg/waiter",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

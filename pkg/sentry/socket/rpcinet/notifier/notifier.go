@@ -20,6 +20,7 @@ import (
 	"sync"
 	"syscall"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/conn"
 	pb "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -76,7 +77,7 @@ func (n *Notifier) waitFD(fd uint32, fi *fdInfo, mask waiter.EventMask) error {
 	}
 
 	e := pb.EpollEvent{
-		Events: mask.ToLinux() | -syscall.EPOLLET,
+		Events: mask.ToLinux() | unix.EPOLLET,
 		Fd:     fd,
 	}
 
