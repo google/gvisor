@@ -231,6 +231,20 @@ const (
 	LeaksLogTraces
 )
 
+// String returns LeakMode's string representation.
+func (l LeakMode) String() string {
+	switch l {
+	case NoLeakChecking:
+		return "NoLeakChecking"
+	case LeaksLogWarning:
+		return "LeaksLogWarning"
+	case LeaksLogTraces:
+		return "LeaksLogTraces"
+	default:
+		panic(fmt.Sprintf("Invalid leakmode: %d", l))
+	}
+}
+
 // leakMode stores the current mode for the reference leak checker.
 //
 // Values must be one of the LeakMode values.
