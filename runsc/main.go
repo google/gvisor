@@ -74,6 +74,10 @@ var (
 	numNetworkChannels = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	rootless           = flag.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
 
+	// Flags that control the page cache behavior in fs
+	aggressiveCache    = flag.Bool("aggressive-cache", false, "allows caching of file contents in normal IO operations apart from mmap")
+	cacheCapacity      = flag.Uint64("cache-capacity", 8192, "maximum allowed size(KB) of page cache")
+
 	// Test flags, not to be used outside tests, ever.
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 )
@@ -191,6 +195,8 @@ func main() {
 		NumNetworkChannels: *numNetworkChannels,
 		Rootless:           *rootless,
 		AlsoLogToStderr:    *alsoLogToStderr,
+		AggressiveCache:    *aggressiveCache,
+		CacheCapacity:      *cacheCapacity,
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
 	}

@@ -201,6 +201,12 @@ type Config struct {
 
 	// AlsoLogToStderr allows to send log messages to stderr.
 	AlsoLogToStderr bool
+
+	// AggressiveCache enables page cache filling during read/write
+	AggressiveCache bool
+
+	// CacheCapacity controls the maximum size(KB) of used page cache
+	CacheCapacity uint64
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -227,6 +233,8 @@ func (c *Config) ToFlags() []string {
 		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
 		"--rootless=" + strconv.FormatBool(c.Rootless),
 		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
+		"--aggressive-cache=" + strconv.FormatBool(c.AggressiveCache),
+		"--cache-capacity=" + strconv.FormatUint(c.CacheCapacity, 10),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.

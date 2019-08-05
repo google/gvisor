@@ -415,6 +415,10 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 
+	// Inherit page cache configuration from runsc
+	cmd.Args = append(cmd.Args, "--aggressive-cache="+strconv.FormatBool(conf.AggressiveCache))
+	cmd.Args = append(cmd.Args, "--cache-capacity="+strconv.FormatUint(conf.CacheCapacity, 10))
+
 	// The current process' stdio must be passed to the application via the
 	// --stdio-fds flag. The stdio of the sandbox process itself must not
 	// be connected to the same FDs, otherwise we risk leaking sandbox

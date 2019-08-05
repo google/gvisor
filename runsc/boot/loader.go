@@ -177,6 +177,10 @@ type Args struct {
 	TotalMem uint64
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
+	// AggressiveCache is set to true if page cache filling in read/write is enabled
+	AggressiveCache bool
+	// CacheCapacity is the maximum allowed volume(KB) of used page cache
+	CacheCapacity uint64
 }
 
 // New initializes a new kernel loader configured by spec.
@@ -290,6 +294,7 @@ func New(args Args) (*Loader, error) {
 	if err := adjustDirentCache(k); err != nil {
 		return nil, err
 	}
+	configPageCache(args)
 
 	// Turn on packet logging if enabled.
 	if args.Conf.LogPackets {

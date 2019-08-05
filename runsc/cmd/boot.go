@@ -84,6 +84,12 @@ type Boot struct {
 
 	// pidns is set if the sanadbox is in its own pid namespace.
 	pidns bool
+
+	// aggressiveCache is set to true if caching in read/write is enabled
+	aggressiveCache bool
+
+	// cacheCapacity is the maximum size(KB) of cache
+	cacheCapacity uint64
 }
 
 // Name implements subcommands.Command.Name.
@@ -118,6 +124,8 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.BoolVar(&b.aggressiveCache, "aggressive-cache", false, "allows caching of file contents in normal IO operations apart from mmap")
+	f.Uint64Var(&b.cacheCapacity, "cache-capacity", 8192, "maximum allowed size(KB) of page cache")
 }
 
 // Execute implements subcommands.Command.Execute.  It starts a sandbox in a
@@ -211,17 +219,19 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:           f.Arg(0),
-		Spec:         spec,
-		Conf:         conf,
-		ControllerFD: b.controllerFD,
-		Device:       os.NewFile(uintptr(b.deviceFD), "platform device"),
-		GoferFDs:     b.ioFDs.GetArray(),
-		StdioFDs:     b.stdioFDs.GetArray(),
-		Console:      b.console,
-		NumCPU:       b.cpuNum,
-		TotalMem:     b.totalMem,
-		UserLogFD:    b.userLogFD,
+		ID:              f.Arg(0),
+		Spec:            spec,
+		Conf:            conf,
+		ControllerFD:    b.controllerFD,
+		Device:          os.NewFile(uintptr(b.deviceFD), "platform device"),
+		GoferFDs:        b.ioFDs.GetArray(),
+		StdioFDs:        b.stdioFDs.GetArray(),
+		Console:         b.console,
+		NumCPU:          b.cpuNum,
+		TotalMem:        b.totalMem,
+		UserLogFD:       b.userLogFD,
+		AggressiveCache: b.aggressiveCache,
+		CacheCapacity:   b.cacheCapacity,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {

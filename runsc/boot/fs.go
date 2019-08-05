@@ -25,6 +25,7 @@ import (
 
 	// Include filesystem types that OCI spec might mount.
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
+	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
@@ -288,6 +289,11 @@ func adjustDirentCache(k *kernel.Kernel) error {
 		}
 	}
 	return nil
+}
+
+func configPageCache(args Args) {
+	fsutil.AggressiveCache = args.AggressiveCache
+	fsutil.CacheCapacity = args.CacheCapacity << 10
 }
 
 type fdDispenser struct {

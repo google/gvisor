@@ -32,6 +32,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
+var AggressiveCache bool
+var CacheCapacity uint64
+
 // Lock order (compare the lock order model in mm/mm.go):
 //
 // CachingInodeOperations.attrMu ("fs locks")

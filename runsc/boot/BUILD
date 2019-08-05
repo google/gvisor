@@ -41,6 +41,7 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/dev",
+        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fs/gofer",
         "//pkg/sentry/fs/host",
         "//pkg/sentry/fs/proc",
