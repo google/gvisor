@@ -54,7 +54,7 @@ type Sandbox struct {
 	// ID as the first container run in the sandbox.
 	ID string `json:"id"`
 
-	// Pid is the pid of the running sandbox (immutable). May be 0 if the sandbox
+	// Pid is the pid of the running sandbox (immutable). May be 0 is the sandbox
 	// is not running.
 	Pid int `json:"pid"`
 
