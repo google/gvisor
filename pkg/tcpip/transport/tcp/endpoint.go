@@ -362,6 +362,12 @@ type endpoint struct {
 	// without hearing a response, the connection is closed.
 	keepalive keepalive
 
+	// pendingAccepted is a synchronization primitive used to track number
+	// of connections that are queued up to be delivered to the accepted
+	// channel. We use this to ensure that all goroutines blocked on writing
+	// to the acceptedChan below terminate before we close acceptedChan.
+	pendingAccepted sync.WaitGroup `state:"nosave"`
+
 	// acceptedChan is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
@@ -375,7 +381,11 @@ type endpoint struct {
 	// The goroutine drain completion notification channel.
 	drainDone chan struct{} `state:"nosave"`
 
-	// The goroutine undrain notification channel.
+	// The goroutine undrain notification channel. This is currently used as
+	// a way to block the worker goroutines. Today nothing closes/writes
+	// this channel and this causes any goroutines waiting on this to just
+	// block. This is used during save/restore to prevent worker goroutines
+	// from mutating state as it's being saved.
 	undrain chan struct{} `state:"nosave"`
 
 	// probe if not nil is invoked on every received segment. It is passed
@@ -575,6 +585,34 @@ func (e *endpoint) Close() {
 	e.mu.Unlock()
 }
 
+// closePendingAcceptableConnections closes all connections that have completed
+// handshake but not yet been delivered to the application.
+func (e *endpoint) closePendingAcceptableConnectionsLocked() {
+	done := make(chan struct{})
+	// Spin a goroutine up as ranging on e.acceptedChan will just block when
+	// there are no more connections in the channel. Using a non-blocking
+	// select does not work as it can potentially select the default case
+	// even when there are pending writes but that are not yet written to
+	// the channel.
+	go func() {
+		defer close(done)
+		for n := range e.acceptedChan {
+			n.mu.Lock()
+			n.resetConnectionLocked(tcpip.ErrConnectionAborted)
+			n.mu.Unlock()
+			n.Close()
+		}
+	}()
+	// pendingAccepted(see endpoint.deliverAccepted) tracks the number of
+	// endpoints which have completed handshake but are not yet written to
+	// the e.acceptedChan. We wait here till the goroutine above can drain
+	// all such connections from e.acceptedChan.
+	e.pendingAccepted.Wait()
+	close(e.acceptedChan)
+	<-done
+	e.acceptedChan = nil
+}
+
 // cleanupLocked frees all resources associated with the endpoint. It is called
 // after Close() is called and the worker goroutine (if any) is done with its
 // work.
@@ -582,14 +620,7 @@ func (e *endpoint) cleanupLocked() {
 	// Close all endpoints that might have been accepted by TCP but not by
 	// the client.
 	if e.acceptedChan != nil {
-		close(e.acceptedChan)
-		for n := range e.acceptedChan {
-			n.mu.Lock()
-			n.resetConnectionLocked(tcpip.ErrConnectionAborted)
-			n.mu.Unlock()
-			n.Close()
-		}
-		e.acceptedChan = nil
+		e.closePendingAcceptableConnectionsLocked()
 	}
 	e.workerCleanup = false
 
