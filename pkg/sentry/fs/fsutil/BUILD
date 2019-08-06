@@ -94,6 +94,7 @@ go_library(
         "//pkg/state",
         "//pkg/syserror",
         "//pkg/waiter",
+        "//third_party/gvsync",
     ],
 )
 

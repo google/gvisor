@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 var AggressiveCache bool
@@ -97,7 +98,7 @@ type CachingInodeOperations struct {
 	// mappings is protected by mapsMu.
 	mappings memmap.MappingSet
 
-	dataMu sync.RWMutex `state:"nosave"`
+	dataMu gvsync.DowngradableRWMutex `state:"nosave"`
 
 	// cache maps offsets into the cached file to offsets into
 	// mfp.MemoryFile() that store the file's data.
@@ -576,12 +577,15 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 
 	// Hot path. Avoid defers.
 	var unlock func()
+	var downgradelock func()
 	if fillCache {
 		rw.c.dataMu.Lock()
 		unlock = rw.c.dataMu.Unlock
+		downgradelock = rw.c.dataMu.DowngradeLock
 	} else {
 		rw.c.dataMu.RLock()
 		unlock = rw.c.dataMu.RUnlock
+		downgradelock = func() {}
 	}
 
 	// Compute the range to read.
@@ -601,6 +605,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 		mr := memmap.MappableRange{uint64(rw.offset), uint64(end)}
 		switch {
 		case seg.Ok():
+			downgradelock()
 			// Get internal mappings from the cache.
 			ims, err := mem.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), usermem.Read)
 			if err != nil {
