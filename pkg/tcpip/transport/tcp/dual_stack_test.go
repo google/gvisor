@@ -570,3 +570,89 @@ func TestV4AcceptOnV4(t *testing.T) {
 	// Test acceptance.
 	testV4Accept(t, c)
 }
+
+func testV4ListenClose(t *testing.T, c *context.Context) {
+	// Set the SynRcvd threshold to zero to force a syn cookie based accept
+	// to happen.
+	saved := tcp.SynRcvdCountThreshold
+	defer func() {
+		tcp.SynRcvdCountThreshold = saved
+	}()
+	tcp.SynRcvdCountThreshold = 0
+	const n = uint16(32)
+
+	// Start listening.
+	if err := c.EP.Listen(int(tcp.SynRcvdCountThreshold + 1)); err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+
+	irs := seqnum.Value(789)
+	for i := uint16(0); i < n; i++ {
+		// Send a SYN request.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: context.TestPort + i,
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagSyn,
+			SeqNum:  irs,
+			RcvWnd:  30000,
+		})
+	}
+
+	// Each of these ACK's will cause a syn-cookie based connection to be
+	// accepted and delivered to the listening endpoint.
+	for i := uint16(0); i < n; i++ {
+		b := c.GetPacket()
+		tcp := header.TCP(header.IPv4(b).Payload())
+		iss := seqnum.Value(tcp.SequenceNumber())
+		// Send ACK.
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: tcp.DestinationPort(),
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagAck,
+			SeqNum:  irs + 1,
+			AckNum:  iss + 1,
+			RcvWnd:  30000,
+		})
+	}
+
+	// Try to accept the connection.
+	we, ch := waiter.NewChannelEntry(nil)
+	c.WQ.EventRegister(&we, waiter.EventIn)
+	defer c.WQ.EventUnregister(&we)
+	nep, _, err := c.EP.Accept()
+	if err == tcpip.ErrWouldBlock {
+		// Wait for connection to be established.
+		select {
+		case <-ch:
+			nep, _, err = c.EP.Accept()
+			if err != nil {
+				t.Fatalf("Accept failed: %v", err)
+			}
+
+		case <-time.After(10 * time.Second):
+			t.Fatalf("Timed out waiting for accept")
+		}
+	}
+	nep.Close()
+	c.EP.Close()
+}
+
+func TestV4ListenCloseOnV4(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	// Create TCP endpoint.
+	var err *tcpip.Error
+	c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %v", err)
+	}
+
+	// Bind to wildcard.
+	if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %v", err)
+	}
+
+	// Test acceptance.
+	testV4ListenClose(t, c)
+}

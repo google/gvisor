@@ -145,6 +145,67 @@ TEST_P(SocketInetLoopbackTest, TCP) {
   ASSERT_THAT(shutdown(conn_fd.get(), SHUT_RDWR), SyscallSucceeds());
 }
 
+TEST_P(SocketInetLoopbackTest, TCPListenClose) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  // Create the listening socket.
+  FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(listener.family(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(bind(listen_fd.get(), reinterpret_cast<sockaddr*>(&listen_addr),
+                   listener.addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), 1001), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(),
+                          reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+              SyscallSucceeds());
+  uint16_t const port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  DisableSave ds;  // Too many system calls.
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  constexpr int kFDs = 2048;
+  constexpr int kThreadCount = 4;
+  constexpr int kFDsPerThread = kFDs / kThreadCount;
+  FileDescriptor clients[kFDs];
+  std::unique_ptr<ScopedThread> threads[kThreadCount];
+  for (int i = 0; i < kFDs; i++) {
+    clients[i] = ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(connector.family(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i] = absl::make_unique<ScopedThread>([&connector, &conn_addr,
+                                                  &clients, i]() {
+      for (int j = 0; j < kFDsPerThread; j++) {
+        int k = i * kFDsPerThread + j;
+        int ret =
+            connect(clients[k].get(), reinterpret_cast<sockaddr*>(&conn_addr),
+                    connector.addr_len);
+        if (ret != 0) {
+          EXPECT_THAT(ret, SyscallFailsWithErrno(EINPROGRESS));
+        }
+      }
+    });
+  }
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i]->Join();
+  }
+  for (int i = 0; i < 32; i++) {
+    auto accepted =
+        ASSERT_NO_ERRNO_AND_VALUE(Accept(listen_fd.get(), nullptr, nullptr));
+  }
+  // TODO(b/138400178): Fix cooperative S/R failure when ds.reset() is invoked
+  // before function end.
+  // ds.reset()
+}
+
 TEST_P(SocketInetLoopbackTest, TCPbacklog) {
   auto const& param = GetParam();
 
