@@ -24,6 +24,7 @@ WORKDIR ${LANG_DIR}
 RUN ./configure
 RUN make
 
-COPY proctor-php.go ${LANG_DIR}
+COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY php/proctor-php.go ${LANG_DIR}
 
 ENTRYPOINT ["/root/go/bin/go", "run", "proctor-php.go"]
