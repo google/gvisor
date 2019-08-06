@@ -207,6 +207,10 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, syserror.ESPIPE
 		}
 		if outOffset != 0 {
+			if !outFile.Flags().Pwrite {
+				return 0, nil, syserror.EINVAL
+			}
+
 			var offset int64
 			if _, err := t.CopyIn(outOffset, &offset); err != nil {
 				return 0, nil, err
@@ -220,6 +224,10 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			return 0, nil, syserror.ESPIPE
 		}
 		if inOffset != 0 {
+			if !inFile.Flags().Pread {
+				return 0, nil, syserror.EINVAL
+			}
+
 			var offset int64
 			if _, err := t.CopyIn(inOffset, &offset); err != nil {
 				return 0, nil, err
