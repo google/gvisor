@@ -1125,6 +1125,10 @@ func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
 	for _, id := range ids {
 		container, err := Load(conf.RootDir, id)
 		if err != nil {
+			if os.IsNotExist(err) {
+				// The container may be deleted after listed.
+				continue
+			}
 			return fmt.Errorf("loading container %q: %v", id, err)
 		}
 		if container.Sandbox.ID == c.Sandbox.ID {
