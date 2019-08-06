@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/eventfd.h>
 #include <sys/sendfile.h>
 #include <unistd.h>
 
@@ -133,6 +134,80 @@ TEST(SpliceTest, PipeOffsets) {
               SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(splice(rfd1.get(), &in_offset, wfd2.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(ESPIPE));
+}
+
+// Event FDs may be used with splice without an offset.
+TEST(SpliceTest, FromEventFD) {
+  // Open the input eventfd with an initial value so that it is readable.
+  constexpr uint64_t kEventFDValue = 1;
+  int efd;
+  ASSERT_THAT(efd = eventfd(kEventFDValue, 0), SyscallSucceeds());
+  const FileDescriptor inf(efd);
+
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Splice 8-byte eventfd value to pipe.
+  constexpr int kEventFDSize = 8;
+  EXPECT_THAT(splice(inf.get(), nullptr, wfd.get(), nullptr, kEventFDSize, 0),
+              SyscallSucceedsWithValue(kEventFDSize));
+
+  // Contents should be equal.
+  std::vector<char> rbuf(kEventFDSize);
+  ASSERT_THAT(read(rfd.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(kEventFDSize));
+  EXPECT_EQ(memcmp(rbuf.data(), &kEventFDValue, rbuf.size()), 0);
+}
+
+// Event FDs may not be used with splice with an offset.
+TEST(SpliceTest, FromEventFDOffset) {
+  int efd;
+  ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
+  const FileDescriptor inf(efd);
+
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Attempt to splice 8-byte eventfd value to pipe with offset.
+  //
+  // This is not allowed because eventfd doesn't support pread.
+  constexpr int kEventFDSize = 8;
+  loff_t in_off = 0;
+  EXPECT_THAT(splice(inf.get(), &in_off, wfd.get(), nullptr, kEventFDSize, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+// Event FDs may not be used with splice with an offset.
+TEST(SpliceTest, ToEventFDOffset) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill with a value.
+  constexpr int kEventFDSize = 8;
+  std::vector<char> buf(kEventFDSize);
+  buf[0] = 1;
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kEventFDSize));
+
+  int efd;
+  ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
+  const FileDescriptor outf(efd);
+
+  // Attempt to splice 8-byte eventfd value to pipe with offset.
+  //
+  // This is not allowed because eventfd doesn't support pwrite.
+  loff_t out_off = 0;
+  EXPECT_THAT(splice(rfd.get(), nullptr, outf.get(), &out_off, kEventFDSize, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SpliceTest, ToPipe) {
