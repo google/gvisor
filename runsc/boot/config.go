@@ -116,12 +116,10 @@ func MakeWatchdogAction(s string) (watchdog.Action, error) {
 // MakeRefsLeakMode converts type from string
 func MakeRefsLeakMode(s string) (refs.LeakMode, error) {
 	switch strings.ToLower(s) {
-	case "nocheck":
+	case "disabled":
 		return refs.NoLeakChecking, nil
 	case "warning":
 		return refs.LeaksLogWarning, nil
-	case "traces":
-		return refs.LeaksLogTraces, nil
 	default:
 		return 0, fmt.Errorf("invalid refs leakmode %q", s)
 	}
@@ -245,7 +243,7 @@ func (c *Config) ToFlags() []string {
 		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
 		"--rootless=" + strconv.FormatBool(c.Rootless),
 		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
-		"--refs-leak-mode=" + c.ReferenceLeakMode.String(),
+		"--ref-leak-mode=" + c.ReferenceLeakMode.String(),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.
