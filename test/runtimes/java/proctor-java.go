@@ -29,6 +29,7 @@ import (
 
 var (
 	dir      = os.Getenv("LANG_DIR")
+	hash     = os.Getenv("LANG_HASH")
 	jtreg    = filepath.Join(dir, "jtreg/bin/jtreg")
 	exclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(java\/time)| )`)
 )
@@ -44,7 +45,7 @@ func main() {
 
 func (j javaRunner) ListTests() ([]string, error) {
 	args := []string{
-		"-dir:test/jdk",
+		"-dir:/root/jdk11-" + hash + "/test/jdk",
 		"-ignore:quiet",
 		"-a",
 		"-listtests",
@@ -69,7 +70,7 @@ func (j javaRunner) ListTests() ([]string, error) {
 }
 
 func (j javaRunner) RunTest(test string) error {
-	args := []string{"-dir:test/jdk/", test}
+	args := []string{"-noreport", "-dir:/root/jdk11-" + hash + "/test/jdk", test}
 	cmd := exec.Command(jtreg, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {

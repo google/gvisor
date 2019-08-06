@@ -26,6 +26,7 @@ WORKDIR ${LANG_DIR}
 RUN ./configure --with-pydebug
 RUN make -s -j2
 
-COPY proctor-python.go ${LANG_DIR}
+COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY python/proctor-python.go ${LANG_DIR}
 
 ENTRYPOINT ["/root/go/bin/go", "run", "proctor-python.go"]

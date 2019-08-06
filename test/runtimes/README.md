@@ -16,7 +16,7 @@ The following runtimes are currently supported:
 
 1) [Install and configure Docker](https://docs.docker.com/install/)
 
-2) Build each Docker container:
+2) Build each Docker container from the runtimes directory:
 
 ```bash
 $ docker build -f $LANG/Dockerfile [-t $NAME] .

@@ -23,9 +23,12 @@ ENV LANG_DIR=${GOROOT}
 
 WORKDIR ${LANG_DIR}/src
 RUN ./make.bash
+# Pre-compile the tests for faster execution
+RUN ["/root/go/bin/go", "tool", "dist", "test", "-compile-only"]
 
 WORKDIR ${LANG_DIR}
 
-COPY proctor-go.go ${LANG_DIR}
+COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
+COPY go/proctor-go.go ${LANG_DIR}
 
 ENTRYPOINT ["/root/go/bin/go", "run", "proctor-go.go"]
