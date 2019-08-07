@@ -1176,30 +1176,16 @@ func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
 		return nil
 	}
 
-	// Set oom_score_adj for the sandbox.
+	// Set the lowest of all containers oom_score_adj to the sandbox.
 	if err := setOOMScoreAdj(c.Sandbox.Pid, lowScore); err != nil {
 		return fmt.Errorf("setting oom_score_adj for sandbox %q: %v", c.Sandbox.ID, err)
 	}
 
-	// Set the gofer's oom_score_adj to the minimum of -500 and the
-	// sandbox's oom_score_adj to better ensure that the sandbox is killed
-	// before the gofer.
-	//
-	// TODO(gvisor.dev/issue/601) Set oom_score_adj for the gofer to
-	// the same oom_score_adj as the sandbox.
-	goferScoreAdj := -500
-	if lowScore < goferScoreAdj {
-		goferScoreAdj = lowScore
+	// Set container's oom_score_adj to the gofer since it is dedicated to the
+	// container, in case the gofer uses up too much memory.
+	if err := setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj); err != nil {
+		return fmt.Errorf("setting gofer oom_score_adj for container %q: %v", c.ID, err)
 	}
-
-	// Set oom_score_adj for gofers for all containers in the sandbox.
-	for _, container := range containers {
-		err := setOOMScoreAdj(container.GoferPid, goferScoreAdj)
-		if err != nil {
-			return fmt.Errorf("setting oom_score_adj for container %q: %v", container.ID, err)
-		}
-	}
-
 	return nil
 }
 
