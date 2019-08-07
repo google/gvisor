@@ -76,6 +76,7 @@ go_test(
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs/ext/disklayout",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//runsc/test/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
