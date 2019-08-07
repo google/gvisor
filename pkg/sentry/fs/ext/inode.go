@@ -15,12 +15,14 @@
 package ext
 
 import (
+	"fmt"
 	"io"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -31,13 +33,11 @@ import (
 //
 // Implementations:
 //    inode --
-//           |-- pipe
 //           |-- dir
 //           |-- symlink
 //           |-- regular--
 //                       |-- extent file
 //                       |-- block map file
-//                       |-- inline file
 type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory operations.
 	refs int64
@@ -92,7 +92,7 @@ func (in *inode) decRef(fs *filesystem) {
 
 // newInode is the inode constructor. Reads the inode off disk. Identifies
 // inodes based on the absolute inode number on disk.
-func newInode(ctx context.Context, fs *filesystem, inodeNum uint32) (*inode, error) {
+func newInode(fs *filesystem, inodeNum uint32) (*inode, error) {
 	if inodeNum == 0 {
 		panic("inode number 0 on ext filesystems is not possible")
 	}
@@ -117,7 +117,6 @@ func newInode(ctx context.Context, fs *filesystem, inodeNum uint32) (*inode, err
 
 	// Build the inode based on its type.
 	inode := inode{
-		refs:      1,
 		inodeNum:  inodeNum,
 		dev:       fs.dev,
 		blkSize:   blkSize,
@@ -138,13 +137,74 @@ func newInode(ctx context.Context, fs *filesystem, inodeNum uint32) (*inode, err
 		}
 		return &f.inode, nil
 	case linux.ModeDirectory:
-		return &newDirectroy(inode).inode, nil
-	case linux.ModeNamedPipe:
-		return &newNamedPipe(ctx, inode).inode, nil
+		f, err := newDirectroy(inode, fs.sb.IncompatibleFeatures().DirentFileType)
+		if err != nil {
+			return nil, err
+		}
+		return &f.inode, nil
 	default:
-		// TODO(b/134676337): Return appropriate errors for sockets and devices.
+		// TODO(b/134676337): Return appropriate errors for sockets, pipes and devices.
 		return nil, syserror.EINVAL
 	}
+}
+
+// open creates and returns a file description for the dentry passed in.
+func (in *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32) (*vfs.FileDescription, error) {
+	ats := vfs.AccessTypesForOpenFlags(flags)
+	if err := in.checkPermissions(rp.Credentials(), ats); err != nil {
+		return nil, err
+	}
+	switch in.impl.(type) {
+	case *regularFile:
+		var fd regularFileFD
+		fd.flags = flags
+		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
+		return &fd.vfsfd, nil
+	case *directory:
+		// Can't open directories writably. This check is not necessary for a read
+		// only filesystem but will be required when write is implemented.
+		if ats&vfs.MayWrite != 0 {
+			return nil, syserror.EISDIR
+		}
+		var fd directoryFD
+		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
+		fd.flags = flags
+		return &fd.vfsfd, nil
+	case *symlink:
+		if flags&linux.O_PATH == 0 {
+			// Can't open symlinks without O_PATH.
+			return nil, syserror.ELOOP
+		}
+		var fd symlinkFD
+		fd.flags = flags
+		fd.vfsfd.Init(&fd, rp.Mount(), vfsd)
+		return &fd.vfsfd, nil
+	default:
+		panic(fmt.Sprintf("unknown inode type: %T", in.impl))
+	}
+}
+
+func (in *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) error {
+	return vfs.GenericCheckPermissions(creds, ats, in.isDir(), uint16(in.diskInode.Mode()), in.diskInode.UID(), in.diskInode.GID())
+}
+
+// statTo writes the statx fields to the output parameter.
+func (in *inode) statTo(stat *linux.Statx) {
+	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK |
+		linux.STATX_UID | linux.STATX_GID | linux.STATX_INO | linux.STATX_SIZE |
+		linux.STATX_ATIME | linux.STATX_CTIME | linux.STATX_MTIME
+	stat.Blksize = uint32(in.blkSize)
+	stat.Mode = uint16(in.diskInode.Mode())
+	stat.Nlink = uint32(in.diskInode.LinksCount())
+	stat.UID = uint32(in.diskInode.UID())
+	stat.GID = uint32(in.diskInode.GID())
+	stat.Ino = uint64(in.inodeNum)
+	stat.Size = in.diskInode.Size()
+	stat.Atime = in.diskInode.AccessTime().StatxTimestamp()
+	stat.Ctime = in.diskInode.ChangeTime().StatxTimestamp()
+	stat.Mtime = in.diskInode.ModificationTime().StatxTimestamp()
+	// TODO(b/134676337): Set stat.Blocks which is the number of 512 byte blocks
+	// (including metadata blocks) required to represent this file.
 }
 
 // getBGNum returns the block group number that a given inode belongs to.
