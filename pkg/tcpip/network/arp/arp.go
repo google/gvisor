@@ -109,6 +109,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 		pkt.SetOp(header.ARPReply)
 		copy(pkt.HardwareAddressSender(), r.LocalLinkAddress[:])
 		copy(pkt.ProtocolAddressSender(), h.ProtocolAddressTarget())
+		copy(pkt.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(pkt.ProtocolAddressTarget(), h.ProtocolAddressSender())
 		e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
 		fallthrough // also fill the cache from requests
