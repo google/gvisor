@@ -16,6 +16,7 @@ package ext
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
 	"gvisor.dev/gvisor/runsc/test/testutil"
@@ -78,6 +80,107 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 		}
 	}
 	return ctx, vfsObj, &root, tearDown, nil
+}
+
+// TestRead tests the read functionality for vfs file descriptions.
+func TestRead(t *testing.T) {
+	type readTest struct {
+		name    string
+		image   string
+		absPath string
+	}
+
+	tests := []readTest{
+		{
+			name:    "ext4 read small file",
+			image:   ext4ImagePath,
+			absPath: "/file.txt",
+		},
+		{
+			name:    "ext3 read small file",
+			image:   ext3ImagePath,
+			absPath: "/file.txt",
+		},
+		{
+			name:    "ext2 read small file",
+			image:   ext2ImagePath,
+			absPath: "/file.txt",
+		},
+		{
+			name:    "ext4 read big file",
+			image:   ext4ImagePath,
+			absPath: "/bigfile.txt",
+		},
+		{
+			name:    "ext3 read big file",
+			image:   ext3ImagePath,
+			absPath: "/bigfile.txt",
+		},
+		{
+			name:    "ext2 read big file",
+			image:   ext2ImagePath,
+			absPath: "/bigfile.txt",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, vfsfs, root, tearDown, err := setUp(t, test.image)
+			if err != nil {
+				t.Fatalf("setUp failed: %v", err)
+			}
+			defer tearDown()
+
+			fd, err := vfsfs.OpenAt(
+				ctx,
+				auth.CredentialsFromContext(ctx),
+				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.absPath},
+				&vfs.OpenOptions{},
+			)
+			if err != nil {
+				t.Fatalf("vfsfs.OpenAt failed: %v", err)
+			}
+
+			// Get a local file descriptor and compare its functionality with a vfs file
+			// description for the same file.
+			localFile, err := testutil.FindFile(path.Join(assetsDir, test.absPath))
+			if err != nil {
+				t.Fatalf("testutil.FindFile failed for %s: %v", test.absPath, err)
+			}
+
+			f, err := os.Open(localFile)
+			if err != nil {
+				t.Fatalf("os.Open failed for %s: %v", localFile, err)
+			}
+			defer f.Close()
+
+			// Read the entire file by reading one byte repeatedly. Doing this stress
+			// tests the underlying file reader implementation.
+			got := make([]byte, 1)
+			want := make([]byte, 1)
+			for {
+				n, err := f.Read(want)
+				fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{})
+
+				if diff := cmp.Diff(got, want); diff != "" {
+					t.Errorf("file data mismatch (-want +got):\n%s", diff)
+				}
+
+				// Make sure there is no more file data left after getting EOF.
+				if n == 0 || err == io.EOF {
+					if n, _ := fd.Impl().Read(ctx, usermem.BytesIOSequence(got), vfs.ReadOptions{}); n != 0 {
+						t.Errorf("extra unexpected file data in file %s in image %s", test.absPath, test.image)
+					}
+
+					break
+				}
+
+				if err != nil {
+					t.Fatalf("read failed: %v", err)
+				}
+			}
+		})
+	}
 }
 
 // iterDirentsCb is a simple callback which just keeps adding the dirents to an
