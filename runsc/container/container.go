@@ -138,6 +138,34 @@ type Container struct {
 	RootContainerDir string
 }
 
+// loadSandbox loads all containers that belong to the sandbox with the given
+// ID.
+func loadSandbox(rootDir, id string) ([]*Container, error) {
+	cids, err := List(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load the container metadata.
+	var containers []*Container
+	for _, cid := range cids {
+		container, err := Load(rootDir, cid)
+		if err != nil {
+			// Container file may not exist if it raced with creation/deletion or
+			// directory was left behind. Load provides a snapshot in time, so it's
+			// fine to skip it.
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("loading container %q: %v", id, err)
+		}
+		if container.Sandbox.ID == id {
+			containers = append(containers, container)
+		}
+	}
+	return containers, nil
+}
+
 // Load loads a container with the given id from a metadata file. id may be an
 // abbreviation of the full container id, in which case Load loads the
 // container to which id unambiguously refers to.
@@ -180,7 +208,7 @@ func Load(rootDir, id string) (*Container, error) {
 	// If the status is "Running" or "Created", check that the sandbox
 	// process still exists, and set it to Stopped if it does not.
 	//
-	// This is inherently racey.
+	// This is inherently racy.
 	if c.Status == Running || c.Status == Created {
 		// Check if the sandbox process is still running.
 		if !c.isSandboxRunning() {
@@ -237,7 +265,13 @@ func List(rootDir string) ([]string, error) {
 	}
 	var out []string
 	for _, f := range fs {
-		out = append(out, f.Name())
+		// Filter out directories that do no belong to a container.
+		cid := f.Name()
+		if validateID(cid) == nil {
+			if _, err := os.Stat(filepath.Join(rootDir, cid, metadataFilename)); err == nil {
+				out = append(out, f.Name())
+			}
+		}
 	}
 	return out, nil
 }
@@ -1108,6 +1142,10 @@ func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
 // adjustOOMScoreAdj sets the oom_score_adj for the sandbox and all gofers.
 // oom_score_adj is set to the lowest oom_score_adj among the containers
 // running in the sandbox.
+//
+// TODO(gvisor.dev/issue/512): This call could race with other containers being
+// created at the same time and end up setting the wrong oom_score_adj to the
+// sandbox.
 func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
 	// If this container's OOMScoreAdj is nil then we can exit early as no
 	// change should be made to oom_score_adj for the sandbox.
@@ -1115,21 +1153,9 @@ func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
 		return nil
 	}
 
-	ids, err := List(conf.RootDir)
+	containers, err := loadSandbox(conf.RootDir, c.Sandbox.ID)
 	if err != nil {
-		return err
-	}
-
-	// Load the container metadata.
-	var containers []*Container
-	for _, id := range ids {
-		container, err := Load(conf.RootDir, id)
-		if err != nil {
-			return fmt.Errorf("loading container %q: %v", id, err)
-		}
-		if container.Sandbox.ID == c.Sandbox.ID {
-			containers = append(containers, container)
-		}
+		return fmt.Errorf("loading sandbox containers: %v", err)
 	}
 
 	// Get the lowest score for all containers.
