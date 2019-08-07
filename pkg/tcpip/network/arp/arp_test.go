@@ -15,6 +15,7 @@
 package arp_test
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -101,40 +102,30 @@ func TestDirectRequest(t *testing.T) {
 		c.linkEP.Inject(arp.ProtocolNumber, v.ToVectorisedView())
 	}
 
-	inject(stackAddr1)
-	{
-		pkt := <-c.linkEP.C
-		if pkt.Proto != arp.ProtocolNumber {
-			t.Fatalf("stackAddr1: expected ARP response, got network protocol number %v", pkt.Proto)
-		}
-		rep := header.ARP(pkt.Header)
-		if !rep.IsValid() {
-			t.Fatalf("stackAddr1: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
-		}
-		if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr1 {
-			t.Errorf("stackAddr1: expected sender to be set")
-		}
-		if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
-			t.Errorf("stackAddr1: expected sender to be stackLinkAddr, got %q", got)
-		}
-	}
-
-	inject(stackAddr2)
-	{
-		pkt := <-c.linkEP.C
-		if pkt.Proto != arp.ProtocolNumber {
-			t.Fatalf("stackAddr2: expected ARP response, got network protocol number %v", pkt.Proto)
-		}
-		rep := header.ARP(pkt.Header)
-		if !rep.IsValid() {
-			t.Fatalf("stackAddr2: invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
-		}
-		if tcpip.Address(rep.ProtocolAddressSender()) != stackAddr2 {
-			t.Errorf("stackAddr2: expected sender to be set")
-		}
-		if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != stackLinkAddr {
-			t.Errorf("stackAddr2: expected sender to be stackLinkAddr, got %q", got)
-		}
+	for i, address := range []tcpip.Address{stackAddr1, stackAddr2} {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			inject(address)
+			pkt := <-c.linkEP.C
+			if pkt.Proto != arp.ProtocolNumber {
+				t.Fatalf("expected ARP response, got network protocol number %d", pkt.Proto)
+			}
+			rep := header.ARP(pkt.Header)
+			if !rep.IsValid() {
+				t.Fatalf("invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
+			}
+			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
+				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
+			}
+			if got, want := tcpip.Address(rep.ProtocolAddressSender()), tcpip.Address(h.ProtocolAddressTarget()); got != want {
+				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, want)
+			}
+			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress(h.HardwareAddressSender()); got != want {
+				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
+			}
+			if got, want := tcpip.Address(rep.ProtocolAddressTarget()), tcpip.Address(h.ProtocolAddressSender()); got != want {
+				t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, want)
+			}
+		})
 	}
 
 	inject(stackAddrBad)
