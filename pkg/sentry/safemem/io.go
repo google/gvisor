@@ -157,7 +157,8 @@ func (w ToIOWriter) Write(src []byte) (int, error) {
 }
 
 // FromIOReader implements Reader for an io.Reader by repeatedly invoking
-// io.Reader.Read until it returns an error or partial read.
+// io.Reader.Read until it returns an error or partial read. This is not
+// thread-safe.
 //
 // FromIOReader will return a successful partial read iff Reader.Read does so.
 type FromIOReader struct {
@@ -199,6 +200,58 @@ func (r FromIOReader) readToBlock(dst Block, buf []byte) (int, []byte, error) {
 		buf = make([]byte, dst.Len())
 	}
 	rn, rerr := r.Reader.Read(buf[:dst.Len()])
+	wbn, wberr := Copy(dst, BlockFromSafeSlice(buf[:rn]))
+	if wberr != nil {
+		return wbn, buf, wberr
+	}
+	return wbn, buf, rerr
+}
+
+// FromIOReaderAt implements Reader for an io.ReaderAt. Does not repeatedly
+// invoke io.ReaderAt.ReadAt because ReadAt is more strict than Read. A partial
+// read indicates an error. This is not thread-safe.
+type FromIOReaderAt struct {
+	ReaderAt io.ReaderAt
+	Offset   int64
+}
+
+// ReadToBlocks implements Reader.ReadToBlocks.
+func (r FromIOReaderAt) ReadToBlocks(dsts BlockSeq) (uint64, error) {
+	var buf []byte
+	var done uint64
+	for !dsts.IsEmpty() {
+		dst := dsts.Head()
+		var n int
+		var err error
+		n, buf, err = r.readToBlock(dst, buf)
+		done += uint64(n)
+		if n != dst.Len() {
+			return done, err
+		}
+		dsts = dsts.Tail()
+		if err != nil {
+			if dsts.IsEmpty() && err == io.EOF {
+				return done, nil
+			}
+			return done, err
+		}
+	}
+	return done, nil
+}
+
+func (r FromIOReaderAt) readToBlock(dst Block, buf []byte) (int, []byte, error) {
+	// io.Reader isn't safecopy-aware, so we have to buffer Blocks that require
+	// safecopy.
+	if !dst.NeedSafecopy() {
+		n, err := r.ReaderAt.ReadAt(dst.ToSlice(), r.Offset)
+		r.Offset += int64(n)
+		return n, buf, err
+	}
+	if len(buf) < dst.Len() {
+		buf = make([]byte, dst.Len())
+	}
+	rn, rerr := r.ReaderAt.ReadAt(buf[:dst.Len()], r.Offset)
+	r.Offset += int64(rn)
 	wbn, wberr := Copy(dst, BlockFromSafeSlice(buf[:rn]))
 	if wberr != nil {
 		return wbn, buf, wberr
