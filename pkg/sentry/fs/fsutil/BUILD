@@ -73,11 +73,13 @@ go_library(
         "host_mappable.go",
         "inode.go",
         "inode_cached.go",
+        "cache_reclaim.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/fs/fsutil",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/ilist",
         "//pkg/log",
         "//pkg/sentry/arch",
         "//pkg/sentry/context",

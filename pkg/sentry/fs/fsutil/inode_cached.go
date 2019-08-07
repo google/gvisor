@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	gotime "time"
 
+	"gvisor.dev/gvisor/pkg/ilist"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -64,6 +66,8 @@ var CacheCapacity uint64
 //
 // +stateify savable
 type CachingInodeOperations struct {
+	ilist.Entry
+
 	// backingFile is a handle to a cached file object.
 	backingFile CachedFileObject
 
@@ -118,6 +122,16 @@ type CachingInodeOperations struct {
 	//
 	// refs is protected by dataMu.
 	refs frameRefSet
+
+	// lruMgr points to the LruManager that tracks the cache usage in current inode
+	//
+	// lruMgr takes care of concurrent operations internally
+	lruMgr *LruManager
+
+	// pdf points to PeriodicFlusher that flush all dirty ranges in current inode
+	//
+	// pdf takes care of concurrent operations internally
+	pdf *PeriodicFlusher
 }
 
 // CachedFileObject is a file that may require caching.
@@ -168,13 +182,17 @@ func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
 	}
-	return &CachingInodeOperations{
+	c := &CachingInodeOperations{
 		backingFile:    backingFile,
 		mfp:            mfp,
 		forcePageCache: forcePageCache,
 		attr:           uattr,
 		hostFileMapper: NewHostFileMapper(),
+		lruMgr:         NewLruManager(30 * gotime.Second, mfp.MemoryFile()),
+		pdf:            NewPeriodicFlusher(30 * gotime.Second),
 	}
+	c.pdf.Attach(c)
+	return c
 }
 
 // Release implements fs.InodeOperations.Release.
@@ -570,6 +588,26 @@ type inodeReadWriter struct {
 	offset int64
 }
 
+func (c *CachingInodeOperations) addCacheLru(mr memmap.MappableRange) {
+	seg, _ := c.cache.Find(mr.Start)
+	if !seg.Ok() {
+		panic("(Just allocated) cache does not exist?")
+	}
+	fr := seg.FileRangeOf(seg.Range().Intersect(mr))
+	// Tracking granularity ranges from [usermem.PageSize, usermem.HugePageSize], page aligned
+	start := fr.Start &^ (usermem.HugePageSize - 1)
+        for start < fr.End {
+		frCur := platform.FileRange{start, start + usermem.HugePageSize}.Intersect(fr)
+		mr.End = mr.Start + frCur.Length()
+
+		e := NewLruEntry(frCur, mr, c)
+		c.lruMgr.Insert(e)
+		// mr reside within one seg, therefore no need to search for next seg
+		start += usermem.HugePageSize
+		mr.Start += frCur.Length()
+	}
+}
+
 // Boundary of mr should be page-aligned already
 func (rw *inodeReadWriter) readAheadSync(required,optional memmap.MappableRange) error {
 	rw.c.dataMu.RUnlock()
@@ -586,6 +624,7 @@ func (rw *inodeReadWriter) readAheadSync(required,optional memmap.MappableRange)
 		rw.c.dataMu.DowngradeLock()
 		return err
 	}
+	rw.c.addCacheLru(required)
 	rw.c.dataMu.DowngradeLock()
 	return nil
 }
