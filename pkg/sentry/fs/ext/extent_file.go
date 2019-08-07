@@ -150,7 +150,11 @@ func (f *extentFile) ReadAt(dst []byte, off int64) (int, error) {
 		return 0, io.EOF
 	}
 
-	return f.read(&f.root, uint64(off), dst)
+	n, err := f.read(&f.root, uint64(off), dst)
+	if n < len(dst) && err == nil {
+		err = io.EOF
+	}
+	return n, err
 }
 
 // read is the recursive step of extentFile.ReadAt which traverses the extent

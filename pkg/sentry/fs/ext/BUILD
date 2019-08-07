@@ -4,14 +4,14 @@ load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
-    name = "dentry_list",
-    out = "dentry_list.go",
+    name = "dirent_list",
+    out = "dirent_list.go",
     package = "ext",
-    prefix = "dentry",
+    prefix = "dirent",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*dentry",
-        "Linker": "*dentry",
+        "Element": "*dirent",
+        "Linker": "*dirent",
     },
 )
 
@@ -20,14 +20,13 @@ go_library(
     srcs = [
         "block_map_file.go",
         "dentry.go",
-        "dentry_list.go",
         "directory.go",
+        "dirent_list.go",
         "ext.go",
         "extent_file.go",
+        "file_description.go",
         "filesystem.go",
-        "inline_file.go",
         "inode.go",
-        "named_pipe.go",
         "regular_file.go",
         "symlink.go",
         "utils.go",
@@ -38,15 +37,19 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/binary",
         "//pkg/fd",
+        "//pkg/log",
+        "//pkg/sentry/arch",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/ext/disklayout",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/pipe",
+        "//pkg/sentry/memmap",
         "//pkg/sentry/safemem",
+        "//pkg/sentry/syscalls/linux",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
+        "//pkg/waiter",
     ],
 )
 

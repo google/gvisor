@@ -221,7 +221,7 @@ func CompatFeaturesFromInt(f uint32) CompatFeatures {
 // This is not exhaustive, unused features are not listed.
 const (
 	// SbDirentFileType indicates that directory entries record the file type.
-	// We should use struct ext4_dir_entry_2 for dirents then.
+	// We should use struct DirentNew for dirents then.
 	SbDirentFileType = 0x2
 
 	// SbRecovery indicates that the filesystem needs recovery.

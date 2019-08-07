@@ -21,6 +21,9 @@ import (
 const (
 	// MaxFileName is the maximum length of an ext fs file's name.
 	MaxFileName = 255
+
+	// DirentSize is the size of ext dirent structures.
+	DirentSize = 263
 )
 
 var (

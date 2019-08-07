@@ -44,7 +44,7 @@ var (
 // setUp opens imagePath as an ext Filesystem and returns all necessary
 // elements required to run tests. If error is non-nil, it also returns a tear
 // down function which must be called after the test is run for clean up.
-func setUp(t *testing.T, imagePath string) (context.Context, *vfs.Filesystem, *vfs.Dentry, func(), error) {
+func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesystem, *vfs.VirtualDentry, func(), error) {
 	localImagePath, err := testutil.FindFile(imagePath)
 	if err != nil {
 		return nil, nil, nil, nil, fmt.Errorf("failed to open local image at path %s: %v", imagePath, err)
@@ -55,20 +55,28 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.Filesystem, *v
 		return nil, nil, nil, nil, err
 	}
 
-	// Mount the ext4 fs and retrieve the inode structure for the file.
-	mockCtx := contexttest.Context(t)
-	fs, d, err := filesystemType{}.NewFilesystem(mockCtx, nil, localImagePath, vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
+	ctx := contexttest.Context(t)
+	creds := auth.CredentialsFromContext(ctx)
+
+	// Create VFS.
+	vfsObj := vfs.New()
+	vfsObj.MustRegisterFilesystemType("extfs", filesystemType{})
+	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
 		return nil, nil, nil, nil, err
 	}
 
+	root := mntns.Root()
+
 	tearDown := func() {
+		root.DecRef()
+
 		if err := f.Close(); err != nil {
 			t.Fatalf("tearDown failed: %v", err)
 		}
 	}
-	return mockCtx, fs, d, tearDown, nil
+	return ctx, vfsObj, &root, tearDown, nil
 }
 
 // TestRootDir tests that the root directory inode is correctly initialized and
@@ -126,15 +134,15 @@ func TestRootDir(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, _, vfsd, tearDown, err := setUp(t, test.image)
+			_, _, vd, tearDown, err := setUp(t, test.image)
 			if err != nil {
 				t.Fatalf("setUp failed: %v", err)
 			}
 			defer tearDown()
 
-			d, ok := vfsd.Impl().(*dentry)
+			d, ok := vd.Dentry().Impl().(*dentry)
 			if !ok {
-				t.Fatalf("ext dentry of incorrect type: %T", vfsd.Impl())
+				t.Fatalf("ext dentry of incorrect type: %T", vd.Dentry().Impl())
 			}
 
 			// Offload inode contents into local structs for comparison.
@@ -329,15 +337,15 @@ func TestFilesystemInit(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, vfsfs, _, tearDown, err := setUp(t, test.image)
+			_, _, vd, tearDown, err := setUp(t, test.image)
 			if err != nil {
 				t.Fatalf("setUp failed: %v", err)
 			}
 			defer tearDown()
 
-			fs, ok := vfsfs.Impl().(*filesystem)
+			fs, ok := vd.Mount().Filesystem().Impl().(*filesystem)
 			if !ok {
-				t.Fatalf("ext filesystem of incorrect type: %T", vfsfs.Impl())
+				t.Fatalf("ext filesystem of incorrect type: %T", vd.Mount().Filesystem().Impl())
 			}
 
 			// Offload superblock and block group descriptors contents into

@@ -85,7 +85,8 @@ func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 	}
 
 	offset := uint64(off)
-	if offset >= f.regFile.inode.diskInode.Size() {
+	size := f.regFile.inode.diskInode.Size()
+	if offset >= size {
 		return 0, io.EOF
 	}
 
@@ -104,6 +105,9 @@ func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 
 	read := 0
 	toRead := len(dst)
+	if uint64(toRead)+offset > size {
+		toRead = int(size - offset)
+	}
 	for read < toRead {
 		var err error
 		var curR int
@@ -131,6 +135,9 @@ func (f *blockMapFile) ReadAt(dst []byte, off int64) (int, error) {
 		}
 	}
 
+	if read < len(dst) {
+		return read, io.EOF
+	}
 	return read, nil
 }
 

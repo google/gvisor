@@ -120,7 +120,7 @@ func newDirent(width uint, name string, attr fs.DentAttr, offset uint64) *dirent
 				Ino: attr.InodeID,
 				Off: offset,
 			},
-			Typ: toType(attr.Type),
+			Typ: fs.ToDirentType(attr.Type),
 		},
 		Name: []byte(name),
 	}
@@ -140,28 +140,6 @@ func smallestDirent(a arch.Context) uint {
 func smallestDirent64(a arch.Context) uint {
 	d := dirent{}
 	return uint(binary.Size(d.Hdr)) + a.Width()
-}
-
-// toType converts an fs.InodeOperationsInfo to a linux dirent typ field.
-func toType(nodeType fs.InodeType) uint8 {
-	switch nodeType {
-	case fs.RegularFile, fs.SpecialFile:
-		return linux.DT_REG
-	case fs.Symlink:
-		return linux.DT_LNK
-	case fs.Directory, fs.SpecialDirectory:
-		return linux.DT_DIR
-	case fs.Pipe:
-		return linux.DT_FIFO
-	case fs.CharacterDevice:
-		return linux.DT_CHR
-	case fs.BlockDevice:
-		return linux.DT_BLK
-	case fs.Socket:
-		return linux.DT_SOCK
-	default:
-		return linux.DT_UNKNOWN
-	}
 }
 
 // padRec pads the name field until the rec length is a multiple of the width,

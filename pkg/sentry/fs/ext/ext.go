@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -62,8 +63,40 @@ func getDeviceFd(source string, opts vfs.NewFilesystemOptions) (io.ReaderAt, err
 	return fd.NewReadWriter(devFd), nil
 }
 
+// isCompatible checks if the superblock has feature sets which are compatible.
+// We only need to check the superblock incompatible feature set since we are
+// mounting readonly. We will also need to check readonly compatible feature
+// set when mounting for read/write.
+func isCompatible(sb disklayout.SuperBlock) bool {
+	// Please note that what is being checked is limited based on the fact that we
+	// are mounting readonly and that we are not journaling. When mounting
+	// read/write or with a journal, this must be reevaluated.
+	incompatFeatures := sb.IncompatibleFeatures()
+	if incompatFeatures.MetaBG {
+		log.Warningf("ext fs: meta block groups are not supported")
+		return false
+	}
+	if incompatFeatures.MMP {
+		log.Warningf("ext fs: multiple mount protection is not supported")
+		return false
+	}
+	if incompatFeatures.Encrypted {
+		log.Warningf("ext fs: encrypted inodes not supported")
+		return false
+	}
+	if incompatFeatures.InlineData {
+		log.Warningf("ext fs: inline files not supported")
+		return false
+	}
+	return true
+}
+
 // NewFilesystem implements vfs.FilesystemType.NewFilesystem.
 func (fstype filesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+	// TODO(b/134676337): Ensure that the user is mounting readonly. If not,
+	// EACCESS should be returned according to mount(2). Filesystem independent
+	// flags (like readonly) are currently not available in pkg/sentry/vfs.
+
 	dev, err := getDeviceFd(source, opts)
 	if err != nil {
 		return nil, nil, err
@@ -82,15 +115,21 @@ func (fstype filesystemType) NewFilesystem(ctx context.Context, creds *auth.Cred
 		return nil, nil, syserror.EINVAL
 	}
 
+	// Refuse to mount if the filesystem is incompatible.
+	if !isCompatible(fs.sb) {
+		return nil, nil, syserror.EINVAL
+	}
+
 	fs.bgs, err = readBlockGroups(dev, fs.sb)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rootInode, err := fs.getOrCreateInode(ctx, disklayout.RootDirInode)
+	rootInode, err := fs.getOrCreateInodeLocked(disklayout.RootDirInode)
 	if err != nil {
 		return nil, nil, err
 	}
+	rootInode.incRef()
 
 	return &fs.vfsfs, &newDentry(rootInode).vfsd, nil
 }
