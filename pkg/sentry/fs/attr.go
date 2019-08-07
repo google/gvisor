@@ -111,6 +111,50 @@ func (n InodeType) LinuxType() uint32 {
 	}
 }
 
+// ToDirentType converts an InodeType to a linux dirent type field.
+func ToDirentType(nodeType InodeType) uint8 {
+	switch nodeType {
+	case RegularFile, SpecialFile:
+		return linux.DT_REG
+	case Symlink:
+		return linux.DT_LNK
+	case Directory, SpecialDirectory:
+		return linux.DT_DIR
+	case Pipe:
+		return linux.DT_FIFO
+	case CharacterDevice:
+		return linux.DT_CHR
+	case BlockDevice:
+		return linux.DT_BLK
+	case Socket:
+		return linux.DT_SOCK
+	default:
+		return linux.DT_UNKNOWN
+	}
+}
+
+// ToInodeType coverts a linux file type to InodeType.
+func ToInodeType(linuxFileType linux.FileMode) InodeType {
+	switch linuxFileType {
+	case linux.ModeRegular:
+		return RegularFile
+	case linux.ModeDirectory:
+		return Directory
+	case linux.ModeSymlink:
+		return Symlink
+	case linux.ModeNamedPipe:
+		return Pipe
+	case linux.ModeCharacterDevice:
+		return CharacterDevice
+	case linux.ModeBlockDevice:
+		return BlockDevice
+	case linux.ModeSocket:
+		return Socket
+	default:
+		panic(fmt.Sprintf("unknown file mode: %d", linuxFileType))
+	}
+}
+
 // StableAttr contains Inode attributes that will be stable throughout the
 // lifetime of the Inode.
 //
