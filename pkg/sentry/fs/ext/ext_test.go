@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -77,6 +78,120 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 		}
 	}
 	return ctx, vfsObj, &root, tearDown, nil
+}
+
+// iterDirentsCb is a simple callback which just keeps adding the dirents to an
+// internal list. Implements vfs.IterDirentsCallback.
+type iterDirentsCb struct {
+	dirents []vfs.Dirent
+}
+
+// Compiles only if iterDirentCb implements vfs.IterDirentsCallback.
+var _ vfs.IterDirentsCallback = (*iterDirentsCb)(nil)
+
+// newIterDirentsCb is the iterDirent
+func newIterDirentCb() *iterDirentsCb {
+	return &iterDirentsCb{dirents: make([]vfs.Dirent, 0)}
+}
+
+// Handle implements vfs.IterDirentsCallback.Handle.
+func (cb *iterDirentsCb) Handle(dirent vfs.Dirent) bool {
+	cb.dirents = append(cb.dirents, dirent)
+	return true
+}
+
+// TestIterDirents tests the FileDescriptionImpl.IterDirents functionality.
+func TestIterDirents(t *testing.T) {
+	type iterDirentTest struct {
+		name  string
+		image string
+		path  string
+		want  []vfs.Dirent
+	}
+
+	wantDirents := []vfs.Dirent{
+		vfs.Dirent{
+			Name: ".",
+			Type: linux.DT_DIR,
+		},
+		vfs.Dirent{
+			Name: "..",
+			Type: linux.DT_DIR,
+		},
+		vfs.Dirent{
+			Name: "lost+found",
+			Type: linux.DT_DIR,
+		},
+		vfs.Dirent{
+			Name: "file.txt",
+			Type: linux.DT_REG,
+		},
+		vfs.Dirent{
+			Name: "bigfile.txt",
+			Type: linux.DT_REG,
+		},
+		vfs.Dirent{
+			Name: "symlink.txt",
+			Type: linux.DT_LNK,
+		},
+	}
+	tests := []iterDirentTest{
+		{
+			name:  "ext4 root dir iteration",
+			image: ext4ImagePath,
+			path:  "/",
+			want:  wantDirents,
+		},
+		{
+			name:  "ext3 root dir iteration",
+			image: ext3ImagePath,
+			path:  "/",
+			want:  wantDirents,
+		},
+		{
+			name:  "ext2 root dir iteration",
+			image: ext2ImagePath,
+			path:  "/",
+			want:  wantDirents,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, vfsfs, root, tearDown, err := setUp(t, test.image)
+			if err != nil {
+				t.Fatalf("setUp failed: %v", err)
+			}
+			defer tearDown()
+
+			fd, err := vfsfs.OpenAt(
+				ctx,
+				auth.CredentialsFromContext(ctx),
+				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.OpenOptions{},
+			)
+			if err != nil {
+				t.Fatalf("vfsfs.OpenAt failed: %v", err)
+			}
+
+			cb := &iterDirentsCb{}
+			if err = fd.Impl().IterDirents(ctx, cb); err != nil {
+				t.Fatalf("dir fd.IterDirents() failed: %v", err)
+			}
+
+			sort.Slice(cb.dirents, func(i int, j int) bool { return cb.dirents[i].Name < cb.dirents[j].Name })
+			sort.Slice(test.want, func(i int, j int) bool { return test.want[i].Name < test.want[j].Name })
+
+			// Ignore the inode number and offset of dirents because those are likely to
+			// change as the underlying image changes.
+			cmpIgnoreFields := cmp.FilterPath(func(p cmp.Path) bool {
+				return p.String() == "Ino" || p.String() == "Off"
+			}, cmp.Ignore())
+			if diff := cmp.Diff(cb.dirents, test.want, cmpIgnoreFields); diff != "" {
+				t.Errorf("dirents mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 // TestRootDir tests that the root directory inode is correctly initialized and
