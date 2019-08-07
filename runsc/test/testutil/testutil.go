@@ -189,11 +189,14 @@ func SetupRootDir() (string, error) {
 // SetupContainer creates a bundle and root dir for the container, generates a
 // test config, and writes the spec to config.json in the bundle dir.
 func SetupContainer(spec *specs.Spec, conf *boot.Config) (rootDir, bundleDir string, err error) {
-	rootDir, err = SetupRootDir()
-	if err != nil {
-		return "", "", err
+	// Setup root dir if one hasn't been provided.
+	if len(conf.RootDir) == 0 {
+		rootDir, err = SetupRootDir()
+		if err != nil {
+			return "", "", err
+		}
+		conf.RootDir = rootDir
 	}
-	conf.RootDir = rootDir
 	bundleDir, err = SetupBundleDir(spec)
 	return rootDir, bundleDir, err
 }
