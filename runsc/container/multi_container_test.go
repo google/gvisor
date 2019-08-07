@@ -60,11 +60,14 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 }
 
 func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating root dir: %v", err)
+	// Setup root dir if one hasn't been provided.
+	if len(conf.RootDir) == 0 {
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			return nil, nil, fmt.Errorf("error creating root dir: %v", err)
+		}
+		conf.RootDir = rootDir
 	}
-	conf.RootDir = rootDir
 
 	var containers []*Container
 	var bundles []string
@@ -75,7 +78,7 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		for _, b := range bundles {
 			os.RemoveAll(b)
 		}
-		os.RemoveAll(rootDir)
+		os.RemoveAll(conf.RootDir)
 	}
 	for i, spec := range specs {
 		bundleDir, err := testutil.SetupBundleDir(spec)
@@ -1421,5 +1424,64 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 		if _, err := c.executeSync(args); err == nil {
 			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
+	}
+}
+
+func TestMultiContainerLoadSandbox(t *testing.T) {
+	sleep := []string{"sleep", "100"}
+	specs, ids := createSpecs(sleep, sleep, sleep)
+	conf := testutil.TestConfig()
+
+	// Create containers for the sandbox.
+	wants, cleanup, err := startContainers(conf, specs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Then create unrelated containers.
+	for i := 0; i < 3; i++ {
+		specs, ids = createSpecs(sleep, sleep, sleep)
+		_, cleanup, err = startContainers(conf, specs, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+	}
+
+	// Create an unrelated directory under root.
+	dir := filepath.Join(conf.RootDir, "not-a-container")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(%q)=%v", dir, err)
+	}
+
+	// Create a valid but empty container directory.
+	randomCID := testutil.UniqueContainerID()
+	dir = filepath.Join(conf.RootDir, randomCID)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("os.MkdirAll(%q)=%v", dir, err)
+	}
+
+	// Load the sandbox and check that the correct containers were returned.
+	id := wants[0].Sandbox.ID
+	gots, err := loadSandbox(conf.RootDir, id)
+	if err != nil {
+		t.Fatalf("loadSandbox()=%v", err)
+	}
+	wantIDs := make(map[string]struct{})
+	for _, want := range wants {
+		wantIDs[want.ID] = struct{}{}
+	}
+	for _, got := range gots {
+		if got.Sandbox.ID != id {
+			t.Errorf("wrong sandbox ID, got: %v, want: %v", got.Sandbox.ID, id)
+		}
+		if _, ok := wantIDs[got.ID]; !ok {
+			t.Errorf("wrong container ID, got: %v, wants: %v", got.ID, wantIDs)
+		}
+		delete(wantIDs, got.ID)
+	}
+	if len(wantIDs) != 0 {
+		t.Errorf("containers not found: %v", wantIDs)
 	}
 }
