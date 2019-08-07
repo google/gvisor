@@ -167,6 +167,10 @@ type MemoryFile struct {
 	// usedCache indicates the current size of used page cache
 	usedCache uint64
 
+	// pressured is set to true is current cgroup memory is under pressure.
+	// Only valid if UseHostMemcgPressure is set to true
+	pressured bool
+
 	// stopNotifyPressure stops memory cgroup pressure level
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.
@@ -320,6 +324,8 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 			f.mu.Lock()
 			startedAny := f.startEvictionsLocked()
 			f.mu.Unlock()
+			// trigger many rounds of reclaimation in LruManager if necessary
+			f.pressured = true
 			if startedAny {
 				log.Debugf("pgalloc.MemoryFile performing evictions due to memcg pressure")
 			}
@@ -379,6 +385,14 @@ func (f *MemoryFile) AccountCacheDrop(delta uint64) {
 func (f *MemoryFile) AccountCacheGet() uint64 {
 	// TODO. perhaps atomic load?
 	return f.usedCache
+}
+
+func (f *MemoryFile) CheckMemoryPressure() bool {
+	return f.pressured
+}
+
+func (f *MemoryFile) ResetMemoryPressure() {
+	f.pressured = false
 }
 
 // Destroy releases all resources used by f.

@@ -43,6 +43,8 @@ type LruManager struct {
 	length [LRU_LIST_NUM]int
         mappings map[uint64]*LruEntry
         lruMu sync.RWMutex
+
+	f *pgalloc.MemoryFile
 }
 
 func NewLruEntry(fr platform.FileRange, mr memmap.MappableRange, c *CachingInodeOperations) *LruEntry {
@@ -70,6 +72,7 @@ func NewLruManager(interval time.Duration, f *pgalloc.MemoryFile) *LruManager {
 		destroyed: false,
 		forceReclaim: false,
 		mappings: make(map[uint64]*LruEntry),
+		f: f,
 	}
 	for i := 0; i < LRU_LIST_NUM; i++ {
 		lru.lists[i].Reset()
@@ -175,9 +178,11 @@ func (m *LruManager) run(interval time.Duration) {
 	// TODO. aribitrarily chosen
 	maxHarvest := 64
 	for !m.destroyed {
-		if m.forceReclaim {
+		if m.forceReclaim || m.f.CheckMemoryPressure() {
 			m.forceReclaim = false
+			m.f.ResetMemoryPressure()
 			m.doReclaim(maxHarvest << 1)
+			// do as many rounds of reclaimation under memory pressure
 			continue
 		}
 
