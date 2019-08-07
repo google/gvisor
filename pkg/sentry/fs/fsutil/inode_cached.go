@@ -570,10 +570,30 @@ type inodeReadWriter struct {
 	offset int64
 }
 
+// Boundary of mr should be page-aligned already
+func (rw *inodeReadWriter) readAheadSync(required,optional memmap.MappableRange) error {
+	rw.c.dataMu.RUnlock()
+	rw.c.dataMu.Lock()
+	seg, _ := rw.c.cache.Find(uint64(rw.offset))
+	if seg.Ok() {
+		rw.c.dataMu.DowngradeLock()
+		return nil
+	}
+
+	mem := rw.c.mfp.MemoryFile()
+	required = maxFillRange(required, optional)
+	if err := rw.c.cache.Fill(rw.ctx, required, required, mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt); err != nil && err != io.EOF {
+		rw.c.dataMu.DowngradeLock()
+		return err
+	}
+	rw.c.dataMu.DowngradeLock()
+	return nil
+}
+
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	mem := rw.c.mfp.MemoryFile()
-	fillCache := !rw.c.useHostPageCache() && mem.ShouldCacheEvictable()
+	fillCache := !rw.c.useHostPageCache() && mem.ShouldCacheEvictable() && !AggressiveCache
 
 	// Hot path. Avoid defers.
 	var unlock func()
@@ -628,7 +648,19 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 
 		case gap.Ok():
 			gapMR := gap.Range().Intersect(mr)
-			if fillCache {
+			if AggressiveCache {
+				reqMR := memmap.MappableRange{
+					Start: uint64(usermem.Addr(gapMR.Start).RoundDown()),
+					End:   fs.OffsetPageEnd(int64(gapMR.End)),
+				}
+				optMR := gap.Range()
+				err := rw.readAheadSync(reqMR, optMR)
+				seg, gap = rw.c.cache.Find(uint64(rw.offset))
+				if !seg.Ok() {
+					unlock()
+					return done, err
+				}
+			} else if fillCache {
 				// Read into the cache, then re-enter the loop to read from the
 				// cache.
 				reqMR := memmap.MappableRange{
