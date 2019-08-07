@@ -32,6 +32,7 @@ type LruEntry struct {
 
 type LruManager struct {
 	destroyed bool
+	forceReclaim bool
 
 	// LRULists store the current file ranges consumed by all the files
         // with the minimum granularity of 4K
@@ -67,6 +68,7 @@ func NewLruManager(interval time.Duration, f *pgalloc.MemoryFile) *LruManager {
 	mgrMu.Lock()
 	lru := &LruManager {
 		destroyed: false,
+		forceReclaim: false,
 		mappings: make(map[uint64]*LruEntry),
 	}
 	for i := 0; i < LRU_LIST_NUM; i++ {
@@ -125,6 +127,10 @@ func (m *LruManager) shrinkInactiveListLocked(maxHarvest int) (*ilist.List, int)
 	return &out, reclaimed
 }
 
+func (m *LruManager) Kick() {
+	m.forceReclaim = true
+}
+
 func (m *LruManager) doReclaim(maxHarvest int) {
 	m.lruMu.Lock()
 	active, reclaimedActive := m.shrinkActiveListLocked(maxHarvest)
@@ -146,6 +152,7 @@ func (m *LruManager) doReclaim(maxHarvest int) {
 		err := SyncDirty(context.Background(), le.mr, &c.cache, &c.dirty, uint64(c.attr.Size), c.mfp.MemoryFile(), c.backingFile.WriteFromBlocksAt)
 		if err == nil {
 			c.cache.Drop(le.mr, c.mfp.MemoryFile())
+			c.mfp.MemoryFile().AccountCacheDrop(le.mr.Length())
 		} else {
 			backup.PushBack(e)
 		}
@@ -168,6 +175,12 @@ func (m *LruManager) run(interval time.Duration) {
 	// TODO. aribitrarily chosen
 	maxHarvest := 64
 	for !m.destroyed {
+		if m.forceReclaim {
+			m.forceReclaim = false
+			m.doReclaim(maxHarvest << 1)
+			continue
+		}
+
 		select {
 		case <- ticker.C:
 			m.doReclaim(maxHarvest)

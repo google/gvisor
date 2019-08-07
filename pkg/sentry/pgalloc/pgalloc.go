@@ -164,6 +164,9 @@ type MemoryFile struct {
 	// evictionWG counts the number of goroutines currently performing evictions.
 	evictionWG sync.WaitGroup
 
+	// usedCache indicates the current size of used page cache
+	usedCache uint64
+
 	// stopNotifyPressure stops memory cgroup pressure level
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.
@@ -363,6 +366,19 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	}
 
 	return f, nil
+}
+
+func (f *MemoryFile) AccountCacheAdd(delta uint64) {
+	atomic.AddUint64(&f.usedCache, delta)
+}
+
+func (f *MemoryFile) AccountCacheDrop(delta uint64) {
+	atomic.AddUint64(&f.usedCache, ^uint64(delta-1))
+}
+
+func (f *MemoryFile) AccountCacheGet() uint64 {
+	// TODO. perhaps atomic load?
+	return f.usedCache
 }
 
 // Destroy releases all resources used by f.

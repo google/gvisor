@@ -588,6 +588,18 @@ type inodeReadWriter struct {
 	offset int64
 }
 
+func hasAggressiveCache(c *CachingInodeOperations, size uint64) bool {
+	if !AggressiveCache || CacheCapacity < usermem.PageSize {
+		return false
+	}
+
+	mem := c.mfp.MemoryFile()
+	if mem.AccountCacheGet() * 9 > CacheCapacity * 10 {
+		c.lruMgr.Kick()
+	}
+	return mem.AccountCacheGet() + size <= CacheCapacity
+}
+
 func (c *CachingInodeOperations) addCacheLru(mr memmap.MappableRange) {
 	seg, _ := c.cache.Find(mr.Start)
 	if !seg.Ok() {
@@ -596,12 +608,14 @@ func (c *CachingInodeOperations) addCacheLru(mr memmap.MappableRange) {
 	fr := seg.FileRangeOf(seg.Range().Intersect(mr))
 	// Tracking granularity ranges from [usermem.PageSize, usermem.HugePageSize], page aligned
 	start := fr.Start &^ (usermem.HugePageSize - 1)
+	mem := c.mfp.MemoryFile()
         for start < fr.End {
 		frCur := platform.FileRange{start, start + usermem.HugePageSize}.Intersect(fr)
 		mr.End = mr.Start + frCur.Length()
 
 		e := NewLruEntry(frCur, mr, c)
 		c.lruMgr.Insert(e)
+		mem.AccountCacheAdd(frCur.Length())
 		// mr reside within one seg, therefore no need to search for next seg
 		start += usermem.HugePageSize
 		mr.Start += frCur.Length()
@@ -687,7 +701,7 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 
 		case gap.Ok():
 			gapMR := gap.Range().Intersect(mr)
-			if AggressiveCache {
+			if hasAggressiveCache(rw.c, fs.OffsetPageEnd(int64(gapMR.End)) - uint64(usermem.Addr(gapMR.Start).RoundDown())) {
 				reqMR := memmap.MappableRange{
 					Start: uint64(usermem.Addr(gapMR.Start).RoundDown()),
 					End:   fs.OffsetPageEnd(int64(gapMR.End)),
@@ -944,6 +958,7 @@ func (c *CachingInodeOperations) Translate(ctx context.Context, required, option
 
 	mf := c.mfp.MemoryFile()
 	cerr := c.cache.Fill(ctx, required, maxFillRange(required, optional), mf, usage.PageCache, c.backingFile.ReadToBlocksAt)
+	c.addCacheLru(required)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64
@@ -1045,6 +1060,7 @@ func (c *CachingInodeOperations) Evict(ctx context.Context, er pgalloc.Evictable
 			log.Warningf("Failed to writeback cached data %v: %v", mgapMR, err)
 		}
 		c.cache.Drop(mgapMR, mf)
+		c.mfp.MemoryFile().AccountCacheDrop(mgapMR.Length())
 		c.dirty.KeepClean(mgapMR)
 	}
 }
