@@ -11,8 +11,8 @@ go_template_instance(
     prefix = "dentry",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*Dentry",
-        "Linker": "*Dentry",
+        "Element": "*dentry",
+        "Linker": "*dentry",
     },
 )
 
