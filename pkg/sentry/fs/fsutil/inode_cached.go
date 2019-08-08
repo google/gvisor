@@ -38,6 +38,19 @@ import (
 var AggressiveCache bool
 var CacheCapacity uint64
 
+type ReadAhead struct {
+	// cur is the current position
+	cur  uint64
+	// size is the current readahead window size
+	size uint64
+	// marker indicates the time point of next async readahead
+	marker uint64
+	// maxReadAhead is the max size of readahead window
+	maxReadAhead uint64
+	// disabled is set to true if we don't want readahead at all
+	disabled bool
+}
+
 // Lock order (compare the lock order model in mm/mm.go):
 //
 // CachingInodeOperations.attrMu ("fs locks")
@@ -132,6 +145,8 @@ type CachingInodeOperations struct {
 	//
 	// pdf takes care of concurrent operations internally
 	pdf *PeriodicFlusher
+
+	ra *ReadAhead
 }
 
 // CachedFileObject is a file that may require caching.
@@ -175,6 +190,83 @@ type CachedFileObject interface {
 	FD() int
 }
 
+func newReadAhead(size uint64, disabled bool) *ReadAhead {
+	return &ReadAhead {
+		maxReadAhead: size,
+		disabled: disabled,
+	}
+}
+
+func initReadAheadSize(mr memmap.MappableRange, maxReadAhead uint64) uint64 {
+	size := mr.Length()
+	if size <= usermem.PageSize {
+		return usermem.PageSize
+	}
+
+	var bit uint64
+	for bit = 63; bit >= 0; bit-- {
+		if ((size - 1) & (1 << bit)) != 0 {
+			break
+		}
+	}
+	if bit == 63 {
+		return 1 << 63
+	}
+	size = 1 << (bit + 1)
+	if size < (maxReadAhead >> 5) {
+		size <<= 2
+	} else if size < (maxReadAhead >> 2) {
+		size <<= 1
+	} else {
+		size = maxReadAhead;
+	}
+	return size
+}
+
+func getNextReadAheadSize(ra *ReadAhead, maxReadAhead uint64) uint64 {
+	size := ra.size
+	if size < (maxReadAhead >> 4) {
+		size <<= 2
+	} else if size < (maxReadAhead >> 1) {
+		size <<= 1
+	} else {
+		size = maxReadAhead
+	}
+	return size
+}
+
+func (ra *ReadAhead) resetWindow(mr memmap.MappableRange) {
+	mr.Start = uint64(usermem.Addr(mr.Start).RoundDown())
+	mr.End = fs.OffsetPageEnd(int64(mr.End))
+
+	ra.cur = mr.Start
+	ra.marker = 0
+	ra.size = initReadAheadSize(mr, ra.maxReadAhead)
+}
+
+// updateWindow updates readahead window based on current status and desired mr
+// return true: if windows updated
+// return false: if window unaffected because of possible small random read
+func (ra *ReadAhead) updateWindow(mr memmap.MappableRange) bool {
+	mr.Start = uint64(usermem.Addr(mr.Start).RoundDown())
+	mr.End = fs.OffsetPageEnd(int64(mr.End))
+
+	if mr.Start == 0 || mr.Start > ra.cur + ra.size {
+		ra.resetWindow(mr)
+		return true
+	}
+	if  mr.Start == ra.cur + ra.size {
+		// Assume sequential read, ramp up size and push the window
+		ra.cur += ra.size
+		ra.marker = ra.cur
+		ra.size = getNextReadAheadSize(ra, ra.maxReadAhead)
+		return true
+	}
+
+	// Assume small random read, window unaffected
+	return false
+}
+
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by
 // a CachedFileObject and its initial unstable attributes.
 func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, forcePageCache bool) *CachingInodeOperations {
@@ -190,6 +282,7 @@ func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject
 		hostFileMapper: NewHostFileMapper(),
 		lruMgr:         NewLruManager(30 * gotime.Second, mfp.MemoryFile()),
 		pdf:            NewPeriodicFlusher(30 * gotime.Second),
+		ra:             newReadAhead(64 << 10, false),
 	}
 	c.pdf.Attach(c)
 	return c
@@ -641,13 +734,56 @@ func (rw *inodeReadWriter) readAheadSync(required,optional memmap.MappableRange)
 		return nil
 	}
 
+	ra := rw.c.ra
+	if ra.updateWindow(required) {
+		required = memmap.MappableRange{ra.cur, ra.cur + ra.size}
+	}
+	required = required.Intersect(optional)
 	mem := rw.c.mfp.MemoryFile()
-	required = maxFillRange(required, optional)
 	if err := rw.c.cache.Fill(rw.ctx, required, required, mem, usage.PageCache, rw.c.backingFile.ReadToBlocksAt); err != nil && err != io.EOF {
 		rw.c.dataMu.DowngradeLock()
 		return err
 	}
 	rw.c.addCacheLru(required)
+	rw.c.dataMu.DowngradeLock()
+	return nil
+}
+
+func containMarker(mr memmap.MappableRange, addr uint64) bool {
+	return mr.Start <= addr + usermem.PageSize && mr.End > addr
+}
+
+func (rw *inodeReadWriter) readAheadAsync(mr memmap.MappableRange) error {
+	mr.Start = uint64(usermem.Addr(mr.Start).RoundDown())
+	mr.End = fs.OffsetPageEnd(int64(mr.End))
+	// If address does not fall into readahead window, or does not hit marker, or readahead is disabled,
+	// avoid readahead
+	if !hasAggressiveCache(rw.c, mr.Length()) || mr.End < rw.c.ra.cur || !containMarker(mr, rw.c.ra.marker) || rw.c.ra.disabled {
+		return nil
+	}
+
+	rw.c.dataMu.RUnlock()
+	rw.c.dataMu.Lock()
+
+	if !rw.c.ra.updateWindow(mr) {
+		rw.c.dataMu.DowngradeLock()
+		return nil
+	}
+
+	window := memmap.MappableRange{rw.c.ra.cur, rw.c.ra.cur + rw.c.ra.size}
+	seg, _ := rw.c.cache.Find(window.Start)
+	if seg.Ok() {
+		rw.c.dataMu.DowngradeLock()
+		return nil
+	}
+
+	if err := rw.c.cache.Fill(rw.ctx, window, window, rw.c.mfp.MemoryFile(), usage.PageCache, rw.c.backingFile.ReadToBlocksAt); err != nil && err != io.EOF {
+		rw.c.dataMu.DowngradeLock()
+		return err
+	}
+
+	rw.c.ra.marker = window.Start
+	rw.c.addCacheLru(window)
 	rw.c.dataMu.DowngradeLock()
 	return nil
 }
@@ -695,6 +831,9 @@ func (rw *inodeReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 				return done, err
 			}
 
+			if err := rw.readAheadAsync(seg.Range().Intersect(mr)); err != nil {
+				return done, err
+			}
 			// Copy from internal mappings.
 			n, err := safemem.CopySeq(dsts, ims)
 			done += n
