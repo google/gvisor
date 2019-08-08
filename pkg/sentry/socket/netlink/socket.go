@@ -271,7 +271,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 }
 
 // Accept implements socket.Socket.Accept.
-func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error) {
+func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error) {
 	// Netlink sockets never support accept.
 	return 0, nil, 0, syserr.ErrNotSupported
 }
@@ -379,11 +379,11 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 }
 
 // GetSockName implements socket.Socket.GetSockName.
-func (s *Socket) GetSockName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
+func (s *Socket) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sa := linux.SockAddrNetlink{
+	sa := &linux.SockAddrNetlink{
 		Family: linux.AF_NETLINK,
 		PortID: uint32(s.portID),
 	}
@@ -391,8 +391,8 @@ func (s *Socket) GetSockName(t *kernel.Task) (interface{}, uint32, *syserr.Error
 }
 
 // GetPeerName implements socket.Socket.GetPeerName.
-func (s *Socket) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
-	sa := linux.SockAddrNetlink{
+func (s *Socket) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
+	sa := &linux.SockAddrNetlink{
 		Family: linux.AF_NETLINK,
 		// TODO(b/68878065): Support non-kernel peers. For now the peer
 		// must be the kernel.
@@ -402,8 +402,8 @@ func (s *Socket) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error
 }
 
 // RecvMsg implements socket.Socket.RecvMsg.
-func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, interface{}, uint32, socket.ControlMessages, *syserr.Error) {
-	from := linux.SockAddrNetlink{
+func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
+	from := &linux.SockAddrNetlink{
 		Family: linux.AF_NETLINK,
 		PortID: 0,
 	}

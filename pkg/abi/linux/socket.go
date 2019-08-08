@@ -267,6 +267,20 @@ type SockAddrUnix struct {
 	Path   [UnixPathMax]int8
 }
 
+// SockAddr represents a union of valid socket address types. This is logically
+// equivalent to struct sockaddr. SockAddr ensures that a well-defined set of
+// types can be used as socket addresses.
+type SockAddr interface {
+	// implementsSockAddr exists purely to allow a type to indicate that they
+	// implement this interface. This method is a no-op and shouldn't be called.
+	implementsSockAddr()
+}
+
+func (s *SockAddrInet) implementsSockAddr()    {}
+func (s *SockAddrInet6) implementsSockAddr()   {}
+func (s *SockAddrUnix) implementsSockAddr()    {}
+func (s *SockAddrNetlink) implementsSockAddr() {}
+
 // Linger is struct linger, from include/linux/socket.h.
 type Linger struct {
 	OnOff  int32
