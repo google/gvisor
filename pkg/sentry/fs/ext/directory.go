@@ -217,7 +217,9 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	defer dir.mu.Unlock()
 
 	// Find resulting offset.
-	offset += fd.off
+	if whence == linux.SEEK_CUR {
+		offset += fd.off
+	}
 
 	if offset < 0 {
 		// lseek(2) specifies that EINVAL should be returned if the resulting offset

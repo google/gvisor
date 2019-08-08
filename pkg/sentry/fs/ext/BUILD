@@ -78,6 +78,7 @@ go_test(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
+        "//pkg/syserror",
         "//runsc/test/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
