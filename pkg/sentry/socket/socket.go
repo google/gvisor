@@ -20,8 +20,10 @@ package socket
 import (
 	"fmt"
 	"sync/atomic"
+	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -52,7 +54,7 @@ type Socket interface {
 	// Accept implements the accept4(2) linux syscall.
 	// Returns fd, real peer address length and error. Real peer address
 	// length is only set if len(peer) > 0.
-	Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, interface{}, uint32, *syserr.Error)
+	Accept(t *kernel.Task, peerRequested bool, flags int, blocking bool) (int32, linux.SockAddr, uint32, *syserr.Error)
 
 	// Bind implements the bind(2) linux syscall.
 	Bind(t *kernel.Task, sockaddr []byte) *syserr.Error
@@ -73,13 +75,13 @@ type Socket interface {
 	//
 	// addrLen is the address length to be returned to the application, not
 	// necessarily the actual length of the address.
-	GetSockName(t *kernel.Task) (addr interface{}, addrLen uint32, err *syserr.Error)
+	GetSockName(t *kernel.Task) (addr linux.SockAddr, addrLen uint32, err *syserr.Error)
 
 	// GetPeerName implements the getpeername(2) linux syscall.
 	//
 	// addrLen is the address length to be returned to the application, not
 	// necessarily the actual length of the address.
-	GetPeerName(t *kernel.Task) (addr interface{}, addrLen uint32, err *syserr.Error)
+	GetPeerName(t *kernel.Task) (addr linux.SockAddr, addrLen uint32, err *syserr.Error)
 
 	// RecvMsg implements the recvmsg(2) linux syscall.
 	//
@@ -92,7 +94,7 @@ type Socket interface {
 	// msgFlags. In that case, the caller should set MSG_CTRUNC appropriately.
 	//
 	// If err != nil, the recv was not successful.
-	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr interface{}, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
+	RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlDataLen uint64) (n int, msgFlags int, senderAddr linux.SockAddr, senderAddrLen uint32, controlMessages ControlMessages, err *syserr.Error)
 
 	// SendMsg implements the sendmsg(2) linux syscall. SendMsg does not take
 	// ownership of the ControlMessage on error.
@@ -338,5 +340,33 @@ func emitUnimplementedEvent(t *kernel.Task, name int) {
 		linux.SO_ZEROCOPY:
 
 		t.Kernel().EmitUnimplementedEvent(t)
+	}
+}
+
+// UnmarshalSockAddr unmarshals memory representing a struct sockaddr to one of
+// the ABI socket address types.
+//
+// Precondition: data must be long enough to represent a socket address of the
+// given family.
+func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
+	switch family {
+	case syscall.AF_INET:
+		var addr linux.SockAddrInet
+		binary.Unmarshal(data[:syscall.SizeofSockaddrInet4], usermem.ByteOrder, &addr)
+		return &addr
+	case syscall.AF_INET6:
+		var addr linux.SockAddrInet6
+		binary.Unmarshal(data[:syscall.SizeofSockaddrInet6], usermem.ByteOrder, &addr)
+		return &addr
+	case syscall.AF_UNIX:
+		var addr linux.SockAddrUnix
+		binary.Unmarshal(data[:syscall.SizeofSockaddrUnix], usermem.ByteOrder, &addr)
+		return &addr
+	case syscall.AF_NETLINK:
+		var addr linux.SockAddrNetlink
+		binary.Unmarshal(data[:syscall.SizeofSockaddrNetlink], usermem.ByteOrder, &addr)
+		return &addr
+	default:
+		panic(fmt.Sprintf("Unsupported socket family %v", family))
 	}
 }

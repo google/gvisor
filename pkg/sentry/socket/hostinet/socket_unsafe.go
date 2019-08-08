@@ -18,10 +18,12 @@ import (
 	"syscall"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -91,25 +93,25 @@ func getsockopt(fd int, level, name int, optlen int) ([]byte, error) {
 }
 
 // GetSockName implements socket.Socket.GetSockName.
-func (s *socketOperations) GetSockName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
+func (s *socketOperations) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := syscall.Syscall(syscall.SYS_GETSOCKNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
-	return addr[:addrlen], addrlen, nil
+	return socket.UnmarshalSockAddr(s.family, addr), addrlen, nil
 }
 
 // GetPeerName implements socket.Socket.GetPeerName.
-func (s *socketOperations) GetPeerName(t *kernel.Task) (interface{}, uint32, *syserr.Error) {
+func (s *socketOperations) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, *syserr.Error) {
 	addr := make([]byte, sizeofSockaddr)
 	addrlen := uint32(len(addr))
 	_, _, errno := syscall.Syscall(syscall.SYS_GETPEERNAME, uintptr(s.fd), uintptr(unsafe.Pointer(&addr[0])), uintptr(unsafe.Pointer(&addrlen)))
 	if errno != 0 {
 		return nil, 0, syserr.FromError(errno)
 	}
-	return addr[:addrlen], addrlen, nil
+	return socket.UnmarshalSockAddr(s.family, addr), addrlen, nil
 }
 
 func recvfrom(fd int, dst []byte, flags int, from *[]byte) (uint64, error) {

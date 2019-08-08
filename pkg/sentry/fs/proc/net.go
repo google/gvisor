@@ -348,7 +348,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		// Field: local_adddress.
 		var localAddr linux.SockAddrInet
 		if local, _, err := sops.GetSockName(t); err == nil {
-			localAddr = local.(linux.SockAddrInet)
+			localAddr = *local.(*linux.SockAddrInet)
 		}
 		binary.LittleEndian.PutUint16(portBuf, localAddr.Port)
 		fmt.Fprintf(&buf, "%08X:%04X ",
@@ -358,7 +358,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		// Field: rem_address.
 		var remoteAddr linux.SockAddrInet
 		if remote, _, err := sops.GetPeerName(t); err == nil {
-			remoteAddr = remote.(linux.SockAddrInet)
+			remoteAddr = *remote.(*linux.SockAddrInet)
 		}
 		binary.LittleEndian.PutUint16(portBuf, remoteAddr.Port)
 		fmt.Fprintf(&buf, "%08X:%04X ",
