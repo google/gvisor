@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
@@ -80,6 +81,181 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 		}
 	}
 	return ctx, vfsObj, &root, tearDown, nil
+}
+
+// TestStatAt tests filesystem.StatAt functionality.
+func TestStatAt(t *testing.T) {
+	type statAtTest struct {
+		name  string
+		image string
+		path  string
+		want  linux.Statx
+	}
+
+	tests := []statAtTest{
+		{
+			name:  "ext4 statx small file",
+			image: ext4ImagePath,
+			path:  "/file.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13,
+			},
+		},
+		{
+			name:  "ext3 statx small file",
+			image: ext3ImagePath,
+			path:  "/file.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13,
+			},
+		},
+		{
+			name:  "ext2 statx small file",
+			image: ext2ImagePath,
+			path:  "/file.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13,
+			},
+		},
+		{
+			name:  "ext4 statx big file",
+			image: ext4ImagePath,
+			path:  "/bigfile.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13042,
+			},
+		},
+		{
+			name:  "ext3 statx big file",
+			image: ext3ImagePath,
+			path:  "/bigfile.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13042,
+			},
+		},
+		{
+			name:  "ext2 statx big file",
+			image: ext2ImagePath,
+			path:  "/bigfile.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0644 | linux.ModeRegular,
+				Size:    13042,
+			},
+		},
+		{
+			name:  "ext4 statx symlink file",
+			image: ext4ImagePath,
+			path:  "/symlink.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0777 | linux.ModeSymlink,
+				Size:    8,
+			},
+		},
+		{
+			name:  "ext3 statx symlink file",
+			image: ext3ImagePath,
+			path:  "/symlink.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0777 | linux.ModeSymlink,
+				Size:    8,
+			},
+		},
+		{
+			name:  "ext2 statx symlink file",
+			image: ext2ImagePath,
+			path:  "/symlink.txt",
+			want: linux.Statx{
+				Blksize: 0x400,
+				Nlink:   1,
+				UID:     0,
+				GID:     0,
+				Mode:    0777 | linux.ModeSymlink,
+				Size:    8,
+			},
+		},
+	}
+
+	// Ignore the fields that are not supported by filesystem.StatAt yet and
+	// those which are likely to change as the image does.
+	ignoredFields := map[string]bool{
+		"Attributes":     true,
+		"AttributesMask": true,
+		"Atime":          true,
+		"Blocks":         true,
+		"Btime":          true,
+		"Ctime":          true,
+		"DevMajor":       true,
+		"DevMinor":       true,
+		"Ino":            true,
+		"Mask":           true,
+		"Mtime":          true,
+		"RdevMajor":      true,
+		"RdevMinor":      true,
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, vfsfs, root, tearDown, err := setUp(t, test.image)
+			if err != nil {
+				t.Fatalf("setUp failed: %v", err)
+			}
+			defer tearDown()
+
+			got, err := vfsfs.StatAt(ctx,
+				auth.CredentialsFromContext(ctx),
+				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.StatOptions{},
+			)
+			if err != nil {
+				t.Fatalf("vfsfs.StatAt failed for file %s in image %s: %v", test.path, test.image, err)
+			}
+
+			cmpIgnoreFields := cmp.FilterPath(func(p cmp.Path) bool {
+				_, ok := ignoredFields[p.String()]
+				return ok
+			}, cmp.Ignore())
+			if diff := cmp.Diff(got, test.want, cmpIgnoreFields, cmpopts.IgnoreUnexported(linux.Statx{})); diff != "" {
+				t.Errorf("stat mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 // TestRead tests the read functionality for vfs file descriptions.
