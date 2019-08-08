@@ -92,3 +92,7 @@ func (s *TestStack) Statistics(stat interface{}, arg string) error {
 func (s *TestStack) RouteTable() []Route {
 	return s.RouteList
 }
+
+// Resume implements Stack.Resume.
+func (s *TestStack) Resume() {
+}

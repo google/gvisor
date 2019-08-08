@@ -329,3 +329,6 @@ func (s *Stack) Statistics(stat interface{}, arg string) error {
 func (s *Stack) RouteTable() []inet.Route {
 	return append([]inet.Route(nil), s.routes...)
 }
+
+// Resume implements inet.Stack.Resume.
+func (s *Stack) Resume() {}

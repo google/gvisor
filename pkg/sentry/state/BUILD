@@ -16,6 +16,7 @@ go_library(
         "//pkg/log",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/time",
         "//pkg/sentry/watchdog",
         "//pkg/state/statefile",
         "//pkg/syserror",

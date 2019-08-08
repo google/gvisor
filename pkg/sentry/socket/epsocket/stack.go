@@ -201,3 +201,8 @@ func (s *Stack) IPTables() (iptables.IPTables, error) {
 func (s *Stack) FillDefaultIPTables() error {
 	return netfilter.FillDefaultIPTables(s.Stack)
 }
+
+// Resume implements inet.Stack.Resume.
+func (s *Stack) Resume() {
+	s.Stack.Resume()
+}
