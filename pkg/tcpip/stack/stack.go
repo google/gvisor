@@ -334,6 +334,15 @@ type TCPEndpointState struct {
 	Sender TCPSenderState
 }
 
+// ResumableEndpoint is an endpoint that needs to be resumed after restore.
+type ResumableEndpoint interface {
+	// Resume resumes an endpoint after restore. This can be used to restart
+	// background workers such as protocol goroutines. This must be called after
+	// all indirect dependencies of the endpoint has been restored, which
+	// generally implies at the end of the restore process.
+	Resume(*Stack)
+}
+
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
 type Stack struct {
@@ -376,6 +385,10 @@ type Stack struct {
 
 	// tables are the iptables packet filtering and manipulation rules.
 	tables iptables.IPTables
+
+	// resumableEndpoints is a list of endpoints that need to be resumed if the
+	// stack is being restored.
+	resumableEndpoints []ResumableEndpoint
 }
 
 // Options contains optional Stack configuration.
@@ -1088,6 +1101,28 @@ func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip
 	nic := s.nics[nicID]
 	if nic != nil {
 		nic.demux.unregisterRawEndpoint(netProto, transProto, ep)
+	}
+}
+
+// RegisterRestoredEndpoint records e as an endpoint that has been restored on
+// this stack.
+func (s *Stack) RegisterRestoredEndpoint(e ResumableEndpoint) {
+	s.mu.Lock()
+	s.resumableEndpoints = append(s.resumableEndpoints, e)
+	s.mu.Unlock()
+}
+
+// Resume restarts the stack after a restore. This must be called after the
+// entire system has been restored.
+func (s *Stack) Resume() {
+	// ResumableEndpoint.Resume() may call other methods on s, so we can't hold
+	// s.mu while resuming the endpoints.
+	s.mu.Lock()
+	eps := s.resumableEndpoints
+	s.resumableEndpoints = nil
+	s.mu.Unlock()
+	for _, e := range eps {
+		e.Resume(s)
 	}
 }
 
