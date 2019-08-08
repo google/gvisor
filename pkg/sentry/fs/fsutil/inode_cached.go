@@ -240,26 +240,34 @@ func (ra *ReadAhead) resetWindow(mr memmap.MappableRange) {
 	mr.End = fs.OffsetPageEnd(int64(mr.End))
 
 	ra.cur = mr.Start
-	ra.marker = 0
+	ra.marker = mr.Start
 	ra.size = initReadAheadSize(mr, ra.maxReadAhead)
 }
 
 // updateWindow updates readahead window based on current status and desired mr
 // return true: if windows updated
 // return false: if window unaffected because of possible small random read
-func (ra *ReadAhead) updateWindow(mr memmap.MappableRange) bool {
+func (ra *ReadAhead) updateWindow(mr memmap.MappableRange, limit uint64) bool {
 	mr.Start = uint64(usermem.Addr(mr.Start).RoundDown())
 	mr.End = fs.OffsetPageEnd(int64(mr.End))
 
-	if mr.Start == 0 || mr.Start > ra.cur + ra.size {
-		ra.resetWindow(mr)
-		return true
+	if ra.cur + ra.size >= limit {
+		return false
 	}
-	if  mr.Start == ra.cur + ra.size {
+
+	if ra.size > 0 && mr.Start == ra.cur + ra.size {
 		// Assume sequential read, ramp up size and push the window
 		ra.cur += ra.size
 		ra.marker = ra.cur
 		ra.size = getNextReadAheadSize(ra, ra.maxReadAhead)
+		if mr.Length() < ra.size {
+			ra.marker += mr.Length()
+		}
+		return true
+	}
+
+	if mr.Start == 0 || mr.Length() > ra.maxReadAhead {
+		ra.resetWindow(mr)
 		return true
 	}
 
@@ -705,6 +713,7 @@ func hasAggressiveCache(c *CachingInodeOperations, size uint64) bool {
 func (c *CachingInodeOperations) addCacheLru(mr memmap.MappableRange) {
 	seg, _ := c.cache.Find(mr.Start)
 	if !seg.Ok() {
+		log.Debugf("Im mr = %v", mr)
 		panic("(Just allocated) cache does not exist?")
 	}
 	fr := seg.FileRangeOf(seg.Range().Intersect(mr))
@@ -735,7 +744,7 @@ func (rw *inodeReadWriter) readAheadSync(required,optional memmap.MappableRange)
 	}
 
 	ra := rw.c.ra
-	if ra.updateWindow(required) {
+	if ra.updateWindow(required, uint64(rw.c.attr.Size)) {
 		required = memmap.MappableRange{ra.cur, ra.cur + ra.size}
 	}
 	required = required.Intersect(optional)
@@ -765,7 +774,12 @@ func (rw *inodeReadWriter) readAheadAsync(mr memmap.MappableRange) error {
 	rw.c.dataMu.RUnlock()
 	rw.c.dataMu.Lock()
 
-	if !rw.c.ra.updateWindow(mr) {
+	if !rw.c.ra.updateWindow(mr, uint64(rw.c.attr.Size)) {
+		rw.c.dataMu.DowngradeLock()
+		return nil
+	}
+	// Reached the end of file
+	if rw.c.ra.cur >= uint64(rw.c.attr.Size) {
 		rw.c.dataMu.DowngradeLock()
 		return nil
 	}
