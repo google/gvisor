@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/syserror"
 
 	"gvisor.dev/gvisor/runsc/test/testutil"
 )
@@ -81,6 +82,125 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 		}
 	}
 	return ctx, vfsObj, &root, tearDown, nil
+}
+
+// TODO(b/134676337): Test vfs.FilesystemImpl.ReadlinkAt and
+// vfs.FilesystemImpl.StatFSAt which are not implemented in
+// vfs.VirtualFilesystem yet.
+
+// TestSeek tests vfs.FileDescriptionImpl.Seek functionality.
+func TestSeek(t *testing.T) {
+	type seekTest struct {
+		name  string
+		image string
+		path  string
+	}
+
+	tests := []seekTest{
+		{
+			name:  "ext4 root dir seek",
+			image: ext4ImagePath,
+			path:  "/",
+		},
+		{
+			name:  "ext3 root dir seek",
+			image: ext3ImagePath,
+			path:  "/",
+		},
+		{
+			name:  "ext2 root dir seek",
+			image: ext2ImagePath,
+			path:  "/",
+		},
+		{
+			name:  "ext4 reg file seek",
+			image: ext4ImagePath,
+			path:  "/file.txt",
+		},
+		{
+			name:  "ext3 reg file seek",
+			image: ext3ImagePath,
+			path:  "/file.txt",
+		},
+		{
+			name:  "ext2 reg file seek",
+			image: ext2ImagePath,
+			path:  "/file.txt",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, vfsfs, root, tearDown, err := setUp(t, test.image)
+			if err != nil {
+				t.Fatalf("setUp failed: %v", err)
+			}
+			defer tearDown()
+
+			fd, err := vfsfs.OpenAt(
+				ctx,
+				auth.CredentialsFromContext(ctx),
+				&vfs.PathOperation{Root: *root, Start: *root, Pathname: test.path},
+				&vfs.OpenOptions{},
+			)
+			if err != nil {
+				t.Fatalf("vfsfs.OpenAt failed: %v", err)
+			}
+
+			if n, err := fd.Impl().Seek(ctx, 0, linux.SEEK_SET); n != 0 || err != nil {
+				t.Errorf("expected seek position 0, got %d and error %v", n, err)
+			}
+
+			stat, err := fd.Impl().Stat(ctx, vfs.StatOptions{})
+			if err != nil {
+				t.Errorf("fd.stat failed for file %s in image %s: %v", test.path, test.image, err)
+			}
+
+			// We should be able to seek beyond the end of file.
+			size := int64(stat.Size)
+			if n, err := fd.Impl().Seek(ctx, size, linux.SEEK_SET); n != size || err != nil {
+				t.Errorf("expected seek position %d, got %d and error %v", size, n, err)
+			}
+
+			// EINVAL should be returned if the resulting offset is negative.
+			if _, err := fd.Impl().Seek(ctx, -1, linux.SEEK_SET); err != syserror.EINVAL {
+				t.Errorf("expected error EINVAL but got %v", err)
+			}
+
+			if n, err := fd.Impl().Seek(ctx, 3, linux.SEEK_CUR); n != size+3 || err != nil {
+				t.Errorf("expected seek position %d, got %d and error %v", size+3, n, err)
+			}
+
+			// Make sure negative offsets work with SEEK_CUR.
+			if n, err := fd.Impl().Seek(ctx, -2, linux.SEEK_CUR); n != size+1 || err != nil {
+				t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
+			}
+
+			// EINVAL should be returned if the resulting offset is negative.
+			if _, err := fd.Impl().Seek(ctx, -(size + 2), linux.SEEK_CUR); err != syserror.EINVAL {
+				t.Errorf("expected error EINVAL but got %v", err)
+			}
+
+			// Make sure SEEK_END works with regular files.
+			switch fd.Impl().(type) {
+			case *regularFileFD:
+				// Seek back to 0.
+				if n, err := fd.Impl().Seek(ctx, -size, linux.SEEK_END); n != 0 || err != nil {
+					t.Errorf("expected seek position %d, got %d and error %v", 0, n, err)
+				}
+
+				// Seek forward beyond EOF.
+				if n, err := fd.Impl().Seek(ctx, 1, linux.SEEK_END); n != size+1 || err != nil {
+					t.Errorf("expected seek position %d, got %d and error %v", size+1, n, err)
+				}
+
+				// EINVAL should be returned if the resulting offset is negative.
+				if _, err := fd.Impl().Seek(ctx, -(size + 1), linux.SEEK_END); err != syserror.EINVAL {
+					t.Errorf("expected error EINVAL but got %v", err)
+				}
+			}
+		})
+	}
 }
 
 // TestStatAt tests filesystem.StatAt functionality.
