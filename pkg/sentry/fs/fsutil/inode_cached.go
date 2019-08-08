@@ -215,7 +215,13 @@ func (c *CachingInodeOperations) Release() {
 	if err := SyncDirtyAll(context.Background(), &c.cache, &c.dirty, uint64(c.attr.Size), mf, c.backingFile.WriteFromBlocksAt); err != nil {
 		panic(fmt.Sprintf("Failed to writeback cached data: %v", err))
 	}
-	c.cache.DropAll(mf)
+	for seg := c.cache.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+		// Seperate cache size accounting and actual decref because not all
+		// memory is used as cache
+                mf.AccountCacheDrop(seg.Range().Length())
+                mf.DecRef(seg.FileRange())
+        }
+	c.cache.RemoveAll()
 	c.dirty.RemoveAll()
 }
 
@@ -356,7 +362,10 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	// written back.
 	c.dataMu.Lock()
 	defer c.dataMu.Unlock()
+	mf := c.mfp.MemoryFile()
+	old_size := mf.AccountCacheGet()
 	c.cache.Truncate(uint64(size), c.mfp.MemoryFile())
+	mf.AccountCacheDrop(old_size - uint64(size))
 	c.dirty.KeepClean(memmap.MappableRange{uint64(size), oldpgend})
 
 	return nil
