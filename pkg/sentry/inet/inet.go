@@ -55,6 +55,9 @@ type Stack interface {
 
 	// RouteTable returns the network stack's route table.
 	RouteTable() []Route
+
+	// Resume restarts the network stack after restore.
+	Resume()
 }
 
 // Interface contains information about a network interface.

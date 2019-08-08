@@ -15,7 +15,6 @@
 package raw
 
 import (
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -63,26 +62,5 @@ func (ep *endpoint) loadRcvBufSizeMax(max int) {
 
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad() {
-	// StackFromEnv is a stack used specifically for save/restore.
-	ep.stack = stack.StackFromEnv
-
-	// If the endpoint is connected, re-connect via the save/restore stack.
-	if ep.connected {
-		var err *tcpip.Error
-		ep.route, err = ep.stack.FindRoute(ep.registeredNIC, ep.boundAddr, ep.route.RemoteAddress, ep.netProto, false)
-		if err != nil {
-			panic(*err)
-		}
-	}
-
-	// If the endpoint is bound, re-bind via the save/restore stack.
-	if ep.bound {
-		if ep.stack.CheckLocalAddress(ep.registeredNIC, ep.netProto, ep.boundAddr) == 0 {
-			panic(tcpip.ErrBadLocalAddress)
-		}
-	}
-
-	if err := ep.stack.RegisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep); err != nil {
-		panic(*err)
-	}
+	stack.StackFromEnv.RegisterRestoredEndpoint(ep)
 }

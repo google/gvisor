@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/syserror"
@@ -104,7 +105,7 @@ type LoadOpts struct {
 }
 
 // Load loads the given kernel, setting the provided platform and stack.
-func (opts LoadOpts) Load(k *kernel.Kernel, n inet.Stack) error {
+func (opts LoadOpts) Load(k *kernel.Kernel, n inet.Stack, clocks time.Clocks) error {
 	// Open the file.
 	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
@@ -114,5 +115,5 @@ func (opts LoadOpts) Load(k *kernel.Kernel, n inet.Stack) error {
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(r, n)
+	return k.LoadFrom(r, n, clocks)
 }
