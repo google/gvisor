@@ -379,12 +379,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
-	if err := loadOpts.Load(k, networkStack); err != nil {
+	if err := loadOpts.Load(k, networkStack, time.NewCalibratedClocks()); err != nil {
 		return err
 	}
-
-	// Set timekeeper.
-	k.Timekeeper().SetClocks(time.NewCalibratedClocks())
 
 	// Since we have a new kernel we also must make a new watchdog.
 	dog := watchdog.New(k, watchdog.DefaultTimeout, cm.l.conf.WatchdogAction)

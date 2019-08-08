@@ -1082,11 +1082,13 @@ type ProtocolAddress struct {
 	AddressWithPrefix AddressWithPrefix
 }
 
-// danglingEndpointsMu protects access to danglingEndpoints.
-var danglingEndpointsMu sync.Mutex
+var (
+	// danglingEndpointsMu protects access to danglingEndpoints.
+	danglingEndpointsMu sync.Mutex
 
-// danglingEndpoints tracks all dangling endpoints no longer owned by the app.
-var danglingEndpoints = make(map[Endpoint]struct{})
+	// danglingEndpoints tracks all dangling endpoints no longer owned by the app.
+	danglingEndpoints = make(map[Endpoint]struct{})
+)
 
 // GetDanglingEndpoints returns all dangling endpoints.
 func GetDanglingEndpoints() []Endpoint {
