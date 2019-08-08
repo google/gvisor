@@ -28,16 +28,16 @@ import (
 )
 
 type regularFile struct {
-	inode Inode
+	inode inode
 
 	mu   sync.RWMutex
 	data []byte
 	// dataLen is len(data), but accessed using atomic memory operations to
-	// avoid locking in Inode.stat().
+	// avoid locking in inode.stat().
 	dataLen int64
 }
 
-func (fs *Filesystem) newRegularFile(creds *auth.Credentials, mode uint16) *Inode {
+func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode uint16) *inode {
 	file := &regularFile{}
 	file.inode.init(file, fs, creds, mode)
 	file.inode.nlink = 1 // from parent directory

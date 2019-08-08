@@ -21,10 +21,10 @@
 //
 // Lock order:
 //
-// Filesystem.mu
+// filesystem.mu
 //   regularFileFD.offMu
 //     regularFile.mu
-//   Inode.mu
+//   inode.mu
 package memfs
 
 import (
@@ -42,8 +42,8 @@ import (
 // FilesystemType implements vfs.FilesystemType.
 type FilesystemType struct{}
 
-// Filesystem implements vfs.FilesystemImpl.
-type Filesystem struct {
+// filesystem implements vfs.FilesystemImpl.
+type filesystem struct {
 	vfsfs vfs.Filesystem
 
 	// mu serializes changes to the Dentry tree.
@@ -54,44 +54,44 @@ type Filesystem struct {
 
 // NewFilesystem implements vfs.FilesystemType.NewFilesystem.
 func (fstype FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	var fs Filesystem
+	var fs filesystem
 	fs.vfsfs.Init(&fs)
 	root := fs.newDentry(fs.newDirectory(creds, 01777))
 	return &fs.vfsfs, &root.vfsd, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
-func (fs *Filesystem) Release() {
+func (fs *filesystem) Release() {
 }
 
 // Sync implements vfs.FilesystemImpl.Sync.
-func (fs *Filesystem) Sync(ctx context.Context) error {
+func (fs *filesystem) Sync(ctx context.Context) error {
 	// All filesystem state is in-memory.
 	return nil
 }
 
-// Dentry implements vfs.DentryImpl.
-type Dentry struct {
+// dentry implements vfs.DentryImpl.
+type dentry struct {
 	vfsd vfs.Dentry
 
-	// inode is the inode represented by this Dentry. Multiple Dentries may
-	// share a single non-directory Inode (with hard links). inode is
+	// inode is the inode represented by this dentry. Multiple Dentries may
+	// share a single non-directory inode (with hard links). inode is
 	// immutable.
-	inode *Inode
+	inode *inode
 
-	// memfs doesn't count references on Dentries; because the Dentry tree is
+	// memfs doesn't count references on dentries; because the dentry tree is
 	// the sole source of truth, it is by definition always consistent with the
-	// state of the filesystem. However, it does count references on Inodes,
-	// because Inode resources are released when all references are dropped.
+	// state of the filesystem. However, it does count references on inodes,
+	// because inode resources are released when all references are dropped.
 	// (memfs doesn't really have resources to release, but we implement
 	// reference counting because tmpfs regular files will.)
 
-	// dentryEntry (ugh) links Dentries into their parent directory.childList.
+	// dentryEntry (ugh) links dentries into their parent directory.childList.
 	dentryEntry
 }
 
-func (fs *Filesystem) newDentry(inode *Inode) *Dentry {
-	d := &Dentry{
+func (fs *filesystem) newDentry(inode *inode) *dentry {
+	d := &dentry{
 		inode: inode,
 	}
 	d.vfsd.Init(d)
@@ -99,37 +99,37 @@ func (fs *Filesystem) newDentry(inode *Inode) *Dentry {
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
-func (d *Dentry) IncRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) IncRef(vfsfs *vfs.Filesystem) {
 	d.inode.incRef()
 }
 
 // TryIncRef implements vfs.DentryImpl.TryIncRef.
-func (d *Dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
+func (d *dentry) TryIncRef(vfsfs *vfs.Filesystem) bool {
 	return d.inode.tryIncRef()
 }
 
 // DecRef implements vfs.DentryImpl.DecRef.
-func (d *Dentry) DecRef(vfsfs *vfs.Filesystem) {
+func (d *dentry) DecRef(vfsfs *vfs.Filesystem) {
 	d.inode.decRef()
 }
 
-// Inode represents a filesystem object.
-type Inode struct {
+// inode represents a filesystem object.
+type inode struct {
 	// refs is a reference count. refs is accessed using atomic memory
 	// operations.
 	//
-	// A reference is held on all Inodes that are reachable in the filesystem
+	// A reference is held on all inodes that are reachable in the filesystem
 	// tree. For non-directories (which may have multiple hard links), this
 	// means that a reference is dropped when nlink reaches 0. For directories,
 	// nlink never reaches 0 due to the "." entry; instead,
-	// Filesystem.RmdirAt() drops the reference.
+	// filesystem.RmdirAt() drops the reference.
 	refs int64
 
 	// Inode metadata; protected by mu and accessed using atomic memory
 	// operations unless otherwise specified.
 	mu    sync.RWMutex
 	mode  uint32 // excluding file type bits, which are based on impl
-	nlink uint32 // protected by Filesystem.mu instead of Inode.mu
+	nlink uint32 // protected by filesystem.mu instead of inode.mu
 	uid   uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
 	gid   uint32 // auth.KGID, but ...
 	ino   uint64 // immutable
@@ -137,7 +137,7 @@ type Inode struct {
 	impl interface{} // immutable
 }
 
-func (i *Inode) init(impl interface{}, fs *Filesystem, creds *auth.Credentials, mode uint16) {
+func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode uint16) {
 	i.refs = 1
 	i.mode = uint32(mode)
 	i.uid = uint32(creds.EffectiveKUID)
@@ -147,29 +147,29 @@ func (i *Inode) init(impl interface{}, fs *Filesystem, creds *auth.Credentials, 
 	i.impl = impl
 }
 
-// Preconditions: Filesystem.mu must be locked for writing.
-func (i *Inode) incLinksLocked() {
+// Preconditions: filesystem.mu must be locked for writing.
+func (i *inode) incLinksLocked() {
 	if atomic.AddUint32(&i.nlink, 1) <= 1 {
-		panic("memfs.Inode.incLinksLocked() called with no existing links")
+		panic("memfs.inode.incLinksLocked() called with no existing links")
 	}
 }
 
-// Preconditions: Filesystem.mu must be locked for writing.
-func (i *Inode) decLinksLocked() {
+// Preconditions: filesystem.mu must be locked for writing.
+func (i *inode) decLinksLocked() {
 	if nlink := atomic.AddUint32(&i.nlink, ^uint32(0)); nlink == 0 {
 		i.decRef()
 	} else if nlink == ^uint32(0) { // negative overflow
-		panic("memfs.Inode.decLinksLocked() called with no existing links")
+		panic("memfs.inode.decLinksLocked() called with no existing links")
 	}
 }
 
-func (i *Inode) incRef() {
+func (i *inode) incRef() {
 	if atomic.AddInt64(&i.refs, 1) <= 1 {
-		panic("memfs.Inode.incRef() called without holding a reference")
+		panic("memfs.inode.incRef() called without holding a reference")
 	}
 }
 
-func (i *Inode) tryIncRef() bool {
+func (i *inode) tryIncRef() bool {
 	for {
 		refs := atomic.LoadInt64(&i.refs)
 		if refs == 0 {
@@ -181,7 +181,7 @@ func (i *Inode) tryIncRef() bool {
 	}
 }
 
-func (i *Inode) decRef() {
+func (i *inode) decRef() {
 	if refs := atomic.AddInt64(&i.refs, -1); refs == 0 {
 		// This is unnecessary; it's mostly to simulate what tmpfs would do.
 		if regfile, ok := i.impl.(*regularFile); ok {
@@ -191,18 +191,18 @@ func (i *Inode) decRef() {
 			regfile.mu.Unlock()
 		}
 	} else if refs < 0 {
-		panic("memfs.Inode.decRef() called without holding a reference")
+		panic("memfs.inode.decRef() called without holding a reference")
 	}
 }
 
-func (i *Inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes, isDir bool) error {
+func (i *inode) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes, isDir bool) error {
 	return vfs.GenericCheckPermissions(creds, ats, isDir, uint16(atomic.LoadUint32(&i.mode)), auth.KUID(atomic.LoadUint32(&i.uid)), auth.KGID(atomic.LoadUint32(&i.gid)))
 }
 
 // Go won't inline this function, and returning linux.Statx (which is quite
 // big) means spending a lot of time in runtime.duffcopy(), so instead it's an
 // output parameter.
-func (i *Inode) statTo(stat *linux.Statx) {
+func (i *inode) statTo(stat *linux.Statx) {
 	stat.Mask = linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_INO
 	stat.Blksize = 1 // usermem.PageSize in tmpfs
 	stat.Nlink = atomic.LoadUint32(&i.nlink)
@@ -241,7 +241,7 @@ func allocatedBlocksForSize(size uint64) uint64 {
 	return (size + 511) / 512
 }
 
-func (i *Inode) direntType() uint8 {
+func (i *inode) direntType() uint8 {
 	switch i.impl.(type) {
 	case *regularFile:
 		return linux.DT_REG
@@ -262,12 +262,12 @@ type fileDescription struct {
 	flags uint32 // status flags; immutable
 }
 
-func (fd *fileDescription) filesystem() *Filesystem {
-	return fd.vfsfd.VirtualDentry().Mount().Filesystem().Impl().(*Filesystem)
+func (fd *fileDescription) filesystem() *filesystem {
+	return fd.vfsfd.VirtualDentry().Mount().Filesystem().Impl().(*filesystem)
 }
 
-func (fd *fileDescription) inode() *Inode {
-	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*Dentry).inode
+func (fd *fileDescription) inode() *inode {
+	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*dentry).inode
 }
 
 // StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
@@ -294,6 +294,6 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	// TODO: implement Inode.setStat
+	// TODO: implement inode.setStat
 	return syserror.EPERM
 }

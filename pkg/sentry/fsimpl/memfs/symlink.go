@@ -19,11 +19,11 @@ import (
 )
 
 type symlink struct {
-	inode  Inode
+	inode  inode
 	target string // immutable
 }
 
-func (fs *Filesystem) newSymlink(creds *auth.Credentials, target string) *Inode {
+func (fs *filesystem) newSymlink(creds *auth.Credentials, target string) *inode {
 	link := &symlink{
 		target: target,
 	}

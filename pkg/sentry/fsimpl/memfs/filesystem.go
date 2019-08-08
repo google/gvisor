@@ -28,9 +28,9 @@ import (
 //
 // stepLocked is loosely analogous to fs/namei.c:walk_component().
 //
-// Preconditions: Filesystem.mu must be locked. !rp.Done(). inode ==
-// vfsd.Impl().(*Dentry).inode.
-func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *Inode) (*vfs.Dentry, *Inode, error) {
+// Preconditions: filesystem.mu must be locked. !rp.Done(). inode ==
+// vfsd.Impl().(*dentry).inode.
+func stepLocked(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, inode *inode) (*vfs.Dentry, *inode, error) {
 	if !inode.isDir() {
 		return nil, nil, syserror.ENOTDIR
 	}
@@ -47,7 +47,7 @@ afterSymlink:
 		// not in the Dentry tree, it doesn't exist.
 		return nil, nil, syserror.ENOENT
 	}
-	nextInode := nextVFSD.Impl().(*Dentry).inode
+	nextInode := nextVFSD.Impl().(*dentry).inode
 	if symlink, ok := nextInode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
 		// TODO: symlink traversals update access time
 		if err := rp.HandleSymlink(symlink.target); err != nil {
@@ -64,10 +64,10 @@ afterSymlink:
 // walkExistingLocked is loosely analogous to Linux's
 // fs/namei.c:path_lookupat().
 //
-// Preconditions: Filesystem.mu must be locked.
-func walkExistingLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *Inode, error) {
+// Preconditions: filesystem.mu must be locked.
+func walkExistingLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *inode, error) {
 	vfsd := rp.Start()
-	inode := vfsd.Impl().(*Dentry).inode
+	inode := vfsd.Impl().(*dentry).inode
 	for !rp.Done() {
 		var err error
 		vfsd, inode, err = stepLocked(rp, vfsd, inode)
@@ -88,10 +88,10 @@ func walkExistingLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *Inode, error) {
 // walkParentDirLocked is loosely analogous to Linux's
 // fs/namei.c:path_parentat().
 //
-// Preconditions: Filesystem.mu must be locked. !rp.Done().
-func walkParentDirLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *Inode, error) {
+// Preconditions: filesystem.mu must be locked. !rp.Done().
+func walkParentDirLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *inode, error) {
 	vfsd := rp.Start()
-	inode := vfsd.Impl().(*Dentry).inode
+	inode := vfsd.Impl().(*dentry).inode
 	for !rp.Final() {
 		var err error
 		vfsd, inode, err = stepLocked(rp, vfsd, inode)
@@ -108,9 +108,9 @@ func walkParentDirLocked(rp *vfs.ResolvingPath) (*vfs.Dentry, *Inode, error) {
 // checkCreateLocked checks that a file named rp.Component() may be created in
 // directory parentVFSD, then returns rp.Component().
 //
-// Preconditions: Filesystem.mu must be locked. parentInode ==
-// parentVFSD.Impl().(*Dentry).inode. parentInode.isDir() == true.
-func checkCreateLocked(rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode *Inode) (string, error) {
+// Preconditions: filesystem.mu must be locked. parentInode ==
+// parentVFSD.Impl().(*dentry).inode. parentInode.isDir() == true.
+func checkCreateLocked(rp *vfs.ResolvingPath, parentVFSD *vfs.Dentry, parentInode *inode) (string, error) {
 	if err := parentInode.checkPermissions(rp.Credentials(), vfs.MayWrite|vfs.MayExec, true); err != nil {
 		return "", err
 	}
@@ -144,7 +144,7 @@ func checkDeleteLocked(vfsd *vfs.Dentry) error {
 }
 
 // GetDentryAt implements vfs.FilesystemImpl.GetDentryAt.
-func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
+func (fs *filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.GetDentryOptions) (*vfs.Dentry, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 	vfsd, inode, err := walkExistingLocked(rp)
@@ -164,7 +164,7 @@ func (fs *Filesystem) GetDentryAt(ctx context.Context, rp *vfs.ResolvingPath, op
 }
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
-func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
+func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
 	if rp.Done() {
 		return syserror.EEXIST
 	}
@@ -185,7 +185,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	d := vd.Dentry().Impl().(*Dentry)
+	d := vd.Dentry().Impl().(*dentry)
 	if d.inode.isDir() {
 		return syserror.EPERM
 	}
@@ -197,7 +197,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 }
 
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
-func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
+func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	if rp.Done() {
 		return syserror.EEXIST
 	}
@@ -223,7 +223,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 }
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
-func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
+func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
 	if rp.Done() {
 		return syserror.EEXIST
 	}
@@ -246,7 +246,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 }
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
-func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	// Filter out flags that are not supported by memfs. O_DIRECTORY and
 	// O_NOFOLLOW have no effect here (they're handled by VFS by setting
 	// appropriate bits in rp), but are returned by
@@ -265,11 +265,10 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	mustCreate := opts.Flags&linux.O_EXCL != 0
 	vfsd := rp.Start()
-	inode := vfsd.Impl().(*Dentry).inode
+	inode := vfsd.Impl().(*dentry).inode
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	if rp.Done() {
-		// FIXME: ???
 		if rp.MustBeDir() {
 			return nil, syserror.EISDIR
 		}
@@ -327,7 +326,7 @@ afterTrailingSymlink:
 	if mustCreate {
 		return nil, syserror.EEXIST
 	}
-	childInode := childVFSD.Impl().(*Dentry).inode
+	childInode := childVFSD.Impl().(*dentry).inode
 	if symlink, ok := childInode.impl.(*symlink); ok && rp.ShouldFollowSymlink() {
 		// TODO: symlink traversals update access time
 		if err := rp.HandleSymlink(symlink.target); err != nil {
@@ -340,7 +339,7 @@ afterTrailingSymlink:
 	return childInode.open(rp, childVFSD, opts.Flags, false)
 }
 
-func (i *Inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afterCreate bool) (*vfs.FileDescription, error) {
+func (i *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afterCreate bool) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(flags)
 	if !afterCreate {
 		if err := i.checkPermissions(rp.Credentials(), ats, i.isDir()); err != nil {
@@ -385,7 +384,7 @@ func (i *Inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afte
 }
 
 // ReadlinkAt implements vfs.FilesystemImpl.ReadlinkAt.
-func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
+func (fs *filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (string, error) {
 	fs.mu.RLock()
 	_, inode, err := walkExistingLocked(rp)
 	fs.mu.RUnlock()
@@ -400,9 +399,8 @@ func (fs *Filesystem) ReadlinkAt(ctx context.Context, rp *vfs.ResolvingPath) (st
 }
 
 // RenameAt implements vfs.FilesystemImpl.RenameAt.
-func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry, opts vfs.RenameOptions) error {
+func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry, opts vfs.RenameOptions) error {
 	if rp.Done() {
-		// FIXME
 		return syserror.ENOENT
 	}
 	fs.mu.Lock()
@@ -424,7 +422,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, vd vf
 }
 
 // RmdirAt implements vfs.FilesystemImpl.RmdirAt.
-func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
+func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	vfsd, inode, err := walkExistingLocked(rp)
@@ -447,12 +445,14 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	if err := rp.VirtualFilesystem().DeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
 		return err
 	}
+	// Remove from parent directory's childList.
+	vfsd.Parent().Impl().(*dentry).inode.impl.(*directory).childList.Remove(vfsd.Impl().(*dentry))
 	inode.decRef()
 	return nil
 }
 
 // SetStatAt implements vfs.FilesystemImpl.SetStatAt.
-func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
+func (fs *filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.SetStatOptions) error {
 	fs.mu.RLock()
 	_, _, err := walkExistingLocked(rp)
 	fs.mu.RUnlock()
@@ -462,12 +462,12 @@ func (fs *Filesystem) SetStatAt(ctx context.Context, rp *vfs.ResolvingPath, opts
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	// TODO: implement Inode.setStat
+	// TODO: implement inode.setStat
 	return syserror.EPERM
 }
 
 // StatAt implements vfs.FilesystemImpl.StatAt.
-func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
+func (fs *filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.StatOptions) (linux.Statx, error) {
 	fs.mu.RLock()
 	_, inode, err := walkExistingLocked(rp)
 	fs.mu.RUnlock()
@@ -480,7 +480,7 @@ func (fs *Filesystem) StatAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 }
 
 // StatFSAt implements vfs.FilesystemImpl.StatFSAt.
-func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
+func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
 	fs.mu.RLock()
 	_, _, err := walkExistingLocked(rp)
 	fs.mu.RUnlock()
@@ -492,7 +492,7 @@ func (fs *Filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
-func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
+func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
 	if rp.Done() {
 		return syserror.EEXIST
 	}
@@ -517,7 +517,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 }
 
 // UnlinkAt implements vfs.FilesystemImpl.UnlinkAt.
-func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
+func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 	vfsd, inode, err := walkExistingLocked(rp)
@@ -537,6 +537,8 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	if err := rp.VirtualFilesystem().DeleteDentry(vfs.MountNamespaceFromContext(ctx), vfsd); err != nil {
 		return err
 	}
+	// Remove from parent directory's childList.
+	vfsd.Parent().Impl().(*dentry).inode.impl.(*directory).childList.Remove(vfsd.Impl().(*dentry))
 	inode.decLinksLocked()
 	return nil
 }
