@@ -235,11 +235,11 @@ const (
 func (l LeakMode) String() string {
 	switch l {
 	case NoLeakChecking:
-		return "NoLeakChecking"
+		return "disabled"
 	case LeaksLogWarning:
-		return "LeaksLogWarning"
+		return "warning"
 	case LeaksLogTraces:
-		return "LeaksLogTraces"
+		return "traces"
 	default:
 		panic(fmt.Sprintf("Invalid leakmode: %d", l))
 	}

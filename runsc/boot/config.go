@@ -120,6 +120,8 @@ func MakeRefsLeakMode(s string) (refs.LeakMode, error) {
 		return refs.NoLeakChecking, nil
 	case "warning":
 		return refs.LeaksLogWarning, nil
+	case "traces":
+		return refs.LeaksLogTraces, nil
 	default:
 		return 0, fmt.Errorf("invalid refs leakmode %q", s)
 	}
