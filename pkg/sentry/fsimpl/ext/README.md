@@ -44,8 +44,8 @@ an internal pointer, it can quickly fragment a structure across memory. As this
 runs along side a full blown kernel (which is memory intensive), having a
 fragmented struct might hurt performance. Hence these internal structures,
 though interfaced, are tightly packed in memory using the same inheritance
-pattern that pkg/sentry/vfs uses. The pkg/sentry/fs/ext/disklayout package makes
-an execption to this pattern for reasons documented in the package.
+pattern that pkg/sentry/vfs uses. The pkg/sentry/fsimpl/ext/disklayout package
+makes an execption to this pattern for reasons documented in the package.
 
 ### Security
 

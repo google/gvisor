@@ -9,7 +9,7 @@ go_test(
     deps = [
         "//pkg/sentry/context",
         "//pkg/sentry/context/contexttest",
-        "//pkg/sentry/fs/ext",
+        "//pkg/sentry/fsimpl/ext",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
     ],
