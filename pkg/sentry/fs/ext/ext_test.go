@@ -65,7 +65,7 @@ func setUp(t *testing.T, imagePath string) (context.Context, *vfs.VirtualFilesys
 
 	// Create VFS.
 	vfsObj := vfs.New()
-	vfsObj.MustRegisterFilesystemType("extfs", filesystemType{})
+	vfsObj.MustRegisterFilesystemType("extfs", FilesystemType{})
 	mntns, err := vfsObj.NewMountNamespace(ctx, creds, localImagePath, "extfs", &vfs.NewFilesystemOptions{InternalData: int(f.Fd())})
 	if err != nil {
 		f.Close()
