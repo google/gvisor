@@ -30,11 +30,11 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// filesystemType implements vfs.FilesystemType.
-type filesystemType struct{}
+// FilesystemType implements vfs.FilesystemType.
+type FilesystemType struct{}
 
-// Compiles only if filesystemType implements vfs.FilesystemType.
-var _ vfs.FilesystemType = (*filesystemType)(nil)
+// Compiles only if FilesystemType implements vfs.FilesystemType.
+var _ vfs.FilesystemType = (*FilesystemType)(nil)
 
 // getDeviceFd returns an io.ReaderAt to the underlying device.
 // Currently there are two ways of mounting an ext(2/3/4) fs:
@@ -92,7 +92,7 @@ func isCompatible(sb disklayout.SuperBlock) bool {
 }
 
 // NewFilesystem implements vfs.FilesystemType.NewFilesystem.
-func (fstype filesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
+func (FilesystemType) NewFilesystem(ctx context.Context, creds *auth.Credentials, source string, opts vfs.NewFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	// TODO(b/134676337): Ensure that the user is mounting readonly. If not,
 	// EACCESS should be returned according to mount(2). Filesystem independent
 	// flags (like readonly) are currently not available in pkg/sentry/vfs.
