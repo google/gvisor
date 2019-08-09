@@ -89,3 +89,17 @@ const (
 	// AT_SYSINFO_EHDR is the address of the VDSO.
 	AT_SYSINFO_EHDR = 33
 )
+
+// ELF ET_CORE and ptrace GETREGSET/SETREGSET register set types.
+//
+// See include/uapi/linux/elf.h.
+const (
+	// NT_PRSTATUS is for general purpose register.
+	NT_PRSTATUS = 0x1
+
+	// NT_PRFPREG is for float point register.
+	NT_PRFPREG = 0x2
+
+	// NT_X86_XSTATE is for x86 extended state using xsave.
+	NT_X86_XSTATE = 0x202
+)

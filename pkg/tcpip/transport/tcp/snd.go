@@ -39,6 +39,28 @@ const (
 	nDupAckThreshold = 3
 )
 
+// ccState indicates the current congestion control state for this sender.
+type ccState int
+
+const (
+	// Open indicates that the sender is receiving acks in order and
+	// no loss or dupACK's etc have been detected.
+	Open ccState = iota
+	// RTORecovery indicates that an RTO has occurred and the sender
+	// has entered an RTO based recovery phase.
+	RTORecovery
+	// FastRecovery indicates that the sender has entered FastRecovery
+	// based on receiving nDupAck's. This state is entered only when
+	// SACK is not in use.
+	FastRecovery
+	// SACKRecovery indicates that the sender has entered SACK based
+	// recovery.
+	SACKRecovery
+	// Disorder indicates the sender either received some SACK blocks
+	// or dupACK's.
+	Disorder
+)
+
 // congestionControl is an interface that must be implemented by any supported
 // congestion control algorithm.
 type congestionControl interface {
@@ -137,6 +159,9 @@ type sender struct {
 
 	// maxSentAck is the maxium acknowledgement actually sent.
 	maxSentAck seqnum.Value
+
+	// state is the current state of congestion control for this endpoint.
+	state ccState
 
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
@@ -435,6 +460,7 @@ func (s *sender) retransmitTimerExpired() bool {
 		s.leaveFastRecovery()
 	}
 
+	s.state = RTORecovery
 	s.cc.HandleRTOExpired()
 
 	// Mark the next segment to be sent as the first unacknowledged one and
@@ -820,9 +846,11 @@ func (s *sender) enterFastRecovery() {
 	s.fr.last = s.sndNxt - 1
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
 	if s.ep.sackPermitted {
+		s.state = SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
 		return
 	}
+	s.state = FastRecovery
 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
 
@@ -981,6 +1009,7 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 		s.fr.highRxt = s.sndUna - 1
 		// Do run SetPipe() to calculate the outstanding segments.
 		s.SetPipe()
+		s.state = Disorder
 		return false
 	}
 
@@ -1112,6 +1141,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		// window based on the number of acknowledged packets.
 		if !s.fr.active {
 			s.cc.Update(originalOutstanding - s.outstanding)
+			if s.fr.last.LessThan(s.sndUna) {
+				s.state = Open
+			}
 		}
 
 		// It is possible for s.outstanding to drop below zero if we get

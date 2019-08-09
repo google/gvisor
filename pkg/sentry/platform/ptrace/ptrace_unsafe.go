@@ -18,37 +18,23 @@ import (
 	"syscall"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
-// GETREGSET/SETREGSET register set types.
-//
-// See include/uapi/linux/elf.h.
-const (
-	// _NT_PRFPREG is for x86 floating-point state without using xsave.
-	_NT_PRFPREG = 0x2
-
-	// _NT_X86_XSTATE is for x86 extended state using xsave.
-	_NT_X86_XSTATE = 0x202
-)
-
-// fpRegSet returns the GETREGSET/SETREGSET register set type to be used.
-func fpRegSet(useXsave bool) uintptr {
-	if useXsave {
-		return _NT_X86_XSTATE
-	}
-	return _NT_PRFPREG
-}
-
-// getRegs sets the regular register set.
+// getRegs gets the general purpose register set.
 func (t *thread) getRegs(regs *syscall.PtraceRegs) error {
+	iovec := syscall.Iovec{
+		Base: (*byte)(unsafe.Pointer(regs)),
+		Len:  uint64(unsafe.Sizeof(*regs)),
+	}
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,
-		syscall.PTRACE_GETREGS,
+		syscall.PTRACE_GETREGSET,
 		uintptr(t.tid),
-		0,
-		uintptr(unsafe.Pointer(regs)),
+		linux.NT_PRSTATUS,
+		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {
 		return errno
@@ -56,14 +42,18 @@ func (t *thread) getRegs(regs *syscall.PtraceRegs) error {
 	return nil
 }
 
-// setRegs sets the regular register set.
+// setRegs sets the general purpose register set.
 func (t *thread) setRegs(regs *syscall.PtraceRegs) error {
+	iovec := syscall.Iovec{
+		Base: (*byte)(unsafe.Pointer(regs)),
+		Len:  uint64(unsafe.Sizeof(*regs)),
+	}
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_PTRACE,
-		syscall.PTRACE_SETREGS,
+		syscall.PTRACE_SETREGSET,
 		uintptr(t.tid),
-		0,
-		uintptr(unsafe.Pointer(regs)),
+		linux.NT_PRSTATUS,
+		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {
 		return errno
@@ -131,7 +121,7 @@ func (t *thread) getSignalInfo(si *arch.SignalInfo) error {
 //
 // Precondition: the OS thread must be locked and own t.
 func (t *thread) clone() (*thread, error) {
-	r, ok := usermem.Addr(t.initRegs.Rsp).RoundUp()
+	r, ok := usermem.Addr(stackPointer(&t.initRegs)).RoundUp()
 	if !ok {
 		return nil, syscall.EINVAL
 	}
