@@ -284,7 +284,7 @@ func (s *subprocess) createStub() (*thread, error) {
 
 	// Pass the expected PPID to the child via R15.
 	regs := t.initRegs
-	regs.R15 = uint64(t.tgid)
+	initChildProcessPPID(&regs, t.tgid)
 
 	// Call fork in a subprocess.
 	//

@@ -28,18 +28,11 @@ const (
 	// maximumUserAddress is the largest possible user address.
 	maximumUserAddress = 0x7ffffffff000
 
+	// stubInitAddress is the initial attempt link address for the stub.
+	stubInitAddress = 0x7fffffff0000
+
 	// initRegsRipAdjustment is the size of the syscall instruction.
 	initRegsRipAdjustment = 2
-)
-
-// Linux kernel errnos which "should never be seen by user programs", but will
-// be revealed to ptrace syscall exit tracing.
-//
-// These constants are used in subprocess.go.
-const (
-	ERESTARTSYS    = syscall.Errno(512)
-	ERESTARTNOINTR = syscall.Errno(513)
-	ERESTARTNOHAND = syscall.Errno(514)
 )
 
 // resetSysemuRegs sets up emulation registers.
@@ -138,4 +131,15 @@ func dumpRegs(regs *syscall.PtraceRegs) string {
 	fmt.Fprintf(&m, "\tGs\t = %016x\n", regs.Gs)
 
 	return m.String()
+}
+
+// adjustInitregsRip adjust the current register RIP value to
+// be just before the system call instruction excution
+func (t *thread) adjustInitRegsRip() {
+	t.initRegs.Rip -= initRegsRipAdjustment
+}
+
+// Pass the expected PPID to the child via R15 when creating stub process
+func initChildProcessPPID(initregs *syscall.PtraceRegs, ppid int32) {
+	initregs.R15 = uint64(ppid)
 }

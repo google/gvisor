@@ -341,6 +341,7 @@ func (x *sender) save(m state.Map) {
 	m.Save("gso", &x.gso)
 	m.Save("sndWndScale", &x.sndWndScale)
 	m.Save("maxSentAck", &x.maxSentAck)
+	m.Save("state", &x.state)
 	m.Save("cc", &x.cc)
 }
 
@@ -366,6 +367,7 @@ func (x *sender) load(m state.Map) {
 	m.Load("gso", &x.gso)
 	m.Load("sndWndScale", &x.sndWndScale)
 	m.Load("maxSentAck", &x.maxSentAck)
+	m.Load("state", &x.state)
 	m.Load("cc", &x.cc)
 	m.LoadValue("lastSendTime", new(unixTime), func(y interface{}) { x.loadLastSendTime(y.(unixTime)) })
 	m.LoadValue("rttMeasureTime", new(unixTime), func(y interface{}) { x.loadRttMeasureTime(y.(unixTime)) })

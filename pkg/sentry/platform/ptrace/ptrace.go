@@ -60,7 +60,7 @@ var (
 	// maximum user address. This is valid only after a call to stubInit.
 	//
 	// We attempt to link the stub here, and adjust downward as needed.
-	stubStart uintptr = 0x7fffffff0000
+	stubStart uintptr = stubInitAddress
 
 	// stubEnd is the first byte past the end of the stub, as with
 	// stubStart this is valid only after a call to stubInit.
