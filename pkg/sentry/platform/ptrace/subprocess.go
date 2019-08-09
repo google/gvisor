@@ -28,6 +28,16 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
+// Linux kernel errnos which "should never be seen by user programs", but will
+// be revealed to ptrace syscall exit tracing.
+//
+// These constants are only used in subprocess.go.
+const (
+	ERESTARTSYS    = syscall.Errno(512)
+	ERESTARTNOINTR = syscall.Errno(513)
+	ERESTARTNOHAND = syscall.Errno(514)
+)
+
 // globalPool exists to solve two distinct problems:
 //
 // 1) Subprocesses can't always be killed properly (see Release).
@@ -282,7 +292,7 @@ func (t *thread) grabInitRegs() {
 	if err := t.getRegs(&t.initRegs); err != nil {
 		panic(fmt.Sprintf("ptrace get regs failed: %v", err))
 	}
-	t.initRegs.Rip -= initRegsRipAdjustment
+	t.adjustInitRegsRip()
 }
 
 // detach detaches from the thread.
