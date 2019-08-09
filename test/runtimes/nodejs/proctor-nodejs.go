@@ -29,7 +29,7 @@ import (
 var (
 	dir       = os.Getenv("LANG_DIR")
 	testDir   = filepath.Join(dir, "test")
-	testRegEx = regexp.MustCompile(`^test-.+\.js$`)
+	testRegEx = regexp.MustCompile(`^test-[^-].+\.js$`)
 )
 
 type nodejsRunner struct {
