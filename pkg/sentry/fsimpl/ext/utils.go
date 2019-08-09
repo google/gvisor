@@ -18,7 +18,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 

@@ -26,7 +26,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ext"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )

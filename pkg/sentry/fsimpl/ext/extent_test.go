@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout"
 )
 
 const (

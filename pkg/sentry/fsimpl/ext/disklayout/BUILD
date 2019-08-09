@@ -22,7 +22,7 @@ go_library(
         "superblock_old.go",
         "test_utils.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/fs/ext/disklayout",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/fsimpl/ext/disklayout",
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
