@@ -238,7 +238,8 @@ TEST(NetlinkRouteTest, GetLinkDump) {
   // Loopback is common among all tests, check that it's found.
   bool loopbackFound = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
         CheckGetLinkResponse(hdr, kSeq, port);
         if (hdr->nlmsg_type != RTM_NEWLINK) {
           return;
@@ -252,8 +253,42 @@ TEST(NetlinkRouteTest, GetLinkDump) {
           loopbackFound = true;
           EXPECT_NE(msg->ifi_flags & IFF_LOOPBACK, 0);
         }
-      }));
+      },
+      false));
   EXPECT_TRUE(loopbackFound);
+}
+
+TEST(NetlinkRouteTest, MsgHdrMsgUnsuppType) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  // If type & 0x3 is equal to 0x2, this means a get request
+  // which doesn't require CAP_SYS_ADMIN.
+  req.hdr.nlmsg_type = ((__RTM_MAX + 1024) & (~0x3)) | 0x2;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        EXPECT_THAT(hdr->nlmsg_type, Eq(NLMSG_ERROR));
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct nlmsgerr));
+
+        const struct nlmsgerr* msg =
+            reinterpret_cast<const struct nlmsgerr*>(NLMSG_DATA(hdr));
+        EXPECT_EQ(msg->error, -EOPNOTSUPP);
+      },
+      true));
 }
 
 TEST(NetlinkRouteTest, MsgHdrMsgTrunc) {
@@ -364,9 +399,11 @@ TEST(NetlinkRouteTest, ControlMessageIgnored) {
   req.ifm.ifi_family = AF_UNSPEC;
 
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
         CheckGetLinkResponse(hdr, kSeq, port);
-      }));
+      },
+      false));
 }
 
 TEST(NetlinkRouteTest, GetAddrDump) {
@@ -388,7 +425,8 @@ TEST(NetlinkRouteTest, GetAddrDump) {
   req.rgm.rtgen_family = AF_UNSPEC;
 
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWADDR), Eq(NLMSG_DONE)));
 
         EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
@@ -405,7 +443,8 @@ TEST(NetlinkRouteTest, GetAddrDump) {
         EXPECT_GE(hdr->nlmsg_len, sizeof(*hdr) + sizeof(struct ifaddrmsg));
 
         // TODO(mpratt): Check ifaddrmsg contents and following attrs.
-      }));
+      },
+      false));
 }
 
 TEST(NetlinkRouteTest, LookupAll) {
@@ -448,7 +487,8 @@ TEST(NetlinkRouteTest, GetRouteDump) {
   bool routeFound = false;
   bool dstFound = true;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req), [&](const struct nlmsghdr* hdr) {
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
         // Validate the reponse to RTM_GETROUTE + NLM_F_DUMP.
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWROUTE), Eq(NLMSG_DONE)));
 
@@ -491,7 +531,8 @@ TEST(NetlinkRouteTest, GetRouteDump) {
           routeFound = true;
           dstFound = rtDstFound && dstFound;
         }
-      }));
+      },
+      false));
   // At least one route found in main route table.
   EXPECT_TRUE(routeFound);
   // Found RTA_DST for each route in main table.

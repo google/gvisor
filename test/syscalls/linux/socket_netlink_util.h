@@ -34,7 +34,8 @@ PosixErrorOr<uint32_t> NetlinkPortID(int fd);
 // Send the passed request and call fn will all response netlink messages.
 PosixError NetlinkRequestResponse(
     const FileDescriptor& fd, void* request, size_t len,
-    const std::function<void(const struct nlmsghdr* hdr)>& fn);
+    const std::function<void(const struct nlmsghdr* hdr)>& fn,
+    bool expect_nlmsgerr);
 
 }  // namespace testing
 }  // namespace gvisor

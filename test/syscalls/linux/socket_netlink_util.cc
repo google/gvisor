@@ -54,7 +54,8 @@ PosixErrorOr<uint32_t> NetlinkPortID(int fd) {
 
 PosixError NetlinkRequestResponse(
     const FileDescriptor& fd, void* request, size_t len,
-    const std::function<void(const struct nlmsghdr* hdr)>& fn) {
+    const std::function<void(const struct nlmsghdr* hdr)>& fn,
+    bool expect_nlmsgerr) {
   struct iovec iov = {};
   iov.iov_base = request;
   iov.iov_len = len;
@@ -93,7 +94,11 @@ PosixError NetlinkRequestResponse(
     }
   } while (type != NLMSG_DONE && type != NLMSG_ERROR);
 
-  EXPECT_EQ(type, NLMSG_DONE);
+  if (expect_nlmsgerr) {
+    EXPECT_EQ(type, NLMSG_ERROR);
+  } else {
+    EXPECT_EQ(type, NLMSG_DONE);
+  }
   return NoError();
 }
 
