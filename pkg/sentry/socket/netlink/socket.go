@@ -511,6 +511,19 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	return nil
 }
 
+func (s *Socket) dumpErrorMesage(ctx context.Context, hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) *syserr.Error {
+	m := ms.AddMessage(linux.NetlinkMessageHeader{
+		Type: linux.NLMSG_ERROR,
+	})
+
+	m.Put(linux.NetlinkErrorMessage{
+		Error:  int32(-err.ToLinux().Number()),
+		Header: hdr,
+	})
+	return nil
+
+}
+
 // processMessages handles each message in buf, passing it to the protocol
 // handler for final handling.
 func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error {
@@ -545,14 +558,20 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 			continue
 		}
 
+		ms := NewMessageSet(s.portID, hdr.Seq)
+		var err *syserr.Error
 		// TODO(b/68877377): ACKs not supported yet.
 		if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
-			return syserr.ErrNotSupported
-		}
+			err = syserr.ErrNotSupported
+		} else {
 
-		ms := NewMessageSet(s.portID, hdr.Seq)
-		if err := s.protocol.ProcessMessage(ctx, hdr, data, ms); err != nil {
-			return err
+			err = s.protocol.ProcessMessage(ctx, hdr, data, ms)
+		}
+		if err != nil {
+			ms = NewMessageSet(s.portID, hdr.Seq)
+			if err := s.dumpErrorMesage(ctx, hdr, ms, err); err != nil {
+				return err
+			}
 		}
 
 		if err := s.sendResponse(ctx, ms); err != nil {
