@@ -89,7 +89,8 @@ TEST(NetdeviceTest, Netmask) {
   // (i.e. netmask) for the loopback device.
   int prefixlen = -1;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
-      fd, &req, sizeof(req), [&](const struct nlmsghdr *hdr) {
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr *hdr) {
         EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWADDR), Eq(NLMSG_DONE)));
 
         EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
@@ -111,7 +112,8 @@ TEST(NetdeviceTest, Netmask) {
             ifaddrmsg->ifa_family == AF_INET) {
           prefixlen = ifaddrmsg->ifa_prefixlen;
         }
-      }));
+      },
+      false));
 
   ASSERT_GE(prefixlen, 0);
 
