@@ -122,3 +122,9 @@ const (
 	NETLINK_EXT_ACK          = 11
 	NETLINK_DUMP_STRICT_CHK  = 12
 )
+
+// NetlinkErrorMessage is struct nlmsgerr, from uapi/linux/netlink.h.
+type NetlinkErrorMessage struct {
+	Error  int32
+	Header NetlinkMessageHeader
+}
