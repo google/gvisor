@@ -16,10 +16,8 @@
 
 package fdbased
 
-import "gvisor.dev/gvisor/pkg/tcpip"
-
 // Stubbed out version for non-linux/non-amd64 platforms.
 
-func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, *tcpip.Error) {
+func newPacketMMapDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	return nil, nil
 }
