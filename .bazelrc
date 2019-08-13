@@ -12,25 +12,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Start with a base bazelrc for a recent version of bazel. These can be
-# downloaded from:
-# https://github.com/bazelbuild/bazel-toolchains/tree/master/bazelrc
-import %workspace%/tools/bazel-0.24.0.bazelrc
-
-# All changes below are gVisor-specific.
-
 # Display the current git revision in the info block.
 build --workspace_status_command tools/workspace_status.sh
 
-# Add a custom toolchain that builds in a privileged docker container, which is
-# required by our syscall tests.
+# Enable remote execution so actions are performed on the remote systems.
+build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
+
+# Add a custom platform and toolchain that builds in a privileged docker
+# container, which is required by our syscall tests.
+build:remote --host_platform=//test:rbe_ubuntu1604
 build:remote --extra_toolchains=//test:cc-toolchain-clang-x86_64-default
 build:remote --extra_execution_platforms=//test:rbe_ubuntu1604
-build:remote --host_platform=//test:rbe_ubuntu1604
 build:remote --platforms=//test:rbe_ubuntu1604
+
+# Use default image for crosstool toolchain.
+build:remote --crosstool_top=@rbe_default//cc:toolchain
+
+# Default parallelism and timeout for remote jobs.
+build:remote --jobs=50
+build:remote --remote_timeout=3600
 
 # RBE requires a strong hash function, such as SHA256.
 startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
+
+# Enable authentication. This will pick up application default credentials by
+# default. You can use --google_credentials=some_file.json to use a service
+# account credential instead.
+build:remote --google_default_credentials=true
 
 # Auth scope needed for authentication with RBE.
 build:remote --auth_scope="https://www.googleapis.com/auth/cloud-source-tools"
