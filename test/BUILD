@@ -39,6 +39,6 @@ toolchain(
     ],
     target_compatible_with = [
     ],
-    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/1.2/bazel_0.23.0/default:cc-compiler-k8",
+    toolchain = "@bazel_toolchains//configs/ubuntu16_04_clang/9.0.0/bazel_0.28.0/cc:cc-compiler-k8",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
 )
