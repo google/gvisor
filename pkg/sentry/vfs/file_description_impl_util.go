@@ -252,3 +252,55 @@ func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int6
 	fd.off = offset
 	return offset, nil
 }
+
+// StaticBytesFileDescriptionImpl may be embedded by implementations of
+// FileDescriptionImpl that represent read-only static regular files.
+type StaticBytesFileDescriptionImpl struct {
+	data []byte     // immutable
+	mu   sync.Mutex // protects the following fields
+	off  int64
+}
+
+// SetData must be called exactly once on fd before first use.
+func (fd *StaticBytesFileDescriptionImpl) SetData(data []byte) {
+	fd.data = data
+}
+
+// PRead implements FileDescriptionImpl.PRead.
+func (fd *StaticBytesFileDescriptionImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
+	if offset >= int64(len(fd.data)) {
+		return 0, io.EOF
+	}
+	n, err := dst.CopyOut(ctx, fd.data[offset:])
+	return int64(n), err
+}
+
+// Read implements FileDescriptionImpl.Read.
+func (fd *StaticBytesFileDescriptionImpl) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
+	fd.mu.Lock()
+	n, err := fd.PRead(ctx, dst, fd.off, opts)
+	fd.off += n
+	fd.mu.Unlock()
+	return n, err
+}
+
+// Seek implements FileDescriptionImpl.Seek.
+func (fd *StaticBytesFileDescriptionImpl) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	switch whence {
+	case linux.SEEK_SET:
+		// Use offset as given.
+	case linux.SEEK_CUR:
+		offset += fd.off
+	default:
+		// fs/seq_file:seq_lseek() rejects SEEK_END etc.
+		return 0, syserror.EINVAL
+	}
+	if offset < 0 {
+		return 0, syserror.EINVAL
+	}
+
+	fd.off = offset
+	return offset, nil
+}
