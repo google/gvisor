@@ -556,32 +556,50 @@ type PacketConn struct {
 	wq    *waiter.Queue
 }
 
-// NewPacketConn creates a new PacketConn.
-func NewPacketConn(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*PacketConn, error) {
-	// Create UDP endpoint and bind it.
+// DialUDP creates a new PacketConn.
+//
+// If laddr is nil, a local address is automatically chosen.
+//
+// If raddr is nil, the PacketConn is left unconnected.
+func DialUDP(s *stack.Stack, laddr, raddr *tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*PacketConn, error) {
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(udp.ProtocolNumber, network, &wq)
 	if err != nil {
 		return nil, errors.New(err.String())
 	}
 
-	if err := ep.Bind(addr); err != nil {
-		ep.Close()
-		return nil, &net.OpError{
-			Op:   "bind",
-			Net:  "udp",
-			Addr: fullToUDPAddr(addr),
-			Err:  errors.New(err.String()),
+	if laddr != nil {
+		if err := ep.Bind(*laddr); err != nil {
+			ep.Close()
+			return nil, &net.OpError{
+				Op:   "bind",
+				Net:  "udp",
+				Addr: fullToUDPAddr(*laddr),
+				Err:  errors.New(err.String()),
+			}
 		}
 	}
 
-	c := &PacketConn{
+	c := PacketConn{
 		stack: s,
 		ep:    ep,
 		wq:    &wq,
 	}
 	c.deadlineTimer.init()
-	return c, nil
+
+	if raddr != nil {
+		if err := c.ep.Connect(*raddr); err != nil {
+			c.ep.Close()
+			return nil, &net.OpError{
+				Op:   "connect",
+				Net:  "udp",
+				Addr: fullToUDPAddr(*raddr),
+				Err:  errors.New(err.String()),
+			}
+		}
+	}
+
+	return &c, nil
 }
 
 func (c *PacketConn) newOpError(op string, err error) *net.OpError {
