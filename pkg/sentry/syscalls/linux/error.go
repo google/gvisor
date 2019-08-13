@@ -91,6 +91,10 @@ func handleIOError(t *kernel.Task, partialResult bool, err, intr error, op strin
 		// TODO(gvisor.dev/issue/161): In some cases SIGPIPE should
 		// also be sent to the application.
 		return nil
+	case syserror.ENOSPC:
+		// Similar to EPIPE. Return what we wrote this time, and let
+		// ENOSPC be returned on the next call.
+		return nil
 	case syserror.ECONNRESET:
 		// For TCP sendfile connections, we may have a reset. But we
 		// should just return n as the result.
