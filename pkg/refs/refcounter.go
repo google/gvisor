@@ -325,6 +325,8 @@ func (r *AtomicRefCount) finalize() {
 		msg := fmt.Sprintf("%sAtomicRefCount %p owned by %q garbage collected with ref count of %d (want 0)", note, r, r.name, n)
 		if len(r.stack) != 0 {
 			msg += ":\nCaller:\n" + formatStack(r.stack)
+		} else {
+			msg += " (enable trace logging to debug)"
 		}
 		log.Warningf(msg)
 	}
