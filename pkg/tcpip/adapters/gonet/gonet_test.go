@@ -371,9 +371,9 @@ func TestUDPForwarder(t *testing.T) {
 	})
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, fwd.HandlePacket)
 
-	c2, err := NewPacketConn(s, addr2, ipv4.ProtocolNumber)
+	c2, err := DialUDP(s, &addr2, nil, ipv4.ProtocolNumber)
 	if err != nil {
-		t.Fatal("NewPacketConn(port 5):", err)
+		t.Fatal("DialUDP(bind port 5):", err)
 	}
 
 	sent := "abc123"
@@ -452,13 +452,13 @@ func TestPacketConnTransfer(t *testing.T) {
 	addr2 := tcpip.FullAddress{NICID, ip2, 11311}
 	s.AddAddress(NICID, ipv4.ProtocolNumber, ip2)
 
-	c1, err := NewPacketConn(s, addr1, ipv4.ProtocolNumber)
+	c1, err := DialUDP(s, &addr1, nil, ipv4.ProtocolNumber)
 	if err != nil {
-		t.Fatal("NewPacketConn(port 4):", err)
+		t.Fatal("DialUDP(bind port 4):", err)
 	}
-	c2, err := NewPacketConn(s, addr2, ipv4.ProtocolNumber)
+	c2, err := DialUDP(s, &addr2, nil, ipv4.ProtocolNumber)
 	if err != nil {
-		t.Fatal("NewPacketConn(port 5):", err)
+		t.Fatal("DialUDP(bind port 5):", err)
 	}
 
 	c1.SetDeadline(time.Now().Add(time.Second))
@@ -481,6 +481,50 @@ func TestPacketConnTransfer(t *testing.T) {
 
 	if want := fullToUDPAddr(addr1); !reflect.DeepEqual(recvAddr, want) {
 		t.Errorf("got recvAddr = %v, want = %v", recvAddr, want)
+	}
+
+	if err := c1.Close(); err != nil {
+		t.Error("c1.Close():", err)
+	}
+	if err := c2.Close(); err != nil {
+		t.Error("c2.Close():", err)
+	}
+}
+
+func TestConnectedPacketConnTransfer(t *testing.T) {
+	s, e := newLoopbackStack()
+	if e != nil {
+		t.Fatalf("newLoopbackStack() = %v", e)
+	}
+
+	ip := tcpip.Address(net.IPv4(169, 254, 10, 1).To4())
+	addr := tcpip.FullAddress{NICID, ip, 11211}
+	s.AddAddress(NICID, ipv4.ProtocolNumber, ip)
+
+	c1, err := DialUDP(s, &addr, nil, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatal("DialUDP(bind port 4):", err)
+	}
+	c2, err := DialUDP(s, nil, &addr, ipv4.ProtocolNumber)
+	if err != nil {
+		t.Fatal("DialUDP(bind port 5):", err)
+	}
+
+	c1.SetDeadline(time.Now().Add(time.Second))
+	c2.SetDeadline(time.Now().Add(time.Second))
+
+	sent := "abc123"
+	if n, err := c2.Write([]byte(sent)); err != nil || n != len(sent) {
+		t.Errorf("got c2.Write(%q) = %d, %v, want = %d, %v", sent, n, err, len(sent), nil)
+	}
+	recv := make([]byte, len(sent))
+	n, err := c1.Read(recv)
+	if err != nil || n != len(recv) {
+		t.Errorf("got c1.Read() = %d, %v, want = %d, %v", n, err, len(recv), nil)
+	}
+
+	if recv := string(recv); recv != sent {
+		t.Errorf("got recv = %q, want = %q", recv, sent)
 	}
 
 	if err := c1.Close(); err != nil {
