@@ -23,11 +23,13 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -189,6 +191,8 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
 		"-net-raw=true",
+		fmt.Sprintf("-panic-signal=%d", syscall.SIGTERM),
+		"-watchdog-action=panic",
 	}
 	if *overlay {
 		args = append(args, "-overlay")
@@ -220,8 +224,8 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
 	// as root inside that namespace to get it.
-	args = append(args, "run", "--bundle", bundleDir, id)
-	cmd := exec.Command(*runscPath, args...)
+	rArgs := append(args, "run", "--bundle", bundleDir, id)
+	cmd := exec.Command(*runscPath, rArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
 		// Set current user/group as root inside the namespace.
@@ -239,9 +243,44 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM)
+	go func() {
+		s, ok := <-sig
+		if !ok {
+			return
+		}
+		t.Errorf("%s: Got signal: %v", tc.FullName(), s)
+		done := make(chan bool)
+		go func() {
+			dArgs := append(args, "-alsologtostderr=true", "debug", "--stacks", id)
+			cmd := exec.Command(*runscPath, dArgs...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+			done <- true
+		}()
+
+		timeout := time.Tick(3 * time.Second)
+		select {
+		case <-timeout:
+			t.Logf("runsc debug --stacks is timeouted")
+		case <-done:
+		}
+
+		t.Logf("Send SIGTERM to the sandbox process")
+		dArgs := append(args, "debug",
+			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
+			id)
+		cmd = exec.Command(*runscPath, dArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	}()
 	if err = cmd.Run(); err != nil {
 		t.Errorf("test %q exited with status %v, want 0", tc.FullName(), err)
 	}
+	close(sig)
 }
 
 // filterEnv returns an environment with the blacklisted variables removed.
@@ -277,7 +316,7 @@ func main() {
 		fatalf("test-name flag must be provided")
 	}
 
-	log.SetLevel(log.Warning)
+	log.SetLevel(log.Info)
 	if *debug {
 		log.SetLevel(log.Debug)
 	}
