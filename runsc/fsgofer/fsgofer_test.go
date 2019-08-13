@@ -17,8 +17,10 @@ package fsgofer
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"syscall"
 	"testing"
 
@@ -618,6 +620,46 @@ func TestAttachFile(t *testing.T) {
 	}
 	if string(rBuf) != "foobar" {
 		t.Fatalf("ReadAt() wrong data, got: %s, expected: %s", string(rBuf), "foobar")
+	}
+}
+
+func TestAttachInvalidType(t *testing.T) {
+	dir, err := ioutil.TempDir("", "attach-")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed, err: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0755); err != nil {
+		t.Fatalf("Mkfifo(%q): %v", fifo, err)
+	}
+
+	socket := filepath.Join(dir, "socket")
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("net.Listen(unix, %q): %v", socket, err)
+	}
+	defer l.Close()
+
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "fifo", path: fifo},
+		{name: "socket", path: socket},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conf := Config{ROMount: false}
+			a, err := NewAttachPoint(tc.path, conf)
+			if err != nil {
+				t.Fatalf("NewAttachPoint failed: %v", err)
+			}
+			f, err := a.Attach()
+			if f != nil || err == nil {
+				t.Fatalf("Attach should have failed, got (%v, nil)", f)
+			}
+		})
 	}
 }
 

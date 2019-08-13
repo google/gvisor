@@ -125,7 +125,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
 	mode := syscall.O_RDWR
-	if a.conf.ROMount || stat.Mode&syscall.S_IFDIR != 0 {
+	if a.conf.ROMount || (stat.Mode&syscall.S_IFMT) == syscall.S_IFDIR {
 		mode = syscall.O_RDONLY
 	}
 
@@ -141,9 +141,13 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		f.Close()
 		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
 	}
-	a.attached = true
 
-	return newLocalFile(a, f, a.prefix, stat)
+	rv, err := newLocalFile(a, f, a.prefix, stat)
+	if err != nil {
+		return nil, err
+	}
+	a.attached = true
+	return rv, nil
 }
 
 // makeQID returns a unique QID for the given stat buffer.
