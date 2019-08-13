@@ -87,7 +87,7 @@ func (p *pipeOperations) init() error {
 		log.Warningf("pipe: cannot stat fd %d: %v", p.file.FD(), err)
 		return syscall.EINVAL
 	}
-	if s.Mode&syscall.S_IFIFO != syscall.S_IFIFO {
+	if (s.Mode & syscall.S_IFMT) != syscall.S_IFIFO {
 		log.Warningf("pipe: cannot load fd %d as pipe, file type: %o", p.file.FD(), s.Mode)
 		return syscall.EINVAL
 	}
