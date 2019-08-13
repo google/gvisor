@@ -187,9 +187,9 @@ TEST(ProcNetTCP, EntryUID) {
   std::vector<TCPEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcNetTCPEntries());
   TCPEntry e;
-  EXPECT_TRUE(FindByLocalAddr(entries, &e, sockets->first_addr()));
+  ASSERT_TRUE(FindByLocalAddr(entries, &e, sockets->first_addr()));
   EXPECT_EQ(e.uid, geteuid());
-  EXPECT_TRUE(FindByRemoteAddr(entries, &e, sockets->first_addr()));
+  ASSERT_TRUE(FindByRemoteAddr(entries, &e, sockets->first_addr()));
   EXPECT_EQ(e.uid, geteuid());
 }
 

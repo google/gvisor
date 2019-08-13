@@ -366,7 +366,7 @@ type TCPInfo struct {
 }
 
 // SizeOfTCPInfo is the binary size of a TCPInfo struct.
-const SizeOfTCPInfo = 104
+var SizeOfTCPInfo = int(binary.Size(TCPInfo{}))
 
 // Control message types, from linux/socket.h.
 const (
