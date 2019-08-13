@@ -1,5 +1,6 @@
 # Base path used to install.
 DESTDIR=/usr/local
+GC=go
 GO_BUILD_FLAGS=
 GO_TAGS=
 GO_LDFLAGS=-ldflags '-s -w -extldflags "-static"'
@@ -12,10 +13,10 @@ all: binaries
 binaries: bin/gvisor-containerd-shim bin/containerd-shim-runsc-v1
 
 bin/gvisor-containerd-shim: $(SOURCES)
-	CGO_ENABLED=0 go build ${GO_BUILD_FLAGS} -o bin/gvisor-containerd-shim ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/gvisor-containerd-shim
+	CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/gvisor-containerd-shim ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/gvisor-containerd-shim
 
 bin/containerd-shim-runsc-v1: $(SOURCES)
-	CGO_ENABLED=0 go build ${GO_BUILD_FLAGS} -o bin/containerd-shim-runsc-v1 ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/containerd-shim-runsc-v1
+	CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/containerd-shim-runsc-v1 ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/containerd-shim-runsc-v1
 
 install: bin/gvisor-containerd-shim
 	mkdir -p $(DESTDIR)/bin
