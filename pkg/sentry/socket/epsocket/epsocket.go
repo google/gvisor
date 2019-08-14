@@ -2046,7 +2046,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		n, _, err = s.Endpoint.Write(v, opts)
 	}
 	dontWait := flags&linux.MSG_DONTWAIT != 0
-	if err == nil && (n >= uintptr(v.Size()) || dontWait) {
+	if err == nil && (n >= int64(v.Size()) || dontWait) {
 		// Complete write.
 		return int(n), nil
 	}

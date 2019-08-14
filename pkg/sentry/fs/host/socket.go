@@ -65,7 +65,7 @@ type ConnectedEndpoint struct {
 	// GetSockOpt and message splitting/rejection in SendMsg, but do not
 	// prevent lots of small messages from filling the real send buffer
 	// size on the host.
-	sndbuf int `state:"nosave"`
+	sndbuf int64 `state:"nosave"`
 
 	// mu protects the fields below.
 	mu sync.RWMutex `state:"nosave"`
@@ -107,7 +107,7 @@ func (c *ConnectedEndpoint) init() *syserr.Error {
 	}
 
 	c.stype = linux.SockType(stype)
-	c.sndbuf = sndbuf
+	c.sndbuf = int64(sndbuf)
 
 	return nil
 }
@@ -202,7 +202,7 @@ func newSocket(ctx context.Context, orgfd int, saveable bool) (*fs.File, error) 
 }
 
 // Send implements transport.ConnectedEndpoint.Send.
-func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (uintptr, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Send(data [][]byte, controlMessages transport.ControlMessages, from tcpip.FullAddress) (int64, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -279,7 +279,7 @@ func (c *ConnectedEndpoint) EventUpdate() {
 }
 
 // Recv implements transport.Receiver.Recv.
-func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights uintptr, peek bool) (uintptr, uintptr, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
+func (c *ConnectedEndpoint) Recv(data [][]byte, creds bool, numRights int, peek bool) (int64, int64, transport.ControlMessages, bool, tcpip.FullAddress, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
