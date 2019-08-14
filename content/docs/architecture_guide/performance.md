@@ -68,7 +68,7 @@ accesses. Page faults and other Operating System (OS) mechanisms are translated
 through the Sentry, but once mappings are installed and available to the
 application, there is no additional overhead.
 
-{{&lt; graph id="sysbench-memory" url="/performance/sysbench-memory.csv" title="perf.py sysbench.memory --runtime=runc --runtime=runsc" >}}
+{{< graph id="sysbench-memory" url="/performance/sysbench-memory.csv" title="perf.py sysbench.memory --runtime=runc --runtime=runsc" >}}
 
 The above figure demonstrates the memory transfer rate as measured by
 `sysbench`.
@@ -84,7 +84,7 @@ For many use cases, fixed memory overheads are a primary concern. This may be
 because sandboxed containers handle a low volume of requests, and it is
 therefore important to achieve high densities for efficiency.
 
-{{&lt; graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000" >}}
+{{< graph id="density" url="/performance/density.csv" title="perf.py density --runtime=runc --runtime=runsc" log="true" y_min="100000" >}}
 
 The above figure demonstrates these costs based on three sample applications.
 This test is the result of running many instances of a container (50, or 5 in
@@ -107,7 +107,7 @@ gVisor does not perform emulation or otherwise interfere with the raw execution
 of CPU instructions by the application. Therefore, there is no runtime cost
 imposed for CPU operations.
 
-{{&lt; graph id="sysbench-cpu" url="/performance/sysbench-cpu.csv" title="perf.py sysbench.cpu --runtime=runc --runtime=runsc" >}}
+{{< graph id="sysbench-cpu" url="/performance/sysbench-cpu.csv" title="perf.py sysbench.cpu --runtime=runc --runtime=runsc" >}}
 
 The above figure demonstrates the `sysbench` measurement of CPU events per
 second. Events per second is based on a CPU-bound loop that calculates all prime
@@ -118,7 +118,7 @@ This has important consequences for classes of workloads that are often
 CPU-bound, such as data processing or machine learning. In these cases, `runsc`
 will similarly impose minimal runtime overhead.
 
-{{&lt; graph id="tensorflow" url="/performance/tensorflow.csv" title="perf.py tensorflow --runtime=runc --runtime=runsc" >}}
+{{< graph id="tensorflow" url="/performance/tensorflow.csv" title="perf.py tensorflow --runtime=runc --runtime=runsc" >}}
 
 For example, the above figure shows a sample TensorFlow workload, the
 [convolutional neural network example][cnn]. The time indicated includes the
@@ -132,7 +132,7 @@ supports a variety of platforms. These platforms present distinct performance,
 compatibility and security trade-offs. For example, the KVM platform has low
 overhead system call interception but runs poorly with nested virtualization.
 
-{{&lt; graph id="syscall" url="/performance/syscall.csv" title="perf.py syscall --runtime=runc --runtime=runsc-ptrace --runtime=runsc-kvm" y_min="100" log="true" >}}
+{{< graph id="syscall" url="/performance/syscall.csv" title="perf.py syscall --runtime=runc --runtime=runsc-ptrace --runtime=runsc-kvm" y_min="100" log="true" >}}
 
 The above figure demonstrates the time required for a raw system call on various
 platforms. The test is implemented by a custom binary which performs a large
@@ -143,7 +143,7 @@ tend to be high-performance data stores and static network services. In general,
 the impact of system call interception will be lower the more work an
 application does.
 
-{{&lt; graph id="redis" url="/performance/redis.csv" title="perf.py redis --runtime=runc --runtime=runsc" >}}
+{{< graph id="redis" url="/performance/redis.csv" title="perf.py redis --runtime=runc --runtime=runsc" >}}
 
 For example, `redis` is an application that performs relatively little work in
 userspace: in general it reads from a connected socket, reads or modifies some
@@ -163,7 +163,7 @@ For many use cases, the ability to spin-up containers quickly and efficiently is
 important. A sandbox may be short-lived and perform minimal user work (e.g. a
 function invocation).
 
-{{&lt; graph id="startup" url="/performance/startup.csv" title="perf.py startup --runtime=runc --runtime=runsc" >}}
+{{< graph id="startup" url="/performance/startup.csv" title="perf.py startup --runtime=runc --runtime=runsc" >}}
 
 The above figure indicates how total time required to start a container through
 [Docker][docker]. This benchmark uses three different applications. First, an
@@ -186,14 +186,14 @@ While typically not an important metric in practice for common sandbox use
 cases, nevertheless `iperf` is a common microbenchmark used to measure raw
 throughput.
 
-{{&lt; graph id="iperf" url="/performance/iperf.csv" title="perf.py iperf --runtime=runc --runtime=runsc" >}}
+{{< graph id="iperf" url="/performance/iperf.csv" title="perf.py iperf --runtime=runc --runtime=runsc" >}}
 
 The above figure shows the result of an `iperf` test between two instances. For
 the upload case, the specified runtime is used for the `iperf` client, and in
 the download case, the specified runtime is the server. A native runtime is
 always used for the other endpoint in the test.
 
-{{&lt; graph id="applications" metric="requests_per_second" url="/performance/applications.csv" title="perf.py http.(node|ruby) --connections=25 --runtime=runc --runtime=runsc" >}}
+{{< graph id="applications" metric="requests_per_second" url="/performance/applications.csv" title="perf.py http.(node|ruby) --connections=25 --runtime=runc --runtime=runsc" >}}
 
 The above figure shows the result of simple `node` and `ruby` web services that
 render a template upon receiving a request. Because these synthetic benchmarks
@@ -214,20 +214,20 @@ through the [Gofer](../) as a result of our [security model](../security/), but
 in most cases are dominated by **implementation costs**, due to an internal
 [Virtual File System][vfs] (VFS) implementation that needs improvement.
 
-{{&lt; graph id="fio-bw" url="/performance/fio.csv" title="perf.py fio --engine=sync --runtime=runc --runtime=runsc" log="true" >}}
+{{< graph id="fio-bw" url="/performance/fio.csv" title="perf.py fio --engine=sync --runtime=runc --runtime=runsc" log="true" >}}
 
 The above figures demonstrate the results of `fio` for reads and writes to and
 from the disk. In this case, the disk quickly becomes the bottleneck and
 dominates other costs.
 
-{{&lt; graph id="fio-tmpfs-bw" url="/performance/fio-tmpfs.csv" title="perf.py fio --engine=sync --runtime=runc --tmpfs=True --runtime=runsc" log="true" >}}
+{{< graph id="fio-tmpfs-bw" url="/performance/fio-tmpfs.csv" title="perf.py fio --engine=sync --runtime=runc --tmpfs=True --runtime=runsc" log="true" >}}
 
 The above figure shows the raw I/O performance of using a `tmpfs` mount which is
 sandbox-internal in the case of `runsc`. Generally these operations are
 similarly bound to the cost of copying around data in-memory, and we don't see
 the cost of VFS operations.
 
-{{&lt; graph id="httpd100k" metric="transfer_rate" url="/performance/httpd100k.csv" title="perf.py http.httpd --connections=1 --connections=5 --connections=10 --connections=25 --runtime=runc --runtime=runsc" >}}
+{{< graph id="httpd100k" metric="transfer_rate" url="/performance/httpd100k.csv" title="perf.py http.httpd --connections=1 --connections=5 --connections=10 --connections=25 --runtime=runc --runtime=runsc" >}}
 
 The high costs of VFS operations can manifest in benchmarks that execute many
 such operations in the hot path for serving requests, for example. The above
@@ -240,7 +240,7 @@ internal serialization points (since all requests are reading the same file).
 Note that some of some of network stack performance issues also impact this
 benchmark.
 
-{{&lt; graph id="ffmpeg" url="/performance/ffmpeg.csv" title="perf.py media.ffmpeg --runtime=runc --runtime=runsc" >}}
+{{< graph id="ffmpeg" url="/performance/ffmpeg.csv" title="perf.py media.ffmpeg --runtime=runc --runtime=runsc" >}}
 
 For benchmarks that are bound by raw disk I/O and a mix of compute, file system
 operations are less of an issue. The above figure shows the total time required
