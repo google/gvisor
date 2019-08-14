@@ -20,6 +20,7 @@ go_library(
         "rpcinet_proc.go",
         "stat.go",
         "sys.go",
+        "sys_kernel.go",
         "sys_net.go",
         "sys_net_state.go",
         "task.go",

@@ -16,19 +16,13 @@ package proc
 
 import (
 	"fmt"
-	"io"
-	"strconv"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/fs/proc/seqfile"
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // mmapMinAddrData backs /proc/sys/vm/mmap_min_addr.
@@ -76,22 +70,6 @@ func (*overcommitMemory) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandl
 	}, 0
 }
 
-func (p *proc) newKernelDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
-	h := hostname{
-		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
-	}
-
-	children := map[string]*fs.Inode{
-		"hostname": newProcInode(ctx, &h, msrc, fs.SpecialFile, nil),
-		"shmall":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMALL, 10))),
-		"shmmax":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMMAX, 10))),
-		"shmmni":   newStaticProcInode(ctx, msrc, []byte(strconv.FormatUint(linux.SHMMNI, 10))),
-	}
-
-	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
-	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
-}
-
 func (p *proc) newVMDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	children := map[string]*fs.Inode{
 		"mmap_min_addr":     seqfile.NewSeqFileInode(ctx, &mmapMinAddrData{p.k}, msrc),
@@ -117,46 +95,3 @@ func (p *proc) newSysDir(ctx context.Context, msrc *fs.MountSource) *fs.Inode {
 	d := ramfs.NewDir(ctx, children, fs.RootOwner, fs.FilePermsFromMode(0555))
 	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
-
-// hostname is the inode for a file containing the system hostname.
-//
-// +stateify savable
-type hostname struct {
-	fsutil.SimpleFileInode
-}
-
-// GetFile implements fs.InodeOperations.GetFile.
-func (h *hostname) GetFile(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	return fs.NewFile(ctx, d, flags, &hostnameFile{}), nil
-}
-
-var _ fs.InodeOperations = (*hostname)(nil)
-
-// +stateify savable
-type hostnameFile struct {
-	fsutil.FileNoIoctl              `state:"nosave"`
-	fsutil.FileNoMMap               `state:"nosave"`
-	fsutil.FileNoSeek               `state:"nosave"`
-	fsutil.FileNoopFlush            `state:"nosave"`
-	fsutil.FileNoopFsync            `state:"nosave"`
-	fsutil.FileNoopRelease          `state:"nosave"`
-	fsutil.FileNotDirReaddir        `state:"nosave"`
-	fsutil.FileNoWrite              `state:"nosave"`
-	fsutil.FileNoSplice             `state:"nosave"`
-	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
-	waiter.AlwaysReady              `state:"nosave"`
-}
-
-// Read implements fs.FileOperations.Read.
-func (hf *hostnameFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
-	utsns := kernel.UTSNamespaceFromContext(ctx)
-	contents := []byte(utsns.HostName() + "\n")
-	if offset >= int64(len(contents)) {
-		return 0, io.EOF
-	}
-	n, err := dst.CopyOut(ctx, contents[offset:])
-	return int64(n), err
-
-}
-
-var _ fs.FileOperations = (*hostnameFile)(nil)

@@ -1776,8 +1776,13 @@ TEST(ProcTaskNs, AccessOnNsNodeSucceeds) {
   EXPECT_THAT(access("/proc/self/ns/pid", F_OK), SyscallSucceeds());
 }
 
-TEST(ProcSysKernelHostname, Exists) {
-  EXPECT_THAT(open("/proc/sys/kernel/hostname", O_RDONLY), SyscallSucceeds());
+TEST(ProcSysKernelDomainname, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string domainname = absl::StrCat(buf.domainname, "\n");
+  auto procfs_domainname =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/domainname"));
+  EXPECT_EQ(procfs_domainname, domainname);
 }
 
 TEST(ProcSysKernelHostname, MatchesUname) {
@@ -1787,6 +1792,33 @@ TEST(ProcSysKernelHostname, MatchesUname) {
   auto procfs_hostname =
       ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/hostname"));
   EXPECT_EQ(procfs_hostname, hostname);
+}
+
+TEST(ProcSysKernelOSRelease, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string release = absl::StrCat(buf.release, "\n");
+  auto procfs_osrelease =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/osrelease"));
+  EXPECT_EQ(procfs_osrelease, release);
+}
+
+TEST(ProcSysKernelOSType, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string sysname = absl::StrCat(buf.sysname, "\n");
+  auto procfs_ostype =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/ostype"));
+  EXPECT_EQ(procfs_ostype, sysname);
+}
+
+TEST(ProcSysKernelVersion, MatchesUname) {
+  struct utsname buf;
+  EXPECT_THAT(uname(&buf), SyscallSucceeds());
+  const std::string version = absl::StrCat(buf.version, "\n");
+  auto procfs_version =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/version"));
+  EXPECT_EQ(procfs_version, version);
 }
 
 TEST(ProcSysVmMmapMinAddr, HasNumericValue) {
