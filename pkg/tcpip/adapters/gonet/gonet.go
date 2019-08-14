@@ -404,7 +404,7 @@ func (c *Conn) Write(b []byte) (int, error) {
 			}
 		}
 
-		var n uintptr
+		var n int64
 		var resCh <-chan struct{}
 		n, resCh, err = c.ep.Write(tcpip.SlicePayload(v), tcpip.WriteOptions{})
 		nbytes += int(n)

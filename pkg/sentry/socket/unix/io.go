@@ -62,7 +62,7 @@ type EndpointReader struct {
 	Creds bool
 
 	// NumRights is the number of SCM_RIGHTS FDs requested.
-	NumRights uintptr
+	NumRights int
 
 	// Peek indicates that the data should not be consumed from the
 	// endpoint.
@@ -70,7 +70,7 @@ type EndpointReader struct {
 
 	// MsgSize is the size of the message that was read from. For stream
 	// sockets, it is the amount read.
-	MsgSize uintptr
+	MsgSize int64
 
 	// From, if not nil, will be set with the address read from.
 	From *tcpip.FullAddress

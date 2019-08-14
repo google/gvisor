@@ -907,7 +907,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -976,13 +976,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		// Let the protocol goroutine do the work.
 		e.sndWaker.Assert()
 	}
-	return uintptr(l), nil, nil
+	return int64(l), nil, nil
 }
 
 // Peek reads data without consuming it from the endpoint.
 //
 // This method does not block if there is no data pending.
-func (e *endpoint) Peek(vec [][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
+func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -1008,8 +1008,7 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Er
 	// Make a copy of vec so we can modify the slide headers.
 	vec = append([][]byte(nil), vec...)
 
-	var num uintptr
-
+	var num int64
 	for s := e.rcvList.Front(); s != nil; s = s.Next() {
 		views := s.data.Views()
 
@@ -1028,7 +1027,7 @@ func (e *endpoint) Peek(vec [][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Er
 				n := copy(vec[0], v)
 				v = v[n:]
 				vec[0] = vec[0][n:]
-				num += uintptr(n)
+				num += int64(n)
 			}
 		}
 	}
