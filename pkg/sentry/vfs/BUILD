@@ -18,6 +18,7 @@ go_library(
         "permissions.go",
         "resolving_path.go",
         "syscalls.go",
+        "testutil.go",
         "vfs.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/vfs",
@@ -40,7 +41,16 @@ go_test(
     name = "vfs_test",
     size = "small",
     srcs = [
+        "file_description_impl_util_test.go",
         "mount_test.go",
     ],
     embed = [":vfs"],
+    deps = [
+        "//pkg/abi/linux",
+        "//pkg/sentry/context",
+        "//pkg/sentry/context/contexttest",
+        "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/usermem",
+        "//pkg/syserror",
+    ],
 )
