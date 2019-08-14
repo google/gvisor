@@ -1252,10 +1252,14 @@ cc_binary(
     srcs = ["partial_bad_buffer.cc"],
     linkstatic = 1,
     deps = [
+        "//test/syscalls/linux:socket_test_util",
+        "//test/util:file_descriptor",
         "//test/util:fs_util",
+        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
     ],
 )
