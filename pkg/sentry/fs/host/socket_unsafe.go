@@ -23,7 +23,7 @@ import (
 //
 // If the total length of bufs is > maxlen, fdReadVec will do a partial read
 // and err will indicate why the message was truncated.
-func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (readLen uintptr, msgLen uintptr, controlLen uint64, controlTrunc bool, err error) {
+func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int64) (readLen int64, msgLen int64, controlLen uint64, controlTrunc bool, err error) {
 	flags := uintptr(syscall.MSG_DONTWAIT | syscall.MSG_TRUNC)
 	if peek {
 		flags |= syscall.MSG_PEEK
@@ -48,11 +48,12 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (re
 		msg.Iovlen = uint64(len(iovecs))
 	}
 
-	n, _, e := syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
+	rawN, _, e := syscall.RawSyscall(syscall.SYS_RECVMSG, uintptr(fd), uintptr(unsafe.Pointer(&msg)), flags)
 	if e != 0 {
 		// N.B. prioritize the syscall error over the buildIovec error.
 		return 0, 0, 0, false, e
 	}
+	n := int64(rawN)
 
 	// Copy data back to bufs.
 	if intermediate != nil {
@@ -72,7 +73,7 @@ func fdReadVec(fd int, bufs [][]byte, control []byte, peek bool, maxlen int) (re
 //
 // If the total length of bufs is > maxlen && truncate, fdWriteVec will do a
 // partial write and err will indicate why the message was truncated.
-func fdWriteVec(fd int, bufs [][]byte, maxlen int, truncate bool) (uintptr, uintptr, error) {
+func fdWriteVec(fd int, bufs [][]byte, maxlen int64, truncate bool) (int64, int64, error) {
 	length, iovecs, intermediate, err := buildIovec(bufs, maxlen, truncate)
 	if err != nil && len(iovecs) == 0 {
 		// No partial write to do, return error immediately.
@@ -96,5 +97,5 @@ func fdWriteVec(fd int, bufs [][]byte, maxlen int, truncate bool) (uintptr, uint
 		return 0, length, e
 	}
 
-	return n, length, err
+	return int64(n), length, err
 }

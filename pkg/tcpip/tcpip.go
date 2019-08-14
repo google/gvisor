@@ -329,12 +329,12 @@ type Endpoint interface {
 	// ErrNoLinkAddress and a notification channel is returned for the caller to
 	// block. Channel is closed once address resolution is complete (success or
 	// not). The channel is only non-nil in this case.
-	Write(Payload, WriteOptions) (uintptr, <-chan struct{}, *Error)
+	Write(Payload, WriteOptions) (int64, <-chan struct{}, *Error)
 
 	// Peek reads data without consuming it from the endpoint.
 	//
 	// This method does not block if there is no data pending.
-	Peek([][]byte) (uintptr, ControlMessages, *Error)
+	Peek([][]byte) (int64, ControlMessages, *Error)
 
 	// Connect connects the endpoint to its peer. Specifying a NIC is
 	// optional.

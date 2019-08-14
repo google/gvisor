@@ -233,7 +233,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -335,11 +335,11 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-c
 		return 0, nil, err
 	}
 
-	return uintptr(len(v)), nil, nil
+	return int64(len(v)), nil, nil
 }
 
 // Peek only returns data from a single datagram, so do nothing here.
-func (e *endpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
+func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 

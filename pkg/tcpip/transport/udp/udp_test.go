@@ -567,7 +567,7 @@ func testV4Write(c *testContext) uint16 {
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
-	if n != uintptr(len(payload)) {
+	if n != int64(len(payload)) {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 
@@ -597,7 +597,7 @@ func testV6Write(c *testContext) uint16 {
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
-	if n != uintptr(len(payload)) {
+	if n != int64(len(payload)) {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 
@@ -754,7 +754,7 @@ func TestV6WriteOnConnected(t *testing.T) {
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
-	if n != uintptr(len(payload)) {
+	if n != int64(len(payload)) {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 
@@ -790,7 +790,7 @@ func TestV4WriteOnConnected(t *testing.T) {
 	if err != nil {
 		c.t.Fatalf("Write failed: %v", err)
 	}
-	if n != uintptr(len(payload)) {
+	if n != int64(len(payload)) {
 		c.t.Fatalf("Bad number of bytes written: got %v, want %v", n, len(payload))
 	}
 
@@ -948,7 +948,7 @@ func TestTTL(t *testing.T) {
 				if err != nil {
 					c.t.Fatalf("Write failed: %v", err)
 				}
-				if n != uintptr(len(payload)) {
+				if n != int64(len(payload)) {
 					c.t.Fatalf("got c.ep.Write(...) = %d, want = %d", n, len(payload))
 				}
 
