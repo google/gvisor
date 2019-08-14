@@ -15,6 +15,10 @@
 package vfs
 
 import (
+	"bytes"
+	"io"
+	"sync"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
@@ -139,4 +143,107 @@ func (DirectoryFileDescriptionDefaultImpl) PWrite(ctx context.Context, src userm
 // Write implements FileDescriptionImpl.Write.
 func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src usermem.IOSequence, opts WriteOptions) (int64, error) {
 	return 0, syserror.EISDIR
+}
+
+// DynamicBytesFileDescriptionImpl may be embedded by implementations of
+// FileDescriptionImpl that represent read-only regular files whose contents
+// are backed by a bytes.Buffer that is regenerated when necessary, consistent
+// with Linux's fs/seq_file.c:single_open().
+//
+// DynamicBytesFileDescriptionImpl.SetDataSource() must be called before first
+// use.
+type DynamicBytesFileDescriptionImpl struct {
+	FileDescriptionDefaultImpl
+
+	data     DynamicBytesSource // immutable
+	mu       sync.Mutex         // protects the following fields
+	buf      bytes.Buffer
+	off      int64
+	lastRead int64 // offset at which the last Read, PRead, or Seek ended
+}
+
+// DynamicBytesSource represents a data source for a
+// DynamicBytesFileDescriptionImpl.
+type DynamicBytesSource interface {
+	// Generate writes the file's contents to buf.
+	Generate(ctx context.Context, buf *bytes.Buffer) error
+}
+
+// SetDataSource must be called exactly once on fd before first use.
+func (fd *DynamicBytesFileDescriptionImpl) SetDataSource(data DynamicBytesSource) {
+	fd.data = data
+}
+
+// Preconditions: fd.mu must be locked.
+func (fd *DynamicBytesFileDescriptionImpl) preadLocked(ctx context.Context, dst usermem.IOSequence, offset int64, opts *ReadOptions) (int64, error) {
+	// Regenerate the buffer if it's empty, or before pread() at a new offset.
+	// Compare fs/seq_file.c:seq_read() => traverse().
+	switch {
+	case offset != fd.lastRead:
+		fd.buf.Reset()
+		fallthrough
+	case fd.buf.Len() == 0:
+		if err := fd.data.Generate(ctx, &fd.buf); err != nil {
+			fd.buf.Reset()
+			// fd.off is not updated in this case.
+			fd.lastRead = 0
+			return 0, err
+		}
+	}
+	bs := fd.buf.Bytes()
+	if offset >= int64(len(bs)) {
+		return 0, io.EOF
+	}
+	n, err := dst.CopyOut(ctx, bs[offset:])
+	fd.lastRead = offset + int64(n)
+	return int64(n), err
+}
+
+// PRead implements FileDescriptionImpl.PRead.
+func (fd *DynamicBytesFileDescriptionImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
+	fd.mu.Lock()
+	n, err := fd.preadLocked(ctx, dst, offset, &opts)
+	fd.mu.Unlock()
+	return n, err
+}
+
+// Read implements FileDescriptionImpl.Read.
+func (fd *DynamicBytesFileDescriptionImpl) Read(ctx context.Context, dst usermem.IOSequence, opts ReadOptions) (int64, error) {
+	fd.mu.Lock()
+	n, err := fd.preadLocked(ctx, dst, fd.off, &opts)
+	fd.off += n
+	fd.mu.Unlock()
+	return n, err
+}
+
+// Seek implements FileDescriptionImpl.Seek.
+func (fd *DynamicBytesFileDescriptionImpl) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	fd.mu.Lock()
+	defer fd.mu.Unlock()
+	switch whence {
+	case linux.SEEK_SET:
+		// Use offset as given.
+	case linux.SEEK_CUR:
+		offset += fd.off
+	default:
+		// fs/seq_file:seq_lseek() rejects SEEK_END etc.
+		return 0, syserror.EINVAL
+	}
+	if offset < 0 {
+		return 0, syserror.EINVAL
+	}
+	if offset != fd.lastRead {
+		// Regenerate the file's contents immediately. Compare
+		// fs/seq_file.c:seq_lseek() => traverse().
+		fd.buf.Reset()
+		if err := fd.data.Generate(ctx, &fd.buf); err != nil {
+			fd.buf.Reset()
+			fd.off = 0
+			fd.lastRead = 0
+			return 0, err
+		}
+		fd.lastRead = offset
+	}
+	fd.off = offset
+	return offset, nil
 }
