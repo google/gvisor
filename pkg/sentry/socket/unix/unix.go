@@ -535,7 +535,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		Ctx:       t,
 		Endpoint:  s.ep,
 		Creds:     wantCreds,
-		NumRights: uintptr(numRights),
+		NumRights: numRights,
 		Peek:      peek,
 	}
 	if senderRequested {

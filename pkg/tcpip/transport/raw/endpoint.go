@@ -232,7 +232,7 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 }
 
 // Write implements tcpip.Endpoint.Write.
-func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintptr, <-chan struct{}, *tcpip.Error) {
+func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -336,7 +336,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (uintp
 
 // finishWrite writes the payload to a route. It resolves the route if
 // necessary. It's really just a helper to make defer unnecessary in Write.
-func (ep *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (uintptr, <-chan struct{}, *tcpip.Error) {
+func (ep *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, <-chan struct{}, *tcpip.Error) {
 	// We may need to resolve the route (match a link layer address to the
 	// network address). If that requires blocking (e.g. to use ARP),
 	// return a channel on which the caller can wait.
@@ -366,11 +366,11 @@ func (ep *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (uintpt
 		return 0, nil, tcpip.ErrUnknownProtocol
 	}
 
-	return uintptr(len(payloadBytes)), nil, nil
+	return int64(len(payloadBytes)), nil, nil
 }
 
 // Peek implements tcpip.Endpoint.Peek.
-func (ep *endpoint) Peek([][]byte) (uintptr, tcpip.ControlMessages, *tcpip.Error) {
+func (ep *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
