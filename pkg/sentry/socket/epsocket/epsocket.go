@@ -429,6 +429,11 @@ func (i *ioSequencePayload) Size() int {
 	return int(i.src.NumBytes())
 }
 
+// DropFirst drops the first n bytes from underlying src.
+func (i *ioSequencePayload) DropFirst(n int) {
+	i.src = i.src.DropFirst(int(n))
+}
+
 // Write implements fs.FileOperations.Write.
 func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
 	f := &ioSequencePayload{ctx: ctx, src: src}
@@ -2026,28 +2031,22 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		addr = &addrBuf
 	}
 
-	v := buffer.NewView(int(src.NumBytes()))
-
-	// Copy all the data into the buffer.
-	if _, err := src.CopyIn(t, v); err != nil {
-		return 0, syserr.FromError(err)
-	}
-
 	opts := tcpip.WriteOptions{
 		To:          addr,
 		More:        flags&linux.MSG_MORE != 0,
 		EndOfRecord: flags&linux.MSG_EOR != 0,
 	}
 
-	n, resCh, err := s.Endpoint.Write(tcpip.SlicePayload(v), opts)
+	v := &ioSequencePayload{t, src}
+	n, resCh, err := s.Endpoint.Write(v, opts)
 	if resCh != nil {
 		if err := t.Block(resCh); err != nil {
 			return 0, syserr.FromError(err)
 		}
-		n, _, err = s.Endpoint.Write(tcpip.SlicePayload(v), opts)
+		n, _, err = s.Endpoint.Write(v, opts)
 	}
 	dontWait := flags&linux.MSG_DONTWAIT != 0
-	if err == nil && (n >= uintptr(len(v)) || dontWait) {
+	if err == nil && (n >= uintptr(v.Size()) || dontWait) {
 		// Complete write.
 		return int(n), nil
 	}
@@ -2061,18 +2060,18 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 	s.EventRegister(&e, waiter.EventOut)
 	defer s.EventUnregister(&e)
 
-	v.TrimFront(int(n))
+	v.DropFirst(int(n))
 	total := n
 	for {
-		n, _, err = s.Endpoint.Write(tcpip.SlicePayload(v), opts)
-		v.TrimFront(int(n))
+		n, _, err = s.Endpoint.Write(v, opts)
+		v.DropFirst(int(n))
 		total += n
 
 		if err != nil && err != tcpip.ErrWouldBlock && total == 0 {
 			return 0, syserr.TranslateNetstackError(err)
 		}
 
-		if err == nil && len(v) == 0 || err != nil && err != tcpip.ErrWouldBlock {
+		if err == nil && v.Size() == 0 || err != nil && err != tcpip.ErrWouldBlock {
 			return int(total), nil
 		}
 
