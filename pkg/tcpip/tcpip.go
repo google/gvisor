@@ -1072,6 +1072,11 @@ type AddressWithPrefix struct {
 	PrefixLen int
 }
 
+// String implements the fmt.Stringer interface.
+func (a AddressWithPrefix) String() string {
+	return fmt.Sprintf("%s/%d", a.Address, a.PrefixLen)
+}
+
 // ProtocolAddress is an address and the network protocol it is associated
 // with.
 type ProtocolAddress struct {
