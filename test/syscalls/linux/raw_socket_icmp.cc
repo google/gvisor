@@ -35,32 +35,6 @@ namespace testing {
 
 namespace {
 
-// Compute the internet checksum of the ICMP header (assuming no payload).
-static uint16_t Checksum(struct icmphdr* icmp) {
-  uint32_t total = 0;
-  uint16_t* num = reinterpret_cast<uint16_t*>(icmp);
-
-  // This is just the ICMP header, so there's an even number of bytes.
-  static_assert(
-      sizeof(*icmp) % sizeof(*num) == 0,
-      "sizeof(struct icmphdr) is not an integer multiple of sizeof(uint16_t)");
-  for (unsigned int i = 0; i < sizeof(*icmp); i += sizeof(*num)) {
-    total += *num;
-    num++;
-  }
-
-  // Combine the upper and lower 16 bits. This happens twice in case the first
-  // combination causes a carry.
-  unsigned short upper = total >> 16;
-  unsigned short lower = total & 0xffff;
-  total = upper + lower;
-  upper = total >> 16;
-  lower = total & 0xffff;
-  total = upper + lower;
-
-  return ~total;
-}
-
 // The size of an empty ICMP packet and IP header together.
 constexpr size_t kEmptyICMPSize = 28;
 
@@ -164,7 +138,7 @@ TEST_F(RawSocketICMPTest, SendAndReceive) {
   icmp.checksum = 0;
   icmp.un.echo.sequence = 2012;
   icmp.un.echo.id = 2014;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(icmp));
 
   ASSERT_NO_FATAL_FAILURE(ExpectICMPSuccess(icmp));
@@ -187,7 +161,7 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
   icmp.checksum = 0;
   icmp.un.echo.sequence = 2016;
   icmp.un.echo.id = 2018;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(icmp));
 
   // Both sockets will receive the echo request and reply in indeterminate
@@ -297,7 +271,7 @@ TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
   icmp.un.echo.sequence = 0;
   icmp.un.echo.id = 6789;
   icmp.checksum = 0;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
 
   // Omit 2 bytes from ICMP packet.
   constexpr int kShortICMPSize = sizeof(icmp) - 2;
@@ -338,7 +312,7 @@ TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
   icmp.un.echo.sequence = 0;
   icmp.un.echo.id = 6789;
   icmp.checksum = 0;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
 
   // Omit 2 bytes from ICMP packet.
   constexpr int kShortICMPSize = sizeof(icmp) - 2;
@@ -381,7 +355,7 @@ TEST_F(RawSocketICMPTest, SendAndReceiveViaConnect) {
   icmp.checksum = 0;
   icmp.un.echo.sequence = 2003;
   icmp.un.echo.id = 2004;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
   ASSERT_THAT(send(s_, &icmp, sizeof(icmp), 0),
               SyscallSucceedsWithValue(sizeof(icmp)));
 
@@ -405,7 +379,7 @@ TEST_F(RawSocketICMPTest, BindSendAndReceive) {
   icmp.checksum = 0;
   icmp.un.echo.sequence = 2004;
   icmp.un.echo.id = 2007;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(icmp));
 
   ASSERT_NO_FATAL_FAILURE(ExpectICMPSuccess(icmp));
@@ -431,7 +405,7 @@ TEST_F(RawSocketICMPTest, BindConnectSendAndReceive) {
   icmp.checksum = 0;
   icmp.un.echo.sequence = 2010;
   icmp.un.echo.id = 7;
-  icmp.checksum = Checksum(&icmp);
+  icmp.checksum = ICMPChecksum(icmp, NULL, 0);
   ASSERT_NO_FATAL_FAILURE(SendEmptyICMP(icmp));
 
   ASSERT_NO_FATAL_FAILURE(ExpectICMPSuccess(icmp));
@@ -471,7 +445,7 @@ void RawSocketICMPTest::ExpectICMPSuccess(const struct icmphdr& icmp) {
         // A couple are different.
         EXPECT_EQ(recvd_icmp->type, ICMP_ECHOREPLY);
         // The checksum computed over the reply should still be valid.
-        EXPECT_EQ(Checksum(recvd_icmp), 0);
+        EXPECT_EQ(ICMPChecksum(*recvd_icmp, NULL, 0), 0);
         break;
     }
   }
