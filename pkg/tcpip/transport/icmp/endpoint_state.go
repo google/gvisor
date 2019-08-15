@@ -78,7 +78,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	if e.state == stateConnected {
 		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, e.netProto, false /* multicastLoop */)
 		if err != nil {
-			panic(*err)
+			panic(err)
 		}
 
 		e.id.LocalAddress = e.route.LocalAddress
@@ -90,6 +90,6 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	e.id, err = e.registerWithStack(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.id)
 	if err != nil {
-		panic(*err)
+		panic(err)
 	}
 }

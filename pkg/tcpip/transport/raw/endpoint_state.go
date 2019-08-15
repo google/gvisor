@@ -75,7 +75,7 @@ func (ep *endpoint) Resume(s *stack.Stack) {
 		var err *tcpip.Error
 		ep.route, err = ep.stack.FindRoute(ep.registeredNIC, ep.boundAddr, ep.route.RemoteAddress, ep.netProto, false)
 		if err != nil {
-			panic(*err)
+			panic(err)
 		}
 	}
 
@@ -87,6 +87,6 @@ func (ep *endpoint) Resume(s *stack.Stack) {
 	}
 
 	if err := ep.stack.RegisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep); err != nil {
-		panic(*err)
+		panic(err)
 	}
 }
