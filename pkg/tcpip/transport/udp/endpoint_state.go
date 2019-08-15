@@ -95,7 +95,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	if e.state == stateConnected {
 		e.route, err = e.stack.FindRoute(e.regNICID, e.id.LocalAddress, e.id.RemoteAddress, netProto, e.multicastLoop)
 		if err != nil {
-			panic(*err)
+			panic(err)
 		}
 	} else if len(e.id.LocalAddress) != 0 { // stateBound
 		if e.stack.CheckLocalAddress(e.regNICID, netProto, e.id.LocalAddress) == 0 {
@@ -110,6 +110,6 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	e.id.LocalPort = 0
 	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
 	if err != nil {
-		panic(*err)
+		panic(err)
 	}
 }
