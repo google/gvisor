@@ -7,7 +7,7 @@ go_library(
     srcs = [
         "blockingpoll_amd64.s",
         "blockingpoll_amd64_unsafe.go",
-        "blockingpoll_unsafe.go",
+        "blockingpoll_stub_unsafe.go",
         "errors.go",
         "rawfile_unsafe.go",
     ],
