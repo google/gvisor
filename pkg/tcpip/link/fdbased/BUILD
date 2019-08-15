@@ -7,9 +7,9 @@ go_library(
     srcs = [
         "endpoint.go",
         "endpoint_unsafe.go",
-        "mmap.go",
         "mmap_amd64.go",
         "mmap_amd64_unsafe.go",
+        "mmap_stub.go",
         "packet_dispatchers.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",
