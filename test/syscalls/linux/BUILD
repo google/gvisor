@@ -1209,6 +1209,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "packet_socket_test",
+    testonly = 1,
+    srcs = ["packet_socket.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        ":unix_domain_socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/base:endian",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "pty_test",
     testonly = 1,
     srcs = ["pty.cc"],

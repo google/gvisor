@@ -17,9 +17,12 @@
 
 #include <errno.h>
 #include <netinet/ip.h>
+#include <netinet/ip_icmp.h>
+#include <netinet/udp.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -477,6 +480,17 @@ TestAddress V4MappedAny();
 TestAddress V4MappedLoopback();
 TestAddress V6Any();
 TestAddress V6Loopback();
+
+// Compute the internet checksum of an IP header.
+uint16_t IPChecksum(struct iphdr ip);
+
+// Compute the internet checksum of a UDP header.
+uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
+                     const char* payload, ssize_t payload_len);
+
+// Compute the internet checksum of an ICMP header.
+uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
+                      ssize_t payload_len);
 
 }  // namespace testing
 }  // namespace gvisor

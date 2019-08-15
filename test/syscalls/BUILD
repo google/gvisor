@@ -249,6 +249,8 @@ syscall_test(
     test = "//test/syscalls/linux:open_test",
 )
 
+syscall_test(test = "//test/syscalls/linux:packet_socket_test")
+
 syscall_test(test = "//test/syscalls/linux:partial_bad_buffer_test")
 
 syscall_test(test = "//test/syscalls/linux:pause_test")

@@ -744,5 +744,74 @@ TestAddress V6Loopback() {
   return t;
 }
 
+// Checksum computes the internet checksum of a buffer.
+uint16_t Checksum(uint16_t* buf, ssize_t buf_size) {
+  // Add up the 16-bit values in the buffer.
+  uint32_t total = 0;
+  for (unsigned int i = 0; i < buf_size; i += sizeof(*buf)) {
+    total += *buf;
+    buf++;
+  }
+
+  // If buf has an odd size, add the remaining byte.
+  if (buf_size % 2) {
+    total += *(reinterpret_cast<unsigned char*>(buf) - 1);
+  }
+
+  // This carries any bits past the lower 16 until everything fits in 16 bits.
+  while (total >> 16) {
+    uint16_t lower = total & 0xffff;
+    uint16_t upper = total >> 16;
+    total = lower + upper;
+  }
+
+  return ~total;
+}
+
+uint16_t IPChecksum(struct iphdr ip) {
+  return Checksum(reinterpret_cast<uint16_t*>(&ip), sizeof(ip));
+}
+
+// The pseudo-header defined in RFC 768 for calculating the UDP checksum.
+struct udp_pseudo_hdr {
+  uint32_t srcip;
+  uint32_t destip;
+  char zero;
+  char protocol;
+  uint16_t udplen;
+};
+
+uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
+                     const char* payload, ssize_t payload_len) {
+  struct udp_pseudo_hdr phdr = {};
+  phdr.srcip = iphdr.saddr;
+  phdr.destip = iphdr.daddr;
+  phdr.zero = 0;
+  phdr.protocol = IPPROTO_UDP;
+  phdr.udplen = udphdr.len;
+
+  ssize_t buf_size = sizeof(phdr) + sizeof(udphdr) + payload_len;
+  char* buf = static_cast<char*>(malloc(buf_size));
+  memcpy(buf, &phdr, sizeof(phdr));
+  memcpy(buf + sizeof(phdr), &udphdr, sizeof(udphdr));
+  memcpy(buf + sizeof(phdr) + sizeof(udphdr), payload, payload_len);
+
+  uint16_t csum = Checksum(reinterpret_cast<uint16_t*>(buf), buf_size);
+  free(buf);
+  return csum;
+}
+
+uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
+                      ssize_t payload_len) {
+  ssize_t buf_size = sizeof(icmphdr) + payload_len;
+  char* buf = static_cast<char*>(malloc(buf_size));
+  memcpy(buf, &icmphdr, sizeof(icmphdr));
+  memcpy(buf + sizeof(icmphdr), payload, payload_len);
+
+  uint16_t csum = Checksum(reinterpret_cast<uint16_t*>(buf), buf_size);
+  free(buf);
+  return csum;
+}
+
 }  // namespace testing
 }  // namespace gvisor
