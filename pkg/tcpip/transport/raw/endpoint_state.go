@@ -15,6 +15,7 @@
 package raw
 
 import (
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -63,4 +64,29 @@ func (ep *endpoint) loadRcvBufSizeMax(max int) {
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad() {
 	stack.StackFromEnv.RegisterRestoredEndpoint(ep)
+}
+
+// Resume implements tcpip.ResumableEndpoint.Resume.
+func (ep *endpoint) Resume(s *stack.Stack) {
+	ep.stack = s
+
+	// If the endpoint is connected, re-connect.
+	if ep.connected {
+		var err *tcpip.Error
+		ep.route, err = ep.stack.FindRoute(ep.registeredNIC, ep.boundAddr, ep.route.RemoteAddress, ep.netProto, false)
+		if err != nil {
+			panic(*err)
+		}
+	}
+
+	// If the endpoint is bound, re-bind.
+	if ep.bound {
+		if ep.stack.CheckLocalAddress(ep.registeredNIC, ep.netProto, ep.boundAddr) == 0 {
+			panic(tcpip.ErrBadLocalAddress)
+		}
+	}
+
+	if err := ep.stack.RegisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep); err != nil {
+		panic(*err)
+	}
 }

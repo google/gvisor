@@ -178,53 +178,6 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *endpoint) Resume(s *stack.Stack) {
-	e.stack = s
-
-	for _, m := range e.multicastMemberships {
-		if err := e.stack.JoinGroup(e.netProto, m.nicID, m.multicastAddr); err != nil {
-			panic(err)
-		}
-	}
-
-	if e.state != stateBound && e.state != stateConnected {
-		return
-	}
-
-	netProto := e.effectiveNetProtos[0]
-	// Connect() and bindLocked() both assert
-	//
-	//     netProto == header.IPv6ProtocolNumber
-	//
-	// before creating a multi-entry effectiveNetProtos.
-	if len(e.effectiveNetProtos) > 1 {
-		netProto = header.IPv6ProtocolNumber
-	}
-
-	var err *tcpip.Error
-	if e.state == stateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.id.LocalAddress, e.id.RemoteAddress, netProto, e.multicastLoop)
-		if err != nil {
-			panic(*err)
-		}
-	} else if len(e.id.LocalAddress) != 0 { // stateBound
-		if e.stack.CheckLocalAddress(e.regNICID, netProto, e.id.LocalAddress) == 0 {
-			panic(tcpip.ErrBadLocalAddress)
-		}
-	}
-
-	// Our saved state had a port, but we don't actually have a
-	// reservation. We need to remove the port from our state, but still
-	// pass it to the reservation machinery.
-	id := e.id
-	e.id.LocalPort = 0
-	e.id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
-	if err != nil {
-		panic(*err)
-	}
-}
-
 // Read reads data from the endpoint. This method does not block if
 // there is no data pending.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {

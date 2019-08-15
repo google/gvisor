@@ -136,34 +136,6 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *endpoint) Resume(s *stack.Stack) {
-	e.stack = s
-
-	if e.state != stateBound && e.state != stateConnected {
-		return
-	}
-
-	var err *tcpip.Error
-	if e.state == stateConnected {
-		e.route, err = e.stack.FindRoute(e.regNICID, e.bindAddr, e.id.RemoteAddress, e.netProto, false /* multicastLoop */)
-		if err != nil {
-			panic(*err)
-		}
-
-		e.id.LocalAddress = e.route.LocalAddress
-	} else if len(e.id.LocalAddress) != 0 { // stateBound
-		if e.stack.CheckLocalAddress(e.regNICID, e.netProto, e.id.LocalAddress) == 0 {
-			panic(tcpip.ErrBadLocalAddress)
-		}
-	}
-
-	e.id, err = e.registerWithStack(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.id)
-	if err != nil {
-		panic(*err)
-	}
-}
-
 // Read reads data from the endpoint. This method does not block if
 // there is no data pending.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
