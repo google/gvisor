@@ -46,7 +46,6 @@ func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode uint16) *inod
 
 type regularFileFD struct {
 	fileDescription
-	vfs.FileDescriptionDefaultImpl
 
 	// These are immutable.
 	readable bool
