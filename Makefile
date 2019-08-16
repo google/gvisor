@@ -18,7 +18,7 @@ bazel-server-start: docker-build
 		-v "$(GVISOR_BAZEL_CACHE):$(HOME)/.cache/bazel/" \
 		-v "$(CURDIR):$(CURDIR)" \
 		--workdir "$(CURDIR)" \
-		--tmpfs /tmp \
+		--tmpfs /tmp:rw,exec \
 		--privileged \
 		gvisor-bazel \
 		sh -c "while :; do sleep 100; done" && \
