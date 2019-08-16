@@ -186,41 +186,73 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 	return nil
 }
 
+func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
+	return n.getRefOrCreateTemp(protocol, dst, CanBePrimaryEndpoint, n.promiscuous)
+}
+
 // findEndpoint finds the endpoint, if any, with the given address.
 func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior) *referencedNetworkEndpoint {
+	return n.getRefOrCreateTemp(protocol, address, peb, n.spoofing)
+}
+
+// getRefEpOrCreateTemp returns the referenced network endpoint for the given
+// protocol and address. If none exists a temporary one may be created if
+// requested.
+func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address tcpip.Address, peb PrimaryEndpointBehavior, allowTemp bool) *referencedNetworkEndpoint {
 	id := NetworkEndpointID{address}
 
 	n.mu.RLock()
-	ref := n.endpoints[id]
-	if ref != nil && !ref.tryIncRef() {
-		ref = nil
+
+	if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
+		n.mu.RUnlock()
+		return ref
 	}
-	spoofing := n.spoofing
+
+	// The address was not found, create a temporary one if requested by the
+	// caller or if the address is found in the NIC's subnets.
+	createTempEP := allowTemp
+	if !createTempEP {
+		for _, sn := range n.subnets {
+			if sn.Contains(address) {
+				createTempEP = true
+				break
+			}
+		}
+	}
+
 	n.mu.RUnlock()
 
-	if ref != nil || !spoofing {
-		return ref
+	if !createTempEP {
+		return nil
 	}
 
 	// Try again with the lock in exclusive mode. If we still can't get the
 	// endpoint, create a new "temporary" endpoint. It will only exist while
 	// there's a route through it.
 	n.mu.Lock()
-	ref = n.endpoints[id]
-	if ref == nil || !ref.tryIncRef() {
-		if netProto, ok := n.stack.networkProtocols[protocol]; ok {
-			ref, _ = n.addAddressLocked(tcpip.ProtocolAddress{
-				Protocol: protocol,
-				AddressWithPrefix: tcpip.AddressWithPrefix{
-					Address:   address,
-					PrefixLen: netProto.DefaultPrefixLen(),
-				},
-			}, peb, true)
-			if ref != nil {
-				ref.holdsInsertRef = false
-			}
-		}
+	if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
+		n.mu.Unlock()
+		return ref
 	}
+
+	netProto, ok := n.stack.networkProtocols[protocol]
+	if !ok {
+		n.mu.Unlock()
+		return nil
+	}
+
+	ref, _ := n.addAddressLocked(tcpip.ProtocolAddress{
+		Protocol: protocol,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   address,
+			PrefixLen: netProto.DefaultPrefixLen(),
+		},
+	}, peb, true)
+
+	if ref != nil {
+		ref.holdsInsertRef = false
+	}
+
 	n.mu.Unlock()
 	return ref
 }
@@ -551,57 +583,6 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	}
 
 	n.stack.stats.IP.InvalidAddressesReceived.Increment()
-}
-
-func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
-	id := NetworkEndpointID{dst}
-
-	n.mu.RLock()
-	if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
-		n.mu.RUnlock()
-		return ref
-	}
-
-	promiscuous := n.promiscuous
-	// Check if the packet is for a subnet this NIC cares about.
-	if !promiscuous {
-		for _, sn := range n.subnets {
-			if sn.Contains(dst) {
-				promiscuous = true
-				break
-			}
-		}
-	}
-	n.mu.RUnlock()
-	if promiscuous {
-		// Try again with the lock in exclusive mode. If we still can't
-		// get the endpoint, create a new "temporary" one. It will only
-		// exist while there's a route through it.
-		n.mu.Lock()
-		if ref, ok := n.endpoints[id]; ok && ref.tryIncRef() {
-			n.mu.Unlock()
-			return ref
-		}
-		netProto, ok := n.stack.networkProtocols[protocol]
-		if !ok {
-			n.mu.Unlock()
-			return nil
-		}
-		ref, err := n.addAddressLocked(tcpip.ProtocolAddress{
-			Protocol: protocol,
-			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   dst,
-				PrefixLen: netProto.DefaultPrefixLen(),
-			},
-		}, CanBePrimaryEndpoint, true)
-		n.mu.Unlock()
-		if err == nil {
-			ref.holdsInsertRef = false
-			return ref
-		}
-	}
-
-	return nil
 }
 
 // DeliverTransportPacket delivers the packets to the appropriate transport
