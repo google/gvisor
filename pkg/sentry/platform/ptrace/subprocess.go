@@ -354,6 +354,9 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 				continue // Spurious stop.
 			}
 			if stopSig == syscall.SIGTRAP {
+				if status.TrapCause() == syscall.PTRACE_EVENT_EXIT {
+					t.dumpAndPanic("wait failed: the process exited")
+				}
 				// Re-encode the trap cause the way it's expected.
 				return stopSig | syscall.Signal(status.TrapCause()<<8)
 			}
