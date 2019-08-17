@@ -428,15 +428,15 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 	return netProto, nil
 }
 
+// Disconnect implements tcpip.Endpoint.Disconnect.
+func (*endpoint) Disconnect() *tcpip.Error {
+	return tcpip.ErrNotSupported
+}
+
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	if addr.Addr == "" {
-		// AF_UNSPEC isn't supported.
-		return tcpip.ErrAddressFamilyNotSupported
-	}
 
 	nicid := addr.NIC
 	localPort := uint16(0)
