@@ -358,6 +358,9 @@ type Endpoint interface {
 	// ErrAddressFamilyNotSupported must be returned.
 	Connect(address FullAddress) *Error
 
+	// Disconnect disconnects the endpoint from its peer.
+	Disconnect() *Error
+
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.
 	Shutdown(flags ShutdownFlags) *Error
