@@ -4,7 +4,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 package(licenses = ["notice"])
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 go_template_instance(
     name = "pending_signals_list",
@@ -150,7 +150,7 @@ go_library(
         "version.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/kernel",
-    imports = [
+    stateify_imports = [
         "gvisor.dev/gvisor/pkg/bpf",
         "gvisor.dev/gvisor/pkg/sentry/device",
         "gvisor.dev/gvisor/pkg/tcpip",

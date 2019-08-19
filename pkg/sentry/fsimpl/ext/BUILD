@@ -2,8 +2,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//tools:defs.bzl", "go_library")
 
 go_template_instance(
     name = "dirent_list",

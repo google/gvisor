@@ -1,12 +1,12 @@
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 go_library(
     name = "control",
     srcs = ["control.go"],
     importpath = "gvisor.dev/gvisor/pkg/sentry/socket/control",
-    imports = [
+    stateify_imports = [
         "gvisor.dev/gvisor/pkg/sentry/fs",
     ],
     visibility = ["//pkg/sentry:internal"],

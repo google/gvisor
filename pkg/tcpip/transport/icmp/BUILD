@@ -1,7 +1,7 @@
 package(licenses = ["notice"])
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 go_template_instance(
     name = "icmp_packet_list",
@@ -24,7 +24,7 @@ go_library(
         "protocol.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/icmp",
-    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
+    stateify_imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sleep",

@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 package(licenses = ["notice"])
 
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 go_template_instance(
     name = "udp_packet_list",
@@ -27,7 +27,7 @@ go_library(
         "udp_packet_list.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/udp",
-    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
+    stateify_imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/sleep",

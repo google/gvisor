@@ -1,6 +1,6 @@
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library")
 
 go_library(
     name = "hostinet",

@@ -35,7 +35,7 @@ gazelle(name = "gazelle")
 # live in the tools subdirectory (unless they are standard).
 nogo(
     name = "nogo",
-    config = "tools/nogo.js",
+    config = "//tools:nogo.js",
     visibility = ["//visibility:public"],
     deps = [
         "//tools/checkunsafe",
