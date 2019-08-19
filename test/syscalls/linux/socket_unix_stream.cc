@@ -14,6 +14,7 @@
 
 #include <stdio.h>
 #include <sys/un.h>
+#include <poll.h>
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -68,6 +69,25 @@ TEST_P(StreamUnixSocketPairTest, RecvmsgOneSideClosed) {
 
   ASSERT_THAT(recvmsg(sockets->second_fd(), &msg, MSG_WAITALL),
               SyscallSucceedsWithValue(0));
+}
+
+TEST_P(StreamUnixSocketPairTest, ReadOneSideClosedWithUnreadData) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char buf[10] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR),
+              SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(ECONNRESET));
 }
 
 INSTANTIATE_TEST_SUITE_P(
