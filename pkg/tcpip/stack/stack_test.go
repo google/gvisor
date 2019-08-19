@@ -830,48 +830,6 @@ func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 	}
 }
 
-// Set the subnet, then check that CheckLocalAddress returns the correct NIC.
-func TestCheckLocalAddressForSubnet(t *testing.T) {
-	const nicID tcpip.NICID = 1
-	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
-
-	id, _ := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(nicID, id); err != nil {
-		t.Fatal("CreateNIC failed:", err)
-	}
-
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", nicID}, // default route
-	})
-
-	subnet, err := tcpip.NewSubnet(tcpip.Address("\xa0"), tcpip.AddressMask("\xf0"))
-
-	if err != nil {
-		t.Fatal("NewSubnet failed:", err)
-	}
-	if err := s.AddSubnet(nicID, fakeNetNumber, subnet); err != nil {
-		t.Fatal("AddSubnet failed:", err)
-	}
-
-	// Loop over all subnet addresses and check them.
-	numOfAddresses := (1 << uint((8 - subnet.Prefix())))
-	if numOfAddresses < 1 || numOfAddresses > 255 {
-		t.Fatalf("got numOfAddresses = %d, want = [1 .. 255] (subnet=%s)", numOfAddresses, subnet)
-	}
-	addr := []byte(subnet.ID())
-	for i := 0; i < numOfAddresses; i++ {
-		if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, tcpip.Address(addr)); gotNicID != nicID {
-			t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, tcpip.Address(addr), gotNicID, nicID)
-		}
-		addr[0]++
-	}
-
-	// Trying the next address should fail since it is outside the subnet range.
-	if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, tcpip.Address(addr)); gotNicID != 0 {
-		t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, tcpip.Address(addr), gotNicID, 0)
-	}
-}
-
 // Set destination outside the subnet, then check it doesn't get delivered.
 func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})

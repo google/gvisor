@@ -349,15 +349,15 @@ func (ep *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) 
 	return 0, tcpip.ControlMessages{}, nil
 }
 
-// Disconnect implements tcpip.Endpoint.Disconnect.
-func (*endpoint) Disconnect() *tcpip.Error {
-	return tcpip.ErrNotSupported
-}
-
 // Connect implements tcpip.Endpoint.Connect.
 func (ep *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
+
+	if addr.Addr == "" {
+		// AF_UNSPEC isn't supported.
+		return tcpip.ErrAddressFamilyNotSupported
+	}
 
 	if ep.closed {
 		return tcpip.ErrInvalidEndpointState
