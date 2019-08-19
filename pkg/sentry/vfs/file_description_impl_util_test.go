@@ -29,18 +29,11 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// fileDescription is the common fd struct which a filesystem implementation
-// embeds in all of its file description implementations as required.
-type fileDescription struct {
-	vfsfd FileDescription
-	FileDescriptionDefaultImpl
-}
-
 // genCountFD is a read-only FileDescriptionImpl representing a regular file
 // that contains the number of times its DynamicBytesSource.Generate()
 // implementation has been called.
 type genCountFD struct {
-	fileDescription
+	vfsfd FileDescription
 	DynamicBytesFileDescriptionImpl
 
 	count uint64 // accessed using atomic memory ops

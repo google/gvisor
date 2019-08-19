@@ -378,17 +378,16 @@ TEST_P(UdpSocketTest, Connect) {
   EXPECT_EQ(memcmp(&peer, addr_[2], addrlen_), 0);
 }
 
-void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
+TEST_P(UdpSocketTest, ConnectAny) {
   struct sockaddr_storage addr = {};
 
   // Precondition check.
   {
     socklen_t addrlen = sizeof(addr);
-    EXPECT_THAT(
-        getsockname(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-        SyscallSucceeds());
+    EXPECT_THAT(getsockname(s_, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+                SyscallSucceeds());
 
-    if (family == AddressFamily::kIpv4) {
+    if (GetParam() == AddressFamily::kIpv4) {
       auto addr_out = reinterpret_cast<struct sockaddr_in*>(&addr);
       EXPECT_EQ(addrlen, sizeof(*addr_out));
       EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_ANY));
@@ -401,24 +400,21 @@ void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
 
     {
       socklen_t addrlen = sizeof(addr);
-      EXPECT_THAT(
-          getpeername(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-          SyscallFailsWithErrno(ENOTCONN));
+      EXPECT_THAT(getpeername(s_, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+                  SyscallFailsWithErrno(ENOTCONN));
     }
 
     struct sockaddr_storage baddr = {};
-    if (family == AddressFamily::kIpv4) {
+    if (GetParam() == AddressFamily::kIpv4) {
       auto addr_in = reinterpret_cast<struct sockaddr_in*>(&baddr);
       addrlen = sizeof(*addr_in);
       addr_in->sin_family = AF_INET;
       addr_in->sin_addr.s_addr = htonl(INADDR_ANY);
-      addr_in->sin_port = port;
     } else {
       auto addr_in = reinterpret_cast<struct sockaddr_in6*>(&baddr);
       addrlen = sizeof(*addr_in);
       addr_in->sin6_family = AF_INET6;
-      addr_in->sin6_port = port;
-      if (family == AddressFamily::kIpv6) {
+      if (GetParam() == AddressFamily::kIpv6) {
         addr_in->sin6_addr = IN6ADDR_ANY_INIT;
       } else {
         TestAddress const& v4_mapped_any = V4MappedAny();
@@ -428,23 +424,21 @@ void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
       }
     }
 
-    // TODO(b/138658473): gVisor doesn't allow connecting to the zero port.
-    if (port == 0) {
-      SKIP_IF(IsRunningOnGvisor());
-    }
-
-    ASSERT_THAT(connect(sockfd, reinterpret_cast<sockaddr*>(&baddr), addrlen),
+    ASSERT_THAT(connect(s_, reinterpret_cast<sockaddr*>(&baddr), addrlen),
                 SyscallSucceeds());
   }
+
+  // TODO(b/138658473): gVisor doesn't return the correct local address after
+  // connecting to the any address.
+  SKIP_IF(IsRunningOnGvisor());
 
   // Postcondition check.
   {
     socklen_t addrlen = sizeof(addr);
-    EXPECT_THAT(
-        getsockname(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-        SyscallSucceeds());
+    EXPECT_THAT(getsockname(s_, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+                SyscallSucceeds());
 
-    if (family == AddressFamily::kIpv4) {
+    if (GetParam() == AddressFamily::kIpv4) {
       auto addr_out = reinterpret_cast<struct sockaddr_in*>(&addr);
       EXPECT_EQ(addrlen, sizeof(*addr_out));
       EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_LOOPBACK));
@@ -452,7 +446,7 @@ void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
       auto addr_out = reinterpret_cast<struct sockaddr_in6*>(&addr);
       EXPECT_EQ(addrlen, sizeof(*addr_out));
       struct in6_addr loopback;
-      if (family == AddressFamily::kIpv6) {
+      if (GetParam() == AddressFamily::kIpv6) {
         loopback = IN6ADDR_LOOPBACK_INIT;
       } else {
         TestAddress const& v4_mapped_loopback = V4MappedLoopback();
@@ -465,89 +459,9 @@ void ConnectAny(AddressFamily family, int sockfd, uint16_t port) {
     }
 
     addrlen = sizeof(addr);
-    if (port == 0) {
-      EXPECT_THAT(
-          getpeername(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-          SyscallFailsWithErrno(ENOTCONN));
-    } else {
-      EXPECT_THAT(
-          getpeername(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-          SyscallSucceeds());
-    }
+    EXPECT_THAT(getpeername(s_, reinterpret_cast<sockaddr*>(&addr), &addrlen),
+                SyscallFailsWithErrno(ENOTCONN));
   }
-}
-
-TEST_P(UdpSocketTest, ConnectAny) { ConnectAny(GetParam(), s_, 0); }
-
-TEST_P(UdpSocketTest, ConnectAnyWithPort) {
-  auto port = *Port(reinterpret_cast<struct sockaddr_storage*>(addr_[1]));
-  ConnectAny(GetParam(), s_, port);
-}
-
-void DisconnectAfterConnectAny(AddressFamily family, int sockfd, int port) {
-  struct sockaddr_storage addr = {};
-
-  socklen_t addrlen = sizeof(addr);
-  struct sockaddr_storage baddr = {};
-  if (family == AddressFamily::kIpv4) {
-    auto addr_in = reinterpret_cast<struct sockaddr_in*>(&baddr);
-    addrlen = sizeof(*addr_in);
-    addr_in->sin_family = AF_INET;
-    addr_in->sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_in->sin_port = port;
-  } else {
-    auto addr_in = reinterpret_cast<struct sockaddr_in6*>(&baddr);
-    addrlen = sizeof(*addr_in);
-    addr_in->sin6_family = AF_INET6;
-    addr_in->sin6_port = port;
-    if (family == AddressFamily::kIpv6) {
-      addr_in->sin6_addr = IN6ADDR_ANY_INIT;
-    } else {
-      TestAddress const& v4_mapped_any = V4MappedAny();
-      addr_in->sin6_addr =
-          reinterpret_cast<const struct sockaddr_in6*>(&v4_mapped_any.addr)
-              ->sin6_addr;
-    }
-  }
-
-  // TODO(b/138658473): gVisor doesn't allow connecting to the zero port.
-  if (port == 0) {
-    SKIP_IF(IsRunningOnGvisor());
-  }
-
-  ASSERT_THAT(connect(sockfd, reinterpret_cast<sockaddr*>(&baddr), addrlen),
-              SyscallSucceeds());
-  // Now the socket is bound to the loopback address.
-
-  // Disconnect
-  addrlen = sizeof(addr);
-  addr.ss_family = AF_UNSPEC;
-  ASSERT_THAT(connect(sockfd, reinterpret_cast<sockaddr*>(&addr), addrlen),
-              SyscallSucceeds());
-
-  // Check that after disconnect the socket is bound to the ANY address.
-  EXPECT_THAT(getsockname(sockfd, reinterpret_cast<sockaddr*>(&addr), &addrlen),
-              SyscallSucceeds());
-  if (family == AddressFamily::kIpv4) {
-    auto addr_out = reinterpret_cast<struct sockaddr_in*>(&addr);
-    EXPECT_EQ(addrlen, sizeof(*addr_out));
-    EXPECT_EQ(addr_out->sin_addr.s_addr, htonl(INADDR_ANY));
-  } else {
-    auto addr_out = reinterpret_cast<struct sockaddr_in6*>(&addr);
-    EXPECT_EQ(addrlen, sizeof(*addr_out));
-    struct in6_addr loopback = IN6ADDR_ANY_INIT;
-
-    EXPECT_EQ(memcmp(&addr_out->sin6_addr, &loopback, sizeof(in6_addr)), 0);
-  }
-}
-
-TEST_P(UdpSocketTest, DisconnectAfterConnectAny) {
-  DisconnectAfterConnectAny(GetParam(), s_, 0);
-}
-
-TEST_P(UdpSocketTest, DisconnectAfterConnectAnyWithPort) {
-  auto port = *Port(reinterpret_cast<struct sockaddr_storage*>(addr_[1]));
-  DisconnectAfterConnectAny(GetParam(), s_, port);
 }
 
 TEST_P(UdpSocketTest, DisconnectAfterBind) {

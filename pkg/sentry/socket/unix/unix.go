@@ -116,7 +116,7 @@ func (s *SocketOperations) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, _, err := epsocket.AddressAndFamily(linux.AF_UNIX, sockaddr, true /* strict */)
+	addr, err := epsocket.GetAddress(linux.AF_UNIX, sockaddr, true /* strict */)
 	if err != nil {
 		return "", err
 	}

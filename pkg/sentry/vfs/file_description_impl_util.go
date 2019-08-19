@@ -28,16 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// The following design pattern is strongly recommended for filesystem
-// implementations to adapt:
-//   - Have a local fileDescription struct (containing FileDescription) which
-//     embeds FileDescriptionDefaultImpl and overrides the default methods
-//     which are common to all fd implementations for that for that filesystem
-//     like StatusFlags, SetStatusFlags, Stat, SetStat, StatFS, etc.
-//   - This should be embedded in all file description implementations as the
-//     first field by value.
-//   - Directory FDs would also embed DirectoryFileDescriptionDefaultImpl.
-
 // FileDescriptionDefaultImpl may be embedded by implementations of
 // FileDescriptionImpl to obtain implementations of many FileDescriptionImpl
 // methods with default behavior analogous to Linux's.
@@ -129,8 +119,11 @@ func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, arg
 
 // DirectoryFileDescriptionDefaultImpl may be embedded by implementations of
 // FileDescriptionImpl that always represent directories to obtain
-// implementations of non-directory I/O methods that return EISDIR.
-type DirectoryFileDescriptionDefaultImpl struct{}
+// implementations of non-directory I/O methods that return EISDIR, and
+// implementations of other methods consistent with FileDescriptionDefaultImpl.
+type DirectoryFileDescriptionDefaultImpl struct {
+	FileDescriptionDefaultImpl
+}
 
 // PRead implements FileDescriptionImpl.PRead.
 func (DirectoryFileDescriptionDefaultImpl) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts ReadOptions) (int64, error) {
@@ -160,6 +153,8 @@ func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src userme
 // DynamicBytesFileDescriptionImpl.SetDataSource() must be called before first
 // use.
 type DynamicBytesFileDescriptionImpl struct {
+	FileDescriptionDefaultImpl
+
 	data     DynamicBytesSource // immutable
 	mu       sync.Mutex         // protects the following fields
 	buf      bytes.Buffer
