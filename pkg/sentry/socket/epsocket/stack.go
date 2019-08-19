@@ -198,8 +198,8 @@ func (s *Stack) IPTables() (iptables.IPTables, error) {
 
 // FillDefaultIPTables sets the stack's iptables to the default tables, which
 // allow and do not modify all traffic.
-func (s *Stack) FillDefaultIPTables() error {
-	return netfilter.FillDefaultIPTables(s.Stack)
+func (s *Stack) FillDefaultIPTables() {
+	netfilter.FillDefaultIPTables(s.Stack)
 }
 
 // Resume implements inet.Stack.Resume.

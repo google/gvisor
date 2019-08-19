@@ -360,10 +360,9 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 		if fragmentOffset == 0 && len(udp) >= header.UDPMinimumSize {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
+			details = fmt.Sprintf("xsum: 0x%x", udp.Checksum())
+			size -= header.UDPMinimumSize
 		}
-		size -= header.UDPMinimumSize
-
-		details = fmt.Sprintf("xsum: 0x%x", udp.Checksum())
 
 	case header.TCPProtocolNumber:
 		transName = "tcp"
