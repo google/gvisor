@@ -191,7 +191,6 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Pwritev2 implements linux syscall pwritev2(2).
-// TODO(b/120162627): Implement RWF_HIPRI functionality.
 // TODO(b/120161091): Implement O_SYNC and D_SYNC functionality.
 func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the syscall is
@@ -227,6 +226,8 @@ func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		return 0, nil, syserror.ESPIPE
 	}
 
+	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
+	// accepted as a valid flag argument for pwritev2.
 	if flags&^linux.RWF_VALID != 0 {
 		return uintptr(flags), nil, syserror.EOPNOTSUPP
 	}
