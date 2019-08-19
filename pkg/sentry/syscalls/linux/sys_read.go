@@ -191,7 +191,6 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Preadv2 implements linux syscall preadv2(2).
-// TODO(b/120162627): Implement RWF_HIPRI functionality.
 func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the syscall is
 	// preadv2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)
@@ -228,6 +227,8 @@ func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	}
 
 	// Check flags field.
+	// Note: gVisor does not implement the RWF_HIPRI feature, but the flag is
+	// accepted as a valid flag argument for preadv2.
 	if flags&^linux.RWF_VALID != 0 {
 		return 0, nil, syserror.EOPNOTSUPP
 	}
