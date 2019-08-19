@@ -595,7 +595,8 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 				total += n
 			}
 
-			if err != nil || !waitAll || isPacket || n >= dst.NumBytes() {
+			streamPeerClosed := s.stype == linux.SOCK_STREAM && n == 0 && err == nil
+			if err != nil || !waitAll || isPacket || n >= dst.NumBytes() || streamPeerClosed {
 				if total > 0 {
 					err = nil
 				}
