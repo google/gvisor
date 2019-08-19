@@ -33,6 +33,7 @@ type queue struct {
 
 	mu       sync.Mutex `state:"nosave"`
 	closed   bool
+	unread   bool
 	used     int64
 	limit    int64
 	dataList messageList
@@ -160,7 +161,9 @@ func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 	if q.dataList.Front() == nil {
 		err := syserr.ErrWouldBlock
 		if q.closed {
-			err = syserr.ErrClosedForReceive
+			if err = syserr.ErrClosedForReceive; q.unread {
+				err = syserr.ErrConnectionReset
+			}
 		}
 		q.mu.Unlock()
 
@@ -188,7 +191,9 @@ func (q *queue) Peek() (*message, *syserr.Error) {
 	if q.dataList.Front() == nil {
 		err := syserr.ErrWouldBlock
 		if q.closed {
-			err = syserr.ErrClosedForReceive
+			if err = syserr.ErrClosedForReceive; q.unread {
+				err = syserr.ErrConnectionReset
+			}
 		}
 		return nil, err
 	}
@@ -207,4 +212,12 @@ func (q *queue) QueuedSize() int64 {
 // MaxQueueSize returns the maximum number of bytes storable in the queue.
 func (q *queue) MaxQueueSize() int64 {
 	return q.limit
+}
+
+// CloseUnread sets flag to indicate that the peer is closed (not shutdown)
+// with unread data. So if read on this queue shall return ECONNRESET error.
+func (q *queue) CloseUnread() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.unread = true
 }
