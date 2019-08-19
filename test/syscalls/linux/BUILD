@@ -913,6 +913,24 @@ cc_library(
 )
 
 cc_binary(
+    name = "iptables_test",
+    testonly = 1,
+    srcs = [
+        "iptables.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":iptables_types",
+        ":socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "itimer_test",
     testonly = 1,
     srcs = ["itimer.cc"],
