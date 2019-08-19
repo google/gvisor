@@ -332,7 +332,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 
 	switch family {
 	case linux.AF_INET, linux.AF_INET6, linux.AF_UNIX:
-		fa, err := epsocket.GetAddress(int(family), b, true /* strict */)
+		fa, _, err := epsocket.AddressAndFamily(int(family), b, true /* strict */)
 		if err != nil {
 			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
 		}

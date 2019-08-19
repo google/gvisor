@@ -711,7 +711,8 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 	return netProto, nil
 }
 
-func (e *endpoint) disconnect() *tcpip.Error {
+// Disconnect implements tcpip.Endpoint.Disconnect.
+func (e *endpoint) Disconnect() *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -749,9 +750,6 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	netProto, err := e.checkV4Mapped(&addr, false)
 	if err != nil {
 		return err
-	}
-	if addr.Addr == "" {
-		return e.disconnect()
 	}
 	if addr.Port == 0 {
 		// We don't support connecting to port zero.

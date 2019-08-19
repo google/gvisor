@@ -203,8 +203,14 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 				inetRoute.DstAddr = attr.Value
 			case syscall.RTA_SRC:
 				inetRoute.SrcAddr = attr.Value
-			case syscall.RTA_OIF:
+			case syscall.RTA_GATEWAY:
 				inetRoute.GatewayAddr = attr.Value
+			case syscall.RTA_OIF:
+				expected := int(binary.Size(inetRoute.OutputInterface))
+				if len(attr.Value) != expected {
+					return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid attribute data length (%d bytes, expected %d bytes)", len(attr.Value), expected)
+				}
+				binary.Unmarshal(attr.Value, usermem.ByteOrder, &inetRoute.OutputInterface)
 			}
 		}
 

@@ -291,18 +291,22 @@ func bytesToIPAddress(addr []byte) tcpip.Address {
 	return tcpip.Address(addr)
 }
 
-// GetAddress reads an sockaddr struct from the given address and converts it
-// to the FullAddress format. It supports AF_UNIX, AF_INET and AF_INET6
-// addresses.
-func GetAddress(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, *syserr.Error) {
+// AddressAndFamily reads an sockaddr struct from the given address and
+// converts it to the FullAddress format. It supports AF_UNIX, AF_INET and
+// AF_INET6 addresses.
+//
+// strict indicates whether addresses with the AF_UNSPEC family are accepted of not.
+//
+// AddressAndFamily returns an address, its family.
+func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, uint16, *syserr.Error) {
 	// Make sure we have at least 2 bytes for the address family.
 	if len(addr) < 2 {
-		return tcpip.FullAddress{}, syserr.ErrInvalidArgument
+		return tcpip.FullAddress{}, 0, syserr.ErrInvalidArgument
 	}
 
 	family := usermem.ByteOrder.Uint16(addr)
 	if family != uint16(sfamily) && (!strict && family != linux.AF_UNSPEC) {
-		return tcpip.FullAddress{}, syserr.ErrAddressFamilyNotSupported
+		return tcpip.FullAddress{}, family, syserr.ErrAddressFamilyNotSupported
 	}
 
 	// Get the rest of the fields based on the address family.
@@ -310,7 +314,7 @@ func GetAddress(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, *syse
 	case linux.AF_UNIX:
 		path := addr[2:]
 		if len(path) > linux.UnixPathMax {
-			return tcpip.FullAddress{}, syserr.ErrInvalidArgument
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 		// Drop the terminating NUL (if one exists) and everything after
 		// it for filesystem (non-abstract) addresses.
@@ -321,12 +325,12 @@ func GetAddress(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, *syse
 		}
 		return tcpip.FullAddress{
 			Addr: tcpip.Address(path),
-		}, nil
+		}, family, nil
 
 	case linux.AF_INET:
 		var a linux.SockAddrInet
 		if len(addr) < sockAddrInetSize {
-			return tcpip.FullAddress{}, syserr.ErrInvalidArgument
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 		binary.Unmarshal(addr[:sockAddrInetSize], usermem.ByteOrder, &a)
 
@@ -334,12 +338,12 @@ func GetAddress(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, *syse
 			Addr: bytesToIPAddress(a.Addr[:]),
 			Port: ntohs(a.Port),
 		}
-		return out, nil
+		return out, family, nil
 
 	case linux.AF_INET6:
 		var a linux.SockAddrInet6
 		if len(addr) < sockAddrInet6Size {
-			return tcpip.FullAddress{}, syserr.ErrInvalidArgument
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 		binary.Unmarshal(addr[:sockAddrInet6Size], usermem.ByteOrder, &a)
 
@@ -350,13 +354,13 @@ func GetAddress(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, *syse
 		if isLinkLocal(out.Addr) {
 			out.NIC = tcpip.NICID(a.Scope_id)
 		}
-		return out, nil
+		return out, family, nil
 
 	case linux.AF_UNSPEC:
-		return tcpip.FullAddress{}, nil
+		return tcpip.FullAddress{}, family, nil
 
 	default:
-		return tcpip.FullAddress{}, syserr.ErrAddressFamilyNotSupported
+		return tcpip.FullAddress{}, 0, syserr.ErrAddressFamilyNotSupported
 	}
 }
 
@@ -482,11 +486,18 @@ func (s *SocketOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
 // Connect implements the linux syscall connect(2) for sockets backed by
 // tpcip.Endpoint.
 func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	addr, err := GetAddress(s.family, sockaddr, false /* strict */)
+	addr, family, err := AddressAndFamily(s.family, sockaddr, false /* strict */)
 	if err != nil {
 		return err
 	}
 
+	if family == linux.AF_UNSPEC {
+		err := s.Endpoint.Disconnect()
+		if err == tcpip.ErrNotSupported {
+			return syserr.ErrAddressFamilyNotSupported
+		}
+		return syserr.TranslateNetstackError(err)
+	}
 	// Always return right away in the non-blocking case.
 	if !blocking {
 		return syserr.TranslateNetstackError(s.Endpoint.Connect(addr))
@@ -515,7 +526,7 @@ func (s *SocketOperations) Connect(t *kernel.Task, sockaddr []byte, blocking boo
 // Bind implements the linux syscall bind(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *SocketOperations) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
-	addr, err := GetAddress(s.family, sockaddr, true /* strict */)
+	addr, _, err := AddressAndFamily(s.family, sockaddr, true /* strict */)
 	if err != nil {
 		return err
 	}
@@ -2023,7 +2034,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 
 	var addr *tcpip.FullAddress
 	if len(to) > 0 {
-		addrBuf, err := GetAddress(s.family, to, true /* strict */)
+		addrBuf, _, err := AddressAndFamily(s.family, to, true /* strict */)
 		if err != nil {
 			return 0, err
 		}
