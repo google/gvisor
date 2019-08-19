@@ -16,18 +16,16 @@ package ext
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // fileDescription is embedded by ext implementations of
 // vfs.FileDescriptionImpl.
 type fileDescription struct {
 	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
 
 	// flags is the same as vfs.OpenOptions.Flags which are passed to
 	// vfs.FilesystemImpl.OpenAt.
@@ -82,29 +80,7 @@ func (fd *fileDescription) StatFS(ctx context.Context) (linux.Statfs, error) {
 	return stat, nil
 }
 
-// Readiness implements waiter.Waitable.Readiness analogously to
-// file_operations::poll == NULL in Linux.
-func (fd *fileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
-	// include/linux/poll.h:vfs_poll() => DEFAULT_POLLMASK
-	return waiter.EventIn | waiter.EventOut
-}
-
-// EventRegister implements waiter.Waitable.EventRegister analogously to
-// file_operations::poll == NULL in Linux.
-func (fd *fileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {}
-
-// EventUnregister implements waiter.Waitable.EventUnregister analogously to
-// file_operations::poll == NULL in Linux.
-func (fd *fileDescription) EventUnregister(e *waiter.Entry) {}
-
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (fd *fileDescription) Sync(ctx context.Context) error {
 	return nil
-}
-
-// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	// ioctl(2) specifies that ENOTTY must be returned if the file descriptor is
-	// not associated with a character special device (which is unimplemented).
-	return 0, syserror.ENOTTY
 }

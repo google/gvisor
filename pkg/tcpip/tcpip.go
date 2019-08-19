@@ -168,6 +168,11 @@ func NewSubnet(a Address, m AddressMask) (Subnet, error) {
 	return Subnet{a, m}, nil
 }
 
+// String implements Stringer.
+func (s Subnet) String() string {
+	return fmt.Sprintf("%s/%d", s.ID(), s.Prefix())
+}
+
 // Contains returns true iff the address is of the same length and matches the
 // subnet address and mask.
 func (s *Subnet) Contains(a Address) bool {
@@ -352,6 +357,9 @@ type Endpoint interface {
 	// disconnected if this is supported, otherwise
 	// ErrAddressFamilyNotSupported must be returned.
 	Connect(address FullAddress) *Error
+
+	// Disconnect disconnects the endpoint from its peer.
+	Disconnect() *Error
 
 	// Shutdown closes the read and/or write end of the endpoint connection
 	// to its peer.

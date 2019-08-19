@@ -3,17 +3,20 @@ load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
     name = "io_bazel_rules_go",
-    sha256 = "45409e6c4f748baa9e05f8f6ab6efaa05739aa064e3ab94e5a1a09849c51806a",
+    sha256 = "313f2c7a23fecc33023563f082f381a32b9b7254f727a7dd2d6380ccc6dfe09b",
     urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/rules_go/releases/download/0.18.7/rules_go-0.18.7.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/0.18.7/rules_go-0.18.7.tar.gz",
+        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/rules_go/releases/download/0.19.3/rules_go-0.19.3.tar.gz",
+        "https://github.com/bazelbuild/rules_go/releases/download/0.19.3/rules_go-0.19.3.tar.gz",
     ],
 )
 
 http_archive(
     name = "bazel_gazelle",
-    sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
-    url = "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz",
+    sha256 = "be9296bfd64882e3c08e3283c58fcb461fa6dd3c171764fcc4cf322f60615a9b",
+    urls = [
+        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/0.18.1/bazel-gazelle-0.18.1.tar.gz",
+        "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.18.1/bazel-gazelle-0.18.1.tar.gz",
+    ],
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
@@ -21,13 +24,27 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_to
 go_rules_dependencies()
 
 go_register_toolchains(
-    go_version = "1.12.7",
+    go_version = "1.12.9",
     nogo = "@//:nogo",
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
 
 gazelle_dependencies()
+
+# Load protobuf dependencies.
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repository(
+    name = "com_google_protobuf",
+    commit = "09745575a923640154bcf307fba8aedff47f240a",
+    remote = "https://github.com/protocolbuffers/protobuf",
+    shallow_since = "1558721209 -0700",
+)
+
+load("@com_google_protobuf//:protobuf_deps.bzl", "protobuf_deps")
+
+protobuf_deps()
 
 # Load bazel_toolchain to support Remote Build Execution.
 # See releases at https://releases.bazel.build/bazel-toolchains.html
@@ -49,86 +66,100 @@ rbe_autoconfig(name = "rbe_default")
 # External repositories, in sorted order.
 go_repository(
     name = "com_github_cenkalti_backoff",
-    commit = "2146c9339422",
     importpath = "github.com/cenkalti/backoff",
+    sum = "h1:+FKjzBIdfBHYDvxCv+djmDJdes/AoDtg8gpcxowBlF8=",
+    version = "v0.0.0-20190506075156-2146c9339422",
 )
 
 go_repository(
     name = "com_github_gofrs_flock",
-    commit = "886344bea079",
     importpath = "github.com/gofrs/flock",
+    sum = "h1:JFTFz3HZTGmgMz4E1TabNBNJljROSYgja1b4l50FNVs=",
+    version = "v0.6.1-0.20180915234121-886344bea079",
 )
 
 go_repository(
     name = "com_github_golang_mock",
     importpath = "github.com/golang/mock",
-    tag = "v1.3.1",
+    sum = "h1:qGJ6qTW+x6xX/my+8YUVl4WNpX9B7+/l2tRsHGZ7f2s=",
+    version = "v1.3.1",
 )
 
 go_repository(
     name = "com_github_google_go-cmp",
     importpath = "github.com/google/go-cmp",
-    tag = "v0.2.0",
+    sum = "h1:+dTQ8DZQJz0Mb/HjFlkptS1FeQ4cWSnN941F8aEG4SQ=",
+    version = "v0.2.0",
 )
 
 go_repository(
     name = "com_github_google_subcommands",
-    commit = "636abe8753b8",
     importpath = "github.com/google/subcommands",
+    sum = "h1:GZGUPQiZfYrd9uOqyqwbQcHPkz/EZJVkZB1MkaO9UBI=",
+    version = "v0.0.0-20190508160503-636abe8753b8",
 )
 
 go_repository(
     name = "com_github_google_uuid",
-    commit = "dec09d789f3d",
     importpath = "github.com/google/uuid",
+    sum = "h1:rXQlD9GXkjA/PQZhmEaF/8Pj/sJfdZJK7GJG0gkS8I0=",
+    version = "v0.0.0-20171129191014-dec09d789f3d",
 )
 
 go_repository(
     name = "com_github_kr_pty",
     importpath = "github.com/kr/pty",
-    tag = "v1.1.1",
+    sum = "h1:VkoXIwSboBpnk99O/KFauAEILuNHv5DVFKZMBN/gUgw=",
+    version = "v1.1.1",
 )
 
 go_repository(
     name = "com_github_opencontainers_runtime-spec",
-    commit = "b2d941ef6a78",
     importpath = "github.com/opencontainers/runtime-spec",
+    sum = "h1:d9F+LNYwMyi3BDN4GzZdaSiq4otb8duVEWyZjeUtOQI=",
+    version = "v0.1.2-0.20171211145439-b2d941ef6a78",
 )
 
 go_repository(
     name = "com_github_syndtr_gocapability",
-    commit = "d98352740cb2",
     importpath = "github.com/syndtr/gocapability",
+    sum = "h1:b6uOv7YOFK0TYG7HtkIgExQo+2RdLuwRft63jn2HWj8=",
+    version = "v0.0.0-20180916011248-d98352740cb2",
 )
 
 go_repository(
     name = "com_github_vishvananda_netlink",
-    commit = "adb577d4a45e",
     importpath = "github.com/vishvananda/netlink",
+    sum = "h1:/Tdc23Arz1OtdIsBY2utWepGRQ9fEAJlhkdoLzWMK8Q=",
+    version = "v1.0.1-0.20190318003149-adb577d4a45e",
 )
 
 go_repository(
     name = "com_github_vishvananda_netns",
-    commit = "be1fbeda1936",
     importpath = "github.com/vishvananda/netns",
+    sum = "h1:J9gO8RJCAFlln1jsvRba/CWVUnMHwObklfxxjErl1uk=",
+    version = "v0.0.0-20171111001504-be1fbeda1936",
 )
 
 go_repository(
     name = "org_golang_x_crypto",
-    commit = "c2843e01d9a2",
     importpath = "golang.org/x/crypto",
+    sum = "h1:VklqNMn3ovrHsnt90PveolxSbWFaJdECFbxSq0Mqo2M=",
+    version = "v0.0.0-20190308221718-c2843e01d9a2",
 )
 
 go_repository(
     name = "org_golang_x_net",
-    commit = "d8887717615a",
     importpath = "golang.org/x/net",
+    sum = "h1:oWX7TPOiFAMXLq8o0ikBYfCJVlRHBcsciT5bXOrH628=",
+    version = "v0.0.0-20190311183353-d8887717615a",
 )
 
 go_repository(
     name = "org_golang_x_text",
     importpath = "golang.org/x/text",
-    tag = "v0.3.0",
+    sum = "h1:g61tztE5qeGQ89tm6NTjjM9VPIm088od1l6aSorWRWg=",
+    version = "v0.3.0",
 )
 
 go_repository(
@@ -139,14 +170,16 @@ go_repository(
 
 go_repository(
     name = "org_golang_x_sync",
-    commit = "112230192c58",
     importpath = "golang.org/x/sync",
+    sum = "h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=",
+    version = "v0.0.0-20190423024810-112230192c58",
 )
 
 go_repository(
     name = "org_golang_x_sys",
-    commit = "d0b11bdaac8a",
     importpath = "golang.org/x/sys",
+    sum = "h1:1BGLXjeY4akVXGgbC9HugT3Jv3hCI0z56oJR5vAMgBU=",
+    version = "v0.0.0-20190215142949-d0b11bdaac8a",
 )
 
 go_repository(
@@ -164,13 +197,15 @@ go_repository(
 go_repository(
     name = "com_github_google_btree",
     importpath = "github.com/google/btree",
-    tag = "v1.0.0",
+    sum = "h1:0udJVsspx3VBr5FwtLhQQtuAsVc79tTq0ocGIPAU6qo=",
+    version = "v1.0.0",
 )
 
 go_repository(
     name = "com_github_golang_protobuf",
     importpath = "github.com/golang/protobuf",
-    tag = "v1.3.1",
+    sum = "h1:YF8+flBXS5eO826T4nzqPrxfhQThhXl0YzfuUPu4SBg=",
+    version = "v1.3.1",
 )
 
 # System Call test dependencies.

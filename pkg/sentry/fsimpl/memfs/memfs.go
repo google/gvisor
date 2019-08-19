@@ -258,6 +258,7 @@ func (i *inode) direntType() uint8 {
 // vfs.FileDescriptionImpl.
 type fileDescription struct {
 	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
 
 	flags uint32 // status flags; immutable
 }
