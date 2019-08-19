@@ -44,6 +44,32 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosed) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST_P(StreamUnixSocketPairTest, RecvmsgOneSideClosed) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Set timeout so that it will not wait for ever.
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 10
+  };
+  EXPECT_THAT(
+      setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)),
+      SyscallSucceeds());
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  char received_data[10] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(recvmsg(sockets->second_fd(), &msg, MSG_WAITALL),
+              SyscallSucceedsWithValue(0));
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
