@@ -49,8 +49,6 @@ func testLang(t *testing.T, lang string) {
 	for _, tc := range tests {
 		tc := tc
 		t.Run(tc, func(t *testing.T) {
-			t.Parallel()
-
 			d := testutil.MakeDocker("gvisor-test")
 			if err := d.Run(img, "--test", tc); err != nil {
 				t.Fatalf("docker test %q failed to run: %v", tc, err)
