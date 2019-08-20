@@ -8,8 +8,7 @@ def syscall_test(
         size = "small",
         use_tmpfs = False,
         add_overlay = False,
-        tags = None,
-        parallel = True):
+        tags = None):
     _syscall_test(
         test = test,
         shard_count = shard_count,
@@ -17,7 +16,6 @@ def syscall_test(
         platform = "native",
         use_tmpfs = False,
         tags = tags,
-        parallel = parallel,
     )
 
     _syscall_test(
@@ -27,7 +25,6 @@ def syscall_test(
         platform = "kvm",
         use_tmpfs = use_tmpfs,
         tags = tags,
-        parallel = parallel,
     )
 
     _syscall_test(
@@ -37,7 +34,6 @@ def syscall_test(
         platform = "ptrace",
         use_tmpfs = use_tmpfs,
         tags = tags,
-        parallel = parallel,
     )
 
     if add_overlay:
@@ -48,7 +44,6 @@ def syscall_test(
             platform = "ptrace",
             use_tmpfs = False,  # overlay is adding a writable tmpfs on top of root.
             tags = tags,
-            parallel = parallel,
             overlay = True,
         )
 
@@ -61,7 +56,6 @@ def syscall_test(
             platform = "ptrace",
             use_tmpfs = use_tmpfs,
             tags = tags,
-            parallel = parallel,
             file_access = "shared",
         )
 
@@ -72,7 +66,6 @@ def _syscall_test(
         platform,
         use_tmpfs,
         tags,
-        parallel,
         file_access = "exclusive",
         overlay = False):
     test_name = test.split(":")[1]
@@ -110,9 +103,6 @@ def _syscall_test(
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
     ]
-
-    if parallel:
-        args += ["--parallel=true"]
 
     sh_test(
         srcs = ["syscall_test_runner.sh"],
