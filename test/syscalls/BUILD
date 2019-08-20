@@ -696,8 +696,8 @@ go_binary(
     deps = [
         "//pkg/log",
         "//runsc/specutils",
-        "//runsc/test/testutil",
         "//test/syscalls/gtest",
+        "//test/testutil",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],

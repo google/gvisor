@@ -111,7 +111,7 @@ run_simple_tests() {
 
 install_runtime() {
   cd ${WORKSPACE_DIR}
-  sudo -n ${WORKSPACE_DIR}/runsc/test/install.sh --runtime ${RUNTIME}
+  sudo -n ${WORKSPACE_DIR}/test/install.sh --runtime ${RUNTIME}
 }
 
 install_helper() {
@@ -177,7 +177,7 @@ run_docker_tests() {
     "${BAZEL_BUILD_FLAGS[@]}" \
     --test_env=RUNSC_RUNTIME="" \
     --test_output=all \
-    //runsc/test/image:image_test
+    //test/image:image_test
 
   # These names are used to exclude tests not supported in certain
   # configuration, e.g. save/restore not supported with hostnet.
@@ -191,20 +191,20 @@ run_docker_tests() {
     --test_output=all \
     --nocache_test_results \
     --test_output=streamed \
-    //runsc/test/integration:integration_test \
-    //runsc/test/integration:integration_test_hostnet \
-    //runsc/test/integration:integration_test_overlay \
-    //runsc/test/integration:integration_test_kvm \
-    //runsc/test/image:image_test \
-    //runsc/test/image:image_test_overlay \
-    //runsc/test/image:image_test_hostnet \
-    //runsc/test/image:image_test_kvm
+    //test/integration:integration_test \
+    //test/integration:integration_test_hostnet \
+    //test/integration:integration_test_overlay \
+    //test/integration:integration_test_kvm \
+    //test/image:image_test \
+    //test/image:image_test_overlay \
+    //test/image:image_test_hostnet \
+    //test/image:image_test_kvm
 }
 
 # Run the tests that require root.
 run_root_tests() {
   cd ${WORKSPACE_DIR}
-  bazel build //runsc/test/root:root_test
+  bazel build //test/root:root_test
   local root_test=$(find -L ./bazel-bin/ -executable -type f -name root_test | grep __main__)
   if [[ ! -f "${root_test}" ]]; then
     echo "root_test executable not found"

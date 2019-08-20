@@ -11,7 +11,7 @@ go_library(
         "httpd_mount_paths.go",
         "sandbox.go",
     ],
-    importpath = "gvisor.dev/gvisor/runsc/test/root/testdata",
+    importpath = "gvisor.dev/gvisor/test/root/testdata",
     visibility = [
         "//visibility:public",
     ],

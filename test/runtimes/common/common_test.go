@@ -23,8 +23,8 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
 	"gvisor.dev/gvisor/test/runtimes/common"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 func touch(t *testing.T, name string) {

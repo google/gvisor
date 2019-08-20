@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//runsc/test:build_defs.bzl", "runtime_test")
+load("//test:build_defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
 
@@ -19,12 +19,12 @@ runtime_test(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//runsc/test/testutil",
+        "//test/testutil",
     ],
 )
 
 go_library(
     name = "integration",
     srcs = ["integration.go"],
-    importpath = "gvisor.dev/gvisor/runsc/test/integration",
+    importpath = "gvisor.dev/gvisor/test/integration",
 )

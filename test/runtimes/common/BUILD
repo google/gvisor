@@ -15,6 +15,6 @@ go_test(
     srcs = ["common_test.go"],
     deps = [
         ":common",
-        "//runsc/test/testutil",
+        "//test/testutil",
     ],
 )

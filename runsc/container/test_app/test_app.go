@@ -29,7 +29,7 @@ import (
 
 	"flag"
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 func main() {

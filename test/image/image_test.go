@@ -18,7 +18,7 @@
 // behaving properly, like connecting to a port or looking at the output. The
 // container is killed and deleted at the end.
 //
-// Setup instruction in runsc/test/README.md.
+// Setup instruction in test/README.md.
 package image
 
 import (
@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 func TestHelloWorld(t *testing.T) {

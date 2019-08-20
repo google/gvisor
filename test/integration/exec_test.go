@@ -15,7 +15,7 @@
 // Package image provides end-to-end integration tests for runsc. These tests require
 // docker and runsc to be installed on the machine. To set it up, run:
 //
-//     ./runsc/test/install.sh [--runtime <name>]
+//     ./test/install.sh [--runtime <name>]
 //
 // The tests expect the runtime name to be provided in the RUNSC_RUNTIME
 // environment variable (default: runsc-test).
@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 func TestExecCapabilities(t *testing.T) {

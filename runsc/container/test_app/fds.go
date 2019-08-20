@@ -24,7 +24,7 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 const fileContents = "foobarbaz"

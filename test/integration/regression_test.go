@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 // Test that UDS can be created using overlay when parent directory is in lower

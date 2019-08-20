@@ -18,7 +18,7 @@
 // behaving properly, with various runsc commands. The container is killed and
 // deleted at the end.
 //
-// Setup instruction in runsc/test/README.md.
+// Setup instruction in test/README.md.
 package integration
 
 import (
@@ -32,7 +32,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 // httpRequestSucceeds sends a request to a given url and checks that the status is OK.

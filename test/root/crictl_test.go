@@ -30,8 +30,8 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/root/testdata"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/root/testdata"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 // Tests for crictl have to be run as root (rather than in a user namespace)

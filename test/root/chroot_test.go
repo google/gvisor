@@ -13,9 +13,9 @@
 // limitations under the License.
 
 // Package root is used for tests that requires sysadmin privileges run. First,
-// follow the setup instruction in runsc/test/README.md. To run these tests:
+// follow the setup instruction in test/README.md. To run these tests:
 //
-//     bazel build //runsc/test/root:root_test
+//     bazel build //test/root:root_test
 //     root_test=$(find -L ./bazel-bin/ -executable -type f -name root_test | grep __main__)
 //     sudo RUNSC_RUNTIME=runsc-test ${root_test}
 package root
@@ -32,7 +32,7 @@ import (
 
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/test/testutil"
 )
 
 // TestChroot verifies that the sandbox is chroot'd and that mounts are cleaned

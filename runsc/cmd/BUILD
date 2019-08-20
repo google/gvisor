@@ -81,7 +81,7 @@ go_test(
         "//runsc/boot",
         "//runsc/container",
         "//runsc/specutils",
-        "//runsc/test/testutil",
+        "//test/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

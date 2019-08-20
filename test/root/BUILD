@@ -5,7 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "root",
     srcs = ["root.go"],
-    importpath = "gvisor.dev/gvisor/runsc/test/root",
+    importpath = "gvisor.dev/gvisor/test/root",
 )
 
 go_test(
@@ -26,8 +26,8 @@ go_test(
     deps = [
         "//runsc/cgroup",
         "//runsc/specutils",
-        "//runsc/test/root/testdata",
-        "//runsc/test/testutil",
+        "//test/root/testdata",
+        "//test/testutil",
         "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
 )

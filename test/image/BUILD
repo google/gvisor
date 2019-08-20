@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//runsc/test:build_defs.bzl", "runtime_test")
+load("//test:build_defs.bzl", "runtime_test")
 
 package(licenses = ["notice"])
 
@@ -21,11 +21,11 @@ runtime_test(
         "manual",
         "local",
     ],
-    deps = ["//runsc/test/testutil"],
+    deps = ["//test/testutil"],
 )
 
 go_library(
     name = "image",
     srcs = ["image.go"],
-    importpath = "gvisor.dev/gvisor/runsc/test/image",
+    importpath = "gvisor.dev/gvisor/test/image",
 )
