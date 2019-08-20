@@ -689,10 +689,10 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
   std::atomic<int> a = ATOMIC_VAR_INIT(0);
   const bool is_priv = IsPrivate();
 
-  std::unique_ptr<ScopedThread> threads[100];
+  std::unique_ptr<ScopedThread> threads[10];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
     threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
-      for (size_t j = 0; j < 10;) {
+      for (size_t j = 0; j < 100;) {
         if (futex_trylock_pi(is_priv, &a) >= 0) {
           ++j;
           EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
