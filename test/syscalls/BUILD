@@ -27,6 +27,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    shard_count = 5,
     test = "//test/syscalls/linux:alarm_test",
 )
 
@@ -185,6 +186,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    shard_count = 5,
     test = "//test/syscalls/linux:itimer_test",
 )
 
@@ -296,8 +298,6 @@ syscall_test(test = "//test/syscalls/linux:priority_test")
 
 syscall_test(
     size = "medium",
-    # We don't want our proc changing out from under us.
-    parallel = False,
     test = "//test/syscalls/linux:proc_test",
 )
 
@@ -312,6 +312,7 @@ syscall_test(test = "//test/syscalls/linux:ptrace_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 5,
     test = "//test/syscalls/linux:pty_test",
 )
 
@@ -342,6 +343,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    shard_count = 5,
     test = "//test/syscalls/linux:readv_socket_test",
 )
 
@@ -447,7 +449,6 @@ syscall_test(
 
 syscall_test(
     size = "large",
-    parallel = False,
     shard_count = 10,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
@@ -488,8 +489,6 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    # Multicast packets can be received by the wrong test if run in parallel.
-    parallel = False,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 
@@ -528,6 +527,7 @@ syscall_test(
 syscall_test(
     # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
+    shard_count = 5,
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
 )
 
@@ -546,6 +546,7 @@ syscall_test(
 syscall_test(
     # NOTE(b/116636318): Large sendmsg may stall a long time.
     size = "enormous",
+    shard_count = 5,
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
 )
 
@@ -677,6 +678,7 @@ syscall_test(test = "//test/syscalls/linux:vfork_test")
 
 syscall_test(
     size = "medium",
+    shard_count = 5,
     test = "//test/syscalls/linux:wait_test",
 )
 
