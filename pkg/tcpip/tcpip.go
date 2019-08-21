@@ -31,6 +31,7 @@ package tcpip
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"reflect"
 	"strconv"
 	"strings"
@@ -145,8 +146,17 @@ type Address string
 type AddressMask string
 
 // String implements Stringer.
-func (a AddressMask) String() string {
-	return Address(a).String()
+func (m AddressMask) String() string {
+	return Address(m).String()
+}
+
+// Prefix returns the number of bits before the first host bit.
+func (m AddressMask) Prefix() int {
+	p := 0
+	for _, b := range []byte(m) {
+		p += bits.LeadingZeros8(^b)
+	}
+	return p
 }
 
 // Subnet is a subnet defined by its address and mask.
@@ -209,14 +219,7 @@ func (s *Subnet) Bits() (ones int, zeros int) {
 
 // Prefix returns the number of bits before the first host bit.
 func (s *Subnet) Prefix() int {
-	for i, b := range []byte(s.mask) {
-		for j := 7; j >= 0; j-- {
-			if b&(1<<uint(j)) == 0 {
-				return i*8 + 7 - j
-			}
-		}
-	}
-	return len(s.mask) * 8
+	return s.mask.Prefix()
 }
 
 // Mask returns the subnet mask.
@@ -588,6 +591,17 @@ type Route struct {
 
 	// NIC is the id of the nic to be used if this row is viable.
 	NIC NICID
+}
+
+// String implements the fmt.Stringer interface.
+func (r *Route) String() string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s/%d", r.Destination, r.Mask.Prefix())
+	if len(r.Gateway) > 0 {
+		fmt.Fprintf(&out, " via %s", r.Gateway)
+	}
+	fmt.Fprintf(&out, " nic %d", r.NIC)
+	return out.String()
 }
 
 // Match determines if r is viable for the given destination address.
