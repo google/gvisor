@@ -205,16 +205,8 @@ func (s *Subnet) ID() Address {
 // Bits returns the number of ones (network bits) and zeros (host bits) in the
 // subnet mask.
 func (s *Subnet) Bits() (ones int, zeros int) {
-	for _, b := range []byte(s.mask) {
-		for i := uint(0); i < 8; i++ {
-			if b&(1<<i) == 0 {
-				zeros++
-			} else {
-				ones++
-			}
-		}
-	}
-	return
+	ones = s.mask.Prefix()
+	return ones, len(s.mask)*8 - ones
 }
 
 // Prefix returns the number of bits before the first host bit.
@@ -578,13 +570,8 @@ type BroadcastOption int
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination address in the row.
 type Route struct {
-	// Destination is the address that must be matched against the masked
-	// target address to check if this row is viable.
-	Destination Address
-
-	// Mask specifies which bits of the Destination and the target address
-	// must match for this row to be viable.
-	Mask AddressMask
+	// Destination must contain the target address for this row to be viable.
+	Destination Subnet
 
 	// Gateway is the gateway to be used if this row is viable.
 	Gateway Address
@@ -596,33 +583,12 @@ type Route struct {
 // String implements the fmt.Stringer interface.
 func (r *Route) String() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "%s/%d", r.Destination, r.Mask.Prefix())
+	fmt.Fprintf(&out, "%s", r.Destination)
 	if len(r.Gateway) > 0 {
 		fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
 	fmt.Fprintf(&out, " nic %d", r.NIC)
 	return out.String()
-}
-
-// Match determines if r is viable for the given destination address.
-func (r *Route) Match(addr Address) bool {
-	if len(addr) != len(r.Destination) {
-		return false
-	}
-
-	// Using header.Ipv4Broadcast would introduce an import cycle, so
-	// we'll use a literal instead.
-	if addr == "\xff\xff\xff\xff" {
-		return true
-	}
-
-	for i := 0; i < len(r.Destination); i++ {
-		if (addr[i] & r.Mask[i]) != r.Destination[i] {
-			return false
-		}
-	}
-
-	return true
 }
 
 // LinkEndpointID represents a data link layer endpoint.

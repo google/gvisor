@@ -2874,15 +2874,11 @@ func makeStack() (*stack.Stack, *tcpip.Error) {
 
 	s.SetRouteTable([]tcpip.Route{
 		{
-			Destination: "\x00\x00\x00\x00",
-			Mask:        "\x00\x00\x00\x00",
-			Gateway:     "",
+			Destination: header.IPv4EmptySubnet,
 			NIC:         1,
 		},
 		{
-			Destination: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-			Mask:        "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-			Gateway:     "",
+			Destination: header.IPv6EmptySubnet,
 			NIC:         1,
 		},
 	})

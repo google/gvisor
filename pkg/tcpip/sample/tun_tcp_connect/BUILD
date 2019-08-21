@@ -8,6 +8,7 @@ go_binary(
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/link/sniffer",

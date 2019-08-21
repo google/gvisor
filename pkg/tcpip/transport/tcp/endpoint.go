@@ -1348,7 +1348,7 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress) (tcpip.NetworkProtocol
 
 		netProto = header.IPv4ProtocolNumber
 		addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
-		if addr.Addr == "\x00\x00\x00\x00" {
+		if addr.Addr == header.IPv4Any {
 			addr.Addr = ""
 		}
 	}

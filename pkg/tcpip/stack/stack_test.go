@@ -312,7 +312,13 @@ func TestNetworkSend(t *testing.T) {
 		t.Fatal("NewNIC failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{"\x00", "\x00", "\x00", 1}})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
 		t.Fatal("AddAddress failed:", err)
@@ -360,10 +366,20 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 	// Set a route table that sends all packets with odd destination
 	// addresses through the first NIC, and all even destination address
 	// through the second one.
-	s.SetRouteTable([]tcpip.Route{
-		{"\x01", "\x01", "\x00", 1},
-		{"\x00", "\x01", "\x00", 2},
-	})
+	{
+		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet1, Gateway: "\x00", NIC: 1},
+			{Destination: subnet0, Gateway: "\x00", NIC: 2},
+		})
+	}
 
 	// Send a packet to an odd destination.
 	sendTo(t, s, "\x05", nil)
@@ -439,10 +455,20 @@ func TestRoutes(t *testing.T) {
 	// Set a route table that sends all packets with odd destination
 	// addresses through the first NIC, and all even destination address
 	// through the second one.
-	s.SetRouteTable([]tcpip.Route{
-		{"\x01", "\x01", "\x00", 1},
-		{"\x00", "\x01", "\x00", 2},
-	})
+	{
+		subnet0, err := tcpip.NewSubnet("\x00", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01", "\x01")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet1, Gateway: "\x00", NIC: 1},
+			{Destination: subnet0, Gateway: "\x00", NIC: 2},
+		})
+	}
 
 	// Test routes to odd address.
 	testRoute(t, s, 0, "", "\x05", "\x01")
@@ -524,9 +550,13 @@ func TestDelayedRemovalDueToRoute(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
@@ -583,9 +613,13 @@ func TestPromiscuousMode(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
@@ -643,9 +677,13 @@ func TestAddressSpoofing(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	// With address spoofing disabled, FindRoute does not permit an address
 	// that was not added to the NIC to be used as the source.
@@ -806,9 +844,13 @@ func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
@@ -840,9 +882,13 @@ func TestCheckLocalAddressForSubnet(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", nicID}, // default route
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: nicID}})
+	}
 
 	subnet, err := tcpip.NewSubnet(tcpip.Address("\xa0"), tcpip.AddressMask("\xf0"))
 
@@ -854,7 +900,7 @@ func TestCheckLocalAddressForSubnet(t *testing.T) {
 	}
 
 	// Loop over all subnet addresses and check them.
-	numOfAddresses := (1 << uint((8 - subnet.Prefix())))
+	numOfAddresses := 1 << uint(8-subnet.Prefix())
 	if numOfAddresses < 1 || numOfAddresses > 255 {
 		t.Fatalf("got numOfAddresses = %d, want = [1 .. 255] (subnet=%s)", numOfAddresses, subnet)
 	}
@@ -881,9 +927,13 @@ func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
 		t.Fatal("CreateNIC failed:", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{
-		{"\x00", "\x00", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	fakeNet := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol)
 
@@ -1261,9 +1311,13 @@ func TestNICStats(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 	// Route all packets for address \x01 to NIC 1.
-	s.SetRouteTable([]tcpip.Route{
-		{"\x01", "\xff", "\x00", 1},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x01", "\xff")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	// Send a packet to address 1.
 	buf := buffer.NewView(30)
@@ -1312,9 +1366,13 @@ func TestNICForwarding(t *testing.T) {
 	}
 
 	// Route all packets to address 3 to NIC 2.
-	s.SetRouteTable([]tcpip.Route{
-		{"\x03", "\xff", "\x00", 2},
-	})
+	{
+		subnet, err := tcpip.NewSubnet("\x03", "\xff")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 2}})
+	}
 
 	// Send a packet to address 3.
 	buf := buffer.NewView(30)
