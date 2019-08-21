@@ -280,6 +280,7 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	if err = cmd.Run(); err != nil {
 		t.Errorf("test %q exited with status %v, want 0", tc.FullName(), err)
 	}
+	signal.Stop(sig)
 	close(sig)
 }
 
