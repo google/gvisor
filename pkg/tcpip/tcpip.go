@@ -31,6 +31,7 @@ package tcpip
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"reflect"
 	"strconv"
 	"strings"
@@ -145,8 +146,17 @@ type Address string
 type AddressMask string
 
 // String implements Stringer.
-func (a AddressMask) String() string {
-	return Address(a).String()
+func (m AddressMask) String() string {
+	return Address(m).String()
+}
+
+// Prefix returns the number of bits before the first host bit.
+func (m AddressMask) Prefix() int {
+	p := 0
+	for _, b := range []byte(m) {
+		p += bits.LeadingZeros8(^b)
+	}
+	return p
 }
 
 // Subnet is a subnet defined by its address and mask.
@@ -195,28 +205,13 @@ func (s *Subnet) ID() Address {
 // Bits returns the number of ones (network bits) and zeros (host bits) in the
 // subnet mask.
 func (s *Subnet) Bits() (ones int, zeros int) {
-	for _, b := range []byte(s.mask) {
-		for i := uint(0); i < 8; i++ {
-			if b&(1<<i) == 0 {
-				zeros++
-			} else {
-				ones++
-			}
-		}
-	}
-	return
+	ones = s.mask.Prefix()
+	return ones, len(s.mask)*8 - ones
 }
 
 // Prefix returns the number of bits before the first host bit.
 func (s *Subnet) Prefix() int {
-	for i, b := range []byte(s.mask) {
-		for j := 7; j >= 0; j-- {
-			if b&(1<<uint(j)) == 0 {
-				return i*8 + 7 - j
-			}
-		}
-	}
-	return len(s.mask) * 8
+	return s.mask.Prefix()
 }
 
 // Mask returns the subnet mask.
@@ -575,13 +570,8 @@ type BroadcastOption int
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination address in the row.
 type Route struct {
-	// Destination is the address that must be matched against the masked
-	// target address to check if this row is viable.
-	Destination Address
-
-	// Mask specifies which bits of the Destination and the target address
-	// must match for this row to be viable.
-	Mask AddressMask
+	// Destination must contain the target address for this row to be viable.
+	Destination Subnet
 
 	// Gateway is the gateway to be used if this row is viable.
 	Gateway Address
@@ -590,25 +580,15 @@ type Route struct {
 	NIC NICID
 }
 
-// Match determines if r is viable for the given destination address.
-func (r *Route) Match(addr Address) bool {
-	if len(addr) != len(r.Destination) {
-		return false
+// String implements the fmt.Stringer interface.
+func (r *Route) String() string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "%s", r.Destination)
+	if len(r.Gateway) > 0 {
+		fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
-
-	// Using header.Ipv4Broadcast would introduce an import cycle, so
-	// we'll use a literal instead.
-	if addr == "\xff\xff\xff\xff" {
-		return true
-	}
-
-	for i := 0; i < len(r.Destination); i++ {
-		if (addr[i] & r.Mask[i]) != r.Destination[i] {
-			return false
-		}
-	}
-
-	return true
+	fmt.Fprintf(&out, " nic %d", r.NIC)
+	return out.String()
 }
 
 // LinkEndpointID represents a data link layer endpoint.
