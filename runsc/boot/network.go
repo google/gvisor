@@ -38,8 +38,7 @@ type Network struct {
 
 // Route represents a route in the network stack.
 type Route struct {
-	Destination net.IP
-	Mask        net.IPMask
+	Destination net.IPNet
 	Gateway     net.IP
 }
 
@@ -85,16 +84,19 @@ type CreateLinksAndRoutesArgs struct {
 
 // Empty returns true if route hasn't been set.
 func (r *Route) Empty() bool {
-	return r.Destination == nil && r.Mask == nil && r.Gateway == nil
+	return r.Destination.IP == nil && r.Destination.Mask == nil && r.Gateway == nil
 }
 
-func (r *Route) toTcpipRoute(id tcpip.NICID) tcpip.Route {
-	return tcpip.Route{
-		Destination: ipToAddress(r.Destination),
-		Gateway:     ipToAddress(r.Gateway),
-		Mask:        ipToAddressMask(net.IP(r.Mask)),
-		NIC:         id,
+func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
+	subnet, err := tcpip.NewSubnet(ipToAddress(r.Destination.IP), ipMaskToAddressMask(r.Destination.Mask))
+	if err != nil {
+		return tcpip.Route{}, err
 	}
+	return tcpip.Route{
+		Destination: subnet,
+		Gateway:     ipToAddress(r.Gateway),
+		NIC:         id,
+	}, nil
 }
 
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should
@@ -128,7 +130,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		// Collect the routes from this link.
 		for _, r := range link.Routes {
-			routes = append(routes, r.toTcpipRoute(nicID))
+			route, err := r.toTcpipRoute(nicID)
+			if err != nil {
+				return err
+			}
+			routes = append(routes, route)
 		}
 	}
 
@@ -170,7 +176,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		// Collect the routes from this link.
 		for _, r := range link.Routes {
-			routes = append(routes, r.toTcpipRoute(nicID))
+			route, err := r.toTcpipRoute(nicID)
+			if err != nil {
+				return err
+			}
+			routes = append(routes, route)
 		}
 	}
 
@@ -179,7 +189,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		if !ok {
 			return fmt.Errorf("invalid interface name %q for default route", args.DefaultGateway.Name)
 		}
-		routes = append(routes, args.DefaultGateway.Route.toTcpipRoute(nicID))
+		route, err := args.DefaultGateway.Route.toTcpipRoute(nicID)
+		if err != nil {
+			return err
+		}
+		routes = append(routes, route)
 	}
 
 	log.Infof("Setting routes %+v", routes)
@@ -230,8 +244,8 @@ func ipToAddress(ip net.IP) tcpip.Address {
 	return addr
 }
 
-// ipToAddressMask converts IP to tcpip.AddressMask, ignoring the protocol.
-func ipToAddressMask(ip net.IP) tcpip.AddressMask {
-	_, addr := ipToAddressAndProto(ip)
-	return tcpip.AddressMask(addr)
+// ipMaskToAddressMask converts IPMask to tcpip.AddressMask, ignoring the
+// protocol.
+func ipMaskToAddressMask(ipMask net.IPMask) tcpip.AddressMask {
+	return tcpip.AddressMask(ipToAddress(net.IP(ipMask)))
 }

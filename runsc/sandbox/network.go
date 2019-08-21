@@ -81,12 +81,17 @@ func createDefaultLoopbackInterface(conn *urpc.Client) error {
 		},
 		Routes: []boot.Route{
 			{
-				Destination: net.IP("\x7f\x00\x00\x00"),
-				Mask:        net.IPMask("\xff\x00\x00\x00"),
+				Destination: net.IPNet{
+
+					IP:   net.IPv4(0x7f, 0, 0, 0),
+					Mask: net.IPv4Mask(0xff, 0, 0, 0),
+				},
 			},
 			{
-				Destination: net.IPv6loopback,
-				Mask:        net.IPMask(strings.Repeat("\xff", 16)),
+				Destination: net.IPNet{
+					IP:   net.IPv6loopback,
+					Mask: net.IPMask(strings.Repeat("\xff", net.IPv6len)),
+				},
 			},
 		},
 	}
@@ -326,12 +331,13 @@ func loopbackLinks(iface net.Interface, addrs []net.Addr) ([]boot.LoopbackLink, 
 		if !ok {
 			return nil, fmt.Errorf("address is not IPNet: %+v", addr)
 		}
+		dst := *ipNet
+		dst.IP = dst.IP.Mask(dst.Mask)
 		links = append(links, boot.LoopbackLink{
 			Name:      iface.Name,
 			Addresses: []net.IP{ipNet.IP},
 			Routes: []boot.Route{{
-				Destination: ipNet.IP.Mask(ipNet.Mask),
-				Mask:        ipNet.Mask,
+				Destination: dst,
 			}},
 		})
 	}
@@ -367,9 +373,11 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 			}
 			// Create a catch all route to the gateway.
 			def = &boot.Route{
-				Destination: net.IPv4zero,
-				Mask:        net.IPMask(net.IPv4zero),
-				Gateway:     r.Gw,
+				Destination: net.IPNet{
+					IP:   net.IPv4zero,
+					Mask: net.IPMask(net.IPv4zero),
+				},
+				Gateway: r.Gw,
 			}
 			continue
 		}
@@ -377,9 +385,10 @@ func routesForIface(iface net.Interface) ([]boot.Route, *boot.Route, error) {
 			log.Warningf("IPv6 is not supported, skipping route: %v", r)
 			continue
 		}
+		dst := *r.Dst
+		dst.IP = dst.IP.Mask(dst.Mask)
 		routes = append(routes, boot.Route{
-			Destination: r.Dst.IP.Mask(r.Dst.Mask),
-			Mask:        r.Dst.Mask,
+			Destination: dst,
 			Gateway:     r.Gw,
 		})
 	}

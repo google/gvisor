@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -154,7 +153,7 @@ func (s *Stack) RouteTable() []inet.Route {
 
 	for _, rt := range s.Stack.GetRouteTable() {
 		var family uint8
-		switch len(rt.Destination) {
+		switch len(rt.Destination.ID()) {
 		case header.IPv4AddressSize:
 			family = linux.AF_INET
 		case header.IPv6AddressSize:
@@ -164,14 +163,9 @@ func (s *Stack) RouteTable() []inet.Route {
 			continue
 		}
 
-		dstSubnet, err := tcpip.NewSubnet(rt.Destination, rt.Mask)
-		if err != nil {
-			log.Warningf("Invalid destination & mask in route: %s(%s): %v", rt.Destination, rt.Mask, err)
-			continue
-		}
 		routeTable = append(routeTable, inet.Route{
 			Family: family,
-			DstLen: uint8(dstSubnet.Prefix()), // The CIDR prefix for the destination.
+			DstLen: uint8(rt.Destination.Prefix()), // The CIDR prefix for the destination.
 
 			// Always return unspecified protocol since we have no notion of
 			// protocol for routes.
@@ -182,7 +176,7 @@ func (s *Stack) RouteTable() []inet.Route {
 			Scope: linux.RT_SCOPE_LINK,
 			Type:  linux.RTN_UNICAST,
 
-			DstAddr:         []byte(rt.Destination),
+			DstAddr:         []byte(rt.Destination.ID()),
 			OutputInterface: int32(rt.NIC),
 			GatewayAddr:     []byte(rt.Gateway),
 		})
