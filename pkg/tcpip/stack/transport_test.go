@@ -284,7 +284,13 @@ func TestTransportReceive(t *testing.T) {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{"\x00", "\x00", "\x00", 1}})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
 		t.Fatalf("AddAddress failed: %v", err)
@@ -340,7 +346,13 @@ func TestTransportControlReceive(t *testing.T) {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{"\x00", "\x00", "\x00", 1}})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
 		t.Fatalf("AddAddress failed: %v", err)
@@ -406,7 +418,13 @@ func TestTransportSend(t *testing.T) {
 		t.Fatalf("AddAddress failed: %v", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{"\x00", "\x00", "\x00", 1}})
+	{
+		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+	}
 
 	// Create endpoint and bind it.
 	wq := waiter.Queue{}
@@ -497,10 +515,20 @@ func TestTransportForwarding(t *testing.T) {
 
 	// Route all packets to address 3 to NIC 2 and all packets to address
 	// 1 to NIC 1.
-	s.SetRouteTable([]tcpip.Route{
-		{"\x03", "\xff", "\x00", 2},
-		{"\x01", "\xff", "\x00", 1},
-	})
+	{
+		subnet0, err := tcpip.NewSubnet("\x03", "\xff")
+		if err != nil {
+			t.Fatal(err)
+		}
+		subnet1, err := tcpip.NewSubnet("\x01", "\xff")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable([]tcpip.Route{
+			{Destination: subnet0, Gateway: "\x00", NIC: 2},
+			{Destination: subnet1, Gateway: "\x00", NIC: 1},
+		})
+	}
 
 	wq := waiter.Queue{}
 	ep, err := s.NewEndpoint(fakeTransNumber, fakeNetNumber, &wq)

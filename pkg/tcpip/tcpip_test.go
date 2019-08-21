@@ -60,12 +60,12 @@ func TestSubnetBits(t *testing.T) {
 	}{
 		{"\x00", 0, 8},
 		{"\x00\x00", 0, 16},
-		{"\x36", 4, 4},
-		{"\x5c", 4, 4},
-		{"\x5c\x5c", 8, 8},
-		{"\x5c\x36", 8, 8},
-		{"\x36\x5c", 8, 8},
-		{"\x36\x36", 8, 8},
+		{"\x36", 0, 8},
+		{"\x5c", 0, 8},
+		{"\x5c\x5c", 0, 16},
+		{"\x5c\x36", 0, 16},
+		{"\x36\x5c", 0, 16},
+		{"\x36\x36", 0, 16},
 		{"\xff", 8, 0},
 		{"\xff\xff", 16, 0},
 	}
@@ -118,26 +118,6 @@ func TestSubnetCreation(t *testing.T) {
 	for _, tt := range tests {
 		if _, err := NewSubnet(tt.a, tt.m); err != tt.want {
 			t.Errorf("NewSubnet(%v, %v) = %v, want %v", tt.a, tt.m, err, tt.want)
-		}
-	}
-}
-
-func TestRouteMatch(t *testing.T) {
-	tests := []struct {
-		d    Address
-		m    AddressMask
-		a    Address
-		want bool
-	}{
-		{"\xc2\x80", "\xff\xf0", "\xc2\x80", true},
-		{"\xc2\x80", "\xff\xf0", "\xc2\x00", false},
-		{"\xc2\x00", "\xff\xf0", "\xc2\x00", true},
-		{"\xc2\x00", "\xff\xf0", "\xc2\x80", false},
-	}
-	for _, tt := range tests {
-		r := Route{Destination: tt.d, Mask: tt.m}
-		if got := r.Match(tt.a); got != tt.want {
-			t.Errorf("Route(%v).Match(%v) = %v, want %v", r, tt.a, got, tt.want)
 		}
 	}
 }

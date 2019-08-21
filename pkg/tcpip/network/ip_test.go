@@ -173,8 +173,7 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv4.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
-		Destination: ipv4SubnetAddr,
-		Mask:        ipv4SubnetMask,
+		Destination: header.IPv4EmptySubnet,
 		Gateway:     ipv4Gateway,
 		NIC:         1,
 	}})
@@ -187,8 +186,7 @@ func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv6.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
-		Destination: ipv6SubnetAddr,
-		Mask:        ipv6SubnetMask,
+		Destination: header.IPv6EmptySubnet,
 		Gateway:     ipv6Gateway,
 		NIC:         1,
 	}})

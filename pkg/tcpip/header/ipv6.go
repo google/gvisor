@@ -82,6 +82,15 @@ const (
 	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 )
 
+// IPv6EmptySubnet is the empty IPv6 subnet.
+var IPv6EmptySubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet(IPv6Any, tcpip.AddressMask(IPv6Any))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
 // PayloadLength returns the value of the "payload length" field of the ipv6
 // header.
 func (b IPv6) PayloadLength() uint16 {

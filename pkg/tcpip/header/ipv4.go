@@ -111,6 +111,15 @@ const (
 	IPv4FlagDontFragment
 )
 
+// IPv4EmptySubnet is the empty IPv4 subnet.
+var IPv4EmptySubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet(IPv4Any, tcpip.AddressMask(IPv4Any))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
 // IPVersion returns the version of IP used in the given packet. It returns -1
 // if the packet is not large enough to contain the version field.
 func IPVersion(b []byte) int {

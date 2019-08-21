@@ -26,6 +26,7 @@ import (
 
 	"golang.org/x/net/nettest"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -69,17 +70,13 @@ func newLoopbackStack() (*stack.Stack, *tcpip.Error) {
 	s.SetRouteTable([]tcpip.Route{
 		// IPv4
 		{
-			Destination: tcpip.Address(strings.Repeat("\x00", 4)),
-			Mask:        tcpip.AddressMask(strings.Repeat("\x00", 4)),
-			Gateway:     "",
+			Destination: header.IPv4EmptySubnet,
 			NIC:         NICID,
 		},
 
 		// IPv6
 		{
-			Destination: tcpip.Address(strings.Repeat("\x00", 16)),
-			Mask:        tcpip.AddressMask(strings.Repeat("\x00", 16)),
-			Gateway:     "",
+			Destination: header.IPv6EmptySubnet,
 			NIC:         NICID,
 		},
 	})

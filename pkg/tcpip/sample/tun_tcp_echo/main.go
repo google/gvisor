@@ -149,12 +149,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	subnet, err := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", len(addr))), tcpip.AddressMask(strings.Repeat("\x00", len(addr))))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Add default route.
 	s.SetRouteTable([]tcpip.Route{
 		{
-			Destination: tcpip.Address(strings.Repeat("\x00", len(addr))),
-			Mask:        tcpip.AddressMask(strings.Repeat("\x00", len(addr))),
-			Gateway:     "",
+			Destination: subnet,
 			NIC:         1,
 		},
 	})

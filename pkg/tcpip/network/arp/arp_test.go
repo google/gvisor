@@ -66,9 +66,7 @@ func newTestContext(t *testing.T) *testContext {
 	}
 
 	s.SetRouteTable([]tcpip.Route{{
-		Destination: "\x00\x00\x00\x00",
-		Mask:        "\x00\x00\x00\x00",
-		Gateway:     "",
+		Destination: header.IPv4EmptySubnet,
 		NIC:         1,
 	}})
 

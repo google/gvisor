@@ -24,6 +24,7 @@ go_test(
     embed = [":gonet"],
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
         "//pkg/tcpip/link/loopback",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",

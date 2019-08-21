@@ -91,13 +91,18 @@ func TestICMPCounts(t *testing.T) {
 			t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
 		}
 	}
-	s.SetRouteTable(
-		[]tcpip.Route{{
-			Destination: lladdr1,
-			Mask:        tcpip.AddressMask(strings.Repeat("\xff", 16)),
-			NIC:         1,
-		}},
-	)
+	{
+		subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.SetRouteTable(
+			[]tcpip.Route{{
+				Destination: subnet,
+				NIC:         1,
+			}},
+		)
+	}
 
 	netProto := s.NetworkProtocolInstance(ProtocolNumber)
 	if netProto == nil {
@@ -237,17 +242,23 @@ func newTestContext(t *testing.T) *testContext {
 		t.Fatalf("AddAddress sn lladdr1: %v", err)
 	}
 
+	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+	if err != nil {
+		t.Fatal(err)
+	}
 	c.s0.SetRouteTable(
 		[]tcpip.Route{{
-			Destination: lladdr1,
-			Mask:        tcpip.AddressMask(strings.Repeat("\xff", 16)),
+			Destination: subnet0,
 			NIC:         1,
 		}},
 	)
+	subnet1, err := tcpip.NewSubnet(lladdr0, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr0))))
+	if err != nil {
+		t.Fatal(err)
+	}
 	c.s1.SetRouteTable(
 		[]tcpip.Route{{
-			Destination: lladdr0,
-			Mask:        tcpip.AddressMask(strings.Repeat("\xff", 16)),
+			Destination: subnet1,
 			NIC:         1,
 		}},
 	)
