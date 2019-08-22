@@ -127,13 +127,15 @@ func FindFile(path string) (string, error) {
 // 'RootDir' must be set by caller if required.
 func TestConfig() *boot.Config {
 	return &boot.Config{
-		Debug:      true,
-		LogFormat:  "text",
-		LogPackets: true,
-		Network:    boot.NetworkNone,
-		Strace:     true,
-		Platform:   "ptrace",
-		FileAccess: boot.FileAccessExclusive,
+		Debug:           true,
+		LogFormat:       "text",
+		DebugLogFormat:  "text",
+		AlsoLogToStderr: true,
+		LogPackets:      true,
+		Network:         boot.NetworkNone,
+		Strace:          true,
+		Platform:        "ptrace",
+		FileAccess:      boot.FileAccessExclusive,
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: true,
 		NumNetworkChannels:                         1,
 	}
