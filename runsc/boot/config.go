@@ -118,9 +118,9 @@ func MakeRefsLeakMode(s string) (refs.LeakMode, error) {
 	switch strings.ToLower(s) {
 	case "disabled":
 		return refs.NoLeakChecking, nil
-	case "warning":
+	case "log-names":
 		return refs.LeaksLogWarning, nil
-	case "traces":
+	case "log-traces":
 		return refs.LeaksLogTraces, nil
 	default:
 		return 0, fmt.Errorf("invalid refs leakmode %q", s)
