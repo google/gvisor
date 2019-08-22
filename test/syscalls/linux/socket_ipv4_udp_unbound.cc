@@ -30,6 +30,7 @@ namespace gvisor {
 namespace testing {
 
 constexpr char kMulticastAddress[] = "224.0.2.1";
+constexpr char kBroadcastAddress[] = "255.255.255.255";
 
 TestAddress V4Multicast() {
   TestAddress t("V4Multicast");
@@ -37,6 +38,15 @@ TestAddress V4Multicast() {
   t.addr_len = sizeof(sockaddr_in);
   reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
       inet_addr(kMulticastAddress);
+  return t;
+}
+
+TestAddress V4Broadcast() {
+  TestAddress t("V4Broadcast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      inet_addr(kBroadcastAddress);
   return t;
 }
 
@@ -1424,6 +1434,250 @@ TEST_P(IPv4UDPUnboundSocketPairTest,
                   SyscallFailsWithErrno(EAGAIN));
     }
   }
+}
+
+// Check that a receiving socket can bind to the multicast address before
+// joining the group and receive data once the group has been joined.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestBindToMcastThenJoinThenReceive) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Bind second socket (receiver) to the multicast address.
+  auto receiver_addr = V4Multicast();
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  // Update receiver_addr with the correct port number.
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->second_fd(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Register to receive multicast packets.
+  ip_mreqn group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  group.imr_ifindex = ASSERT_NO_ERRNO_AND_VALUE(InterfaceIndex("lo"));
+  ASSERT_THAT(setsockopt(sockets->second_fd(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                         &group, sizeof(group)),
+              SyscallSucceeds());
+
+  // Send a multicast packet on the first socket out the loopback interface.
+  ip_mreq iface = {};
+  iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF,
+                         &iface, sizeof(iface)),
+              SyscallSucceeds());
+  auto sendto_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                         sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that a receiving socket can bind to the multicast address and won't
+// receive multicast data if it hasn't joined the group.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestBindToMcastThenNoJoinThenNoReceive) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Bind second socket (receiver) to the multicast address.
+  auto receiver_addr = V4Multicast();
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  // Update receiver_addr with the correct port number.
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->second_fd(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Send a multicast packet on the first socket out the loopback interface.
+  ip_mreq iface = {};
+  iface.imr_interface.s_addr = htonl(INADDR_LOOPBACK);
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_IP, IP_MULTICAST_IF,
+                         &iface, sizeof(iface)),
+              SyscallSucceeds());
+  auto sendto_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                         sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we don't receive the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Check that a socket can bind to a multicast address and still send out
+// packets.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestBindToMcastThenSend) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Bind second socket (receiver) to the ANY address.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->second_fd(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Bind the first socket (sender) to the multicast address.
+  auto sender_addr = V4Multicast();
+  ASSERT_THAT(
+      bind(sockets->first_fd(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+           sender_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t sender_addr_len = sender_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->first_fd(),
+                          reinterpret_cast<sockaddr*>(&sender_addr.addr),
+                          &sender_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(sender_addr_len, sender_addr.addr_len);
+
+  // Send a packet on the first socket to the loopback address.
+  auto sendto_addr = V4Loopback();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                         sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that a receiving socket can bind to the broadcast address and receive
+// broadcast packets.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestBindToBcastThenReceive) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Bind second socket (receiver) to the broadcast address.
+  auto receiver_addr = V4Broadcast();
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->second_fd(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Send a broadcast packet on the first socket out the loopback interface.
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_BROADCAST,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+  // Note: Binding to the loopback interface makes the broadcast go out of it.
+  auto sender_bind_addr = V4Loopback();
+  ASSERT_THAT(bind(sockets->first_fd(),
+                   reinterpret_cast<sockaddr*>(&sender_bind_addr.addr),
+                   sender_bind_addr.addr_len),
+              SyscallSucceeds());
+  auto sendto_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                         sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the multicast packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+}
+
+// Check that a socket can bind to the broadcast address and still send out
+// packets.
+TEST_P(IPv4UDPUnboundSocketPairTest, TestBindToBcastThenSend) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Bind second socket (receiver) to the ANY address.
+  auto receiver_addr = V4Any();
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                   receiver_addr.addr_len),
+              SyscallSucceeds());
+  socklen_t receiver_addr_len = receiver_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->second_fd(),
+                          reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                          &receiver_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+
+  // Bind the first socket (sender) to the broadcast address.
+  auto sender_addr = V4Broadcast();
+  ASSERT_THAT(
+      bind(sockets->first_fd(), reinterpret_cast<sockaddr*>(&sender_addr.addr),
+           sender_addr.addr_len),
+      SyscallSucceeds());
+  socklen_t sender_addr_len = sender_addr.addr_len;
+  ASSERT_THAT(getsockname(sockets->first_fd(),
+                          reinterpret_cast<sockaddr*>(&sender_addr.addr),
+                          &sender_addr_len),
+              SyscallSucceeds());
+  EXPECT_EQ(sender_addr_len, sender_addr.addr_len);
+
+  // Send a packet on the first socket to the loopback address.
+  auto sendto_addr = V4Loopback();
+  reinterpret_cast<sockaddr_in*>(&sendto_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(
+      RetryEINTR(sendto)(sockets->first_fd(), send_buf, sizeof(send_buf), 0,
+                         reinterpret_cast<sockaddr*>(&sendto_addr.addr),
+                         sendto_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(send_buf)));
+
+  // Check that we received the packet.
+  char recv_buf[sizeof(send_buf)] = {};
+  ASSERT_THAT(RetryEINTR(recv)(sockets->second_fd(), recv_buf, sizeof(recv_buf),
+                               MSG_DONTWAIT),
+              SyscallSucceedsWithValue(sizeof(recv_buf)));
+  EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
 }
 
 }  // namespace testing
