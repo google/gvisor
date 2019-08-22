@@ -182,6 +182,9 @@ type Args struct {
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
+	// Sets the reference leak check mode
+	refs.SetLeakMode(args.Conf.ReferenceLeakMode)
+
 	// We initialize the rand package now to make sure /dev/urandom is pre-opened
 	// on kernels that do not support getrandom(2).
 	if err := rand.Init(); err != nil {
@@ -1089,9 +1092,4 @@ func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host
 		return nil, nil, false, nil
 	}
 	return ep.tg, ep.tty, true, nil
-}
-
-func init() {
-	// TODO(gvisor.dev/issue/365): Make this configurable.
-	refs.SetLeakMode(refs.NoLeakChecking)
 }
