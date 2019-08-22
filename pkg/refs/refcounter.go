@@ -237,9 +237,9 @@ func (l LeakMode) String() string {
 	case NoLeakChecking:
 		return "disabled"
 	case LeaksLogWarning:
-		return "warning"
+		return "log-names"
 	case LeaksLogTraces:
-		return "traces"
+		return "log-traces"
 	default:
 		panic(fmt.Sprintf("Invalid leakmode: %d", l))
 	}
