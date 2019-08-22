@@ -624,6 +624,11 @@ func (s *StatCounter) Increment() {
 	s.IncrementBy(1)
 }
 
+// Decrement minuses one to the counter.
+func (s *StatCounter) Decrement() {
+	s.IncrementBy(^uint64(0))
+}
+
 // Value returns the current value of the counter.
 func (s *StatCounter) Value() uint64 {
 	return atomic.LoadUint64(&s.count)
@@ -823,6 +828,15 @@ type TCPStats struct {
 	// PassiveConnectionOpenings is the number of connections opened
 	// successfully via Listen.
 	PassiveConnectionOpenings *StatCounter
+
+	// CurrentEstablished is the number of TCP connections for which the
+	// current state is either ESTABLISHED or CLOSE-WAIT.
+	CurrentEstablished *StatCounter
+
+	// EstablishedResets is the number of times TCP connections have made
+	// a direct transition to the CLOSED state from either the
+	// ESTABLISHED state or the CLOSE-WAIT state.
+	EstablishedResets *StatCounter
 
 	// ListenOverflowSynDrop is the number of times the listen queue overflowed
 	// and a SYN was dropped.

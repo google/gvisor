@@ -153,3 +153,21 @@ type Route struct {
 	// GatewayAddr is the route gateway address (RTA_GATEWAY).
 	GatewayAddr []byte
 }
+
+// StatSNMPIP describes Ip line of /proc/net/snmp.
+type StatSNMPIP [19]uint64
+
+// StatSNMPICMP describes Icmp line of /proc/net/snmp.
+type StatSNMPICMP [27]uint64
+
+// StatSNMPICMPMSG describes IcmpMsg line of /proc/net/snmp.
+type StatSNMPICMPMSG [512]uint64
+
+// StatSNMPTCP describes Tcp line of /proc/net/snmp.
+type StatSNMPTCP [15]uint64
+
+// StatSNMPUDP describes Udp line of /proc/net/snmp.
+type StatSNMPUDP [8]uint64
+
+// StatSNMPUDPLite describes UdpLite line of /proc/net/snmp.
+type StatSNMPUDPLite [8]uint64

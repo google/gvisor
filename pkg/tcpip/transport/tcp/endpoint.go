@@ -1523,6 +1523,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		e.segmentQueue.mu.Unlock()
 		e.snd.updateMaxPayloadSize(int(e.route.MTU()), 0)
 		e.state = StateEstablished
+		e.stack.Stats().TCP.CurrentEstablished.Increment()
 	}
 
 	if run {

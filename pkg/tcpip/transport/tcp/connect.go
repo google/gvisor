@@ -727,6 +727,10 @@ func (e *endpoint) handleClose() *tcpip.Error {
 func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
+	if e.state == StateEstablished || e.state == StateCloseWait {
+		e.stack.Stats().TCP.EstablishedResets.Increment()
+		e.stack.Stats().TCP.CurrentEstablished.Decrement()
+	}
 	e.state = StateError
 	e.hardError = err
 	if err != tcpip.ErrConnectionReset {
@@ -897,6 +901,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 			e.lastErrorMu.Unlock()
 
 			e.mu.Lock()
+			if e.state == StateEstablished || e.state == StateCloseWait {
+				e.stack.Stats().TCP.EstablishedResets.Increment()
+				e.stack.Stats().TCP.CurrentEstablished.Decrement()
+			}
 			e.state = StateError
 			e.hardError = err
 
@@ -927,7 +935,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	// Tell waiters that the endpoint is connected and writable.
 	e.mu.Lock()
-	e.state = StateEstablished
+	if e.state != StateEstablished {
+		e.stack.Stats().TCP.CurrentEstablished.Increment()
+		e.state = StateEstablished
+	}
 	drained := e.drainDone != nil
 	e.mu.Unlock()
 	if drained {
@@ -1088,6 +1099,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	// Mark endpoint as closed.
 	e.mu.Lock()
 	if e.state != StateError {
+		if e.state == StateEstablished || e.state == StateCloseWait {
+			e.stack.Stats().TCP.EstablishedResets.Increment()
+			e.stack.Stats().TCP.CurrentEstablished.Decrement()
+		}
 		e.state = StateClose
 	}
 	// Lock released below.

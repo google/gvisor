@@ -666,10 +666,10 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	}
 
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
-	if n.demux.deliverPacket(r, protocol, netHeader, vv, id) {
+	if n.demux.deliverPacket(r, protocol, netHeader, vv, id, true /* first */) {
 		return
 	}
-	if n.stack.demux.deliverPacket(r, protocol, netHeader, vv, id) {
+	if n.stack.demux.deliverPacket(r, protocol, netHeader, vv, id, false /* first */) {
 		return
 	}
 
