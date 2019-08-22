@@ -249,7 +249,8 @@ TEST(ProcNetTCP, State) {
 
   std::unique_ptr<FileDescriptor> client =
       ASSERT_NO_ERRNO_AND_VALUE(IPv4TCPUnboundSocket(0).Create());
-  ASSERT_THAT(connect(client->get(), &addr, addrlen), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(connect)(client->get(), &addr, addrlen),
+              SyscallSucceeds());
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcNetTCPEntries());
   ASSERT_TRUE(FindByLocalAddr(entries, &listen_entry, &addr));
   EXPECT_EQ(listen_entry.state, TCP_LISTEN);
