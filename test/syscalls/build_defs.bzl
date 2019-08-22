@@ -4,7 +4,7 @@
 # on the host (native) and runsc.
 def syscall_test(
         test,
-        shard_count = 1,
+        shard_count = 5,
         size = "small",
         use_tmpfs = False,
         add_overlay = False,
