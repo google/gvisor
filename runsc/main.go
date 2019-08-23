@@ -117,13 +117,6 @@ func main() {
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
 
-	if *testOnlyAllowRunAsCurrentUserWithoutChroot {
-		// SIGTERM is sent to all processes if a test exceeds its
-		// timeout and this case is handled by syscall_test_runner.
-		log.Warningf("Block the TERM signal. This is only safe in tests!")
-		signal.Ignore(syscall.SIGTERM)
-	}
-
 	// Are we showing the version?
 	if *showVersion {
 		// The format here is the same as runc.
@@ -264,6 +257,13 @@ func main() {
 	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)
 	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
 	log.Infof("***************************")
+
+	if *testOnlyAllowRunAsCurrentUserWithoutChroot {
+		// SIGTERM is sent to all processes if a test exceeds its
+		// timeout and this case is handled by syscall_test_runner.
+		log.Warningf("Block the TERM signal. This is only safe in tests!")
+		signal.Ignore(syscall.SIGTERM)
+	}
 
 	// Call the subcommand and pass in the configuration.
 	var ws syscall.WaitStatus
