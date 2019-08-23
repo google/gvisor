@@ -581,7 +581,7 @@ type Route struct {
 }
 
 // String implements the fmt.Stringer interface.
-func (r *Route) String() string {
+func (r Route) String() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s", r.Destination)
 	if len(r.Gateway) > 0 {
