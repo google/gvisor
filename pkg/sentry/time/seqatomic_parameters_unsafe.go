@@ -1,12 +1,12 @@
 package time
 
 import (
+	"strings"
 	"unsafe"
 
 	"fmt"
 	"gvisor.dev/gvisor/third_party/gvsync"
 	"reflect"
-	"strings"
 )
 
 // SeqAtomicLoad returns a copy of *ptr, ensuring that the read does not race
