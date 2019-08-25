@@ -9,7 +9,7 @@ go_binary(
         "imports.go",
         "remove.go",
     ],
-    visibility = ["//:sandbox"],
+    visibility = ["//visibility:public"],
     deps = ["//tools/go_generics/globals"],
 )
 
