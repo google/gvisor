@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build linux,amd64
+// +build linux,amd64 linux,arm64
 // +build go1.12
 // +build !go1.14
 
@@ -25,6 +25,12 @@ import (
 	_ "unsafe" // for go:linkname
 )
 
+// BlockingPoll on amd64/arm64 makes the ppoll() syscall while calling the
+// version of entersyscall that relinquishes the P so that other Gs can
+// run. This is meant to be called in cases when the syscall is expected to
+// block. On non amd64/arm64 platforms it just forwards to the ppoll() system
+// call.
+//
 //go:noescape
 func BlockingPoll(fds *PollEvent, nfds int, timeout *syscall.Timespec) (int, syscall.Errno)
 
