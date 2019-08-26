@@ -21,7 +21,7 @@ a good place to put the `runsc` binary.
   sha512sum -c runsc.sha512
   sudo mv runsc /usr/local/bin
   sudo chown root:root /usr/local/bin/runsc
-  chmod 0755 /usr/local/bin/runsc
+  sudo chmod 0755 /usr/local/bin/runsc
 )
 ```
 
