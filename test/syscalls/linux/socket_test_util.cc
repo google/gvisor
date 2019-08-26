@@ -588,8 +588,9 @@ ssize_t SendLargeSendMsg(const std::unique_ptr<SocketPair>& sockets,
   return RetryEINTR(sendmsg)(sockets->first_fd(), &msg, 0);
 }
 
-PosixErrorOr<int> PortAvailable(int port, AddressFamily family, SocketType type,
-                                bool reuse_addr) {
+namespace internal {
+PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
+                                   SocketType type, bool reuse_addr) {
   if (port < 0) {
     return PosixError(EINVAL, "Invalid port");
   }
@@ -664,10 +665,7 @@ PosixErrorOr<int> PortAvailable(int port, AddressFamily family, SocketType type,
 
   return available_port;
 }
-
-PosixError FreeAvailablePort(int port) {
-  return NoError();
-}
+}  // namespace internal
 
 PosixErrorOr<int> SendMsg(int sock, msghdr* msg, char buf[], int buf_size) {
   struct iovec iov;

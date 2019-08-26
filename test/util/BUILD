@@ -1,3 +1,5 @@
+load("//test/syscalls:build_defs.bzl", "select_for_linux")
+
 package(
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
@@ -139,7 +141,11 @@ cc_library(
 cc_library(
     name = "save_util",
     testonly = 1,
-    srcs = ["save_util.cc"],
+    srcs = ["save_util.cc"] +
+           select_for_linux(
+               ["save_util_linux.cc"],
+               ["save_util_other.cc"],
+           ),
     hdrs = ["save_util.h"],
 )
 

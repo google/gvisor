@@ -122,3 +122,6 @@ def sh_test(**kwargs):
     native.sh_test(
         **kwargs
     )
+
+def select_for_linux(for_linux, for_others = []):
+    return for_linux
