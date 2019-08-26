@@ -184,6 +184,15 @@ struct ElfBinary {
     }
   }
 
+  // PreLinkUpdate updates e_entry and p_vaddr in all phdrs as the specified
+  // address.
+  void PreLinkUpdate(size_t offset) {
+    header.e_entry += offset;
+    for (auto& p : phdrs) {
+      p.p_vaddr += offset;
+    }
+  }
+
   // AddInterpreter adds a PT_INTERP segment with the passed contents.
   //
   // A later call to UpdateOffsets is required to make the new phdr valid.
@@ -912,6 +921,64 @@ TEST(ElfTest, ELFInterpreter) {
                   {interp_load_addr, interp_load_addr + 0x1000, true, false,
                    true, true, 0, 0, 0, 0, interpreter_file.path().c_str()},
               })));
+}
+
+// Prelinked dynamically linked binary with an ELF interpreter.
+TEST(ElfTest, ELFInterpreterPrelink) {
+  ElfBinary<64> interpreter = StandardElf();
+  interpreter.header.e_type = ET_DYN;
+  interpreter.header.e_entry = 0x0;
+  interpreter.UpdateOffsets();
+
+  // The first segment really needs to start at 0 for a normal PIE binary, and
+  // thus includes the headers.
+  const uint64_t offset = interpreter.phdrs[1].p_offset;
+  interpreter.phdrs[1].p_offset = 0x0;
+  interpreter.phdrs[1].p_vaddr = 0x0;
+  interpreter.phdrs[1].p_filesz += offset;
+  interpreter.phdrs[1].p_memsz += offset;
+
+  // Prelink change the p_vaddr of phdrs and e_entry.
+  interpreter.PreLinkUpdate(0x80000000000);
+
+  TempPath interpreter_file =
+      ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(interpreter));
+
+  ElfBinary<64> binary = StandardElf();
+
+  // Append the interpreter path.
+  int const interp_data_start = binary.data.size();
+  for (char const c : interpreter_file.path()) {
+    binary.data.push_back(c);
+  }
+  // NUL-terminate.
+  binary.data.push_back(0);
+  int const interp_data_size = binary.data.size() - interp_data_start;
+
+  decltype(binary)::ElfPhdr phdr = {};
+  phdr.p_type = PT_INTERP;
+  phdr.p_offset = interp_data_start;
+  phdr.p_filesz = interp_data_size;
+  phdr.p_memsz = interp_data_size;
+  // "If [PT_INTERP] is present, it must precede any loadable segment entry."
+  //
+  // However, Linux allows it anywhere, so we just stick it at the end to make
+  // sure out-of-order PT_INTERP is OK.
+  binary.phdrs.push_back(phdr);
+
+  binary.UpdateOffsets();
+
+  TempPath binary_file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(binary));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec(
+      binary_file.path(), {binary_file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(child, &status, 0),
+              SyscallSucceedsWithValue(child));
 }
 
 // Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
