@@ -635,7 +635,15 @@ func TestAttachInvalidType(t *testing.T) {
 		t.Fatalf("Mkfifo(%q): %v", fifo, err)
 	}
 
-	socket := filepath.Join(dir, "socket")
+	dirFile, err := os.Open(dir)
+	if err != nil {
+		t.Fatalf("Open(%s): %v", dir, err)
+	}
+	defer dirFile.Close()
+
+	// Bind a socket via /proc to be sure that a length of a socket path
+	// is less than UNIX_PATH_MAX.
+	socket := filepath.Join(fmt.Sprintf("/proc/self/fd/%d", dirFile.Fd()), "socket")
 	l, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatalf("net.Listen(unix, %q): %v", socket, err)
