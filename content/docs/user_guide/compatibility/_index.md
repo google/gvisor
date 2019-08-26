@@ -55,7 +55,7 @@ old versions of ping, require excplicitly enabling raw sockets via the unsafe
 | nslookup | Working |
 | ping     | Working |
 | ps       | Working |
-| ss       | Working |
+| ss       | [In progress](https://github.com/google/gvisor/issues/506) |
 | sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
 | tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
 | top      | Working |
