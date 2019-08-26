@@ -148,11 +148,15 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 // IsResolutionRequired returns true if Resolve() must be called to resolve
 // the link address before the this route can be written to.
 func (r *Route) IsResolutionRequired() bool {
-	return r.ref.linkCache != nil && r.RemoteLinkAddress == ""
+	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == ""
 }
 
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
+	if !r.ref.isValidForOutgoing() {
+		return tcpip.ErrInvalidEndpointState
+	}
+
 	err := r.ref.ep.WritePacket(r, gso, hdr, payload, protocol, ttl, r.loop)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
@@ -166,6 +170,10 @@ func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.Vec
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
 func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.Error {
+	if !r.ref.isValidForOutgoing() {
+		return tcpip.ErrInvalidEndpointState
+	}
+
 	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.loop); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
