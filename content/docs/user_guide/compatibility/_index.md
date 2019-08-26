@@ -48,7 +48,7 @@ old versions of ping, require excplicitly enabling raw sockets via the unsafe
 | dig      | Working |
 | drill    | Working |
 | gdb      | Working |
-| ip       | Most commands not working. Some (e.g. addr) work |
+| ip       | Some subcommands work (e.g. addr) |
 | lsof     | Working |
 | nc       | Working |
 | netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
