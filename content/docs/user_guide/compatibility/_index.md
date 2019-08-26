@@ -36,5 +36,20 @@ The following applications/images have been tested:
 *   tomcat
 *   wordpress
 
+## Debugging tools
+
+Most common debugging utilities work. Specific tools include:
+
+| Tool     | Status                                                     |
+| ---      | ---                                                        |
+| curl     | Working                                                    |
+| dig      | Working                                                    |
+| drill    | Working                                                    |
+| netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
+| nslookup | Working                                                    |
+| ping     | Working                                                    |
+| tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
+| wget     | Working                                                    |
+
 [bug]: https://github.com/google/gvisor/issues/new?title=Compatibility%20Issue:
 [issues]: https://github.com/google/gvisor/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+compatibility%22
