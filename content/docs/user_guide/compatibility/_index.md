@@ -38,7 +38,9 @@ The following applications/images have been tested:
 
 ## Debugging tools
 
-Most common debugging utilities work. Specific tools include:
+Most common debugging utilities work. Note that some tools, such as tcpdump and
+old versions of ping, require excplicitly enabling raw sockets via the unsafe
+`--net-raw` runsc flag.  Specific tools include:
 
 | Tool     | Status                                                     |
 | ---      | ---                                                        |
