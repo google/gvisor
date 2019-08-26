@@ -45,10 +45,15 @@ Most common debugging utilities work. Specific tools include:
 | curl     | Working                                                    |
 | dig      | Working                                                    |
 | drill    | Working                                                    |
+| gdb      | Working                                                    |
+| lsof     | Working                                                    |
 | netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
 | nslookup | Working                                                    |
 | ping     | Working                                                    |
+| ps       | Working                                                    |
+| ss       | Not working                                                |
 | tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
+| top      | Working                                                    |
 | wget     | Working                                                    |
 
 [bug]: https://github.com/google/gvisor/issues/new?title=Compatibility%20Issue:
