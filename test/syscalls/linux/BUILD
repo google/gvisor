@@ -1,3 +1,5 @@
+load("//test/syscalls:build_defs.bzl", "select_for_linux")
+
 package(
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
@@ -108,20 +110,27 @@ cc_library(
 cc_library(
     name = "socket_test_util",
     testonly = 1,
-    srcs = ["socket_test_util.cc"],
+    srcs = [
+        "socket_test_util.cc",
+    ] + select_for_linux(
+        [
+            "socket_test_util_impl.cc",
+        ],
+    ),
     hdrs = ["socket_test_util.h"],
     deps = [
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/time",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_util",
         "//test/util:thread_util",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/time",
-        "@com_google_googletest//:gtest",
-    ],
+    ] + select_for_linux([
+    ]),
 )
 
 cc_library(
