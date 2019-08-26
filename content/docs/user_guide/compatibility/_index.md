@@ -42,21 +42,24 @@ Most common debugging utilities work. Note that some tools, such as tcpdump and
 old versions of ping, require excplicitly enabling raw sockets via the unsafe
 `--net-raw` runsc flag.  Specific tools include:
 
-| Tool     | Status                                                     |
-| ---      | ---                                                        |
-| curl     | Working                                                    |
-| dig      | Working                                                    |
-| drill    | Working                                                    |
-| gdb      | Working                                                    |
-| lsof     | Working                                                    |
+| Tool     | Status                                                                                    |
+| ---      | ---                                                                                       |
+| curl     | Working |
+| dig      | Working |
+| drill    | Working |
+| gdb      | Working |
+| ip       | Most commands not working. Some (e.g. addr) work |
+| lsof     | Working |
+| nc       | Working |
 | netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
-| nslookup | Working                                                    |
-| ping     | Working                                                    |
-| ps       | Working                                                    |
-| ss       | Not working                                                |
+| nslookup | Working |
+| ping     | Working |
+| ps       | Working |
+| ss       | Working |
+| sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
 | tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
-| top      | Working                                                    |
-| wget     | Working                                                    |
+| top      | Working |
+| wget     | Working |
 
 [bug]: https://github.com/google/gvisor/issues/new?title=Compatibility%20Issue:
 [issues]: https://github.com/google/gvisor/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+compatibility%22
