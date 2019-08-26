@@ -57,24 +57,13 @@ var justFPUandPAE = &FeatureSet{
 		X86FeaturePAE: true,
 	}}
 
-func TestIsSubset(t *testing.T) {
-	if !justFPU.IsSubset(justFPUandPAE) {
-		t.Errorf("Got %v is not subset of %v, want IsSubset being true", justFPU, justFPUandPAE)
+func TestSubtract(t *testing.T) {
+	if diff := justFPU.Subtract(justFPUandPAE); diff != nil {
+		t.Errorf("Got %v is not subset of %v, want diff (%v) to be nil", justFPU, justFPUandPAE, diff)
 	}
 
-	if justFPUandPAE.IsSubset(justFPU) {
-		t.Errorf("Got %v is a subset of %v, want IsSubset being false", justFPU, justFPUandPAE)
-	}
-}
-
-func TestTakeFeatureIntersection(t *testing.T) {
-	testFeatures := HostFeatureSet()
-	testFeatures.TakeFeatureIntersection(justFPU)
-	if !testFeatures.IsSubset(justFPU) {
-		t.Errorf("Got more features than expected after intersecting host features with justFPU: %v, want %v", testFeatures.Set, justFPU.Set)
-	}
-	if !testFeatures.HasFeature(X86FeatureFPU) {
-		t.Errorf("Got no features in testFeatures after intersecting, want %v", X86FeatureFPU)
+	if justFPUandPAE.Subtract(justFPU) == nil {
+		t.Errorf("Got %v is a subset of %v, want diff to be nil", justFPU, justFPUandPAE)
 	}
 }
 
@@ -83,7 +72,7 @@ func TestTakeFeatureIntersection(t *testing.T) {
 // if HostFeatureSet gives back junk bits.
 func TestHostFeatureSet(t *testing.T) {
 	hostFeatures := HostFeatureSet()
-	if !justFPUandPAE.IsSubset(hostFeatures) {
+	if justFPUandPAE.Subtract(hostFeatures) != nil {
 		t.Errorf("Got invalid feature set %v from HostFeatureSet()", hostFeatures)
 	}
 }
@@ -175,6 +164,7 @@ func TestEmulateIDBasicFeatures(t *testing.T) {
 	testFeatures := newEmptyFeatureSet()
 	testFeatures.Add(X86FeatureCLFSH)
 	testFeatures.Add(X86FeatureAVX)
+	testFeatures.CacheLine = 64
 
 	ax, bx, cx, dx := testFeatures.EmulateID(1, 0)
 	ECXAVXBit := uint32(1 << uint(X86FeatureAVX))
