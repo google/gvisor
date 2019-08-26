@@ -664,7 +664,14 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		segEnd = seg.sequenceNumber.Add(1)
 		// Transition to FIN-WAIT1 state since we're initiating an active close.
 		s.ep.mu.Lock()
-		s.ep.state = StateFinWait1
+		switch s.ep.state {
+		case StateCloseWait:
+			// We've already received a FIN and are now sending our own. The
+			// sender is now awaiting a final ACK for this FIN.
+			s.ep.state = StateLastAck
+		default:
+			s.ep.state = StateFinWait1
+		}
 		s.ep.mu.Unlock()
 	} else {
 		// We're sending a non-FIN segment.
