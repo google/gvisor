@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build linux,amd64
+// +build linux,amd64 linux,arm64
 
 package fdbased
 
