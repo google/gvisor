@@ -244,8 +244,10 @@ TEST(Pwritev2Test, TestInvalidOffset) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
 
+  char buf[16];
   struct iovec iov;
-  iov.iov_base = nullptr;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
 
   EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
                        /*offset=*/static_cast<off_t>(-8), /*flags=*/0),
@@ -286,8 +288,10 @@ TEST(Pwritev2Test, TestUnseekableFileInValid) {
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   int pipe_fds[2];
+  char buf[16];
   struct iovec iov;
-  iov.iov_base = nullptr;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
 
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
 
@@ -307,8 +311,10 @@ TEST(Pwritev2Test, TestReadOnlyFile) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
 
+  char buf[16];
   struct iovec iov;
-  iov.iov_base = nullptr;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
 
   EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
                        /*offset=*/0, /*flags=*/0),
@@ -324,8 +330,10 @@ TEST(Pwritev2Test, TestInvalidFlag) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR | O_DIRECT));
 
+  char buf[16];
   struct iovec iov;
-  iov.iov_base = nullptr;
+  iov.iov_base = buf;
+  iov.iov_len = sizeof(buf);
 
   EXPECT_THAT(pwritev2(fd.get(), &iov, /*iovcnt=*/1,
                        /*offset=*/0, /*flags=*/0xF0),
