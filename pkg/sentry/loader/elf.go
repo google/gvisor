@@ -464,7 +464,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 	// base address big enough to fit all segments, so we first create a
 	// mapping for the total size just to find a region that is big enough.
 	//
-	// It is safe to unmap it immediately with racing with another mapping
+	// It is safe to unmap it immediately without racing with another mapping
 	// because we are the only one in control of the MemoryManager.
 	//
 	// Note that the vaddr of the first PT_LOAD segment is ignored when
