@@ -176,7 +176,6 @@ run_docker_tests() {
   bazel test \
     "${BAZEL_BUILD_FLAGS[@]}" \
     --test_env=RUNSC_RUNTIME="" \
-    --test_output=all \
     //runsc/test/image:image_test
 
   # These names are used to exclude tests not supported in certain
@@ -188,9 +187,7 @@ run_docker_tests() {
   bazel test \
     "${BAZEL_BUILD_FLAGS[@]}" \
     --test_env=RUNSC_RUNTIME="${RUNTIME}" \
-    --test_output=all \
     --nocache_test_results \
-    --test_output=streamed \
     //runsc/test/integration:integration_test \
     //runsc/test/integration:integration_test_hostnet \
     //runsc/test/integration:integration_test_overlay \
@@ -248,8 +245,7 @@ upload_test_artifacts() {
   fi
 }
 
-# Finish runs at exit, even in the event of an error, and uploads all test
-# artifacts.
+# Finish runs in the event of an error, uploading all artifacts.
 finish() {
   # Grab the last exit code, we will return it.
   local exit_code=${?}
@@ -294,8 +290,14 @@ main() {
   # Build other flavors too.
   build_everything dbg
 
+  # We need to upload all the existing test logs and artifacts before shutting
+  # down and cleaning bazel, otherwise all test information is lost. After this
+  # point, we don't expect any logs or artifacts.
+  upload_test_artifacts
+  trap - EXIT
+
+  # Run docker build tests.
   build_in_docker
-  # No need to call "finish" here, it will happen at exit.
 }
 
 # Kick it off.
