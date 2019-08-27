@@ -36,29 +36,47 @@ The following applications/images have been tested:
 *   tomcat
 *   wordpress
 
-## Debugging tools
+## Utilities
 
-Most common debugging utilities work. Note that some tools, such as tcpdump and
-old versions of ping, require excplicitly enabling raw sockets via the unsafe
+Most common utilities work. Note that some tools, such as tcpdump and old
+versions of ping, require excplicitly enabling raw sockets via the unsafe
 `--net-raw` runsc flag.  Specific tools include:
 
 | Tool     | Status                                                                                    |
 | ---      | ---                                                                                       |
+| apt-get  | Working |
+| bundle   | Working |
+| cat      | Working |
 | curl     | Working |
+| dd       | Working |
+| df       | Working |
 | dig      | Working |
 | drill    | Working |
+| env      | Working |
+| find     | Working |
 | gdb      | Working |
+| gosu     | Working |
+| grep     | Working (unless stdin is a pipe and stdout is /dev/null) |
+| ifconfig | Works partially, like ip |
 | ip       | Some subcommands work (e.g. addr) |
+| less     | Working |
+| ls       | Working |
 | lsof     | Working |
+| mount    | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime |
 | nc       | Working |
 | netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
 | nslookup | Working |
 | ping     | Working |
 | ps       | Working |
+| route    | Working |
 | ss       | [In progress](https://github.com/google/gvisor/issues/506) |
 | sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
+| strace   | Working |
+| tar      | Working |
 | tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
 | top      | Working |
+| uptime   | Working |
+| vim      | Working |
 | wget     | Working |
 
 [bug]: https://github.com/google/gvisor/issues/new?title=Compatibility%20Issue:
