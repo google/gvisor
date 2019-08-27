@@ -64,6 +64,7 @@ versions of ping, require excplicitly enabling raw sockets via the unsafe
 | lsof     | Working |
 | mount    | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime |
 | nc       | Working |
+| nmap     | Not working |
 | netstat  | [In progress](https://github.com/google/gvisor/issues/506) |
 | nslookup | Working |
 | ping     | Working |
