@@ -299,10 +299,30 @@ TEST(SendFileTest, DoNotSendfileIfOutfileIsAppendOnly) {
 
   // Open the output file as append only.
   const FileDescriptor outf =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_APPEND));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY | O_APPEND));
 
   // Send data and verify that sendfile returns the correct errno.
   EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, kDataSize),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SendFileTest, AppendCheckOrdering) {
+  constexpr char kData[] = "And by opposing end them: to die, to sleep";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+
+  const FileDescriptor read =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  const FileDescriptor write =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+  const FileDescriptor append =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_APPEND));
+
+  // Check that read/write file mode is verified before append.
+  EXPECT_THAT(sendfile(append.get(), read.get(), nullptr, kDataSize),
+              SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(sendfile(write.get(), write.get(), nullptr, kDataSize),
               SyscallFailsWithErrno(EBADF));
 }
 
