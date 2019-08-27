@@ -164,13 +164,13 @@ func TestGetExecUserHome(t *testing.T) {
 				},
 			}
 
-			var mns *fs.MountNamespace
-			setMountNS := func(m *fs.MountNamespace) {
-				mns = m
-				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
-			}
 			mntr := newContainerMounter(spec, []int{sandEnd}, nil, &podMountHints{})
-			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
+			mns, err := mntr.createMountNamespace(ctx, conf)
+			if err != nil {
+				t.Fatalf("failed to create mount namespace: %v", err)
+			}
+			ctx = fs.WithRoot(ctx, mns.Root())
+			if err := mntr.mountSubmounts(ctx, conf, mns); err != nil {
 				t.Fatalf("failed to create mount namespace: %v", err)
 			}
 

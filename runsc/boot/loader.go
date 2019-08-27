@@ -527,14 +527,12 @@ func (l *Loader) run() error {
 
 		// Setup the root container file system.
 		l.startGoferMonitor(l.sandboxID, l.goferFDs)
+
 		mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-		if err := mntr.setupRootContainer(ctx, ctx, l.conf, func(mns *fs.MountNamespace) {
-			l.rootProcArgs.MountNamespace = mns
-		}); err != nil {
+		if err := mntr.processHints(l.conf); err != nil {
 			return err
 		}
-
-		if err := setExecutablePath(ctx, &l.rootProcArgs); err != nil {
+		if err := setupContainerFS(ctx, l.conf, mntr, &l.rootProcArgs); err != nil {
 			return err
 		}
 
@@ -687,13 +685,10 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 
 	// Setup the child container file system.
 	l.startGoferMonitor(cid, goferFDs)
-	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
-	if err := mntr.setupChildContainer(conf, &procArgs); err != nil {
-		return fmt.Errorf("configuring container FS: %v", err)
-	}
 
-	if err := setExecutablePath(ctx, &procArgs); err != nil {
-		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
+	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
+	if err := setupContainerFS(ctx, conf, mntr, &procArgs); err != nil {
+		return err
 	}
 
 	// Create and start the new process.

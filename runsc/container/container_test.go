@@ -1310,10 +1310,13 @@ func TestRunNonRoot(t *testing.T) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("/bin/true")
+
+		// Set a random user/group with no access to "blocked" dir.
 		spec.Process.User.UID = 343
 		spec.Process.User.GID = 2401
+		spec.Process.Capabilities = nil
 
-		// User that container runs as can't list '$TMP/blocked' and would fail to
+		// User running inside container can't list '$TMP/blocked' and would fail to
 		// mount it.
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
 		if err != nil {
@@ -1326,6 +1329,17 @@ func TestRunNonRoot(t *testing.T) {
 		if err := os.Mkdir(dir, 0755); err != nil {
 			t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 		}
+
+		src, err := ioutil.TempDir(testutil.TmpDir(), "src")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir() failed: %v", err)
+		}
+
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: dir,
+			Source:      src,
+			Type:        "bind",
+		})
 
 		if err := run(spec, conf); err != nil {
 			t.Fatalf("error running sandbox: %v", err)

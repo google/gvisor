@@ -1485,3 +1485,58 @@ func TestMultiContainerLoadSandbox(t *testing.T) {
 		t.Errorf("containers not found: %v", wantIDs)
 	}
 }
+
+// TestMultiContainerRunNonRoot checks that child container can be configured
+// when running as non-privileged user.
+func TestMultiContainerRunNonRoot(t *testing.T) {
+	cmdRoot := []string{"/bin/sleep", "100"}
+	cmdSub := []string{"/bin/true"}
+	podSpecs, ids := createSpecs(cmdRoot, cmdSub)
+
+	// User running inside container can't list '$TMP/blocked' and would fail to
+	// mount it.
+	blocked, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+	if err := os.Chmod(blocked, 0700); err != nil {
+		t.Fatalf("os.MkDir(%q) failed: %v", blocked, err)
+	}
+	dir := path.Join(blocked, "test")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
+	}
+
+	src, err := ioutil.TempDir(testutil.TmpDir(), "src")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+
+	// Set a random user/group with no access to "blocked" dir.
+	podSpecs[1].Process.User.UID = 343
+	podSpecs[1].Process.User.GID = 2401
+	podSpecs[1].Process.Capabilities = nil
+
+	podSpecs[1].Mounts = append(podSpecs[1].Mounts, specs.Mount{
+		Destination: dir,
+		Source:      src,
+		Type:        "bind",
+	})
+
+	conf := testutil.TestConfig()
+	pod, cleanup, err := startContainers(conf, podSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Once all containers are started, wait for the child container to exit.
+	// This means that the volume was mounted properly.
+	ws, err := pod[1].Wait()
+	if err != nil {
+		t.Fatalf("running child container: %v", err)
+	}
+	if !ws.Exited() || ws.ExitStatus() != 0 {
+		t.Fatalf("child container failed, waitStatus: %v", ws)
+	}
+}
