@@ -91,22 +91,29 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	// Get files.
-	outFile := t.GetFile(outFD)
-	if outFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer outFile.DecRef()
-
 	inFile := t.GetFile(inFD)
 	if inFile == nil {
 		return 0, nil, syserror.EBADF
 	}
 	defer inFile.DecRef()
 
-	// Verify that the outfile Append flag is not set. Note that fs.Splice
-	// itself validates that the output file is writable.
-	if outFile.Flags().Append {
+	if !inFile.Flags().Read {
 		return 0, nil, syserror.EBADF
+	}
+
+	outFile := t.GetFile(outFD)
+	if outFile == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer outFile.DecRef()
+
+	if !outFile.Flags().Write {
+		return 0, nil, syserror.EBADF
+	}
+
+	// Verify that the outfile Append flag is not set.
+	if outFile.Flags().Append {
+		return 0, nil, syserror.EINVAL
 	}
 
 	// Verify that we have a regular infile. This is a requirement; the
