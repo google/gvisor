@@ -38,9 +38,14 @@ The following applications/images have been tested:
 
 ## Utilities
 
-Most common utilities work. Note that some tools, such as tcpdump and old
-versions of ping, require excplicitly enabling raw sockets via the unsafe
-`--net-raw` runsc flag.  Specific tools include:
+Most common utilities work. Note that:
+
+* Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
+  enabling raw sockets via the unsafe `--net-raw` runsc flag.
+* Different Docker images can behave differently. For example, Alpine Linux and
+  Ubuntu have different `ip` binaries.
+
+ Specific tools include:
 
 | Tool     | Status                                                                                    |
 | ---      | ---                                                                                       |
@@ -58,7 +63,7 @@ versions of ping, require excplicitly enabling raw sockets via the unsafe
 | gosu     | Working |
 | grep     | Working (unless stdin is a pipe and stdout is /dev/null) |
 | ifconfig | Works partially, like ip |
-| ip       | Some subcommands work (e.g. addr) |
+| ip       | Some subcommands work (e.g. addr, route) |
 | less     | Working |
 | ls       | Working |
 | lsof     | Working |
@@ -69,7 +74,7 @@ versions of ping, require excplicitly enabling raw sockets via the unsafe
 | nslookup | Working |
 | ping     | Working |
 | ps       | Working |
-| route    | Working |
+| route    | [In progress](https://github.com/google/gvisor/issues/764) |
 | ss       | [In progress](https://github.com/google/gvisor/issues/506) |
 | sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
 | strace   | Working |
