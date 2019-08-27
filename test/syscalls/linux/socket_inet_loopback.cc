@@ -1197,7 +1197,7 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, NoReusePortFollowingReusePort) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    AllFamlies, SocketMultiProtocolInetLoopbackTest,
+    AllFamilies, SocketMultiProtocolInetLoopbackTest,
     ::testing::Values(ProtocolTestParam{"TCP", SOCK_STREAM},
                       ProtocolTestParam{"UDP", SOCK_DGRAM}),
     DescribeProtocolTestParam);

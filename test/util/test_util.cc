@@ -114,9 +114,6 @@ PosixErrorOr<KernelVersion> GetKernelVersion() {
   return ParseKernelVersion(buf.release);
 }
 
-void SetupGvisorDeathTest() {
-}
-
 std::string CPUSetToString(const cpu_set_t& set, size_t cpus) {
   std::string str = "cpuset[";
   for (unsigned int n = 0; n < cpus; n++) {
