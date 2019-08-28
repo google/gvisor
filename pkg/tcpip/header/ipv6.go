@@ -27,7 +27,7 @@ const (
 	nextHdr    = 6
 	hopLimit   = 7
 	v6SrcAddr  = 8
-	v6DstAddr  = 24
+	v6DstAddr  = v6SrcAddr + IPv6AddressSize
 )
 
 // IPv6Fields contains the fields of an IPv6 packet. It is used to describe the
@@ -119,13 +119,13 @@ func (b IPv6) Payload() []byte {
 
 // SourceAddress returns the "source address" field of the ipv6 header.
 func (b IPv6) SourceAddress() tcpip.Address {
-	return tcpip.Address(b[v6SrcAddr : v6SrcAddr+IPv6AddressSize])
+	return tcpip.Address(b[v6SrcAddr:][:IPv6AddressSize])
 }
 
 // DestinationAddress returns the "destination address" field of the ipv6
 // header.
 func (b IPv6) DestinationAddress() tcpip.Address {
-	return tcpip.Address(b[v6DstAddr : v6DstAddr+IPv6AddressSize])
+	return tcpip.Address(b[v6DstAddr:][:IPv6AddressSize])
 }
 
 // Checksum implements Network.Checksum. Given that IPv6 doesn't have a
@@ -153,13 +153,13 @@ func (b IPv6) SetPayloadLength(payloadLength uint16) {
 
 // SetSourceAddress sets the "source address" field of the ipv6 header.
 func (b IPv6) SetSourceAddress(addr tcpip.Address) {
-	copy(b[v6SrcAddr:v6SrcAddr+IPv6AddressSize], addr)
+	copy(b[v6SrcAddr:][:IPv6AddressSize], addr)
 }
 
 // SetDestinationAddress sets the "destination address" field of the ipv6
 // header.
 func (b IPv6) SetDestinationAddress(addr tcpip.Address) {
-	copy(b[v6DstAddr:v6DstAddr+IPv6AddressSize], addr)
+	copy(b[v6DstAddr:][:IPv6AddressSize], addr)
 }
 
 // SetNextHeader sets the value of the "next header" field of the ipv6 header.
@@ -178,8 +178,8 @@ func (b IPv6) Encode(i *IPv6Fields) {
 	b.SetPayloadLength(i.PayloadLength)
 	b[nextHdr] = i.NextHeader
 	b[hopLimit] = i.HopLimit
-	copy(b[v6SrcAddr:v6SrcAddr+IPv6AddressSize], i.SrcAddr)
-	copy(b[v6DstAddr:v6DstAddr+IPv6AddressSize], i.DstAddr)
+	b.SetSourceAddress(i.SrcAddr)
+	b.SetDestinationAddress(i.DstAddr)
 }
 
 // IsValid performs basic validation on the packet.

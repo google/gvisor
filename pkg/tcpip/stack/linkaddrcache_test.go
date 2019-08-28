@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,25 +30,34 @@ type testaddr struct {
 	linkAddr tcpip.LinkAddress
 }
 
-var testaddrs []testaddr
+var testAddrs = func() []testaddr {
+	var addrs []testaddr
+	for i := 0; i < 4*linkAddrCacheSize; i++ {
+		addr := fmt.Sprintf("Addr%06d", i)
+		addrs = append(addrs, testaddr{
+			addr:     tcpip.FullAddress{NIC: 1, Addr: tcpip.Address(addr)},
+			linkAddr: tcpip.LinkAddress("Link" + addr),
+		})
+	}
+	return addrs
+}()
 
 type testLinkAddressResolver struct {
-	cache *linkAddrCache
-	delay time.Duration
+	cache                *linkAddrCache
+	delay                time.Duration
+	onLinkAddressRequest func()
 }
 
 func (r *testLinkAddressResolver) LinkAddressRequest(addr, _ tcpip.Address, _ LinkEndpoint) *tcpip.Error {
-	go func() {
-		if r.delay > 0 {
-			time.Sleep(r.delay)
-		}
-		r.fakeRequest(addr)
-	}()
+	time.AfterFunc(r.delay, func() { r.fakeRequest(addr) })
+	if f := r.onLinkAddressRequest; f != nil {
+		f()
+	}
 	return nil
 }
 
 func (r *testLinkAddressResolver) fakeRequest(addr tcpip.Address) {
-	for _, ta := range testaddrs {
+	for _, ta := range testAddrs {
 		if ta.addr.Addr == addr {
 			r.cache.add(ta.addr, ta.linkAddr)
 			break
@@ -80,20 +90,10 @@ func getBlocking(c *linkAddrCache, addr tcpip.FullAddress, linkRes LinkAddressRe
 	}
 }
 
-func init() {
-	for i := 0; i < 4*linkAddrCacheSize; i++ {
-		addr := fmt.Sprintf("Addr%06d", i)
-		testaddrs = append(testaddrs, testaddr{
-			addr:     tcpip.FullAddress{NIC: 1, Addr: tcpip.Address(addr)},
-			linkAddr: tcpip.LinkAddress("Link" + addr),
-		})
-	}
-}
-
 func TestCacheOverflow(t *testing.T) {
 	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
-	for i := len(testaddrs) - 1; i >= 0; i-- {
-		e := testaddrs[i]
+	for i := len(testAddrs) - 1; i >= 0; i-- {
+		e := testAddrs[i]
 		c.add(e.addr, e.linkAddr)
 		got, _, err := c.get(e.addr, nil, "", nil, nil)
 		if err != nil {
@@ -105,7 +105,7 @@ func TestCacheOverflow(t *testing.T) {
 	}
 	// Expect to find at least half of the most recent entries.
 	for i := 0; i < linkAddrCacheSize/2; i++ {
-		e := testaddrs[i]
+		e := testAddrs[i]
 		got, _, err := c.get(e.addr, nil, "", nil, nil)
 		if err != nil {
 			t.Errorf("check %d, c.get(%q)=%q, got error: %v", i, string(e.addr.Addr), got, err)
@@ -115,8 +115,8 @@ func TestCacheOverflow(t *testing.T) {
 		}
 	}
 	// The earliest entries should no longer be in the cache.
-	for i := len(testaddrs) - 1; i >= len(testaddrs)-linkAddrCacheSize; i-- {
-		e := testaddrs[i]
+	for i := len(testAddrs) - 1; i >= len(testAddrs)-linkAddrCacheSize; i-- {
+		e := testAddrs[i]
 		if _, _, err := c.get(e.addr, nil, "", nil, nil); err != tcpip.ErrNoLinkAddress {
 			t.Errorf("check %d, c.get(%q), got error: %v, want: error ErrNoLinkAddress", i, string(e.addr.Addr), err)
 		}
@@ -130,7 +130,7 @@ func TestCacheConcurrent(t *testing.T) {
 	for r := 0; r < 16; r++ {
 		wg.Add(1)
 		go func() {
-			for _, e := range testaddrs {
+			for _, e := range testAddrs {
 				c.add(e.addr, e.linkAddr)
 				c.get(e.addr, nil, "", nil, nil) // make work for gotsan
 			}
@@ -142,7 +142,7 @@ func TestCacheConcurrent(t *testing.T) {
 	// All goroutines add in the same order and add more values than
 	// can fit in the cache, so our eviction strategy requires that
 	// the last entry be present and the first be missing.
-	e := testaddrs[len(testaddrs)-1]
+	e := testAddrs[len(testAddrs)-1]
 	got, _, err := c.get(e.addr, nil, "", nil, nil)
 	if err != nil {
 		t.Errorf("c.get(%q)=%q, got error: %v", string(e.addr.Addr), got, err)
@@ -151,7 +151,7 @@ func TestCacheConcurrent(t *testing.T) {
 		t.Errorf("c.get(%q)=%q, want %q", string(e.addr.Addr), got, e.linkAddr)
 	}
 
-	e = testaddrs[0]
+	e = testAddrs[0]
 	if _, _, err := c.get(e.addr, nil, "", nil, nil); err != tcpip.ErrNoLinkAddress {
 		t.Errorf("c.get(%q), got error: %v, want: error ErrNoLinkAddress", string(e.addr.Addr), err)
 	}
@@ -159,7 +159,7 @@ func TestCacheConcurrent(t *testing.T) {
 
 func TestCacheAgeLimit(t *testing.T) {
 	c := newLinkAddrCache(1*time.Millisecond, 1*time.Second, 3)
-	e := testaddrs[0]
+	e := testAddrs[0]
 	c.add(e.addr, e.linkAddr)
 	time.Sleep(50 * time.Millisecond)
 	if _, _, err := c.get(e.addr, nil, "", nil, nil); err != tcpip.ErrNoLinkAddress {
@@ -169,7 +169,7 @@ func TestCacheAgeLimit(t *testing.T) {
 
 func TestCacheReplace(t *testing.T) {
 	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
-	e := testaddrs[0]
+	e := testAddrs[0]
 	l2 := e.linkAddr + "2"
 	c.add(e.addr, e.linkAddr)
 	got, _, err := c.get(e.addr, nil, "", nil, nil)
@@ -193,7 +193,7 @@ func TestCacheReplace(t *testing.T) {
 func TestCacheResolution(t *testing.T) {
 	c := newLinkAddrCache(1<<63-1, 250*time.Millisecond, 1)
 	linkRes := &testLinkAddressResolver{cache: c}
-	for i, ta := range testaddrs {
+	for i, ta := range testAddrs {
 		got, err := getBlocking(c, ta.addr, linkRes)
 		if err != nil {
 			t.Errorf("check %d, c.get(%q)=%q, got error: %v", i, string(ta.addr.Addr), got, err)
@@ -205,7 +205,7 @@ func TestCacheResolution(t *testing.T) {
 
 	// Check that after resolved, address stays in the cache and never returns WouldBlock.
 	for i := 0; i < 10; i++ {
-		e := testaddrs[len(testaddrs)-1]
+		e := testAddrs[len(testAddrs)-1]
 		got, _, err := c.get(e.addr, linkRes, "", nil, nil)
 		if err != nil {
 			t.Errorf("c.get(%q)=%q, got error: %v", string(e.addr.Addr), got, err)
@@ -220,8 +220,13 @@ func TestCacheResolutionFailed(t *testing.T) {
 	c := newLinkAddrCache(1<<63-1, 10*time.Millisecond, 5)
 	linkRes := &testLinkAddressResolver{cache: c}
 
+	var requestCount uint32
+	linkRes.onLinkAddressRequest = func() {
+		atomic.AddUint32(&requestCount, 1)
+	}
+
 	// First, sanity check that resolution is working...
-	e := testaddrs[0]
+	e := testAddrs[0]
 	got, err := getBlocking(c, e.addr, linkRes)
 	if err != nil {
 		t.Errorf("c.get(%q)=%q, got error: %v", string(e.addr.Addr), got, err)
@@ -230,9 +235,15 @@ func TestCacheResolutionFailed(t *testing.T) {
 		t.Errorf("c.get(%q)=%q, want %q", string(e.addr.Addr), got, e.linkAddr)
 	}
 
+	before := atomic.LoadUint32(&requestCount)
+
 	e.addr.Addr += "2"
 	if _, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrNoLinkAddress {
 		t.Errorf("c.get(%q), got error: %v, want: error ErrNoLinkAddress", string(e.addr.Addr), err)
+	}
+
+	if got, want := int(atomic.LoadUint32(&requestCount)-before), c.resolutionAttempts; got != want {
+		t.Errorf("got link address request count = %d, want = %d", got, want)
 	}
 }
 
@@ -242,7 +253,7 @@ func TestCacheResolutionTimeout(t *testing.T) {
 	c := newLinkAddrCache(expiration, 1*time.Millisecond, 3)
 	linkRes := &testLinkAddressResolver{cache: c, delay: resolverDelay}
 
-	e := testaddrs[0]
+	e := testAddrs[0]
 	if _, err := getBlocking(c, e.addr, linkRes); err != tcpip.ErrNoLinkAddress {
 		t.Errorf("c.get(%q), got error: %v, want: error ErrNoLinkAddress", string(e.addr.Addr), err)
 	}

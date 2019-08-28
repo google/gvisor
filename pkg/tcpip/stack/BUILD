@@ -1,11 +1,25 @@
 package(licenses = ["notice"])
 
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+
+go_template_instance(
+    name = "linkaddrentry_list",
+    out = "linkaddrentry_list.go",
+    package = "stack",
+    prefix = "linkAddrEntry",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*linkAddrEntry",
+        "Linker": "*linkAddrEntry",
+    },
+)
 
 go_library(
     name = "stack",
     srcs = [
         "linkaddrcache.go",
+        "linkaddrentry_list.go",
         "nic.go",
         "registration.go",
         "route.go",
