@@ -100,13 +100,11 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 	case header.ICMPv6NeighborSolicit:
 		received.NeighborSolicit.Increment()
 
-		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
-
 		if len(v) < header.ICMPv6NeighborSolicitMinimumSize {
 			received.Invalid.Increment()
 			return
 		}
-		targetAddr := tcpip.Address(v[8:][:16])
+		targetAddr := tcpip.Address(v[8:][:header.IPv6AddressSize])
 		if e.linkAddrCache.CheckLocalAddress(e.nicid, ProtocolNumber, targetAddr) == 0 {
 			// We don't have a useful answer; the best we can do is ignore the request.
 			return
@@ -146,7 +144,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			received.Invalid.Increment()
 			return
 		}
-		targetAddr := tcpip.Address(v[8:][:16])
+		targetAddr := tcpip.Address(v[8:][:header.IPv6AddressSize])
 		e.linkAddrCache.AddLinkAddress(e.nicid, targetAddr, r.RemoteLinkAddress)
 		if targetAddr != r.RemoteAddress {
 			e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
