@@ -74,3 +74,11 @@ go_test(
         "//pkg/tcpip",
     ],
 )
+
+filegroup(
+    name = "autogen",
+    srcs = [
+        "linkaddrentry_list.go",
+    ],
+    visibility = ["//:sandbox"],
+)
