@@ -6,6 +6,32 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (x *linkAddrEntryList) beforeSave() {}
+func (x *linkAddrEntryList) save(m state.Map) {
+	x.beforeSave()
+	m.Save("head", &x.head)
+	m.Save("tail", &x.tail)
+}
+
+func (x *linkAddrEntryList) afterLoad() {}
+func (x *linkAddrEntryList) load(m state.Map) {
+	m.Load("head", &x.head)
+	m.Load("tail", &x.tail)
+}
+
+func (x *linkAddrEntryEntry) beforeSave() {}
+func (x *linkAddrEntryEntry) save(m state.Map) {
+	x.beforeSave()
+	m.Save("next", &x.next)
+	m.Save("prev", &x.prev)
+}
+
+func (x *linkAddrEntryEntry) afterLoad() {}
+func (x *linkAddrEntryEntry) load(m state.Map) {
+	m.Load("next", &x.next)
+	m.Load("prev", &x.prev)
+}
+
 func (x *TransportEndpointID) beforeSave() {}
 func (x *TransportEndpointID) save(m state.Map) {
 	x.beforeSave()
@@ -53,6 +79,8 @@ func (x *GSO) load(m state.Map) {
 }
 
 func init() {
+	state.Register("stack.linkAddrEntryList", (*linkAddrEntryList)(nil), state.Fns{Save: (*linkAddrEntryList).save, Load: (*linkAddrEntryList).load})
+	state.Register("stack.linkAddrEntryEntry", (*linkAddrEntryEntry)(nil), state.Fns{Save: (*linkAddrEntryEntry).save, Load: (*linkAddrEntryEntry).load})
 	state.Register("stack.TransportEndpointID", (*TransportEndpointID)(nil), state.Fns{Save: (*TransportEndpointID).save, Load: (*TransportEndpointID).load})
 	state.Register("stack.GSOType", (*GSOType)(nil), state.Fns{Save: (*GSOType).save, Load: (*GSOType).load})
 	state.Register("stack.GSO", (*GSO)(nil), state.Fns{Save: (*GSO).save, Load: (*GSO).load})
