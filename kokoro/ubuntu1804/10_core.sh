@@ -1,0 +1,1 @@
+../ubuntu1604/10_core.sh
