@@ -112,6 +112,12 @@ PosixErrorOr<std::vector<Mapping>> CreateFragmentedRegion(const int size,
 // A contiguous iov that is heavily fragmented in FileMem can still be sent
 // successfully.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
+  // NOTE(b/116636318): Linux has poor behavior in the presence of physical
+  // memory fragmentation. In the best case, this causes sendmsg() to eventually
+  // return ENOBUFS. In the worse case, this causes sendmsg() to stall for long
+  // enough to cause the test to time out.
+  SKIP_IF(!IsRunningOnGvisor());
+
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   const int buffer_size = UIO_MAXIOV * kPageSize;
@@ -156,18 +162,17 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedSendMsg) {
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
 
-  // NOTE(b/116636318,b/115833655): Linux has poor behavior in the presence of
-  // physical memory fragmentation. As a result, this may stall for a long time
-  // and ultimately return ENOBUFS. Allow this error, since it means that we
-  // made it to the host kernel and started the sendmsg.
   EXPECT_THAT(RetryEINTR(sendmsg)(sockets->first_fd(), &msg, 0),
-              AnyOf(SyscallSucceedsWithValue(buffer_size),
-                    SyscallFailsWithErrno(ENOBUFS)));
+              SyscallSucceedsWithValue(buffer_size));
 }
 
 // A contiguous iov that is heavily fragmented in FileMem can still be received
 // into successfully.
 TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
+  // NOTE(b/116636318): The write() below has the same issue as sendmsg()
+  // described in FragmentedSendMsg above.
+  SKIP_IF(!IsRunningOnGvisor());
+
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   const int buffer_size = UIO_MAXIOV * kPageSize;
@@ -198,15 +203,9 @@ TEST_P(UnixNonStreamSocketPairTest, FragmentedRecvMsg) {
   }
 
   std::vector<char> write_buf(buffer_size, 'a');
-  const int ret = RetryEINTR(write)(sockets->first_fd(), write_buf.data(),
-                                    write_buf.size());
-  if (ret < 0 && errno == ENOBUFS) {
-    // NOTE(b/116636318): Linux may stall the write for a long time and
-    // ultimately return ENOBUFS. Allow this error, since a retry will likely
-    // result in the same error.
-    return;
-  }
-  ASSERT_THAT(ret, SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), write_buf.data(),
+                                write_buf.size()),
+              SyscallSucceedsWithValue(write_buf.size()));
 
   // Create a contiguous region of memory of 2*UIO_MAXIOV*PAGE_SIZE. We'll call
   // sendmsg with a single iov, but the goal is to get the sentry to split this
