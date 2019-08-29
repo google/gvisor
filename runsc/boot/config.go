@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 )
 
@@ -112,6 +113,34 @@ func MakeWatchdogAction(s string) (watchdog.Action, error) {
 	}
 }
 
+// MakeRefsLeakMode converts type from string.
+func MakeRefsLeakMode(s string) (refs.LeakMode, error) {
+	switch strings.ToLower(s) {
+	case "disabled":
+		return refs.NoLeakChecking, nil
+	case "log-names":
+		return refs.LeaksLogWarning, nil
+	case "log-traces":
+		return refs.LeaksLogTraces, nil
+	default:
+		return 0, fmt.Errorf("invalid refs leakmode %q", s)
+	}
+}
+
+func refsLeakModeToString(mode refs.LeakMode) string {
+	switch mode {
+	// If not set, default it to disabled.
+	case refs.UninitializedLeakChecking, refs.NoLeakChecking:
+		return "disabled"
+	case refs.LeaksLogWarning:
+		return "log-names"
+	case refs.LeaksLogTraces:
+		return "log-traces"
+	default:
+		panic(fmt.Sprintf("Invalid leakmode: %d", mode))
+	}
+}
+
 // Config holds configuration that is not part of the runtime spec.
 type Config struct {
 	// RootDir is the runtime root directory.
@@ -201,6 +230,9 @@ type Config struct {
 
 	// AlsoLogToStderr allows to send log messages to stderr.
 	AlsoLogToStderr bool
+
+	// ReferenceLeakMode sets reference leak check mode
+	ReferenceLeakMode refs.LeakMode
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -227,6 +259,7 @@ func (c *Config) ToFlags() []string {
 		"--num-network-channels=" + strconv.Itoa(c.NumNetworkChannels),
 		"--rootless=" + strconv.FormatBool(c.Rootless),
 		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
+		"--ref-leak-mode=" + refsLeakModeToString(c.ReferenceLeakMode),
 	}
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// Only include if set since it is never to be used by users.

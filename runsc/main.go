@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
@@ -74,6 +75,7 @@ var (
 	netRaw             = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
 	numNetworkChannels = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	rootless           = flag.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
+	referenceLeakMode  = flag.String("ref-leak-mode", "disabled", "sets reference leak check mode: disabled (default), log-names, log-traces.")
 
 	// Test flags, not to be used outside tests, ever.
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
@@ -169,6 +171,15 @@ func main() {
 		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
 	}
 
+	refsLeakMode, err := boot.MakeRefsLeakMode(*referenceLeakMode)
+	if err != nil {
+		cmd.Fatalf("%v", err)
+	}
+
+	// Sets the reference leak check mode. Also set it in config below to
+	// propagate it to child processes.
+	refs.SetLeakMode(refsLeakMode)
+
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:            *rootDir,
@@ -192,6 +203,7 @@ func main() {
 		NumNetworkChannels: *numNetworkChannels,
 		Rootless:           *rootless,
 		AlsoLogToStderr:    *alsoLogToStderr,
+		ReferenceLeakMode:  refsLeakMode,
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
 	}
