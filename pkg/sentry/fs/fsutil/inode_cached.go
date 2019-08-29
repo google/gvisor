@@ -66,10 +66,8 @@ type CachingInodeOperations struct {
 	// mfp is used to allocate memory that caches backingFile's contents.
 	mfp pgalloc.MemoryFileProvider
 
-	// forcePageCache indicates the sentry page cache should be used regardless
-	// of whether the platform supports host mapped I/O or not. This must not be
-	// modified after inode creation.
-	forcePageCache bool
+	// opts contains options. opts is immutable.
+	opts CachingInodeOperationsOptions
 
 	attrMu sync.Mutex `state:"nosave"`
 
@@ -116,6 +114,20 @@ type CachingInodeOperations struct {
 	refs frameRefSet
 }
 
+// CachingInodeOperationsOptions configures a CachingInodeOperations.
+//
+// +stateify savable
+type CachingInodeOperationsOptions struct {
+	// If ForcePageCache is true, use the sentry page cache even if a host file
+	// descriptor is available.
+	ForcePageCache bool
+
+	// If LimitHostFDTranslation is true, apply maxFillRange() constraints to
+	// host file descriptor mappings returned by
+	// CachingInodeOperations.Translate().
+	LimitHostFDTranslation bool
+}
+
 // CachedFileObject is a file that may require caching.
 type CachedFileObject interface {
 	// ReadToBlocksAt reads up to dsts.NumBytes() bytes from the file to dsts,
@@ -159,7 +171,7 @@ type CachedFileObject interface {
 
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by
 // a CachedFileObject and its initial unstable attributes.
-func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, forcePageCache bool) *CachingInodeOperations {
+func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, opts CachingInodeOperationsOptions) *CachingInodeOperations {
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
@@ -167,7 +179,7 @@ func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject
 	return &CachingInodeOperations{
 		backingFile:    backingFile,
 		mfp:            mfp,
-		forcePageCache: forcePageCache,
+		opts:           opts,
 		attr:           uattr,
 		hostFileMapper: NewHostFileMapper(),
 	}
@@ -763,7 +775,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 // and memory mappings, and false if c.cache may contain data cached from
 // c.backingFile.
 func (c *CachingInodeOperations) useHostPageCache() bool {
-	return !c.forcePageCache && c.backingFile.FD() >= 0
+	return !c.opts.ForcePageCache && c.backingFile.FD() >= 0
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -835,11 +847,15 @@ func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.Mapp
 func (c *CachingInodeOperations) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	// Hot path. Avoid defer.
 	if c.useHostPageCache() {
+		mr := optional
+		if c.opts.LimitHostFDTranslation {
+			mr = maxFillRange(required, optional)
+		}
 		return []memmap.Translation{
 			{
-				Source: optional,
+				Source: mr,
 				File:   c,
-				Offset: optional.Start,
+				Offset: mr.Start,
 				Perms:  usermem.AnyAccess,
 			},
 		}, nil
