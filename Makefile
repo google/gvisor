@@ -4,7 +4,7 @@ GC=go
 GO_BUILD_FLAGS=
 GO_TAGS=
 GO_LDFLAGS=-ldflags '-s -w -extldflags "-static"'
-SOURCES=$(shell find cmd/ pkg/ vendor/ -name '*.go')
+SOURCES=$(shell find cmd/ pkg/ -name '*.go')
 DEPLOY_PATH=cri-containerd-staging/gvisor-containerd-shim
 VERSION=$(shell git rev-parse HEAD)
 
