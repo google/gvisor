@@ -215,8 +215,8 @@ type AtomicRefCount struct {
 type LeakMode uint32
 
 const (
-	// uninitializedLeakChecking indicates that the leak checker has not yet been initialized.
-	uninitializedLeakChecking LeakMode = iota
+	// UninitializedLeakChecking indicates that the leak checker has not yet been initialized.
+	UninitializedLeakChecking LeakMode = iota
 
 	// NoLeakChecking indicates that no effort should be made to check for
 	// leaks.
@@ -318,7 +318,7 @@ func (r *AtomicRefCount) finalize() {
 	switch LeakMode(atomic.LoadUint32(&leakMode)) {
 	case NoLeakChecking:
 		return
-	case uninitializedLeakChecking:
+	case UninitializedLeakChecking:
 		note = "(Leak checker uninitialized): "
 	}
 	if n := r.ReadRefs(); n != 0 {
