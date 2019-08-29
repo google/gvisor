@@ -31,6 +31,7 @@ if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
     mkdir -p ~kbuilder/.ssh
     (IFS=$'\n'; echo "${ssh_public_keys[*]}") > ~kbuilder/.ssh/authorized_keys
     chmod 0600 ~kbuilder/.ssh/authorized_keys
+    chown -R kbuilder ~kbuilder/.ssh
 fi
 
 # Give passwordless sudo access.
