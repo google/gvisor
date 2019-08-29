@@ -63,7 +63,7 @@ Most common utilities work. Note that:
 | gosu     | Working |
 | grep     | Working (unless stdin is a pipe and stdout is /dev/null) |
 | ifconfig | Works partially, like ip |
-| ip       | Some subcommands work (e.g. addr, route) |
+| ip       | [In progress](https://github.com/google/gvisor/issues/769). Some subcommands work (e.g. addr, route) on alpine images. Not working on newest debian/ubuntu images. |
 | less     | Working |
 | ls       | Working |
 | lsof     | Working |
