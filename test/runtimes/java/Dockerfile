@@ -31,5 +31,6 @@ ENV LANG_DIR=/root
 
 COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
 COPY java/proctor-java.go ${LANG_DIR}
+RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-java.go"]
 
-ENTRYPOINT ["/root/go/bin/go", "run", "proctor-java.go"]
+ENTRYPOINT ["/root/go/bin/proctor"]

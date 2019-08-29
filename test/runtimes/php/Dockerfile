@@ -26,5 +26,6 @@ RUN make
 
 COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
 COPY php/proctor-php.go ${LANG_DIR}
+RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-php.go"]
 
-ENTRYPOINT ["/root/go/bin/go", "run", "proctor-php.go"]
+ENTRYPOINT ["/root/go/bin/proctor"]
