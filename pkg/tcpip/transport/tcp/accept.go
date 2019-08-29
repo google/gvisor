@@ -297,7 +297,10 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		return nil, err
 	}
 	ep.mu.Lock()
-	ep.state = StateEstablished
+	if ep.state != StateEstablished {
+		ep.stack.Stats().TCP.CurrentEstablished.Increment()
+		ep.state = StateEstablished
+	}
 	ep.mu.Unlock()
 
 	// Update the receive window scaling. We can't do it before the
@@ -519,6 +522,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n.tsOffset = 0
 
 		// Switch state to connected.
+		n.stack.Stats().TCP.CurrentEstablished.Increment()
 		n.state = StateEstablished
 
 		// Do the delivery in a separate goroutine so
