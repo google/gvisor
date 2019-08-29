@@ -23,7 +23,7 @@ declare -r ssh_public_keys=(
 )
 
 # Install dependencies.
-apt-get install -y rsync coreutils
+apt-get update && apt-get install -y rsync coreutils python-psutil
 
 # We need a kbuilder user.
 if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
