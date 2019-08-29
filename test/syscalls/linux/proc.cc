@@ -1602,9 +1602,9 @@ class BlockingChild {
   }
 
   mutable absl::Mutex mu_;
-  bool stop_ GUARDED_BY(mu_) = false;
+  bool stop_ ABSL_GUARDED_BY(mu_) = false;
   pid_t tid_;
-  bool tid_ready_ GUARDED_BY(mu_) = false;
+  bool tid_ready_ ABSL_GUARDED_BY(mu_) = false;
 
   // Must be last to ensure that the destructor for the thread is run before
   // any other member of the object is destroyed.
