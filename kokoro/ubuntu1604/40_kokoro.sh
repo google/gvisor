@@ -33,10 +33,15 @@ if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
     chmod 0600 ~kbuilder/.ssh/authorized_keys
 fi
 
+# Give passwordless sudo access.
+cat > /etc/sudoers.d/kokoro <<EOF
+kbuilder ALL=(ALL) NOPASSWD:ALL
+EOF
+
 # Ensure that /tmpfs exists and is writable by kokoro.
 #
 # Note that kokoro will typically attach a second disk (sdb) to the instance
 # that is used for the /tmpfs volume. In the future we could setup an init
 # script that formats and mounts this here; however, we don't expect our build
 # artifacts to be that large.
-mkdir -p /tmpfs && chmod 0755 /tmpfs && touch /tmpfs/READY
+mkdir -p /tmpfs && chmod 0777 /tmpfs && touch /tmpfs/READY
