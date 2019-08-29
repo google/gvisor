@@ -56,7 +56,7 @@ class TimerThread {
 
  private:
   mutable absl::Mutex mu_;
-  bool cancel_ GUARDED_BY(mu_) = false;
+  bool cancel_ ABSL_GUARDED_BY(mu_) = false;
 
   // Must be last to ensure that the destructor for the thread is run before
   // any other member of the object is destroyed.
