@@ -3472,3 +3472,18 @@ cc_binary(
         "@com_google_googletest//:gtest",
     ],
 )
+
+cc_binary(
+    name = "proc_net_udp_test",
+    testonly = 1,
+    srcs = ["proc_net_udp.cc"],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest",
+    ],
+)

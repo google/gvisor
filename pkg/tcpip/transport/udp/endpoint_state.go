@@ -77,7 +77,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		}
 	}
 
-	if e.state != stateBound && e.state != stateConnected {
+	if e.state != StateBound && e.state != StateConnected {
 		return
 	}
 
@@ -92,7 +92,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	}
 
 	var err *tcpip.Error
-	if e.state == stateConnected {
+	if e.state == StateConnected {
 		e.route, err = e.stack.FindRoute(e.regNICID, e.id.LocalAddress, e.id.RemoteAddress, netProto, e.multicastLoop)
 		if err != nil {
 			panic(err)
