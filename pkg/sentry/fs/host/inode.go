@@ -200,8 +200,10 @@ func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, 
 	// Build the fs.InodeOperations.
 	uattr := unstableAttr(msrc.MountSourceOperations.(*superOperations), &s)
 	iops := &inodeOperations{
-		fileState:       fileState,
-		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, msrc.Flags.ForcePageCache),
+		fileState: fileState,
+		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, fsutil.CachingInodeOperationsOptions{
+			ForcePageCache: msrc.Flags.ForcePageCache,
+		}),
 	}
 
 	// Return the fs.Inode.
