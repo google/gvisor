@@ -297,7 +297,11 @@ func (d *Docker) Remove() error {
 func (d *Docker) CleanUp() {
 	d.logDockerID()
 	if _, err := do("kill", d.Name); err != nil {
-		log.Printf("error killing container %q: %v", d.Name, err)
+		if strings.Contains(err.Error(), "is not running") {
+			// Nothing to kill. Don't log the error in this case.
+		} else {
+			log.Printf("error killing container %q: %v", d.Name, err)
+		}
 	}
 	if err := d.Remove(); err != nil {
 		log.Print(err)
