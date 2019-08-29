@@ -203,6 +203,17 @@ func (x *netTCP) load(m state.Map) {
 	m.Load("k", &x.k)
 }
 
+func (x *netUDP) beforeSave() {}
+func (x *netUDP) save(m state.Map) {
+	x.beforeSave()
+	m.Save("k", &x.k)
+}
+
+func (x *netUDP) afterLoad() {}
+func (x *netUDP) load(m state.Map) {
+	m.Load("k", &x.k)
+}
+
 func (x *proc) beforeSave() {}
 func (x *proc) save(m state.Map) {
 	x.beforeSave()
@@ -633,6 +644,7 @@ func init() {
 	state.Register("proc.netDev", (*netDev)(nil), state.Fns{Save: (*netDev).save, Load: (*netDev).load})
 	state.Register("proc.netUnix", (*netUnix)(nil), state.Fns{Save: (*netUnix).save, Load: (*netUnix).load})
 	state.Register("proc.netTCP", (*netTCP)(nil), state.Fns{Save: (*netTCP).save, Load: (*netTCP).load})
+	state.Register("proc.netUDP", (*netUDP)(nil), state.Fns{Save: (*netUDP).save, Load: (*netUDP).load})
 	state.Register("proc.proc", (*proc)(nil), state.Fns{Save: (*proc).save, Load: (*proc).load})
 	state.Register("proc.self", (*self)(nil), state.Fns{Save: (*self).save, Load: (*self).load})
 	state.Register("proc.threadSelf", (*threadSelf)(nil), state.Fns{Save: (*threadSelf).save, Load: (*threadSelf).load})
