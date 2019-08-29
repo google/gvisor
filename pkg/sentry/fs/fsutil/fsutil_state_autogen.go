@@ -299,7 +299,7 @@ func (x *CachingInodeOperations) save(m state.Map) {
 	x.beforeSave()
 	m.Save("backingFile", &x.backingFile)
 	m.Save("mfp", &x.mfp)
-	m.Save("forcePageCache", &x.forcePageCache)
+	m.Save("opts", &x.opts)
 	m.Save("attr", &x.attr)
 	m.Save("dirtyAttr", &x.dirtyAttr)
 	m.Save("mappings", &x.mappings)
@@ -313,7 +313,7 @@ func (x *CachingInodeOperations) afterLoad() {}
 func (x *CachingInodeOperations) load(m state.Map) {
 	m.Load("backingFile", &x.backingFile)
 	m.Load("mfp", &x.mfp)
-	m.Load("forcePageCache", &x.forcePageCache)
+	m.Load("opts", &x.opts)
 	m.Load("attr", &x.attr)
 	m.Load("dirtyAttr", &x.dirtyAttr)
 	m.Load("mappings", &x.mappings)
@@ -321,6 +321,19 @@ func (x *CachingInodeOperations) load(m state.Map) {
 	m.Load("dirty", &x.dirty)
 	m.Load("hostFileMapper", &x.hostFileMapper)
 	m.Load("refs", &x.refs)
+}
+
+func (x *CachingInodeOperationsOptions) beforeSave() {}
+func (x *CachingInodeOperationsOptions) save(m state.Map) {
+	x.beforeSave()
+	m.Save("ForcePageCache", &x.ForcePageCache)
+	m.Save("LimitHostFDTranslation", &x.LimitHostFDTranslation)
+}
+
+func (x *CachingInodeOperationsOptions) afterLoad() {}
+func (x *CachingInodeOperationsOptions) load(m state.Map) {
+	m.Load("ForcePageCache", &x.ForcePageCache)
+	m.Load("LimitHostFDTranslation", &x.LimitHostFDTranslation)
 }
 
 func init() {
@@ -346,4 +359,5 @@ func init() {
 	state.Register("fsutil.staticFile", (*staticFile)(nil), state.Fns{Save: (*staticFile).save, Load: (*staticFile).load})
 	state.Register("fsutil.InodeStaticFileGetter", (*InodeStaticFileGetter)(nil), state.Fns{Save: (*InodeStaticFileGetter).save, Load: (*InodeStaticFileGetter).load})
 	state.Register("fsutil.CachingInodeOperations", (*CachingInodeOperations)(nil), state.Fns{Save: (*CachingInodeOperations).save, Load: (*CachingInodeOperations).load})
+	state.Register("fsutil.CachingInodeOperationsOptions", (*CachingInodeOperationsOptions)(nil), state.Fns{Save: (*CachingInodeOperationsOptions).save, Load: (*CachingInodeOperationsOptions).load})
 }
