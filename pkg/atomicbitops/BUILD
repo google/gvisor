@@ -8,6 +8,7 @@ go_library(
     srcs = [
         "atomic_bitops.go",
         "atomic_bitops_amd64.s",
+        "atomic_bitops_arm64.s",
         "atomic_bitops_common.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/atomicbitops",
