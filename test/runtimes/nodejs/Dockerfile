@@ -24,7 +24,8 @@ RUN make test-build
 
 COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
 COPY nodejs/proctor-nodejs.go ${LANG_DIR}
+RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-nodejs.go"]
 
 # Including dumb-init emulates the Linux "init" process, preventing the failure
 # of tests involving worker processes.
-ENTRYPOINT ["/usr/bin/dumb-init", "/root/go/bin/go", "run", "proctor-nodejs.go"]
+ENTRYPOINT ["/usr/bin/dumb-init", "/root/go/bin/proctor"]

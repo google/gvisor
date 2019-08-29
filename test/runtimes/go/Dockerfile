@@ -30,5 +30,6 @@ WORKDIR ${LANG_DIR}
 
 COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
 COPY go/proctor-go.go ${LANG_DIR}
+RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-go.go"]
 
-ENTRYPOINT ["/root/go/bin/go", "run", "proctor-go.go"]
+ENTRYPOINT ["/root/go/bin/proctor"]

@@ -28,5 +28,6 @@ RUN make -s -j2
 
 COPY common /root/go/src/gvisor.dev/gvisor/test/runtimes/common/common
 COPY python/proctor-python.go ${LANG_DIR}
+RUN ["/root/go/bin/go", "build", "-o", "/root/go/bin/proctor", "proctor-python.go"]
 
-ENTRYPOINT ["/root/go/bin/go", "run", "proctor-python.go"]
+ENTRYPOINT ["/root/go/bin/proctor"]
