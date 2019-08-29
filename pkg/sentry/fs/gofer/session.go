@@ -117,6 +117,11 @@ type session struct {
 	// Flags provided to the mount.
 	superBlockFlags fs.MountSourceFlags `state:"wait"`
 
+	// limitHostFDTranslation is the value used for
+	// CachingInodeOperationsOptions.LimitHostFDTranslation for all
+	// CachingInodeOperations created by the session.
+	limitHostFDTranslation bool
+
 	// connID is a unique identifier for the session connection.
 	connID string `state:"wait"`
 
@@ -218,8 +223,11 @@ func newInodeOperations(ctx context.Context, s *session, file contextFile, qid p
 
 	uattr := unstable(ctx, valid, attr, s.mounter, s.client)
 	return sattr, &inodeOperations{
-		fileState:       fileState,
-		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, s.superBlockFlags.ForcePageCache),
+		fileState: fileState,
+		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, fsutil.CachingInodeOperationsOptions{
+			ForcePageCache:         s.superBlockFlags.ForcePageCache,
+			LimitHostFDTranslation: s.limitHostFDTranslation,
+		}),
 	}
 }
 
@@ -242,13 +250,14 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 
 	// Construct the session.
 	s := session{
-		connID:          dev,
-		msize:           o.msize,
-		version:         o.version,
-		cachePolicy:     o.policy,
-		aname:           o.aname,
-		superBlockFlags: superBlockFlags,
-		mounter:         mounter,
+		connID:                 dev,
+		msize:                  o.msize,
+		version:                o.version,
+		cachePolicy:            o.policy,
+		aname:                  o.aname,
+		superBlockFlags:        superBlockFlags,
+		limitHostFDTranslation: o.limitHostFDTranslation,
+		mounter:                mounter,
 	}
 	s.EnableLeakCheck("gofer.session")
 
