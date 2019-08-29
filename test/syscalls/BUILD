@@ -319,10 +319,6 @@ syscall_test(
 )
 
 syscall_test(
-    test = "//test/syscalls/linux:pty_root_test",
-)
-
-syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:pwritev2_test",
 )

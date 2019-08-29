@@ -17,10 +17,7 @@ package tty
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/refs"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // Terminal is a pseudoterminal.
@@ -29,100 +26,23 @@ import (
 type Terminal struct {
 	refs.AtomicRefCount
 
-	// n is the terminal index. It is immutable.
+	// n is the terminal index.
 	n uint32
 
-	// d is the containing directory. It is immutable.
+	// d is the containing directory.
 	d *dirInodeOperations
 
-	// ld is the line discipline of the terminal. It is immutable.
+	// ld is the line discipline of the terminal.
 	ld *lineDiscipline
-
-	// masterKTTY contains the controlling process of the master end of
-	// this terminal. This field is immutable.
-	masterKTTY *kernel.TTY
-
-	// slaveKTTY contains the controlling process of the slave end of this
-	// terminal. This field is immutable.
-	slaveKTTY *kernel.TTY
 }
 
 func newTerminal(ctx context.Context, d *dirInodeOperations, n uint32) *Terminal {
 	termios := linux.DefaultSlaveTermios
 	t := Terminal{
-		d:          d,
-		n:          n,
-		ld:         newLineDiscipline(termios),
-		masterKTTY: &kernel.TTY{},
-		slaveKTTY:  &kernel.TTY{},
+		d:  d,
+		n:  n,
+		ld: newLineDiscipline(termios),
 	}
 	t.EnableLeakCheck("tty.Terminal")
 	return &t
-}
-
-// setControllingTTY makes tm the controlling terminal of the calling thread
-// group.
-func (tm *Terminal) setControllingTTY(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) error {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		panic("setControllingTTY must be called from a task context")
-	}
-
-	return task.ThreadGroup().SetControllingTTY(tm.tty(isMaster), args[2].Int())
-}
-
-// releaseControllingTTY removes tm as the controlling terminal of the calling
-// thread group.
-func (tm *Terminal) releaseControllingTTY(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) error {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		panic("releaseControllingTTY must be called from a task context")
-	}
-
-	return task.ThreadGroup().ReleaseControllingTTY(tm.tty(isMaster))
-}
-
-// foregroundProcessGroup gets the process group ID of tm's foreground process.
-func (tm *Terminal) foregroundProcessGroup(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		panic("foregroundProcessGroup must be called from a task context")
-	}
-
-	ret, err := task.ThreadGroup().ForegroundProcessGroup(tm.tty(isMaster))
-	if err != nil {
-		return 0, err
-	}
-
-	// Write it out to *arg.
-	_, err = usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(ret), usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
-	return 0, err
-}
-
-// foregroundProcessGroup sets tm's foreground process.
-func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, io usermem.IO, args arch.SyscallArguments, isMaster bool) (uintptr, error) {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		panic("setForegroundProcessGroup must be called from a task context")
-	}
-
-	// Read in the process group ID.
-	var pgid int32
-	if _, err := usermem.CopyObjectIn(ctx, io, args[2].Pointer(), &pgid, usermem.IOOpts{
-		AddressSpaceActive: true,
-	}); err != nil {
-		return 0, err
-	}
-
-	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.tty(isMaster), kernel.ProcessGroupID(pgid))
-	return uintptr(ret), err
-}
-
-func (tm *Terminal) tty(isMaster bool) *kernel.TTY {
-	if isMaster {
-		return tm.masterKTTY
-	}
-	return tm.slaveKTTY
 }
