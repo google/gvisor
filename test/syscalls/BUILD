@@ -691,6 +691,10 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:proc_net_unix_test")
 
+syscall_test(test = "//test/syscalls/linux:proc_net_tcp_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_net_udp_test")
+
 go_binary(
     name = "syscall_test_runner",
     srcs = ["syscall_test_runner.go"],

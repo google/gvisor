@@ -27,12 +27,14 @@ package epsocket
 import (
 	"bytes"
 	"math"
+	"reflect"
 	"sync"
 	"syscall"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
@@ -52,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -2421,7 +2424,8 @@ func (s *SocketOperations) State() uint32 {
 		return 0
 	}
 
-	if !s.isPacketBased() {
+	switch {
+	case s.skType == linux.SOCK_STREAM && s.protocol == 0 || s.protocol == syscall.IPPROTO_TCP:
 		// TCP socket.
 		switch tcp.EndpointState(s.Endpoint.State()) {
 		case tcp.StateEstablished:
@@ -2450,9 +2454,26 @@ func (s *SocketOperations) State() uint32 {
 			// Internal or unknown state.
 			return 0
 		}
+	case s.skType == linux.SOCK_DGRAM && s.protocol == 0 || s.protocol == syscall.IPPROTO_UDP:
+		// UDP socket.
+		switch udp.EndpointState(s.Endpoint.State()) {
+		case udp.StateInitial, udp.StateBound, udp.StateClosed:
+			return linux.TCP_CLOSE
+		case udp.StateConnected:
+			return linux.TCP_ESTABLISHED
+		default:
+			return 0
+		}
+	case s.skType == linux.SOCK_DGRAM && s.protocol == syscall.IPPROTO_ICMP || s.protocol == syscall.IPPROTO_ICMPV6:
+		// TODO(b/112063468): Export states for ICMP sockets.
+	case s.skType == linux.SOCK_RAW:
+		// TODO(b/112063468): Export states for raw sockets.
+	default:
+		// Unknown transport protocol, how did we make this socket?
+		log.Warningf("Unknown transport protocol for an existing socket: family=%v, type=%v, protocol=%v, internal type %v", s.family, s.skType, s.protocol, reflect.TypeOf(s.Endpoint).Elem())
+		return 0
 	}
 
-	// TODO(b/112063468): Export states for UDP, ICMP, and raw sockets.
 	return 0
 }
 

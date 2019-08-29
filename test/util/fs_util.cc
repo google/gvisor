@@ -105,6 +105,15 @@ PosixErrorOr<struct stat> Stat(absl::string_view path) {
   return stat_buf;
 }
 
+PosixErrorOr<struct stat> Fstat(int fd) {
+  struct stat stat_buf;
+  int res = fstat(fd, &stat_buf);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("fstat ", fd));
+  }
+  return stat_buf;
+}
+
 PosixErrorOr<bool> Exists(absl::string_view path) {
   struct stat stat_buf;
   int res = stat(std::string(path).c_str(), &stat_buf);
