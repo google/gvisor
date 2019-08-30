@@ -23,7 +23,7 @@ declare -r ssh_public_keys=(
 )
 
 # Install dependencies.
-apt-get update && apt-get install -y rsync coreutils python-psutil
+apt-get update && apt-get install -y rsync coreutils python-psutil qemu-kvm
 
 # We need a kbuilder user.
 if useradd -c "kbuilder user" -m -s /bin/bash kbuilder; then
@@ -38,6 +38,12 @@ fi
 cat > /etc/sudoers.d/kokoro <<EOF
 kbuilder ALL=(ALL) NOPASSWD:ALL
 EOF
+
+# Ensure we can run Docker without sudo.
+usermod -aG docker kbuilder
+
+# Ensure that we can access kvm.
+usermod -aG kvm kbuilder
 
 # Ensure that /tmpfs exists and is writable by kokoro.
 #
