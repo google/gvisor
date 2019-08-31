@@ -152,16 +152,9 @@ func (sf *slaveFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem
 	case linux.TIOCSCTTY:
 		// Make the given terminal the controlling terminal of the
 		// calling process.
-		return 0, sf.si.t.setControllingTTY(ctx, io, args, false /* isMaster */)
-	case linux.TIOCNOTTY:
-		// Release this process's controlling terminal.
-		return 0, sf.si.t.releaseControllingTTY(ctx, io, args, false /* isMaster */)
-	case linux.TIOCGPGRP:
-		// Get the foreground process group.
-		return sf.si.t.foregroundProcessGroup(ctx, io, args, false /* isMaster */)
-	case linux.TIOCSPGRP:
-		// Set the foreground process group.
-		return sf.si.t.setForegroundProcessGroup(ctx, io, args, false /* isMaster */)
+		// TODO(b/129283598): Implement once we have support for job
+		// control.
+		return 0, nil
 	default:
 		maybeEmitUnimplementedEvent(ctx, cmd)
 		return 0, syserror.ENOTTY
