@@ -2104,7 +2104,8 @@ func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO,
 	// SIOCGSTAMP is implemented by epsocket rather than all commonEndpoint
 	// sockets.
 	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.
-	if int(args[1].Int()) == syscall.SIOCGSTAMP {
+	switch args[1].Int() {
+	case syscall.SIOCGSTAMP:
 		s.readMu.Lock()
 		defer s.readMu.Unlock()
 		if !s.timestampValid {
@@ -2113,6 +2114,25 @@ func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO,
 
 		tv := linux.NsecToTimeval(s.timestampNS)
 		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), &tv, usermem.IOOpts{
+			AddressSpaceActive: true,
+		})
+		return 0, err
+
+	case linux.TIOCINQ:
+		v, terr := s.Endpoint.GetSockOptInt(tcpip.ReceiveQueueSizeOption)
+		if terr != nil {
+			return 0, syserr.TranslateNetstackError(terr).ToError()
+		}
+
+		// Add bytes removed from the endpoint but not yet sent to the caller.
+		v += len(s.readView)
+
+		if v > math.MaxInt32 {
+			v = math.MaxInt32
+		}
+
+		// Copy result to user-space.
+		_, err := usermem.CopyObjectOut(ctx, io, args[2].Pointer(), int32(v), usermem.IOOpts{
 			AddressSpaceActive: true,
 		})
 		return 0, err
