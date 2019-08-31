@@ -169,26 +169,24 @@ TEST(MlockallTest, Future) {
   // Run this test in a separate (single-threaded) subprocess to ensure that a
   // background thread doesn't try to mmap a large amount of memory, fail due
   // to hitting RLIMIT_MEMLOCK, and explode the process violently.
-  EXPECT_THAT(InForkedProcess([] {
-                auto const mapping =
-                    MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE)
-                        .ValueOrDie();
-                TEST_CHECK(!IsPageMlocked(mapping.addr()));
-                TEST_PCHECK(mlockall(MCL_FUTURE) == 0);
-                // Ensure that mlockall(MCL_FUTURE) is turned off before the end
-                // of the test, as otherwise mmaps may fail unexpectedly.
-                Cleanup do_munlockall([] { TEST_PCHECK(munlockall() == 0); });
-                auto const mapping2 = ASSERT_NO_ERRNO_AND_VALUE(
-                    MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-                TEST_CHECK(IsPageMlocked(mapping2.addr()));
-                // Fire munlockall() and check that it disables
-                // mlockall(MCL_FUTURE).
-                do_munlockall.Release()();
-                auto const mapping3 = ASSERT_NO_ERRNO_AND_VALUE(
-                    MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
-                TEST_CHECK(!IsPageMlocked(mapping2.addr()));
-              }),
-              IsPosixErrorOkAndHolds(0));
+  auto const do_test = [] {
+    auto const mapping =
+        MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE).ValueOrDie();
+    TEST_CHECK(!IsPageMlocked(mapping.addr()));
+    TEST_PCHECK(mlockall(MCL_FUTURE) == 0);
+    // Ensure that mlockall(MCL_FUTURE) is turned off before the end of the
+    // test, as otherwise mmaps may fail unexpectedly.
+    Cleanup do_munlockall([] { TEST_PCHECK(munlockall() == 0); });
+    auto const mapping2 =
+        MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE).ValueOrDie();
+    TEST_CHECK(IsPageMlocked(mapping2.addr()));
+    // Fire munlockall() and check that it disables mlockall(MCL_FUTURE).
+    do_munlockall.Release()();
+    auto const mapping3 =
+        MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE).ValueOrDie();
+    TEST_CHECK(!IsPageMlocked(mapping2.addr()));
+  };
+  EXPECT_THAT(InForkedProcess(do_test), IsPosixErrorOkAndHolds(0));
 }
 
 TEST(MunlockallTest, Basic) {
