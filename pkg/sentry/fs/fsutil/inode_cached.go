@@ -796,11 +796,6 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 			mf.MarkUnevictable(c, pgalloc.EvictableRange{r.Start, r.End})
 		}
 	}
-	if c.useHostPageCache() && !usage.IncrementalMappedAccounting {
-		for _, r := range mapped {
-			usage.MemoryAccounting.Inc(r.Length(), usage.Mapped)
-		}
-	}
 	c.mapsMu.Unlock()
 	return nil
 }
@@ -814,11 +809,6 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 		c.hostFileMapper.DecRefOn(r)
 	}
 	if c.useHostPageCache() {
-		if !usage.IncrementalMappedAccounting {
-			for _, r := range unmapped {
-				usage.MemoryAccounting.Dec(r.Length(), usage.Mapped)
-			}
-		}
 		c.mapsMu.Unlock()
 		return
 	}
@@ -1001,9 +991,7 @@ func (c *CachingInodeOperations) IncRef(fr platform.FileRange) {
 			seg, gap = seg.NextNonEmpty()
 		case gap.Ok() && gap.Start() < fr.End:
 			newRange := gap.Range().Intersect(fr)
-			if usage.IncrementalMappedAccounting {
-				usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
-			}
+			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
 			seg, gap = c.refs.InsertWithoutMerging(gap, newRange, 1).NextNonEmpty()
 		default:
 			c.refs.MergeAdjacent(fr)
@@ -1024,9 +1012,7 @@ func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
 	for seg.Ok() && seg.Start() < fr.End {
 		seg = c.refs.Isolate(seg, fr)
 		if old := seg.Value(); old == 1 {
-			if usage.IncrementalMappedAccounting {
-				usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
-			}
+			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
 			seg = c.refs.Remove(seg).NextSegment()
 		} else {
 			seg.SetValue(old - 1)
