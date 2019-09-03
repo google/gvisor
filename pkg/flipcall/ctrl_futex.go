@@ -121,7 +121,16 @@ func (ep *Endpoint) enterFutexWait() error {
 }
 
 func (ep *Endpoint) exitFutexWait() {
-	atomic.AddInt32(&ep.ctrl.state, -epsBlocked)
+	switch eps := atomic.AddInt32(&ep.ctrl.state, -epsBlocked); eps {
+	case 0:
+		return
+	case epsShutdown:
+		// ep.ctrlShutdown() was called while we were blocked, so we are
+		// repsonsible for indicating connection shutdown.
+		ep.shutdownConn()
+	default:
+		panic(fmt.Sprintf("invalid flipcall.Endpoint.ctrl.state after flipcall.Endpoint.exitFutexWait(): %v", eps+epsBlocked))
+	}
 }
 
 func (ep *Endpoint) ctrlShutdown() {
@@ -142,5 +151,25 @@ func (ep *Endpoint) ctrlShutdown() {
 				break
 			}
 		}
+	} else {
+		// There is no blocked thread, so we are responsible for indicating
+		// connection shutdown.
+		ep.shutdownConn()
+	}
+}
+
+func (ep *Endpoint) shutdownConn() {
+	switch cs := atomic.SwapUint32(ep.connState(), csShutdown); cs {
+	case ep.activeState:
+		if err := ep.futexWakeConnState(1); err != nil {
+			log.Warningf("failed to FUTEX_WAKE peer Endpoint for shutdown: %v", err)
+		}
+	case ep.inactiveState:
+		// The peer is currently active and will detect shutdown when it tries
+		// to update the connection state.
+	case csShutdown:
+		// The peer also called Endpoint.Shutdown().
+	default:
+		log.Warningf("unexpected connection state before Endpoint.shutdownConn(): %v", cs)
 	}
 }

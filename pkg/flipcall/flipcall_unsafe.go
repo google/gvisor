@@ -19,15 +19,15 @@ import (
 	"unsafe"
 )
 
-// Packets consist of an 8-byte header followed by an arbitrarily-sized
+// Packets consist of a 16-byte header followed by an arbitrarily-sized
 // datagram. The header consists of:
 //
 // - A 4-byte native-endian connection state.
 //
 // - A 4-byte native-endian datagram length in bytes.
+//
+// - 8 reserved bytes.
 const (
-	sizeofUint32 = unsafe.Sizeof(uint32(0))
-
 	// PacketHeaderBytes is the size of a flipcall packet header in bytes. The
 	// maximum datagram size supported by a flipcall connection is equal to the
 	// length of the packet window minus PacketHeaderBytes.
@@ -35,7 +35,7 @@ const (
 	// PacketHeaderBytes is exported to support its use in constant
 	// expressions. Non-constant expressions may prefer to use
 	// PacketWindowLengthForDataCap().
-	PacketHeaderBytes = 2 * sizeofUint32
+	PacketHeaderBytes = 16
 )
 
 func (ep *Endpoint) connState() *uint32 {
@@ -43,7 +43,7 @@ func (ep *Endpoint) connState() *uint32 {
 }
 
 func (ep *Endpoint) dataLen() *uint32 {
-	return (*uint32)((unsafe.Pointer)(ep.packet + sizeofUint32))
+	return (*uint32)((unsafe.Pointer)(ep.packet + 4))
 }
 
 // Data returns the datagram part of ep's packet window as a byte slice.

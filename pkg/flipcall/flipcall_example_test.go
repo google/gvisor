@@ -38,12 +38,12 @@ func Example() {
 		panic(err)
 	}
 	var clientEP Endpoint
-	if err := clientEP.Init(pwd); err != nil {
+	if err := clientEP.Init(ClientSide, pwd); err != nil {
 		panic(err)
 	}
 	defer clientEP.Destroy()
 	var serverEP Endpoint
-	if err := serverEP.Init(pwd); err != nil {
+	if err := serverEP.Init(ServerSide, pwd); err != nil {
 		panic(err)
 	}
 	defer serverEP.Destroy()
