@@ -22,12 +22,14 @@ import (
 )
 
 const (
-	versTCFL   = 0
-	payloadLen = 4
-	nextHdr    = 6
-	hopLimit   = 7
-	v6SrcAddr  = 8
-	v6DstAddr  = v6SrcAddr + IPv6AddressSize
+	versTCFL = 0
+	// IPv6PayloadLenOffset is the offset of the PayloadLength field in
+	// IPv6 header.
+	IPv6PayloadLenOffset = 4
+	nextHdr              = 6
+	hopLimit             = 7
+	v6SrcAddr            = 8
+	v6DstAddr            = v6SrcAddr + IPv6AddressSize
 )
 
 // IPv6Fields contains the fields of an IPv6 packet. It is used to describe the
@@ -94,7 +96,7 @@ var IPv6EmptySubnet = func() tcpip.Subnet {
 // PayloadLength returns the value of the "payload length" field of the ipv6
 // header.
 func (b IPv6) PayloadLength() uint16 {
-	return binary.BigEndian.Uint16(b[payloadLen:])
+	return binary.BigEndian.Uint16(b[IPv6PayloadLenOffset:])
 }
 
 // HopLimit returns the value of the "hop limit" field of the ipv6 header.
@@ -148,7 +150,7 @@ func (b IPv6) SetTOS(t uint8, l uint32) {
 
 // SetPayloadLength sets the "payload length" field of the ipv6 header.
 func (b IPv6) SetPayloadLength(payloadLength uint16) {
-	binary.BigEndian.PutUint16(b[payloadLen:], payloadLength)
+	binary.BigEndian.PutUint16(b[IPv6PayloadLenOffset:], payloadLength)
 }
 
 // SetSourceAddress sets the "source address" field of the ipv6 header.

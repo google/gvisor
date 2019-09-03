@@ -21,16 +21,18 @@ import (
 )
 
 const (
-	versIHL  = 0
-	tos      = 1
-	totalLen = 2
-	id       = 4
-	flagsFO  = 6
-	ttl      = 8
-	protocol = 9
-	checksum = 10
-	srcAddr  = 12
-	dstAddr  = 16
+	versIHL = 0
+	tos     = 1
+	// IPv4TotalLenOffset is the offset of the total length field in the
+	// IPv4 header.
+	IPv4TotalLenOffset = 2
+	id                 = 4
+	flagsFO            = 6
+	ttl                = 8
+	protocol           = 9
+	checksum           = 10
+	srcAddr            = 12
+	dstAddr            = 16
 )
 
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
@@ -103,6 +105,11 @@ const (
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.
 	IPv4Any tcpip.Address = "\x00\x00\x00\x00"
+
+	// IPv4MinimumProcessableDatagramSize is the minimum size of an IP
+	// packet that every IPv4 capable host must be able to
+	// process/reassemble.
+	IPv4MinimumProcessableDatagramSize = 576
 )
 
 // Flags that may be set in an IPv4 packet.
@@ -163,7 +170,7 @@ func (b IPv4) FragmentOffset() uint16 {
 
 // TotalLength returns the "total length" field of the ipv4 header.
 func (b IPv4) TotalLength() uint16 {
-	return binary.BigEndian.Uint16(b[totalLen:])
+	return binary.BigEndian.Uint16(b[IPv4TotalLenOffset:])
 }
 
 // Checksum returns the checksum field of the ipv4 header.
@@ -209,7 +216,7 @@ func (b IPv4) SetTOS(v uint8, _ uint32) {
 
 // SetTotalLength sets the "total length" field of the ipv4 header.
 func (b IPv4) SetTotalLength(totalLength uint16) {
-	binary.BigEndian.PutUint16(b[totalLen:], totalLength)
+	binary.BigEndian.PutUint16(b[IPv4TotalLenOffset:], totalLength)
 }
 
 // SetChecksum sets the checksum field of the ipv4 header.
@@ -265,7 +272,7 @@ func (b IPv4) Encode(i *IPv4Fields) {
 // packets are produced.
 func (b IPv4) EncodePartial(partialChecksum, totalLength uint16) {
 	b.SetTotalLength(totalLength)
-	checksum := Checksum(b[totalLen:totalLen+2], partialChecksum)
+	checksum := Checksum(b[IPv4TotalLenOffset:IPv4TotalLenOffset+2], partialChecksum)
 	b.SetChecksum(^checksum)
 }
 

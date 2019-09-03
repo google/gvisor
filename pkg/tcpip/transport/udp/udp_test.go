@@ -461,7 +461,11 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple) {
 }
 
 func newPayload() []byte {
-	b := make([]byte, 30+rand.Intn(100))
+	return newMinPayload(30)
+}
+
+func newMinPayload(minSize int) []byte {
+	b := make([]byte, minSize+rand.Intn(100))
 	for i := range b {
 		b[i] = byte(rand.Intn(256))
 	}
@@ -1234,6 +1238,156 @@ func TestMulticastInterfaceOption(t *testing.T) {
 						})
 					}
 				})
+			}
+		})
+	}
+}
+
+// TestV4UnknownDestination verifies that we generate an ICMPv4 Destination
+// Unreachable message when a udp datagram is received on ports for which there
+// is no bound udp socket.
+func TestV4UnknownDestination(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	testCases := []struct {
+		flow         testFlow
+		icmpRequired bool
+		// largePayload if true, will result in a payload large enough
+		// so that the final generated IPv4 packet is larger than
+		// header.IPv4MinimumProcessableDatagramSize.
+		largePayload bool
+	}{
+		{unicastV4, true, false},
+		{unicastV4, true, true},
+		{multicastV4, false, false},
+		{multicastV4, false, true},
+		{broadcast, false, false},
+		{broadcast, false, true},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+			payload := newPayload()
+			if tc.largePayload {
+				payload = newMinPayload(576)
+			}
+			c.injectPacket(tc.flow, payload)
+			if !tc.icmpRequired {
+				select {
+				case p := <-c.linkEP.C:
+					t.Fatalf("unexpected packet received: %+v", p)
+				case <-time.After(1 * time.Second):
+					return
+				}
+			}
+
+			select {
+			case p := <-c.linkEP.C:
+				var pkt []byte
+				pkt = append(pkt, p.Header...)
+				pkt = append(pkt, p.Payload...)
+				if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
+					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+				}
+
+				hdr := header.IPv4(pkt)
+				checker.IPv4(t, hdr, checker.ICMPv4(
+					checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+					checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
+
+				icmpPkt := header.ICMPv4(hdr.Payload())
+				payloadIPHeader := header.IPv4(icmpPkt.Payload())
+				wantLen := len(payload)
+				if tc.largePayload {
+					wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
+				}
+
+				// In case of large payloads the IP packet may be truncated. Update
+				// the length field before retrieving the udp datagram payload.
+				payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
+
+				origDgram := header.UDP(payloadIPHeader.Payload())
+				if got, want := len(origDgram.Payload()), wantLen; got != want {
+					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+				}
+				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+					t.Fatalf("unexpected payload got: %d, want: %d", got, want)
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatalf("packet wasn't written out")
+			}
+		})
+	}
+}
+
+// TestV6UnknownDestination verifies that we generate an ICMPv6 Destination
+// Unreachable message when a udp datagram is received on ports for which there
+// is no bound udp socket.
+func TestV6UnknownDestination(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	testCases := []struct {
+		flow         testFlow
+		icmpRequired bool
+		// largePayload if true will result in a payload large enough to
+		// create an IPv6 packet > header.IPv6MinimumMTU bytes.
+		largePayload bool
+	}{
+		{unicastV6, true, false},
+		{unicastV6, true, true},
+		{multicastV6, false, false},
+		{multicastV6, false, true},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+			payload := newPayload()
+			if tc.largePayload {
+				payload = newMinPayload(1280)
+			}
+			c.injectPacket(tc.flow, payload)
+			if !tc.icmpRequired {
+				select {
+				case p := <-c.linkEP.C:
+					t.Fatalf("unexpected packet received: %+v", p)
+				case <-time.After(1 * time.Second):
+					return
+				}
+			}
+
+			select {
+			case p := <-c.linkEP.C:
+				var pkt []byte
+				pkt = append(pkt, p.Header...)
+				pkt = append(pkt, p.Payload...)
+				if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
+					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+				}
+
+				hdr := header.IPv6(pkt)
+				checker.IPv6(t, hdr, checker.ICMPv6(
+					checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+					checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+
+				icmpPkt := header.ICMPv6(hdr.Payload())
+				payloadIPHeader := header.IPv6(icmpPkt.Payload())
+				wantLen := len(payload)
+				if tc.largePayload {
+					wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+				}
+				// In case of large payloads the IP packet may be truncated. Update
+				// the length field before retrieving the udp datagram payload.
+				payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
+
+				origDgram := header.UDP(payloadIPHeader.Payload())
+				if got, want := len(origDgram.Payload()), wantLen; got != want {
+					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+				}
+				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+					t.Fatalf("unexpected payload got: %v, want: %v", got, want)
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatalf("packet wasn't written out")
 			}
 		})
 	}

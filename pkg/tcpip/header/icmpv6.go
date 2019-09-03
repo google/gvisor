@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 )
 
 // ICMPv6 represents an ICMPv6 header stored in a byte array.
@@ -25,14 +26,18 @@ type ICMPv6 []byte
 
 const (
 	// ICMPv6MinimumSize is the minimum size of a valid ICMP packet.
-	ICMPv6MinimumSize = 4
+	ICMPv6MinimumSize = 8
+
+	// ICMPv6PayloadOffset is the offset of the payload in an
+	// ICMP packet.
+	ICMPv6PayloadOffset = 8
 
 	// ICMPv6ProtocolNumber is the ICMP transport protocol number.
 	ICMPv6ProtocolNumber tcpip.TransportProtocolNumber = 58
 
 	// ICMPv6NeighborSolicitMinimumSize is the minimum size of a
 	// neighbor solicitation packet.
-	ICMPv6NeighborSolicitMinimumSize = ICMPv6MinimumSize + 4 + 16
+	ICMPv6NeighborSolicitMinimumSize = ICMPv6MinimumSize + 16
 
 	// ICMPv6NeighborAdvertSize is size of a neighbor advertisement.
 	ICMPv6NeighborAdvertSize = 32
@@ -42,11 +47,27 @@ const (
 
 	// ICMPv6DstUnreachableMinimumSize is the minimum size of a valid ICMP
 	// destination unreachable packet.
-	ICMPv6DstUnreachableMinimumSize = ICMPv6MinimumSize + 4
+	ICMPv6DstUnreachableMinimumSize = ICMPv6MinimumSize
 
 	// ICMPv6PacketTooBigMinimumSize is the minimum size of a valid ICMP
 	// packet-too-big packet.
-	ICMPv6PacketTooBigMinimumSize = ICMPv6MinimumSize + 4
+	ICMPv6PacketTooBigMinimumSize = ICMPv6MinimumSize
+
+	// icmpv6ChecksumOffset is the offset of the checksum field
+	// in an ICMPv6 message.
+	icmpv6ChecksumOffset = 2
+
+	// icmpv6MTUOffset is the offset of the MTU field in an ICMPv6
+	// PacketTooBig message.
+	icmpv6MTUOffset = 4
+
+	// icmpv6IdentOffset is the offset of the ident field
+	// in a ICMPv6 Echo Request/Reply message.
+	icmpv6IdentOffset = 4
+
+	// icmpv6SequenceOffset is the offset of the sequence field
+	// in a ICMPv6 Echo Request/Reply message.
+	icmpv6SequenceOffset = 6
 )
 
 // ICMPv6Type is the ICMP type field described in RFC 4443 and friends.
@@ -89,12 +110,12 @@ func (b ICMPv6) SetCode(c byte) { b[1] = c }
 
 // Checksum is the ICMP checksum field.
 func (b ICMPv6) Checksum() uint16 {
-	return binary.BigEndian.Uint16(b[2:])
+	return binary.BigEndian.Uint16(b[icmpv6ChecksumOffset:])
 }
 
 // SetChecksum calculates and sets the ICMP checksum field.
 func (b ICMPv6) SetChecksum(checksum uint16) {
-	binary.BigEndian.PutUint16(b[2:], checksum)
+	binary.BigEndian.PutUint16(b[icmpv6ChecksumOffset:], checksum)
 }
 
 // SourcePort implements Transport.SourcePort.
@@ -115,7 +136,60 @@ func (ICMPv6) SetSourcePort(uint16) {
 func (ICMPv6) SetDestinationPort(uint16) {
 }
 
+// MTU retrieves the MTU field from an ICMPv6 message.
+func (b ICMPv6) MTU() uint32 {
+	return binary.BigEndian.Uint32(b[icmpv6MTUOffset:])
+}
+
+// SetMTU sets the MTU field from an ICMPv6 message.
+func (b ICMPv6) SetMTU(mtu uint32) {
+	binary.BigEndian.PutUint32(b[icmpv6MTUOffset:], mtu)
+}
+
+// Ident retrieves the Ident field from an ICMPv6 message.
+func (b ICMPv6) Ident() uint16 {
+	return binary.BigEndian.Uint16(b[icmpv6IdentOffset:])
+}
+
+// SetIdent sets the Ident field from an ICMPv6 message.
+func (b ICMPv6) SetIdent(ident uint16) {
+	binary.BigEndian.PutUint16(b[icmpv6IdentOffset:], ident)
+}
+
+// Sequence retrieves the Sequence field from an ICMPv6 message.
+func (b ICMPv6) Sequence() uint16 {
+	return binary.BigEndian.Uint16(b[icmpv6SequenceOffset:])
+}
+
+// SetSequence sets the Sequence field from an ICMPv6 message.
+func (b ICMPv6) SetSequence(sequence uint16) {
+	binary.BigEndian.PutUint16(b[icmpv6SequenceOffset:], sequence)
+}
+
 // Payload implements Transport.Payload.
 func (b ICMPv6) Payload() []byte {
-	return b[ICMPv6MinimumSize:]
+	return b[ICMPv6PayloadOffset:]
+}
+
+// ICMPv6Checksum calculates the ICMP checksum over the provided ICMP header,
+// IPv6 src/dst addresses and the payload.
+func ICMPv6Checksum(h ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
+	// Calculate the IPv6 pseudo-header upper-layer checksum.
+	xsum := Checksum([]byte(src), 0)
+	xsum = Checksum([]byte(dst), xsum)
+	var upperLayerLength [4]byte
+	binary.BigEndian.PutUint32(upperLayerLength[:], uint32(len(h)+vv.Size()))
+	xsum = Checksum(upperLayerLength[:], xsum)
+	xsum = Checksum([]byte{0, 0, 0, uint8(ICMPv6ProtocolNumber)}, xsum)
+	for _, v := range vv.Views() {
+		xsum = Checksum(v, xsum)
+	}
+
+	// h[2:4] is the checksum itself, set it aside to avoid checksumming the checksum.
+	h2, h3 := h[2], h[3]
+	h[2], h[3] = 0, 0
+	xsum = ^Checksum(h, xsum)
+	h[2], h[3] = h2, h3
+
+	return xsum
 }

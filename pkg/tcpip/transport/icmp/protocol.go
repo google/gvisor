@@ -23,7 +23,6 @@
 package icmp
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -92,7 +91,7 @@ func (p *protocol) MinimumPacketSize() int {
 	case ProtocolNumber4:
 		return header.ICMPv4MinimumSize
 	case ProtocolNumber6:
-		return header.ICMPv6EchoMinimumSize
+		return header.ICMPv6MinimumSize
 	}
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
@@ -101,16 +100,18 @@ func (p *protocol) MinimumPacketSize() int {
 func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	switch p.number {
 	case ProtocolNumber4:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv4PayloadOffset:]), nil
+		hdr := header.ICMPv4(v)
+		return 0, hdr.Ident(), nil
 	case ProtocolNumber6:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv6MinimumSize:]), nil
+		hdr := header.ICMPv6(v)
+		return 0, hdr.Ident(), nil
 	}
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
-func (p *protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.VectorisedView) bool {
+func (p *protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.View, buffer.VectorisedView) bool {
 	return true
 }
 

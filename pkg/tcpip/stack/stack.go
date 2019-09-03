@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -389,6 +390,10 @@ type Stack struct {
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
 	// stack is being restored.
 	resumableEndpoints []ResumableEndpoint
+
+	// icmpRateLimiter is a global rate limiter for all ICMP messages generated
+	// by the stack.
+	icmpRateLimiter *ICMPRateLimiter
 }
 
 // Options contains optional Stack configuration.
@@ -434,6 +439,7 @@ func New(network []string, transport []string, opts Options) *Stack {
 		stats:              opts.Stats.FillIn(),
 		handleLocal:        opts.HandleLocal,
 		raw:                opts.Raw,
+		icmpRateLimiter:    NewICMPRateLimiter(),
 	}
 
 	// Add specified network protocols.
@@ -1214,4 +1220,34 @@ func (s *Stack) IPTables() iptables.IPTables {
 // SetIPTables sets the stack's iptables.
 func (s *Stack) SetIPTables(ipt iptables.IPTables) {
 	s.tables = ipt
+}
+
+// ICMPLimit returns the maximum number of ICMP messages that can be sent
+// in one second.
+func (s *Stack) ICMPLimit() rate.Limit {
+	return s.icmpRateLimiter.Limit()
+}
+
+// SetICMPLimit sets the maximum number of ICMP messages that be sent
+// in one second.
+func (s *Stack) SetICMPLimit(newLimit rate.Limit) {
+	s.icmpRateLimiter.SetLimit(newLimit)
+}
+
+// ICMPBurst returns the maximum number of ICMP messages that can be sent
+// in a single burst.
+func (s *Stack) ICMPBurst() int {
+	return s.icmpRateLimiter.Burst()
+}
+
+// SetICMPBurst sets the maximum number of ICMP messages that can be sent
+// in a single burst.
+func (s *Stack) SetICMPBurst(burst int) {
+	s.icmpRateLimiter.SetBurst(burst)
+}
+
+// AllowICMPMessage returns true if we the rate limiter allows at least one
+// ICMP message to be sent at this instant.
+func (s *Stack) AllowICMPMessage() bool {
+	return s.icmpRateLimiter.Allow()
 }

@@ -319,7 +319,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			icmp := header.ICMPv4(view[header.IPv4MinimumSize:])
 			icmp.SetType(header.ICMPv4DstUnreachable)
 			icmp.SetCode(c.code)
-			copy(view[header.IPv4MinimumSize+header.ICMPv4PayloadOffset:], []byte{0xde, 0xad, 0xbe, 0xef})
+			icmp.SetIdent(0xdead)
+			icmp.SetSequence(0xbeef)
 
 			// Create the inner IPv4 header.
 			ip = header.IPv4(view[header.IPv4MinimumSize+header.ICMPv4MinimumSize:])
@@ -539,7 +540,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 
 			defer ep.Close()
 
-			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize + 4
+			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize
 			if c.fragmentOffset != nil {
 				dataOffset += header.IPv6FragmentHeaderSize
 			}
@@ -559,10 +560,11 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			icmp := header.ICMPv6(view[header.IPv6MinimumSize:])
 			icmp.SetType(c.typ)
 			icmp.SetCode(c.code)
-			copy(view[header.IPv6MinimumSize+header.ICMPv6MinimumSize:], []byte{0xde, 0xad, 0xbe, 0xef})
+			icmp.SetIdent(0xdead)
+			icmp.SetSequence(0xbeef)
 
 			// Create the inner IPv6 header.
-			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6MinimumSize+4:])
+			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6PayloadOffset:])
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: 100,
 				NextHeader:    10,
@@ -574,7 +576,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Build the fragmentation header if needed.
 			if c.fragmentOffset != nil {
 				ip.SetNextHeader(header.IPv6FragmentHeader)
-				frag := header.IPv6Fragment(view[2*header.IPv6MinimumSize+header.ICMPv6MinimumSize+4:])
+				frag := header.IPv6Fragment(view[2*header.IPv6MinimumSize+header.ICMPv6MinimumSize:])
 				frag.Encode(&header.IPv6FragmentFields{
 					NextHeader:     10,
 					FragmentOffset: *c.fragmentOffset,
