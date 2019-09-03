@@ -720,6 +720,10 @@ type ICMPv4SentPacketStats struct {
 	// Dropped is the total number of ICMPv4 packets dropped due to link
 	// layer errors.
 	Dropped *StatCounter
+
+	// RateLimited is the total number of ICMPv6 packets dropped due to
+	// rate limit being exceeded.
+	RateLimited *StatCounter
 }
 
 // ICMPv4ReceivedPacketStats collects inbound ICMPv4-specific stats.
@@ -738,6 +742,10 @@ type ICMPv6SentPacketStats struct {
 	// Dropped is the total number of ICMPv6 packets dropped due to link
 	// layer errors.
 	Dropped *StatCounter
+
+	// RateLimited is the total number of ICMPv6 packets dropped due to
+	// rate limit being exceeded.
+	RateLimited *StatCounter
 }
 
 // ICMPv6ReceivedPacketStats collects inbound ICMPv6-specific stats.

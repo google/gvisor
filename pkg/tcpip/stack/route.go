@@ -217,3 +217,8 @@ func (r *Route) MakeLoopedRoute() Route {
 	}
 	return l
 }
+
+// Stack returns the instance of the Stack that owns this route.
+func (r *Route) Stack() *Stack {
+	return r.ref.stack()
+}
