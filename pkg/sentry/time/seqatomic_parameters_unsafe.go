@@ -1,11 +1,11 @@
 package time
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 	"unsafe"
 
+	"fmt"
 	"gvisor.dev/gvisor/third_party/gvsync"
 )
 

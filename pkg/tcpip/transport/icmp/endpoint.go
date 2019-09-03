@@ -15,7 +15,6 @@
 package icmp
 
 import (
-	"encoding/binary"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -368,14 +367,13 @@ func send4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	// Set the ident to the user-specified port. Sequence number should
-	// already be set by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv4PayloadOffset:], ident)
-
 	hdr := buffer.NewPrependable(header.ICMPv4MinimumSize + int(r.MaxHeaderLength()))
 
 	icmpv4 := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 	copy(icmpv4, data)
+	// Set the ident to the user-specified port. Sequence number should
+	// already be set by the user.
+	icmpv4.SetIdent(ident)
 	data = data[header.ICMPv4MinimumSize:]
 
 	// Linux performs these basic checks.
@@ -394,14 +392,13 @@ func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	// Set the ident. Sequence number is provided by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv6MinimumSize:], ident)
+	hdr := buffer.NewPrependable(header.ICMPv6MinimumSize + int(r.MaxHeaderLength()))
 
-	hdr := buffer.NewPrependable(header.ICMPv6EchoMinimumSize + int(r.MaxHeaderLength()))
-
-	icmpv6 := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
+	icmpv6 := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 	copy(icmpv6, data)
-	data = data[header.ICMPv6EchoMinimumSize:]
+	// Set the ident. Sequence number is provided by the user.
+	icmpv6.SetIdent(ident)
+	data = data[header.ICMPv6MinimumSize:]
 
 	if icmpv6.Type() != header.ICMPv6EchoRequest || icmpv6.Code() != 0 {
 		return tcpip.ErrInvalidEndpointState

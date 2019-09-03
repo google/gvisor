@@ -679,7 +679,7 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 
 	// We could not find an appropriate destination for this packet, so
 	// deliver it to the global handler.
-	if !transProto.HandleUnknownDestinationPacket(r, id, vv) {
+	if !transProto.HandleUnknownDestinationPacket(r, id, netHeader, vv) {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 	}
 }
@@ -718,6 +718,11 @@ func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcp
 // ID returns the identifier of n.
 func (n *NIC) ID() tcpip.NICID {
 	return n.id
+}
+
+// Stack returns the instance of the Stack that owns this NIC.
+func (n *NIC) Stack() *Stack {
+	return n.stack
 }
 
 type networkEndpointKind int32
@@ -822,4 +827,9 @@ func (r *referencedNetworkEndpoint) tryIncRef() bool {
 			return true
 		}
 	}
+}
+
+// stack returns the Stack instance that owns the underlying endpoint.
+func (r *referencedNetworkEndpoint) stack() *Stack {
+	return r.nic.stack
 }
