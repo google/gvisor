@@ -18,6 +18,7 @@ go_template_instance(
 go_library(
     name = "stack",
     srcs = [
+        "icmp_rate_limit.go",
         "linkaddrcache.go",
         "linkaddrentry_list.go",
         "nic.go",
@@ -42,6 +43,7 @@ go_library(
         "//pkg/tcpip/ports",
         "//pkg/tcpip/seqnum",
         "//pkg/waiter",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 
