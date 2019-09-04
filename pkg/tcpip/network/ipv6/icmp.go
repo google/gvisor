@@ -21,6 +21,15 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
+const (
+	// ndpHopLimit is the expected IP hop limit value of 255 for received
+	// NDP packets, as per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1,
+	// 7.1.2 and 8.1. If the hop limit value is not 255, nodes MUST silently
+	// drop the NDP packet. All outgoing NDP packets must use this value for
+	// its IP hop limit field.
+	ndpHopLimit = 255
+)
+
 // handleControl handles the case when an ICMP packet contains the headers of
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
@@ -70,6 +79,21 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		return
 	}
 	h := header.ICMPv6(v)
+
+	// As per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1, 7.1.2 and
+	// 8.1, nodes MUST silently drop NDP packets where the Hop Limit field
+	// in the IPv6 header is not set to 255.
+	switch h.Type() {
+	case header.ICMPv6NeighborSolicit,
+		header.ICMPv6NeighborAdvert,
+		header.ICMPv6RouterSolicit,
+		header.ICMPv6RouterAdvert,
+		header.ICMPv6RedirectMsg:
+		if header.IPv6(netHeader).HopLimit() != ndpHopLimit {
+			received.Invalid.Increment()
+			return
+		}
+	}
 
 	// TODO(b/112892170): Meaningfully handle all ICMP types.
 	switch h.Type() {
