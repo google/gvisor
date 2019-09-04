@@ -720,13 +720,18 @@ func (e *endpoint) handleClose() *tcpip.Error {
 	return nil
 }
 
-// resetConnectionLocked sends a RST segment and puts the endpoint in an error
-// state with the given error code. This method must only be called from the
-// protocol goroutine.
+// resetConnectionLocked puts the endpoint in an error state with the given
+// error code and sends a RST if and only if the error is not ErrConnectionReset
+// indicating that the connection is being reset due to receiving a RST. This
+// method must only be called from the protocol goroutine.
 func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
-	e.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck|header.TCPFlagRst, e.snd.sndUna, e.rcv.rcvNxt, 0)
+	// Only send a reset if the connection is being aborted for a reason
+	// other than receiving a reset.
 	e.state = StateError
 	e.hardError = err
+	if err != tcpip.ErrConnectionReset {
+		e.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck|header.TCPFlagRst, e.snd.sndUna, e.rcv.rcvNxt, 0)
+	}
 }
 
 // completeWorkerLocked is called by the worker goroutine when it's about to
@@ -806,7 +811,7 @@ func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
 
 	if e.keepalive.unacked >= e.keepalive.count {
 		e.keepalive.Unlock()
-		return tcpip.ErrConnectionReset
+		return tcpip.ErrTimeout
 	}
 
 	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with
@@ -1068,6 +1073,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		e.workMu.Lock()
 		if err := funcs[v].f(); err != nil {
 			e.mu.Lock()
+			// Ensure we release all endpoint registration and route
+			// references as the connection is now in an error
+			// state.
+			e.workerCleanup = true
 			e.resetConnectionLocked(err)
 			// Lock released below.
 			epilogue()
