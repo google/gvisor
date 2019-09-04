@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 // Wait time for each test to run.

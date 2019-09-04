@@ -54,6 +54,7 @@ go_test(
     ],
     embed = [":kvm"],
     tags = [
+        "manual",
         "nogotsan",
         "requires-kvm",
     ],

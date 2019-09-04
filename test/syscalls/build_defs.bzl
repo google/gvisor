@@ -94,6 +94,7 @@ def _syscall_test(
     # more stable.
     if platform == "kvm":
         tags += ["manual"]
+        tags += ["requires-kvm"]
 
     args = [
         # Arguments are passed directly to syscall_test_runner binary.

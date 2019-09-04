@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 	"gvisor.dev/gvisor/test/runtimes/common"
 )
 

@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"testing"
@@ -25,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 func init() {
@@ -121,6 +122,7 @@ func TestCapabilities(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	flag.Parse()
 	specutils.MaybeRunAsRoot()
 	os.Exit(m.Run())
 }

@@ -13,7 +13,7 @@ go_binary(
     visibility = ["//runsc/container:__pkg__"],
     deps = [
         "//pkg/unet",
-        "//runsc/test/testutil",
+        "//runsc/testutil",
         "@com_github_google_subcommands//:go_default_library",
     ],
 )
