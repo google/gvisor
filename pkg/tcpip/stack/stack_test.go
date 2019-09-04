@@ -1128,8 +1128,8 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 	}
 }
 
-// Set the subnet, then check that packet is delivered.
-func TestSubnetAcceptsMatchingPacket(t *testing.T) {
+// Add a range of addresses, then check that a packet is delivered.
+func TestAddressRangeAcceptsMatchingPacket(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
 
 	id, linkEP := channel.New(10, defaultMTU, "")
@@ -1155,14 +1155,45 @@ func TestSubnetAcceptsMatchingPacket(t *testing.T) {
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
 	}
-	if err := s.AddSubnet(1, fakeNetNumber, subnet); err != nil {
-		t.Fatal("AddSubnet failed:", err)
+	if err := s.AddAddressRange(1, fakeNetNumber, subnet); err != nil {
+		t.Fatal("AddAddressRange failed:", err)
 	}
 
 	testRecv(t, fakeNet, localAddrByte, linkEP, buf)
 }
 
-// Set the subnet, then check that CheckLocalAddress returns the correct NIC.
+func testNicForAddressRange(t *testing.T, nicID tcpip.NICID, s *stack.Stack, subnet tcpip.Subnet, rangeExists bool) {
+	t.Helper()
+
+	// Loop over all addresses and check them.
+	numOfAddresses := 1 << uint(8-subnet.Prefix())
+	if numOfAddresses < 1 || numOfAddresses > 255 {
+		t.Fatalf("got numOfAddresses = %d, want = [1 .. 255] (subnet=%s)", numOfAddresses, subnet)
+	}
+
+	addrBytes := []byte(subnet.ID())
+	for i := 0; i < numOfAddresses; i++ {
+		addr := tcpip.Address(addrBytes)
+		wantNicID := nicID
+		// The subnet and broadcast addresses are skipped.
+		if !rangeExists || addr == subnet.ID() || addr == subnet.Broadcast() {
+			wantNicID = 0
+		}
+		if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, addr); gotNicID != wantNicID {
+			t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, addr, gotNicID, wantNicID)
+		}
+		addrBytes[0]++
+	}
+
+	// Trying the next address should always fail since it is outside the range.
+	if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, tcpip.Address(addrBytes)); gotNicID != 0 {
+		t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, tcpip.Address(addrBytes), gotNicID, 0)
+	}
+}
+
+// Set a range of addresses, then remove it again, and check at each step that
+// CheckLocalAddress returns the correct NIC for each address or zero if not
+// existent.
 func TestCheckLocalAddressForSubnet(t *testing.T) {
 	const nicID tcpip.NICID = 1
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
@@ -1181,35 +1212,28 @@ func TestCheckLocalAddressForSubnet(t *testing.T) {
 	}
 
 	subnet, err := tcpip.NewSubnet(tcpip.Address("\xa0"), tcpip.AddressMask("\xf0"))
-
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
 	}
-	if err := s.AddSubnet(nicID, fakeNetNumber, subnet); err != nil {
-		t.Fatal("AddSubnet failed:", err)
+
+	testNicForAddressRange(t, nicID, s, subnet, false /* rangeExists */)
+
+	if err := s.AddAddressRange(nicID, fakeNetNumber, subnet); err != nil {
+		t.Fatal("AddAddressRange failed:", err)
 	}
 
-	// Loop over all subnet addresses and check them.
-	numOfAddresses := 1 << uint(8-subnet.Prefix())
-	if numOfAddresses < 1 || numOfAddresses > 255 {
-		t.Fatalf("got numOfAddresses = %d, want = [1 .. 255] (subnet=%s)", numOfAddresses, subnet)
-	}
-	addr := []byte(subnet.ID())
-	for i := 0; i < numOfAddresses; i++ {
-		if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, tcpip.Address(addr)); gotNicID != nicID {
-			t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, tcpip.Address(addr), gotNicID, nicID)
-		}
-		addr[0]++
+	testNicForAddressRange(t, nicID, s, subnet, true /* rangeExists */)
+
+	if err := s.RemoveAddressRange(nicID, subnet); err != nil {
+		t.Fatal("RemoveAddressRange failed:", err)
 	}
 
-	// Trying the next address should fail since it is outside the subnet range.
-	if gotNicID := s.CheckLocalAddress(0, fakeNetNumber, tcpip.Address(addr)); gotNicID != 0 {
-		t.Errorf("got CheckLocalAddress(0, %d, %s) = %d, want = %d", fakeNetNumber, tcpip.Address(addr), gotNicID, 0)
-	}
+	testNicForAddressRange(t, nicID, s, subnet, false /* rangeExists */)
 }
 
-// Set destination outside the subnet, then check it doesn't get delivered.
-func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
+// Set a range of addresses, then send a packet to a destination outside the
+// range and then check it doesn't get delivered.
+func TestAddressRangeRejectsNonmatchingPacket(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
 
 	id, linkEP := channel.New(10, defaultMTU, "")
@@ -1235,8 +1259,8 @@ func TestSubnetRejectsNonmatchingPacket(t *testing.T) {
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
 	}
-	if err := s.AddSubnet(1, fakeNetNumber, subnet); err != nil {
-		t.Fatal("AddSubnet failed:", err)
+	if err := s.AddAddressRange(1, fakeNetNumber, subnet); err != nil {
+		t.Fatal("AddAddressRange failed:", err)
 	}
 	testFailingRecv(t, fakeNet, localAddrByte, linkEP, buf)
 }
@@ -1281,7 +1305,20 @@ func TestNetworkOptions(t *testing.T) {
 	}
 }
 
-func TestSubnetAddRemove(t *testing.T) {
+func stackContainsAddressRange(s *stack.Stack, id tcpip.NICID, addrRange tcpip.Subnet) bool {
+	ranges, ok := s.NICAddressRanges()[id]
+	if !ok {
+		return false
+	}
+	for _, r := range ranges {
+		if r == addrRange {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAddresRangeAddRemove(t *testing.T) {
 	s := stack.New([]string{"fakeNet"}, nil, stack.Options{})
 	id, _ := channel.New(10, defaultMTU, "")
 	if err := s.CreateNIC(1, id); err != nil {
@@ -1290,35 +1327,29 @@ func TestSubnetAddRemove(t *testing.T) {
 
 	addr := tcpip.Address("\x01\x01\x01\x01")
 	mask := tcpip.AddressMask(strings.Repeat("\xff", len(addr)))
-	subnet, err := tcpip.NewSubnet(addr, mask)
+	addrRange, err := tcpip.NewSubnet(addr, mask)
 	if err != nil {
 		t.Fatal("NewSubnet failed:", err)
 	}
 
-	if contained, err := s.ContainsSubnet(1, subnet); err != nil {
-		t.Fatal("ContainsSubnet failed:", err)
-	} else if contained {
-		t.Fatal("got s.ContainsSubnet(...) = true, want = false")
+	if got, want := stackContainsAddressRange(s, 1, addrRange), false; got != want {
+		t.Fatalf("got stackContainsAddressRange(...) = %t, want = %t", got, want)
 	}
 
-	if err := s.AddSubnet(1, fakeNetNumber, subnet); err != nil {
-		t.Fatal("AddSubnet failed:", err)
+	if err := s.AddAddressRange(1, fakeNetNumber, addrRange); err != nil {
+		t.Fatal("AddAddressRange failed:", err)
 	}
 
-	if contained, err := s.ContainsSubnet(1, subnet); err != nil {
-		t.Fatal("ContainsSubnet failed:", err)
-	} else if !contained {
-		t.Fatal("got s.ContainsSubnet(...) = false, want = true")
+	if got, want := stackContainsAddressRange(s, 1, addrRange), true; got != want {
+		t.Fatalf("got stackContainsAddressRange(...) = %t, want = %t", got, want)
 	}
 
-	if err := s.RemoveSubnet(1, subnet); err != nil {
-		t.Fatal("RemoveSubnet failed:", err)
+	if err := s.RemoveAddressRange(1, addrRange); err != nil {
+		t.Fatal("RemoveAddressRange failed:", err)
 	}
 
-	if contained, err := s.ContainsSubnet(1, subnet); err != nil {
-		t.Fatal("ContainsSubnet failed:", err)
-	} else if contained {
-		t.Fatal("got s.ContainsSubnet(...) = true, want = false")
+	if got, want := stackContainsAddressRange(s, 1, addrRange), false; got != want {
+		t.Fatalf("got stackContainsAddressRange(...) = %t, want = %t", got, want)
 	}
 }
 

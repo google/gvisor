@@ -219,6 +219,15 @@ func (s *Subnet) Mask() AddressMask {
 	return s.mask
 }
 
+// Broadcast returns the subnet's broadcast address.
+func (s *Subnet) Broadcast() Address {
+	addr := []byte(s.address)
+	for i := range addr {
+		addr[i] |= ^s.mask[i]
+	}
+	return Address(addr)
+}
+
 // NICID is a number that uniquely identifies a NIC.
 type NICID int32
 
