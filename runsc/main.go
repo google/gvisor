@@ -88,6 +88,11 @@ func main() {
 	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 
+	// Installation helpers.
+	const helperGroup = "helpers"
+	subcommands.Register(new(cmd.Install), helperGroup)
+	subcommands.Register(new(cmd.Uninstall), helperGroup)
+
 	// Register user-facing runsc commands.
 	subcommands.Register(new(cmd.Checkpoint), "")
 	subcommands.Register(new(cmd.Create), "")
