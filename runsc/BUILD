@@ -67,19 +67,10 @@ pkg_tar(
 )
 
 pkg_tar(
-    name = "runsc-tools",
-    srcs = ["//runsc/tools/dockercfg"],
-    mode = "0755",
-    package_dir = "/usr/libexec/runsc",
-    strip_prefix = "/runsc/tools/dockercfg/linux_amd64_stripped",
-)
-
-pkg_tar(
     name = "debian-data",
     extension = "tar.gz",
     deps = [
         ":runsc-bin",
-        ":runsc-tools",
     ],
 )
 

@@ -16,6 +16,7 @@ package container
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -39,7 +40,7 @@ import (
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 // waitForProcessList waits for the given process list to show up in the container.
@@ -155,12 +156,7 @@ func waitForFile(f *os.File) error {
 		return nil
 	}
 
-	timeout := 5 * time.Second
-	if testutil.RaceEnabled {
-		// Race makes slow things even slow, so bump the timeout.
-		timeout = 3 * timeout
-	}
-	return testutil.Poll(op, timeout)
+	return testutil.Poll(op, 30*time.Second)
 }
 
 // readOutputNum reads a file at given filepath and returns the int at the
@@ -254,10 +250,6 @@ func configs(opts ...configOption) []*boot.Config {
 			// TODO(b/112165693): KVM tests are flaky. Disable until fixed.
 			continue
 
-			// TODO(b/68787993): KVM doesn't work with --race.
-			if testutil.RaceEnabled {
-				continue
-			}
 			c.Platform = platforms.KVM
 		case nonExclusiveFS:
 			c.FileAccess = boot.FileAccessShared
@@ -1651,21 +1643,26 @@ func TestGoferExits(t *testing.T) {
 }
 
 func TestRootNotMount(t *testing.T) {
-	if testutil.RaceEnabled {
-		// Requires statically linked binary, since it's mapping the root to a
-		// random dir, libs cannot be located.
-		t.Skip("race makes test_app not statically linked")
-	}
-
 	appSym, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}
+
 	app, err := filepath.EvalSymlinks(appSym)
 	if err != nil {
 		t.Fatalf("error resolving %q symlink: %v", appSym, err)
 	}
 	log.Infof("App path %q is a symlink to %q", appSym, app)
+
+	static, err := testutil.IsStatic(app)
+	if err != nil {
+		t.Fatalf("error reading application binary: %v", err)
+	}
+	if !static {
+		// This happens during race builds; we cannot map in shared
+		// libraries also, so we need to skip the test.
+		t.Skip()
+	}
 
 	root := filepath.Dir(app)
 	exe := "/" + filepath.Base(app)
@@ -2067,10 +2064,10 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 
 func TestMain(m *testing.M) {
 	log.SetLevel(log.Debug)
+	flag.Parse()
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
 	specutils.MaybeRunAsRoot()
-
 	os.Exit(m.Run())
 }
