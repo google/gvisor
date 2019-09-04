@@ -23,7 +23,10 @@ go_library(
 go_test(
     name = "ipv6_test",
     size = "small",
-    srcs = ["icmp_test.go"],
+    srcs = [
+        "icmp_test.go",
+        "ndp_test.go",
+    ],
     embed = [":ipv6"],
     deps = [
         "//pkg/tcpip",
