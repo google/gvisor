@@ -36,13 +36,13 @@ type NIC struct {
 
 	demux *transportDemuxer
 
-	mu          sync.RWMutex
-	spoofing    bool
-	promiscuous bool
-	primary     map[tcpip.NetworkProtocolNumber]*ilist.List
-	endpoints   map[NetworkEndpointID]*referencedNetworkEndpoint
-	subnets     []tcpip.Subnet
-	mcastJoins  map[NetworkEndpointID]int32
+	mu            sync.RWMutex
+	spoofing      bool
+	promiscuous   bool
+	primary       map[tcpip.NetworkProtocolNumber]*ilist.List
+	endpoints     map[NetworkEndpointID]*referencedNetworkEndpoint
+	addressRanges []tcpip.Subnet
+	mcastJoins    map[NetworkEndpointID]int32
 
 	stats NICStats
 }
@@ -224,7 +224,17 @@ func (n *NIC) getRefOrCreateTemp(protocol tcpip.NetworkProtocolNumber, address t
 	// the caller or if the address is found in the NIC's subnets.
 	createTempEP := spoofingOrPromiscuous
 	if !createTempEP {
-		for _, sn := range n.subnets {
+		for _, sn := range n.addressRanges {
+			// Skip the subnet address.
+			if address == sn.ID() {
+				continue
+			}
+			// For now just skip the broadcast address, until we support it.
+			// FIXME(b/137608825): Add support for sending/receiving directed
+			// (subnet) broadcast.
+			if address == sn.Broadcast() {
+				continue
+			}
 			if sn.Contains(address) {
 				createTempEP = true
 				break
@@ -381,45 +391,38 @@ func (n *NIC) Addresses() []tcpip.ProtocolAddress {
 	return addrs
 }
 
-// AddSubnet adds a new subnet to n, so that it starts accepting packets
-// targeted at the given address and network protocol.
-func (n *NIC) AddSubnet(protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) {
+// AddAddressRange adds a range of addresses to n, so that it starts accepting
+// packets targeted at the given addresses and network protocol. The range is
+// given by a subnet address, and all addresses contained in the subnet are
+// used except for the subnet address itself and the subnet's broadcast
+// address.
+func (n *NIC) AddAddressRange(protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) {
 	n.mu.Lock()
-	n.subnets = append(n.subnets, subnet)
+	n.addressRanges = append(n.addressRanges, subnet)
 	n.mu.Unlock()
 }
 
-// RemoveSubnet removes the given subnet from n.
-func (n *NIC) RemoveSubnet(subnet tcpip.Subnet) {
+// RemoveAddressRange removes the given address range from n.
+func (n *NIC) RemoveAddressRange(subnet tcpip.Subnet) {
 	n.mu.Lock()
 
 	// Use the same underlying array.
-	tmp := n.subnets[:0]
-	for _, sub := range n.subnets {
+	tmp := n.addressRanges[:0]
+	for _, sub := range n.addressRanges {
 		if sub != subnet {
 			tmp = append(tmp, sub)
 		}
 	}
-	n.subnets = tmp
+	n.addressRanges = tmp
 
 	n.mu.Unlock()
 }
 
-// ContainsSubnet reports whether this NIC contains the given subnet.
-func (n *NIC) ContainsSubnet(subnet tcpip.Subnet) bool {
-	for _, s := range n.Subnets() {
-		if s == subnet {
-			return true
-		}
-	}
-	return false
-}
-
 // Subnets returns the Subnets associated with this NIC.
-func (n *NIC) Subnets() []tcpip.Subnet {
+func (n *NIC) AddressRanges() []tcpip.Subnet {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
-	sns := make([]tcpip.Subnet, 0, len(n.subnets)+len(n.endpoints))
+	sns := make([]tcpip.Subnet, 0, len(n.addressRanges)+len(n.endpoints))
 	for nid := range n.endpoints {
 		sn, err := tcpip.NewSubnet(nid.LocalAddress, tcpip.AddressMask(strings.Repeat("\xff", len(nid.LocalAddress))))
 		if err != nil {
@@ -429,7 +432,7 @@ func (n *NIC) Subnets() []tcpip.Subnet {
 		}
 		sns = append(sns, sn)
 	}
-	return append(sns, n.subnets...)
+	return append(sns, n.addressRanges...)
 }
 
 func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
