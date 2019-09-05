@@ -128,31 +128,22 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
 
-	// Apply the S_IFMT bitmask so we can detect file type appropriately
-	fmtStat := stat.Mode & syscall.S_IFMT
+	// Hold the file descriptor we are converting into a p9.File
+	var f *fd.FD
 
-	switch fmtStat{
-		case syscall.S_IFSOCK:
+  // Apply the S_IFMT bitmask so we can detect file type appropriately
+	switch fmtStat := stat.Mode & syscall.S_IFMT; {
+	case fmtStat == syscall.S_IFSOCK:
 			// Attempt to open a connection. Bubble up the failures.
-			f, err := fd.OpenUnix(a.prefix); if err != nil {
+			f, err = fd.OpenUnix(a.prefix)
+			if err != nil {
 				return nil, err
 			}
-
-			// Close the connection if the UDS is already attached.
-			a.attachedMu.Lock()
-			defer a.attachedMu.Unlock()
-			if a.attached {
-				f.Close()
-				return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
-			}
-			a.attached = true
-
-			// Return a localFile object to the caller with the UDS FD included.
-			return newLocalFile(a, f, a.prefix, stat)
 
 		default:
 			// Default to Read/Write permissions.
 			mode := syscall.O_RDWR
+
 			// If the configuration is Read Only & the mount point is a directory,
 			// set the mode to Read Only.
 			if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
@@ -160,23 +151,23 @@ func (a *attachPoint) Attach() (p9.File, error) {
 			}
 
 			// Open the mount point & capture the FD.
-			f, err := fd.Open(a.prefix, openFlags|mode, 0)
+			f, err = fd.Open(a.prefix, openFlags|mode, 0)
 			if err != nil {
 				return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
 			}
-
-			// If the mount point has already been attached, close the FD.
-			a.attachedMu.Lock()
-			defer a.attachedMu.Unlock()
-			if a.attached {
-				f.Close()
-				return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
-			}
-			a.attached = true
-
-			// Return a localFile object to the caller with the mount point FD
-			return newLocalFile(a, f, a.prefix, stat)
 	}
+
+	// Close the connection if the UDS is already attached.
+	a.attachedMu.Lock()
+	defer a.attachedMu.Unlock()
+	if a.attached {
+		f.Close()
+		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
+	}
+	a.attached = true
+
+	// Return a localFile object to the caller with the UDS FD included.
+	return newLocalFile(a, f, a.prefix, stat)
 }
 
 // makeQID returns a unique QID for the given stat buffer.

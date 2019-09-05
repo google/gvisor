@@ -36,23 +36,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{},
 		},
 	},
-	syscall.SYS_SETSOCKOPT: []seccomp.Rule{
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.SOL_SOCKET),
-			seccomp.AllowValue(syscall.SO_BROADCAST),
-		},
-	},
-	syscall.SYS_GETSOCKNAME: []seccomp.Rule{
-		{
-			seccomp.AllowAny{},
-		},
-	},
-	syscall.SYS_GETPEERNAME: []seccomp.Rule{
-		{
-			seccomp.AllowAny{},
-		},
-	},
 	syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
 		{seccomp.AllowValue(linux.ARCH_GET_FS)},
 		{seccomp.AllowValue(linux.ARCH_SET_FS)},
