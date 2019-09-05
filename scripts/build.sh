@@ -24,16 +24,17 @@ pkg=$(build -c opt --host_force_python=py2 //runsc:runsc-debian)
 
 # Build a repository, if the key is available.
 if [[ -v KOKORO_REPO_KEY ]]; then
-  repo=$(tools/make_repository.sh "${KOKORO_REPO_KEY}" gvisor-bot@google.com)
+  repo=$(tools/make_repository.sh "${KOKORO_REPO_KEY}" gvisor-bot@google.com ${pkg})
 fi
 
 # Install installs artifacts.
 install() {
-  mkdir -p $1
-  cp "${runsc}" "$1"/runsc
-  sha512sum "$1"/runsc | awk '{print $1 "  runsc"}' > "$1"/runsc.sha512
+  local dir="$1"
+  mkdir -p "${dir}"
+  cp -f "${runsc}" "${dir}"/runsc
+  sha512sum "${dir}"/runsc | awk '{print $1 "  runsc"}' > "${dir}"/runsc.sha512
   if [[ -v repo ]]; then
-    cp -a "${repo}" "${latest_dir}"/repo
+    rm -rf "${dir}"/repo && cp -a "${repo}" "$dir"/repo
   fi
 }
 
@@ -49,14 +50,19 @@ if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
     # Is it a tagged release? Build that instead. In that case, we also try to
     # update the base release directory, in case this is an update. Finally, we
     # update the "release" directory, which has the last released version.
-    tag="$(git describe --exact-match --tags HEAD || true)"
-    if ! [[ -z "${tag}" ]]; then
-      install "${KOKORO_ARTIFACTS_DIR}/${tag}"
-      base=$(echo "${tag}" | cut -d'.' -f1)
-      if [[ "${base}" != "${tag}" ]]; then
-        install "${KOKORO_ARTIFACTS_DIR}/${base}"
-      fi
-      install "${KOKORO_ARTIFACTS_DIR}/release"
+    tags="$(git tag --points-at HEAD)"
+    if ! [[ -z "${tags}" ]]; then
+      # Note that a given commit can match any number of tags. We have to
+      # iterate through all possible tags and produce associated artifacts.
+      for tag in ${tags}; do
+        name=$(echo "${tag}" | cut -d'-' -f2)
+        base=$(echo "${name}" | cut -d'.' -f1)
+        install "${KOKORO_ARTIFACTS_DIR}/release/${name}"
+        if [[ "${base}" != "${tag}" ]]; then
+          install "${KOKORO_ARTIFACTS_DIR}/release/${base}"
+        fi
+        install "${KOKORO_ARTIFACTS_DIR}/release/latest"
+      done
     fi
   fi
 fi
