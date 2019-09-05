@@ -49,7 +49,7 @@ if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
     # Is it a tagged release? Build that instead. In that case, we also try to
     # update the base release directory, in case this is an update. Finally, we
     # update the "release" directory, which has the last released version.
-    tag="$(git describe --exact-match --tags HEAD)"
+    tag="$(git describe --exact-match --tags HEAD || true)"
     if ! [[ -z "${tag}" ]]; then
       install "${KOKORO_ARTIFACTS_DIR}/${tag}"
       base=$(echo "${tag}" | cut -d'.' -f1)
