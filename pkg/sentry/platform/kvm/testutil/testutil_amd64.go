@@ -21,6 +21,9 @@ import (
 	"syscall"
 )
 
+// TwiddleSegments reads segments into known registers.
+func TwiddleSegments()
+
 // SetTestTarget sets the rip appropriately.
 func SetTestTarget(regs *syscall.PtraceRegs, fn func()) {
 	regs.Rip = uint64(reflect.ValueOf(fn).Pointer())
