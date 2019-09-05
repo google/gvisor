@@ -66,7 +66,7 @@ func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSo
 		if s.SupportsIPv6() {
 			contents["if_inet6"] = seqfile.NewSeqFileInode(ctx, &ifinet6{s: s}, msrc)
 			contents["ipv6_route"] = newStaticProcInode(ctx, msrc, []byte(""))
-			contents["tcp6"] = newStaticProcInode(ctx, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"))
+			contents["tcp6"] = seqfile.NewSeqFileInode(ctx, &netTCP6{k: k}, msrc)
 			contents["udp6"] = newStaticProcInode(ctx, msrc, []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode"))
 		}
 	}
@@ -310,44 +310,51 @@ func networkToHost16(n uint16) uint16 {
 	return usermem.ByteOrder.Uint16(buf[:])
 }
 
-func writeInetAddr(w io.Writer, a linux.SockAddrInet) {
-	// linux.SockAddrInet.Port is stored in the network byte order and is
-	// printed like a number in host byte order. Note that all numbers in host
-	// byte order are printed with the most-significant byte first when
-	// formatted with %X. See get_tcp4_sock() and udp4_format_sock() in Linux.
-	port := networkToHost16(a.Port)
+func writeInetAddr(w io.Writer, family int, i linux.SockAddr) {
+	switch family {
+	case linux.AF_INET:
+		var a linux.SockAddrInet
+		if i != nil {
+			a = *i.(*linux.SockAddrInet)
+		}
 
-	// linux.SockAddrInet.Addr is stored as a byte slice in big-endian order
-	// (i.e. most-significant byte in index 0). Linux represents this as a
-	// __be32 which is a typedef for an unsigned int, and is printed with
-	// %X. This means that for a little-endian machine, Linux prints the
-	// least-significant byte of the address first. To emulate this, we first
-	// invert the byte order for the address using usermem.ByteOrder.Uint32,
-	// which makes it have the equivalent encoding to a __be32 on a little
-	// endian machine. Note that this operation is a no-op on a big endian
-	// machine. Then similar to Linux, we format it with %X, which will print
-	// the most-significant byte of the __be32 address first, which is now
-	// actually the least-significant byte of the original address in
-	// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
-	addr := usermem.ByteOrder.Uint32(a.Addr[:])
+		// linux.SockAddrInet.Port is stored in the network byte order and is
+		// printed like a number in host byte order. Note that all numbers in host
+		// byte order are printed with the most-significant byte first when
+		// formatted with %X. See get_tcp4_sock() and udp4_format_sock() in Linux.
+		port := networkToHost16(a.Port)
 
-	fmt.Fprintf(w, "%08X:%04X ", addr, port)
+		// linux.SockAddrInet.Addr is stored as a byte slice in big-endian order
+		// (i.e. most-significant byte in index 0). Linux represents this as a
+		// __be32 which is a typedef for an unsigned int, and is printed with
+		// %X. This means that for a little-endian machine, Linux prints the
+		// least-significant byte of the address first. To emulate this, we first
+		// invert the byte order for the address using usermem.ByteOrder.Uint32,
+		// which makes it have the equivalent encoding to a __be32 on a little
+		// endian machine. Note that this operation is a no-op on a big endian
+		// machine. Then similar to Linux, we format it with %X, which will print
+		// the most-significant byte of the __be32 address first, which is now
+		// actually the least-significant byte of the original address in
+		// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
+		addr := usermem.ByteOrder.Uint32(a.Addr[:])
+
+		fmt.Fprintf(w, "%08X:%04X ", addr, port)
+	case linux.AF_INET6:
+		var a linux.SockAddrInet6
+		if i != nil {
+			a = *i.(*linux.SockAddrInet6)
+		}
+
+		port := networkToHost16(a.Port)
+		addr0 := usermem.ByteOrder.Uint32(a.Addr[0:4])
+		addr1 := usermem.ByteOrder.Uint32(a.Addr[4:8])
+		addr2 := usermem.ByteOrder.Uint32(a.Addr[8:12])
+		addr3 := usermem.ByteOrder.Uint32(a.Addr[12:16])
+		fmt.Fprintf(w, "%08X%08X%08X%08X:%04X ", addr0, addr1, addr2, addr3, port)
+	}
 }
 
-// netTCP implements seqfile.SeqSource for /proc/net/tcp.
-//
-// +stateify savable
-type netTCP struct {
-	k *kernel.Kernel
-}
-
-// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
-func (*netTCP) NeedsUpdate(generation int64) bool {
-	return true
-}
-
-// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
-func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+func commonReadSeqFileDataTCP(n seqfile.SeqHandle, k *kernel.Kernel, ctx context.Context, h seqfile.SeqHandle, fa int, header []byte) ([]seqfile.SeqData, int64) {
 	// t may be nil here if our caller is not part of a task goroutine. This can
 	// happen for example if we're here for "sentryctl cat". When t is nil,
 	// degrade gracefully and retrieve what we can.
@@ -358,7 +365,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	}
 
 	var buf bytes.Buffer
-	for _, se := range n.k.ListSockets() {
+	for _, se := range k.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
 			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
@@ -369,7 +376,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
 		}
-		if family, stype, _ := sops.Type(); !(family == linux.AF_INET && stype == linux.SOCK_STREAM) {
+		if family, stype, _ := sops.Type(); !(family == fa && stype == linux.SOCK_STREAM) {
 			s.DecRef()
 			// Not tcp4 sockets.
 			continue
@@ -384,22 +391,22 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		fmt.Fprintf(&buf, "%4d: ", se.ID)
 
 		// Field: local_adddress.
-		var localAddr linux.SockAddrInet
+		var localAddr linux.SockAddr
 		if t != nil {
 			if local, _, err := sops.GetSockName(t); err == nil {
-				localAddr = *local.(*linux.SockAddrInet)
+				localAddr = local
 			}
 		}
-		writeInetAddr(&buf, localAddr)
+		writeInetAddr(&buf, fa, localAddr)
 
 		// Field: rem_address.
-		var remoteAddr linux.SockAddrInet
+		var remoteAddr linux.SockAddr
 		if t != nil {
 			if remote, _, err := sops.GetPeerName(t); err == nil {
-				remoteAddr = *remote.(*linux.SockAddrInet)
+				remoteAddr = remote
 			}
 		}
-		writeInetAddr(&buf, remoteAddr)
+		writeInetAddr(&buf, fa, remoteAddr)
 
 		// Field: state; socket state.
 		fmt.Fprintf(&buf, "%02X ", sops.State())
@@ -465,7 +472,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 
 	data := []seqfile.SeqData{
 		{
-			Buf:    []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n"),
+			Buf:    header,
 			Handle: n,
 		},
 		{
@@ -474,6 +481,42 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		},
 	}
 	return data, 0
+}
+
+// netTCP implements seqfile.SeqSource for /proc/net/tcp.
+//
+// +stateify savable
+type netTCP struct {
+	k *kernel.Kernel
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (*netTCP) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	header := []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n")
+	return commonReadSeqFileDataTCP(n, n.k, ctx, h, linux.AF_INET, header)
+}
+
+// netTCP6 implements seqfile.SeqSource for /proc/net/tcp6.
+//
+// +stateify savable
+type netTCP6 struct {
+	k *kernel.Kernel
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (*netTCP6) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (n *netTCP6) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	header := []byte("  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n")
+	return commonReadSeqFileDataTCP(n, n.k, ctx, h, linux.AF_INET6, header)
 }
 
 // netUDP implements seqfile.SeqSource for /proc/net/udp.
@@ -529,7 +572,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 				localAddr = *local.(*linux.SockAddrInet)
 			}
 		}
-		writeInetAddr(&buf, localAddr)
+		writeInetAddr(&buf, linux.AF_INET, &localAddr)
 
 		// Field: rem_address.
 		var remoteAddr linux.SockAddrInet
@@ -538,7 +581,7 @@ func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 				remoteAddr = *remote.(*linux.SockAddrInet)
 			}
 		}
-		writeInetAddr(&buf, remoteAddr)
+		writeInetAddr(&buf, linux.AF_INET, &remoteAddr)
 
 		// Field: state; socket state.
 		fmt.Fprintf(&buf, "%02X ", sops.State())
