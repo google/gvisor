@@ -131,30 +131,30 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	// Hold the file descriptor we are converting into a p9.File
 	var f *fd.FD
 
-  // Apply the S_IFMT bitmask so we can detect file type appropriately
+	// Apply the S_IFMT bitmask so we can detect file type appropriately
 	switch fmtStat := stat.Mode & syscall.S_IFMT; {
 	case fmtStat == syscall.S_IFSOCK:
-			// Attempt to open a connection. Bubble up the failures.
-			f, err = fd.OpenUnix(a.prefix)
-			if err != nil {
-				return nil, err
-			}
+		// Attempt to open a connection. Bubble up the failures.
+		f, err = fd.OpenUnix(a.prefix)
+		if err != nil {
+			return nil, err
+		}
 
-		default:
-			// Default to Read/Write permissions.
-			mode := syscall.O_RDWR
+	default:
+		// Default to Read/Write permissions.
+		mode := syscall.O_RDWR
 
-			// If the configuration is Read Only & the mount point is a directory,
-			// set the mode to Read Only.
-			if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
-				mode = syscall.O_RDONLY
-			}
+		// If the configuration is Read Only & the mount point is a directory,
+		// set the mode to Read Only.
+		if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
+			mode = syscall.O_RDONLY
+		}
 
-			// Open the mount point & capture the FD.
-			f, err = fd.Open(a.prefix, openFlags|mode, 0)
-			if err != nil {
-				return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
-			}
+		// Open the mount point & capture the FD.
+		f, err = fd.Open(a.prefix, openFlags|mode, 0)
+		if err != nil {
+			return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
+		}
 	}
 
 	// Close the connection if the UDS is already attached.
