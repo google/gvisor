@@ -760,25 +760,33 @@ func (l *Loader) destroyContainer(cid string) error {
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
 			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
 		}
+		// Wait for all processes that belong to the container to exit (including
+		// exec'd processes).
+		for _, t := range l.k.TaskSet().Root.Tasks() {
+			if t.ContainerID() == cid {
+				t.ThreadGroup().WaitExited()
+			}
+		}
+
+		// At this point, all processes inside of the container have exited,
+		// releasing all references to the container's MountNamespace and
+		// causing all submounts and overlays to be unmounted.
+		//
+		// Since the container's MountNamespace has been released,
+		// MountNamespace.destroy() will have executed, but that function may
+		// trigger async close operations. We must wait for those to complete
+		// before returning, otherwise the caller may kill the gofer before
+		// they complete, causing a cascade of failing RPCs.
+		fs.AsyncBarrier()
 	}
 
-	// Remove all container thread groups from the map.
+	// No more failure from this point on. Remove all container thread groups
+	// from the map.
 	for key := range l.processes {
 		if key.cid == cid {
 			delete(l.processes, key)
 		}
 	}
-
-	// At this point, all processes inside of the container have exited,
-	// releasing all references to the container's MountNamespace and
-	// causing all submounts and overlays to be unmounted.
-	//
-	// Since the container's MountNamespace has been released,
-	// MountNamespace.destroy() will have executed, but that function may
-	// trigger async close operations. We must wait for those to complete
-	// before returning, otherwise the caller may kill the gofer before
-	// they complete, causing a cascade of failing RPCs.
-	fs.AsyncBarrier()
 
 	log.Debugf("Container destroyed %q", cid)
 	return nil
@@ -1037,21 +1045,8 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	// the signal is delivered. This prevents process leaks when SIGKILL is
 	// sent to the entire container.
 	l.k.Pause()
-	if err := l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo}); err != nil {
-		l.k.Unpause()
-		return err
-	}
-	l.k.Unpause()
-
-	// If SIGKILLing all processes, wait for them to exit.
-	if linux.Signal(signo) == linux.SIGKILL {
-		for _, t := range l.k.TaskSet().Root.Tasks() {
-			if t.ContainerID() == cid {
-				t.ThreadGroup().WaitExited()
-			}
-		}
-	}
-	return nil
+	defer l.k.Unpause()
+	return l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo})
 }
 
 // threadGroupFromID same as threadGroupFromIDLocked except that it acquires

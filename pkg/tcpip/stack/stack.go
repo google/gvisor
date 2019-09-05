@@ -702,14 +702,14 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 }
 
 // NICSubnets returns a map of NICIDs to their associated subnets.
-func (s *Stack) NICSubnets() map[tcpip.NICID][]tcpip.Subnet {
+func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nics := map[tcpip.NICID][]tcpip.Subnet{}
 
 	for id, nic := range s.nics {
-		nics[id] = append(nics[id], nic.Subnets()...)
+		nics[id] = append(nics[id], nic.AddressRanges()...)
 	}
 	return nics
 }
@@ -810,43 +810,33 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 	return nic.AddAddress(protocolAddress, peb)
 }
 
-// AddSubnet adds a subnet range to the specified NIC.
-func (s *Stack) AddSubnet(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
+// AddAddressRange adds a range of addresses to the specified NIC. The range is
+// given by a subnet address, and all addresses contained in the subnet are
+// used except for the subnet address itself and the subnet's broadcast
+// address.
+func (s *Stack) AddAddressRange(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[id]; ok {
-		nic.AddSubnet(protocol, subnet)
+		nic.AddAddressRange(protocol, subnet)
 		return nil
 	}
 
 	return tcpip.ErrUnknownNICID
 }
 
-// RemoveSubnet removes the subnet range from the specified NIC.
-func (s *Stack) RemoveSubnet(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
+// RemoveAddressRange removes the range of addresses from the specified NIC.
+func (s *Stack) RemoveAddressRange(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[id]; ok {
-		nic.RemoveSubnet(subnet)
+		nic.RemoveAddressRange(subnet)
 		return nil
 	}
 
 	return tcpip.ErrUnknownNICID
-}
-
-// ContainsSubnet reports whether the specified NIC contains the specified
-// subnet.
-func (s *Stack) ContainsSubnet(id tcpip.NICID, subnet tcpip.Subnet) (bool, *tcpip.Error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if nic, ok := s.nics[id]; ok {
-		return nic.ContainsSubnet(subnet), nil
-	}
-
-	return false, tcpip.ErrUnknownNICID
 }
 
 // RemoveAddress removes an existing network-layer address from the specified
