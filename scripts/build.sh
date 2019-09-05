@@ -20,7 +20,7 @@ source $(dirname $0)/common.sh
 runsc=$(build -c opt //runsc)
 
 # Build packages.
-pkg=$(build -c opt --host_force_python=py2 //runsc:debian)
+pkg=$(build -c opt --host_force_python=py2 //runsc:runsc-debian)
 
 # Build a repository, if the key is available.
 if [[ -v KOKORO_REPO_KEY ]]; then
