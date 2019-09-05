@@ -22,7 +22,7 @@ import (
 	"runtime"
 	"sync/atomic"
 	"syscall"
-	"net"
+	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // ReadWriter implements io.ReadWriter, io.ReaderAt, and io.WriterAt for fd. It
@@ -186,19 +186,10 @@ func OpenAt(dir *FD, path string, flags int, mode uint32) (*FD, error) {
 	return New(f), nil
 }
 
-// OpenUnix TODO: DOC
+// OpenUnix Open a Unix Domain Socket and return the file descriptor for it.
 func OpenUnix(path string) (*FD, error) {
-	addr, _ := net.ResolveUnixAddr("unix", path)
-	f, err := net.DialUnix("unix", nil, addr); if err != nil {
-		return nil, fmt.Errorf("unable to open socket: %q, err: %v", path, err)
-	}
-	fConnd, err := f.File(); if err != nil {
-		return nil, fmt.Errorf("unable to convert to os.File: %q, err: %v", path, err)
-	}
-	fdConnd, err := NewFromFile(fConnd); if err != nil {
-		return nil, fmt.Errorf("unable to convert os.File to fd.FD: %q, err: %v", path, err)
-	}
-	return fdConnd, nil
+	socket, err := unet.Connect(path, false)
+	return New(socket.FD()), err
 }
 
 // Close closes the file descriptor contained in the FD.
