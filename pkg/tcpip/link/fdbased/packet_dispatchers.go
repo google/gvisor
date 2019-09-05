@@ -67,10 +67,8 @@ func (d *readVDispatcher) allocateViews(bufConfig []int) {
 		// The kernel adds virtioNetHdr before each packet, but
 		// we don't use it, so so we allocate a buffer for it,
 		// add it in iovecs but don't add it in a view.
-		d.iovecs[0] = syscall.Iovec{
-			Base: &vnetHdr[0],
-			Len:  uint64(virtioNetHdrSize),
-		}
+		d.iovecs[0].Base = &vnetHdr[0]
+		d.iovecs[0].SetLen(virtioNetHdrSize)
 		vnetHdrOff++
 	}
 	for i := 0; i < len(bufConfig); i++ {
@@ -79,10 +77,8 @@ func (d *readVDispatcher) allocateViews(bufConfig []int) {
 		}
 		b := buffer.NewView(bufConfig[i])
 		d.views[i] = b
-		d.iovecs[i+vnetHdrOff] = syscall.Iovec{
-			Base: &b[0],
-			Len:  uint64(len(b)),
-		}
+		d.iovecs[i+vnetHdrOff].Base = &b[0]
+		d.iovecs[i+vnetHdrOff].SetLen(len(b))
 	}
 }
 
@@ -204,7 +200,7 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	d.msgHdrs = make([]rawfile.MMsgHdr, MaxMsgsPerRecv)
 	for i := range d.msgHdrs {
 		d.msgHdrs[i].Msg.Iov = &d.iovecs[i][0]
-		d.msgHdrs[i].Msg.Iovlen = uint64(iovLen)
+		setIovlen(&d.msgHdrs[i].Msg, iovLen)
 	}
 	return d, nil
 }
@@ -229,10 +225,8 @@ func (d *recvMMsgDispatcher) allocateViews(bufConfig []int) {
 			// The kernel adds virtioNetHdr before each packet, but
 			// we don't use it, so so we allocate a buffer for it,
 			// add it in iovecs but don't add it in a view.
-			d.iovecs[k][0] = syscall.Iovec{
-				Base: &vnetHdr[0],
-				Len:  uint64(virtioNetHdrSize),
-			}
+			d.iovecs[k][0].Base = &vnetHdr[0]
+			d.iovecs[k][0].SetLen(virtioNetHdrSize)
 			vnetHdrOff++
 		}
 		for i := 0; i < len(bufConfig); i++ {
@@ -241,10 +235,8 @@ func (d *recvMMsgDispatcher) allocateViews(bufConfig []int) {
 			}
 			b := buffer.NewView(bufConfig[i])
 			d.views[k][i] = b
-			d.iovecs[k][i+vnetHdrOff] = syscall.Iovec{
-				Base: &b[0],
-				Len:  uint64(len(b)),
-			}
+			d.iovecs[k][i+vnetHdrOff].Base = &b[0]
+			d.iovecs[k][i+vnetHdrOff].SetLen(len(b))
 		}
 	}
 }
