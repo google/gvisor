@@ -1882,7 +1882,9 @@ void CheckDuplicatesRecursively(std::string path) {
   errno = 0;
   DIR* dir = opendir(path.c_str());
   if (dir == nullptr) {
-    ASSERT_THAT(errno, ::testing::AnyOf(EPERM, EACCES)) << path;
+    // Ignore any directories we can't read or missing directories as the
+    // directory could have been deleted/mutated from the time the parent
+    // directory contents were read.
     return;
   }
   auto dir_closer = Cleanup([&dir]() { closedir(dir); });
