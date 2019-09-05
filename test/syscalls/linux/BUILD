@@ -265,12 +265,15 @@ cc_binary(
     ],
     linkstatic = 1,
     deps = [
-        # The heap check doesn't handle mremap properly.
+        # The heapchecker doesn't recognize that io_destroy munmaps.
         "@com_google_googletest//:gtest",
         "@com_google_absl//absl/strings",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:memory_util",
         "//test/util:posix_error",
+        "//test/util:proc_util",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
