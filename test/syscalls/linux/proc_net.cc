@@ -14,6 +14,7 @@
 
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
@@ -35,6 +36,8 @@ TEST(ProcSysNetIpv4Sack, Exists) {
 }
 
 TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
   auto const fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
 
