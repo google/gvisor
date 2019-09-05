@@ -35,17 +35,6 @@ namespace testing {
 
 namespace {
 
-// Wrapper for mremap that returns a PosixErrorOr<>, since the return type of
-// void* isn't directly compatible with SyscallSucceeds.
-PosixErrorOr<void*> Mremap(void* old_address, size_t old_size, size_t new_size,
-                           int flags, void* new_address) {
-  void* rv = mremap(old_address, old_size, new_size, flags, new_address);
-  if (rv == MAP_FAILED) {
-    return PosixError(errno, "mremap failed");
-  }
-  return rv;
-}
-
 // Fixture for mremap tests parameterized by mmap flags.
 using MremapParamTest = ::testing::TestWithParam<int>;
 
