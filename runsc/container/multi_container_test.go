@@ -549,10 +549,16 @@ func TestMultiContainerDestroy(t *testing.T) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		// First container will remain intact while the second container is killed.
-		specs, ids := createSpecs(
-			[]string{app, "reaper"},
+		podSpecs, ids := createSpecs(
+			[]string{"sleep", "100"},
 			[]string{app, "fork-bomb"})
-		containers, cleanup, err := startContainers(conf, specs, ids)
+
+		// Run the fork bomb in a PID namespace to prevent processes to be
+		// re-parented to PID=1 in the root container.
+		podSpecs[1].Linux = &specs.Linux{
+			Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
+		}
+		containers, cleanup, err := startContainers(conf, podSpecs, ids)
 		if err != nil {
 			t.Fatalf("error starting containers: %v", err)
 		}
@@ -580,7 +586,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error getting process data from sandbox: %v", err)
 		}
-		expectedPL := []*control.Process{{PID: 1, Cmd: "test_app"}}
+		expectedPL := []*control.Process{{PID: 1, Cmd: "sleep"}}
 		if !procListsEqual(pss, expectedPL) {
 			t.Errorf("container got process list: %s, want: %s", procListToString(pss), procListToString(expectedPL))
 		}
