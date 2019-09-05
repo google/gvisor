@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("//tools/build_defs/proto/cpp:cc_proto_library.bzl", "cc_proto_library")
 
 package(licenses = ["notice"])
 
@@ -81,6 +82,12 @@ proto_library(
     srcs = ["uncaught_signal.proto"],
     visibility = ["//visibility:public"],
     deps = ["//pkg/sentry/arch:registers_proto"],
+)
+
+cc_proto_library(
+    name = "uncaught_signal_cc_proto",
+    proto = ":uncaught_signal_proto",
+    visibility = ["//visibility:public"],
 )
 
 go_proto_library(

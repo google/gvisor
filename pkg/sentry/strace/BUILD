@@ -1,5 +1,6 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("//tools/build_defs/proto/cpp:cc_proto_library.bzl", "cc_proto_library")
 
 package(licenses = ["notice"])
 
@@ -41,6 +42,12 @@ go_library(
 proto_library(
     name = "strace_proto",
     srcs = ["strace.proto"],
+    visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "strace_cc_proto",
+    proto = ":strace_proto",
     visibility = ["//visibility:public"],
 )
 
