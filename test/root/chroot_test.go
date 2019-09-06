@@ -16,19 +16,15 @@
 package root
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/runsc/dockerutil"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // TestChroot verifies that the sandbox is chroot'd and that mounts are cleaned
@@ -143,16 +139,4 @@ func TestChrootGofer(t *testing.T) {
 			t.Errorf("gofer current dir is wrong, want: %q, got: %q", root, path)
 		}
 	}
-}
-
-func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
-
-	if !specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_DAC_OVERRIDE) {
-		fmt.Println("Test requires sysadmin privileges to run. Try again with sudo.")
-		os.Exit(1)
-	}
-
-	flag.Parse()
-	os.Exit(m.Run())
 }

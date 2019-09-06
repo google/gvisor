@@ -12,5 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package root is empty. See chroot_test.go for description.
+// Package root is used for tests that requires sysadmin privileges run. First,
+// follow the setup instruction in runsc/test/README.md. You should also have
+// docker, containerd, and crictl installed. To run these tests from the
+// project root directory:
+//
+//     ./scripts/root_tests.sh
 package root

@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -502,4 +503,42 @@ func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
 			return r1, r2, err
 		}
 	}
+}
+
+// GetOOMScoreAdj reads the given process' oom_score_adj
+func GetOOMScoreAdj(pid int) (int, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(data)))
+}
+
+// GetParentPid gets the parent process ID of the specified PID.
+func GetParentPid(pid int) (int, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, err
+	}
+
+	var cpid string
+	var name string
+	var state string
+	var ppid int
+	// Parse after the binary name.
+	_, err = fmt.Sscanf(string(data),
+		"%v %v %v %d",
+		// cpid is ignored.
+		&cpid,
+		// name is ignored.
+		&name,
+		// state is ignored.
+		&state,
+		&ppid)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return ppid, nil
 }
