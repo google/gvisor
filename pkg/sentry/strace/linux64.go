@@ -335,4 +335,5 @@ var linuxAMD64 = SyscallMap{
 	315: makeSyscallInfo("sched_getattr", Hex, Hex, Hex),
 	316: makeSyscallInfo("renameat2", FD, Path, Hex, Path, Hex),
 	317: makeSyscallInfo("seccomp", Hex, Hex, Hex),
+	332: makeSyscallInfo("statx", FD, Path, Hex, Hex, Hex),
 }
