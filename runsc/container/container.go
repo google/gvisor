@@ -513,9 +513,16 @@ func (c *Container) Start(conf *boot.Config) error {
 		return err
 	}
 
-	// Adjust the oom_score_adj for sandbox and gofers. This must be done after
+	// Adjust the oom_score_adj for sandbox. This must be done after
 	// save().
-	return c.adjustOOMScoreAdj(conf)
+	err = adjustSandboxOOMScoreAdj(c.Sandbox, c.RootContainerDir, false)
+	if err != nil {
+		return err
+	}
+
+	// Set container's oom_score_adj to the gofer since it is dedicated to
+	// the container, in case the gofer uses up too much memory.
+	return c.adjustGoferOOMScoreAdj()
 }
 
 // Restore takes a container and replaces its kernel and file system
@@ -782,6 +789,9 @@ func (c *Container) Destroy() error {
 	}
 	defer unlock()
 
+	// Stored for later use as stop() sets c.Sandbox to nil.
+	sb := c.Sandbox
+
 	if err := c.stop(); err != nil {
 		err = fmt.Errorf("stopping container: %v", err)
 		log.Warningf("%v", err)
@@ -795,6 +805,16 @@ func (c *Container) Destroy() error {
 	}
 
 	c.changeStatus(Stopped)
+
+	// Adjust oom_score_adj for the sandbox. This must be done after the
+	// container is stopped and the directory at c.Root is removed.
+	// We must test if the sandbox is nil because Destroy should be
+	// idempotent.
+	if sb != nil {
+		if err := adjustSandboxOOMScoreAdj(sb, c.RootContainerDir, true); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
 
 	// "If any poststop hook fails, the runtime MUST log a warning, but the
 	// remaining hooks and lifecycle continue as if the hook had succeeded" -OCI spec.
@@ -1139,33 +1159,80 @@ func runInCgroup(cg *cgroup.Cgroup, fn func() error) error {
 	return fn()
 }
 
-// adjustOOMScoreAdj sets the oom_score_adj for the sandbox and all gofers.
+// adjustGoferOOMScoreAdj sets the oom_store_adj for the container's gofer.
+func (c *Container) adjustGoferOOMScoreAdj() error {
+	if c.GoferPid != 0 && c.Spec.Process.OOMScoreAdj != nil {
+		if err := setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj); err != nil {
+			return fmt.Errorf("setting gofer oom_score_adj for container %q: %v", c.ID, err)
+		}
+	}
+
+	return nil
+}
+
+// adjustSandboxOOMScoreAdj sets the oom_score_adj for the sandbox.
 // oom_score_adj is set to the lowest oom_score_adj among the containers
 // running in the sandbox.
 //
 // TODO(gvisor.dev/issue/512): This call could race with other containers being
 // created at the same time and end up setting the wrong oom_score_adj to the
 // sandbox.
-func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
-	// If this container's OOMScoreAdj is nil then we can exit early as no
-	// change should be made to oom_score_adj for the sandbox.
-	if c.Spec.Process.OOMScoreAdj == nil {
-		return nil
-	}
-
-	containers, err := loadSandbox(conf.RootDir, c.Sandbox.ID)
+func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) error {
+	containers, err := loadSandbox(rootDir, s.ID)
 	if err != nil {
 		return fmt.Errorf("loading sandbox containers: %v", err)
+	}
+
+	// Do nothing if the sandbox has been terminated.
+	if len(containers) == 0 {
+		return nil
 	}
 
 	// Get the lowest score for all containers.
 	var lowScore int
 	scoreFound := false
-	for _, container := range containers {
-		if container.Spec.Process.OOMScoreAdj != nil && (!scoreFound || *container.Spec.Process.OOMScoreAdj < lowScore) {
+	if len(containers) == 1 && len(containers[0].Spec.Annotations[specutils.ContainerdContainerTypeAnnotation]) == 0 {
+		// This is a single-container sandbox. Set the oom_score_adj to
+		// the value specified in the OCI bundle.
+		if containers[0].Spec.Process.OOMScoreAdj != nil {
 			scoreFound = true
-			lowScore = *container.Spec.Process.OOMScoreAdj
+			lowScore = *containers[0].Spec.Process.OOMScoreAdj
 		}
+	} else {
+		for _, container := range containers {
+			// Special multi-container support for CRI. Ignore the root
+			// container when calculating oom_score_adj for the sandbox because
+			// it is the infrastructure (pause) container and always has a very
+			// low oom_score_adj.
+			//
+			// We will use OOMScoreAdj in the single-container case where the
+			// containerd container-type annotation is not present.
+			if container.Spec.Annotations[specutils.ContainerdContainerTypeAnnotation] == specutils.ContainerdContainerTypeSandbox {
+				continue
+			}
+
+			if container.Spec.Process.OOMScoreAdj != nil && (!scoreFound || *container.Spec.Process.OOMScoreAdj < lowScore) {
+				scoreFound = true
+				lowScore = *container.Spec.Process.OOMScoreAdj
+			}
+		}
+	}
+
+	// If the container is destroyed and remaining containers have no
+	// oomScoreAdj specified then we must revert to the oom_score_adj of the
+	// parent process.
+	if !scoreFound && destroy {
+		ppid, err := specutils.GetParentPid(s.Pid)
+		if err != nil {
+			return fmt.Errorf("getting parent pid of sandbox pid %d: %v", s.Pid, err)
+		}
+		pScore, err := specutils.GetOOMScoreAdj(ppid)
+		if err != nil {
+			return fmt.Errorf("getting oom_score_adj of parent %d: %v", ppid, err)
+		}
+
+		scoreFound = true
+		lowScore = pScore
 	}
 
 	// Only set oom_score_adj if one of the containers has oom_score_adj set
@@ -1177,15 +1244,10 @@ func (c *Container) adjustOOMScoreAdj(conf *boot.Config) error {
 	}
 
 	// Set the lowest of all containers oom_score_adj to the sandbox.
-	if err := setOOMScoreAdj(c.Sandbox.Pid, lowScore); err != nil {
-		return fmt.Errorf("setting oom_score_adj for sandbox %q: %v", c.Sandbox.ID, err)
+	if err := setOOMScoreAdj(s.Pid, lowScore); err != nil {
+		return fmt.Errorf("setting oom_score_adj for sandbox %q: %v", s.ID, err)
 	}
 
-	// Set container's oom_score_adj to the gofer since it is dedicated to the
-	// container, in case the gofer uses up too much memory.
-	if err := setOOMScoreAdj(c.GoferPid, *c.Spec.Process.OOMScoreAdj); err != nil {
-		return fmt.Errorf("setting gofer oom_score_adj for container %q: %v", c.ID, err)
-	}
 	return nil
 }
 

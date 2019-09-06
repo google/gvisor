@@ -15,6 +15,11 @@ go_test(
         "cgroup_test.go",
         "chroot_test.go",
         "crictl_test.go",
+        "main_test.go",
+        "oom_score_adj_test.go",
+    ],
+    data = [
+        "//runsc",
     ],
     embed = [":root"],
     tags = [
@@ -25,12 +30,15 @@ go_test(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//runsc/boot",
         "//runsc/cgroup",
+        "//runsc/container",
         "//runsc/criutil",
         "//runsc/dockerutil",
         "//runsc/specutils",
         "//runsc/testutil",
         "//test/root/testdata",
+        "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
     ],
 )
