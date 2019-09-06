@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//test/syscalls:build_defs.bzl", "select_for_linux")
 
 package(
