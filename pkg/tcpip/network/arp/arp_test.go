@@ -47,11 +47,13 @@ func newTestContext(t *testing.T) *testContext {
 	s := stack.New([]string{ipv4.ProtocolName, arp.ProtocolName}, []string{icmp.ProtocolName4}, stack.Options{})
 
 	const defaultMTU = 65536
-	id, linkEP := channel.New(256, defaultMTU, stackLinkAddr)
+	ep := channel.New(256, defaultMTU, stackLinkAddr)
+	wep := stack.LinkEndpoint(ep)
+
 	if testing.Verbose() {
-		id = sniffer.New(id)
+		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, wep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -73,7 +75,7 @@ func newTestContext(t *testing.T) *testContext {
 	return &testContext{
 		t:      t,
 		s:      s,
-		linkEP: linkEP,
+		linkEP: ep,
 	}
 }
 

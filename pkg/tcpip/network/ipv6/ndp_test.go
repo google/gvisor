@@ -32,15 +32,14 @@ func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address) (*stack
 	t.Helper()
 
 	s := stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{})
-	{
-		id := stack.RegisterLinkEndpoint(&stubLinkEndpoint{})
-		if err := s.CreateNIC(1, id); err != nil {
-			t.Fatalf("CreateNIC(_) = %s", err)
-		}
-		if err := s.AddAddress(1, ProtocolNumber, llladdr); err != nil {
-			t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, llladdr, err)
-		}
+
+	if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
+		t.Fatalf("CreateNIC(_) = %s", err)
 	}
+	if err := s.AddAddress(1, ProtocolNumber, llladdr); err != nil {
+		t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, llladdr, err)
+	}
+
 	{
 		subnet, err := tcpip.NewSubnet(rlladdr, tcpip.AddressMask(strings.Repeat("\xff", len(rlladdr))))
 		if err != nil {

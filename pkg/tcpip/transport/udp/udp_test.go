@@ -275,12 +275,13 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 
 	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName}, stack.Options{})
+	ep := channel.New(256, mtu, "")
+	wep := stack.LinkEndpoint(ep)
 
-	id, linkEP := channel.New(256, mtu, "")
 	if testing.Verbose() {
-		id = sniffer.New(id)
+		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, wep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -306,7 +307,7 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	return &testContext{
 		t:      t,
 		s:      s,
-		linkEP: linkEP,
+		linkEP: ep,
 	}
 }
 

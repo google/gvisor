@@ -150,11 +150,12 @@ func New(t *testing.T, mtu uint32) *Context {
 
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
-	id, linkEP := channel.New(1000, mtu, "")
+	ep := channel.New(1000, mtu, "")
+	wep := stack.LinkEndpoint(ep)
 	if testing.Verbose() {
-		id = sniffer.New(id)
+		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, wep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -180,7 +181,7 @@ func New(t *testing.T, mtu uint32) *Context {
 	return &Context{
 		t:           t,
 		s:           s,
-		linkEP:      linkEP,
+		linkEP:      ep,
 		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
 	}
 }
