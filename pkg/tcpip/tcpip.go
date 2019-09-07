@@ -600,9 +600,6 @@ func (r Route) String() string {
 	return out.String()
 }
 
-// LinkEndpointID represents a data link layer endpoint.
-type LinkEndpointID uint64
-
 // TransportProtocolNumber is the number of a transport protocol.
 type TransportProtocolNumber uint32
 

@@ -15,8 +15,6 @@
 package stack
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -379,10 +377,6 @@ var (
 	networkProtocols   = make(map[string]NetworkProtocolFactory)
 
 	unassociatedFactory UnassociatedEndpointFactory
-
-	linkEPMu           sync.RWMutex
-	nextLinkEndpointID tcpip.LinkEndpointID = 1
-	linkEndpoints                           = make(map[tcpip.LinkEndpointID]LinkEndpoint)
 )
 
 // RegisterTransportProtocolFactory registers a new transport protocol factory
@@ -404,28 +398,6 @@ func RegisterNetworkProtocolFactory(name string, p NetworkProtocolFactory) {
 // to be called by init() functions of the protocols.
 func RegisterUnassociatedFactory(f UnassociatedEndpointFactory) {
 	unassociatedFactory = f
-}
-
-// RegisterLinkEndpoint register a link-layer protocol endpoint and returns an
-// ID that can be used to refer to it.
-func RegisterLinkEndpoint(linkEP LinkEndpoint) tcpip.LinkEndpointID {
-	linkEPMu.Lock()
-	defer linkEPMu.Unlock()
-
-	v := nextLinkEndpointID
-	nextLinkEndpointID++
-
-	linkEndpoints[v] = linkEP
-
-	return v
-}
-
-// FindLinkEndpoint finds the link endpoint associated with the given ID.
-func FindLinkEndpoint(id tcpip.LinkEndpointID) LinkEndpoint {
-	linkEPMu.RLock()
-	defer linkEPMu.RUnlock()
-
-	return linkEndpoints[id]
 }
 
 // GSOType is the type of GSO segments.
