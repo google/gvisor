@@ -62,6 +62,9 @@ func (c *testConnection) destroy() {
 }
 
 func testSendRecv(t *testing.T, c *testConnection) {
+	// This shared variable is used to confirm that synchronization between
+	// flipcall endpoints is visible to the Go race detector.
+	state := 0
 	var serverRun sync.WaitGroup
 	serverRun.Add(1)
 	go func() {
@@ -71,10 +74,18 @@ func testSendRecv(t *testing.T, c *testConnection) {
 			t.Errorf("server Endpoint.RecvFirst() failed: %v", err)
 			return
 		}
+		state++
+		if state != 2 {
+			t.Errorf("shared state counter: got %d, wanted 2", state)
+		}
 		t.Logf("server Endpoint got packet 1, sending packet 2 and waiting for packet 3")
 		if _, err := c.serverEP.SendRecv(0); err != nil {
 			t.Errorf("server Endpoint.SendRecv() failed: %v", err)
 			return
+		}
+		state++
+		if state != 4 {
+			t.Errorf("shared state counter: got %d, wanted 4", state)
 		}
 		t.Logf("server Endpoint got packet 3")
 	}()
@@ -89,9 +100,17 @@ func testSendRecv(t *testing.T, c *testConnection) {
 	if err := c.clientEP.Connect(); err != nil {
 		t.Fatalf("client Endpoint.Connect() failed: %v", err)
 	}
+	state++
+	if state != 1 {
+		t.Errorf("shared state counter: got %d, wanted 1", state)
+	}
 	t.Logf("client Endpoint sending packet 1 and waiting for packet 2")
 	if _, err := c.clientEP.SendRecv(0); err != nil {
 		t.Fatalf("client Endpoint.SendRecv() failed: %v", err)
+	}
+	state++
+	if state != 3 {
+		t.Errorf("shared state counter: got %d, wanted 3", state)
 	}
 	t.Logf("client Endpoint got packet 2, sending packet 3")
 	if err := c.clientEP.SendLast(0); err != nil {

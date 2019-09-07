@@ -82,6 +82,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	*ep.dataLen() = w.Len()
 
 	// Return control to the client.
+	raceBecomeInactive()
 	if err := ep.futexSwitchToPeer(); err != nil {
 		return err
 	}
