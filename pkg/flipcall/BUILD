@@ -18,6 +18,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/memutil",
+        "//third_party/gvsync",
     ],
 )
 

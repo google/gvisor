@@ -17,6 +17,8 @@ package flipcall
 import (
 	"reflect"
 	"unsafe"
+
+	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
 // Packets consist of a 16-byte header followed by an arbitrarily-sized
@@ -66,4 +68,20 @@ func (ep *Endpoint) Data() []byte {
 	bsReflect.Len = int(ep.dataCap)
 	bsReflect.Cap = int(ep.dataCap)
 	return bs
+}
+
+// ioSync is a dummy variable used to indicate synchronization to the Go race
+// detector. Compare syscall.ioSync.
+var ioSync int64
+
+func raceBecomeActive() {
+	if gvsync.RaceEnabled {
+		gvsync.RaceAcquire((unsafe.Pointer)(&ioSync))
+	}
+}
+
+func raceBecomeInactive() {
+	if gvsync.RaceEnabled {
+		gvsync.RaceReleaseMerge((unsafe.Pointer)(&ioSync))
+	}
 }

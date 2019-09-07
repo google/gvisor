@@ -180,7 +180,11 @@ const (
 // Preconditions: ep is a client Endpoint. ep.Connect(), ep.RecvFirst(),
 // ep.SendRecv(), and ep.SendLast() have never been called.
 func (ep *Endpoint) Connect() error {
-	return ep.ctrlConnect()
+	err := ep.ctrlConnect()
+	if err == nil {
+		raceBecomeActive()
+	}
+	return err
 }
 
 // RecvFirst blocks until the peer Endpoint calls Endpoint.SendRecv(), then
@@ -192,6 +196,7 @@ func (ep *Endpoint) RecvFirst() (uint32, error) {
 	if err := ep.ctrlWaitFirst(); err != nil {
 		return 0, err
 	}
+	raceBecomeActive()
 	recvDataLen := atomic.LoadUint32(ep.dataLen())
 	if recvDataLen > ep.dataCap {
 		return 0, fmt.Errorf("received packet with invalid datagram length %d (maximum %d)", recvDataLen, ep.dataCap)
@@ -218,9 +223,11 @@ func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 	// after ep.ctrlRoundTrip(), so if the peer is mutating it concurrently then
 	// they can only shoot themselves in the foot.
 	*ep.dataLen() = dataLen
+	raceBecomeInactive()
 	if err := ep.ctrlRoundTrip(); err != nil {
 		return 0, err
 	}
+	raceBecomeActive()
 	recvDataLen := atomic.LoadUint32(ep.dataLen())
 	if recvDataLen > ep.dataCap {
 		return 0, fmt.Errorf("received packet with invalid datagram length %d (maximum %d)", recvDataLen, ep.dataCap)
@@ -240,6 +247,7 @@ func (ep *Endpoint) SendLast(dataLen uint32) error {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
 	}
 	*ep.dataLen() = dataLen
+	raceBecomeInactive()
 	if err := ep.ctrlWakeLast(); err != nil {
 		return err
 	}
