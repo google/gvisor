@@ -165,7 +165,7 @@ type Options struct {
 //
 // Makes fd non-blocking, but does not take ownership of fd, which must remain
 // open for the lifetime of the returned endpoint.
-func New(opts *Options) (tcpip.LinkEndpointID, error) {
+func New(opts *Options) (stack.LinkEndpoint, error) {
 	caps := stack.LinkEndpointCapabilities(0)
 	if opts.RXChecksumOffload {
 		caps |= stack.CapabilityRXChecksumOffload
@@ -190,7 +190,7 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 	}
 
 	if len(opts.FDs) == 0 {
-		return 0, fmt.Errorf("opts.FD is empty, at least one FD must be specified")
+		return nil, fmt.Errorf("opts.FD is empty, at least one FD must be specified")
 	}
 
 	e := &endpoint{
@@ -207,12 +207,12 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 	for i := 0; i < len(e.fds); i++ {
 		fd := e.fds[i]
 		if err := syscall.SetNonblock(fd, true); err != nil {
-			return 0, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", fd, err)
+			return nil, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", fd, err)
 		}
 
 		isSocket, err := isSocketFD(fd)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
@@ -222,12 +222,12 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 		}
 		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket)
 		if err != nil {
-			return 0, fmt.Errorf("createInboundDispatcher(...) = %v", err)
+			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
 
-	return stack.RegisterLinkEndpoint(e), nil
+	return e, nil
 }
 
 func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher, error) {
@@ -435,14 +435,12 @@ func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buf
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
-func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) (tcpip.LinkEndpointID, *InjectableEndpoint) {
+func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) *InjectableEndpoint {
 	syscall.SetNonblock(fd, true)
 
-	e := &InjectableEndpoint{endpoint: endpoint{
+	return &InjectableEndpoint{endpoint: endpoint{
 		fds:  []int{fd},
 		mtu:  mtu,
 		caps: capabilities,
 	}}
-
-	return stack.RegisterLinkEndpoint(e), e
 }

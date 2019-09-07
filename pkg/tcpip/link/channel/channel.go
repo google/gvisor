@@ -44,14 +44,12 @@ type Endpoint struct {
 }
 
 // New creates a new channel endpoint.
-func New(size int, mtu uint32, linkAddr tcpip.LinkAddress) (tcpip.LinkEndpointID, *Endpoint) {
-	e := &Endpoint{
+func New(size int, mtu uint32, linkAddr tcpip.LinkAddress) *Endpoint {
+	return &Endpoint{
 		C:        make(chan PacketInfo, size),
 		mtu:      mtu,
 		linkAddr: linkAddr,
 	}
-
-	return stack.RegisterLinkEndpoint(e), e
 }
 
 // Drain removes all outbound packets from the channel and counts them.

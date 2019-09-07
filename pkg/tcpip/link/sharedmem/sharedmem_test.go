@@ -119,12 +119,12 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	initQueue(t, &c.txq, &c.txCfg)
 	initQueue(t, &c.rxq, &c.rxCfg)
 
-	id, err := New(mtu, bufferSize, addr, c.txCfg, c.rxCfg)
+	ep, err := New(mtu, bufferSize, addr, c.txCfg, c.rxCfg)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
 
-	c.ep = stack.FindLinkEndpoint(id).(*endpoint)
+	c.ep = ep.(*endpoint)
 	c.ep.Attach(c)
 
 	return c

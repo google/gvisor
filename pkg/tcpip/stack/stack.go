@@ -620,12 +620,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 
 // createNIC creates a NIC with the provided id and link-layer endpoint, and
 // optionally enable it.
-func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID, enabled, loopback bool) *tcpip.Error {
-	ep := FindLinkEndpoint(linkEP)
-	if ep == nil {
-		return tcpip.ErrBadLinkEndpoint
-	}
-
+func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled, loopback bool) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -645,33 +640,33 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpoint
 }
 
 // CreateNIC creates a NIC with the provided id and link-layer endpoint.
-func (s *Stack) CreateNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, true, false)
+func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, "", ep, true, false)
 }
 
 // CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
 // and a human-readable name.
-func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, true, false)
+func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, true, false)
 }
 
 // CreateNamedLoopbackNIC creates a NIC with the provided id and link-layer
 // endpoint, and a human-readable name.
-func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, true, true)
+func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, true, true)
 }
 
 // CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
 // but leave it disable. Stack.EnableNIC must be called before the link-layer
 // endpoint starts delivering packets to it.
-func (s *Stack) CreateDisabledNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, false, false)
+func (s *Stack) CreateDisabledNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, "", ep, false, false)
 }
 
 // CreateDisabledNamedNIC is a combination of CreateNamedNIC and
 // CreateDisabledNIC.
-func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, false, false)
+func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, false, false)
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start

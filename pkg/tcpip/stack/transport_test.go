@@ -278,9 +278,9 @@ func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
 }
 
 func TestTransportReceive(t *testing.T) {
-	id, linkEP := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -340,9 +340,9 @@ func TestTransportReceive(t *testing.T) {
 }
 
 func TestTransportControlReceive(t *testing.T) {
-	id, linkEP := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -408,9 +408,9 @@ func TestTransportControlReceive(t *testing.T) {
 }
 
 func TestTransportSend(t *testing.T) {
-	id, _ := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, "")
 	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -497,16 +497,16 @@ func TestTransportForwarding(t *testing.T) {
 	s.SetForwarding(true)
 
 	// TODO(b/123449044): Change this to a channel NIC.
-	id1 := loopback.New()
-	if err := s.CreateNIC(1, id1); err != nil {
+	ep1 := loopback.New()
+	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatalf("CreateNIC #1 failed: %v", err)
 	}
 	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
 		t.Fatalf("AddAddress #1 failed: %v", err)
 	}
 
-	id2, linkEP2 := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(2, id2); err != nil {
+	ep2 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatalf("CreateNIC #2 failed: %v", err)
 	}
 	if err := s.AddAddress(2, fakeNetNumber, "\x02"); err != nil {
@@ -545,7 +545,7 @@ func TestTransportForwarding(t *testing.T) {
 	req[0] = 1
 	req[1] = 3
 	req[2] = byte(fakeTransNumber)
-	linkEP2.Inject(fakeNetNumber, req.ToVectorisedView())
+	ep2.Inject(fakeNetNumber, req.ToVectorisedView())
 
 	aep, _, err := ep.Accept()
 	if err != nil || aep == nil {
@@ -559,7 +559,7 @@ func TestTransportForwarding(t *testing.T) {
 
 	var p channel.PacketInfo
 	select {
-	case p = <-linkEP2.C:
+	case p = <-ep2.C:
 	default:
 		t.Fatal("Response packet not forwarded")
 	}
