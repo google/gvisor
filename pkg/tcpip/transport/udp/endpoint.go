@@ -747,6 +747,10 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 		}
 		e.state = StateBound
 	} else {
+		if e.id.LocalPort != 0 {
+			// Release the ephemeral port.
+			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		}
 		e.state = StateInitial
 	}
 
