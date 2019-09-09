@@ -556,6 +556,17 @@ type PacketConn struct {
 	wq    *waiter.Queue
 }
 
+// NewPacketConn creates a new PacketConn.
+func NewPacketConn(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *PacketConn {
+	p := &PacketConn{
+		stack: s,
+		wq:    wq,
+		ep:    ep,
+	}
+	p.deadlineTimer.init()
+	return p
+}
+
 // DialUDP creates a new PacketConn.
 //
 // If laddr is nil, a local address is automatically chosen.
