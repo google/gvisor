@@ -48,7 +48,8 @@ fi
 
 # Wrap bazel.
 function build() {
-  bazel build "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@"
+  bazel build "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@" 2>&1 |
+    tee /dev/fd/2 | grep -E '^  bazel-bin/' | awk '{ print $1; }'
 }
 
 function test() {

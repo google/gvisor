@@ -26,9 +26,13 @@ if ! [[ -v KOKORO_RELEASE_TAG ]]; then
   exit 1
 fi
 
+# Unless an explicit releaser is provided, use the bot e-mail.
+declare -r KOKORO_RELEASE_AUTHOR=${KOKORO_RELEASE_AUTHOR:-gvisor-bot}
+declare -r EMAIL=${EMAIL:-${KOKORO_RELEASE_AUTHOR}@google.com}
+
 # Ensure we have an appropriate configuration for the tag.
 git config --get user.name || git config user.name "gVisor-bot"
-git config --get user.email || git config user.email "gvisor-bot@google.com"
+git config --get user.email || git config user.email "${EMAIL}"
 
 # Run the release tool, which pushes to the origin repository.
 tools/tag_release.sh "${KOKORO_RELEASE_COMMIT}" "${KOKORO_RELEASE_TAG}"
