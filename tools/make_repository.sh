@@ -37,10 +37,10 @@ cleanup() {
   rm -f "${keyring}"
 }
 trap cleanup EXIT
-gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}"
+gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" >&2
 
 # Export the public key from the keyring.
-gpg --no-default-keyring --keyring "${keyring}" --armor --export "${signer}" > "${tmpdir}"/keyFile
+gpg --no-default-keyring --keyring "${keyring}" --armor --export "${signer}" > "${tmpdir}"/keyFile >&2
 
 # Copy the packages, and ensure permissions are correct.
 cp -a "$@" "${tmpdir}" && chmod 0644 "${tmpdir}"/*
@@ -52,7 +52,7 @@ find "${tmpdir}" -type l -exec rm -f {} \;
 
 # Sign all packages.
 for file in "${tmpdir}"/*.deb; do
-  dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}"
+  dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}" >&2
 done
 
 # Build the package list.
@@ -62,8 +62,8 @@ done
 (cd "${tmpdir}" && apt-ftparchive release . > Release)
 
 # Sign the release.
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign -o InRelease Release)
-(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs -o Release.gpg Release)
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" --clearsign -o InRelease Release >&2)
+(cd "${tmpdir}" && gpg --no-default-keyring --keyring "${keyring}" -abs -o Release.gpg Release >&2)
 
 # Show the results.
 echo "${tmpdir}"
