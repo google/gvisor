@@ -25,6 +25,7 @@ go_test(
     size = "small",
     srcs = [
         "icmp_test.go",
+        "ipv6_test.go",
         "ndp_test.go",
     ],
     embed = [":ipv6"],
@@ -36,6 +37,7 @@ go_test(
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
     ],
 )

@@ -222,9 +222,6 @@ func newTestContext(t *testing.T) *testContext {
 	if err := c.s0.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
 		t.Fatalf("AddAddress lladdr0: %v", err)
 	}
-	if err := c.s0.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr0)); err != nil {
-		t.Fatalf("AddAddress sn lladdr0: %v", err)
-	}
 
 	c.linkEP1 = channel.New(256, defaultMTU, linkAddr1)
 	wrappedEP1 := stack.LinkEndpoint(endpointWithResolutionCapability{LinkEndpoint: c.linkEP1})
@@ -233,9 +230,6 @@ func newTestContext(t *testing.T) *testContext {
 	}
 	if err := c.s1.AddAddress(1, ProtocolNumber, lladdr1); err != nil {
 		t.Fatalf("AddAddress lladdr1: %v", err)
-	}
-	if err := c.s1.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr1)); err != nil {
-		t.Fatalf("AddAddress sn lladdr1: %v", err)
 	}
 
 	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
