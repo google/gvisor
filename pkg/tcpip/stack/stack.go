@@ -633,7 +633,7 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled,
 
 	s.nics[id] = n
 	if enabled {
-		n.attachLinkEndpoint()
+		return n.enable()
 	}
 
 	return nil
@@ -680,9 +680,7 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 		return tcpip.ErrUnknownNICID
 	}
 
-	nic.attachLinkEndpoint()
-
-	return nil
+	return nic.enable()
 }
 
 // CheckNIC checks if a NIC is usable.
