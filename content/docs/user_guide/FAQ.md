@@ -27,7 +27,7 @@ Binaries run in gVisor should be built for the
 
 Yes. Please see the [Docker Quick Start](/docs/user_guide/docker/).
 
-### Can I run Kubernets pods using gVisor.
+### Can I run Kubernetes pods using gVisor.
 
 Yes. Please see the [Docker Quick Start](/docs/user_guide/kubernetes/).
 
@@ -80,12 +80,14 @@ sudo chmod 0755 /usr/local/bin/runsc
 
 ### My container cannot resolve another container's name when using Docker user defined bridge
 
+This is normally indicated by errors like `bad address 'container-name'` when
+trying to communicate to another container in the same network.
+
 Docker user defined bridge uses an embedded DNS server bound to the loopback 
 interface on address 127.0.0.10. This requires access to the host network in
 order to communicate to the DNS server. runsc network is isolated from the
-host, therefore it cannot access the DNS server on the host network without
-breaking the sandbox isolation. There are a few different workarounds you can
-try:
+host and cannot access the DNS server on the host network without breaking the
+sandbox isolation. There are a few different workarounds you can try:
 
 * Use default bridge network with `--link` to connect containers. Default
   bridge doesn't use embedded DNS.
