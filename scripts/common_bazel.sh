@@ -56,7 +56,7 @@ function test() {
   (bazel test "${BAZEL_RBE_FLAGS[@]}" "${BAZEL_RBE_AUTH_FLAGS[@]}" "${BAZEL_FLAGS[@]}" "$@" && rc=0) || rc=$?
 
   # Zip out everything into a convenient form.
-  if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
+  if [[ -v KOKORO_ARTIFACTS_DIR ]] && [[ -e bazel-testlogs ]]; then
     find -L "bazel-testlogs" -name "test.xml" -o -name "test.log" -o -name "outputs.zip" |
       tar --create --files-from - --transform 's/test\./sponge_log./' |
       tar --extract --directory ${KOKORO_ARTIFACTS_DIR}

@@ -20,11 +20,10 @@ source $(dirname $0)/common.sh
 (lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
 sudo chmod a+rw /dev/kvm
 
-# Run all KVM-tagged tests (locally).
-test --test_strategy=standalone --test_tag_filters=requires-kvm //...
-test --test_strategy=standalone //pkg/sentry/platform/kvm:kvm_test
+# Run all KVM platform tests (locally).
+run_as_root //pkg/sentry/platform/kvm:kvm_test
 
 # Install the KVM runtime and run all integration tests.
 run_as_root //runsc install --experimental=true -- --debug --strace --log-packets --platform=kvm
 sudo systemctl restart docker
-test --test_strategy=standalone //test/image:image_test //test/e2e:integration_test
+test //test/image:image_test //test/e2e:integration_test

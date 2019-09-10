@@ -59,7 +59,11 @@ git checkout -b go "${go_branch}"
 
 # Start working on a merge commit that combines the previous history with the
 # current history. Note that we don't actually want any changes yet.
-git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
+#
+# N.B. The git behavior changed at some point and the relevant flag was added
+# to allow for override, so try the only behavior first then pass the flag.
+git merge --no-commit --strategy ours ${head} || \
+  git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
 
 # Sync the entire gopath_dir and go.mod.
 rsync --recursive --verbose --delete --exclude .git --exclude README.md -L "${gopath_dir}/" .
