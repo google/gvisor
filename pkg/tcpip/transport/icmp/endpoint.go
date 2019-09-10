@@ -730,3 +730,6 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 func (e *endpoint) State() uint32 {
 	return 0
 }
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (*endpoint) Wait() {}

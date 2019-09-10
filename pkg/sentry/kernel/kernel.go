@@ -174,8 +174,14 @@ type Kernel struct {
 	// any. It is protected by extMu.
 	saveErr error `state:"nosave"`
 
-	// danglingEndpoints is used to save / restore tcpip.DanglingEndpoints.
-	danglingEndpoints struct{} `state:".([]tcpip.Endpoint)"`
+	// cleanupEndpoints is used to save / restore the network stack's
+	// endpoints in cleanup state.
+	cleanupEndpoints struct{} `state:".([]stack.TransportEndpoint)"`
+
+	// registeredEndpoints is used to save the endpoints registed with the
+	// network stack. These do not need to be restored manually as they
+	// will re-register with the stack on their own.
+	registeredEndpoints struct{} `state:".([]stack.TransportEndpoint)"`
 
 	// sockets is the list of all network sockets the system. Protected by
 	// extMu.

@@ -14,6 +14,8 @@
 
 package inet
 
+import "gvisor.dev/gvisor/pkg/tcpip/stack"
+
 // TestStack is a dummy implementation of Stack for tests.
 type TestStack struct {
 	InterfacesMap     map[int32]Interface
@@ -94,5 +96,17 @@ func (s *TestStack) RouteTable() []Route {
 }
 
 // Resume implements Stack.Resume.
-func (s *TestStack) Resume() {
+func (s *TestStack) Resume() {}
+
+// RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
+func (s *TestStack) RegisteredEndpoints() []stack.TransportEndpoint {
+	return nil
 }
+
+// CleanupEndpoints implements inet.Stack.CleanupEndpoints.
+func (s *TestStack) CleanupEndpoints() []stack.TransportEndpoint {
+	return nil
+}
+
+// RestoreCleanupEndpoints implements inet.Stack.RestoreCleanupEndpoints.
+func (s *TestStack) RestoreCleanupEndpoints([]stack.TransportEndpoint) {}

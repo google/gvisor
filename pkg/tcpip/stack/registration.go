@@ -67,6 +67,19 @@ type TransportEndpoint interface {
 	// HandleControlPacket is called by the stack when new control (e.g.,
 	// ICMP) packets arrive to this transport endpoint.
 	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView)
+
+	// Close puts the endpoint in a closed state and frees all resources
+	// associated with it. This may happen asynchronously.
+	Close()
+
+	// Wait waits for any worker goroutines owned by the endpoint to stop.
+	//
+	// An endpoint can be requested to stop its worker goroutines by calling
+	// its Close method.
+	//
+	// Wait will not block if the endpoint hasn't started any goroutines
+	// yet, even if it might later.
+	Wait()
 }
 
 // RawTransportEndpoint is the interface that needs to be implemented by raw

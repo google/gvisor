@@ -15,6 +15,8 @@
 // Package inet defines semantics for IP stacks.
 package inet
 
+import "gvisor.dev/gvisor/pkg/tcpip/stack"
+
 // Stack represents a TCP/IP stack.
 type Stack interface {
 	// Interfaces returns all network interfaces as a mapping from interface
@@ -58,6 +60,16 @@ type Stack interface {
 
 	// Resume restarts the network stack after restore.
 	Resume()
+
+	// RegisteredEndpoints returns all endpoints which are currently registered.
+	RegisteredEndpoints() []stack.TransportEndpoint
+
+	// CleanupEndpoints returns endpoints currently in the cleanup state.
+	CleanupEndpoints() []stack.TransportEndpoint
+
+	// RestoreCleanupEndpoints adds endpoints to cleanup tracking. This is useful
+	// for restoring a stack after a save.
+	RestoreCleanupEndpoints([]stack.TransportEndpoint)
 }
 
 // Interface contains information about a network interface.

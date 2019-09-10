@@ -1097,39 +1097,6 @@ type ProtocolAddress struct {
 	AddressWithPrefix AddressWithPrefix
 }
 
-var (
-	// danglingEndpointsMu protects access to danglingEndpoints.
-	danglingEndpointsMu sync.Mutex
-
-	// danglingEndpoints tracks all dangling endpoints no longer owned by the app.
-	danglingEndpoints = make(map[Endpoint]struct{})
-)
-
-// GetDanglingEndpoints returns all dangling endpoints.
-func GetDanglingEndpoints() []Endpoint {
-	es := make([]Endpoint, 0, len(danglingEndpoints))
-	danglingEndpointsMu.Lock()
-	for e := range danglingEndpoints {
-		es = append(es, e)
-	}
-	danglingEndpointsMu.Unlock()
-	return es
-}
-
-// AddDanglingEndpoint adds a dangling endpoint.
-func AddDanglingEndpoint(e Endpoint) {
-	danglingEndpointsMu.Lock()
-	danglingEndpoints[e] = struct{}{}
-	danglingEndpointsMu.Unlock()
-}
-
-// DeleteDanglingEndpoint removes a dangling endpoint.
-func DeleteDanglingEndpoint(e Endpoint) {
-	danglingEndpointsMu.Lock()
-	delete(danglingEndpoints, e)
-	danglingEndpointsMu.Unlock()
-}
-
 // AsyncLoading is the global barrier for asynchronous endpoint loading
 // activities.
 var AsyncLoading sync.WaitGroup

@@ -564,7 +564,7 @@ func (e *endpoint) Close() {
 	// in Listen() when trying to register.
 	if e.state == StateListen && e.isPortReserved {
 		if e.isRegistered {
-			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+			e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
 			e.isRegistered = false
 		}
 
@@ -574,7 +574,6 @@ func (e *endpoint) Close() {
 
 	// Either perform the local cleanup or kick the worker to make sure it
 	// knows it needs to cleanup.
-	tcpip.AddDanglingEndpoint(e)
 	if !e.workerRunning {
 		e.cleanupLocked()
 	} else {
@@ -625,7 +624,7 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+		e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
 		e.isRegistered = false
 	}
 
@@ -635,7 +634,7 @@ func (e *endpoint) cleanupLocked() {
 	}
 
 	e.route.Release()
-	tcpip.DeleteDanglingEndpoint(e)
+	e.stack.CompleteTransportEndpointCleanup(e)
 }
 
 // initialReceiveWindow returns the initial receive window to advertise in the
@@ -2139,6 +2138,22 @@ func (e *endpoint) State() uint32 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return uint32(e.state)
+}
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (e *endpoint) Wait() {
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	e.waiterQueue.EventRegister(&waitEntry, waiter.EventHUp)
+	defer e.waiterQueue.EventUnregister(&waitEntry)
+	for {
+		e.mu.Lock()
+		running := e.workerRunning
+		e.mu.Unlock()
+		if !running {
+			break
+		}
+		<-notifyCh
+	}
 }
 
 func mssForRoute(r *stack.Route) uint16 {

@@ -154,7 +154,7 @@ go_library(
     imports = [
         "gvisor.dev/gvisor/pkg/bpf",
         "gvisor.dev/gvisor/pkg/sentry/device",
-        "gvisor.dev/gvisor/pkg/tcpip",
+        "gvisor.dev/gvisor/pkg/tcpip/stack",
     ],
     visibility = ["//:sandbox"],
     deps = [

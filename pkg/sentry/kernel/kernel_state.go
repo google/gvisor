@@ -16,27 +16,42 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/sentry/device"
-	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// saveDanglingEndpoints is invoked by stateify.
-func (k *Kernel) saveDanglingEndpoints() []tcpip.Endpoint {
-	return tcpip.GetDanglingEndpoints()
+// saveCleanupEndpoints is invoked by stateify.
+func (k *Kernel) saveCleanupEndpoints() []stack.TransportEndpoint {
+	if k.networkStack == nil {
+		return nil
+	}
+	return k.networkStack.CleanupEndpoints()
 }
 
-// loadDanglingEndpoints is invoked by stateify.
-func (k *Kernel) loadDanglingEndpoints(es []tcpip.Endpoint) {
-	for _, e := range es {
-		tcpip.AddDanglingEndpoint(e)
+// loadCleanupEndpoints is invoked by stateify.
+func (k *Kernel) loadCleanupEndpoints(es []stack.TransportEndpoint) {
+	if k.networkStack == nil {
+		return
 	}
+	k.networkStack.RestoreCleanupEndpoints(es)
 }
+
+// saveRegisteredEndpoints is invoked by stateify.
+func (k *Kernel) saveRegisteredEndpoints() []stack.TransportEndpoint {
+	if k.networkStack == nil {
+		return nil
+	}
+	return k.networkStack.RegisteredEndpoints()
+}
+
+// loadRegisteredEndpoints is invoked by stateify.
+func (*Kernel) loadRegisteredEndpoints([]stack.TransportEndpoint) {}
 
 // saveDeviceRegistry is invoked by stateify.
-func (k *Kernel) saveDeviceRegistry() *device.Registry {
+func (*Kernel) saveDeviceRegistry() *device.Registry {
 	return device.SimpleDevices
 }
 
 // loadDeviceRegistry is invoked by stateify.
-func (k *Kernel) loadDeviceRegistry(r *device.Registry) {
+func (*Kernel) loadDeviceRegistry(r *device.Registry) {
 	device.SimpleDevices.LoadFrom(r)
 }

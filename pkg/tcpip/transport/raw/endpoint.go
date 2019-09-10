@@ -597,3 +597,6 @@ func (ep *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv b
 func (ep *endpoint) State() uint32 {
 	return 0
 }
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (*endpoint) Wait() {}
