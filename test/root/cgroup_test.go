@@ -62,6 +62,12 @@ func TestCgroup(t *testing.T) {
 	}
 	d := dockerutil.MakeDocker("cgroup-test")
 
+	// This is not a comprehensive list of attributes.
+	//
+	// Note that we are specifically missing cpusets, which fail if specified.
+	// In any case, it's unclear if cpusets can be reliably tested here: these
+	// are often run on a single core virtual machine, and there is only a single
+	// CPU available in our current set, and every container's set.
 	attrs := []struct {
 		arg            string
 		ctrl           string
@@ -86,18 +92,6 @@ func TestCgroup(t *testing.T) {
 			ctrl: "cpu",
 			file: "cpu.cfs_quota_us",
 			want: "3000",
-		},
-		{
-			arg:  "--cpuset-cpus=0",
-			ctrl: "cpuset",
-			file: "cpuset.cpus",
-			want: "0",
-		},
-		{
-			arg:  "--cpuset-mems=0",
-			ctrl: "cpuset",
-			file: "cpuset.mems",
-			want: "0",
 		},
 		{
 			arg:  "--kernel-memory=100MB",

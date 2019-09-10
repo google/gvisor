@@ -28,7 +28,7 @@ TEST(ProcNetIfInet6, Format) {
   EXPECT_THAT(ifinet6,
               ::testing::MatchesRegex(
                   // Ex: "00000000000000000000000000000001 01 80 10 80 lo\n"
-                  "^([a-f\\d]{32}( [a-f\\d]{2}){4} +[a-z][a-z\\d]*\\n)+$"));
+                  "^([a-f0-9]{32}( [a-f0-9]{2}){4} +[a-z][a-z0-9]*\n)+$"));
 }
 
 TEST(ProcSysNetIpv4Sack, Exists) {
