@@ -14,5 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# The STABLE_ prefix will triger a re-link if it changes.
-echo STABLE_VERSION $(git describe --always --tags --abbrev=12 --dirty)
+set -euf -x -o pipefail
+
+readonly runsc="${TEST_SRCDIR}/__main__/runsc/linux_amd64_pure_stripped/runsc"
+readonly version=$($runsc --version)
+
+# Version should should not match VERSION, which is the default and which will
+# also appear if something is wrong with workspace_status.sh script.
+if [[ $version =~ "VERSION" ]]; then
+  echo "Got bad version $version"
+  exit 1
+fi
+
+echo "Got OK version $version"
+exit 0

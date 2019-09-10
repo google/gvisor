@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Display the current git revision in the info block.
-build --workspace_status_command tools/workspace_status.sh
+build --stamp --workspace_status_command tools/workspace_status.sh
 
 # Enable remote execution so actions are performed on the remote systems.
 build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
