@@ -16,9 +16,7 @@
 
 set -xeo pipefail
 
-# We need to install a specific version of bazel due to a bug with the RBE
-# environment not respecting the dockerPrivileged configuration.
-declare -r BAZEL_VERSION=0.28.1
+declare -r BAZEL_VERSION=0.29.1
 
 # Install bazel dependencies.
 apt-get update && apt-get install -y openjdk-8-jdk-headless unzip
