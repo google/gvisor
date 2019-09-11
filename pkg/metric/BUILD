@@ -21,6 +21,12 @@ proto_library(
     visibility = ["//:sandbox"],
 )
 
+cc_proto_library(
+    name = "metric_cc_proto",
+    proto = ":metric_proto",
+    visibility = ["//:sandbox"],
+)
+
 go_proto_library(
     name = "metric_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/metric/metric_go_proto",
