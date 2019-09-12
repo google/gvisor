@@ -49,6 +49,14 @@ proto_library(
     ],
 )
 
+cc_proto_library(
+    name = "syscall_rpc_cc_proto",
+    proto = ":syscall_rpc_proto",
+    visibility = [
+        "//visibility:public",
+    ],
+)
+
 go_proto_library(
     name = "syscall_rpc_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/syscall_rpc_go_proto",

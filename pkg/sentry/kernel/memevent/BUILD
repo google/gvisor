@@ -24,6 +24,12 @@ proto_library(
     visibility = ["//visibility:public"],
 )
 
+cc_proto_library(
+    name = "memory_events_cc_proto",
+    proto = ":memory_events_proto",
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "memory_events_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/memevent/memory_events_go_proto",

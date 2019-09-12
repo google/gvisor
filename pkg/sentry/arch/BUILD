@@ -42,6 +42,12 @@ proto_library(
     visibility = ["//visibility:public"],
 )
 
+cc_proto_library(
+    name = "registers_cc_proto",
+    proto = ":registers_proto",
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "registers_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto",

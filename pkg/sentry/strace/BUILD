@@ -44,6 +44,12 @@ proto_library(
     visibility = ["//visibility:public"],
 )
 
+cc_proto_library(
+    name = "strace_cc_proto",
+    proto = ":strace_proto",
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "strace_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/strace/strace_go_proto",
