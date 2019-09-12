@@ -35,7 +35,7 @@ if [[ "${KOKORO_GO_PUSH}" == "true" ]]; then
     git credential approve <<EOF
 protocol=https
 host=github.com
-username=$(cat "${KOKORO_GITHUB_ACCESS_TOKEN}")
+username=$(cat "${KOKORO_KEYSTORE_DIR}/${KOKORO_GITHUB_ACCESS_TOKEN}")
 password=x-oauth-basic
 EOF
   fi
