@@ -62,11 +62,11 @@ protobuf_deps()
 # See releases at https://releases.bazel.build/bazel-toolchains.html
 http_archive(
     name = "bazel_toolchains",
-    sha256 = "e71eadcfcbdb47b4b740eb48b32ca4226e36aabc425d035a18dd40c2dda808c1",
-    strip_prefix = "bazel-toolchains-0.28.4",
+    sha256 = "a019fbd579ce5aed0239de865b2d8281dbb809efd537bf42e0d366783e8dec65",
+    strip_prefix = "bazel-toolchains-0.29.2",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/0.28.4.tar.gz",
-        "https://github.com/bazelbuild/bazel-toolchains/archive/0.28.4.tar.gz",
+        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/archive/0.29.2.tar.gz",
+        "https://github.com/bazelbuild/bazel-toolchains/archive/0.29.2.tar.gz",
     ],
 )
 
