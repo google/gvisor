@@ -13,7 +13,7 @@ go_binary(
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{VERSION}"},
+    x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/log",
         "//pkg/refs",
@@ -46,7 +46,7 @@ go_binary(
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{VERSION}"},
+    x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/log",
         "//pkg/refs",
@@ -100,4 +100,11 @@ pkg_deb(
     visibility = [
         "//visibility:public",
     ],
+)
+
+sh_test(
+    name = "version_test",
+    size = "small",
+    srcs = ["version_test.sh"],
+    data = [":runsc"],
 )
