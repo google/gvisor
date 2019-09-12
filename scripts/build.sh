@@ -24,7 +24,7 @@ pkg=$(build -c opt --host_force_python=py2 //runsc:runsc-debian)
 
 # Build a repository, if the key is available.
 if [[ -v KOKORO_REPO_KEY ]]; then
-  repo=$(tools/make_repository.sh "${KOKORO_REPO_KEY}" gvisor-bot@google.com ${pkg})
+  repo=$(tools/make_repository.sh "${KOKORO_KEYSTORE_DIR}/${KOKORO_REPO_KEY}" gvisor-bot@google.com ${pkg})
 fi
 
 # Install installs artifacts.
