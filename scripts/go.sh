@@ -30,5 +30,14 @@ go build ./...
 
 # Push, if required.
 if [[ "${KOKORO_GO_PUSH}" == "true" ]]; then
+  if [[ -v KOKORO_GITHUB_ACCESS_TOKEN ]]; then
+    git config --global credential.helper cache
+    git credential approve <<EOF
+protocol=https
+host=github.com
+username=$(cat "${KOKORO_GITHUB_ACCESS_TOKEN}")
+password=x-oauth-basic
+EOF
+  fi
   git push origin go:go
 fi
