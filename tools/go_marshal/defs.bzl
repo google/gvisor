@@ -150,9 +150,3 @@ def go_library(name, srcs, deps = [], imports = [], debug = False, **kwargs):
         ],
         **kwargs
     )
-
-def go_test(**kwargs):
-    """Wraps the standard go_test."""
-    _go_test(
-        **kwargs
-    )
