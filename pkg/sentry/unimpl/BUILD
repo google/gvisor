@@ -10,6 +10,12 @@ proto_library(
     deps = ["//pkg/sentry/arch:registers_proto"],
 )
 
+cc_proto_library(
+    name = "unimplemented_syscall_cc_proto",
+    proto = ":unimplemented_syscall_proto",
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "unimplemented_syscall_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto",

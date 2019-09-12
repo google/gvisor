@@ -83,6 +83,12 @@ proto_library(
     deps = ["//pkg/sentry/arch:registers_proto"],
 )
 
+cc_proto_library(
+    name = "uncaught_signal_cc_proto",
+    proto = ":uncaught_signal_proto",
+    visibility = ["//visibility:public"],
+)
+
 go_proto_library(
     name = "uncaught_signal_go_proto",
     importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto",
