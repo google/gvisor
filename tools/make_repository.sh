@@ -39,11 +39,18 @@ cleanup() {
 trap cleanup EXIT
 gpg --no-default-keyring --keyring "${keyring}" --import "${private_key}" >&2
 
-# Export the public key from the keyring.
-gpg --no-default-keyring --keyring "${keyring}" --armor --export "${signer}" > "${tmpdir}"/keyFile >&2
-
 # Copy the packages, and ensure permissions are correct.
-cp -a "$@" "${tmpdir}" && chmod 0644 "${tmpdir}"/*
+for pkg in "$@"; do
+  name=$(basename "${pkg}" .deb)
+  name=$(basename "${name}" .changes)
+  arch=${name##*_}
+  if [[ "${name}" == "${arch}" ]]; then
+    continue # Not a regular package.
+  fi
+  mkdir -p "${tmpdir}"/binary-"${arch}"
+  cp -a "${pkg}" "${tmpdir}"/binary-"${arch}"
+done
+find "${tmpdir}" -type f -exec chmod 0644 {} \;
 
 # Ensure there are no symlinks hanging around; these may be remnants of the
 # build process. They may be useful for other things, but we are going to build
@@ -51,12 +58,14 @@ cp -a "$@" "${tmpdir}" && chmod 0644 "${tmpdir}"/*
 find "${tmpdir}" -type l -exec rm -f {} \;
 
 # Sign all packages.
-for file in "${tmpdir}"/*.deb; do
+for file in "${tmpdir}"/binary-*/*.deb; do
   dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}" >&2
 done
 
 # Build the package list.
-(cd "${tmpdir}" && apt-ftparchive packages . | gzip > Packages.gz)
+for dir in "${tmpdir}"/binary-*; do
+  (cd "${dir}" && apt-ftparchive packages . | gzip > Packages.gz)
+done
 
 # Build the release list.
 (cd "${tmpdir}" && apt-ftparchive release . > Release)

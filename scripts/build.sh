@@ -32,12 +32,14 @@ fi
 
 # Install installs artifacts.
 install() {
-  local dir="$1"
-  mkdir -p "${dir}"
-  cp -f "${runsc}" "${dir}"/runsc
-  sha512sum "${dir}"/runsc | awk '{print $1 "  runsc"}' > "${dir}"/runsc.sha512
+  local -r binaries_dir="$1"
+  local -r repo_dir="$2"
+  mkdir -p "${binaries_dir}"
+  cp -f "${runsc}" "${binaries_dir}"/runsc
+  sha512sum "${binaries_dir}"/runsc | awk '{print $1 "  runsc"}' > "${binaries_dir}"/runsc.sha512
   if [[ -v repo ]]; then
-    rm -rf "${dir}"/repo && cp -a "${repo}" "$dir"/repo
+    rm -rf "${repo_dir}" && mkdir -p "$(dirname "${repo_dir}")"
+    cp -a "${repo}" "${repo_dir}"
   fi
 }
 
@@ -47,8 +49,11 @@ install() {
 if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
   if [[ "${KOKORO_BUILD_NIGHTLY}" == "true" ]]; then
     # The "latest" directory and current date.
-    install "${KOKORO_ARTIFACTS_DIR}/nightly/latest"
-    install "${KOKORO_ARTIFACTS_DIR}/nightly/$(date -Idate)"
+    stamp="$(date -Idate)"
+    install "${KOKORO_ARTIFACTS_DIR}/nightly/latest" \
+            "${KOKORO_ARTIFACTS_DIR}/dists/nightly/main"
+    install "${KOKORO_ARTIFACTS_DIR}/nightly/${stamp}" \
+            "${KOKORO_ARTIFACTS_DIR}/dists/nightly/${stamp}"
   else
     # Is it a tagged release? Build that instead. In that case, we also try to
     # update the base release directory, in case this is an update. Finally, we
@@ -60,11 +65,14 @@ if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
       for tag in ${tags}; do
         name=$(echo "${tag}" | cut -d'-' -f2)
         base=$(echo "${name}" | cut -d'.' -f1)
-        install "${KOKORO_ARTIFACTS_DIR}/release/${name}"
+        install "${KOKORO_ARTIFACTS_DIR}/release/${name}" \
+                "${KOKORO_ARTIFACTS_DIR}/dists/${name}/main"
         if [[ "${base}" != "${tag}" ]]; then
-          install "${KOKORO_ARTIFACTS_DIR}/release/${base}"
+          install "${KOKORO_ARTIFACTS_DIR}/release/${base}" \
+                  "${KOKORO_ARTIFACTS_DIR}/dists/${base}/main"
         fi
-        install "${KOKORO_ARTIFACTS_DIR}/release/latest"
+        install "${KOKORO_ARTIFACTS_DIR}/release/latest" \
+                "${KOKORO_ARTIFACTS_DIR}/dists/latest/main"
       done
     fi
   fi
