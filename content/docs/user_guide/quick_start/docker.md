@@ -1,21 +1,22 @@
 +++
-title = "Docker Quick Start"
+title = "Docker"
 weight = 10
 +++
+
+> Note: This guide requires Docker version 17.09.0 or greater. Refer to the
+> [Docker documentation][docker] for how to install it.
+
 This guide will help you quickly get started running Docker containers using
 gVisor.
 
 ## Install gVisor
 
-> Note: gVisor supports only x86\_64 and requires Linux {{< required_linux >}}
-> ([older Linux][old-linux]).
+First, install gVisor using the [install instructions][install].
 
-{{% readfile file="docs/includes/install_gvisor.md" markdown="true" %}}
+If you use the `apt` repository or the `automated` install, then you can skip
+the next section and proceed straight to running a container.
 
 ## Configuring Docker
-
-> Note: This guide requires Docker version 17.09.0 or greater. Refer to the
-> [Docker documentation][docker] for how to install it.
 
 First you will need to configure Docker to use `runsc` by adding a runtime
 entry to your Docker configuration (`/etc/docker/daemon.json`). You may have to
@@ -88,5 +89,5 @@ Next, look at the different options available for gVisor: [platform](../platform
 [network](../networking/), [filesystem](../filesystem/).
 
 [docker]: https://docs.docker.com/install/
-[old-linux]: /docs/user_guide/networking/#gso
+
 [storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
