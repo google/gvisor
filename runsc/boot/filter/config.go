@@ -88,14 +88,24 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
 			seccomp.AllowAny{},
 			seccomp.AllowAny{},
-			seccomp.AllowValue(0),
 		},
 		{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
 			seccomp.AllowAny{},
+		},
+		// Non-private variants are included for flipcall support. They are otherwise
+		// unncessary, as the sentry will use only private futexes internally.
+		{
 			seccomp.AllowAny{},
-			seccomp.AllowValue(0),
+			seccomp.AllowValue(linux.FUTEX_WAIT),
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+		},
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(linux.FUTEX_WAKE),
+			seccomp.AllowAny{},
 		},
 	},
 	syscall.SYS_GETPID: {},

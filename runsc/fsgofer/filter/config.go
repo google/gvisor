@@ -83,6 +83,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.F_GETFD),
 		},
+		// Used by flipcall.PacketWindowAllocator.Init().
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(unix.F_ADD_SEALS),
+		},
 	},
 	syscall.SYS_FSTAT:     {},
 	syscall.SYS_FSTATFS:   {},
@@ -103,6 +108,19 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(0),
 		},
+		// Non-private futex used for flipcall.
+		seccomp.Rule{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(linux.FUTEX_WAIT),
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+		},
+		seccomp.Rule{
+			seccomp.AllowAny{},
+			seccomp.AllowValue(linux.FUTEX_WAKE),
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+		},
 	},
 	syscall.SYS_GETDENTS64:   {},
 	syscall.SYS_GETPID:       {},
@@ -112,6 +130,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_LINKAT:       {},
 	syscall.SYS_LSEEK:        {},
 	syscall.SYS_MADVISE:      {},
+	unix.SYS_MEMFD_CREATE:    {}, /// Used by flipcall.PacketWindowAllocator.Init().
 	syscall.SYS_MKDIRAT:      {},
 	syscall.SYS_MMAP: []seccomp.Rule{
 		{
@@ -160,6 +179,13 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_RT_SIGPROCMASK:  {},
 	syscall.SYS_SCHED_YIELD:     {},
 	syscall.SYS_SENDMSG: []seccomp.Rule{
+		// Used by fdchannel.Endpoint.SendFD().
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+			seccomp.AllowValue(0),
+		},
+		// Used by unet.SocketWriter.WriteVec().
 		{
 			seccomp.AllowAny{},
 			seccomp.AllowAny{},
@@ -170,7 +196,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 		{seccomp.AllowAny{}, seccomp.AllowValue(syscall.SHUT_RDWR)},
 	},
 	syscall.SYS_SIGALTSTACK: {},
-	syscall.SYS_SYMLINKAT:   {},
+	// Used by fdchannel.NewConnectedSockets().
+	syscall.SYS_SOCKETPAIR: {
+		{
+			seccomp.AllowValue(syscall.AF_UNIX),
+			seccomp.AllowValue(syscall.SOCK_SEQPACKET | syscall.SOCK_CLOEXEC),
+			seccomp.AllowValue(0),
+		},
+	},
+	syscall.SYS_SYMLINKAT: {},
 	syscall.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.AllowValue(uint64(os.Getpid())),
