@@ -124,7 +124,9 @@ func TestSendRecvWithFile(t *testing.T) {
 		t.Fatalf("unable to create file: %v", err)
 	}
 
-	if err := send(client, Tag(1), &Rlopen{File: f}); err != nil {
+	rlopen := &Rlopen{}
+	rlopen.SetFilePayload(f)
+	if err := send(client, Tag(1), rlopen); err != nil {
 		t.Fatalf("send got err %v expected nil", err)
 	}
 

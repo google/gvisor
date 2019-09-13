@@ -35,23 +35,23 @@ func TestVersion(t *testing.T) {
 	go s.Handle(serverSocket)
 
 	// NewClient does a Tversion exchange, so this is our test for success.
-	c, err := NewClient(clientSocket, 1024*1024 /* 1M message size */, HighestVersionString())
+	c, err := NewClient(clientSocket, DefaultMessageSize, HighestVersionString())
 	if err != nil {
 		t.Fatalf("got %v, expected nil", err)
 	}
 
 	// Check a bogus version string.
-	if err := c.sendRecv(&Tversion{Version: "notokay", MSize: 1024 * 1024}, &Rversion{}); err != syscall.EINVAL {
+	if err := c.sendRecv(&Tversion{Version: "notokay", MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
 
 	// Check a bogus version number.
-	if err := c.sendRecv(&Tversion{Version: "9P1000.L", MSize: 1024 * 1024}, &Rversion{}); err != syscall.EINVAL {
+	if err := c.sendRecv(&Tversion{Version: "9P1000.L", MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
 
 	// Check a too high version number.
-	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion + 1), MSize: 1024 * 1024}, &Rversion{}); err != syscall.EAGAIN {
+	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion + 1), MSize: DefaultMessageSize}, &Rversion{}); err != syscall.EAGAIN {
 		t.Errorf("got %v expected %v", err, syscall.EAGAIN)
 	}
 
@@ -59,4 +59,46 @@ func TestVersion(t *testing.T) {
 	if err := c.sendRecv(&Tversion{Version: versionString(highestSupportedVersion), MSize: 0}, &Rversion{}); err != syscall.EINVAL {
 		t.Errorf("got %v expected %v", err, syscall.EINVAL)
 	}
+}
+
+func benchmarkSendRecv(b *testing.B, fn func(c *Client) func(message, message) error) {
+	// See above.
+	serverSocket, clientSocket, err := unet.SocketPair(false)
+	if err != nil {
+		b.Fatalf("socketpair got err %v expected nil", err)
+	}
+	defer clientSocket.Close()
+
+	// See above.
+	s := NewServer(nil)
+	go s.Handle(serverSocket)
+
+	// See above.
+	c, err := NewClient(clientSocket, DefaultMessageSize, HighestVersionString())
+	if err != nil {
+		b.Fatalf("got %v, expected nil", err)
+	}
+
+	// Initialize messages.
+	sendRecv := fn(c)
+	tversion := &Tversion{
+		Version: versionString(highestSupportedVersion),
+		MSize:   DefaultMessageSize,
+	}
+	rversion := new(Rversion)
+
+	// Run in a loop.
+	for i := 0; i < b.N; i++ {
+		if err := sendRecv(tversion, rversion); err != nil {
+			b.Fatalf("got unexpected err: %v", err)
+		}
+	}
+}
+
+func BenchmarkSendRecvLegacy(b *testing.B) {
+	benchmarkSendRecv(b, func(c *Client) func(message, message) error { return c.sendRecvLegacy })
+}
+
+func BenchmarkSendRecvChannel(b *testing.B) {
+	benchmarkSendRecv(b, func(c *Client) func(message, message) error { return c.sendRecvChannel })
 }
