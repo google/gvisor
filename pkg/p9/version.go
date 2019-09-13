@@ -26,7 +26,7 @@ const (
 	//
 	// Clients are expected to start requesting this version number and
 	// to continuously decrement it until a Tversion request succeeds.
-	highestSupportedVersion uint32 = 7
+	highestSupportedVersion uint32 = 8
 
 	// lowestSupportedVersion is the lowest supported version X in a
 	// version string of the format 9P2000.L.Google.X.
@@ -147,4 +147,11 @@ func VersionSupportsMultiUser(v uint32) bool {
 // versionSupportsTallocate returns true if version v supports Allocate().
 func versionSupportsTallocate(v uint32) bool {
 	return v >= 7
+}
+
+// versionSupportsFlipcall returns true if version v supports IPC channels from
+// the flipcall package. Note that these must be negotiated, but this version
+// string indicates that such a facility exists.
+func versionSupportsFlipcall(v uint32) bool {
+	return v >= 8
 }
