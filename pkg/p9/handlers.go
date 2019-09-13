@@ -305,7 +305,9 @@ func (t *Tlopen) handle(cs *connState) message {
 	ref.opened = true
 	ref.openFlags = t.Flags
 
-	return &Rlopen{QID: qid, IoUnit: ioUnit, File: osFile}
+	rlopen := &Rlopen{QID: qid, IoUnit: ioUnit}
+	rlopen.SetFilePayload(osFile)
+	return rlopen
 }
 
 func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
@@ -364,7 +366,9 @@ func (t *Tlcreate) do(cs *connState, uid UID) (*Rlcreate, error) {
 	// Replace the FID reference.
 	cs.InsertFID(t.FID, newRef)
 
-	return &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit, File: osFile}}, nil
+	rlcreate := &Rlcreate{Rlopen: Rlopen{QID: qid, IoUnit: ioUnit}}
+	rlcreate.SetFilePayload(osFile)
+	return rlcreate, nil
 }
 
 // handle implements handler.handle.
@@ -1287,5 +1291,48 @@ func (t *Tlconnect) handle(cs *connState) message {
 		return newErr(err)
 	}
 
-	return &Rlconnect{File: osFile}
+	rlconnect := &Rlconnect{}
+	rlconnect.SetFilePayload(osFile)
+	return rlconnect
+}
+
+// handle implements handler.handle.
+func (t *Tchannel) handle(cs *connState) message {
+	// Ensure that channels are enabled.
+	if err := cs.initializeChannels(); err != nil {
+		return newErr(err)
+	}
+
+	// Lookup the given channel.
+	ch := cs.lookupChannel(t.ID)
+	if ch == nil {
+		return newErr(syscall.ENOSYS)
+	}
+
+	// Return the payload. Note that we need to duplicate the file
+	// descriptor for the channel allocator, because sending is a
+	// destructive operation between sendRecvLegacy (and now the newer
+	// channel send operations). Same goes for the client FD.
+	rchannel := &Rchannel{
+		Offset: uint64(ch.desc.Offset),
+		Length: uint64(ch.desc.Length),
+	}
+	switch t.Control {
+	case 0:
+		// Open the main data channel.
+		mfd, err := syscall.Dup(int(cs.channelAlloc.FD()))
+		if err != nil {
+			return newErr(err)
+		}
+		rchannel.SetFilePayload(fd.New(mfd))
+	case 1:
+		cfd, err := syscall.Dup(ch.client.FD())
+		if err != nil {
+			return newErr(err)
+		}
+		rchannel.SetFilePayload(fd.New(cfd))
+	default:
+		return newErr(syscall.EINVAL)
+	}
+	return rchannel
 }

@@ -378,6 +378,8 @@ const (
 	MsgRlconnect            = 137
 	MsgTallocate            = 138
 	MsgRallocate            = 139
+	MsgTchannel             = 250
+	MsgRchannel             = 251
 )
 
 // QIDType represents the file type for QIDs.
