@@ -26,6 +26,7 @@ package epsocket
 
 import (
 	"bytes"
+	"io"
 	"math"
 	"reflect"
 	"sync"
@@ -227,7 +228,6 @@ type SocketOperations struct {
 	fsutil.FileNoopFlush            `state:"nosave"`
 	fsutil.FileNoFsync              `state:"nosave"`
 	fsutil.FileNoMMap               `state:"nosave"`
-	fsutil.FileNoSplice             `state:"nosave"`
 	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
 	socket.SendReceiveTimeout
 	*waiter.Queue
@@ -412,28 +412,64 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 	return int64(n), nil
 }
 
-// ioSequencePayload implements tcpip.Payload. It copies user memory bytes on demand
-// based on the requested size.
+// WriteTo implements fs.FileOperations.WriteTo.
+func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Writer, count int64, dup bool) (int64, error) {
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+
+	// Copy as much data as possible.
+	done := int64(0)
+	for count > 0 {
+		// This may return a blocking error.
+		if err := s.fetchReadView(); err != nil {
+			return done, err.ToError()
+		}
+
+		// Write to the underlying file.
+		n, err := dst.Write(s.readView)
+		done += int64(n)
+		count -= int64(n)
+		if dup {
+			// That's all we support for dup. This is generally
+			// supported by any Linux system calls, but the
+			// expectation is that now a caller will call read to
+			// actually remove these bytes from the socket.
+			return done, nil
+		}
+
+		// Drop that part of the view.
+		s.readView.TrimFront(n)
+		if err != nil {
+			return done, err
+		}
+	}
+
+	return done, nil
+}
+
+// ioSequencePayload implements tcpip.Payload.
+//
+// t copies user memory bytes on demand based on the requested size.
 type ioSequencePayload struct {
 	ctx context.Context
 	src usermem.IOSequence
 }
 
-// Get implements tcpip.Payload.
-func (i *ioSequencePayload) Get(size int) ([]byte, *tcpip.Error) {
-	if size > i.Size() {
-		size = i.Size()
+// FullPayload implements tcpip.Payloader.FullPayload
+func (i *ioSequencePayload) FullPayload() ([]byte, *tcpip.Error) {
+	return i.Payload(int(i.src.NumBytes()))
+}
+
+// Payload implements tcpip.Payloader.Payload.
+func (i *ioSequencePayload) Payload(size int) ([]byte, *tcpip.Error) {
+	if max := int(i.src.NumBytes()); size > max {
+		size = max
 	}
 	v := buffer.NewView(size)
 	if _, err := i.src.CopyIn(i.ctx, v); err != nil {
 		return nil, tcpip.ErrBadAddress
 	}
 	return v, nil
-}
-
-// Size implements tcpip.Payload.
-func (i *ioSequencePayload) Size() int {
-	return int(i.src.NumBytes())
 }
 
 // DropFirst drops the first n bytes from underlying src.
@@ -464,6 +500,76 @@ func (s *SocketOperations) Write(ctx context.Context, _ *fs.File, src usermem.IO
 
 	if int64(n) < src.NumBytes() {
 		return int64(n), syserror.ErrWouldBlock
+	}
+
+	return int64(n), nil
+}
+
+// readerPayload implements tcpip.Payloader.
+//
+// It allocates a view and reads from a reader on-demand, based on available
+// capacity in the endpoint.
+type readerPayload struct {
+	ctx   context.Context
+	r     io.Reader
+	count int64
+	err   error
+}
+
+// FullPayload implements tcpip.Payloader.FullPayload.
+func (r *readerPayload) FullPayload() ([]byte, *tcpip.Error) {
+	return r.Payload(int(r.count))
+}
+
+// Payload implements tcpip.Payloader.Payload.
+func (r *readerPayload) Payload(size int) ([]byte, *tcpip.Error) {
+	if size > int(r.count) {
+		size = int(r.count)
+	}
+	v := buffer.NewView(size)
+	n, err := r.r.Read(v)
+	if n > 0 {
+		// We ignore the error here. It may re-occur on subsequent
+		// reads, but for now we can enqueue some amount of data.
+		r.count -= int64(n)
+		return v[:n], nil
+	}
+	if err == syserror.ErrWouldBlock {
+		return nil, tcpip.ErrWouldBlock
+	} else if err != nil {
+		r.err = err // Save for propation.
+		return nil, tcpip.ErrBadAddress
+	}
+
+	// There is no data and no error. Return an error, which will propagate
+	// r.err, which will be nil. This is the desired result: (0, nil).
+	return nil, tcpip.ErrBadAddress
+}
+
+// ReadFrom implements fs.FileOperations.ReadFrom.
+func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader, count int64) (int64, error) {
+	f := &readerPayload{ctx: ctx, r: r, count: count}
+	n, resCh, err := s.Endpoint.Write(f, tcpip.WriteOptions{})
+	if err == tcpip.ErrWouldBlock {
+		return 0, syserror.ErrWouldBlock
+	}
+
+	if resCh != nil {
+		t := ctx.(*kernel.Task)
+		if err := t.Block(resCh); err != nil {
+			return 0, syserr.FromError(err).ToError()
+		}
+
+		n, _, err = s.Endpoint.Write(f, tcpip.WriteOptions{
+			// Reads may be destructive but should be very fast,
+			// so we can't release the lock while copying data.
+			Atomic: true,
+		})
+	}
+	if err == tcpip.ErrWouldBlock {
+		return n, syserror.ErrWouldBlock
+	} else if err != nil {
+		return int64(n), f.err // Propagate error.
 	}
 
 	return int64(n), nil
@@ -2060,7 +2166,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 		n, _, err = s.Endpoint.Write(v, opts)
 	}
 	dontWait := flags&linux.MSG_DONTWAIT != 0
-	if err == nil && (n >= int64(v.Size()) || dontWait) {
+	if err == nil && (n >= v.src.NumBytes() || dontWait) {
 		// Complete write.
 		return int(n), nil
 	}
@@ -2085,7 +2191,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 			return 0, syserr.TranslateNetstackError(err)
 		}
 
-		if err == nil && v.Size() == 0 || err != nil && err != tcpip.ErrWouldBlock {
+		if err == nil && v.src.NumBytes() == 0 || err != nil && err != tcpip.ErrWouldBlock {
 			return int(total), nil
 		}
 

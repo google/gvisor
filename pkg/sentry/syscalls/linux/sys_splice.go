@@ -29,9 +29,8 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 		total int64
 		n     int64
 		err   error
-		ch    chan struct{}
-		inW   bool
-		outW  bool
+		inCh  chan struct{}
+		outCh chan struct{}
 	)
 	for opts.Length > 0 {
 		n, err = fs.Splice(t, outFile, inFile, opts)
@@ -43,35 +42,33 @@ func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonB
 			break
 		}
 
-		// Are we a registered waiter?
-		if ch == nil {
-			ch = make(chan struct{}, 1)
+		// Note that the blocking behavior here is a bit different than the
+		// normal pattern. Because we need to have both data to read and data
+		// to write simultaneously, we actually explicitly block on both of
+		// these cases in turn before returning to the splice operation.
+		if inFile.Readiness(EventMaskRead) == 0 {
+			if inCh == nil {
+				inCh = make(chan struct{}, 1)
+				inW, _ := waiter.NewChannelEntry(inCh)
+				inFile.EventRegister(&inW, EventMaskRead)
+				defer inFile.EventUnregister(&inW)
+				continue // Need to refresh readiness.
+			}
+			if err = t.Block(inCh); err != nil {
+				break
+			}
 		}
-		if !inW && !inFile.Flags().NonBlocking {
-			w, _ := waiter.NewChannelEntry(ch)
-			inFile.EventRegister(&w, EventMaskRead)
-			defer inFile.EventUnregister(&w)
-			inW = true // Registered.
-		} else if !outW && !outFile.Flags().NonBlocking {
-			w, _ := waiter.NewChannelEntry(ch)
-			outFile.EventRegister(&w, EventMaskWrite)
-			defer outFile.EventUnregister(&w)
-			outW = true // Registered.
-		}
-
-		// Was anything registered? If no, everything is non-blocking.
-		if !inW && !outW {
-			break
-		}
-
-		if (!inW || inFile.Readiness(EventMaskRead) != 0) && (!outW || outFile.Readiness(EventMaskWrite) != 0) {
-			// Something became ready, try again without blocking.
-			continue
-		}
-
-		// Block until there's data.
-		if err = t.Block(ch); err != nil {
-			break
+		if outFile.Readiness(EventMaskWrite) == 0 {
+			if outCh == nil {
+				outCh = make(chan struct{}, 1)
+				outW, _ := waiter.NewChannelEntry(outCh)
+				outFile.EventRegister(&outW, EventMaskWrite)
+				defer outFile.EventUnregister(&outW)
+				continue // Need to refresh readiness.
+			}
+			if err = t.Block(outCh); err != nil {
+				break
+			}
 		}
 	}
 
@@ -149,7 +146,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 			Length:    count,
 			SrcOffset: true,
 			SrcStart:  offset,
-		}, false)
+		}, outFile.Flags().NonBlocking)
 
 		// Copy out the new offset.
 		if _, err := t.CopyOut(offsetAddr, n+offset); err != nil {
@@ -159,7 +156,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Send data using splice.
 		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
 			Length: count,
-		}, false)
+		}, outFile.Flags().NonBlocking)
 	}
 
 	// We can only pass a single file to handleIOError, so pick inFile
@@ -181,12 +178,6 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, syserror.EINVAL
 	}
 
-	// Only non-blocking is meaningful. Note that unlike in Linux, this
-	// flag is applied consistently. We will have either fully blocking or
-	// non-blocking behavior below, regardless of the underlying files
-	// being spliced to. It's unclear if this is a bug or not yet.
-	nonBlocking := (flags & linux.SPLICE_F_NONBLOCK) != 0
-
 	// Get files.
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
@@ -199,6 +190,13 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		return 0, nil, syserror.EBADF
 	}
 	defer inFile.DecRef()
+
+	// The operation is non-blocking if anything is non-blocking.
+	//
+	// N.B. This is a rather simplistic heuristic that avoids some
+	// poor edge case behavior since the exact semantics here are
+	// underspecified and vary between versions of Linux itself.
+	nonBlock := inFile.Flags().NonBlocking || outFile.Flags().NonBlocking || (flags&linux.SPLICE_F_NONBLOCK != 0)
 
 	// Construct our options.
 	//
@@ -257,7 +255,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	}
 
 	// Splice data.
-	n, err := doSplice(t, outFile, inFile, opts, nonBlocking)
+	n, err := doSplice(t, outFile, inFile, opts, nonBlock)
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "splice", inFile)
@@ -274,9 +272,6 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
 		return 0, nil, syserror.EINVAL
 	}
-
-	// Only non-blocking is meaningful.
-	nonBlocking := (flags & linux.SPLICE_F_NONBLOCK) != 0
 
 	// Get files.
 	outFile := t.GetFile(outFD)
@@ -301,11 +296,14 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 		return 0, nil, syserror.EINVAL
 	}
 
+	// The operation is non-blocking if anything is non-blocking.
+	nonBlock := inFile.Flags().NonBlocking || outFile.Flags().NonBlocking || (flags&linux.SPLICE_F_NONBLOCK != 0)
+
 	// Splice data.
 	n, err := doSplice(t, outFile, inFile, fs.SpliceOpts{
 		Length: count,
 		Dup:    true,
-	}, nonBlocking)
+	}, nonBlock)
 
 	// See above; inFile is chosen arbitrarily here.
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "tee", inFile)

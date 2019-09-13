@@ -207,7 +207,7 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 }
 
 // Write implements tcpip.Endpoint.Write.
-func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -220,9 +220,8 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64
 		return 0, nil, tcpip.ErrInvalidEndpointState
 	}
 
-	payloadBytes, err := payload.Get(payload.Size())
+	payloadBytes, err := p.FullPayload()
 	if err != nil {
-		ep.mu.RUnlock()
 		return 0, nil, err
 	}
 
@@ -230,7 +229,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64
 	// destination address, route using that address.
 	if !ep.associated {
 		ip := header.IPv4(payloadBytes)
-		if !ip.IsValid(payload.Size()) {
+		if !ip.IsValid(len(payloadBytes)) {
 			ep.mu.RUnlock()
 			return 0, nil, tcpip.ErrInvalidOptionValue
 		}

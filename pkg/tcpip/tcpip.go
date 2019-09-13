@@ -261,31 +261,34 @@ type FullAddress struct {
 	Port uint16
 }
 
-// Payload provides an interface around data that is being sent to an endpoint.
-// This allows the endpoint to request the amount of data it needs based on
-// internal buffers without exposing them. 'p.Get(p.Size())' reads all the data.
-type Payload interface {
-	// Get returns a slice containing exactly 'min(size, p.Size())' bytes.
-	Get(size int) ([]byte, *Error)
+// Payloader is an interface that provides data.
+//
+// This interface allows the endpoint to request the amount of data it needs
+// based on internal buffers without exposing them.
+type Payloader interface {
+	// FullPayload returns all available bytes.
+	FullPayload() ([]byte, *Error)
 
-	// Size returns the payload size.
-	Size() int
+	// Payload returns a slice containing at most size bytes.
+	Payload(size int) ([]byte, *Error)
 }
 
-// SlicePayload implements Payload on top of slices for convenience.
+// SlicePayload implements Payloader for slices.
+//
+// This is typically used for tests.
 type SlicePayload []byte
 
-// Get implements Payload.
-func (s SlicePayload) Get(size int) ([]byte, *Error) {
-	if size > s.Size() {
-		size = s.Size()
-	}
-	return s[:size], nil
+// FullPayload implements Payloader.FullPayload.
+func (s SlicePayload) FullPayload() ([]byte, *Error) {
+	return s, nil
 }
 
-// Size implements Payload.
-func (s SlicePayload) Size() int {
-	return len(s)
+// Payload implements Payloader.Payload.
+func (s SlicePayload) Payload(size int) ([]byte, *Error) {
+	if size > len(s) {
+		size = len(s)
+	}
+	return s[:size], nil
 }
 
 // A ControlMessages contains socket control messages for IP sockets.
@@ -338,7 +341,7 @@ type Endpoint interface {
 	// ErrNoLinkAddress and a notification channel is returned for the caller to
 	// block. Channel is closed once address resolution is complete (success or
 	// not). The channel is only non-nil in this case.
-	Write(Payload, WriteOptions) (int64, <-chan struct{}, *Error)
+	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
 
 	// Peek reads data without consuming it from the endpoint.
 	//
@@ -432,6 +435,11 @@ type WriteOptions struct {
 
 	// EndOfRecord has the same semantics as Linux's MSG_EOR.
 	EndOfRecord bool
+
+	// Atomic means that all data fetched from Payloader must be written to the
+	// endpoint. If Atomic is false, then data fetched from the Payloader may be
+	// discarded if available endpoint buffer space is unsufficient.
+	Atomic bool
 }
 
 // SockOpt represents socket options which values have the int type.

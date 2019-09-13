@@ -806,7 +806,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -821,47 +821,52 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		return 0, nil, err
 	}
 
-	e.sndBufMu.Unlock()
-	e.mu.RUnlock()
-
-	// Nothing to do if the buffer is empty.
-	if p.Size() == 0 {
-		return 0, nil, nil
+	// We can release locks while copying data.
+	//
+	// This is not possible if atomic is set, because we can't allow the
+	// available buffer space to be consumed by some other caller while we
+	// are copying data in.
+	if !opts.Atomic {
+		e.sndBufMu.Unlock()
+		e.mu.RUnlock()
 	}
 
-	// Copy in memory without holding sndBufMu so that worker goroutine can
-	// make progress independent of this operation.
-	v, perr := p.Get(avail)
-	if perr != nil {
+	// Fetch data.
+	v, perr := p.Payload(avail)
+	if perr != nil || len(v) == 0 {
+		if opts.Atomic { // See above.
+			e.sndBufMu.Unlock()
+			e.mu.RUnlock()
+		}
+		// Note that perr may be nil if len(v) == 0.
 		return 0, nil, perr
 	}
 
-	e.mu.RLock()
-	e.sndBufMu.Lock()
+	if !opts.Atomic { // See above.
+		e.mu.RLock()
+		e.sndBufMu.Lock()
 
-	// Because we released the lock before copying, check state again
-	// to make sure the endpoint is still in a valid state for a
-	// write.
-	avail, err = e.isEndpointWritableLocked()
-	if err != nil {
-		e.sndBufMu.Unlock()
-		e.mu.RUnlock()
-		return 0, nil, err
-	}
+		// Because we released the lock before copying, check state again
+		// to make sure the endpoint is still in a valid state for a write.
+		avail, err = e.isEndpointWritableLocked()
+		if err != nil {
+			e.sndBufMu.Unlock()
+			e.mu.RUnlock()
+			return 0, nil, err
+		}
 
-	// Discard any excess data copied in due to avail being reduced due to a
-	// simultaneous write call to the socket.
-	if avail < len(v) {
-		v = v[:avail]
+		// Discard any excess data copied in due to avail being reduced due
+		// to a simultaneous write call to the socket.
+		if avail < len(v) {
+			v = v[:avail]
+		}
 	}
 
 	// Add data to the send queue.
-	l := len(v)
 	s := newSegmentFromView(&e.route, e.id, v)
-	e.sndBufUsed += l
-	e.sndBufInQueue += seqnum.Size(l)
+	e.sndBufUsed += len(v)
+	e.sndBufInQueue += seqnum.Size(len(v))
 	e.sndQueue.PushBack(s)
-
 	e.sndBufMu.Unlock()
 	// Release the endpoint lock to prevent deadlocks due to lock
 	// order inversion when acquiring workMu.
@@ -875,7 +880,8 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		// Let the protocol goroutine do the work.
 		e.sndWaker.Assert()
 	}
-	return int64(l), nil, nil
+
+	return int64(len(v)), nil, nil
 }
 
 // Peek reads data without consuming it from the endpoint.
