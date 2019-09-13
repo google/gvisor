@@ -15,6 +15,7 @@
 package pipe
 
 import (
+	"io"
 	"math"
 	"syscall"
 
@@ -55,7 +56,45 @@ func (rw *ReaderWriter) Release() {
 
 // Read implements fs.FileOperations.Read.
 func (rw *ReaderWriter) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, _ int64) (int64, error) {
-	n, err := rw.Pipe.read(ctx, dst)
+	n, err := rw.Pipe.read(ctx, readOps{
+		left: func() int64 {
+			return dst.NumBytes()
+		},
+		limit: func(l int64) {
+			dst = dst.TakeFirst64(l)
+		},
+		read: func(buf *buffer) (int64, error) {
+			n, err := dst.CopyOutFrom(ctx, buf)
+			dst = dst.DropFirst64(n)
+			return n, err
+		},
+	})
+	if n > 0 {
+		rw.Pipe.Notify(waiter.EventOut)
+	}
+	return n, err
+}
+
+// WriteTo implements fs.FileOperations.WriteTo.
+func (rw *ReaderWriter) WriteTo(ctx context.Context, _ *fs.File, w io.Writer, count int64, dup bool) (int64, error) {
+	ops := readOps{
+		left: func() int64 {
+			return count
+		},
+		limit: func(l int64) {
+			count = l
+		},
+		read: func(buf *buffer) (int64, error) {
+			n, err := buf.ReadToWriter(w, count, dup)
+			count -= n
+			return n, err
+		},
+	}
+	if dup {
+		// There is no notification for dup operations.
+		return rw.Pipe.dup(ctx, ops)
+	}
+	n, err := rw.Pipe.read(ctx, ops)
 	if n > 0 {
 		rw.Pipe.Notify(waiter.EventOut)
 	}
@@ -64,7 +103,40 @@ func (rw *ReaderWriter) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequ
 
 // Write implements fs.FileOperations.Write.
 func (rw *ReaderWriter) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, _ int64) (int64, error) {
-	n, err := rw.Pipe.write(ctx, src)
+	n, err := rw.Pipe.write(ctx, writeOps{
+		left: func() int64 {
+			return src.NumBytes()
+		},
+		limit: func(l int64) {
+			src = src.TakeFirst64(l)
+		},
+		write: func(buf *buffer) (int64, error) {
+			n, err := src.CopyInTo(ctx, buf)
+			src = src.DropFirst64(n)
+			return n, err
+		},
+	})
+	if n > 0 {
+		rw.Pipe.Notify(waiter.EventIn)
+	}
+	return n, err
+}
+
+// ReadFrom implements fs.FileOperations.WriteTo.
+func (rw *ReaderWriter) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader, count int64) (int64, error) {
+	n, err := rw.Pipe.write(ctx, writeOps{
+		left: func() int64 {
+			return count
+		},
+		limit: func(l int64) {
+			count = l
+		},
+		write: func(buf *buffer) (int64, error) {
+			n, err := buf.WriteFromReader(r, count)
+			count -= n
+			return n, err
+		},
+	})
 	if n > 0 {
 		rw.Pipe.Notify(waiter.EventIn)
 	}

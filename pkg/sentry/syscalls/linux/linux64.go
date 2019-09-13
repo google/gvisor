@@ -320,8 +320,8 @@ var AMD64 = &kernel.SyscallTable{
 		272: syscalls.PartiallySupported("unshare", Unshare, "Mount, cgroup namespaces not supported. Network namespaces supported but must be empty.", nil),
 		273: syscalls.Error("set_robust_list", syserror.ENOSYS, "Obsolete.", nil),
 		274: syscalls.Error("get_robust_list", syserror.ENOSYS, "Obsolete.", nil),
-		275: syscalls.PartiallySupported("splice", Splice, "Stub implementation.", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
-		276: syscalls.ErrorWithEvent("tee", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}),                   // TODO(b/29354098)
+		275: syscalls.Supported("splice", Splice),
+		276: syscalls.Supported("tee", Tee),
 		277: syscalls.PartiallySupported("sync_file_range", SyncFileRange, "Full data flush is not guaranteed at this time.", nil),
 		278: syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
 		279: syscalls.CapError("move_pages", linux.CAP_SYS_NICE, "", nil),                               // requires cap_sys_nice (mostly)

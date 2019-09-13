@@ -15,7 +15,6 @@
 package udp
 
 import (
-	"math"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -277,15 +276,10 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netPr
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
-	}
-
-	if p.Size() > math.MaxUint16 {
-		// Payload can't possibly fit in a packet.
-		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	to := opts.To
@@ -370,9 +364,13 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		}
 	}
 
-	v, err := p.Get(p.Size())
+	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
+	}
+	if len(v) > header.UDPMaximumPacketSize {
+		// Payload can't possibly fit in a packet.
+		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	ttl := route.DefaultTTL()
