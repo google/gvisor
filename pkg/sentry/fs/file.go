@@ -515,6 +515,11 @@ type lockedReader struct {
 
 	// File is the file to read from.
 	File *File
+
+	// Offset is the offset to start at.
+	//
+	// This applies only to Read, not ReadAt.
+	Offset int64
 }
 
 // Read implements io.Reader.Read.
@@ -522,7 +527,8 @@ func (r *lockedReader) Read(buf []byte) (int, error) {
 	if r.Ctx.Interrupted() {
 		return 0, syserror.ErrInterrupted
 	}
-	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), r.File.offset)
+	n, err := r.File.FileOperations.Read(r.Ctx, r.File, usermem.BytesIOSequence(buf), r.Offset)
+	r.Offset += n
 	return int(n), err
 }
 
@@ -544,11 +550,21 @@ type lockedWriter struct {
 
 	// File is the file to write to.
 	File *File
+
+	// Offset is the offset to start at.
+	//
+	// This applies only to Write, not WriteAt.
+	Offset int64
 }
 
 // Write implements io.Writer.Write.
 func (w *lockedWriter) Write(buf []byte) (int, error) {
-	return w.WriteAt(buf, w.File.offset)
+	if w.Ctx.Interrupted() {
+		return 0, syserror.ErrInterrupted
+	}
+	n, err := w.WriteAt(buf, w.Offset)
+	w.Offset += int64(n)
+	return int(n), err
 }
 
 // WriteAt implements io.Writer.WriteAt.
@@ -562,6 +578,9 @@ func (w *lockedWriter) WriteAt(buf []byte, offset int64) (int, error) {
 	// io.Copy, since our own Write interface does not have this same
 	// contract. Enforce that here.
 	for written < len(buf) {
+		if w.Ctx.Interrupted() {
+			return written, syserror.ErrInterrupted
+		}
 		var n int64
 		n, err = w.File.FileOperations.Write(w.Ctx, w.File, usermem.BytesIOSequence(buf[written:]), offset+int64(written))
 		if n > 0 {

@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -173,13 +172,24 @@ func (p *Pipe) Open(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) *fs.F
 	}
 }
 
+type readOps struct {
+	// left returns the bytes remaining.
+	left func() int64
+
+	// limit limits subsequence reads.
+	limit func(int64)
+
+	// read performs the actual read operation.
+	read func(*buffer) (int64, error)
+}
+
 // read reads data from the pipe into dst and returns the number of bytes
 // read, or returns ErrWouldBlock if the pipe is empty.
 //
 // Precondition: this pipe must have readers.
-func (p *Pipe) read(ctx context.Context, dst usermem.IOSequence) (int64, error) {
+func (p *Pipe) read(ctx context.Context, ops readOps) (int64, error) {
 	// Don't block for a zero-length read even if the pipe is empty.
-	if dst.NumBytes() == 0 {
+	if ops.left() == 0 {
 		return 0, nil
 	}
 
@@ -196,12 +206,12 @@ func (p *Pipe) read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 	}
 
 	// Limit how much we consume.
-	if dst.NumBytes() > p.size {
-		dst = dst.TakeFirst64(p.size)
+	if ops.left() > p.size {
+		ops.limit(p.size)
 	}
 
 	done := int64(0)
-	for dst.NumBytes() > 0 {
+	for ops.left() > 0 {
 		// Pop the first buffer.
 		first := p.data.Front()
 		if first == nil {
@@ -209,10 +219,9 @@ func (p *Pipe) read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 		}
 
 		// Copy user data.
-		n, err := dst.CopyOutFrom(ctx, first)
+		n, err := ops.read(first)
 		done += int64(n)
 		p.size -= n
-		dst = dst.DropFirst64(n)
 
 		// Empty buffer?
 		if first.Empty() {
@@ -230,12 +239,57 @@ func (p *Pipe) read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 	return done, nil
 }
 
+// dup duplicates all data from this pipe into the given writer.
+//
+// There is no blocking behavior implemented here. The writer may propagate
+// some blocking error. All the writes must be complete writes.
+func (p *Pipe) dup(ctx context.Context, ops readOps) (int64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Is the pipe empty?
+	if p.size == 0 {
+		if !p.HasWriters() {
+			// See above.
+			return 0, nil
+		}
+		return 0, syserror.ErrWouldBlock
+	}
+
+	// Limit how much we consume.
+	if ops.left() > p.size {
+		ops.limit(p.size)
+	}
+
+	done := int64(0)
+	for buf := p.data.Front(); buf != nil; buf = buf.Next() {
+		n, err := ops.read(buf)
+		done += n
+		if err != nil {
+			return done, err
+		}
+	}
+
+	return done, nil
+}
+
+type writeOps struct {
+	// left returns the bytes remaining.
+	left func() int64
+
+	// limit should limit subsequent writes.
+	limit func(int64)
+
+	// write should write to the provided buffer.
+	write func(*buffer) (int64, error)
+}
+
 // write writes data from sv into the pipe and returns the number of bytes
 // written. If no bytes are written because the pipe is full (or has less than
 // atomicIOBytes free capacity), write returns ErrWouldBlock.
 //
 // Precondition: this pipe must have writers.
-func (p *Pipe) write(ctx context.Context, src usermem.IOSequence) (int64, error) {
+func (p *Pipe) write(ctx context.Context, ops writeOps) (int64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -246,17 +300,16 @@ func (p *Pipe) write(ctx context.Context, src usermem.IOSequence) (int64, error)
 
 	// POSIX requires that a write smaller than atomicIOBytes (PIPE_BUF) be
 	// atomic, but requires no atomicity for writes larger than this.
-	wanted := src.NumBytes()
+	wanted := ops.left()
 	if avail := p.max - p.size; wanted > avail {
 		if wanted <= p.atomicIOBytes {
 			return 0, syserror.ErrWouldBlock
 		}
-		// Limit to the available capacity.
-		src = src.TakeFirst64(avail)
+		ops.limit(avail)
 	}
 
 	done := int64(0)
-	for src.NumBytes() > 0 {
+	for ops.left() > 0 {
 		// Need a new buffer?
 		last := p.data.Back()
 		if last == nil || last.Full() {
@@ -266,10 +319,9 @@ func (p *Pipe) write(ctx context.Context, src usermem.IOSequence) (int64, error)
 		}
 
 		// Copy user data.
-		n, err := src.CopyInTo(ctx, last)
+		n, err := ops.write(last)
 		done += int64(n)
 		p.size += n
-		src = src.DropFirst64(n)
 
 		// Handle errors.
 		if err != nil {

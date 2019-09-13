@@ -15,6 +15,7 @@
 package fs
 
 import (
+	"io"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/refs"
@@ -268,9 +269,9 @@ func (f *overlayFileOperations) Read(ctx context.Context, file *File, dst userme
 }
 
 // WriteTo implements FileOperations.WriteTo.
-func (f *overlayFileOperations) WriteTo(ctx context.Context, file *File, dst *File, opts SpliceOpts) (n int64, err error) {
+func (f *overlayFileOperations) WriteTo(ctx context.Context, file *File, dst io.Writer, count int64, dup bool) (n int64, err error) {
 	err = f.onTop(ctx, file, func(file *File, ops FileOperations) error {
-		n, err = ops.WriteTo(ctx, file, dst, opts)
+		n, err = ops.WriteTo(ctx, file, dst, count, dup)
 		return err // Will overwrite itself.
 	})
 	return
@@ -285,9 +286,9 @@ func (f *overlayFileOperations) Write(ctx context.Context, file *File, src userm
 }
 
 // ReadFrom implements FileOperations.ReadFrom.
-func (f *overlayFileOperations) ReadFrom(ctx context.Context, file *File, src *File, opts SpliceOpts) (n int64, err error) {
+func (f *overlayFileOperations) ReadFrom(ctx context.Context, file *File, src io.Reader, count int64) (n int64, err error) {
 	// See above; f.upper must be non-nil.
-	return f.upper.FileOperations.ReadFrom(ctx, f.upper, src, opts)
+	return f.upper.FileOperations.ReadFrom(ctx, f.upper, src, count)
 }
 
 // Fsync implements FileOperations.Fsync.
