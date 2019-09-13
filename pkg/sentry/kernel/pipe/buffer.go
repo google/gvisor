@@ -15,6 +15,7 @@
 package pipe
 
 import (
+	"io"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/sentry/safemem"
@@ -67,12 +68,36 @@ func (b *buffer) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 	return n, err
 }
 
+// WriteFromReader writes to the buffer from an io.Reader.
+func (b *buffer) WriteFromReader(r io.Reader, count int64) (int64, error) {
+	dst := b.data[b.write:]
+	if count < int64(len(dst)) {
+		dst = b.data[b.write:][:count]
+	}
+	n, err := r.Read(dst)
+	b.write += n
+	return int64(n), err
+}
+
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (b *buffer) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	src := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(b.data[b.read:b.write]))
 	n, err := safemem.CopySeq(dsts, src)
 	b.read += int(n)
 	return n, err
+}
+
+// ReadToWriter reads from the buffer into an io.Writer.
+func (b *buffer) ReadToWriter(w io.Writer, count int64, dup bool) (int64, error) {
+	src := b.data[b.read:b.write]
+	if count < int64(len(src)) {
+		src = b.data[b.read:][:count]
+	}
+	n, err := w.Write(src)
+	if !dup {
+		b.read += n
+	}
+	return int64(n), err
 }
 
 // bufferPool is a pool for buffers.
