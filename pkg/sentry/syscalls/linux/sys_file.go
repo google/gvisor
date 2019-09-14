@@ -1423,9 +1423,6 @@ func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 	if err != nil {
 		return err
 	}
-	if dirPath {
-		return syserror.ENOENT
-	}
 
 	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
 		if !fs.IsDir(d.Inode.StableAttr) {
@@ -1436,7 +1433,7 @@ func unlinkAt(t *kernel.Task, dirFD int32, addr usermem.Addr) error {
 			return err
 		}
 
-		return d.Remove(t, root, name)
+		return d.Remove(t, root, name, dirPath)
 	})
 }
 
