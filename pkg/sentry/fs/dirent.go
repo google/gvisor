@@ -1126,7 +1126,7 @@ func (d *Dirent) unmount(ctx context.Context, replacement *Dirent) error {
 
 // Remove removes the given file or symlink.  The root dirent is used to
 // resolve name, and must not be nil.
-func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string) error {
+func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string, dirPath bool) error {
 	// Check the root.
 	if root == nil {
 		panic("Dirent.Remove: root must not be nil")
@@ -1151,6 +1151,8 @@ func (d *Dirent) Remove(ctx context.Context, root *Dirent, name string) error {
 	// Remove cannot remove directories.
 	if IsDir(child.Inode.StableAttr) {
 		return syscall.EISDIR
+	} else if dirPath {
+		return syscall.ENOTDIR
 	}
 
 	// Remove cannot remove a mount point.
