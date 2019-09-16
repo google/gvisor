@@ -21,6 +21,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/multiprocess_util.h"
@@ -28,9 +29,9 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_bool(prctl_no_new_privs_test_child, false,
-            "If true, exit with the return value of prctl(PR_GET_NO_NEW_PRIVS) "
-            "plus an offset (see test source).");
+ABSL_FLAG(bool, prctl_no_new_privs_test_child, false,
+          "If true, exit with the return value of prctl(PR_GET_NO_NEW_PRIVS) "
+          "plus an offset (see test source).");
 
 namespace gvisor {
 namespace testing {
@@ -220,7 +221,7 @@ TEST(PrctlTest, RootDumpability) {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (FLAGS_prctl_no_new_privs_test_child) {
+  if (absl::GetFlag(FLAGS_prctl_no_new_privs_test_child)) {
     exit(gvisor::testing::kPrctlNoNewPrivsTestChildExitBase +
          prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0));
   }

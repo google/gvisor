@@ -23,6 +23,7 @@
 #include <atomic>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/cleanup.h"
@@ -33,8 +34,8 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_bool(timers_test_sleep, false,
-            "If true, sleep forever instead of running tests.");
+ABSL_FLAG(bool, timers_test_sleep, false,
+          "If true, sleep forever instead of running tests.");
 
 using ::testing::_;
 using ::testing::AnyOf;
@@ -635,7 +636,7 @@ TEST(IntervalTimerTest, IgnoredSignalCountsAsOverrun) {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (FLAGS_timers_test_sleep) {
+  if (absl::GetFlag(FLAGS_timers_test_sleep)) {
     while (true) {
       absl::SleepFor(absl::Seconds(10));
     }

@@ -14,9 +14,11 @@
 
 #include <sched.h>
 #include <sys/prctl.h>
+
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -24,12 +26,12 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
 // This flag is used to verify that after an exec PR_GET_KEEPCAPS
 // returns 0, the return code will be offset by kPrGetKeepCapsExitBase.
-DEFINE_bool(prctl_pr_get_keepcaps, false,
-            "If true the test will verify that prctl with pr_get_keepcaps"
-            "returns 0. The test will exit with the result of that check.");
+ABSL_FLAG(bool, prctl_pr_get_keepcaps, false,
+          "If true the test will verify that prctl with pr_get_keepcaps"
+          "returns 0. The test will exit with the result of that check.");
 
 // These tests exist seperately from prctl because we need to start
 // them as root. Setuid() has the behavior that permissions are fully
@@ -113,10 +115,12 @@ TEST_F(PrctlKeepCapsSetuidTest, SetUidNoKeepCaps) {
     // call to only apply to this task. POSIX threads, however, require that
     // all threads have the same UIDs, so using the setuid wrapper sets all
     // threads' real UID.
-    EXPECT_THAT(syscall(SYS_setuid, FLAGS_scratch_uid), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setuid, absl::GetFlag(FLAGS_scratch_uid)),
+                SyscallSucceeds());
 
     // Verify that we changed uid.
-    EXPECT_THAT(getuid(), SyscallSucceedsWithValue(FLAGS_scratch_uid));
+    EXPECT_THAT(getuid(),
+                SyscallSucceedsWithValue(absl::GetFlag(FLAGS_scratch_uid)));
 
     // Verify we lost the capability in the effective set, this always happens.
     TEST_CHECK(!HaveCapability(CAP_SYS_ADMIN).ValueOrDie());
@@ -157,10 +161,12 @@ TEST_F(PrctlKeepCapsSetuidTest, SetUidKeepCaps) {
     // call to only apply to this task. POSIX threads, however, require that
     // all threads have the same UIDs, so using the setuid wrapper sets all
     // threads' real UID.
-    EXPECT_THAT(syscall(SYS_setuid, FLAGS_scratch_uid), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setuid, absl::GetFlag(FLAGS_scratch_uid)),
+                SyscallSucceeds());
 
     // Verify that we changed uid.
-    EXPECT_THAT(getuid(), SyscallSucceedsWithValue(FLAGS_scratch_uid));
+    EXPECT_THAT(getuid(),
+                SyscallSucceedsWithValue(absl::GetFlag(FLAGS_scratch_uid)));
 
     // Verify we lost the capability in the effective set, this always happens.
     TEST_CHECK(!HaveCapability(CAP_SYS_ADMIN).ValueOrDie());
@@ -253,7 +259,7 @@ TEST_F(PrctlKeepCapsSetuidTest, PrGetKeepCaps) {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (FLAGS_prctl_pr_get_keepcaps) {
+  if (absl::GetFlag(FLAGS_prctl_pr_get_keepcaps)) {
     return gvisor::testing::kPrGetKeepCapsExitBase +
            prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
   }

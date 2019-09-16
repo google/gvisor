@@ -28,6 +28,8 @@
 #include <vector>
 
 #include "absl/base/attributes.h"
+#include "absl/flags/flag.h"   // IWYU pragma: keep
+#include "absl/flags/parse.h"  // IWYU pragma: keep
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
@@ -224,7 +226,7 @@ bool Equivalent(uint64_t current, uint64_t target, double tolerance) {
 
 void TestInit(int* argc, char*** argv) {
   ::testing::InitGoogleTest(argc, *argv);
-  ::gflags::ParseCommandLineFlags(argc, argv, true);
+  ::absl::ParseCommandLine(*argc, *argv);
 
   // Always mask SIGPIPE as it's common and tests aren't expected to handle it.
   struct sigaction sa = {};

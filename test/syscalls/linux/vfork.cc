@@ -22,14 +22,15 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/time/time.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/test_util.h"
 #include "test/util/time_util.h"
 
-DEFINE_bool(vfork_test_child, false,
-            "If true, run the VforkTest child workload.");
+ABSL_FLAG(bool, vfork_test_child, false,
+          "If true, run the VforkTest child workload.");
 
 namespace gvisor {
 namespace testing {
@@ -186,7 +187,7 @@ int RunChild() {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (FLAGS_vfork_test_child) {
+  if (absl::GetFlag(FLAGS_vfork_test_child)) {
     return gvisor::testing::RunChild();
   }
 
