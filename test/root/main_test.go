@@ -29,12 +29,14 @@ import (
 // supported docker version, required capabilities, and configures the executable
 // path for runsc.
 func TestMain(m *testing.M) {
-	dockerutil.EnsureSupportedDockerVersion()
+	flag.Parse()
 
 	if !specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_DAC_OVERRIDE) {
 		fmt.Println("Test requires sysadmin privileges to run. Try again with sudo.")
 		os.Exit(1)
 	}
+
+	dockerutil.EnsureSupportedDockerVersion()
 
 	// Configure exe for tests.
 	path, err := dockerutil.RuntimePath()
@@ -43,6 +45,5 @@ func TestMain(m *testing.M) {
 	}
 	specutils.ExePath = path
 
-	flag.Parse()
 	os.Exit(m.Run())
 }

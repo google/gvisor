@@ -24,6 +24,5 @@ sudo chmod a+rw /dev/kvm
 run_as_root //pkg/sentry/platform/kvm:kvm_test
 
 # Install the KVM runtime and run all integration tests.
-run_as_root //runsc install --experimental=true -- --debug --strace --log-packets --platform=kvm
-sudo systemctl restart docker
-test //test/image:image_test //test/e2e:integration_test
+install_runsc_for_test kvm --platform=kvm
+test_runsc //test/image:image_test //test/e2e:integration_test

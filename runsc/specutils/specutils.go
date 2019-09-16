@@ -399,13 +399,15 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 //   - %TIMESTAMP%: is replaced with a timestamp using the following format:
 //			<yyyymmdd-hhmmss.uuuuuu>
 //	 - %COMMAND%: is replaced with 'command'
-func DebugLogFile(logPattern, command string) (*os.File, error) {
+//	 - %TEST%: is replaced with 'test' (omitted by default)
+func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%"
 	}
 	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
 	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
+	logPattern = strings.Replace(logPattern, "%TEST%", test, -1)
 
 	dir := filepath.Dir(logPattern)
 	if err := os.MkdirAll(dir, 0775); err != nil {
@@ -541,4 +543,16 @@ func GetParentPid(pid int) (int, error) {
 	}
 
 	return ppid, nil
+}
+
+// EnvVar looks for a varible value in the env slice assuming the following
+// format: "NAME=VALUE".
+func EnvVar(env []string, name string) (string, bool) {
+	prefix := name + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return strings.TrimPrefix(e, prefix), true
+		}
+	}
+	return "", false
 }

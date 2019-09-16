@@ -26,6 +26,6 @@ chmod +x ${shim_path}
 sudo mv ${shim_path} /usr/local/bin/gvisor-containerd-shim
 
 # Run the tests that require root.
-run_as_root //runsc install --experimental=true -- --debug --strace --log-packets
-sudo systemctl restart docker
-run_as_root //test/root:root_test
+install_runsc_for_test root
+run_as_root //test/root:root_test --runtime=${RUNTIME}
+

@@ -83,6 +83,8 @@ Rules:
 
 ### Code reviews
 
+Before sending code reviews, run `bazel test ...` to ensure tests are passing.
+
 Code changes are accepted via [pull request][github].
 
 When approved, the change will be submitted by a team member and automatically
@@ -99,6 +101,36 @@ Some TODOs and NOTEs sprinkled throughout the code have associated IDs of the
 form `b/1234`. These correspond to bugs in our internal bug tracker. Eventually
 these bugs will be moved to the GitHub Issues, but until then they can simply be
 ignored.
+
+### Build and test with Docker
+
+`scripts/dev.sh` is a convenient script that builds and installs `runsc` as a
+new Docker runtime for you. The scripts tries to extract the runtime name from
+your local environment and will print it at the end. You can also customize it.
+The script creates one regular runtime and another with debug flags enabled.
+Here are a few examples:
+
+```bash
+# Default case (inside branch my-branch)
+$ scripts/dev.sh
+...
+Runtimes my-branch and my-branch-d (debug enabled) setup.
+Use --runtime=my-branch with your Docker command.
+  docker run --rm --runtime=my-branch --rm hello-world
+
+If you rebuild, use scripts/dev.sh --refresh.
+Logs are in: /tmp/my-branch/logs
+
+# --refresh just updates the runtime binary and doesn't restart docker.
+$ git/my_branch> scripts/dev.sh --refresh
+
+# Using a custom runtime name
+$ git/my_branch> scripts/dev.sh my-runtime
+...
+Runtimes my-runtime and my-runtime-d (debug enabled) setup.
+Use --runtime=my-runtime with your Docker command.
+  docker run --rm --runtime=my-runtime --rm hello-world
+```
 
 ### The small print
 
