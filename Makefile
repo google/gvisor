@@ -7,16 +7,17 @@ GO_LDFLAGS=-ldflags '-s -w -extldflags "-static"'
 SOURCES=$(shell find cmd/ pkg/ -name '*.go')
 DEPLOY_PATH=cri-containerd-staging/gvisor-containerd-shim
 VERSION=$(shell git rev-parse HEAD)
+GO_MODULE=on
 
 all: binaries
 
 binaries: bin/gvisor-containerd-shim bin/containerd-shim-runsc-v1
 
 bin/gvisor-containerd-shim: $(SOURCES)
-	CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/gvisor-containerd-shim ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/gvisor-containerd-shim
+	GO111MODULE=${GO_MODULE} CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/gvisor-containerd-shim ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/gvisor-containerd-shim
 
 bin/containerd-shim-runsc-v1: $(SOURCES)
-	CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/containerd-shim-runsc-v1 ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/containerd-shim-runsc-v1
+	GO111MODULE=${GO_MODULE} CGO_ENABLED=0 ${GC} build ${GO_BUILD_FLAGS} -o bin/containerd-shim-runsc-v1 ${SHIM_GO_LDFLAGS} ${GO_TAGS} ./cmd/containerd-shim-runsc-v1
 
 install: bin/gvisor-containerd-shim
 	mkdir -p $(DESTDIR)/bin
