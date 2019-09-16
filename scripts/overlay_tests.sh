@@ -17,6 +17,5 @@
 source $(dirname $0)/common.sh
 
 # Install the runtime and perform basic tests.
-run_as_root //runsc install --experimental=true -- --debug --strace --log-packets --overlay
-sudo systemctl restart docker
-test //test/image:image_test //test/e2e:integration_test
+install_runsc_for_test overlay --overlay
+test_runsc //test/image:image_test //test/e2e:integration_test

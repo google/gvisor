@@ -240,7 +240,7 @@ func (d *Docker) Stop() error {
 // Run calls 'docker run' with the arguments provided. The container starts
 // running in the background and the call returns immediately.
 func (d *Docker) Run(args ...string) error {
-	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-d"}
+	a := d.runArgs("-d")
 	a = append(a, args...)
 	_, err := do(a...)
 	if err == nil {
@@ -251,7 +251,7 @@ func (d *Docker) Run(args ...string) error {
 
 // RunWithPty is like Run but with an attached pty.
 func (d *Docker) RunWithPty(args ...string) (*exec.Cmd, *os.File, error) {
-	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-it"}
+	a := d.runArgs("-it")
 	a = append(a, args...)
 	return doWithPty(a...)
 }
@@ -259,13 +259,20 @@ func (d *Docker) RunWithPty(args ...string) (*exec.Cmd, *os.File, error) {
 // RunFg calls 'docker run' with the arguments provided in the foreground. It
 // blocks until the container exits and returns the output.
 func (d *Docker) RunFg(args ...string) (string, error) {
-	a := []string{"run", "--runtime", d.Runtime, "--name", d.Name}
-	a = append(a, args...)
+	a := d.runArgs(args...)
 	out, err := do(a...)
 	if err == nil {
 		d.logDockerID()
 	}
 	return string(out), err
+}
+
+func (d *Docker) runArgs(args ...string) []string {
+	// Environment variable RUNSC_TEST_NAME is picked up by the runtime and added
+	// to the log name, so one can easily identify the corresponding logs for
+	// this test.
+	rv := []string{"run", "--runtime", d.Runtime, "--name", d.Name, "-e", "RUNSC_TEST_NAME=" + d.Name}
+	return append(rv, args...)
 }
 
 // Logs calls 'docker logs'.
