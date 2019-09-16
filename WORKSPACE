@@ -222,16 +222,6 @@ go_repository(
 
 # System Call test dependencies.
 http_archive(
-    name = "com_github_gflags_gflags",
-    sha256 = "34af2f15cf7367513b352bdcd2493ab14ce43692d2dcd9dfc499492966c64dcf",
-    strip_prefix = "gflags-2.2.2",
-    urls = [
-        "https://mirror.bazel.build/github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-        "https://github.com/gflags/gflags/archive/v2.2.2.tar.gz",
-    ],
-)
-
-http_archive(
     name = "com_google_absl",
     sha256 = "56775f1283a59e6274c28d99981a9717ff4e0b1161e9129fdb2fcf22531d8d93",
     strip_prefix = "abseil-cpp-a0d1e098c2f99694fa399b175a7ccf920762030e",
