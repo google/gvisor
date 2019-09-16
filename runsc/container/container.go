@@ -946,7 +946,14 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 	}
 
 	if conf.DebugLog != "" {
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer")
+		test := ""
+		if len(conf.TestOnlyTestNameEnv) != 0 {
+			// Fetch test name if one is provided and the test only flag was set.
+			if t, ok := specutils.EnvVar(spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
+				test = t
+			}
+		}
+		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "gofer", test)
 		if err != nil {
 			return nil, nil, fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
 		}
