@@ -79,6 +79,7 @@ var (
 
 	// Test flags, not to be used outside tests, ever.
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
+	testOnlyTestNameEnv                        = flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
 )
 
 func main() {
@@ -211,6 +212,7 @@ func main() {
 		ReferenceLeakMode:  refsLeakMode,
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
+		TestOnlyTestNameEnv:                        *testOnlyTestNameEnv,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")
@@ -244,7 +246,7 @@ func main() {
 		e = newEmitter(*debugLogFormat, f)
 
 	} else if *debugLog != "" {
-		f, err := specutils.DebugLogFile(*debugLog, subcommand)
+		f, err := specutils.DebugLogFile(*debugLog, subcommand, "" /* name */)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}

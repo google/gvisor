@@ -211,12 +211,6 @@ type Config struct {
 	// RestoreFile is the path to the saved container image
 	RestoreFile string
 
-	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
-	// tests. It allows runsc to start the sandbox process as the current
-	// user, and without chrooting the sandbox process. This can be
-	// necessary in test environments that have limited capabilities.
-	TestOnlyAllowRunAsCurrentUserWithoutChroot bool
-
 	// NumNetworkChannels controls the number of AF_PACKET sockets that map
 	// to the same underlying network device. This allows netstack to better
 	// scale for high throughput use cases.
@@ -233,6 +227,19 @@ type Config struct {
 
 	// ReferenceLeakMode sets reference leak check mode
 	ReferenceLeakMode refs.LeakMode
+
+	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
+	// tests. It allows runsc to start the sandbox process as the current
+	// user, and without chrooting the sandbox process. This can be
+	// necessary in test environments that have limited capabilities.
+	TestOnlyAllowRunAsCurrentUserWithoutChroot bool
+
+	// TestOnlyTestNameEnv should only be used in tests. It looks up for the
+	// test name in the container environment variables and adds it to the debug
+	// log file name. This is done to help identify the log with the test when
+	// multiple tests are run in parallel, since there is no way to pass
+	// parameters to the runtime from docker.
+	TestOnlyTestNameEnv string
 }
 
 // ToFlags returns a slice of flags that correspond to the given Config.
@@ -261,9 +268,12 @@ func (c *Config) ToFlags() []string {
 		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
 		"--ref-leak-mode=" + refsLeakModeToString(c.ReferenceLeakMode),
 	}
+	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		// Only include if set since it is never to be used by users.
-		f = append(f, "-TESTONLY-unsafe-nonroot=true")
+		f = append(f, "--TESTONLY-unsafe-nonroot=true")
+	}
+	if len(c.TestOnlyTestNameEnv) != 0 {
+		f = append(f, "--TESTONLY-test-name-env="+c.TestOnlyTestNameEnv)
 	}
 	return f
 }
