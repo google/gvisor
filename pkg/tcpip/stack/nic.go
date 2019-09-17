@@ -102,6 +102,25 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 	}
 }
 
+// enable enables the NIC. enable will attach the link to its LinkEndpoint and
+// join the IPv6 All-Nodes Multicast address (ff02::1).
+func (n *NIC) enable() *tcpip.Error {
+	n.attachLinkEndpoint()
+
+	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
+	// use IPv6. This is required to ensure that this node properly receives
+	// and responds to the various NDP messages that are destined to the
+	// all-nodes multicast address. An example is the Neighbor Advertisement
+	// when we perform Duplicate Address Detection, or Router Advertisement
+	// when we do Router Discovery. See RFC 4862, section 5.4.2 and RFC 4861
+	// section 4.2 for more information.
+	if _, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]; ok {
+		return n.joinGroup(header.IPv6ProtocolNumber, header.IPv6AllNodesMulticastAddress)
+	}
+
+	return nil
+}
+
 // attachLinkEndpoint attaches the NIC to the endpoint, which will enable it
 // to start delivering packets.
 func (n *NIC) attachLinkEndpoint() {
@@ -307,6 +326,8 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 }
 
 func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior, kind networkEndpointKind) (*referencedNetworkEndpoint, *tcpip.Error) {
+	// TODO(b/141022673): Validate IP address before adding them.
+
 	// Sanity check.
 	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
 	if _, ok := n.endpoints[id]; ok {
@@ -336,6 +357,15 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 	if n.linkEP.Capabilities()&CapabilityResolutionRequired != 0 {
 		if _, ok := n.stack.linkAddrResolvers[protocolAddress.Protocol]; ok {
 			ref.linkCache = n.stack
+		}
+	}
+
+	// If we are adding an IPv6 unicast address, join the solicited-node
+	// multicast address.
+	if protocolAddress.Protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address) {
+		snmc := header.SolicitedNodeAddr(protocolAddress.AddressWithPrefix.Address)
+		if err := n.joinGroupLocked(protocolAddress.Protocol, snmc); err != nil {
+			return nil, err
 		}
 	}
 
@@ -467,13 +497,27 @@ func (n *NIC) removeEndpoint(r *referencedNetworkEndpoint) {
 }
 
 func (n *NIC) removePermanentAddressLocked(addr tcpip.Address) *tcpip.Error {
-	r := n.endpoints[NetworkEndpointID{addr}]
-	if r == nil || r.getKind() != permanent {
+	r, ok := n.endpoints[NetworkEndpointID{addr}]
+	if !ok || r.getKind() != permanent {
 		return tcpip.ErrBadLocalAddress
 	}
 
 	r.setKind(permanentExpired)
-	r.decRefLocked()
+	if !r.decRefLocked() {
+		// The endpoint still has references to it.
+		return nil
+	}
+
+	// At this point the endpoint is deleted.
+
+	// If we are removing an IPv6 unicast address, leave the solicited-node
+	// multicast address.
+	if r.protocol == header.IPv6ProtocolNumber && header.IsV6UnicastAddress(addr) {
+		snmc := header.SolicitedNodeAddr(addr)
+		if err := n.leaveGroupLocked(snmc); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -491,6 +535,13 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	return n.joinGroupLocked(protocol, addr)
+}
+
+// joinGroupLocked adds a new endpoint for the given multicast address, if none
+// exists yet. Otherwise it just increments its count. n MUST be locked before
+// joinGroupLocked is called.
+func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
 	id := NetworkEndpointID{addr}
 	joins := n.mcastJoins[id]
 	if joins == 0 {
@@ -518,6 +569,13 @@ func (n *NIC) leaveGroup(addr tcpip.Address) *tcpip.Error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	return n.leaveGroupLocked(addr)
+}
+
+// leaveGroupLocked decrements the count for the given multicast address, and
+// when it reaches zero removes the endpoint for this address. n MUST be locked
+// before leaveGroupLocked is called.
+func (n *NIC) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
 	id := NetworkEndpointID{addr}
 	joins := n.mcastJoins[id]
 	switch joins {
@@ -802,11 +860,14 @@ func (r *referencedNetworkEndpoint) decRef() {
 }
 
 // decRefLocked is the same as decRef but assumes that the NIC.mu mutex is
-// locked.
-func (r *referencedNetworkEndpoint) decRefLocked() {
+// locked. Returns true if the endpoint was removed.
+func (r *referencedNetworkEndpoint) decRefLocked() bool {
 	if atomic.AddInt32(&r.refs, -1) == 0 {
 		r.nic.removeEndpointLocked(r)
+		return true
 	}
+
+	return false
 }
 
 // incRef increments the ref count. It must only be called when the caller is
