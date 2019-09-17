@@ -100,6 +100,10 @@ func search(root string, testFilter *regexp.Regexp) ([]string, error) {
 	var testSlice []string
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
 		name := filepath.Base(path)
 
 		if info.IsDir() || !testFilter.MatchString(name) {
@@ -113,7 +117,6 @@ func search(root string, testFilter *regexp.Regexp) ([]string, error) {
 		testSlice = append(testSlice, relPath)
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("walking %q: %v", root, err)
 	}
