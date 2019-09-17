@@ -128,7 +128,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	linkID, err := fdbased.New(&fdbased.Options{
+	linkEP, err := fdbased.New(&fdbased.Options{
 		FDs:            []int{fd},
 		MTU:            mtu,
 		EthernetHeader: *tap,
@@ -137,7 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := s.CreateNIC(1, linkID); err != nil {
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		log.Fatal(err)
 	}
 
