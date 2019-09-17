@@ -7,6 +7,7 @@ go_library(
     name = "hostcpu",
     srcs = [
         "getcpu_amd64.s",
+        "getcpu_arm64.s",
         "hostcpu.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/hostcpu",
