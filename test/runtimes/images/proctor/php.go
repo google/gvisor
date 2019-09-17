@@ -12,47 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary proctor-php is a utility that facilitates language testing for PHP.
 package main
 
 import (
-	"fmt"
-	"log"
-	"os"
 	"os/exec"
 	"regexp"
-
-	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
-var (
-	dir       = os.Getenv("LANG_DIR")
-	testRegEx = regexp.MustCompile(`^.+\.phpt$`)
-)
+var phpTestRegEx = regexp.MustCompile(`^.+\.phpt$`)
 
-type phpRunner struct {
-}
+// phpRunner implements TestRunner for PHP.
+type phpRunner struct{}
 
-func main() {
-	if err := common.LaunchFunc(phpRunner{}); err != nil {
-		log.Fatalf("Failed to start: %v", err)
-	}
-}
+var _ TestRunner = phpRunner{}
 
-func (p phpRunner) ListTests() ([]string, error) {
-	testSlice, err := common.Search(dir, testRegEx)
+// ListTests implements TestRunner.ListTests.
+func (phpRunner) ListTests() ([]string, error) {
+	testSlice, err := search(".", phpTestRegEx)
 	if err != nil {
 		return nil, err
 	}
 	return testSlice, nil
 }
 
-func (p phpRunner) RunTest(test string) error {
+// TestCmd implements TestRunner.TestCmd.
+func (phpRunner) TestCmd(test string) *exec.Cmd {
 	args := []string{"test", "TESTS=" + test}
-	cmd := exec.Command("make", args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run: %v", err)
-	}
-	return nil
+	return exec.Command("make", args...)
 }

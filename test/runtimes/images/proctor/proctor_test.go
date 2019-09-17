@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package common_test
+package main
 
 import (
 	"io/ioutil"
@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/runsc/testutil"
-	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
 func touch(t *testing.T, name string) {
@@ -48,9 +47,9 @@ func TestSearchEmptyDir(t *testing.T) {
 	var want []string
 
 	testFilter := regexp.MustCompile(`^test-[^-].+\.tc$`)
-	got, err := common.Search(td, testFilter)
+	got, err := search(td, testFilter)
 	if err != nil {
-		t.Errorf("Search error: %v", err)
+		t.Errorf("search error: %v", err)
 	}
 
 	if !reflect.DeepEqual(got, want) {
@@ -117,9 +116,9 @@ func TestSearch(t *testing.T) {
 	}
 
 	testFilter := regexp.MustCompile(`^test-[^-].+\.tc$`)
-	got, err := common.Search(td, testFilter)
+	got, err := search(td, testFilter)
 	if err != nil {
-		t.Errorf("Search error: %v", err)
+		t.Errorf("search error: %v", err)
 	}
 
 	if !reflect.DeepEqual(got, want) {

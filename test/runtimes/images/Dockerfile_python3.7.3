@@ -1,0 +1,30 @@
+# Compile the proctor binary.
+FROM golang:1.12 AS golang
+ADD ["proctor/", "/go/src/proctor/"]
+RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
+
+FROM ubuntu:bionic
+
+RUN apt-get update && apt-get install -y \
+  curl \
+  gcc \
+  libbz2-dev \
+  libffi-dev \
+  liblzma-dev \
+  libreadline-dev \
+  libssl-dev \
+  make \
+  zlib1g-dev
+
+# Use flags -LJO to follow the html redirect and download .tar.gz.
+WORKDIR /root
+ARG VERSION 3.7.3
+RUN curl -LJO https://github.com/python/cpython/archive/v${VERSION}.tar.gz
+RUN tar -zxf cpython-${VERSION}.tar.gz
+
+WORKDIR /root/cpython-${VERSION}
+RUN ./configure --with-pydebug
+RUN make -s -j2
+
+COPY --from=golang /proctor /proctor
+ENTRYPOINT ["/proctor", "--runtime=python"]
