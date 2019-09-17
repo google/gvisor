@@ -26,7 +26,7 @@ import (
 var javaExclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(java\/time)| )`)
 
 // Location of java tests.
-const javaTestDir = "/root/test"
+const javaTestDir = "/root/test/jdk"
 
 // javaRunner implements TestRunner for Java.
 type javaRunner struct{}

@@ -41,6 +41,6 @@ func (nodejsRunner) ListTests() ([]string, error) {
 
 // TestCmd implements TestRunner.TestCmd.
 func (nodejsRunner) TestCmd(test string) *exec.Cmd {
-	args := []string{filepath.Join(nodejsTestDir, "tools", "test.py"), test}
+	args := []string{filepath.Join("tools", "test.py"), test}
 	return exec.Command("/usr/bin/python", args...)
 }

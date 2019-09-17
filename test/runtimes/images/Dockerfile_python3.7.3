@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 
 # Use flags -LJO to follow the html redirect and download .tar.gz.
 WORKDIR /root
-ARG VERSION 3.7.3
+ARG VERSION=3.7.3
 RUN curl -LJO https://github.com/python/cpython/archive/v${VERSION}.tar.gz
 RUN tar -zxf cpython-${VERSION}.tar.gz
 
