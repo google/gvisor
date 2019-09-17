@@ -355,7 +355,8 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			}
 			if stopSig == syscall.SIGTRAP {
 				if status.TrapCause() == syscall.PTRACE_EVENT_EXIT {
-					t.dumpAndPanic("wait failed: the process exited")
+					msg, err := t.getEventMessage()
+					t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
 				}
 				// Re-encode the trap cause the way it's expected.
 				return stopSig | syscall.Signal(status.TrapCause()<<8)
@@ -426,6 +427,9 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 			break
 		} else {
 			// Some other signal caused a thread stop; ignore.
+			if sig != syscall.SIGSTOP && sig != syscall.SIGCHLD {
+				log.Warningf("The thread %d:%d has been interrupted by %d", t.tgid, t.tid, sig)
+			}
 			continue
 		}
 	}
