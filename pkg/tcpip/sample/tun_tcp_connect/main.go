@@ -138,11 +138,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	linkID, err := fdbased.New(&fdbased.Options{FDs: []int{fd}, MTU: mtu})
+	linkEP, err := fdbased.New(&fdbased.Options{FDs: []int{fd}, MTU: mtu})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := s.CreateNIC(1, sniffer.New(linkID)); err != nil {
+	if err := s.CreateNIC(1, sniffer.New(linkEP)); err != nil {
 		log.Fatal(err)
 	}
 
