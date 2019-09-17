@@ -1,0 +1,28 @@
+# Compile the proctor binary.
+FROM golang:1.12 AS golang
+ADD ["proctor/", "/go/src/proctor/"]
+RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
+
+FROM ubuntu:bionic
+RUN apt-get update && apt-get install -y \
+  curl \
+  dumb-init \
+  g++ \
+  make \
+  python
+
+WORKDIR /root
+ARG VERSION v12.4.0
+RUN curl https://nodejs.org/dist/${VERSION}/node-${VERSION}.tar.gz
+RUN tar -zxf node-${VERSION}.tar.gz
+
+WORKDIR /root/node-${VERSION}
+RUN ./configure
+RUN make
+RUN make test-build
+
+COPY --from=golang /proctor /proctor
+
+# Including dumb-init emulates the Linux "init" process, preventing the failure
+# of tests involving worker processes.
+ENTRYPOINT ["/usr/bin/dumb-init", "/proctor", "--runtime=nodejs"]

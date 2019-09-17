@@ -12,50 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary proctor-go is a utility that facilitates language testing for Go.
-
-// There are two types of Go tests: "Go tool tests" and "Go tests on disk".
-// "Go tool tests" are found and executed using `go tool dist test`.
-// "Go tests on disk" are found in the /test directory and are
-// executed using `go run run.go`.
 package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
-
-	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
 var (
-	dir       = os.Getenv("LANG_DIR")
-	goBin     = filepath.Join(dir, "bin/go")
-	testDir   = filepath.Join(dir, "test")
-	testRegEx = regexp.MustCompile(`^.+\.go$`)
+	goTestRegEx = regexp.MustCompile(`^.+\.go$`)
 
 	// Directories with .dir contain helper files for tests.
 	// Exclude benchmarks and stress tests.
-	dirFilter = regexp.MustCompile(`^(bench|stress)\/.+$|^.+\.dir.+$`)
+	goDirFilter = regexp.MustCompile(`^(bench|stress)\/.+$|^.+\.dir.+$`)
 )
 
-type goRunner struct {
-}
+// Location of Go tests on disk.
+const goTestDir = "/usr/local/go/test"
 
-func main() {
-	if err := common.LaunchFunc(goRunner{}); err != nil {
-		log.Fatalf("Failed to start: %v", err)
-	}
-}
+// goRunner implements TestRunner for Go.
+//
+// There are two types of Go tests: "Go tool tests" and "Go tests on disk".
+// "Go tool tests" are found and executed using `go tool dist test`. "Go tests
+// on disk" are found in the /usr/local/go/test directory and are executed
+// using `go run run.go`.
+type goRunner struct{}
 
-func (g goRunner) ListTests() ([]string, error) {
+var _ TestRunner = goRunner{}
+
+// ListTests implements TestRunner.ListTests.
+func (goRunner) ListTests() ([]string, error) {
 	// Go tool dist test tests.
 	args := []string{"tool", "dist", "test", "-list"}
-	cmd := exec.Command(filepath.Join(dir, "bin/go"), args...)
+	cmd := exec.Command("go", args...)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -67,14 +59,14 @@ func (g goRunner) ListTests() ([]string, error) {
 	}
 
 	// Go tests on disk.
-	diskSlice, err := common.Search(testDir, testRegEx)
+	diskSlice, err := search(goTestDir, goTestRegEx)
 	if err != nil {
 		return nil, err
 	}
 	// Remove items from /bench/, /stress/ and .dir files
 	diskFiltered := diskSlice[:0]
 	for _, file := range diskSlice {
-		if !dirFilter.MatchString(file) {
+		if !goDirFilter.MatchString(file) {
 			diskFiltered = append(diskFiltered, file)
 		}
 	}
@@ -82,24 +74,17 @@ func (g goRunner) ListTests() ([]string, error) {
 	return append(toolSlice, diskFiltered...), nil
 }
 
-func (g goRunner) RunTest(test string) error {
+// TestCmd implements TestRunner.TestCmd.
+func (goRunner) TestCmd(test string) *exec.Cmd {
 	// Check if test exists on disk by searching for file of the same name.
 	// This will determine whether or not it is a Go test on disk.
 	if strings.HasSuffix(test, ".go") {
 		// Test has suffix ".go" which indicates a disk test, run it as such.
-		cmd := exec.Command(goBin, "run", "run.go", "-v", "--", test)
-		cmd.Dir = testDir
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run test: %v", err)
-		}
-	} else {
-		// No ".go" suffix, run as a tool test.
-		cmd := exec.Command(goBin, "tool", "dist", "test", "-run", test)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run test: %v", err)
-		}
+		cmd := exec.Command("go", "run", "run.go", "-v", "--", test)
+		cmd.Dir = goTestDir
+		return cmd
 	}
-	return nil
+
+	// No ".go" suffix, run as a tool test.
+	return exec.Command("go", "tool", "dist", "test", "-run", test)
 }

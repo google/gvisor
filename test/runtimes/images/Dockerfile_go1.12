@@ -1,0 +1,10 @@
+# Go is easy, since we already have everything we need to compile the proctor
+# binary and run the tests in the golang Docker image.
+FROM golang:1.12
+ADD ["proctor/", "/go/src/proctor/"]
+RUN ["go", "build", "-o", "/proctor", "/go/src/proctor"]
+
+# Pre-compile the tests so we don't need to do so in each test run.
+RUN ["go", "tool", "dist", "test", "-compile-only"]
+
+ENTRYPOINT ["/proctor", "--runtime=go"]

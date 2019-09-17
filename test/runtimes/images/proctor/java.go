@@ -12,40 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Binary proctor-java is a utility that facilitates language testing for Java.
 package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
-
-	"gvisor.dev/gvisor/test/runtimes/common"
 )
 
-var (
-	dir      = os.Getenv("LANG_DIR")
-	hash     = os.Getenv("LANG_HASH")
-	jtreg    = filepath.Join(dir, "jtreg/bin/jtreg")
-	exclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(java\/time)| )`)
-)
+// Directories to exclude from tests.
+var javaExclDirs = regexp.MustCompile(`(^(sun\/security)|(java\/util\/stream)|(java\/time)| )`)
 
-type javaRunner struct {
-}
+// Location of java tests.
+const javaTestDir = "/root/test"
 
-func main() {
-	if err := common.LaunchFunc(javaRunner{}); err != nil {
-		log.Fatalf("Failed to start: %v", err)
-	}
-}
+// javaRunner implements TestRunner for Java.
+type javaRunner struct{}
 
-func (j javaRunner) ListTests() ([]string, error) {
+var _ TestRunner = javaRunner{}
+
+// ListTests implements TestRunner.ListTests.
+func (javaRunner) ListTests() ([]string, error) {
 	args := []string{
-		"-dir:/root/jdk11-" + hash + "/test/jdk",
+		"-dir:" + javaTestDir,
 		"-ignore:quiet",
 		"-a",
 		"-listtests",
@@ -54,7 +45,7 @@ func (j javaRunner) ListTests() ([]string, error) {
 		":jdk_sound",
 		":jdk_imageio",
 	}
-	cmd := exec.Command(jtreg, args...)
+	cmd := exec.Command("jtreg", args...)
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
@@ -62,19 +53,19 @@ func (j javaRunner) ListTests() ([]string, error) {
 	}
 	var testSlice []string
 	for _, test := range strings.Split(string(out), "\n") {
-		if !exclDirs.MatchString(test) {
+		if !javaExclDirs.MatchString(test) {
 			testSlice = append(testSlice, test)
 		}
 	}
 	return testSlice, nil
 }
 
-func (j javaRunner) RunTest(test string) error {
-	args := []string{"-noreport", "-dir:/root/jdk11-" + hash + "/test/jdk", test}
-	cmd := exec.Command(jtreg, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run: %v", err)
+// TestCmd implements TestRunner.TestCmd.
+func (javaRunner) TestCmd(test string) *exec.Cmd {
+	args := []string{
+		"-noreport",
+		"-dir:" + javaTestDir,
+		test,
 	}
-	return nil
+	return exec.Command("jtreg", args...)
 }
