@@ -154,3 +154,19 @@ func (t *thread) clone() (*thread, error) {
 		cpu:  ^uint32(0),
 	}, nil
 }
+
+// getEventMessage retrieves a message about the ptrace event that just happened.
+func (t *thread) getEventMessage() (uintptr, error) {
+	var msg uintptr
+	_, _, errno := syscall.RawSyscall6(
+		syscall.SYS_PTRACE,
+		syscall.PTRACE_GETEVENTMSG,
+		uintptr(t.tid),
+		0,
+		uintptr(unsafe.Pointer(&msg)),
+		0, 0)
+	if errno != 0 {
+		return msg, errno
+	}
+	return msg, nil
+}
