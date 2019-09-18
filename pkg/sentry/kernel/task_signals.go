@@ -28,6 +28,7 @@ import (
 	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 // SignalAction is an internal signal action.
@@ -497,6 +498,9 @@ func (tg *ThreadGroup) applySignalSideEffectsLocked(sig linux.Signal) {
 //
 // Preconditions: The signal mutex must be locked.
 func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
+	// Notify that the signal is queued.
+	t.signalQueue.Notify(waiter.EventMask(linux.MakeSignalSet(sig)))
+
 	// - Do not choose tasks that are blocking the signal.
 	if linux.SignalSetOf(sig)&t.signalMask != 0 {
 		return false
@@ -1107,4 +1111,18 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 	act := t.tg.signalHandlers.dequeueAction(linux.Signal(info.Signo))
 	t.tg.signalHandlers.mu.Unlock()
 	return t.deliverSignal(info, act)
+}
+
+// SignalRegister registers a waiter for pending signals.
+func (t *Task) SignalRegister(e *waiter.Entry, mask waiter.EventMask) {
+	t.tg.signalHandlers.mu.Lock()
+	t.signalQueue.EventRegister(e, mask)
+	t.tg.signalHandlers.mu.Unlock()
+}
+
+// SignalUnregister unregisters a waiter for pending signals.
+func (t *Task) SignalUnregister(e *waiter.Entry) {
+	t.tg.signalHandlers.mu.Lock()
+	t.signalQueue.EventUnregister(e)
+	t.tg.signalHandlers.mu.Unlock()
 }

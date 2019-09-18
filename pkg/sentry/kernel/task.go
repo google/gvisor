@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/waiter"
 	"gvisor.dev/gvisor/third_party/gvsync"
 )
 
@@ -132,6 +133,13 @@ type Task struct {
 	//
 	// signalStack is exclusive to the task goroutine.
 	signalStack arch.SignalStack
+
+	// signalQueue is a set of registered waiters for signal-related events.
+	//
+	// signalQueue is protected by the signalMutex. Note that the task does
+	// not implement all queue methods, specifically the readiness checks.
+	// The task only broadcast a notification on signal delivery.
+	signalQueue waiter.Queue `state:"zerovalue"`
 
 	// If groupStopPending is true, the task should participate in a group
 	// stop in the interrupt path.
