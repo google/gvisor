@@ -16,13 +16,14 @@
 
 # Parse arguments. We require more than two arguments, which are the private
 # keyring, the e-mail associated with the signer, and the list of packages.
-if [ "$#" -le 2 ]; then
-  echo "usage: $0 <private-key> <signer-email> <packages...>"
+if [ "$#" -le 3 ]; then
+  echo "usage: $0 <private-key> <signer-email> <component> <packages...>"
   exit 1
 fi
 declare -r private_key=$(readlink -e "$1")
 declare -r signer="$2"
-shift; shift
+declare -r component="$3"
+shift; shift; shift
 
 # Verbose from this point.
 set -xeo pipefail
@@ -47,8 +48,8 @@ for pkg in "$@"; do
   if [[ "${name}" == "${arch}" ]]; then
     continue # Not a regular package.
   fi
-  mkdir -p "${tmpdir}"/binary-"${arch}"
-  cp -a "${pkg}" "${tmpdir}"/binary-"${arch}"
+  mkdir -p "${tmpdir}"/"${component}"/binary-"${arch}"
+  cp -a "${pkg}" "${tmpdir}"/"${component}"/binary-"${arch}"
 done
 find "${tmpdir}" -type f -exec chmod 0644 {} \;
 
@@ -58,12 +59,12 @@ find "${tmpdir}" -type f -exec chmod 0644 {} \;
 find "${tmpdir}" -type l -exec rm -f {} \;
 
 # Sign all packages.
-for file in "${tmpdir}"/binary-*/*.deb; do
+for file in "${tmpdir}"/"${component}"/binary-*/*.deb; do
   dpkg-sig -g "--no-default-keyring --keyring ${keyring}" --sign builder "${file}" >&2
 done
 
 # Build the package list.
-for dir in "${tmpdir}"/binary-*; do
+for dir in "${tmpdir}"/"${component}"/binary-*; do
   (cd "${dir}" && apt-ftparchive packages . | gzip > Packages.gz)
 done
 
