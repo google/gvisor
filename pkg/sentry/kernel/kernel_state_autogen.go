@@ -510,6 +510,7 @@ func (x *syslog) load(m state.Map) {
 func (x *Task) beforeSave() {}
 func (x *Task) save(m state.Map) {
 	x.beforeSave()
+	if !state.IsZeroValue(x.signalQueue) { m.Failf("signalQueue is %v, expected zero", x.signalQueue) }
 	var ptraceTracer *Task = x.savePtraceTracer()
 	m.SaveValue("ptraceTracer", ptraceTracer)
 	var logPrefix string = x.saveLogPrefix()

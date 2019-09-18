@@ -327,14 +327,14 @@ var AMD64 = &kernel.SyscallTable{
 		279: syscalls.CapError("move_pages", linux.CAP_SYS_NICE, "", nil),                               // requires cap_sys_nice (mostly)
 		280: syscalls.Supported("utimensat", Utimensat),
 		281: syscalls.Supported("epoll_pwait", EpollPwait),
-		282: syscalls.ErrorWithEvent("signalfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/139"}), // TODO(b/19846426)
+		282: syscalls.PartiallySupported("signalfd", Signalfd, "Semantics are slightly different.", []string{"gvisor.dev/issue/139"}),
 		283: syscalls.Supported("timerfd_create", TimerfdCreate),
 		284: syscalls.Supported("eventfd", Eventfd),
 		285: syscalls.PartiallySupported("fallocate", Fallocate, "Not all options are supported.", nil),
 		286: syscalls.Supported("timerfd_settime", TimerfdSettime),
 		287: syscalls.Supported("timerfd_gettime", TimerfdGettime),
 		288: syscalls.Supported("accept4", Accept4),
-		289: syscalls.ErrorWithEvent("signalfd4", syserror.ENOSYS, "", []string{"gvisor.dev/issue/139"}), // TODO(b/19846426)
+		289: syscalls.PartiallySupported("signalfd4", Signalfd4, "Semantics are slightly different.", []string{"gvisor.dev/issue/139"}),
 		290: syscalls.Supported("eventfd2", Eventfd2),
 		291: syscalls.Supported("epoll_create1", EpollCreate1),
 		292: syscalls.Supported("dup3", Dup3),
