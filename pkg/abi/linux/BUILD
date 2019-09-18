@@ -46,6 +46,7 @@ go_library(
         "sem.go",
         "shm.go",
         "signal.go",
+        "signalfd.go",
         "socket.go",
         "splice.go",
         "tcp.go",
