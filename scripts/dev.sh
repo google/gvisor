@@ -63,6 +63,7 @@ if [[ ${REFRESH} -eq 0 ]]; then
   echo "If you rebuild, use $0 --refresh."
 
 else
+  mkdir -p "$(dirname ${RUNSC_BIN})"
   cp -f ${OUTPUT} "${RUNSC_BIN}"
 
   echo
