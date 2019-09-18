@@ -27,7 +27,7 @@ pkg=$(build -c opt --host_force_python=py2 //runsc:runsc-debian)
 
 # Build a repository, if the key is available.
 if [[ -v KOKORO_REPO_KEY ]]; then
-  repo=$(tools/make_repository.sh "${KOKORO_KEYSTORE_DIR}/${KOKORO_REPO_KEY}" gvisor-bot@google.com ${pkg})
+  repo=$(tools/make_repository.sh "${KOKORO_KEYSTORE_DIR}/${KOKORO_REPO_KEY}" gvisor-bot@google.com main ${pkg})
 fi
 
 # Install installs artifacts.
@@ -51,7 +51,7 @@ if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
     # The "latest" directory and current date.
     stamp="$(date -Idate)"
     install "${KOKORO_ARTIFACTS_DIR}/nightly/latest" \
-            "${KOKORO_ARTIFACTS_DIR}/dists/nightly/main"
+            "${KOKORO_ARTIFACTS_DIR}/dists/nightly/latest"
     install "${KOKORO_ARTIFACTS_DIR}/nightly/${stamp}" \
             "${KOKORO_ARTIFACTS_DIR}/dists/nightly/${stamp}"
   else
@@ -66,13 +66,13 @@ if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
         name=$(echo "${tag}" | cut -d'-' -f2)
         base=$(echo "${name}" | cut -d'.' -f1)
         install "${KOKORO_ARTIFACTS_DIR}/release/${name}" \
-                "${KOKORO_ARTIFACTS_DIR}/dists/${name}/main"
+                "${KOKORO_ARTIFACTS_DIR}/dists/${name}"
         if [[ "${base}" != "${tag}" ]]; then
           install "${KOKORO_ARTIFACTS_DIR}/release/${base}" \
-                  "${KOKORO_ARTIFACTS_DIR}/dists/${base}/main"
+                  "${KOKORO_ARTIFACTS_DIR}/dists/${base}"
         fi
         install "${KOKORO_ARTIFACTS_DIR}/release/latest" \
-                "${KOKORO_ARTIFACTS_DIR}/dists/latest/main"
+                "${KOKORO_ARTIFACTS_DIR}/dists/latest"
       done
     fi
   fi
