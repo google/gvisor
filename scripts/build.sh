@@ -47,7 +47,7 @@ install() {
 # current date. If the current commit happens to correpond to a tag, then we
 # will also move everything into a directory named after the given tag.
 if [[ -v KOKORO_ARTIFACTS_DIR ]]; then
-  if [[ "${KOKORO_BUILD_NIGHTLY}" == "true" ]]; then
+  if [[ "${KOKORO_BUILD_NIGHTLY:-false}" == "true" ]]; then
     # The "latest" directory and current date.
     stamp="$(date -Idate)"
     install "${KOKORO_ARTIFACTS_DIR}/nightly/latest" \
