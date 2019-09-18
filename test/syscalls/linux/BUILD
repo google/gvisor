@@ -1964,6 +1964,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "signalfd_test",
+    testonly = 1,
+    srcs = ["signalfd.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:logging",
+        "//test/util:posix_error",
+        "//test/util:signal_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "sigprocmask_test",
     testonly = 1,
     srcs = ["sigprocmask.cc"],
