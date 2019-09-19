@@ -204,13 +204,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 
 	if g.hostUDSAllowed {
-		if err := filter.InstallUDS(); err != nil {
-			Fatalf("installing UDS seccomp filters: %v", err)
-		}
-	} else {
-		if err := filter.Install(); err != nil {
-			Fatalf("installing seccomp filters: %v", err)
-		}
+		filter.InstallUDSFilters()
+	}
+
+	if err := filter.Install(); err != nil {
+		Fatalf("installing seccomp filters: %v", err)
 	}
 
 	runServers(ats, g.ioFDs)

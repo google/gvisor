@@ -17,12 +17,12 @@ package fd
 
 import (
 	"fmt"
+	"gvisor.dev/gvisor/pkg/unet"
 	"io"
 	"os"
 	"runtime"
 	"sync/atomic"
 	"syscall"
-	"gvisor.dev/gvisor/pkg/unet"
 )
 
 // ReadWriter implements io.ReadWriter, io.ReaderAt, and io.WriterAt for fd. It
@@ -186,8 +186,8 @@ func OpenAt(dir *FD, path string, flags int, mode uint32) (*FD, error) {
 	return New(f), nil
 }
 
-// OpenUnix Open a Unix Domain Socket and return the file descriptor for it.
-func OpenUnix(path string) (*FD, error) {
+// DialUnix connects to a Unix Domain Socket and return the file descriptor.
+func DialUnix(path string) (*FD, error) {
 	socket, err := unet.Connect(path, false)
 	return New(socket.FD()), err
 }
