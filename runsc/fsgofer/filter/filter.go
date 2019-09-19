@@ -31,3 +31,15 @@ func Install() error {
 
 	return seccomp.Install(s)
 }
+
+// InstallUDS installs the standard Gofer seccomp filters along with filters
+// allowing the gofer to connect to a host UDS.
+func InstallUDS() error {
+	// Use the base syscall
+	s := allowedSyscalls
+
+	// Add additional filters required for connecting to the host's sockets.
+	s.Merge(udsSyscalls)
+
+	return seccomp.Install(s)
+}
