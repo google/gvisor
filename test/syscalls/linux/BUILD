@@ -1287,8 +1287,10 @@ cc_binary(
     srcs = ["pty.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
+        "//test/util:pty_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -1296,6 +1298,23 @@ cc_binary(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
+    name = "pty_root_test",
+    testonly = 1,
+    srcs = ["pty_root.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:pty_util",
+        "//test/util:test_main",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_googletest//:gtest",
     ],
 )

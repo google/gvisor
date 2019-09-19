@@ -47,6 +47,11 @@ type Session struct {
 	// The id is immutable.
 	id SessionID
 
+	// foreground is the foreground process group.
+	//
+	// This is protected by TaskSet.mu.
+	foreground *ProcessGroup
+
 	// ProcessGroups is a list of process groups in this Session. This is
 	// protected by TaskSet.mu.
 	processGroups processGroupList
@@ -260,12 +265,14 @@ func (pg *ProcessGroup) SendSignal(info *arch.SignalInfo) error {
 func (tg *ThreadGroup) CreateSession() error {
 	tg.pidns.owner.mu.Lock()
 	defer tg.pidns.owner.mu.Unlock()
+	tg.signalHandlers.mu.Lock()
+	defer tg.signalHandlers.mu.Unlock()
 	return tg.createSession()
 }
 
 // createSession creates a new session for a threadgroup.
 //
-// Precondition: callers must hold TaskSet.mu for writing.
+// Precondition: callers must hold TaskSet.mu and the signal mutex for writing.
 func (tg *ThreadGroup) createSession() error {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
@@ -321,8 +328,14 @@ func (tg *ThreadGroup) createSession() error {
 			childTG.processGroup.incRefWithParent(pg)
 			childTG.processGroup.decRefWithParent(oldParentPG)
 		})
-		tg.processGroup.decRefWithParent(oldParentPG)
+		// If tg.processGroup is an orphan, decRefWithParent will lock
+		// the signal mutex of each thread group in tg.processGroup.
+		// However, tg's signal mutex may already be locked at this
+		// point. We change tg's process group before calling
+		// decRefWithParent to avoid locking tg's signal mutex twice.
+		oldPG := tg.processGroup
 		tg.processGroup = pg
+		oldPG.decRefWithParent(oldParentPG)
 	} else {
 		// The current process group may be nil only in the case of an
 		// unparented thread group (i.e. the init process). This would
@@ -345,6 +358,9 @@ func (tg *ThreadGroup) createSession() error {
 		ns.pgids[pg] = ProcessGroupID(local)
 		ns.processGroups[ProcessGroupID(local)] = pg
 	}
+
+	// Disconnect from the controlling terminal.
+	tg.tty = nil
 
 	return nil
 }
