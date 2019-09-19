@@ -1,19 +1,35 @@
 """Defines a rule for runsc test targets."""
 
-load("@io_bazel_rules_go//go:def.bzl", _go_test = "go_test")
-
 # runtime_test is a macro that will create targets to run the given test target
 # with different runtime options.
-def runtime_test(**kwargs):
-    """Runs the given test target with different runtime options."""
-    name = kwargs["name"]
-    _go_test(**kwargs)
-    kwargs["name"] = name + "_hostnet"
-    kwargs["args"] = ["--runtime-type=hostnet"]
-    _go_test(**kwargs)
-    kwargs["name"] = name + "_kvm"
-    kwargs["args"] = ["--runtime-type=kvm"]
-    _go_test(**kwargs)
-    kwargs["name"] = name + "_overlay"
-    kwargs["args"] = ["--runtime-type=overlay"]
-    _go_test(**kwargs)
+def runtime_test(
+        lang,
+        image,
+        shard_count = 20,
+        size = "enormous"):
+    sh_test(
+        name = lang + "_test",
+        srcs = ["runner.sh"],
+        args = [
+            "--lang",
+            lang,
+            "--image",
+            image,
+        ],
+        data = [
+            ":runner",
+        ],
+        size = size,
+        shard_count = shard_count,
+        tags = [
+            # Requires docker and runsc to be configured before the test runs.
+            "manual",
+            "local",
+        ],
+    )
+
+def sh_test(**kwargs):
+    """Wraps the standard sh_test."""
+    native.sh_test(
+        **kwargs
+    )
