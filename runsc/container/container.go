@@ -941,6 +941,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *boot.Config, bund
 		args = append(args, "--panic-on-write=true")
 	}
 
+	// Add support for mounting host UDS in the gofer
+	if conf.FSGoferHostUDSAllowed {
+		args = append(args, "--host-uds-allowed=true")
+	}
+
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {

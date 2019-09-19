@@ -85,6 +85,9 @@ type Config struct {
 
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
+
+	// HostUDS prevents
+	HostUDSAllowed bool
 }
 
 type attachPoint struct {
@@ -128,12 +131,21 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
 
+	// Acquire the attach point lock
+	a.attachedMu.Lock()
+	defer a.attachedMu.Unlock()
+
 	// Hold the file descriptor we are converting into a p9.File
 	var f *fd.FD
 
 	// Apply the S_IFMT bitmask so we can detect file type appropriately
 	switch fmtStat := stat.Mode & syscall.S_IFMT; {
 	case fmtStat == syscall.S_IFSOCK:
+		// Check to see if the CLI option has been set to allow the UDS mount
+		if !a.conf.HostUDSAllowed {
+			return nil, fmt.Errorf("host UDS support is disabled")
+		}
+
 		// Attempt to open a connection. Bubble up the failures.
 		f, err = fd.OpenUnix(a.prefix)
 		if err != nil {
@@ -144,7 +156,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		// Default to Read/Write permissions.
 		mode := syscall.O_RDWR
 
-		// If the configuration is Read Only & the mount point is a directory,
+		// If the configuration is Read Only or the mount point is a directory,
 		// set the mode to Read Only.
 		if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
 			mode = syscall.O_RDONLY
@@ -157,9 +169,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		}
 	}
 
-	// Close the connection if the UDS is already attached.
-	a.attachedMu.Lock()
-	defer a.attachedMu.Unlock()
+	// Close the connection if already attached.
 	if a.attached {
 		f.Close()
 		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
