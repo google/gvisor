@@ -21,6 +21,7 @@
 package fsgofer
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -86,7 +87,7 @@ type Config struct {
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
 
-	// HostUDS prevents
+	// HostUDSAllowed signals whether the gofer can mount a host's UDS.
 	HostUDSAllowed bool
 }
 
@@ -131,23 +132,23 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
 
-	// Acquire the attach point lock
+	// Acquire the attach point lock.
 	a.attachedMu.Lock()
 	defer a.attachedMu.Unlock()
 
-	// Hold the file descriptor we are converting into a p9.File
+	// Hold the file descriptor we are converting into a p9.File.
 	var f *fd.FD
 
-	// Apply the S_IFMT bitmask so we can detect file type appropriately
-	switch fmtStat := stat.Mode & syscall.S_IFMT; {
-	case fmtStat == syscall.S_IFSOCK:
-		// Check to see if the CLI option has been set to allow the UDS mount
+	// Apply the S_IFMT bitmask so we can detect file type appropriately.
+	switch fmtStat := stat.Mode & syscall.S_IFMT; fmtStat {
+	case syscall.S_IFSOCK:
+		// Check to see if the CLI option has been set to allow the UDS mount.
 		if !a.conf.HostUDSAllowed {
-			return nil, fmt.Errorf("host UDS support is disabled")
+			return nil, errors.New("host UDS support is disabled")
 		}
 
 		// Attempt to open a connection. Bubble up the failures.
-		f, err = fd.OpenUnix(a.prefix)
+		f, err = fd.DialUnix(a.prefix)
 		if err != nil {
 			return nil, err
 		}
@@ -1058,7 +1059,7 @@ func (l *localFile) Flush() error {
 
 // Connect implements p9.File.
 func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
-	return fd.OpenUnix(l.hostPath)
+	return fd.DialUnix(l.hostPath)
 }
 
 // Close implements p9.File.

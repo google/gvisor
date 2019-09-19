@@ -23,23 +23,16 @@ import (
 
 // Install installs seccomp filters.
 func Install() error {
-	s := allowedSyscalls
-
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
-	s.Merge(instrumentationFilters())
+	allowedSyscalls.Merge(instrumentationFilters())
 
-	return seccomp.Install(s)
+	return seccomp.Install(allowedSyscalls)
 }
 
-// InstallUDS installs the standard Gofer seccomp filters along with filters
-// allowing the gofer to connect to a host UDS.
-func InstallUDS() error {
-	// Use the base syscall
-	s := allowedSyscalls
-
+// InstallUDSFilters installs the seccomp filters required to let the gofer connect
+// to a host UDS.
+func InstallUDSFilters() {
 	// Add additional filters required for connecting to the host's sockets.
-	s.Merge(udsSyscalls)
-
-	return seccomp.Install(s)
+	allowedSyscalls.Merge(udsSyscalls)
 }

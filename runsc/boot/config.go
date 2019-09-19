@@ -138,7 +138,7 @@ type Config struct {
 	// Overlay is whether to wrap the root filesystem in an overlay.
 	Overlay bool
 
-	// fsGoferHostUDSAllowed enables the gofer to mount a host UDS
+	// FSGoferHostUDSAllowed enables the gofer to mount a host UDS.
 	FSGoferHostUDSAllowed bool
 
 	// Network indicates what type of network to use.
