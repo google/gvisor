@@ -415,13 +415,13 @@ func (s *SocketOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 // WriteTo implements fs.FileOperations.WriteTo.
 func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Writer, count int64, dup bool) (int64, error) {
 	s.readMu.Lock()
-	defer s.readMu.Unlock()
 
 	// Copy as much data as possible.
 	done := int64(0)
 	for count > 0 {
 		// This may return a blocking error.
 		if err := s.fetchReadView(); err != nil {
+			s.readMu.Unlock()
 			return done, err.ToError()
 		}
 
@@ -434,16 +434,18 @@ func (s *SocketOperations) WriteTo(ctx context.Context, _ *fs.File, dst io.Write
 			// supported by any Linux system calls, but the
 			// expectation is that now a caller will call read to
 			// actually remove these bytes from the socket.
-			return done, nil
+			break
 		}
 
 		// Drop that part of the view.
 		s.readView.TrimFront(n)
 		if err != nil {
+			s.readMu.Unlock()
 			return done, err
 		}
 	}
 
+	s.readMu.Unlock()
 	return done, nil
 }
 
@@ -549,7 +551,11 @@ func (r *readerPayload) Payload(size int) ([]byte, *tcpip.Error) {
 // ReadFrom implements fs.FileOperations.ReadFrom.
 func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader, count int64) (int64, error) {
 	f := &readerPayload{ctx: ctx, r: r, count: count}
-	n, resCh, err := s.Endpoint.Write(f, tcpip.WriteOptions{})
+	n, resCh, err := s.Endpoint.Write(f, tcpip.WriteOptions{
+		// Reads may be destructive but should be very fast,
+		// so we can't release the lock while copying data.
+		Atomic: true,
+	})
 	if err == tcpip.ErrWouldBlock {
 		return 0, syserror.ErrWouldBlock
 	}
@@ -561,9 +567,7 @@ func (s *SocketOperations) ReadFrom(ctx context.Context, _ *fs.File, r io.Reader
 		}
 
 		n, _, err = s.Endpoint.Write(f, tcpip.WriteOptions{
-			// Reads may be destructive but should be very fast,
-			// so we can't release the lock while copying data.
-			Atomic: true,
+			Atomic: true, // See above.
 		})
 	}
 	if err == tcpip.ErrWouldBlock {
