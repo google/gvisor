@@ -145,6 +145,7 @@ go_library(
         "threads.go",
         "timekeeper.go",
         "timekeeper_state.go",
+        "tty.go",
         "uts_namespace.go",
         "vdso.go",
         "version.go",

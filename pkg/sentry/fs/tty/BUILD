@@ -25,6 +25,7 @@ go_library(
         "//pkg/sentry/device",
         "//pkg/sentry/fs",
         "//pkg/sentry/fs/fsutil",
+        "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket/unix/transport",
