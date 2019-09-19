@@ -30,8 +30,8 @@ func Install() error {
 	return seccomp.Install(allowedSyscalls)
 }
 
-// InstallUDSFilters installs the seccomp filters required to let the gofer connect
-// to a host UDS.
+// InstallUDSFilters extends the allowed syscalls to include those necessary for
+// connecting to a host UDS.
 func InstallUDSFilters() {
 	// Add additional filters required for connecting to the host's sockets.
 	allowedSyscalls.Merge(udsSyscalls)
