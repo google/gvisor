@@ -129,6 +129,9 @@ func newDir(ctx context.Context, m *fs.MountSource) *fs.Inode {
 
 // Release implements fs.InodeOperations.Release.
 func (d *dirInodeOperations) Release(ctx context.Context) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.master.DecRef()
 	if len(d.slaves) != 0 {
 		panic(fmt.Sprintf("devpts directory still contains active terminals: %+v", d))

@@ -172,9 +172,10 @@ func (ts *TaskSet) newTask(cfg *TaskConfig) (*Task, error) {
 		if parentPG := tg.parentPG(); parentPG == nil {
 			tg.createSession()
 		} else {
-			// Inherit the process group.
+			// Inherit the process group and terminal.
 			parentPG.incRefWithParent(parentPG)
 			tg.processGroup = parentPG
+			tg.tty = t.parent.tg.tty
 		}
 	}
 	tg.tasks.PushBack(t)

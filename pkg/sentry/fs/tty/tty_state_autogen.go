@@ -175,6 +175,8 @@ func (x *Terminal) save(m state.Map) {
 	m.Save("n", &x.n)
 	m.Save("d", &x.d)
 	m.Save("ld", &x.ld)
+	m.Save("masterKTTY", &x.masterKTTY)
+	m.Save("slaveKTTY", &x.slaveKTTY)
 }
 
 func (x *Terminal) afterLoad() {}
@@ -183,6 +185,8 @@ func (x *Terminal) load(m state.Map) {
 	m.Load("n", &x.n)
 	m.Load("d", &x.d)
 	m.Load("ld", &x.ld)
+	m.Load("masterKTTY", &x.masterKTTY)
+	m.Load("slaveKTTY", &x.slaveKTTY)
 }
 
 func init() {
