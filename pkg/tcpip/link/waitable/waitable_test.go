@@ -70,6 +70,9 @@ func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.P
 	return nil
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*countedEndpoint) Wait() {}
+
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
 	wep := New(ep)

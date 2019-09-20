@@ -120,3 +120,6 @@ func (e *Endpoint) WaitWrite() {
 func (e *Endpoint) WaitDispatch() {
 	e.dispatchGate.Close()
 }
+
+// Wait implements stack.LinkEndpoint.Wait.
+func (e *Endpoint) Wait() {}

@@ -144,6 +144,9 @@ func (*testObject) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*testObject) Wait() {}
+
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.

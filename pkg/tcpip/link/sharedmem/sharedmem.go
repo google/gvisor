@@ -132,7 +132,8 @@ func (e *endpoint) Close() {
 	}
 }
 
-// Wait waits until all workers have stopped after a Close() call.
+// Wait implements stack.LinkEndpoint.Wait. It waits until all workers have
+// stopped after a Close() call.
 func (e *endpoint) Wait() {
 	e.completed.Wait()
 }

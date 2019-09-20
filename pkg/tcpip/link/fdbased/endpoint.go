@@ -41,6 +41,7 @@ package fdbased
 
 import (
 	"fmt"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -81,6 +82,7 @@ const (
 	PacketMMap
 )
 
+// An endpoint implements the link-layer using a message-oriented file descriptor.
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
@@ -114,6 +116,9 @@ type endpoint struct {
 	// gsoMaxSize is the maximum GSO packet size. It is zero if GSO is
 	// disabled.
 	gsoMaxSize uint32
+
+	// wg keeps track of running goroutines.
+	wg sync.WaitGroup
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -164,7 +169,8 @@ type Options struct {
 // New creates a new fd-based endpoint.
 //
 // Makes fd non-blocking, but does not take ownership of fd, which must remain
-// open for the lifetime of the returned endpoint.
+// open for the lifetime of the returned endpoint (until after the endpoint has
+// stopped being using and Wait returns).
 func New(opts *Options) (stack.LinkEndpoint, error) {
 	caps := stack.LinkEndpointCapabilities(0)
 	if opts.RXChecksumOffload {
@@ -290,7 +296,11 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	// saved, they stop sending outgoing packets and all incoming packets
 	// are rejected.
 	for i := range e.inboundDispatchers {
-		go e.dispatchLoop(e.inboundDispatchers[i]) // S/R-SAFE: See above.
+		e.wg.Add(1)
+		go func(i int) { // S/R-SAFE: See above.
+			e.dispatchLoop(e.inboundDispatchers[i])
+			e.wg.Done()
+		}(i)
 	}
 }
 
@@ -318,6 +328,12 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 // LinkAddress returns the link address of this endpoint.
 func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
+}
+
+// Wait implements stack.LinkEndpoint.Wait. It waits for the endpoint to stop
+// reading from its FD.
+func (e *endpoint) Wait() {
+	e.wg.Wait()
 }
 
 // virtioNetHdr is declared in linux/virtio_net.h.
