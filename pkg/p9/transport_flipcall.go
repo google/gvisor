@@ -60,6 +60,7 @@ type channel struct {
 
 	// -- client only --
 	connected bool
+	active    bool
 
 	// -- server only --
 	client *fd.FD
@@ -197,10 +198,18 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 		return nil, &ErrBadResponse{Got: t, Want: r.Type()}
 	}
 
-	// Is there a payload? Set to the latter portion.
+	// Is there a payload? Copy from the latter portion.
 	if payloader, ok := r.(payloader); ok {
 		fs := payloader.FixedSize()
-		payloader.SetPayload(ch.buf.data[fs:])
+		p := payloader.Payload()
+		payloadData := ch.buf.data[fs:]
+		if len(p) < len(payloadData) {
+			p = make([]byte, len(payloadData))
+			copy(p, payloadData)
+			payloader.SetPayload(p)
+		} else if n := copy(p, payloadData); n < len(p) {
+			payloader.SetPayload(p[:n])
+		}
 		ch.buf.data = ch.buf.data[:fs]
 	}
 
