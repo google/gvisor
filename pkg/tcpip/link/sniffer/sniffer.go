@@ -240,6 +240,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*endpoint) Wait() {}
+
 func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
 	// Figure out the network layer info.
 	var transProto uint8
