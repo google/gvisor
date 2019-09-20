@@ -4,11 +4,17 @@ load("//tools/go_generics:defs.bzl", "go_template", "go_template_instance")
 
 package(licenses = ["notice"])
 
+config_setting(
+    name = "aarch64",
+    constraint_values = ["@bazel_tools//platforms:aarch64"],
+)
+
 go_template(
     name = "generic_walker",
-    srcs = [
-        "walker_amd64.go",
-    ],
+    srcs = select({
+        ":aarch64": ["walker_arm64.go",],
+	"//conditions:default": ["walker_amd64.go",],
+        }),
     opt_types = [
         "Visitor",
     ],
@@ -78,6 +84,8 @@ go_library(
         "pagetables.go",
         "pagetables_amd64.go",
         "pagetables_x86.go",
+        "pagetables_arm64.go",
+        "pagetables_aarch64.go",
         "pcids_x86.go",
         "walker_empty.go",
         "walker_lookup.go",
@@ -96,6 +104,7 @@ go_test(
     name = "pagetables_test",
     size = "small",
     srcs = [
+        "pagetables_arm64_test.go",
         "pagetables_amd64_test.go",
         "pagetables_test.go",
         "walker_check.go",
