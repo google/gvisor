@@ -199,8 +199,11 @@ type Dirent struct {
 	// Ino is the inode number.
 	Ino uint64
 
-	// Off is this Dirent's offset.
-	Off int64
+	// NextOff is the offset of the *next* Dirent in the directory; that is,
+	// FileDescription.Seek(NextOff, SEEK_SET) (as called by seekdir(3)) will
+	// cause the next call to FileDescription.IterDirents() to yield the next
+	// Dirent. (The offset of the first Dirent in a directory is always 0.)
+	NextOff int64
 }
 
 // IterDirentsCallback receives Dirents from FileDescriptionImpl.IterDirents.

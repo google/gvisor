@@ -190,10 +190,10 @@ func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallba
 			}
 
 			if !cb.Handle(vfs.Dirent{
-				Name: child.diskDirent.FileName(),
-				Type: fs.ToDirentType(childType),
-				Ino:  uint64(child.diskDirent.Inode()),
-				Off:  fd.off,
+				Name:    child.diskDirent.FileName(),
+				Type:    fs.ToDirentType(childType),
+				Ino:     uint64(child.diskDirent.Inode()),
+				NextOff: fd.off + 1,
 			}) {
 				dir.childList.InsertBefore(child, fd.iter)
 				return nil
