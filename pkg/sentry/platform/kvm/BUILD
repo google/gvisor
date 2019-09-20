@@ -24,6 +24,8 @@ go_library(
         "machine_amd64_unsafe.go",
         "machine_unsafe.go",
         "physical_map.go",
+        "physical_map_amd64.go",
+        "physical_map_arm64.go",
         "virtual_map.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/platform/kvm",
