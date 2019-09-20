@@ -85,3 +85,6 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 
 	return nil
 }
+
+// Wait implements stack.LinkEndpoint.Wait.
+func (*endpoint) Wait() {}
