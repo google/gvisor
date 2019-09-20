@@ -529,6 +529,16 @@ func (s IOSequence) CopyIn(ctx context.Context, dst []byte) (int, error) {
 	return CopyInVec(ctx, s.IO, s.Addrs, dst, s.Opts)
 }
 
+// CopyInNew invokes CopyInVecNew over s.Addrs.
+//
+// As with CopyInVecNew, if s.NumBytes() < num, the copy will be truncated to
+// s.NumBytes(), and a nil error will be returned.
+//
+// Preconditions: As for CopyInVecNew.
+func (s IOSequence) CopyInNew(ctx context.Context, num int) ([]byte, error) {
+	return CopyInVecNew(ctx, s.IO, s.Addrs, num, s.Opts)
+}
+
 // ZeroOut invokes ZeroOutVec over s.Addrs.
 //
 // As with ZeroOutVec, if s.NumBytes() < toZero, the write will be truncated
