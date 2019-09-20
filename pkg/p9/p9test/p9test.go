@@ -279,7 +279,7 @@ func (h *Harness) NewSocket() Generator {
 
 // Finish completes all checks and shuts down the server.
 func (h *Harness) Finish() {
-	h.clientSocket.Close()
+	h.clientSocket.Shutdown()
 	h.wg.Wait()
 	h.mockCtrl.Finish()
 }

@@ -77,7 +77,7 @@ go_library(
 
 go_test(
     name = "client_test",
-    size = "small",
+    size = "medium",
     srcs = ["client_test.go"],
     embed = [":p9test"],
     deps = [
