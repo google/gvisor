@@ -153,6 +153,8 @@ type Options struct {
 	// disabled.
 	GSOMaxSize uint32
 
+	SWGSO bool
+
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
 	// used for this endpoint.
 	PacketDispatchMode PacketDispatchMode
@@ -222,7 +224,11 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		}
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
-				e.caps |= stack.CapabilityGSO
+				if opts.SWGSO {
+					e.caps |= stack.CapabilitySWGSO
+				} else {
+					e.caps |= stack.CapabilityHWGSO
+				}
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
 		}
@@ -374,7 +380,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		eth.Encode(ethHdr)
 	}
 
-	if e.Capabilities()&stack.CapabilityGSO != 0 {
+	if e.Capabilities()&stack.CapabilityHWGSO != 0 {
 		vnetHdr := virtioNetHdr{}
 		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
 		if gso != nil {
@@ -405,6 +411,77 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 
 	return rawfile.NonBlockingWrite3(e.fds[0], hdr.View(), payload.ToView(), nil)
+}
+
+// WriteGSOPackets writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	var ethHdrBuf []byte
+	// hdr + data
+	iovLen := 2
+	if e.hdrSize > 0 {
+		// Add ethernet header if needed.
+		ethHdrBuf = make([]byte, header.EthernetMinimumSize)
+		eth := header.Ethernet(ethHdrBuf)
+		ethHdr := &header.EthernetFields{
+			DstAddr: r.RemoteLinkAddress,
+			Type:    protocol,
+		}
+
+		// Preserve the src address if it's set in the route.
+		if r.LocalLinkAddress != "" {
+			ethHdr.SrcAddr = r.LocalLinkAddress
+		} else {
+			ethHdr.SrcAddr = e.addr
+		}
+		eth.Encode(ethHdr)
+		iovLen++
+	}
+
+	n := len(hdrs)
+
+	iovec := make([]syscall.Iovec, n*iovLen)
+	mmsgHdrs := make([]rawfile.MMsgHdr, n)
+
+	payloadView := payload.ToView()
+	for i := range hdrs {
+		packetSize := hdrs[i].Size
+		hdr := &hdrs[i].Hdr
+		off := hdrs[i].Off
+		j := 0
+		if ethHdrBuf != nil {
+			v := &iovec[i*iovLen+j]
+			v.Base = &ethHdrBuf[0]
+			v.Len = uint64(len(ethHdrBuf))
+			j++
+		}
+
+		v := &iovec[i*iovLen+j]
+		hdrView := hdr.View()
+		v.Base = &hdrView[0]
+		v.Len = uint64(len(hdrView))
+		j++
+
+		v = &iovec[i*iovLen+j]
+		v.Base = &payloadView[off]
+		v.Len = uint64(packetSize)
+		j++
+
+		mmsgHdr := &mmsgHdrs[i]
+		mmsgHdr.Msg.Iov = &iovec[i*iovLen]
+		mmsgHdr.Msg.Iovlen = uint64(iovLen)
+	}
+
+	packets := 0
+	for packets < n {
+		sent, err := rawfile.NonBlockingSendMMsg(e.fds[0], mmsgHdrs)
+		if err != nil {
+			return packets, err
+		}
+		packets += sent
+		mmsgHdrs = mmsgHdrs[sent:]
+	}
+	return packets, nil
 }
 
 // WriteRawPacket writes a raw packet directly to the file descriptor.

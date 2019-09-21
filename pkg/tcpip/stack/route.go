@@ -47,8 +47,8 @@ type Route struct {
 	// starts.
 	ref *referencedNetworkEndpoint
 
-	// loop controls where WritePacket should send packets.
-	loop PacketLooping
+	// Loop controls where WritePacket should send packets.
+	Loop PacketLooping
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
@@ -67,7 +67,7 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		LocalLinkAddress: localLinkAddr,
 		RemoteAddress:    remoteAddr,
 		ref:              ref,
-		loop:             loop,
+		Loop:             loop,
 	}
 }
 
@@ -157,13 +157,53 @@ func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.Vec
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, hdr, payload, protocol, ttl, r.loop)
+	err := r.ref.ep.WritePacket(r, gso, hdr, payload, protocol, ttl, r.Loop)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {
 		r.ref.nic.stats.Tx.Packets.Increment()
 		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
 	}
+	return err
+}
+
+// PacketDescriptor is a packet descriptor which contains a packet header and
+// offset and size of packet data in a payload view.
+type PacketDescriptor struct {
+	Hdr       buffer.Prependable
+	Off, Size int
+}
+
+// NewPacketDescriptors allocates a set of packet descriptors.
+func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
+	buf := make([]byte, n*hdrSize)
+	hdrs := make([]PacketDescriptor, n)
+	for i := range hdrs {
+		hdrs[i].Hdr = buffer.NewEmptyPrependableFromView(buf[i*hdrSize : (i+1)*hdrSize])
+	}
+	return hdrs
+}
+
+// WritePackets writes the set of packets through the given route.
+func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8) *tcpip.Error {
+	if !r.ref.isValidForOutgoing() {
+		return tcpip.ErrInvalidEndpointState
+	}
+
+	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, protocol, ttl, r.Loop)
+	if err != nil {
+		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
+	}
+	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
+	payloadSize := 0
+	for i := range hdrs {
+		if i >= n {
+			break
+		}
+		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdrs[i].Hdr.UsedLength()))
+		payloadSize += hdrs[i].Size
+	}
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
 	return err
 }
 
@@ -174,7 +214,7 @@ func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.loop); err != nil {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.Loop); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}

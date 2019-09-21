@@ -144,6 +144,10 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr bu
 	return f.ep.WritePacket(r, gso, hdr, payload, fakeNetNumber)
 }
 
+func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, _ uint8, loop stack.PacketLooping) (int, *tcpip.Error) {
+	panic("not implemented")
+}
+
 func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }

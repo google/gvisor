@@ -175,8 +175,11 @@ type Config struct {
 	// capabilities.
 	EnableRaw bool
 
-	// GSO indicates that generic segmentation offload is enabled.
-	GSO bool
+	// HardwareGSO indicates that generic segmentation offload is enabled.
+	HardwareGSO bool
+
+	// SoftwareGSO indicates that generic segmentation offload is enabled.
+	SoftwareGSO bool
 
 	// LogPackets indicates that all network packets should be logged.
 	LogPackets bool

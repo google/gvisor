@@ -239,6 +239,41 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return nil
 }
 
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop stack.PacketLooping) (int, *tcpip.Error) {
+	for i := range hdrs {
+		hdr := &hdrs[i].Hdr
+		packetSize := hdrs[i].Size
+
+		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+		length := uint16(hdr.UsedLength() + packetSize)
+		id := uint32(0)
+		if length > header.IPv4MaximumHeaderSize+8 {
+			// Packets of 68 bytes or less are required by RFC 791 to not be
+			// fragmented, so we only assign ids to larger packets.
+			id = atomic.AddUint32(&ids[hashRoute(r, protocol)%buckets], 1)
+		}
+		ip.Encode(&header.IPv4Fields{
+			IHL:         header.IPv4MinimumSize,
+			TotalLength: length,
+			ID:          uint16(id),
+			TTL:         ttl,
+			Protocol:    uint8(protocol),
+			SrcAddr:     r.LocalAddress,
+			DstAddr:     r.RemoteAddress,
+		})
+		ip.SetChecksum(^ip.CalculateChecksum())
+	}
+	if loop&stack.PacketLoop != 0 {
+		panic("multiple packets in local loop")
+	}
+	if loop&stack.PacketOut == 0 {
+		return len(hdrs), nil
+	}
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+	return n, err
+}
+
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
 func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {

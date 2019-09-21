@@ -240,6 +240,14 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
 }
 
+// WritePackets implements the stack.LinkEndpoint interface. It is called by
+// higher-level protocols to write packets; it just logs the packet and forwards
+// the request to the lower endpoint.
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	//FIXME
+	return e.lower.WritePackets(r, gso, hdrs, payload, protocol)
+}
+
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}
 

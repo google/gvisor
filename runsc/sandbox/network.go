@@ -28,6 +28,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -61,7 +62,7 @@ func setupNetwork(conn *urpc.Client, pid int, spec *specs.Spec, conf *boot.Confi
 		// Build the path to the net namespace of the sandbox process.
 		// This is what we will copy.
 		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
-		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.GSO, conf.NumNetworkChannels); err != nil {
+		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf.HardwareGSO, conf.SoftwareGSO, conf.NumNetworkChannels); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
 	case boot.NetworkHost:
@@ -136,7 +137,7 @@ func isRootNS() (bool, error) {
 // createInterfacesAndRoutesFromNS scrapes the interface and routes from the
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
-func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO bool, numNetworkChannels int) error {
+func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, hardwareGSO bool, softwareGSO bool, numNetworkChannels int) error {
 	// Join the network namespace that we will be copying.
 	restore, err := joinNetNS(nsPath)
 	if err != nil {
@@ -232,7 +233,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 		// Create the socket for the device.
 		for i := 0; i < link.NumChannels; i++ {
 			log.Debugf("Creating Channel %d", i)
-			socketEntry, err := createSocket(iface, ifaceLink, enableGSO)
+			socketEntry, err := createSocket(iface, ifaceLink, hardwareGSO)
 			if err != nil {
 				return fmt.Errorf("failed to createSocket for %s : %v", iface.Name, err)
 			}
@@ -245,6 +246,11 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, enableGSO
 				}
 			}
 			args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
+		}
+		if link.GSOMaxSize == 0 && softwareGSO {
+			// Hardware GSO is disabled. Let's enable software GSO.
+			link.GSOMaxSize = stack.SoftwareGSOMaxSize
+			link.SWGSO = true
 		}
 
 		// Collect the addresses for the interface, enable forwarding,

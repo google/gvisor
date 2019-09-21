@@ -70,6 +70,11 @@ func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.P
 	return nil
 }
 
+func (e *countedEndpoint) WritePackets(r *stack.Route, _ *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	e.writeCount += len(hdrs)
+	return len(hdrs), nil
+}
+
 // Wait implements stack.LinkEndpoint.Wait.
 func (*countedEndpoint) Wait() {}
 

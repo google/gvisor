@@ -16,13 +16,6 @@
 
 source $(dirname $0)/common.sh
 
-# Ensure that KVM is loaded, and we can use it.
-(lsmod | grep -E '^(kvm_intel|kvm_amd)') || sudo modprobe kvm
-sudo chmod a+rw /dev/kvm
-
-# Run all KVM platform tests (locally).
-run_as_root //pkg/sentry/platform/kvm:kvm_test
-
-# Install the KVM runtime and run all integration tests.
-install_runsc_for_test kvm --platform=kvm --software-gso=true --gso=false
+# Install the runtime and perform basic tests.
+install_runsc_for_test swgso --software-gso=true --gso=false
 test_runsc //test/image:image_test //test/e2e:integration_test

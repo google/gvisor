@@ -96,7 +96,7 @@ func (e *Endpoint) MTU() uint32 {
 func (e *Endpoint) Capabilities() stack.LinkEndpointCapabilities {
 	caps := stack.LinkEndpointCapabilities(0)
 	if e.GSO {
-		caps |= stack.CapabilityGSO
+		caps |= stack.CapabilityHWGSO
 	}
 	return caps
 }
@@ -132,6 +132,29 @@ func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 
 	return nil
+}
+
+// WritePackets stores outbound packets into the channel.
+func (e *Endpoint) WritePackets(_ *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	payloadView := payload.ToView()
+	for i := range hdrs {
+		hdr := &hdrs[i].Hdr
+		off := hdrs[i].Off
+		size := hdrs[i].Size
+		p := PacketInfo{
+			Header:  hdr.View(),
+			Proto:   protocol,
+			Payload: buffer.NewViewFromBytes(payloadView[off : off+size]),
+			GSO:     gso,
+		}
+
+		select {
+		case e.C <- p:
+		default:
+		}
+	}
+
+	return 0, nil
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

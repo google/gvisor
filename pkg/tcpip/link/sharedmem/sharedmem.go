@@ -212,6 +212,10 @@ func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	return nil
 }
 
+func (e *endpoint) WritePackets(r *stack.Route, _ *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	panic("not implemented")
+}
+
 // dispatchLoop reads packets from the rx queue in a loop and dispatches them
 // to the network stack.
 func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {

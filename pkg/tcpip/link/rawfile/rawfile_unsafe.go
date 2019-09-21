@@ -101,6 +101,16 @@ func NonBlockingWrite3(fd int, b1, b2, b3 []byte) *tcpip.Error {
 	return nil
 }
 
+// NonBlockingSendMMsg sends multiple messages on a socket.
+func NonBlockingSendMMsg(fd int, msgHdrs []MMsgHdr) (int, *tcpip.Error) {
+	n, _, e := syscall.RawSyscall6(307 /* sendmmsg */, uintptr(fd), uintptr(unsafe.Pointer(&msgHdrs[0])), uintptr(len(msgHdrs)), syscall.MSG_DONTWAIT, 0, 0)
+	if e != 0 {
+		return 0, TranslateErrno(e)
+	}
+
+	return int(n), nil
+}
+
 // PollEvent represents the pollfd structure passed to a poll() system call.
 type PollEvent struct {
 	FD      int32

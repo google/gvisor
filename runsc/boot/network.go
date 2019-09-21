@@ -55,6 +55,7 @@ type FDBasedLink struct {
 	Addresses   []net.IP
 	Routes      []Route
 	GSOMaxSize  uint32
+	SWGSO       bool
 	LinkAddress net.HardwareAddr
 
 	// NumChannels controls how many underlying FD's are to be used to
@@ -163,6 +164,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			Address:            mac,
 			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
+			SWGSO:              link.SWGSO,
 			RXChecksumOffload:  true,
 		})
 		if err != nil {

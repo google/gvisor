@@ -126,6 +126,33 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber)
 }
 
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop stack.PacketLooping) (int, *tcpip.Error) {
+	for i := range hdrs {
+		hdr := &hdrs[i].Hdr
+		size := hdrs[i].Size
+		length := uint16(hdr.UsedLength() + size)
+		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength: length,
+			NextHeader:    uint8(protocol),
+			HopLimit:      ttl,
+			SrcAddr:       r.LocalAddress,
+			DstAddr:       r.RemoteAddress,
+		})
+	}
+
+	if loop&stack.PacketLoop != 0 {
+		panic("not implemented")
+	}
+	if loop&stack.PacketOut == 0 {
+		return len(hdrs), nil
+	}
+
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+	return n, err
+}
+
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
 // supported by IPv6.
 func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {

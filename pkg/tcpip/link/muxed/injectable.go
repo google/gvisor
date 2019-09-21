@@ -84,12 +84,22 @@ func (m *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buf
 	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv)
 }
 
+// WritePackets writes outbound packets to the appropriate LinkInjectableEndpoint
+// based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
+// route registered in this endpoint.
+func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
+		return endpoint.WritePackets(r, gso, hdrs, payload, protocol)
+	}
+	return 0, tcpip.ErrNoRoute
+}
+
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
 // based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
 // route registered in this endpoint.
-func (m *InjectableEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
-		return endpoint.WritePacket(r, nil /* gso */, hdr, payload, protocol)
+		return endpoint.WritePacket(r, gso, hdr, payload, protocol)
 	}
 	return tcpip.ErrNoRoute
 }
