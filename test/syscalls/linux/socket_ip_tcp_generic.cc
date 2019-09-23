@@ -117,7 +117,7 @@ TEST_P(TCPSocketPairTest, RSTCausesPollHUP) {
   struct pollfd poll_fd3 = {sockets->first_fd(), POLLHUP, 0};
   ASSERT_THAT(RetryEINTR(poll)(&poll_fd3, 1, kPollTimeoutMs),
               SyscallSucceedsWithValue(1));
-  ASSERT_NE(poll_fd.revents & (POLLHUP | POLLIN), 0);
+  ASSERT_NE(poll_fd3.revents & POLLHUP, 0);
 }
 
 // This test validates that even if a RST is sent the other end will not
