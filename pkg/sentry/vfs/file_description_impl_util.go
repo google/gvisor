@@ -152,6 +152,12 @@ func (DirectoryFileDescriptionDefaultImpl) Write(ctx context.Context, src userme
 	return 0, syserror.EISDIR
 }
 
+// ConfigureMMap implements FileDescriptionImpl.ConfigureMMap.
+func (DirectoryFileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	// mmap(2) specifies that EACCESS should be returned for non-regular file fds.
+	return syserror.EACCES
+}
+
 // DynamicBytesFileDescriptionImpl may be embedded by implementations of
 // FileDescriptionImpl that represent read-only regular files whose contents
 // are backed by a bytes.Buffer that is regenerated when necessary, consistent

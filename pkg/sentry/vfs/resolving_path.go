@@ -147,6 +147,27 @@ func (vfs *VirtualFilesystem) putResolvingPath(rp *ResolvingPath) {
 	resolvingPathPool.Put(rp)
 }
 
+// WithResolvingPath constructs a ResolvingPath given a PathOperation, runs an
+// operation on it, and performs the necessary cleanup on the ResolvingPath.
+func (vfs *VirtualFilesystem) WithResolvingPath(creds *auth.Credentials, pop *PathOperation, body func(rp *ResolvingPath) error) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return err
+	}
+
+	for {
+		err := body(rp)
+		if err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
 func (rp *ResolvingPath) decRefStartAndMount() {
 	if rp.flags&rpflagsHaveStartRef != 0 {
 		rp.start.decRef(rp.mount.fs)
