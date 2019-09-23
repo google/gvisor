@@ -209,6 +209,10 @@ type commonEndpoint interface {
 	// transport.Endpoint.SetSockOpt.
 	SetSockOpt(interface{}) *tcpip.Error
 
+	// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt and
+	// transport.Endpoint.SetSockOptInt.
+	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+
 	// GetSockOpt implements tcpip.Endpoint.GetSockOpt and
 	// transport.Endpoint.GetSockOpt.
 	GetSockOpt(interface{}) *tcpip.Error
@@ -887,8 +891,8 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var size tcpip.SendBufferSizeOption
-		if err := ep.GetSockOpt(&size); err != nil {
+		size, err := ep.GetSockOptInt(tcpip.SendBufferSizeOption)
+		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
@@ -903,8 +907,8 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var size tcpip.ReceiveBufferSizeOption
-		if err := ep.GetSockOpt(&size); err != nil {
+		size, err := ep.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
+		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
@@ -1275,7 +1279,7 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.SendBufferSizeOption(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.SendBufferSizeOption, int(v)))
 
 	case linux.SO_RCVBUF:
 		if len(optVal) < sizeOfInt32 {
@@ -1283,7 +1287,7 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(v)))
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, int(v)))
 
 	case linux.SO_REUSEADDR:
 		if len(optVal) < sizeOfInt32 {
@@ -2317,9 +2321,9 @@ func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.Sysc
 		return 0, err
 
 	case linux.TIOCOUTQ:
-		var v tcpip.SendQueueSizeOption
-		if err := ep.GetSockOpt(&v); err != nil {
-			return 0, syserr.TranslateNetstackError(err).ToError()
+		v, terr := ep.GetSockOptInt(tcpip.SendQueueSizeOption)
+		if terr != nil {
+			return 0, syserr.TranslateNetstackError(terr).ToError()
 		}
 
 		if v > math.MaxInt32 {

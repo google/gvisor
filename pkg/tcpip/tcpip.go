@@ -401,6 +401,10 @@ type Endpoint interface {
 	// SetSockOpt sets a socket option. opt should be one of the *Option types.
 	SetSockOpt(opt interface{}) *Error
 
+	// SetSockOptInt sets a socket option, for simple cases where a value
+	// has the int type.
+	SetSockOptInt(opt SockOpt, v int) *Error
+
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// *Option types.
 	GetSockOpt(opt interface{}) *Error
@@ -446,9 +450,21 @@ type WriteOptions struct {
 type SockOpt int
 
 const (
-	// ReceiveQueueSizeOption is used in GetSockOpt to specify that the number of
-	// unread bytes in the input buffer should be returned.
+	// ReceiveQueueSizeOption is used in GetSockOptInt to specify that the
+	// number of unread bytes in the input buffer should be returned.
 	ReceiveQueueSizeOption SockOpt = iota
+
+	// SendBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
+	// specify the send buffer size option.
+	SendBufferSizeOption
+
+	// ReceiveBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
+	// specify the receive buffer size option.
+	ReceiveBufferSizeOption
+
+	// SendQueueSizeOption is used in GetSockOptInt to specify that the
+	// number of unread bytes in the output buffer should be returned.
+	SendQueueSizeOption
 
 	// TODO(b/137664753): convert all int socket options to be handled via
 	// GetSockOptInt.
@@ -457,18 +473,6 @@ const (
 // ErrorOption is used in GetSockOpt to specify that the last error reported by
 // the endpoint should be cleared and returned.
 type ErrorOption struct{}
-
-// SendBufferSizeOption is used by SetSockOpt/GetSockOpt to specify the send
-// buffer size option.
-type SendBufferSizeOption int
-
-// ReceiveBufferSizeOption is used by SetSockOpt/GetSockOpt to specify the
-// receive buffer size option.
-type ReceiveBufferSizeOption int
-
-// SendQueueSizeOption is used in GetSockOpt to specify that the number of
-// unread bytes in the output buffer should be returned.
-type SendQueueSizeOption int
 
 // V6OnlyOption is used by SetSockOpt/GetSockOpt to specify whether an IPv6
 // socket is to be restricted to sending and receiving IPv6 packets only.
