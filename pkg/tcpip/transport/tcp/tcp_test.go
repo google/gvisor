@@ -84,7 +84,7 @@ func TestConnectIncrementActiveConnection(t *testing.T) {
 	stats := c.Stack().Stats()
 	want := stats.TCP.ActiveConnectionOpenings.Value() + 1
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	if got := stats.TCP.ActiveConnectionOpenings.Value(); got != want {
 		t.Errorf("got stats.TCP.ActtiveConnectionOpenings.Value() = %v, want = %v", got, want)
 	}
@@ -97,7 +97,7 @@ func TestConnectDoesNotIncrementFailedConnectionAttempts(t *testing.T) {
 	stats := c.Stack().Stats()
 	want := stats.TCP.FailedConnectionAttempts.Value()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	if got := stats.TCP.FailedConnectionAttempts.Value(); got != want {
 		t.Errorf("got stats.TCP.FailedConnectionOpenings.Value() = %v, want = %v", got, want)
 	}
@@ -131,7 +131,7 @@ func TestTCPSegmentsSentIncrement(t *testing.T) {
 	stats := c.Stack().Stats()
 	// SYN and ACK
 	want := stats.TCP.SegmentsSent.Value() + 2
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	if got := stats.TCP.SegmentsSent.Value(); got != want {
 		t.Errorf("got stats.TCP.SegmentsSent.Value() = %v, want = %v", got, want)
@@ -299,7 +299,7 @@ func TestTCPResetsReceivedIncrement(t *testing.T) {
 	want := stats.TCP.ResetsReceived.Value() + 1
 	iss := seqnum.Value(789)
 	rcvWnd := seqnum.Size(30000)
-	c.CreateConnected(iss, rcvWnd, nil)
+	c.CreateConnected(iss, rcvWnd, -1 /* epRcvBuf */)
 
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -323,7 +323,7 @@ func TestTCPResetsDoNotGenerateResets(t *testing.T) {
 	want := stats.TCP.ResetsReceived.Value() + 1
 	iss := seqnum.Value(789)
 	rcvWnd := seqnum.Size(30000)
-	c.CreateConnected(iss, rcvWnd, nil)
+	c.CreateConnected(iss, rcvWnd, -1 /* epRcvBuf */)
 
 	c.SendPacket(nil, &context.Headers{
 		SrcPort: context.TestPort,
@@ -344,14 +344,14 @@ func TestActiveHandshake(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 }
 
 func TestNonBlockingClose(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	ep := c.EP
 	c.EP = nil
 
@@ -367,7 +367,7 @@ func TestConnectResetAfterClose(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	ep := c.EP
 	c.EP = nil
 
@@ -417,7 +417,7 @@ func TestSimpleReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -469,7 +469,7 @@ func TestOutOfOrderReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -557,8 +557,7 @@ func TestOutOfOrderFlood(t *testing.T) {
 	defer c.Cleanup()
 
 	// Create a new connection with initial window size of 10.
-	opt := tcpip.ReceiveBufferSizeOption(10)
-	c.CreateConnected(789, 30000, &opt)
+	c.CreateConnected(789, 30000, 10)
 
 	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
@@ -631,7 +630,7 @@ func TestRstOnCloseWithUnreadData(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -700,7 +699,7 @@ func TestRstOnCloseWithUnreadDataFinConvertRst(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -785,7 +784,7 @@ func TestShutdownRead(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	if _, _, err := c.EP.Read(nil); err != tcpip.ErrWouldBlock {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrWouldBlock)
@@ -804,8 +803,7 @@ func TestFullWindowReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	opt := tcpip.ReceiveBufferSizeOption(10)
-	c.CreateConnected(789, 30000, &opt)
+	c.CreateConnected(789, 30000, 10)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -872,11 +870,9 @@ func TestNoWindowShrinking(t *testing.T) {
 	defer c.Cleanup()
 
 	// Start off with a window size of 10, then shrink it to 5.
-	opt := tcpip.ReceiveBufferSizeOption(10)
-	c.CreateConnected(789, 30000, &opt)
+	c.CreateConnected(789, 30000, 10)
 
-	opt = 5
-	if err := c.EP.SetSockOpt(opt); err != nil {
+	if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 5); err != nil {
 		t.Fatalf("SetSockOpt failed: %v", err)
 	}
 
@@ -976,7 +972,7 @@ func TestSimpleSend(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	data := []byte{1, 2, 3}
 	view := buffer.NewView(len(data))
@@ -1017,7 +1013,7 @@ func TestZeroWindowSend(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 0, nil)
+	c.CreateConnected(789, 0, -1 /* epRcvBuf */)
 
 	data := []byte{1, 2, 3}
 	view := buffer.NewView(len(data))
@@ -1075,8 +1071,7 @@ func TestScaledWindowConnect(t *testing.T) {
 	defer c.Cleanup()
 
 	// Set the window size greater than the maximum non-scaled window.
-	opt := tcpip.ReceiveBufferSizeOption(65535 * 3)
-	c.CreateConnectedWithRawOptions(789, 30000, &opt, []byte{
+	c.CreateConnectedWithRawOptions(789, 30000, 65535*3, []byte{
 		header.TCPOptionWS, 3, 0, header.TCPOptionNOP,
 	})
 
@@ -1110,8 +1105,7 @@ func TestNonScaledWindowConnect(t *testing.T) {
 	defer c.Cleanup()
 
 	// Set the window size greater than the maximum non-scaled window.
-	opt := tcpip.ReceiveBufferSizeOption(65535 * 3)
-	c.CreateConnected(789, 30000, &opt)
+	c.CreateConnected(789, 30000, 65535*3)
 
 	data := []byte{1, 2, 3}
 	view := buffer.NewView(len(data))
@@ -1151,7 +1145,7 @@ func TestScaledWindowAccept(t *testing.T) {
 	defer ep.Close()
 
 	// Set the window size greater than the maximum non-scaled window.
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(65535 * 3)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 65535*3); err != nil {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
@@ -1224,7 +1218,7 @@ func TestNonScaledWindowAccept(t *testing.T) {
 	defer ep.Close()
 
 	// Set the window size greater than the maximum non-scaled window.
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(65535 * 3)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 65535*3); err != nil {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
@@ -1293,8 +1287,7 @@ func TestZeroScaledWindowReceive(t *testing.T) {
 	// Set the window size such that a window scale of 4 will be used.
 	const wnd = 65535 * 10
 	const ws = uint32(4)
-	opt := tcpip.ReceiveBufferSizeOption(wnd)
-	c.CreateConnectedWithRawOptions(789, 30000, &opt, []byte{
+	c.CreateConnectedWithRawOptions(789, 30000, wnd, []byte{
 		header.TCPOptionWS, 3, 0, header.TCPOptionNOP,
 	})
 
@@ -1399,7 +1392,7 @@ func TestSegmentMerging(t *testing.T) {
 			c := context.New(t, defaultMTU)
 			defer c.Cleanup()
 
-			c.CreateConnected(789, 30000, nil)
+			c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 			// Prevent the endpoint from processing packets.
 			test.stop(c.EP)
@@ -1449,7 +1442,7 @@ func TestDelay(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	c.EP.SetSockOpt(tcpip.DelayOption(1))
 
@@ -1497,7 +1490,7 @@ func TestUndelay(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	c.EP.SetSockOpt(tcpip.DelayOption(1))
 
@@ -1579,7 +1572,7 @@ func TestMSSNotDelayed(t *testing.T) {
 			c := context.New(t, defaultMTU)
 			defer c.Cleanup()
 
-			c.CreateConnectedWithRawOptions(789, 30000, nil, []byte{
+			c.CreateConnectedWithRawOptions(789, 30000, -1 /* epRcvBuf */, []byte{
 				header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 			})
 
@@ -1695,7 +1688,7 @@ func TestSendGreaterThanMTU(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	testBrokenUpWrite(t, c, maxPayload)
 }
 
@@ -1704,7 +1697,7 @@ func TestActiveSendMSSLessThanMTU(t *testing.T) {
 	c := context.New(t, 65535)
 	defer c.Cleanup()
 
-	c.CreateConnectedWithRawOptions(789, 30000, nil, []byte{
+	c.CreateConnectedWithRawOptions(789, 30000, -1 /* epRcvBuf */, []byte{
 		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 	})
 	testBrokenUpWrite(t, c, maxPayload)
@@ -1727,7 +1720,7 @@ func TestPassiveSendMSSLessThanMTU(t *testing.T) {
 	// Set the buffer size to a deterministic size so that we can check the
 	// window scaling option.
 	const rcvBufferSize = 0x20000
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(rcvBufferSize)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBufferSize); err != nil {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
@@ -1871,7 +1864,7 @@ func TestSynOptionsOnActiveConnect(t *testing.T) {
 	// window scaling option.
 	const rcvBufferSize = 0x20000
 	const wndScale = 2
-	if err := c.EP.SetSockOpt(tcpip.ReceiveBufferSizeOption(rcvBufferSize)); err != nil {
+	if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, rcvBufferSize); err != nil {
 		t.Fatalf("SetSockOpt failed failed: %v", err)
 	}
 
@@ -1973,7 +1966,7 @@ func TestReceiveOnResetConnection(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Send RST segment.
 	c.SendPacket(nil, &context.Headers{
@@ -2010,7 +2003,7 @@ func TestSendOnResetConnection(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Send RST segment.
 	c.SendPacket(nil, &context.Headers{
@@ -2035,7 +2028,7 @@ func TestFinImmediately(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Shutdown immediately, check that we get a FIN.
 	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
@@ -2078,7 +2071,7 @@ func TestFinRetransmit(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Shutdown immediately, check that we get a FIN.
 	if err := c.EP.Shutdown(tcpip.ShutdownWrite); err != nil {
@@ -2132,7 +2125,7 @@ func TestFinWithNoPendingData(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Write something out, and have it acknowledged.
 	view := buffer.NewView(10)
@@ -2203,7 +2196,7 @@ func TestFinWithPendingDataCwndFull(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Write enough segments to fill the congestion window before ACK'ing
 	// any of them.
@@ -2291,7 +2284,7 @@ func TestFinWithPendingData(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Write something out, and acknowledge it to get cwnd to 2.
 	view := buffer.NewView(10)
@@ -2377,7 +2370,7 @@ func TestFinWithPartialAck(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Write something out, and acknowledge it to get cwnd to 2. Also send
 	// FIN from the test side.
@@ -2509,7 +2502,7 @@ func scaledSendWindow(t *testing.T, scale uint8) {
 	defer c.Cleanup()
 
 	maxPayload := defaultMTU - header.IPv4MinimumSize - header.TCPMinimumSize
-	c.CreateConnectedWithRawOptions(789, 0, nil, []byte{
+	c.CreateConnectedWithRawOptions(789, 0, -1 /* epRcvBuf */, []byte{
 		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 		header.TCPOptionWS, 3, scale, header.TCPOptionNOP,
 	})
@@ -2559,7 +2552,7 @@ func TestScaledSendWindow(t *testing.T) {
 func TestReceivedValidSegmentCountIncrement(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
 	want := stats.TCP.ValidSegmentsReceived.Value() + 1
 
@@ -2580,7 +2573,7 @@ func TestReceivedValidSegmentCountIncrement(t *testing.T) {
 func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
 	want := stats.TCP.InvalidSegmentsReceived.Value() + 1
 	vv := c.BuildSegment(nil, &context.Headers{
@@ -2604,7 +2597,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	stats := c.Stack().Stats()
 	want := stats.TCP.ChecksumErrors.Value() + 1
 	vv := c.BuildSegment([]byte{0x1, 0x2, 0x3}, &context.Headers{
@@ -2635,7 +2628,7 @@ func TestReceivedSegmentQueuing(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	// Send 200 segments.
 	data := []byte{1, 2, 3}
@@ -2681,7 +2674,7 @@ func TestReadAfterClosedState(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -2856,8 +2849,8 @@ func TestReusePort(t *testing.T) {
 func checkRecvBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 	t.Helper()
 
-	var s tcpip.ReceiveBufferSizeOption
-	if err := ep.GetSockOpt(&s); err != nil {
+	s, err := ep.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
+	if err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
@@ -2869,8 +2862,8 @@ func checkRecvBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 	t.Helper()
 
-	var s tcpip.SendBufferSizeOption
-	if err := ep.GetSockOpt(&s); err != nil {
+	s, err := ep.GetSockOptInt(tcpip.SendBufferSizeOption)
+	if err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
@@ -2945,26 +2938,26 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	}
 
 	// Set values below the min.
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(199)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 199); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkRecvBufferSize(t, ep, 200)
 
-	if err := ep.SetSockOpt(tcpip.SendBufferSizeOption(299)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 299); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkSendBufferSize(t, ep, 300)
 
 	// Set values above the max.
-	if err := ep.SetSockOpt(tcpip.ReceiveBufferSizeOption(1 + tcp.DefaultReceiveBufferSize*20)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.ReceiveBufferSizeOption, 1+tcp.DefaultReceiveBufferSize*20); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
 	checkRecvBufferSize(t, ep, tcp.DefaultReceiveBufferSize*20)
 
-	if err := ep.SetSockOpt(tcpip.SendBufferSizeOption(1 + tcp.DefaultSendBufferSize*30)); err != nil {
+	if err := ep.SetSockOptInt(tcpip.SendBufferSizeOption, 1+tcp.DefaultSendBufferSize*30); err != nil {
 		t.Fatalf("GetSockOpt failed: %v", err)
 	}
 
@@ -3231,7 +3224,7 @@ func TestPathMTUDiscovery(t *testing.T) {
 
 	// Create new connection with MSS of 1460.
 	const maxPayload = 1500 - header.TCPMinimumSize - header.IPv4MinimumSize
-	c.CreateConnectedWithRawOptions(789, 30000, nil, []byte{
+	c.CreateConnectedWithRawOptions(789, 30000, -1 /* epRcvBuf */, []byte{
 		header.TCPOptionMSS, 4, byte(maxPayload / 256), byte(maxPayload % 256),
 	})
 
@@ -3308,7 +3301,7 @@ func TestTCPEndpointProbe(t *testing.T) {
 		invoked <- struct{}{}
 	})
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	data := []byte{1, 2, 3}
 	c.SendPacket(data, &context.Headers{
@@ -3482,7 +3475,7 @@ func TestKeepalive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	c.EP.SetSockOpt(tcpip.KeepaliveIdleOption(10 * time.Millisecond))
 	c.EP.SetSockOpt(tcpip.KeepaliveIntervalOption(10 * time.Millisecond))
