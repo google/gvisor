@@ -175,6 +175,10 @@ type Endpoint interface {
 	// types.
 	SetSockOpt(opt interface{}) *tcpip.Error
 
+	// SetSockOptInt sets a socket option for simple cases when a value has
+	// the int type.
+	SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error
+
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// tcpip.*Option types.
 	GetSockOpt(opt interface{}) *tcpip.Error
@@ -838,6 +842,10 @@ func (e *baseEndpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
+func (e *baseEndpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	return nil
+}
+
 func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
@@ -853,6 +861,46 @@ func (e *baseEndpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 			return -1, tcpip.ErrQueueSizeNotSupported
 		}
 		return v, nil
+
+	case tcpip.SendQueueSizeOption:
+		e.Lock()
+		if !e.Connected() {
+			e.Unlock()
+			return -1, tcpip.ErrNotConnected
+		}
+		v := e.connected.SendQueuedSize()
+		e.Unlock()
+		if v < 0 {
+			return -1, tcpip.ErrQueueSizeNotSupported
+		}
+		return int(v), nil
+
+	case tcpip.SendBufferSizeOption:
+		e.Lock()
+		if !e.Connected() {
+			e.Unlock()
+			return -1, tcpip.ErrNotConnected
+		}
+		v := e.connected.SendMaxQueueSize()
+		e.Unlock()
+		if v < 0 {
+			return -1, tcpip.ErrQueueSizeNotSupported
+		}
+		return int(v), nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		e.Lock()
+		if e.receiver == nil {
+			e.Unlock()
+			return -1, tcpip.ErrNotConnected
+		}
+		v := e.receiver.RecvMaxQueueSize()
+		e.Unlock()
+		if v < 0 {
+			return -1, tcpip.ErrQueueSizeNotSupported
+		}
+		return int(v), nil
+
 	default:
 		return -1, tcpip.ErrUnknownProtocolOption
 	}
@@ -864,54 +912,12 @@ func (e *baseEndpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	case tcpip.ErrorOption:
 		return nil
 
-	case *tcpip.SendQueueSizeOption:
-		e.Lock()
-		if !e.Connected() {
-			e.Unlock()
-			return tcpip.ErrNotConnected
-		}
-		qs := tcpip.SendQueueSizeOption(e.connected.SendQueuedSize())
-		e.Unlock()
-		if qs < 0 {
-			return tcpip.ErrQueueSizeNotSupported
-		}
-		*o = qs
-		return nil
-
 	case *tcpip.PasscredOption:
 		if e.Passcred() {
 			*o = tcpip.PasscredOption(1)
 		} else {
 			*o = tcpip.PasscredOption(0)
 		}
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		e.Lock()
-		if !e.Connected() {
-			e.Unlock()
-			return tcpip.ErrNotConnected
-		}
-		qs := tcpip.SendBufferSizeOption(e.connected.SendMaxQueueSize())
-		e.Unlock()
-		if qs < 0 {
-			return tcpip.ErrQueueSizeNotSupported
-		}
-		*o = qs
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		e.Lock()
-		if e.receiver == nil {
-			e.Unlock()
-			return tcpip.ErrNotConnected
-		}
-		qs := tcpip.ReceiveBufferSizeOption(e.receiver.RecvMaxQueueSize())
-		e.Unlock()
-		if qs < 0 {
-			return tcpip.ErrQueueSizeNotSupported
-		}
-		*o = qs
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:
