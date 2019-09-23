@@ -952,62 +952,9 @@ func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
 	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
 }
 
-// SetSockOpt sets a socket option.
-func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	switch v := opt.(type) {
-	case tcpip.DelayOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.delay, 0)
-
-			// Handle delayed data.
-			e.sndWaker.Assert()
-		} else {
-			atomic.StoreUint32(&e.delay, 1)
-		}
-		return nil
-
-	case tcpip.CorkOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.cork, 0)
-
-			// Handle the corked data.
-			e.sndWaker.Assert()
-		} else {
-			atomic.StoreUint32(&e.cork, 1)
-		}
-		return nil
-
-	case tcpip.ReuseAddressOption:
-		e.mu.Lock()
-		e.reuseAddr = v != 0
-		e.mu.Unlock()
-		return nil
-
-	case tcpip.ReusePortOption:
-		e.mu.Lock()
-		e.reusePort = v != 0
-		e.mu.Unlock()
-		return nil
-
-	case tcpip.QuickAckOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.slowAck, 1)
-		} else {
-			atomic.StoreUint32(&e.slowAck, 0)
-		}
-		return nil
-
-	case tcpip.MaxSegOption:
-		userMSS := v
-		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
-			return tcpip.ErrInvalidOptionValue
-		}
-		e.mu.Lock()
-		e.userMSS = int(userMSS)
-		e.mu.Unlock()
-		e.notifyProtocolGoroutine(notifyMSSChanged)
-		return nil
-
+// SetSockOptInt sets a socket option.
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	switch opt {
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -1069,6 +1016,67 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.sndBufMu.Lock()
 		e.sndBufSize = size
 		e.sndBufMu.Unlock()
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// SetSockOpt sets a socket option.
+func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	switch v := opt.(type) {
+	case tcpip.DelayOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.delay, 0)
+
+			// Handle delayed data.
+			e.sndWaker.Assert()
+		} else {
+			atomic.StoreUint32(&e.delay, 1)
+		}
+		return nil
+
+	case tcpip.CorkOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.cork, 0)
+
+			// Handle the corked data.
+			e.sndWaker.Assert()
+		} else {
+			atomic.StoreUint32(&e.cork, 1)
+		}
+		return nil
+
+	case tcpip.ReuseAddressOption:
+		e.mu.Lock()
+		e.reuseAddr = v != 0
+		e.mu.Unlock()
+		return nil
+
+	case tcpip.ReusePortOption:
+		e.mu.Lock()
+		e.reusePort = v != 0
+		e.mu.Unlock()
+		return nil
+
+	case tcpip.QuickAckOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.slowAck, 1)
+		} else {
+			atomic.StoreUint32(&e.slowAck, 0)
+		}
+		return nil
+
+	case tcpip.MaxSegOption:
+		userMSS := v
+		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
+			return tcpip.ErrInvalidOptionValue
+		}
+		e.mu.Lock()
+		e.userMSS = int(userMSS)
+		e.mu.Unlock()
+		e.notifyProtocolGoroutine(notifyMSSChanged)
 		return nil
 
 	case tcpip.V6OnlyOption:
@@ -1182,6 +1190,18 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
+	case tcpip.SendBufferSizeOption:
+		e.sndBufMu.Lock()
+		v := e.sndBufSize
+		e.sndBufMu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		e.rcvListMu.Lock()
+		v := e.rcvBufSize
+		e.rcvListMu.Unlock()
+		return v, nil
+
 	}
 	return -1, tcpip.ErrUnknownProtocolOption
 }
@@ -1202,18 +1222,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		// actual current MSS. Netstack just returns the defaultMSS
 		// always for now.
 		*o = header.TCPDefaultMSS
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		e.sndBufMu.Lock()
-		*o = tcpip.SendBufferSizeOption(e.sndBufSize)
-		e.sndBufMu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		e.rcvListMu.Lock()
-		*o = tcpip.ReceiveBufferSizeOption(e.rcvBufSize)
-		e.rcvListMu.Unlock()
 		return nil
 
 	case *tcpip.DelayOption:

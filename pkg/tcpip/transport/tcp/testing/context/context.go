@@ -512,7 +512,7 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 }
 
 // CreateConnected creates a connected TCP endpoint.
-func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption) {
+func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf int) {
 	c.CreateConnectedWithRawOptions(iss, rcvWnd, epRcvBuf, nil)
 }
 
@@ -590,7 +590,7 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 //
 // It also sets the receive buffer for the endpoint to the specified
 // value in epRcvBuf.
-func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption, options []byte) {
+func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf int, options []byte) {
 	// Create TCP endpoint.
 	var err *tcpip.Error
 	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -598,8 +598,8 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if epRcvBuf != nil {
-		if err := c.EP.SetSockOpt(*epRcvBuf); err != nil {
+	if epRcvBuf != -1 {
+		if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, epRcvBuf); err != nil {
 			c.t.Fatalf("SetSockOpt failed failed: %v", err)
 		}
 	}

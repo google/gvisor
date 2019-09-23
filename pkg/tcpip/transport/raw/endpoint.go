@@ -492,6 +492,11 @@ func (ep *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
+// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
+func (ep *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	return tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
@@ -504,6 +509,19 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		}
 		ep.rcvMu.Unlock()
 		return v, nil
+
+	case tcpip.SendBufferSizeOption:
+		ep.mu.Lock()
+		v := ep.sndBufSize
+		ep.mu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		ep.rcvMu.Lock()
+		v := ep.rcvBufSizeMax
+		ep.rcvMu.Unlock()
+		return v, nil
+
 	}
 
 	return -1, tcpip.ErrUnknownProtocolOption
@@ -513,18 +531,6 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 func (ep *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		ep.mu.Lock()
-		*o = tcpip.SendBufferSizeOption(ep.sndBufSize)
-		ep.mu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		ep.rcvMu.Lock()
-		*o = tcpip.ReceiveBufferSizeOption(ep.rcvBufSizeMax)
-		ep.rcvMu.Unlock()
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:
