@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package image provides end-to-end integration tests for runsc. These tests
-// require docker and runsc to be installed on the machine.
+// Package integration provides end-to-end integration tests for runsc. These
+// tests require docker and runsc to be installed on the machine.
 //
 // Each test calls docker commands to start up a container, and tests that it
 // is behaving properly, with various runsc commands. The container is killed
@@ -152,5 +152,28 @@ func TestExecError(t *testing.T) {
 	}
 	if want := `error finding executable "no_can_find" in PATH`; !strings.Contains(err.Error(), want) {
 		t.Fatalf("docker exec wrong error, got: %s, want: .*%s.*", err.Error(), want)
+	}
+}
+
+// Test that exec inherits environment from run.
+func TestExecEnv(t *testing.T) {
+	if err := dockerutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := dockerutil.MakeDocker("exec-env-test")
+
+	// Start the container with env FOO=BAR.
+	if err := d.Run("-e", "FOO=BAR", "alpine", "sleep", "1000"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Exec "echo $FOO".
+	got, err := d.Exec("/bin/sh", "-c", "echo $FOO")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if want := "BAR"; !strings.Contains(got, want) {
+		t.Errorf("wanted exec output to contain %q, got %q", want, got)
 	}
 }
