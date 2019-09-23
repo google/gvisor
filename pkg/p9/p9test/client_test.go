@@ -2127,3 +2127,98 @@ func TestConcurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestReadWriteConcurrent(t *testing.T) {
+	h, c := NewHarness(t)
+	defer h.Finish()
+
+	_, root := newRoot(h, c)
+	defer root.Close()
+
+	const (
+		instances  = 10
+		iterations = 10000
+		dataSize   = 1024
+	)
+	var (
+		dataSets [instances][dataSize]byte
+		backends [instances]*Mock
+		files    [instances]p9.File
+	)
+
+	// Walk to the file normally.
+	for i := 0; i < instances; i++ {
+		_, backends[i], files[i] = walkHelper(h, "file", root)
+		defer files[i].Close()
+	}
+
+	// Open the files.
+	for i := 0; i < instances; i++ {
+		backends[i].EXPECT().Open(p9.ReadWrite)
+		if _, _, _, err := files[i].Open(p9.ReadWrite); err != nil {
+			t.Fatalf("open got %v, wanted nil", err)
+		}
+	}
+
+	// Initialize random data for each instance.
+	for i := 0; i < instances; i++ {
+		if _, err := rand.Read(dataSets[i][:]); err != nil {
+			t.Fatalf("error initializing dataSet#%d, got %v", i, err)
+		}
+	}
+
+	// Define our random read/write mechanism.
+	randRead := func(h *Harness, backend *Mock, f p9.File, data, test []byte) {
+		// Prepare the backend.
+		backend.EXPECT().ReadAt(gomock.Any(), uint64(0)).Do(func(p []byte, offset uint64) {
+			if n := copy(p, data); n != len(data) {
+				// Note that we have to assert the result here, as the Return statement
+				// below cannot be dynamic: it will be bound before this call is made.
+				h.t.Errorf("wanted length %d, got %d", len(data), n)
+			}
+		}).Return(len(data), nil)
+
+		// Execute the read.
+		if n, err := f.ReadAt(test, 0); n != len(test) || err != nil {
+			t.Errorf("failed read: wanted (%d, nil), got (%d, %v)", len(test), n, err)
+			return // No sense doing check below.
+		}
+		if !bytes.Equal(test, data) {
+			t.Errorf("data integrity failed during read") // Not as expected.
+		}
+	}
+	randWrite := func(h *Harness, backend *Mock, f p9.File, data []byte) {
+		// Prepare the backend.
+		backend.EXPECT().WriteAt(gomock.Any(), uint64(0)).Do(func(p []byte, offset uint64) {
+			if !bytes.Equal(p, data) {
+				h.t.Errorf("data integrity failed during write") // Not as expected.
+			}
+		}).Return(len(data), nil)
+
+		// Execute the write.
+		if n, err := f.WriteAt(data, 0); n != len(data) || err != nil {
+			t.Errorf("failed read: wanted (%d, nil), got (%d, %v)", len(data), n, err)
+		}
+	}
+	randReadWrite := func(n int, h *Harness, backend *Mock, f p9.File, data []byte) {
+		test := make([]byte, len(data))
+		for i := 0; i < n; i++ {
+			if rand.Intn(2) == 0 {
+				randRead(h, backend, f, data, test)
+			} else {
+				randWrite(h, backend, f, data)
+			}
+		}
+	}
+
+	// Start reading and writing.
+	var wg sync.WaitGroup
+	for i := 0; i < instances; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			randReadWrite(iterations, h, backends[i], files[i], dataSets[i][:])
+		}(i)
+	}
+	wg.Wait()
+}
