@@ -1,5 +1,6 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
 
 package(licenses = ["notice"])
 
@@ -22,6 +23,12 @@ proto_library(
     name = "memory_events_proto",
     srcs = ["memory_events.proto"],
     visibility = ["//visibility:public"],
+)
+
+cc_proto_library(
+    name = "memory_events_cc_proto",
+    visibility = ["//visibility:public"],
+    deps = [":memory_events_proto"],
 )
 
 go_proto_library(
