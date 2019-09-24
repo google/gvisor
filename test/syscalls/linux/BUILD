@@ -1736,6 +1736,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "readahead_test",
+    testonly = 1,
+    srcs = ["readahead.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "readv_test",
     testonly = 1,
     srcs = [
