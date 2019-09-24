@@ -346,6 +346,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:readahead_test",
+)
+
+syscall_test(
     size = "medium",
     shard_count = 5,
     test = "//test/syscalls/linux:readv_socket_test",
