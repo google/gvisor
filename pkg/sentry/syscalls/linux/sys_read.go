@@ -72,6 +72,39 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "read", file)
 }
 
+// Readahead implements readahead(2).
+func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	offset := args[1].Int64()
+	size := args[2].SizeT()
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, syserror.EBADF
+	}
+	defer file.DecRef()
+
+	// Check that the file is readable.
+	if !file.Flags().Read {
+		return 0, nil, syserror.EBADF
+	}
+
+	// Check that the size is valid.
+	if int(size) < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Check that the offset is legitimate.
+	if offset < 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Return EINVAL; if the underlying file type does not support readahead,
+	// then Linux will return EINVAL to indicate as much. In the future, we
+	// may extend this function to actually support readahead hints.
+	return 0, nil, syserror.EINVAL
+}
+
 // Pread64 implements linux syscall pread64(2).
 func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
