@@ -287,6 +287,14 @@ func (d *Docker) Exec(args ...string) (string, error) {
 	return do(a...)
 }
 
+// ExecAsUser calls 'docker exec' as the given user with the arguments
+// provided.
+func (d *Docker) ExecAsUser(user string, args ...string) (string, error) {
+	a := []string{"exec", "--user", user, d.Name}
+	a = append(a, args...)
+	return do(a...)
+}
+
 // ExecWithTerminal calls 'docker exec -it' with the arguments provided and
 // attaches a pty to stdio.
 func (d *Docker) ExecWithTerminal(args ...string) (*exec.Cmd, *os.File, error) {
