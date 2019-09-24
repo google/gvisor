@@ -148,37 +148,6 @@ func (n *NIC) setSpoofing(enable bool) {
 	n.mu.Unlock()
 }
 
-func (n *NIC) getMainNICAddress(protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
-
-	var r *referencedNetworkEndpoint
-
-	// Check for a primary endpoint.
-	if list, ok := n.primary[protocol]; ok {
-		for e := list.Front(); e != nil; e = e.Next() {
-			ref := e.(*referencedNetworkEndpoint)
-			if ref.getKind() == permanent && ref.tryIncRef() {
-				r = ref
-				break
-			}
-		}
-
-	}
-
-	if r == nil {
-		return tcpip.AddressWithPrefix{}, tcpip.ErrNoLinkAddress
-	}
-
-	addressWithPrefix := tcpip.AddressWithPrefix{
-		Address:   r.ep.ID().LocalAddress,
-		PrefixLen: r.ep.PrefixLen(),
-	}
-	r.decRef()
-
-	return addressWithPrefix, nil
-}
-
 // primaryEndpoint returns the primary endpoint of n for the given network
 // protocol.
 func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedNetworkEndpoint {
@@ -398,10 +367,12 @@ func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpo
 	return err
 }
 
-// Addresses returns the addresses associated with this NIC.
-func (n *NIC) Addresses() []tcpip.ProtocolAddress {
+// AllAddresses returns all addresses (primary and non-primary) associated with
+// this NIC.
+func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
+
 	addrs := make([]tcpip.ProtocolAddress, 0, len(n.endpoints))
 	for nid, ref := range n.endpoints {
 		// Don't include expired or tempory endpoints to avoid confusion and
@@ -417,6 +388,34 @@ func (n *NIC) Addresses() []tcpip.ProtocolAddress {
 				PrefixLen: ref.ep.PrefixLen(),
 			},
 		})
+	}
+	return addrs
+}
+
+// PrimaryAddresses returns the primary addresses associated with this NIC.
+func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	var addrs []tcpip.ProtocolAddress
+	for proto, list := range n.primary {
+		for e := list.Front(); e != nil; e = e.Next() {
+			ref := e.(*referencedNetworkEndpoint)
+			// Don't include expired or tempory endpoints to avoid confusion and
+			// prevent the caller from using those.
+			switch ref.getKind() {
+			case permanentExpired, temporary:
+				continue
+			}
+
+			addrs = append(addrs, tcpip.ProtocolAddress{
+				Protocol: proto,
+				AddressWithPrefix: tcpip.AddressWithPrefix{
+					Address:   ref.ep.ID().LocalAddress,
+					PrefixLen: ref.ep.PrefixLen(),
+				},
+			})
+		}
 	}
 	return addrs
 }
