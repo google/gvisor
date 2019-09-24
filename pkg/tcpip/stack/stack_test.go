@@ -930,10 +930,10 @@ func TestSpoofingWithAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("Route has wrong local address: got %v, wanted %v", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %v, wanted %v", r.RemoteAddress, dstAddr)
+		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet works.
 	testSendTo(t, s, dstAddr, ep, nil)
@@ -945,10 +945,10 @@ func TestSpoofingWithAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != localAddr {
-		t.Errorf("Route has wrong local address: got %v, wanted %v", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %v, wanted %v", r.RemoteAddress, dstAddr)
+		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet using the route works.
 	testSend(t, r, ep, nil)
@@ -992,10 +992,10 @@ func TestSpoofingNoAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("Route has wrong local address: got %v, wanted %v", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %v, wanted %v", r.RemoteAddress, dstAddr)
+		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet works.
 	// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
@@ -1400,20 +1400,20 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 							// Check that GetMainNICAddress returns an address if at least
 							// one primary address was added. In that case make sure the
 							// address/prefixLen matches what we added.
+							gotAddr, err := s.GetMainNICAddress(1, fakeNetNumber)
+							if err != nil {
+								t.Fatal("GetMainNICAddress failed:", err)
+							}
 							if len(primaryAddrAdded) == 0 {
-								// No primary addresses present, expect an error.
-								if _, err := s.GetMainNICAddress(1, fakeNetNumber); err != tcpip.ErrNoLinkAddress {
-									t.Fatalf("got s.GetMainNICAddress(...) = %v, wanted = %s", err, tcpip.ErrNoLinkAddress)
+								// No primary addresses present.
+								if wantAddr := (tcpip.AddressWithPrefix{}); gotAddr != wantAddr {
+									t.Fatalf("GetMainNICAddress: got addr = %s, want = %s", gotAddr, wantAddr)
 								}
 							} else {
-								// At least one primary address was added, expect a valid
-								// address and prefixLen.
-								gotAddressWithPefix, err := s.GetMainNICAddress(1, fakeNetNumber)
-								if err != nil {
-									t.Fatal("GetMainNICAddress failed:", err)
-								}
-								if _, ok := primaryAddrAdded[gotAddressWithPefix]; !ok {
-									t.Fatalf("GetMainNICAddress: got addressWithPrefix = %v, wanted any in {%v}", gotAddressWithPefix, primaryAddrAdded)
+								// At least one primary address was added, verify the returned
+								// address is in the list of primary addresses we added.
+								if _, ok := primaryAddrAdded[gotAddr]; !ok {
+									t.Fatalf("GetMainNICAddress: got = %s, want any in {%v}", gotAddr, primaryAddrAdded)
 								}
 							}
 						})
@@ -1452,19 +1452,25 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 			}
 
 			// Check that we get the right initial address and prefix length.
-			if gotAddressWithPrefix, err := s.GetMainNICAddress(1, fakeNetNumber); err != nil {
+			gotAddr, err := s.GetMainNICAddress(1, fakeNetNumber)
+			if err != nil {
 				t.Fatal("GetMainNICAddress failed:", err)
-			} else if gotAddressWithPrefix != protocolAddress.AddressWithPrefix {
-				t.Fatalf("got GetMainNICAddress = %+v, want = %+v", gotAddressWithPrefix, protocolAddress.AddressWithPrefix)
+			}
+			if wantAddr := protocolAddress.AddressWithPrefix; gotAddr != wantAddr {
+				t.Fatalf("got s.GetMainNICAddress(...) = %s, want = %s", gotAddr, wantAddr)
 			}
 
 			if err := s.RemoveAddress(1, protocolAddress.AddressWithPrefix.Address); err != nil {
 				t.Fatal("RemoveAddress failed:", err)
 			}
 
-			// Check that we get an error after removal.
-			if _, err := s.GetMainNICAddress(1, fakeNetNumber); err != tcpip.ErrNoLinkAddress {
-				t.Fatalf("got s.GetMainNICAddress(...) = %v, want = %s", err, tcpip.ErrNoLinkAddress)
+			// Check that we get no address after removal.
+			gotAddr, err = s.GetMainNICAddress(1, fakeNetNumber)
+			if err != nil {
+				t.Fatal("GetMainNICAddress failed:", err)
+			}
+			if wantAddr := (tcpip.AddressWithPrefix{}); gotAddr != wantAddr {
+				t.Fatalf("got GetMainNICAddress(...) = %s, want = %s", gotAddr, wantAddr)
 			}
 		})
 	}
@@ -1479,8 +1485,10 @@ func (g *addressGenerator) next(addrLen int) tcpip.Address {
 }
 
 func verifyAddresses(t *testing.T, expectedAddresses, gotAddresses []tcpip.ProtocolAddress) {
+	t.Helper()
+
 	if len(gotAddresses) != len(expectedAddresses) {
-		t.Fatalf("got len(addresses) = %d, wanted = %d", len(gotAddresses), len(expectedAddresses))
+		t.Fatalf("got len(addresses) = %d, want = %d", len(gotAddresses), len(expectedAddresses))
 	}
 
 	sort.Slice(gotAddresses, func(i, j int) bool {
@@ -1519,7 +1527,7 @@ func TestAddAddress(t *testing.T) {
 		})
 	}
 
-	gotAddresses := s.NICInfo()[nicid].ProtocolAddresses
+	gotAddresses := s.AllAddresses()[nicid]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
@@ -1551,7 +1559,7 @@ func TestAddProtocolAddress(t *testing.T) {
 		}
 	}
 
-	gotAddresses := s.NICInfo()[nicid].ProtocolAddresses
+	gotAddresses := s.AllAddresses()[nicid]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
@@ -1580,7 +1588,7 @@ func TestAddAddressWithOptions(t *testing.T) {
 		}
 	}
 
-	gotAddresses := s.NICInfo()[nicid].ProtocolAddresses
+	gotAddresses := s.AllAddresses()[nicid]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
@@ -1615,7 +1623,7 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 		}
 	}
 
-	gotAddresses := s.NICInfo()[nicid].ProtocolAddresses
+	gotAddresses := s.AllAddresses()[nicid]
 	verifyAddresses(t, expectedAddresses, gotAddresses)
 }
 
