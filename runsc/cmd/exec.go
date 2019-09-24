@@ -127,6 +127,7 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			Fatalf("getting environment variables: %v", err)
 		}
 	}
+
 	if e.Capabilities == nil {
 		// enableRaw is set to true to prevent the filtering out of
 		// CAP_NET_RAW. This is the opposite of Create() because exec

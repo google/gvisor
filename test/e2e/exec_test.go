@@ -177,3 +177,45 @@ func TestExecEnv(t *testing.T) {
 		t.Errorf("wanted exec output to contain %q, got %q", want, got)
 	}
 }
+
+// Test that exec always has HOME environment set, even when not set in run.
+func TestExecEnvHasHome(t *testing.T) {
+	// Base alpine image does not have any environment variables set.
+	if err := dockerutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := dockerutil.MakeDocker("exec-env-test")
+
+	// We will check that HOME is set for root user, and also for a new
+	// non-root user we will create.
+	newUID := 1234
+	newHome := "/foo/bar"
+
+	// Create a new user with a home directory, and then sleep.
+	script := fmt.Sprintf(`
+	mkdir -p -m 777 %s && \
+	adduser foo -D -u %d -h %s && \
+	sleep 1000`, newHome, newUID, newHome)
+	if err := d.Run("alpine", "/bin/sh", "-c", script); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Exec "echo $HOME", and expect to see "/root".
+	got, err := d.Exec("/bin/sh", "-c", "echo $HOME")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if want := "/root"; !strings.Contains(got, want) {
+		t.Errorf("wanted exec output to contain %q, got %q", want, got)
+	}
+
+	// Execute the same as uid 123 and expect newHome.
+	got, err = d.ExecAsUser(strconv.Itoa(newUID), "/bin/sh", "-c", "echo $HOME")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if want := newHome; !strings.Contains(got, want) {
+		t.Errorf("wanted exec output to contain %q, got %q", want, got)
+	}
+}

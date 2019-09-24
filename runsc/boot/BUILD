@@ -109,6 +109,7 @@ go_test(
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/context/contexttest",
         "//pkg/sentry/fs",
+        "//pkg/sentry/kernel/auth",
         "//pkg/unet",
         "//runsc/fsgofer",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

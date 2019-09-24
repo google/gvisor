@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
 func setupTempDir() (string, error) {
@@ -68,7 +69,7 @@ func setupPasswd(contents string, perms os.FileMode) func() (string, error) {
 // TestGetExecUserHome tests the getExecUserHome function.
 func TestGetExecUserHome(t *testing.T) {
 	tests := map[string]struct {
-		uid        uint32
+		uid        auth.KUID
 		createRoot func() (string, error)
 		expected   string
 	}{
