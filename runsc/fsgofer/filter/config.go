@@ -83,10 +83,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowAny{},
 			seccomp.AllowValue(syscall.F_GETFD),
 		},
-		{
-			seccomp.AllowAny{},
-			seccomp.AllowValue(syscall.F_DUPFD_CLOEXEC),
-		},
 	},
 	syscall.SYS_FSTAT:     {},
 	syscall.SYS_FSTATFS:   {},
