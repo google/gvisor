@@ -22,8 +22,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
+	"syscall"
 )
 
 // TestRunner is an interface that must be implemented for each runtime
@@ -40,10 +42,16 @@ var (
 	runtime = flag.String("runtime", "", "name of runtime")
 	list    = flag.Bool("list", false, "list all available tests")
 	test    = flag.String("test", "", "run a single test from the list of available tests")
+	pause   = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
 )
 
 func main() {
 	flag.Parse()
+
+	if *pause {
+		pauseAndReap()
+		panic("pauseAndReap should never return")
+	}
 
 	if *runtime == "" {
 		log.Fatalf("runtime flag must be provided")
@@ -73,7 +81,7 @@ func main() {
 	cmd := tr.TestCmd(*test)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
-		log.Fatalf("FAIL %q: %v", err)
+		log.Fatalf("FAIL: %v", err)
 	}
 }
 
@@ -92,6 +100,27 @@ func testRunnerForRuntime(runtime string) (TestRunner, error) {
 		return pythonRunner{}, nil
 	}
 	return nil, fmt.Errorf("invalid runtime %q", runtime)
+}
+
+// pauseAndReap is like init. It runs forever and reaps any children.
+func pauseAndReap() {
+	// Get notified of any new children.
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGCHLD)
+
+	for {
+		if _, ok := <-ch; !ok {
+			// Channel closed. This should not happen.
+			panic("signal channel closed")
+		}
+
+		// Reap the child.
+		for {
+			if cpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil); cpid < 1 {
+				break
+			}
+		}
+	}
 }
 
 // search is a helper function to find tests in the given directory that match

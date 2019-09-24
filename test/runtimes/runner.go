@@ -18,6 +18,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -43,30 +44,52 @@ func main() {
 		fmt.Fprintf(os.Stderr, "lang and image flags must not be empty\n")
 		os.Exit(1)
 	}
-	tests, err := testsForImage(*lang, *image)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
-		os.Exit(1)
-	}
 
-	testing.Main(func(a, b string) (bool, error) {
-		return a == b, nil
-	}, tests, nil, nil)
+	os.Exit(runTests())
 }
 
-func testsForImage(lang, image string) ([]testing.InternalTest, error) {
-	if err := dockerutil.Pull(image); err != nil {
-		return nil, fmt.Errorf("docker pull failed: %v", err)
+// runTests is a helper that is called by main. It exists so that we can run
+// defered functions before exiting. It returns an exit code that should be
+// passed to os.Exit.
+func runTests() int {
+	// Create a single docker container that will be used for all tests.
+	d := dockerutil.MakeDocker("gvisor-" + *lang)
+	defer d.CleanUp()
+
+	// Get a slice of tests to run. This will also start a single Docker
+	// container that will be used to run each test. The final test will
+	// stop the Docker container.
+	tests, err := getTests(d)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
+		return 1
 	}
 
-	c := dockerutil.MakeDocker("gvisor-list")
-	list, err := c.RunFg(image, "--runtime", lang, "--list")
-	defer c.CleanUp()
-	if err != nil {
+	m := testing.MainStart(testDeps{}, tests, nil, nil)
+	return m.Run()
+}
+
+// getTests returns a slice of tests to run, subject to the shard size and
+// index.
+func getTests(d dockerutil.Docker) ([]testing.InternalTest, error) {
+	// Pull the image.
+	if err := dockerutil.Pull(*image); err != nil {
+		return nil, fmt.Errorf("docker pull %q failed: %v", *image, err)
+	}
+
+	// Run proctor with --pause flag to keep container alive forever.
+	if err := d.Run(*image, "--pause"); err != nil {
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
-	// Get subset of tests corresponding to shard.
+	// Get a list of all tests in the image.
+	list, err := d.Exec("/proctor", "--runtime", *lang, "--list")
+	if err != nil {
+		return nil, fmt.Errorf("docker exec failed: %v", err)
+	}
+
+	// Calculate a subset of tests to run corresponding to the current
+	// shard.
 	tests := strings.Fields(list)
 	sort.Strings(tests)
 	begin, end, err := testutil.TestBoundsForShard(len(tests))
@@ -77,33 +100,48 @@ func testsForImage(lang, image string) ([]testing.InternalTest, error) {
 	tests = tests[begin:end]
 
 	var itests []testing.InternalTest
-	for i, tc := range tests {
+	for _, tc := range tests {
 		// Capture tc in this scope.
 		tc := tc
 		itests = append(itests, testing.InternalTest{
 			Name: tc,
 			F: func(t *testing.T) {
-				d := dockerutil.MakeDocker(fmt.Sprintf("gvisor-test-%d", i))
-				defer d.CleanUp()
-				if err := d.Run(image, "--runtime", lang, "--test", tc); err != nil {
-					t.Fatalf("docker test %q failed to run: %v", tc, err)
-				}
+				var (
+					now    = time.Now()
+					done   = make(chan struct{})
+					output string
+					err    error
+				)
+				go func() {
+					fmt.Printf("RUNNING %s...\n", tc)
+					output, err = d.Exec("/proctor", "--runtime", *lang, "--test", tc)
+					close(done)
+				}()
 
-				status, err := d.Wait(timeout)
-				if err != nil {
-					t.Fatalf("docker test %q failed to wait: %v", tc, err)
+				select {
+				case <-done:
+					if err == nil {
+						fmt.Printf("PASS: %s (%v)\n\n", tc, time.Since(now))
+						return
+					}
+					t.Errorf("FAIL: %s (%v):\n%s\n", tc, time.Since(now), output)
+				case <-time.After(timeout):
+					t.Errorf("TIMEOUT: %s (%v):\n%s\n", tc, time.Since(now), output)
 				}
-				logs, err := d.Logs()
-				if err != nil {
-					t.Fatalf("docker test %q failed to supply logs: %v", tc, err)
-				}
-				if status == 0 {
-					t.Logf("test %q passed", tc)
-					return
-				}
-				t.Errorf("test %q failed: %v", tc, logs)
 			},
 		})
 	}
 	return itests, nil
 }
+
+// testDeps implements testing.testDeps (an unexported interface), and is
+// required to use testing.MainStart.
+type testDeps struct{}
+
+func (f testDeps) MatchString(a, b string) (bool, error)       { return a == b, nil }
+func (f testDeps) StartCPUProfile(io.Writer) error             { return nil }
+func (f testDeps) StopCPUProfile()                             {}
+func (f testDeps) WriteProfileTo(string, io.Writer, int) error { return nil }
+func (f testDeps) ImportPath() string                          { return "" }
+func (f testDeps) StartTestLog(io.Writer)                      {}
+func (f testDeps) StopTestLog() error                          { return nil }

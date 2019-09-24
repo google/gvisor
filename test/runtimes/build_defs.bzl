@@ -5,7 +5,7 @@
 def runtime_test(
         lang,
         image,
-        shard_count = 20,
+        shard_count = 50,
         size = "enormous"):
     sh_test(
         name = lang + "_test",
