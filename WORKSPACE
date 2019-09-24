@@ -196,7 +196,7 @@ go_repository(
 
 go_repository(
     name = "org_golang_x_time",
-    commit = "9d24e82272b4f38b78bc8cff74fa936d31ccd8ef",
+    commit = "c4c64cad1fd0a1a8dab2523e04e61d35308e131e",
     importpath = "golang.org/x/time",
 )
 
