@@ -20,7 +20,6 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -535,23 +534,12 @@ func (l *Loader) run() error {
 			return err
 		}
 
-		// Read /etc/passwd for the user's HOME directory and set the HOME
-		// environment variable as required by POSIX if it is not overridden by
-		// the user.
-		hasHomeEnvv := false
-		for _, envv := range l.rootProcArgs.Envv {
-			if strings.HasPrefix(envv, "HOME=") {
-				hasHomeEnvv = true
-			}
+		// Add the HOME enviroment variable if it is not already set.
+		envv, err := maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace, l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		if err != nil {
+			return err
 		}
-		if !hasHomeEnvv {
-			homeDir, err := getExecUserHome(ctx, l.rootProcArgs.MountNamespace, uint32(l.rootProcArgs.Credentials.RealKUID))
-			if err != nil {
-				return fmt.Errorf("error reading exec user: %v", err)
-			}
-
-			l.rootProcArgs.Envv = append(l.rootProcArgs.Envv, "HOME="+homeDir)
-		}
+		l.rootProcArgs.Envv = envv
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
@@ -814,6 +802,16 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		args.MountNamespace.IncRef()
 	})
 	defer args.MountNamespace.DecRef()
+
+	// Add the HOME enviroment varible if it is not already set.
+	root := args.MountNamespace.Root()
+	defer root.DecRef()
+	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
+	envv, err := maybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
+	if err != nil {
+		return 0, err
+	}
+	args.Envv = envv
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
