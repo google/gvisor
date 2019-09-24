@@ -738,7 +738,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		nics[id] = NICInfo{
 			Name:              nic.name,
 			LinkAddress:       nic.linkEP.LinkAddress(),
-			ProtocolAddresses: nic.Addresses(),
+			ProtocolAddresses: nic.PrimaryAddresses(),
 			Flags:             flags,
 			MTU:               nic.linkEP.MTU(),
 			Stats:             nic.stats,
@@ -845,19 +845,37 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrUnknownNICID
 }
 
-// GetMainNICAddress returns the first primary address (and the subnet that
-// contains it) for the given NIC and protocol. Returns an arbitrary endpoint's
-// address if no primary addresses exist. Returns an error if the NIC doesn't
-// exist or has no endpoints.
+// AllAddresses returns a map of NICIDs to their protocol addresses (primary
+// and non-primary).
+func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := make(map[tcpip.NICID][]tcpip.ProtocolAddress)
+	for id, nic := range s.nics {
+		nics[id] = nic.AllAddresses()
+	}
+	return nics
+}
+
+// GetMainNICAddress returns the first primary address and prefix for the given
+// NIC and protocol. Returns an error if the NIC doesn't exist and an empty
+// value if the NIC doesn't have a primary address for the given protocol.
 func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if nic, ok := s.nics[id]; ok {
-		return nic.getMainNICAddress(protocol)
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
 	}
 
-	return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
+	for _, a := range nic.PrimaryAddresses() {
+		if a.Protocol == protocol {
+			return a.AddressWithPrefix, nil
+		}
+	}
+	return tcpip.AddressWithPrefix{}, nil
 }
 
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
