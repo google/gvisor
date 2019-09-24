@@ -56,11 +56,10 @@ var goferCaps = &specs.LinuxCapabilities{
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
-	bundleDir      string
-	ioFDs          intFlags
-	applyCaps      bool
-	hostUDSAllowed bool
-	setUpRoot      bool
+	bundleDir string
+	ioFDs     intFlags
+	applyCaps bool
+	setUpRoot bool
 
 	panicOnWrite bool
 	specFD       int
@@ -87,7 +86,6 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&g.bundleDir, "bundle", "", "path to the root of the bundle directory, defaults to the current directory")
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect 9P servers. They must follow this order: root first, then mounts as defined in the spec")
 	f.BoolVar(&g.applyCaps, "apply-caps", true, "if true, apply capabilities to restrict what the Gofer process can do")
-	f.BoolVar(&g.hostUDSAllowed, "host-uds-allowed", false, "if true, allow the Gofer to mount a host UDS")
 	f.BoolVar(&g.panicOnWrite, "panic-on-write", false, "if true, panics on attempts to write to RO mounts. RW mounts are unnaffected")
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -182,9 +180,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	for _, m := range spec.Mounts {
 		if specutils.Is9PMount(m) {
 			cfg := fsgofer.Config{
-				ROMount:        isReadonlyMount(m.Options),
-				PanicOnWrite:   g.panicOnWrite,
-				HostUDSAllowed: g.hostUDSAllowed,
+				ROMount:      isReadonlyMount(m.Options),
+				PanicOnWrite: g.panicOnWrite,
+				HostUDS:      conf.FSGoferHostUDS,
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
@@ -203,7 +201,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
 	}
 
-	if g.hostUDSAllowed {
+	if conf.FSGoferHostUDS {
 		filter.InstallUDSFilters()
 	}
 

@@ -138,8 +138,8 @@ type Config struct {
 	// Overlay is whether to wrap the root filesystem in an overlay.
 	Overlay bool
 
-	// FSGoferHostUDSAllowed enables the gofer to mount a host UDS.
-	FSGoferHostUDSAllowed bool
+	// FSGoferHostUDS enables the gofer to mount a host UDS.
+	FSGoferHostUDS bool
 
 	// Network indicates what type of network to use.
 	Network NetworkType
@@ -217,6 +217,7 @@ func (c *Config) ToFlags() []string {
 		"--debug-log-format=" + c.DebugLogFormat,
 		"--file-access=" + c.FileAccess.String(),
 		"--overlay=" + strconv.FormatBool(c.Overlay),
+		"--fsgofer-host-uds=" + strconv.FormatBool(c.FSGoferHostUDS),
 		"--network=" + c.Network.String(),
 		"--log-packets=" + strconv.FormatBool(c.LogPackets),
 		"--platform=" + c.Platform,

@@ -87,8 +87,8 @@ type Config struct {
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
 
-	// HostUDSAllowed signals whether the gofer can mount a host's UDS.
-	HostUDSAllowed bool
+	// HostUDS signals whether the gofer can mount a host's UDS.
+	HostUDS bool
 }
 
 type attachPoint struct {
@@ -143,7 +143,7 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	switch fmtStat := stat.Mode & syscall.S_IFMT; fmtStat {
 	case syscall.S_IFSOCK:
 		// Check to see if the CLI option has been set to allow the UDS mount.
-		if !a.conf.HostUDSAllowed {
+		if !a.conf.HostUDS {
 			return nil, errors.New("host UDS support is disabled")
 		}
 
@@ -1059,6 +1059,10 @@ func (l *localFile) Flush() error {
 
 // Connect implements p9.File.
 func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
+	// Check to see if the CLI option has been set to allow the UDS mount.
+	if !l.attachPoint.conf.HostUDS {
+		return nil, errors.New("host UDS support is disabled")
+	}
 	return fd.DialUnix(l.hostPath)
 }
 
