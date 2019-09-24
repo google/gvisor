@@ -239,7 +239,7 @@ func main() {
 		// want with them. Since Docker and Containerd both eat boot's stderr, we
 		// dup our stderr to the provided log FD so that panics will appear in the
 		// logs, rather than just disappear.
-		if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
+		if err := syscall.Dup3(int(f.Fd()), int(os.Stderr.Fd()), 0); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
