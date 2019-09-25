@@ -33,7 +33,10 @@ import (
 )
 
 func TestExcludeBroadcast(t *testing.T) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{udp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+	})
 
 	const defaultMTU = 65536
 	ep := stack.LinkEndpoint(channel.New(256, defaultMTU, ""))
@@ -238,7 +241,9 @@ type context struct {
 
 func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32) context {
 	// Make the packet and write it.
-	s := stack.New([]string{ipv4.ProtocolName}, []string{}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+	})
 	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, "", packetCollectorErrors)
 	s.CreateNIC(1, ep)
 	const (

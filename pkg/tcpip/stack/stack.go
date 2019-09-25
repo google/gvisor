@@ -17,11 +17,6 @@
 //
 // For consumers, the only function of interest is New(), everything else is
 // provided by the tcpip/public package.
-//
-// For protocol implementers, RegisterTransportProtocolFactory() and
-// RegisterNetworkProtocolFactory() are used to register protocol factories with
-// the stack, which will then be used to instantiate protocol objects when
-// consumers interact with the stack.
 package stack
 
 import (
@@ -351,6 +346,9 @@ type Stack struct {
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
+	// unassociatedFactory creates unassociated endpoints. If nil, raw
+	// endpoints are disabled. It is set during Stack creation and is
+	// immutable.
 	unassociatedFactory UnassociatedEndpointFactory
 
 	demux *transportDemuxer
@@ -358,10 +356,6 @@ type Stack struct {
 	stats tcpip.Stats
 
 	linkAddrCache *linkAddrCache
-
-	// raw indicates whether raw sockets may be created. It is set during
-	// Stack creation and is immutable.
-	raw bool
 
 	mu         sync.RWMutex
 	nics       map[tcpip.NICID]*NIC
@@ -398,6 +392,12 @@ type Stack struct {
 
 // Options contains optional Stack configuration.
 type Options struct {
+	// NetworkProtocols lists the network protocols to enable.
+	NetworkProtocols []NetworkProtocol
+
+	// TransportProtocols lists the transport protocols to enable.
+	TransportProtocols []TransportProtocol
+
 	// Clock is an optional clock source used for timestampping packets.
 	//
 	// If no Clock is specified, the clock source will be time.Now.
@@ -411,8 +411,9 @@ type Options struct {
 	// stack (false).
 	HandleLocal bool
 
-	// Raw indicates whether raw sockets may be created.
-	Raw bool
+	// UnassociatedFactory produces unassociated endpoints raw endpoints.
+	// Raw endpoints are enabled only if this is non-nil.
+	UnassociatedFactory UnassociatedEndpointFactory
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -422,7 +423,7 @@ type Options struct {
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
-func New(network []string, transport []string, opts Options) *Stack {
+func New(opts Options) *Stack {
 	clock := opts.Clock
 	if clock == nil {
 		clock = &tcpip.StdClock{}
@@ -438,17 +439,11 @@ func New(network []string, transport []string, opts Options) *Stack {
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
 		handleLocal:        opts.HandleLocal,
-		raw:                opts.Raw,
 		icmpRateLimiter:    NewICMPRateLimiter(),
 	}
 
 	// Add specified network protocols.
-	for _, name := range network {
-		netProtoFactory, ok := networkProtocols[name]
-		if !ok {
-			continue
-		}
-		netProto := netProtoFactory()
+	for _, netProto := range opts.NetworkProtocols {
 		s.networkProtocols[netProto.Number()] = netProto
 		if r, ok := netProto.(LinkAddressResolver); ok {
 			s.linkAddrResolvers[r.LinkAddressProtocol()] = r
@@ -456,18 +451,14 @@ func New(network []string, transport []string, opts Options) *Stack {
 	}
 
 	// Add specified transport protocols.
-	for _, name := range transport {
-		transProtoFactory, ok := transportProtocols[name]
-		if !ok {
-			continue
-		}
-		transProto := transProtoFactory()
+	for _, transProto := range opts.TransportProtocols {
 		s.transportProtocols[transProto.Number()] = &transportProtocolState{
 			proto: transProto,
 		}
 	}
 
-	s.unassociatedFactory = unassociatedFactory
+	// Add the factory for unassociated endpoints, if present.
+	s.unassociatedFactory = opts.UnassociatedFactory
 
 	// Create the global transport demuxer.
 	s.demux = newTransportDemuxer(s)
@@ -602,7 +593,7 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // protocol. Raw endpoints receive all traffic for a given protocol regardless
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
-	if !s.raw {
+	if s.unassociatedFactory == nil {
 		return nil, tcpip.ErrNotPermitted
 	}
 

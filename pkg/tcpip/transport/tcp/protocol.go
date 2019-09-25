@@ -14,7 +14,7 @@
 
 // Package tcp contains the implementation of the TCP transport protocol. To use
 // it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing tcp.ProtocolName (or "tcp") as one of the
+// activated on the stack by passing tcp.NewProtocol() as one of the
 // transport protocols when calling stack.New(). Then endpoints can be created
 // by passing tcp.ProtocolNumber as the transport protocol number when calling
 // Stack.NewEndpoint().
@@ -34,9 +34,6 @@ import (
 )
 
 const (
-	// ProtocolName is the string representation of the tcp protocol name.
-	ProtocolName = "tcp"
-
 	// ProtocolNumber is the tcp protocol number.
 	ProtocolNumber = header.TCPProtocolNumber
 
@@ -254,13 +251,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	}
 }
 
-func init() {
-	stack.RegisterTransportProtocolFactory(ProtocolName, func() stack.TransportProtocol {
-		return &protocol{
-			sendBufferSize:             SendBufferSizeOption{MinBufferSize, DefaultSendBufferSize, MaxBufferSize},
-			recvBufferSize:             ReceiveBufferSizeOption{MinBufferSize, DefaultReceiveBufferSize, MaxBufferSize},
-			congestionControl:          ccReno,
-			availableCongestionControl: []string{ccReno, ccCubic},
-		}
-	})
+// NewProtocol returns a TCP transport protocol.
+func NewProtocol() stack.TransportProtocol {
+	return &protocol{
+		sendBufferSize:             SendBufferSizeOption{MinBufferSize, DefaultSendBufferSize, MaxBufferSize},
+		recvBufferSize:             ReceiveBufferSizeOption{MinBufferSize, DefaultReceiveBufferSize, MaxBufferSize},
+		congestionControl:          ccReno,
+		availableCongestionControl: []string{ccReno, ccCubic},
+	}
 }

@@ -172,7 +172,10 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 }
 
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{udp.ProtocolName, tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
+	})
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv4.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
@@ -185,7 +188,10 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 }
 
 func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
-	s := stack.New([]string{ipv6.ProtocolName}, []string{udp.ProtocolName, tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
+	})
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv6.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{

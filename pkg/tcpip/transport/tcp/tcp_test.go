@@ -2873,7 +2873,10 @@ func checkSendBufferSize(t *testing.T, ep tcpip.Endpoint, v int) {
 }
 
 func TestDefaultBufferSizes(t *testing.T) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+	})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2919,7 +2922,10 @@ func TestDefaultBufferSizes(t *testing.T) {
 }
 
 func TestMinMaxBufferSizes(t *testing.T) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+	})
 
 	// Check the default values.
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
@@ -2965,10 +2971,13 @@ func TestMinMaxBufferSizes(t *testing.T) {
 }
 
 func makeStack() (*stack.Stack, *tcpip.Error) {
-	s := stack.New([]string{
-		ipv4.ProtocolName,
-		ipv6.ProtocolName,
-	}, []string{tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{
+			ipv4.NewProtocol(),
+			ipv6.NewProtocol(),
+		},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+	})
 
 	id := loopback.New()
 	if testing.Verbose() {

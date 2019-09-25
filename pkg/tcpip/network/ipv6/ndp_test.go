@@ -31,7 +31,10 @@ import (
 func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address) (*stack.Stack, stack.NetworkEndpoint) {
 	t.Helper()
 
-	s := stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+	})
 
 	if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 		t.Fatalf("CreateNIC(_) = %s", err)

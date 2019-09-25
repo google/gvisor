@@ -44,7 +44,10 @@ type testContext struct {
 }
 
 func newTestContext(t *testing.T) *testContext {
-	s := stack.New([]string{ipv4.ProtocolName, arp.ProtocolName}, []string{icmp.ProtocolName4}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), arp.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol4()},
+	})
 
 	const defaultMTU = 65536
 	ep := channel.New(256, defaultMTU, stackLinkAddr)
