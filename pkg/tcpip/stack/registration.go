@@ -366,47 +366,11 @@ type LinkAddressCache interface {
 	RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
 }
 
-// TransportProtocolFactory functions are used by the stack to instantiate
-// transport protocols.
-type TransportProtocolFactory func() TransportProtocol
-
-// NetworkProtocolFactory provides methods to be used by the stack to
-// instantiate network protocols.
-type NetworkProtocolFactory func() NetworkProtocol
-
 // UnassociatedEndpointFactory produces endpoints for writing packets not
 // associated with a particular transport protocol. Such endpoints can be used
 // to write arbitrary packets that include the IP header.
 type UnassociatedEndpointFactory interface {
 	NewUnassociatedRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
-}
-
-var (
-	transportProtocols = make(map[string]TransportProtocolFactory)
-	networkProtocols   = make(map[string]NetworkProtocolFactory)
-
-	unassociatedFactory UnassociatedEndpointFactory
-)
-
-// RegisterTransportProtocolFactory registers a new transport protocol factory
-// with the stack so that it becomes available to users of the stack. This
-// function is intended to be called by init() functions of the protocols.
-func RegisterTransportProtocolFactory(name string, p TransportProtocolFactory) {
-	transportProtocols[name] = p
-}
-
-// RegisterNetworkProtocolFactory registers a new network protocol factory with
-// the stack so that it becomes available to users of the stack. This function
-// is intended to be called by init() functions of the protocols.
-func RegisterNetworkProtocolFactory(name string, p NetworkProtocolFactory) {
-	networkProtocols[name] = p
-}
-
-// RegisterUnassociatedFactory registers a factory to produce endpoints not
-// associated with any particular transport protocol. This function is intended
-// to be called by init() functions of the protocols.
-func RegisterUnassociatedFactory(f UnassociatedEndpointFactory) {
-	unassociatedFactory = f
 }
 
 // GSOType is the type of GSO segments.

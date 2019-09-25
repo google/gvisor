@@ -14,7 +14,7 @@
 
 // Package udp contains the implementation of the UDP transport protocol. To use
 // it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing udp.ProtocolName (or "udp") as one of the
+// activated on the stack by passing udp.NewProtocol() as one of the
 // transport protocols when calling stack.New(). Then endpoints can be created
 // by passing udp.ProtocolNumber as the transport protocol number when calling
 // Stack.NewEndpoint().
@@ -30,9 +30,6 @@ import (
 )
 
 const (
-	// ProtocolName is the string representation of the udp protocol name.
-	ProtocolName = "udp"
-
 	// ProtocolNumber is the udp protocol number.
 	ProtocolNumber = header.UDPProtocolNumber
 )
@@ -182,8 +179,7 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-func init() {
-	stack.RegisterTransportProtocolFactory(ProtocolName, func() stack.TransportProtocol {
-		return &protocol{}
-	})
+// NewProtocol returns a UDP transport protocol.
+func NewProtocol() stack.TransportProtocol {
+	return &protocol{}
 }
