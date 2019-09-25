@@ -23,11 +23,16 @@ import (
 
 // Install installs seccomp filters.
 func Install() error {
-	s := allowedSyscalls
-
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
-	s.Merge(instrumentationFilters())
+	allowedSyscalls.Merge(instrumentationFilters())
 
-	return seccomp.Install(s)
+	return seccomp.Install(allowedSyscalls)
+}
+
+// InstallUDSFilters extends the allowed syscalls to include those necessary for
+// connecting to a host UDS.
+func InstallUDSFilters() {
+	// Add additional filters required for connecting to the host's sockets.
+	allowedSyscalls.Merge(udsSyscalls)
 }

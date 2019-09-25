@@ -8,6 +8,9 @@ go_library(
     srcs = ["fd.go"],
     importpath = "gvisor.dev/gvisor/pkg/fd",
     visibility = ["//visibility:public"],
+    deps = [
+        "//pkg/unet",
+    ],
 )
 
 go_test(
