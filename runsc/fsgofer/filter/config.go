@@ -214,3 +214,16 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_UTIMENSAT: {},
 	syscall.SYS_WRITE:     {},
 }
+
+var udsSyscalls = seccomp.SyscallRules{
+	syscall.SYS_SOCKET: []seccomp.Rule{
+		{
+			seccomp.AllowValue(syscall.AF_UNIX),
+		},
+	},
+	syscall.SYS_CONNECT: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+		},
+	},
+}
