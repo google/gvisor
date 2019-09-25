@@ -54,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
@@ -911,15 +912,17 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 
 	case NetworkNone, NetworkSandbox:
 		// NetworkNone sets up loopback using netstack.
-		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
-		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, icmp.ProtocolName4}
-		s := epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{
-			Clock:       clock,
-			Stats:       epsocket.Metrics,
-			HandleLocal: true,
+		netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
+		transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
+		s := epsocket.Stack{stack.New(stack.Options{
+			NetworkProtocols:   netProtos,
+			TransportProtocols: transProtos,
+			Clock:              clock,
+			Stats:              epsocket.Metrics,
+			HandleLocal:        true,
 			// Enable raw sockets for users with sufficient
 			// privileges.
-			Raw: true,
+			UnassociatedFactory: raw.EndpointFactory{},
 		})}
 
 		// Enable SACK Recovery.

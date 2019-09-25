@@ -14,10 +14,9 @@
 
 // Package icmp contains the implementation of the ICMP and IPv6-ICMP transport
 // protocols for use in ping. To use it in the networking stack, this package
-// must be added to the project, and
-// activated on the stack by passing icmp.ProtocolName (or "icmp") and/or
-// icmp.ProtocolName6 (or "icmp6") as one of the transport protocols when
-// calling stack.New(). Then endpoints can be created by passing
+// must be added to the project, and activated on the stack by passing
+// icmp.NewProtocol4() and/or icmp.NewProtocol6() as one of the transport
+// protocols when calling stack.New(). Then endpoints can be created by passing
 // icmp.ProtocolNumber or icmp.ProtocolNumber6 as the transport protocol number
 // when calling Stack.NewEndpoint().
 package icmp
@@ -34,14 +33,8 @@ import (
 )
 
 const (
-	// ProtocolName4 is the string representation of the icmp protocol name.
-	ProtocolName4 = "icmp4"
-
 	// ProtocolNumber4 is the ICMP protocol number.
 	ProtocolNumber4 = header.ICMPv4ProtocolNumber
-
-	// ProtocolName6 is the string representation of the icmp protocol name.
-	ProtocolName6 = "icmp6"
 
 	// ProtocolNumber6 is the IPv6-ICMP protocol number.
 	ProtocolNumber6 = header.ICMPv6ProtocolNumber
@@ -125,12 +118,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-func init() {
-	stack.RegisterTransportProtocolFactory(ProtocolName4, func() stack.TransportProtocol {
-		return &protocol{ProtocolNumber4}
-	})
+// NewProtocol4 returns an ICMPv4 transport protocol.
+func NewProtocol4() stack.TransportProtocol {
+	return &protocol{ProtocolNumber4}
+}
 
-	stack.RegisterTransportProtocolFactory(ProtocolName6, func() stack.TransportProtocol {
-		return &protocol{ProtocolNumber6}
-	})
+// NewProtocol6 returns an ICMPv6 transport protocol.
+func NewProtocol6() stack.TransportProtocol {
+	return &protocol{ProtocolNumber6}
 }
