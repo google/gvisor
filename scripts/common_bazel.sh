@@ -80,7 +80,7 @@ function collect_logs() {
     # Collect sentry logs, if any.
     if [[ -v RUNSC_LOGS_DIR ]] && [[ -d "${RUNSC_LOGS_DIR}" ]]; then
       local -r logs=$(ls "${RUNSC_LOGS_DIR}")
-      if [[ -z "${logs}" ]]; then
+      if [[ "${logs}" ]]; then
         tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${RUNTIME}.tar.gz" -C "${RUNSC_LOGS_DIR}" .
       fi
     fi
