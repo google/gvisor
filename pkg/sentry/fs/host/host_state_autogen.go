@@ -117,6 +117,7 @@ func (x *TTYFileOperations) save(m state.Map) {
 	m.Save("fileOperations", &x.fileOperations)
 	m.Save("session", &x.session)
 	m.Save("fgProcessGroup", &x.fgProcessGroup)
+	m.Save("termios", &x.termios)
 }
 
 func (x *TTYFileOperations) afterLoad() {}
@@ -124,6 +125,7 @@ func (x *TTYFileOperations) load(m state.Map) {
 	m.Load("fileOperations", &x.fileOperations)
 	m.Load("session", &x.session)
 	m.Load("fgProcessGroup", &x.fgProcessGroup)
+	m.Load("termios", &x.termios)
 }
 
 func init() {
