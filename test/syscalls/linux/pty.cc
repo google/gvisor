@@ -1292,10 +1292,9 @@ TEST_F(JobControlTest, ReleaseTTY) {
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
-  struct sigaction sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
@@ -1362,10 +1361,9 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   received = 0;
-  struct sigaction sa = {
-      .sa_handler = sig_handler,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = sig_handler;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sigaddset(&sa.sa_mask, SIGHUP);
   sigaddset(&sa.sa_mask, SIGCONT);
@@ -1403,10 +1401,9 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
-  struct sigaction sighup_sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sighup_sa = {};
+  sighup_sa.sa_handler = SIG_IGN;
+  sighup_sa.sa_flags = 0;
   sigemptyset(&sighup_sa.sa_mask);
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sighup_sa, &old_sa), SyscallSucceeds());
@@ -1456,10 +1453,9 @@ TEST_F(JobControlTest, SetForegroundProcessGroup) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
-  struct sigaction sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sigaction(SIGTTOU, &sa, NULL);
 

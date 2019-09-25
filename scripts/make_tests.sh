@@ -21,4 +21,5 @@ top_level=$(git rev-parse --show-toplevel 2>/dev/null)
 
 make
 make runsc
+make BAZEL_OPTIONS="build //..." bazel
 make bazel-shutdown
