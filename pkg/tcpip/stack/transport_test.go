@@ -282,9 +282,16 @@ func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
 	}
 }
 
+func fakeTransFactory() stack.TransportProtocol {
+	return &fakeTransportProtocol{}
+}
+
 func TestTransportReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -346,7 +353,10 @@ func TestTransportReceive(t *testing.T) {
 
 func TestTransportControlReceive(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -414,7 +424,10 @@ func TestTransportControlReceive(t *testing.T) {
 
 func TestTransportSend(t *testing.T) {
 	linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -457,7 +470,10 @@ func TestTransportSend(t *testing.T) {
 }
 
 func TestTransportOptions(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 
 	// Try an unsupported transport protocol.
 	if err := s.SetTransportProtocolOption(tcpip.TransportProtocolNumber(99999), fakeTransportGoodOption(false)); err != tcpip.ErrUnknownProtocol {
@@ -498,7 +514,10 @@ func TestTransportOptions(t *testing.T) {
 }
 
 func TestTransportForwarding(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 	s.SetForwarding(true)
 
 	// TODO(b/123449044): Change this to a channel NIC.
@@ -575,10 +594,4 @@ func TestTransportForwarding(t *testing.T) {
 	if src := p.Header[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
-}
-
-func init() {
-	stack.RegisterTransportProtocolFactory("fakeTrans", func() stack.TransportProtocol {
-		return &fakeTransportProtocol{}
-	})
 }

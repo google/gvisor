@@ -274,7 +274,10 @@ type testContext struct {
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 
-	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+	})
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 

@@ -81,7 +81,10 @@ func (*stubLinkAddressCache) AddLinkAddress(tcpip.NICID, tcpip.Address, tcpip.Li
 }
 
 func TestICMPCounts(t *testing.T) {
-	s := stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+	})
 	{
 		if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 			t.Fatalf("CreateNIC(_) = %s", err)
@@ -205,8 +208,14 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 
 func newTestContext(t *testing.T) *testContext {
 	c := &testContext{
-		s0: stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
-		s1: stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
+		s0: stack.New(stack.Options{
+			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		}),
+		s1: stack.New(stack.Options{
+			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		}),
 	}
 
 	const defaultMTU = 65536

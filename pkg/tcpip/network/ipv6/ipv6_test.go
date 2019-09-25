@@ -124,17 +124,20 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 // UDP packets destined to the IPv6 link-local all-nodes multicast address.
 func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 	tests := []struct {
-		name         string
-		protocolName string
-		rxf          func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
+		name            string
+		protocolFactory stack.TransportProtocol
+		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.ProtocolName6, testReceiveICMP},
-		{"UDP", udp.ProtocolName, testReceiveUDP},
+		{"ICMP", icmp.NewProtocol6(), testReceiveICMP},
+		{"UDP", udp.NewProtocol(), testReceiveUDP},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New([]string{ProtocolName}, []string{test.protocolName}, stack.Options{})
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{test.protocolFactory},
+			})
 			e := channel.New(10, 1280, linkAddr1)
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
@@ -152,19 +155,22 @@ func TestReceiveOnAllNodesMulticastAddr(t *testing.T) {
 // address.
 func TestReceiveOnSolicitedNodeAddr(t *testing.T) {
 	tests := []struct {
-		name         string
-		protocolName string
-		rxf          func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
+		name            string
+		protocolFactory stack.TransportProtocol
+		rxf             func(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64)
 	}{
-		{"ICMP", icmp.ProtocolName6, testReceiveICMP},
-		{"UDP", udp.ProtocolName, testReceiveUDP},
+		{"ICMP", icmp.NewProtocol6(), testReceiveICMP},
+		{"UDP", udp.NewProtocol(), testReceiveUDP},
 	}
 
 	snmc := header.SolicitedNodeAddr(addr2)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New([]string{ProtocolName}, []string{test.protocolName}, stack.Options{})
+			s := stack.New(stack.Options{
+				NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+				TransportProtocols: []stack.TransportProtocol{test.protocolFactory},
+			})
 			e := channel.New(10, 1280, linkAddr1)
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
@@ -237,7 +243,9 @@ func TestAddIpv6Address(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New([]string{ProtocolName}, nil, stack.Options{})
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
 			if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
