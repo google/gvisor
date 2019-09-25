@@ -68,6 +68,7 @@ var (
 	network            = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
 	gso                = flag.Bool("gso", true, "enable generic segmenation offload")
 	fileAccess         = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
+	fsGoferHostUDS     = flag.Bool("fsgofer-host-uds", false, "Allow the gofer to mount Unix Domain Sockets.")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	watchdogAction     = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 	panicSignal        = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
@@ -195,6 +196,7 @@ func main() {
 		DebugLog:           *debugLog,
 		DebugLogFormat:     *debugLogFormat,
 		FileAccess:         fsAccess,
+		FSGoferHostUDS:     *fsGoferHostUDS,
 		Overlay:            *overlay,
 		Network:            netType,
 		GSO:                *gso,

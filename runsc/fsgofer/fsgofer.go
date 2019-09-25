@@ -21,6 +21,7 @@
 package fsgofer
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -54,6 +55,7 @@ const (
 	regular fileType = iota
 	directory
 	symlink
+	socket
 	unknown
 )
 
@@ -66,6 +68,8 @@ func (f fileType) String() string {
 		return "directory"
 	case symlink:
 		return "symlink"
+	case socket:
+		return "socket"
 	}
 	return "unknown"
 }
@@ -82,6 +86,9 @@ type Config struct {
 
 	// PanicOnWrite panics on attempts to write to RO mounts.
 	PanicOnWrite bool
+
+	// HostUDS signals whether the gofer can mount a host's UDS.
+	HostUDS bool
 }
 
 type attachPoint struct {
@@ -124,24 +131,52 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
 	}
-	mode := syscall.O_RDWR
-	if a.conf.ROMount || (stat.Mode&syscall.S_IFMT) == syscall.S_IFDIR {
-		mode = syscall.O_RDONLY
-	}
 
-	// Open the root directory.
-	f, err := fd.Open(a.prefix, openFlags|mode, 0)
-	if err != nil {
-		return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
-	}
-
+	// Acquire the attach point lock.
 	a.attachedMu.Lock()
 	defer a.attachedMu.Unlock()
+
+	// Hold the file descriptor we are converting into a p9.File.
+	var f *fd.FD
+
+	// Apply the S_IFMT bitmask so we can detect file type appropriately.
+	switch fmtStat := stat.Mode & syscall.S_IFMT; fmtStat {
+	case syscall.S_IFSOCK:
+		// Check to see if the CLI option has been set to allow the UDS mount.
+		if !a.conf.HostUDS {
+			return nil, errors.New("host UDS support is disabled")
+		}
+
+		// Attempt to open a connection. Bubble up the failures.
+		f, err = fd.DialUnix(a.prefix)
+		if err != nil {
+			return nil, err
+		}
+
+	default:
+		// Default to Read/Write permissions.
+		mode := syscall.O_RDWR
+
+		// If the configuration is Read Only or the mount point is a directory,
+		// set the mode to Read Only.
+		if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
+			mode = syscall.O_RDONLY
+		}
+
+		// Open the mount point & capture the FD.
+		f, err = fd.Open(a.prefix, openFlags|mode, 0)
+		if err != nil {
+			return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
+		}
+	}
+
+	// Close the connection if already attached.
 	if a.attached {
 		f.Close()
 		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
 	}
 
+	// Return a localFile object to the caller with the UDS FD included.
 	rv, err := newLocalFile(a, f, a.prefix, stat)
 	if err != nil {
 		return nil, err
@@ -304,6 +339,8 @@ func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
 		ft = directory
 	case syscall.S_IFLNK:
 		ft = symlink
+	case syscall.S_IFSOCK:
+		ft = socket
 	default:
 		return unknown, syscall.EPERM
 	}
@@ -1026,7 +1063,11 @@ func (l *localFile) Flush() error {
 
 // Connect implements p9.File.
 func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
-	return nil, syscall.ECONNREFUSED
+	// Check to see if the CLI option has been set to allow the UDS mount.
+	if !l.attachPoint.conf.HostUDS {
+		return nil, errors.New("host UDS support is disabled")
+	}
+	return fd.DialUnix(l.hostPath)
 }
 
 // Close implements p9.File.

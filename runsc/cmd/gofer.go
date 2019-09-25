@@ -182,6 +182,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 			cfg := fsgofer.Config{
 				ROMount:      isReadonlyMount(m.Options),
 				PanicOnWrite: g.panicOnWrite,
+				HostUDS:      conf.FSGoferHostUDS,
 			}
 			ap, err := fsgofer.NewAttachPoint(m.Destination, cfg)
 			if err != nil {
@@ -198,6 +199,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...interface{})
 	}
 	if mountIdx != len(g.ioFDs) {
 		Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+	}
+
+	if conf.FSGoferHostUDS {
+		filter.InstallUDSFilters()
 	}
 
 	if err := filter.Install(); err != nil {
