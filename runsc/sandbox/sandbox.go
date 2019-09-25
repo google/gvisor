@@ -352,7 +352,7 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 	}
 	if conf.DebugLog != "" {
 		test := ""
-		if len(conf.TestOnlyTestNameEnv) == 0 {
+		if len(conf.TestOnlyTestNameEnv) != 0 {
 			// Fetch test name if one is provided and the test only flag was set.
 			if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
 				test = t
