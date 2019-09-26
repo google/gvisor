@@ -135,7 +135,7 @@ func main() {
 		FDs:            []int{fd},
 		MTU:            mtu,
 		EthernetHeader: *tap,
-		Address:        tcpip.LinkAddress(maddr),
+		Address:        tcpip.LinkAddressFromBytes([]byte(maddr)),
 	})
 	if err != nil {
 		log.Fatal(err)

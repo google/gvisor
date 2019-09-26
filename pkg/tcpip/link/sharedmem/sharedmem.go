@@ -192,7 +192,7 @@ func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 		DstAddr: r.RemoteLinkAddress,
 		Type:    protocol,
 	}
-	if r.LocalLinkAddress != "" {
+	if r.LocalLinkAddress != tcpip.LinkAddress(0) {
 		ethHdr.SrcAddr = r.LocalLinkAddress
 	} else {
 		ethHdr.SrcAddr = e.addr

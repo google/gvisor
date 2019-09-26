@@ -153,7 +153,7 @@ func New(t *testing.T, mtu uint32) *Context {
 
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
-	ep := channel.New(1000, mtu, "")
+	ep := channel.New(1000, mtu, 0)
 	wep := stack.LinkEndpoint(ep)
 	if testing.Verbose() {
 		wep = sniffer.New(ep)

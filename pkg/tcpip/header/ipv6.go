@@ -256,13 +256,15 @@ func SolicitedNodeAddr(addr tcpip.Address) tcpip.Address {
 
 // LinkLocalAddr computes the default IPv6 link-local address from a link-layer
 // (MAC) address.
-func LinkLocalAddr(linkAddr tcpip.LinkAddress) tcpip.Address {
+func LinkLocalAddr(addr tcpip.LinkAddress) tcpip.Address {
 	// Convert a 48-bit MAC to an EUI-64 and then prepend the link-local
 	// header, FE80::.
 	//
 	// The conversion is very nearly:
 	//	aa:bb:cc:dd:ee:ff => FE80::Aabb:ccFF:FEdd:eeff
 	// Note the capital A. The conversion aa->Aa involves a bit flip.
+	linkAddr := [8]byte{}
+	addr.ToBuf(linkAddr[:])
 	lladdrb := [16]byte{
 		0:  0xFE,
 		1:  0x80,

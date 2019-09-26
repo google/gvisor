@@ -29,6 +29,7 @@
 package tcpip
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/bits"
@@ -1044,10 +1045,24 @@ func isZeros(a Address) bool {
 
 // LinkAddress is a byte slice cast as a string that represents a link address.
 // It is typically a 6-byte MAC address.
-type LinkAddress string
+type LinkAddress uint64
+
+func LinkAddressFromBytes(buf []byte) LinkAddress {
+	b := [8]byte{}
+	copy(b[:6], buf)
+	return LinkAddress(binary.LittleEndian.Uint64(b[:]))
+}
+
+func (addr LinkAddress) ToBuf(buf []byte) {
+	b := [8]byte{}
+	binary.LittleEndian.PutUint64(b[:], uint64(addr))
+	copy(buf[:6], b[:6])
+}
 
 // String implements the fmt.Stringer interface.
-func (a LinkAddress) String() string {
+func (addr LinkAddress) String() string {
+	a := make([]byte, 6)
+	addr.ToBuf(a)
 	switch len(a) {
 	case 6:
 		return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x", a[0], a[1], a[2], a[3], a[4], a[5])
@@ -1064,17 +1079,17 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 		return c == ':' || c == '-'
 	})
 	if len(parts) != 6 {
-		return "", fmt.Errorf("inconsistent parts: %s", s)
+		return 0, fmt.Errorf("inconsistent parts: %s", s)
 	}
 	addr := make([]byte, 0, len(parts))
 	for _, part := range parts {
 		u, err := strconv.ParseUint(part, 16, 8)
 		if err != nil {
-			return "", fmt.Errorf("invalid hex digits: %s", s)
+			return 0, fmt.Errorf("invalid hex digits: %s", s)
 		}
 		addr = append(addr, byte(u))
 	}
-	return LinkAddress(addr), nil
+	return LinkAddressFromBytes(addr), nil
 }
 
 // AddressWithPrefix is an address with its subnet prefix length.

@@ -1009,7 +1009,7 @@ func (s *Stack) GetLinkAddress(nicid tcpip.NICID, addr, localAddr tcpip.Address,
 	nic := s.nics[nicid]
 	if nic == nil {
 		s.mu.RUnlock()
-		return "", nil, tcpip.ErrUnknownNICID
+		return 0, nil, tcpip.ErrUnknownNICID
 	}
 	s.mu.RUnlock()
 

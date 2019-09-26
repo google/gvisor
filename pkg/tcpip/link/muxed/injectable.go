@@ -63,7 +63,7 @@ func (m *InjectableEndpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress implements stack.LinkEndpoint.
 func (m *InjectableEndpoint) LinkAddress() tcpip.LinkAddress {
-	return ""
+	return 0
 }
 
 // Attach implements stack.LinkEndpoint.
@@ -81,7 +81,7 @@ func (m *InjectableEndpoint) IsAttached() bool {
 
 // Inject implements stack.InjectableLinkEndpoint.
 func (m *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv)
+	m.dispatcher.DeliverNetworkPacket(m, 0 /* remote */, 0 /* local */, protocol, vv)
 }
 
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint

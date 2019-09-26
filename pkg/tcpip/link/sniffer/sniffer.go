@@ -277,8 +277,8 @@ func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.Vie
 		log.Infof(
 			"%s arp %v (%v) -> %v (%v) valid:%v",
 			prefix,
-			tcpip.Address(arp.ProtocolAddressSender()), tcpip.LinkAddress(arp.HardwareAddressSender()),
-			tcpip.Address(arp.ProtocolAddressTarget()), tcpip.LinkAddress(arp.HardwareAddressTarget()),
+			tcpip.Address(arp.ProtocolAddressSender()), tcpip.LinkAddressFromBytes(arp.HardwareAddressSender()),
+			tcpip.Address(arp.ProtocolAddressTarget()), tcpip.LinkAddressFromBytes(arp.HardwareAddressTarget()),
 			arp.IsValid(),
 		)
 		return

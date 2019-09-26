@@ -104,7 +104,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 		pkt := header.ARP(hdr.Prepend(header.ARPSize))
 		pkt.SetIPv4OverEthernet()
 		pkt.SetOp(header.ARPReply)
-		copy(pkt.HardwareAddressSender(), r.LocalLinkAddress[:])
+		r.LocalLinkAddress.ToBuf(pkt.HardwareAddressSender())
 		copy(pkt.ProtocolAddressSender(), h.ProtocolAddressTarget())
 		copy(pkt.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(pkt.ProtocolAddressTarget(), h.ProtocolAddressSender())
@@ -152,7 +152,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	h := header.ARP(hdr.Prepend(header.ARPSize))
 	h.SetIPv4OverEthernet()
 	h.SetOp(header.ARPRequest)
-	copy(h.HardwareAddressSender(), linkEP.LinkAddress())
+	linkEP.LinkAddress().ToBuf(h.HardwareAddressSender())
 	copy(h.ProtocolAddressSender(), localAddr)
 	copy(h.ProtocolAddressTarget(), addr)
 
@@ -173,7 +173,7 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 		// address by placing the low-order 23-bits of the IP address
 		// into the low-order 23 bits of the Ethernet multicast address
 		// 01-00-5E-00-00-00 (hex).
-		return tcpip.LinkAddress([]byte{
+		return tcpip.LinkAddressFromBytes([]byte{
 			0x01,
 			0x00,
 			0x5e,
@@ -182,7 +182,7 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 			addr[header.IPv4AddressSize-1],
 		}), true
 	}
-	return "", false
+	return 0, false
 }
 
 // SetOption implements NetworkProtocol.
@@ -195,7 +195,7 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+var broadcastMAC = tcpip.LinkAddressFromBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
 // NewProtocol returns an ARP network protocol.
 func NewProtocol() stack.NetworkProtocol {

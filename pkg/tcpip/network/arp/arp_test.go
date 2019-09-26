@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	stackLinkAddr = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
+	stackLinkAddr = tcpip.LinkAddress(1)
 	stackAddr1    = tcpip.Address("\x0a\x00\x00\x01")
 	stackAddr2    = tcpip.Address("\x0a\x00\x00\x02")
 	stackAddrBad  = tcpip.Address("\x0a\x00\x00\x03")
@@ -116,13 +116,13 @@ func TestDirectRequest(t *testing.T) {
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response len(pkt.Header)=%d", len(pkt.Header))
 			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressSender()), stackLinkAddr; got != want {
+			if got, want := tcpip.LinkAddressFromBytes(rep.HardwareAddressSender()), stackLinkAddr; got != want {
 				t.Errorf("got HardwareAddressSender = %s, want = %s", got, want)
 			}
 			if got, want := tcpip.Address(rep.ProtocolAddressSender()), tcpip.Address(h.ProtocolAddressTarget()); got != want {
 				t.Errorf("got ProtocolAddressSender = %s, want = %s", got, want)
 			}
-			if got, want := tcpip.LinkAddress(rep.HardwareAddressTarget()), tcpip.LinkAddress(h.HardwareAddressSender()); got != want {
+			if got, want := tcpip.LinkAddressFromBytes(rep.HardwareAddressTarget()), tcpip.LinkAddressFromBytes(h.HardwareAddressSender()); got != want {
 				t.Errorf("got HardwareAddressTarget = %s, want = %s", got, want)
 			}
 			if got, want := tcpip.Address(rep.ProtocolAddressTarget()), tcpip.Address(h.ProtocolAddressSender()); got != want {

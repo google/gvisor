@@ -287,7 +287,7 @@ func fakeTransFactory() stack.TransportProtocol {
 }
 
 func TestTransportReceive(t *testing.T) {
-	linkEP := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, 0)
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
 		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
@@ -352,7 +352,7 @@ func TestTransportReceive(t *testing.T) {
 }
 
 func TestTransportControlReceive(t *testing.T) {
-	linkEP := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, 0)
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
 		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
@@ -423,7 +423,7 @@ func TestTransportControlReceive(t *testing.T) {
 }
 
 func TestTransportSend(t *testing.T) {
-	linkEP := channel.New(10, defaultMTU, "")
+	linkEP := channel.New(10, defaultMTU, 0)
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
 		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
@@ -529,7 +529,7 @@ func TestTransportForwarding(t *testing.T) {
 		t.Fatalf("AddAddress #1 failed: %v", err)
 	}
 
-	ep2 := channel.New(10, defaultMTU, "")
+	ep2 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatalf("CreateNIC #2 failed: %v", err)
 	}

@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	linkAddr0 = tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06")
-	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
+	linkAddr0 = tcpip.LinkAddress(1)
+	linkAddr1 = tcpip.LinkAddress(2)
 )
 
 var (
@@ -53,7 +53,7 @@ func (*stubLinkEndpoint) MaxHeaderLength() uint16 {
 }
 
 func (*stubLinkEndpoint) LinkAddress() tcpip.LinkAddress {
-	return ""
+	return 0
 }
 
 func (*stubLinkEndpoint) WritePacket(*stack.Route, *stack.GSO, buffer.Prependable, buffer.VectorisedView, tcpip.NetworkProtocolNumber) *tcpip.Error {

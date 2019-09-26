@@ -278,7 +278,7 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
-	ep := channel.New(256, mtu, "")
+	ep := channel.New(256, mtu, 0)
 	wep := stack.LinkEndpoint(ep)
 
 	if testing.Verbose() {

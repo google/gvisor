@@ -141,7 +141,7 @@ func (*testObject) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (*testObject) LinkAddress() tcpip.LinkAddress {
-	return ""
+	return 0
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

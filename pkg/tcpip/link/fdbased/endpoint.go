@@ -366,7 +366,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		}
 
 		// Preserve the src address if it's set in the route.
-		if r.LocalLinkAddress != "" {
+		if r.LocalLinkAddress != tcpip.LinkAddress(0) {
 			ethHdr.SrcAddr = r.LocalLinkAddress
 		} else {
 			ethHdr.SrcAddr = e.addr
@@ -447,7 +447,7 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 
 // Inject injects an inbound packet.
 func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, 0 /* remote */, 0 /* local */, protocol, vv)
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.

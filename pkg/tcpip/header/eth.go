@@ -52,13 +52,13 @@ const (
 
 // SourceAddress returns the "MAC source" field of the ethernet frame header.
 func (b Ethernet) SourceAddress() tcpip.LinkAddress {
-	return tcpip.LinkAddress(b[srcMAC:][:EthernetAddressSize])
+	return tcpip.LinkAddressFromBytes(b[srcMAC:][:EthernetAddressSize])
 }
 
 // DestinationAddress returns the "MAC destination" field of the ethernet frame
 // header.
 func (b Ethernet) DestinationAddress() tcpip.LinkAddress {
-	return tcpip.LinkAddress(b[dstMAC:][:EthernetAddressSize])
+	return tcpip.LinkAddressFromBytes(b[dstMAC:][:EthernetAddressSize])
 }
 
 // Type returns the "ethertype" field of the ethernet frame header.
@@ -69,6 +69,6 @@ func (b Ethernet) Type() tcpip.NetworkProtocolNumber {
 // Encode encodes all the fields of the ethernet frame header.
 func (b Ethernet) Encode(e *EthernetFields) {
 	binary.BigEndian.PutUint16(b[ethType:], uint16(e.Type))
-	copy(b[srcMAC:][:EthernetAddressSize], e.SrcAddr)
-	copy(b[dstMAC:][:EthernetAddressSize], e.DstAddr)
+	e.SrcAddr.ToBuf(b[srcMAC:][:EthernetAddressSize])
+	e.DstAddr.ToBuf(b[dstMAC:][:EthernetAddressSize])
 }

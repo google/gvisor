@@ -148,7 +148,7 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 // IsResolutionRequired returns true if Resolve() must be called to resolve
 // the link address before the this route can be written to.
 func (r *Route) IsResolutionRequired() bool {
-	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == ""
+	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == 0
 }
 
 // WritePacket writes the packet through the given route.

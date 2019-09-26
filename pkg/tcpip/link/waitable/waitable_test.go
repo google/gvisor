@@ -109,21 +109,21 @@ func TestWaitDispatch(t *testing.T) {
 	}
 
 	// Dispatch and check that it goes through.
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, 0, 0, 0, buffer.VectorisedView{})
 	if want := 1; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on writes, then try to dispatch. It must go through.
 	wep.WaitWrite()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, 0, 0, 0, buffer.VectorisedView{})
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on dispatches, then try to dispatch. It must not go through.
 	wep.WaitDispatch()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, 0, 0, 0, buffer.VectorisedView{})
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
@@ -134,7 +134,7 @@ func TestOtherMethods(t *testing.T) {
 		mtu          = 0xdead
 		capabilities = 0xbeef
 		hdrLen       = 0x1234
-		linkAddr     = "test address"
+		linkAddr     = tcpip.LinkAddress(3)
 	)
 	ep := &countedEndpoint{
 		mtu:          mtu,

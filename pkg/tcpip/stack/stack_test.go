@@ -229,7 +229,7 @@ func fakeNetFactory() stack.NetworkProtocol {
 func TestNetworkReceive(t *testing.T) {
 	// Create a stack with the fake network protocol, one nic, and two
 	// addresses attached to it: 1 & 2.
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
@@ -375,7 +375,7 @@ func TestNetworkSend(t *testing.T) {
 	// Create a stack with the fake network protocol, one nic, and one
 	// address: 1. The route table sends all packets through the only
 	// existing nic.
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
@@ -407,7 +407,7 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep1 := channel.New(10, defaultMTU, "")
+	ep1 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -420,7 +420,7 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	ep2 := channel.New(10, defaultMTU, "")
+	ep2 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -490,7 +490,7 @@ func TestRoutes(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep1 := channel.New(10, defaultMTU, "")
+	ep1 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -503,7 +503,7 @@ func TestRoutes(t *testing.T) {
 		t.Fatal("AddAddress failed:", err)
 	}
 
-	ep2 := channel.New(10, defaultMTU, "")
+	ep2 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -570,7 +570,7 @@ func TestAddressRemoval(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -617,7 +617,7 @@ func TestAddressRemovalWithRouteHeld(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestEndpointExpiration(t *testing.T) {
 					NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 				})
 
-				ep := channel.New(10, defaultMTU, "")
+				ep := channel.New(10, defaultMTU, 0)
 				if err := s.CreateNIC(nicid, ep); err != nil {
 					t.Fatal("CreateNIC failed:", err)
 				}
@@ -866,7 +866,7 @@ func TestPromiscuousMode(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -918,7 +918,7 @@ func TestSpoofingWithAddress(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -984,7 +984,7 @@ func TestSpoofingNoAddress(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1031,7 +1031,7 @@ func TestBroadcastNeedsNoRoute(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1104,7 +1104,7 @@ func TestMulticastOrIPv6LinkLocalNeedsNoRoute(t *testing.T) {
 				NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 			})
 
-			ep := channel.New(10, defaultMTU, "")
+			ep := channel.New(10, defaultMTU, 0)
 			if err := s.CreateNIC(1, ep); err != nil {
 				t.Fatal("CreateNIC failed:", err)
 			}
@@ -1162,7 +1162,7 @@ func TestAddressRangeAcceptsMatchingPacket(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1230,7 +1230,7 @@ func TestCheckLocalAddressForSubnet(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(nicID, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1270,7 +1270,7 @@ func TestAddressRangeRejectsNonmatchingPacket(t *testing.T) {
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
 
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1359,7 +1359,7 @@ func TestAddresRangeAddRemove(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1402,7 +1402,7 @@ func TestGetMainNICAddressAddPrimaryNonPrimary(t *testing.T) {
 							s := stack.New(stack.Options{
 								NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 							})
-							ep := channel.New(10, defaultMTU, "")
+							ep := channel.New(10, defaultMTU, 0)
 							if err := s.CreateNIC(1, ep); err != nil {
 								t.Fatal("CreateNIC failed:", err)
 							}
@@ -1469,7 +1469,7 @@ func TestGetMainNICAddressAddRemove(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1554,7 +1554,7 @@ func TestAddAddress(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(nicid, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1581,7 +1581,7 @@ func TestAddProtocolAddress(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(nicid, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1615,7 +1615,7 @@ func TestAddAddressWithOptions(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(nicid, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1646,7 +1646,7 @@ func TestAddProtocolAddressWithOptions(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep := channel.New(10, defaultMTU, "")
+	ep := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(nicid, ep); err != nil {
 		t.Fatal("CreateNIC failed:", err)
 	}
@@ -1682,7 +1682,7 @@ func TestNICStats(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
-	ep1 := channel.New(10, defaultMTU, "")
+	ep1 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatal("CreateNIC failed: ", err)
 	}
@@ -1732,7 +1732,7 @@ func TestNICForwarding(t *testing.T) {
 	})
 	s.SetForwarding(true)
 
-	ep1 := channel.New(10, defaultMTU, "")
+	ep1 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatal("CreateNIC #1 failed:", err)
 	}
@@ -1740,7 +1740,7 @@ func TestNICForwarding(t *testing.T) {
 		t.Fatal("AddAddress #1 failed:", err)
 	}
 
-	ep2 := channel.New(10, defaultMTU, "")
+	ep2 := channel.New(10, defaultMTU, 0)
 	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatal("CreateNIC #2 failed:", err)
 	}

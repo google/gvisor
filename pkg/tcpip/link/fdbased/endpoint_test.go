@@ -35,8 +35,8 @@ import (
 
 const (
 	mtu        = 1500
-	laddr      = tcpip.LinkAddress("\x11\x22\x33\x44\x55\x66")
-	raddr      = tcpip.LinkAddress("\x77\x88\x99\xaa\xbb\xcc")
+	laddr      = tcpip.LinkAddress(1)
+	raddr      = tcpip.LinkAddress(2)
 	proto      = 10
 	csumOffset = 48
 	gsoMSS     = 500
@@ -123,7 +123,7 @@ func TestEthernetProperties(t *testing.T) {
 }
 
 func TestAddress(t *testing.T) {
-	addrs := []tcpip.LinkAddress{"", "abc", "def"}
+	addrs := []tcpip.LinkAddress{1, 2, 3}
 	for _, a := range addrs {
 		t.Run(fmt.Sprintf("Address: %q", a), func(t *testing.T) {
 			c := newContext(t, &Options{Address: a, MTU: mtu})
@@ -244,7 +244,7 @@ func TestWritePacket(t *testing.T) {
 }
 
 func TestPreserveSrcAddress(t *testing.T) {
-	baddr := tcpip.LinkAddress("\xcc\xbb\xaa\x77\x88\x99")
+	baddr := tcpip.LinkAddress(1)
 
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: true})
 	defer c.cleanup()
@@ -321,7 +321,7 @@ func TestDeliverPacket(t *testing.T) {
 					}
 					if !eth {
 						want.proto = header.IPv4ProtocolNumber
-						want.raddr = ""
+						want.raddr = 0
 					}
 					if !reflect.DeepEqual(want, pi) {
 						t.Fatalf("Unexpected received packet: %+v, want %+v", pi, want)

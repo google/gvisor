@@ -48,9 +48,11 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 		if ni.Flags.Loopback {
 			devType = linux.ARPHRD_LOOPBACK
 		}
+		addr := [6]byte{}
+		ni.LinkAddress.ToBuf(addr[:])
 		is[int32(id)] = inet.Interface{
 			Name:       ni.Name,
-			Addr:       []byte(ni.LinkAddress),
+			Addr:       addr[:],
 			Flags:      uint32(nicStateFlagsToLinux(ni.Flags)),
 			DeviceType: devType,
 			MTU:        ni.MTU,

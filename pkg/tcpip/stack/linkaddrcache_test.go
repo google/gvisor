@@ -33,10 +33,11 @@ type testaddr struct {
 var testAddrs = func() []testaddr {
 	var addrs []testaddr
 	for i := 0; i < 4*linkAddrCacheSize; i++ {
-		addr := fmt.Sprintf("Addr%06d", i)
+		addr := fmt.Sprintf("%06d", i)
+		linkAddr := tcpip.LinkAddressFromBytes([]byte(addr[:6]))
 		addrs = append(addrs, testaddr{
 			addr:     tcpip.FullAddress{NIC: 1, Addr: tcpip.Address(addr)},
-			linkAddr: tcpip.LinkAddress("Link" + addr),
+			linkAddr: linkAddr,
 		})
 	}
 	return addrs
@@ -67,9 +68,9 @@ func (r *testLinkAddressResolver) fakeRequest(addr tcpip.Address) {
 
 func (*testLinkAddressResolver) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool) {
 	if addr == "broadcast" {
-		return "mac_broadcast", true
+		return tcpip.LinkAddressFromBytes([]byte("mac_broadcast")), true
 	}
-	return "", false
+	return 0, false
 }
 
 func (*testLinkAddressResolver) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
@@ -170,7 +171,7 @@ func TestCacheAgeLimit(t *testing.T) {
 func TestCacheReplace(t *testing.T) {
 	c := newLinkAddrCache(1<<63-1, 1*time.Second, 3)
 	e := testAddrs[0]
-	l2 := e.linkAddr + "2"
+	l2 := e.linkAddr + tcpip.LinkAddress(2)
 	c.add(e.addr, e.linkAddr)
 	got, _, err := c.get(e.addr, nil, "", nil, nil)
 	if err != nil {
@@ -266,7 +267,7 @@ func TestStaticResolution(t *testing.T) {
 	linkRes := &testLinkAddressResolver{cache: c, delay: time.Minute}
 
 	addr := tcpip.Address("broadcast")
-	want := tcpip.LinkAddress("mac_broadcast")
+	want := tcpip.LinkAddressFromBytes([]byte("mac_broadcast"))
 	got, _, err := c.get(tcpip.FullAddress{Addr: addr}, linkRes, "", nil, nil)
 	if err != nil {
 		t.Errorf("c.get(%q)=%q, got error: %v", string(addr), string(got), err)

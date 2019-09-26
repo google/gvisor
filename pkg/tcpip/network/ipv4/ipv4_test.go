@@ -39,7 +39,7 @@ func TestExcludeBroadcast(t *testing.T) {
 	})
 
 	const defaultMTU = 65536
-	ep := stack.LinkEndpoint(channel.New(256, defaultMTU, ""))
+	ep := stack.LinkEndpoint(channel.New(256, defaultMTU, 0))
 	if testing.Verbose() {
 		ep = sniffer.New(ep)
 	}
@@ -244,7 +244,7 @@ func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
 	})
-	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, "", packetCollectorErrors)
+	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, 0, packetCollectorErrors)
 	s.CreateNIC(1, ep)
 	const (
 		src = "\x10\x00\x00\x01"

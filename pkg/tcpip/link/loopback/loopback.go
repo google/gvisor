@@ -67,7 +67,7 @@ func (*endpoint) MaxHeaderLength() uint16 {
 
 // LinkAddress returns the link address of this endpoint.
 func (*endpoint) LinkAddress() tcpip.LinkAddress {
-	return ""
+	return 0
 }
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
@@ -81,7 +81,7 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	// Because we're immediately turning around and writing the packet back to the
 	// rx path, we intentionally don't preserve the remote and local link
 	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, 0 /* remote */, 0 /* local */, protocol, vv)
 
 	return nil
 }

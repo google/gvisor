@@ -139,7 +139,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		copy(pkt[icmpV6OptOffset-len(targetAddr):], targetAddr)
 		pkt[icmpV6OptOffset] = ndpOptDstLinkAddr
 		pkt[icmpV6LengthOffset] = 1
-		copy(pkt[icmpV6LengthOffset+1:], r.LocalLinkAddress[:])
+		r.LocalLinkAddress.ToBuf(pkt[icmpV6LengthOffset+1:])
 
 		// ICMPv6 Neighbor Solicit messages are always sent to
 		// specially crafted IPv6 multicast addresses. As a result, the
@@ -231,7 +231,7 @@ const (
 	icmpV6LengthOffset = 25
 )
 
-var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+var broadcastMAC = tcpip.LinkAddressFromBytes([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
 var _ stack.LinkAddressResolver = (*protocol)(nil)
 
@@ -254,7 +254,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	copy(pkt[icmpV6OptOffset-len(addr):], addr)
 	pkt[icmpV6OptOffset] = ndpOptSrcLinkAddr
 	pkt[icmpV6LengthOffset] = 1
-	copy(pkt[icmpV6LengthOffset+1:], linkEP.LinkAddress())
+	linkEP.LinkAddress().ToBuf(pkt[icmpV6LengthOffset+1:])
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	length := uint16(hdr.UsedLength())
@@ -283,7 +283,7 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 		// transmitted to the Ethernet multicast address whose first
 		// two octets are the value 3333 hexadecimal and whose last
 		// four octets are the last four octets of DST.
-		return tcpip.LinkAddress([]byte{
+		return tcpip.LinkAddressFromBytes([]byte{
 			0x33,
 			0x33,
 			addr[header.IPv6AddressSize-4],
@@ -292,5 +292,5 @@ func (*protocol) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 			addr[header.IPv6AddressSize-1],
 		}), true
 	}
-	return "", false
+	return 0, false
 }

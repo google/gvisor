@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -36,8 +35,8 @@ import (
 )
 
 const (
-	localLinkAddr  = "\xde\xad\xbe\xef\x56\x78"
-	remoteLinkAddr = "\xde\xad\xbe\xef\x12\x34"
+	localLinkAddr  = tcpip.LinkAddress(1)
+	remoteLinkAddr = tcpip.LinkAddress(2)
 
 	queueDataSize = 1024 * 1024
 	queuePipeSize = 4096
@@ -329,7 +328,7 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	c := newTestContext(t, 20000, 1500, localLinkAddr)
 	defer c.cleanup()
 
-	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
+	newLocalLinkAddress := tcpip.LinkAddress(4)
 	// Set both remote and local link address in route.
 	r := stack.Route{
 		RemoteLinkAddress: remoteLinkAddr,

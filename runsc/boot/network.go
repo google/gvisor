@@ -155,7 +155,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			fdOffset++
 		}
 
-		mac := tcpip.LinkAddress(link.LinkAddress)
+		mac := tcpip.LinkAddressFromBytes([]byte(link.LinkAddress))
 		ep, err := fdbased.New(&fdbased.Options{
 			FDs:                FDs,
 			MTU:                uint32(link.MTU),
