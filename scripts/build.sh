@@ -23,7 +23,7 @@ sudo apt-get update && sudo apt-get install -y dpkg-sig coreutils apt-utils
 runsc=$(build -c opt //runsc)
 
 # Build packages.
-pkg=$(build -c opt --host_force_python=py2 //runsc:runsc-debian)
+pkg=$(build -c opt //runsc:runsc-debian)
 
 # Build a repository, if the key is available.
 if [[ -v KOKORO_REPO_KEY ]]; then
