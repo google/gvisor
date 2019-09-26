@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2019 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
+// +build arm64
 
 package ring0
 
@@ -22,47 +22,13 @@ import (
 
 var (
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+	UserspaceSize = uintptr(1) << (VirtualAddressBits())
 
 	// MaximumUserAddress is the largest possible user address.
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(usermem.PageSize-1)
 
 	// KernelStartAddress is the starting kernel address.
 	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
-)
-
-// Segment indices and Selectors.
-const (
-	// Index into GDT array.
-	_          = iota // Null descriptor first.
-	_                 // Reserved (Linux is kernel 32).
-	segKcode          // Kernel code (64-bit).
-	segKdata          // Kernel data.
-	segUcode32        // User code (32-bit).
-	segUdata          // User data.
-	segUcode64        // User code (64-bit).
-	segTss            // Task segment descriptor.
-	segTssHi          // Upper bits for TSS.
-	segLast           // Last segment (terminal, not included).
-)
-
-// Selectors.
-const (
-	Kcode   Selector = segKcode << 3
-	Kdata   Selector = segKdata << 3
-	Ucode32 Selector = (segUcode32 << 3) | 3
-	Udata   Selector = (segUdata << 3) | 3
-	Ucode64 Selector = (segUcode64 << 3) | 3
-	Tss     Selector = segTss << 3
-)
-
-// Standard segments.
-var (
-	UserCodeSegment32 SegmentDescriptor
-	UserDataSegment   SegmentDescriptor
-	UserCodeSegment64 SegmentDescriptor
-	KernelCodeSegment SegmentDescriptor
-	KernelDataSegment SegmentDescriptor
 )
 
 // KernelOpts has initialization options for the kernel.
@@ -74,15 +40,12 @@ type KernelOpts struct {
 // KernelArchState contains architecture-specific state.
 type KernelArchState struct {
 	KernelOpts
-
-	// globalIDT is our set of interrupt gates.
-	globalIDT idt64
 }
 
 // CPUArchState contains CPU-specific arch state.
 type CPUArchState struct {
 	// stack is the stack used for interrupts on this CPU.
-	stack [256]byte
+	stack [512]byte
 
 	// errorCode is the error code from the last exception.
 	errorCode uintptr
@@ -96,11 +59,20 @@ type CPUArchState struct {
 	// exception.
 	errorType uintptr
 
-	// gdt is the CPU's descriptor table.
-	gdt descriptorTable
+	// faultAddr is the value of far_el1.
+	faultAddr uintptr
 
-	// tss is the CPU's task state.
-	tss TaskState64
+	// ttbr0Kvm is the value of ttbr0_el1 for sentry.
+	ttbr0Kvm uintptr
+
+	// ttbr0App is the value of ttbr0_el1 for applicaton.
+	ttbr0App uintptr
+
+	// exception vector.
+	vecCode Vector
+
+	// application context pointer.
+	appAddr uintptr
 }
 
 // ErrorCode returns the last error code.
@@ -123,25 +95,39 @@ func (c *CPU) ClearErrorCode() {
 	c.errorType = 1 // User mode.
 }
 
+//go:nosplit
+func (c *CPU) GetFaultAddr() (value uintptr) {
+	return c.faultAddr
+}
+
+//go:nosplit
+func (c *CPU) SetTtbr0Kvm(value uintptr) {
+	c.ttbr0Kvm = value
+}
+
+//go:nosplit
+func (c *CPU) SetTtbr0App(value uintptr) {
+	c.ttbr0App = value
+}
+
+//go:nosplit
+func (c *CPU) GetVector() (value Vector) {
+	return c.vecCode
+}
+
+//go:nosplit
+func (c *CPU) SetAppAddr(value uintptr) {
+	c.appAddr = value
+}
+
 // SwitchArchOpts are embedded in SwitchOpts.
 type SwitchArchOpts struct {
-	// UserPCID indicates that the application PCID to be used on switch,
-	// assuming that PCIDs are supported.
-	//
-	// Per pagetables_x86.go, a zero PCID implies a flush.
-	UserPCID uint16
+	// UserASID indicates that the application ASID to be used on switch,
+	UserASID uint16
 
-	// KernelPCID indicates that the kernel PCID to be used on return,
-	// assuming that PCIDs are supported.
-	//
-	// Per pagetables_x86.go, a zero PCID implies a flush.
-	KernelPCID uint16
+	// KernelASID indicates that the kernel ASID to be used on return,
+	KernelASID uint16
 }
 
 func init() {
-	KernelCodeSegment.setCode64(0, 0, 0)
-	KernelDataSegment.setData(0, 0xffffffff, 0)
-	UserCodeSegment32.setCode64(0, 0, 3)
-	UserDataSegment.setData(0, 0xffffffff, 3)
-	UserCodeSegment64.setCode64(0, 0, 3)
 }
