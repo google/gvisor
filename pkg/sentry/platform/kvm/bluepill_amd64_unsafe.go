@@ -23,13 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/ring0"
 )
 
-// bluepillArchContext returns the arch-specific context.
-//
-//go:nosplit
-func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
-	return &((*arch.UContext64)(context).MContext)
-}
-
 // dieArchSetup initializes the state for dieTrampoline.
 //
 // The amd64 dieTrampoline requires the vCPU to be set in BX, and the last RIP
