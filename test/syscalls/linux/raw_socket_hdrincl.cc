@@ -63,7 +63,11 @@ class RawHDRINCL : public ::testing::Test {
 };
 
 void RawHDRINCL::SetUp() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   ASSERT_THAT(socket_ = socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
               SyscallSucceeds());
@@ -76,9 +80,10 @@ void RawHDRINCL::SetUp() {
 }
 
 void RawHDRINCL::TearDown() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
-  EXPECT_THAT(close(socket_), SyscallSucceeds());
+  // TearDown will be run even if we skip the test.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    EXPECT_THAT(close(socket_), SyscallSucceeds());
+  }
 }
 
 struct iphdr RawHDRINCL::LoopbackHeader() {
@@ -123,8 +128,6 @@ bool RawHDRINCL::FillPacket(char* buf, size_t buf_size, int port,
 // We should be able to create multiple IPPROTO_RAW sockets. RawHDRINCL::Setup
 // creates the first one, so we only have to create one more here.
 TEST_F(RawHDRINCL, MultipleCreation) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   int s2;
   ASSERT_THAT(s2 = socket(AF_INET, SOCK_RAW, IPPROTO_RAW), SyscallSucceeds());
 
@@ -133,23 +136,17 @@ TEST_F(RawHDRINCL, MultipleCreation) {
 
 // Test that shutting down an unconnected socket fails.
 TEST_F(RawHDRINCL, FailShutdownWithoutConnect) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(shutdown(socket_, SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
   ASSERT_THAT(shutdown(socket_, SHUT_RD), SyscallFailsWithErrno(ENOTCONN));
 }
 
 // Test that listen() fails.
 TEST_F(RawHDRINCL, FailListen) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(listen(socket_, 1), SyscallFailsWithErrno(ENOTSUP));
 }
 
 // Test that accept() fails.
 TEST_F(RawHDRINCL, FailAccept) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   struct sockaddr saddr;
   socklen_t addrlen;
   ASSERT_THAT(accept(socket_, &saddr, &addrlen),
@@ -158,8 +155,6 @@ TEST_F(RawHDRINCL, FailAccept) {
 
 // Test that the socket is writable immediately.
 TEST_F(RawHDRINCL, PollWritableImmediately) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   struct pollfd pfd = {};
   pfd.fd = socket_;
   pfd.events = POLLOUT;
@@ -168,8 +163,6 @@ TEST_F(RawHDRINCL, PollWritableImmediately) {
 
 // Test that the socket isn't readable.
 TEST_F(RawHDRINCL, NotReadable) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   // Try to receive data with MSG_DONTWAIT, which returns immediately if there's
   // nothing to be read.
   char buf[117];
@@ -179,16 +172,12 @@ TEST_F(RawHDRINCL, NotReadable) {
 
 // Test that we can connect() to a valid IP (loopback).
 TEST_F(RawHDRINCL, ConnectToLoopback) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(connect(socket_, reinterpret_cast<struct sockaddr*>(&addr_),
                       sizeof(addr_)),
               SyscallSucceeds());
 }
 
 TEST_F(RawHDRINCL, SendWithoutConnectSucceeds) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   struct iphdr hdr = LoopbackHeader();
   ASSERT_THAT(send(socket_, &hdr, sizeof(hdr), 0),
               SyscallSucceedsWithValue(sizeof(hdr)));
@@ -197,8 +186,6 @@ TEST_F(RawHDRINCL, SendWithoutConnectSucceeds) {
 // HDRINCL implies write-only. Verify that we can't read a packet sent to
 // loopback.
 TEST_F(RawHDRINCL, NotReadableAfterWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(connect(socket_, reinterpret_cast<struct sockaddr*>(&addr_),
                       sizeof(addr_)),
               SyscallSucceeds());
@@ -221,8 +208,6 @@ TEST_F(RawHDRINCL, NotReadableAfterWrite) {
 }
 
 TEST_F(RawHDRINCL, WriteTooSmall) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(connect(socket_, reinterpret_cast<struct sockaddr*>(&addr_),
                       sizeof(addr_)),
               SyscallSucceeds());
@@ -235,8 +220,6 @@ TEST_F(RawHDRINCL, WriteTooSmall) {
 
 // Bind to localhost.
 TEST_F(RawHDRINCL, BindToLocalhost) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   ASSERT_THAT(
       bind(socket_, reinterpret_cast<struct sockaddr*>(&addr_), sizeof(addr_)),
       SyscallSucceeds());
@@ -244,8 +227,6 @@ TEST_F(RawHDRINCL, BindToLocalhost) {
 
 // Bind to a different address.
 TEST_F(RawHDRINCL, BindToInvalid) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   struct sockaddr_in bind_addr = {};
   bind_addr.sin_family = AF_INET;
   bind_addr.sin_addr = {1};  // 1.0.0.0 - An address that we can't bind to.
@@ -256,8 +237,6 @@ TEST_F(RawHDRINCL, BindToInvalid) {
 
 // Send and receive a packet.
 TEST_F(RawHDRINCL, SendAndReceive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -302,8 +281,6 @@ TEST_F(RawHDRINCL, SendAndReceive) {
 
 // Send and receive a packet with nonzero IP ID.
 TEST_F(RawHDRINCL, SendAndReceiveNonzeroID) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -349,8 +326,6 @@ TEST_F(RawHDRINCL, SendAndReceiveNonzeroID) {
 // Send and receive a packet where the sendto address is not the same as the
 // provided destination.
 TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(

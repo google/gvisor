@@ -65,7 +65,7 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
-			return 0, true, syserr.ErrPermissionDenied
+			return 0, true, syserr.ErrNotPermitted
 		}
 
 		switch protocol {
