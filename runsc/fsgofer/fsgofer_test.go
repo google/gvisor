@@ -665,7 +665,7 @@ func TestAttachInvalidType(t *testing.T) {
 			}
 			f, err := a.Attach()
 			if f != nil || err == nil {
-				t.Fatalf("Attach should have failed, got (%v, nil)", f)
+				t.Fatalf("Attach should have failed, got (%v, %v)", f, err)
 			}
 		})
 	}
