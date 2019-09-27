@@ -34,8 +34,6 @@ type NIC struct {
 	linkEP   LinkEndpoint
 	loopback bool
 
-	demux *transportDemuxer
-
 	mu            sync.RWMutex
 	spoofing      bool
 	promiscuous   bool
@@ -85,7 +83,6 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 		name:       name,
 		linkEP:     ep,
 		loopback:   loopback,
-		demux:      newTransportDemuxer(stack),
 		primary:    make(map[tcpip.NetworkProtocolNumber]*ilist.List),
 		endpoints:  make(map[NetworkEndpointID]*referencedNetworkEndpoint),
 		mcastJoins: make(map[NetworkEndpointID]int32),
@@ -707,9 +704,7 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// Raw socket packets are delivered based solely on the transport
 	// protocol number. We do not inspect the payload to ensure it's
 	// validly formed.
-	if !n.demux.deliverRawPacket(r, protocol, netHeader, vv) {
-		n.stack.demux.deliverRawPacket(r, protocol, netHeader, vv)
-	}
+	n.stack.demux.deliverRawPacket(r, protocol, netHeader, vv)
 
 	if len(vv.First()) < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
@@ -723,9 +718,6 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	}
 
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
-	if n.demux.deliverPacket(r, protocol, netHeader, vv, id) {
-		return
-	}
 	if n.stack.demux.deliverPacket(r, protocol, netHeader, vv, id) {
 		return
 	}
@@ -767,10 +759,7 @@ func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcp
 	}
 
 	id := TransportEndpointID{srcPort, local, dstPort, remote}
-	if n.demux.deliverControlPacket(net, trans, typ, extra, vv, id) {
-		return
-	}
-	if n.stack.demux.deliverControlPacket(net, trans, typ, extra, vv, id) {
+	if n.stack.demux.deliverControlPacket(n, net, trans, typ, extra, vv, id) {
 		return
 	}
 }
