@@ -280,6 +280,9 @@ type endpoint struct {
 	// reusePort is set to true if SO_REUSEPORT is enabled.
 	reusePort bool
 
+	// bindToDevice is set to the NIC on which to bind or disabled if 0.
+	bindToDevice tcpip.NICID
+
 	// delay enables Nagle's algorithm.
 	//
 	// delay is a boolean (0 is false) and must be accessed atomically.
@@ -564,11 +567,11 @@ func (e *endpoint) Close() {
 	// in Listen() when trying to register.
 	if e.state == StateListen && e.isPortReserved {
 		if e.isRegistered {
-			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
 			e.isRegistered = false
 		}
 
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -625,12 +628,12 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
 		e.isRegistered = false
 	}
 
 	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -1060,6 +1063,21 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Unlock()
 		return nil
 
+	case tcpip.BindToDeviceOption:
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if v == "" {
+			e.bindToDevice = 0
+			return nil
+		}
+		for nicid, nic := range e.stack.NICInfo() {
+			if nic.Name == string(v) {
+				e.bindToDevice = nicid
+				return nil
+			}
+		}
+		return tcpip.ErrUnknownDevice
+
 	case tcpip.QuickAckOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.slowAck, 1)
@@ -1258,6 +1276,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		if v {
 			*o = 1
 		}
+		return nil
+
+	case *tcpip.BindToDeviceOption:
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		if nic, ok := e.stack.NICInfo()[e.bindToDevice]; ok {
+			*o = tcpip.BindToDeviceOption(nic.Name)
+			return nil
+		}
+		*o = ""
 		return nil
 
 	case *tcpip.QuickAckOption:
@@ -1466,7 +1494,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 
 	if e.id.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e, e.reusePort)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e, e.reusePort, e.bindToDevice)
 		if err != nil {
 			return err
 		}
@@ -1480,13 +1508,15 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 			if sameAddr && p == e.id.RemotePort {
 				return false, nil
 			}
-			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p, false) {
+			// reusePort is false below because connect cannot reuse a port even if
+			// reusePort was set.
+			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p, false /* reusePort */, e.bindToDevice) {
 				return false, nil
 			}
 
 			id := e.id
 			id.LocalPort = p
-			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort) {
+			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice) {
 			case nil:
 				e.id = id
 				return true, nil
@@ -1504,7 +1534,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 	// before Connect: in such a case we don't want to hold on to
 	// reservations anymore.
 	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, origID.LocalAddress, origID.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, origID.LocalAddress, origID.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -1648,7 +1678,7 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	}
 
 	// Register the endpoint.
-	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.reusePort); err != nil {
+	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.reusePort, e.bindToDevice); err != nil {
 		return err
 	}
 
@@ -1729,7 +1759,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 		}
 	}
 
-	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.reusePort)
+	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.reusePort, e.bindToDevice)
 	if err != nil {
 		return err
 	}
@@ -1739,16 +1769,16 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 	e.id.LocalPort = port
 
 	// Any failures beyond this point must remove the port registration.
-	defer func() {
+	defer func(bindToDevice tcpip.NICID) {
 		if err != nil {
-			e.stack.ReleasePort(netProtos, ProtocolNumber, addr.Addr, port)
+			e.stack.ReleasePort(netProtos, ProtocolNumber, addr.Addr, port, bindToDevice)
 			e.isPortReserved = false
 			e.effectiveNetProtos = nil
 			e.id.LocalPort = 0
 			e.id.LocalAddress = ""
 			e.boundNICID = 0
 		}
-	}()
+	}(e.bindToDevice)
 
 	// If an address is specified, we must ensure that it's one of our
 	// local addresses.

@@ -17,7 +17,6 @@ package udp_test
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -476,87 +476,59 @@ func newMinPayload(minSize int) []byte {
 	return b
 }
 
-func TestBindPortReuse(t *testing.T) {
-	c := newDualTestContext(t, defaultMTU)
-	defer c.cleanup()
+func TestBindToDeviceOption(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
 
-	c.createEndpoint(ipv6.ProtocolNumber)
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
+	if err != nil {
+		t.Fatalf("NewEndpoint failed; %v", err)
+	}
+	defer ep.Close()
 
-	var eps [5]tcpip.Endpoint
-	reusePortOpt := tcpip.ReusePortOption(1)
-
-	pollChannel := make(chan tcpip.Endpoint)
-	for i := 0; i < len(eps); i++ {
-		// Try to receive the data.
-		wq := waiter.Queue{}
-		we, ch := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&we, waiter.EventIn)
-		defer wq.EventUnregister(&we)
-		defer close(ch)
-
-		var err *tcpip.Error
-		eps[i], err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
-		if err != nil {
-			c.t.Fatalf("NewEndpoint failed: %v", err)
-		}
-
-		go func(ep tcpip.Endpoint) {
-			for range ch {
-				pollChannel <- ep
-			}
-		}(eps[i])
-
-		defer eps[i].Close()
-		if err := eps[i].SetSockOpt(reusePortOpt); err != nil {
-			c.t.Fatalf("SetSockOpt failed failed: %v", err)
-		}
-		if err := eps[i].Bind(tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort}); err != nil {
-			t.Fatalf("ep.Bind(...) failed: %v", err)
-		}
+	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
+		t.Errorf("CreateNamedNIC failed: %v", err)
 	}
 
-	npackets := 100000
-	nports := 10000
-	ports := make(map[uint16]tcpip.Endpoint)
-	stats := make(map[tcpip.Endpoint]int)
-	for i := 0; i < npackets; i++ {
-		// Send a packet.
-		port := uint16(i % nports)
-		payload := newPayload()
-		c.injectV6Packet(payload, &header4Tuple{
-			srcAddr: tcpip.FullAddress{Addr: testV6Addr, Port: testPort + port},
-			dstAddr: tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort},
+	// Make an nameless NIC.
+	if err := s.CreateNIC(54321, loopback.New()); err != nil {
+		t.Errorf("CreateNIC failed: %v", err)
+	}
+
+	// strPtr is used instead of taking the address of string literals, which is
+	// a compiler error.
+	strPtr := func(s string) *string {
+		return &s
+	}
+
+	testActions := []struct {
+		name                 string
+		setBindToDevice      *string
+		setBindToDeviceError *tcpip.Error
+		getBindToDevice      tcpip.BindToDeviceOption
+	}{
+		{"GetDefaultValue", nil, nil, ""},
+		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
+		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
+		{"UnbindToDevice", strPtr(""), nil, ""},
+	}
+	for _, testAction := range testActions {
+		t.Run(testAction.name, func(t *testing.T) {
+			if testAction.setBindToDevice != nil {
+				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
+				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				}
+			}
+			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
+			if ep.GetSockOpt(&bindToDevice) != nil {
+				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			}
+			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
+				t.Errorf("bindToDevice got %q, want %q", got, want)
+			}
 		})
-
-		var addr tcpip.FullAddress
-		ep := <-pollChannel
-		_, _, err := ep.Read(&addr)
-		if err != nil {
-			c.t.Fatalf("Read failed: %v", err)
-		}
-		stats[ep]++
-		if i < nports {
-			ports[uint16(i)] = ep
-		} else {
-			// Check that all packets from one client are handled
-			// by the same socket.
-			if ports[port] != ep {
-				t.Fatalf("Port mismatch")
-			}
-		}
-	}
-
-	if len(stats) != len(eps) {
-		t.Fatalf("Only %d(expected %d) sockets received packets", len(stats), len(eps))
-	}
-
-	// Check that a packet distribution is fair between sockets.
-	for _, c := range stats {
-		n := float64(npackets) / float64(len(eps))
-		// The deviation is less than 10%.
-		if math.Abs(float64(c)-n) > n/10 {
-			t.Fatal(c, n)
-		}
 	}
 }
 

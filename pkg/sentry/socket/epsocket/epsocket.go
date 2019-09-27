@@ -942,6 +942,19 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		return int32(v), nil
 
+	case linux.SO_BINDTODEVICE:
+		var v tcpip.BindToDeviceOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		if len(v) == 0 {
+			return []byte{}, nil
+		}
+		if outLen < linux.IFNAMSIZ {
+			return nil, syserr.ErrInvalidArgument
+		}
+		return append([]byte(v), 0), nil
+
 	case linux.SO_BROADCAST:
 		if outLen < sizeOfInt32 {
 			return nil, syserr.ErrInvalidArgument
@@ -1304,6 +1317,13 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 		v := usermem.ByteOrder.Uint32(optVal)
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.ReusePortOption(v)))
+
+	case linux.SO_BINDTODEVICE:
+		n := bytes.IndexByte(optVal, 0)
+		if n == -1 {
+			n = len(optVal)
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.BindToDeviceOption(optVal[:n])))
 
 	case linux.SO_BROADCAST:
 		if len(optVal) < sizeOfInt32 {

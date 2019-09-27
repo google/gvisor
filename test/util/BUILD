@@ -324,3 +324,14 @@ cc_library(
         ":test_util",
     ],
 )
+
+cc_library(
+    name = "uid_util",
+    testonly = 1,
+    srcs = ["uid_util.cc"],
+    hdrs = ["uid_util.h"],
+    deps = [
+        ":posix_error",
+        ":save_util",
+    ],
+)

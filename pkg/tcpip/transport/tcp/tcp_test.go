@@ -465,6 +465,66 @@ func TestSimpleReceive(t *testing.T) {
 	)
 }
 
+func TestConnectBindToDevice(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		device string
+		want   tcp.EndpointState
+	}{
+		{"RightDevice", "nic1", tcp.StateEstablished},
+		{"WrongDevice", "nic2", tcp.StateSynSent},
+		{"AnyDevice", "", tcp.StateEstablished},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, defaultMTU)
+			defer c.Cleanup()
+
+			c.Create(-1)
+			bindToDevice := tcpip.BindToDeviceOption(test.device)
+			c.EP.SetSockOpt(bindToDevice)
+			// Start connection attempt.
+			waitEntry, _ := waiter.NewChannelEntry(nil)
+			c.WQ.EventRegister(&waitEntry, waiter.EventOut)
+			defer c.WQ.EventUnregister(&waitEntry)
+
+			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
+				t.Fatalf("Unexpected return value from Connect: %v", err)
+			}
+
+			// Receive SYN packet.
+			b := c.GetPacket()
+			checker.IPv4(t, b,
+				checker.TCP(
+					checker.DstPort(context.TestPort),
+					checker.TCPFlags(header.TCPFlagSyn),
+				),
+			)
+			if got, want := tcp.EndpointState(c.EP.State()), tcp.StateSynSent; got != want {
+				t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+			}
+			tcpHdr := header.TCP(header.IPv4(b).Payload())
+			c.IRS = seqnum.Value(tcpHdr.SequenceNumber())
+
+			iss := seqnum.Value(789)
+			rcvWnd := seqnum.Size(30000)
+			c.SendPacket(nil, &context.Headers{
+				SrcPort: tcpHdr.DestinationPort(),
+				DstPort: tcpHdr.SourcePort(),
+				Flags:   header.TCPFlagSyn | header.TCPFlagAck,
+				SeqNum:  iss,
+				AckNum:  c.IRS.Add(1),
+				RcvWnd:  rcvWnd,
+				TCPOpts: nil,
+			})
+
+			c.GetPacket()
+			if got, want := tcp.EndpointState(c.EP.State()), test.want; got != want {
+				t.Fatalf("Unexpected endpoint state: want %v, got %v", want, got)
+			}
+		})
+	}
+}
+
 func TestOutOfOrderReceive(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
@@ -2968,6 +3028,62 @@ func TestMinMaxBufferSizes(t *testing.T) {
 	}
 
 	checkSendBufferSize(t, ep, tcp.DefaultSendBufferSize*30)
+}
+
+func TestBindToDeviceOption(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()}})
+
+	ep, err := s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
+	if err != nil {
+		t.Fatalf("NewEndpoint failed; %v", err)
+	}
+	defer ep.Close()
+
+	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
+		t.Errorf("CreateNamedNIC failed: %v", err)
+	}
+
+	// Make an nameless NIC.
+	if err := s.CreateNIC(54321, loopback.New()); err != nil {
+		t.Errorf("CreateNIC failed: %v", err)
+	}
+
+	// strPtr is used instead of taking the address of string literals, which is
+	// a compiler error.
+	strPtr := func(s string) *string {
+		return &s
+	}
+
+	testActions := []struct {
+		name                 string
+		setBindToDevice      *string
+		setBindToDeviceError *tcpip.Error
+		getBindToDevice      tcpip.BindToDeviceOption
+	}{
+		{"GetDefaultValue", nil, nil, ""},
+		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
+		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
+		{"UnbindToDevice", strPtr(""), nil, ""},
+	}
+	for _, testAction := range testActions {
+		t.Run(testAction.name, func(t *testing.T) {
+			if testAction.setBindToDevice != nil {
+				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
+				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				}
+			}
+			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
+			if ep.GetSockOpt(&bindToDevice) != nil {
+				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			}
+			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
+				t.Errorf("bindToDevice got %q, want %q", got, want)
+			}
+		})
+	}
 }
 
 func makeStack() (*stack.Stack, *tcpip.Error) {
