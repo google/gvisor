@@ -79,11 +79,11 @@ func Sethostname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 		return 0, nil, syserror.EINVAL
 	}
 
-	name, err := t.CopyInString(nameAddr, int(size))
-	if err != nil {
+	name := make([]byte, size)
+	if _, err := t.CopyInBytes(nameAddr, name); err != nil {
 		return 0, nil, err
 	}
 
-	utsns.SetHostName(name)
+	utsns.SetHostName(string(name))
 	return 0, nil, nil
 }
