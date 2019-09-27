@@ -136,6 +136,10 @@ func (a *attachPoint) Attach() (p9.File, error) {
 	a.attachedMu.Lock()
 	defer a.attachedMu.Unlock()
 
+	if a.attached {
+		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
+	}
+
 	// Hold the file descriptor we are converting into a p9.File.
 	var f *fd.FD
 
@@ -168,12 +172,6 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
 		}
-	}
-
-	// Close the connection if already attached.
-	if a.attached {
-		f.Close()
-		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
 	}
 
 	// Return a localFile object to the caller with the UDS FD included.
@@ -330,7 +328,7 @@ func openAnyFile(path string, fn func(mode int) (*fd.FD, error)) (*fd.FD, error)
 	return file, nil
 }
 
-func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
+func getSupportedFileType(stat syscall.Stat_t, permitSocket bool) (fileType, error) {
 	var ft fileType
 	switch stat.Mode & syscall.S_IFMT {
 	case syscall.S_IFREG:
@@ -340,6 +338,9 @@ func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
 	case syscall.S_IFLNK:
 		ft = symlink
 	case syscall.S_IFSOCK:
+		if !permitSocket {
+			return unknown, syscall.EPERM
+		}
 		ft = socket
 	default:
 		return unknown, syscall.EPERM
@@ -348,7 +349,7 @@ func getSupportedFileType(stat syscall.Stat_t) (fileType, error) {
 }
 
 func newLocalFile(a *attachPoint, file *fd.FD, path string, stat syscall.Stat_t) (*localFile, error) {
-	ft, err := getSupportedFileType(stat)
+	ft, err := getSupportedFileType(stat, a.conf.HostUDS)
 	if err != nil {
 		return nil, err
 	}
@@ -1065,7 +1066,7 @@ func (l *localFile) Flush() error {
 func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
 	// Check to see if the CLI option has been set to allow the UDS mount.
 	if !l.attachPoint.conf.HostUDS {
-		return nil, errors.New("host UDS support is disabled")
+		return nil, syscall.ECONNREFUSED
 	}
 	return fd.DialUnix(l.hostPath)
 }
