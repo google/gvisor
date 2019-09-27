@@ -495,6 +495,10 @@ type ReuseAddressOption int
 // to be bound to an identical socket address.
 type ReusePortOption int
 
+// BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
+// should bind only on a specific NIC.
+type BindToDeviceOption string
+
 // QuickAckOption is stubbed out in SetSockOpt/GetSockOpt.
 type QuickAckOption int
 

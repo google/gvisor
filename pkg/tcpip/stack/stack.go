@@ -1033,73 +1033,27 @@ func (s *Stack) RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.
 // transport dispatcher. Received packets that match the provided id will be
 // delivered to the given endpoint; specifying a nic is optional, but
 // nic-specific IDs have precedence over global ones.
-func (s *Stack) RegisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool) *tcpip.Error {
-	if nicID == 0 {
-		return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
-	}
-
-	return nic.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort)
+func (s *Stack) RegisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
 }
 
 // UnregisterTransportEndpoint removes the endpoint with the given id from the
 // stack transport dispatcher.
-func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint) {
-	if nicID == 0 {
-		s.demux.unregisterEndpoint(netProtos, protocol, id, ep)
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic != nil {
-		nic.demux.unregisterEndpoint(netProtos, protocol, id, ep)
-	}
+func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
 func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
-	if nicID == 0 {
-		return s.demux.registerRawEndpoint(netProto, transProto, ep)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
-	}
-
-	return nic.demux.registerRawEndpoint(netProto, transProto, ep)
+	return s.demux.registerRawEndpoint(netProto, transProto, ep)
 }
 
 // UnregisterRawTransportEndpoint removes the endpoint for the transport
 // protocol from the stack transport dispatcher.
 func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) {
-	if nicID == 0 {
-		s.demux.unregisterRawEndpoint(netProto, transProto, ep)
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic != nil {
-		nic.demux.unregisterRawEndpoint(netProto, transProto, ep)
-	}
+	s.demux.unregisterRawEndpoint(netProto, transProto, ep)
 }
 
 // RegisterRestoredEndpoint records e as an endpoint that has been restored on

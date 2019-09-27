@@ -35,25 +35,109 @@ type protocolIDs struct {
 type transportEndpoints struct {
 	// mu protects all fields of the transportEndpoints.
 	mu        sync.RWMutex
-	endpoints map[TransportEndpointID]TransportEndpoint
+	endpoints map[TransportEndpointID]*endpointsByNic
 	// rawEndpoints contains endpoints for raw sockets, which receive all
 	// traffic of a given protocol regardless of port.
 	rawEndpoints []RawTransportEndpoint
 }
 
-// unregisterEndpoint unregisters the endpoint with the given id such that it
-// won't receive any more packets.
-func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep TransportEndpoint) {
-	eps.mu.Lock()
-	defer eps.mu.Unlock()
-	e, ok := eps.endpoints[id]
+type endpointsByNic struct {
+	mu        sync.RWMutex
+	endpoints map[tcpip.NICID]*multiPortEndpoint
+	// seed is a random secret for a jenkins hash.
+	seed uint32
+}
+
+// HandlePacket is called by the stack when new packets arrive to this transport
+// endpoint.
+func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
+	epsByNic.mu.RLock()
+
+	mpep, ok := epsByNic.endpoints[r.ref.nic.ID()]
+	if !ok {
+		if mpep, ok = epsByNic.endpoints[0]; !ok {
+			epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+			return
+		}
+	}
+
+	// If this is a broadcast or multicast datagram, deliver the datagram to all
+	// endpoints bound to the right device.
+	if id.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(id.LocalAddress) || header.IsV6MulticastAddress(id.LocalAddress) {
+		mpep.handlePacketAll(r, id, vv)
+		epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+		return
+	}
+
+	// multiPortEndpoints are guaranteed to have at least one element.
+	selectEndpoint(id, mpep, epsByNic.seed).HandlePacket(r, id, vv)
+	epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
+}
+
+// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
+func (epsByNic *endpointsByNic) handleControlPacket(n *NIC, id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView) {
+	epsByNic.mu.RLock()
+	defer epsByNic.mu.RUnlock()
+
+	mpep, ok := epsByNic.endpoints[n.ID()]
+	if !ok {
+		mpep, ok = epsByNic.endpoints[0]
+	}
 	if !ok {
 		return
 	}
-	if multiPortEp, ok := e.(*multiPortEndpoint); ok {
-		if !multiPortEp.unregisterEndpoint(ep) {
-			return
-		}
+
+	// TODO(eyalsoha): Why don't we look at id to see if this packet needs to
+	// broadcast like we are doing with handlePacket above?
+
+	// multiPortEndpoints are guaranteed to have at least one element.
+	selectEndpoint(id, mpep, epsByNic.seed).HandleControlPacket(id, typ, extra, vv)
+}
+
+// registerEndpoint returns true if it succeeds. It fails and returns
+// false if ep already has an element with the same key.
+func (epsByNic *endpointsByNic) registerEndpoint(t TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+	epsByNic.mu.Lock()
+	defer epsByNic.mu.Unlock()
+
+	if multiPortEp, ok := epsByNic.endpoints[bindToDevice]; ok {
+		// There was already a bind.
+		return multiPortEp.singleRegisterEndpoint(t, reusePort)
+	}
+
+	// This is a new binding.
+	multiPortEp := &multiPortEndpoint{}
+	multiPortEp.endpointsMap = make(map[TransportEndpoint]int)
+	multiPortEp.reuse = reusePort
+	epsByNic.endpoints[bindToDevice] = multiPortEp
+	return multiPortEp.singleRegisterEndpoint(t, reusePort)
+}
+
+// unregisterEndpoint returns true if endpointsByNic has to be unregistered.
+func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t TransportEndpoint) bool {
+	epsByNic.mu.Lock()
+	defer epsByNic.mu.Unlock()
+	multiPortEp, ok := epsByNic.endpoints[bindToDevice]
+	if !ok {
+		return false
+	}
+	if multiPortEp.unregisterEndpoint(t) {
+		delete(epsByNic.endpoints, bindToDevice)
+	}
+	return len(epsByNic.endpoints) == 0
+}
+
+// unregisterEndpoint unregisters the endpoint with the given id such that it
+// won't receive any more packets.
+func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+	eps.mu.Lock()
+	defer eps.mu.Unlock()
+	epsByNic, ok := eps.endpoints[id]
+	if !ok {
+		return
+	}
+	if !epsByNic.unregisterEndpoint(bindToDevice, ep) {
+		return
 	}
 	delete(eps.endpoints, id)
 }
@@ -75,7 +159,7 @@ func newTransportDemuxer(stack *Stack) *transportDemuxer {
 	for netProto := range stack.networkProtocols {
 		for proto := range stack.transportProtocols {
 			d.protocol[protocolIDs{netProto, proto}] = &transportEndpoints{
-				endpoints: make(map[TransportEndpointID]TransportEndpoint),
+				endpoints: make(map[TransportEndpointID]*endpointsByNic),
 			}
 		}
 	}
@@ -85,10 +169,10 @@ func newTransportDemuxer(stack *Stack) *transportDemuxer {
 
 // registerEndpoint registers the given endpoint with the dispatcher such that
 // packets that match the endpoint ID are delivered to it.
-func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool) *tcpip.Error {
+func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
 	for i, n := range netProtos {
-		if err := d.singleRegisterEndpoint(n, protocol, id, ep, reusePort); err != nil {
-			d.unregisterEndpoint(netProtos[:i], protocol, id, ep)
+		if err := d.singleRegisterEndpoint(n, protocol, id, ep, reusePort, bindToDevice); err != nil {
+			d.unregisterEndpoint(netProtos[:i], protocol, id, ep, bindToDevice)
 			return err
 		}
 	}
@@ -97,13 +181,14 @@ func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNum
 }
 
 // multiPortEndpoint is a container for TransportEndpoints which are bound to
-// the same pair of address and port.
+// the same pair of address and port. endpointsArr always has at least one
+// element.
 type multiPortEndpoint struct {
 	mu           sync.RWMutex
 	endpointsArr []TransportEndpoint
 	endpointsMap map[TransportEndpoint]int
-	// seed is a random secret for a jenkins hash.
-	seed uint32
+	// reuse indicates if more than one endpoint is allowed.
+	reuse bool
 }
 
 // reciprocalScale scales a value into range [0, n).
@@ -117,9 +202,10 @@ func reciprocalScale(val, n uint32) uint32 {
 // selectEndpoint calculates a hash of destination and source addresses and
 // ports then uses it to select a socket. In this case, all packets from one
 // address will be sent to same endpoint.
-func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID) TransportEndpoint {
-	ep.mu.RLock()
-	defer ep.mu.RUnlock()
+func selectEndpoint(id TransportEndpointID, mpep *multiPortEndpoint, seed uint32) TransportEndpoint {
+	if len(mpep.endpointsArr) == 1 {
+		return mpep.endpointsArr[0]
+	}
 
 	payload := []byte{
 		byte(id.LocalPort),
@@ -128,51 +214,50 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID) TransportEnd
 		byte(id.RemotePort >> 8),
 	}
 
-	h := jenkins.Sum32(ep.seed)
+	h := jenkins.Sum32(seed)
 	h.Write(payload)
 	h.Write([]byte(id.LocalAddress))
 	h.Write([]byte(id.RemoteAddress))
 	hash := h.Sum32()
 
-	idx := reciprocalScale(hash, uint32(len(ep.endpointsArr)))
-	return ep.endpointsArr[idx]
+	idx := reciprocalScale(hash, uint32(len(mpep.endpointsArr)))
+	return mpep.endpointsArr[idx]
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
-func (ep *multiPortEndpoint) HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
-	// If this is a broadcast or multicast datagram, deliver the datagram to all
-	// endpoints managed by ep.
-	if id.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(id.LocalAddress) || header.IsV6MulticastAddress(id.LocalAddress) {
-		for i, endpoint := range ep.endpointsArr {
-			// HandlePacket modifies vv, so each endpoint needs its own copy.
-			if i == len(ep.endpointsArr)-1 {
-				endpoint.HandlePacket(r, id, vv)
-				break
-			}
-			vvCopy := buffer.NewView(vv.Size())
-			copy(vvCopy, vv.ToView())
-			endpoint.HandlePacket(r, id, vvCopy.ToVectorisedView())
+func (ep *multiPortEndpoint) handlePacketAll(r *Route, id TransportEndpointID, vv buffer.VectorisedView) {
+	ep.mu.RLock()
+	for i, endpoint := range ep.endpointsArr {
+		// HandlePacket modifies vv, so each endpoint needs its own copy except for
+		// the final one.
+		if i == len(ep.endpointsArr)-1 {
+			endpoint.HandlePacket(r, id, vv)
+			break
 		}
-	} else {
-		ep.selectEndpoint(id).HandlePacket(r, id, vv)
+		vvCopy := buffer.NewView(vv.Size())
+		copy(vvCopy, vv.ToView())
+		endpoint.HandlePacket(r, id, vvCopy.ToVectorisedView())
 	}
+	ep.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
-// HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
-func (ep *multiPortEndpoint) HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView) {
-	ep.selectEndpoint(id).HandleControlPacket(id, typ, extra, vv)
-}
-
-func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint) {
+// singleRegisterEndpoint tries to add an endpoint to the multiPortEndpoint
+// list. The list might be empty already.
+func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, reusePort bool) *tcpip.Error {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	// A new endpoint is added into endpointsArr and its index there is
-	// saved in endpointsMap. This will allows to remove endpoint from
-	// the array fast.
+	if len(ep.endpointsArr) > 0 {
+		// If it was previously bound, we need to check if we can bind again.
+		if !ep.reuse || !reusePort {
+			return tcpip.ErrPortInUse
+		}
+	}
+
+	// A new endpoint is added into endpointsArr and its index there is saved in
+	// endpointsMap. This will allow us to remove endpoint from the array fast.
 	ep.endpointsMap[t] = len(ep.endpointsArr)
 	ep.endpointsArr = append(ep.endpointsArr, t)
+	return nil
 }
 
 // unregisterEndpoint returns true if multiPortEndpoint has to be unregistered.
@@ -197,53 +282,41 @@ func (ep *multiPortEndpoint) unregisterEndpoint(t TransportEndpoint) bool {
 	return true
 }
 
-func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool) *tcpip.Error {
+func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
 	if id.RemotePort != 0 {
+		// TODO(eyalsoha): Why?
 		reusePort = false
 	}
 
 	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
 	if !ok {
-		return nil
+		return tcpip.ErrUnknownProtocol
 	}
 
 	eps.mu.Lock()
 	defer eps.mu.Unlock()
 
-	var multiPortEp *multiPortEndpoint
-	if _, ok := eps.endpoints[id]; ok {
-		if !reusePort {
-			return tcpip.ErrPortInUse
-		}
-		multiPortEp, ok = eps.endpoints[id].(*multiPortEndpoint)
-		if !ok {
-			return tcpip.ErrPortInUse
-		}
+	if epsByNic, ok := eps.endpoints[id]; ok {
+		// There was already a binding.
+		return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
 	}
 
-	if reusePort {
-		if multiPortEp == nil {
-			multiPortEp = &multiPortEndpoint{}
-			multiPortEp.endpointsMap = make(map[TransportEndpoint]int)
-			multiPortEp.seed = rand.Uint32()
-			eps.endpoints[id] = multiPortEp
-		}
-
-		multiPortEp.singleRegisterEndpoint(ep)
-
-		return nil
+	// This is a new binding.
+	epsByNic := &endpointsByNic{
+		endpoints: make(map[tcpip.NICID]*multiPortEndpoint),
+		seed:      rand.Uint32(),
 	}
-	eps.endpoints[id] = ep
+	eps.endpoints[id] = epsByNic
 
-	return nil
+	return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
 }
 
 // unregisterEndpoint unregisters the endpoint with the given id such that it
 // won't receive any more packets.
-func (d *transportDemuxer) unregisterEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint) {
+func (d *transportDemuxer) unregisterEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
 	for _, n := range netProtos {
 		if eps, ok := d.protocol[protocolIDs{n, protocol}]; ok {
-			eps.unregisterEndpoint(id, ep)
+			eps.unregisterEndpoint(id, ep, bindToDevice)
 		}
 	}
 }
@@ -273,7 +346,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 
 	// If the packet is a broadcast, then find all matching transport endpoints.
 	// Otherwise, try to find a single matching transport endpoint.
-	destEps := make([]TransportEndpoint, 0, 1)
+	destEps := make([]*endpointsByNic, 0, 1)
 	eps.mu.RLock()
 
 	if protocol == header.UDPProtocolNumber && id.LocalAddress == header.IPv4Broadcast {
@@ -299,7 +372,7 @@ func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProto
 
 	// Deliver the packet.
 	for _, ep := range destEps {
-		ep.HandlePacket(r, id, vv)
+		ep.handlePacket(r, id, vv)
 	}
 
 	return true
@@ -331,7 +404,7 @@ func (d *transportDemuxer) deliverRawPacket(r *Route, protocol tcpip.TransportPr
 
 // deliverControlPacket attempts to deliver the given control packet. Returns
 // true if it found an endpoint, false otherwise.
-func (d *transportDemuxer) deliverControlPacket(net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView, id TransportEndpointID) bool {
+func (d *transportDemuxer) deliverControlPacket(n *NIC, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView, id TransportEndpointID) bool {
 	eps, ok := d.protocol[protocolIDs{net, trans}]
 	if !ok {
 		return false
@@ -348,12 +421,12 @@ func (d *transportDemuxer) deliverControlPacket(net tcpip.NetworkProtocolNumber,
 	}
 
 	// Deliver the packet.
-	ep.HandleControlPacket(id, typ, extra, vv)
+	ep.handleControlPacket(n, id, typ, extra, vv)
 
 	return true
 }
 
-func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer.VectorisedView, id TransportEndpointID) TransportEndpoint {
+func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer.VectorisedView, id TransportEndpointID) *endpointsByNic {
 	// Try to find a match with the id as provided.
 	if ep, ok := eps.endpoints[id]; ok {
 		return ep
