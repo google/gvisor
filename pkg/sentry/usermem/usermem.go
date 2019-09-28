@@ -16,6 +16,7 @@
 package usermem
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strconv"
@@ -270,11 +271,10 @@ func CopyStringIn(ctx context.Context, uio IO, addr Addr, maxlen int, opts IOOpt
 		n, err := uio.CopyIn(ctx, addr, buf[done:done+readlen], opts)
 		// Look for the terminating zero byte, which may have occurred before
 		// hitting err.
-		for i, c := range buf[done : done+n] {
-			if c == 0 {
-				return stringFromImmutableBytes(buf[:done+i]), nil
-			}
+		if i := bytes.IndexByte(buf[done:done+n], byte(0)); i >= 0 {
+			return stringFromImmutableBytes(buf[:done+i]), nil
 		}
+
 		done += n
 		if err != nil {
 			return stringFromImmutableBytes(buf[:done]), err
