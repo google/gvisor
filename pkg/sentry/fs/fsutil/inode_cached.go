@@ -140,12 +140,16 @@ type CachedFileObject interface {
 	// WriteFromBlocksAt may return a partial write without an error.
 	WriteFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error)
 
-	// SetMaskedAttributes sets the attributes in attr that are true in mask
-	// on the backing file.
+	// SetMaskedAttributes sets the attributes in attr that are true in
+	// mask on the backing file. If the mask contains only ATime or MTime
+	// and the CachedFileObject has an FD to the file, then this operation
+	// is a noop unless forceSetTimestamps is true. This avoids an extra
+	// RPC to the gofer in the open-read/write-close case, when the
+	// timestamps on the file will be updated by the host kernel for us.
 	//
 	// SetMaskedAttributes may be called at any point, regardless of whether
 	// the file was opened.
-	SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error
+	SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr, forceSetTimestamps bool) error
 
 	// Allocate allows the caller to reserve disk space for the inode.
 	// It's equivalent to fallocate(2) with 'mode=0'.
@@ -224,7 +228,7 @@ func (c *CachingInodeOperations) SetPermissions(ctx context.Context, inode *fs.I
 
 	now := ktime.NowFromContext(ctx)
 	masked := fs.AttrMask{Perms: true}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Perms: perms}); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Perms: perms}, false); err != nil {
 		return false
 	}
 	c.attr.Perms = perms
@@ -246,7 +250,7 @@ func (c *CachingInodeOperations) SetOwner(ctx context.Context, inode *fs.Inode, 
 		UID: owner.UID.Ok(),
 		GID: owner.GID.Ok(),
 	}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Owner: owner}); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Owner: owner}, false); err != nil {
 		return err
 	}
 	if owner.UID.Ok() {
@@ -282,7 +286,9 @@ func (c *CachingInodeOperations) SetTimestamps(ctx context.Context, inode *fs.In
 		AccessTime:       !ts.ATimeOmit,
 		ModificationTime: !ts.MTimeOmit,
 	}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{AccessTime: ts.ATime, ModificationTime: ts.MTime}); err != nil {
+	// Call SetMaskedAttributes with forceSetTimestamps = true to make sure
+	// the timestamp is updated.
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{AccessTime: ts.ATime, ModificationTime: ts.MTime}, true); err != nil {
 		return err
 	}
 	if !ts.ATimeOmit {
@@ -305,7 +311,7 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	now := ktime.NowFromContext(ctx)
 	masked := fs.AttrMask{Size: true}
 	attr := fs.UnstableAttr{Size: size}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, attr); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, attr, false); err != nil {
 		c.dataMu.Unlock()
 		return err
 	}
@@ -394,7 +400,7 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 	c.dirtyAttr.Size = false
 
 	// Write out cached attributes.
-	if err := c.backingFile.SetMaskedAttributes(ctx, c.dirtyAttr, c.attr); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, c.dirtyAttr, c.attr, false); err != nil {
 		c.attrMu.Unlock()
 		return err
 	}
