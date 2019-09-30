@@ -215,8 +215,8 @@ func (i *inodeFileState) WriteFromBlocksAt(ctx context.Context, srcs safemem.Blo
 }
 
 // SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
-func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error {
-	if i.skipSetAttr(mask) {
+func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr, forceSetTimestamps bool) error {
+	if i.skipSetAttr(mask, forceSetTimestamps) {
 		return nil
 	}
 	as, ans := attr.AccessTime.Unix()
@@ -251,13 +251,14 @@ func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMa
 // when:
 //   - Mask is empty
 //   - Mask contains only attributes that cannot be set in the gofer
-//   - Mask contains only atime and/or mtime, and host FD exists
+//   - forceSetTimestamps is false and mask contains only atime and/or mtime
+//     and host FD exists
 //
 // Updates to atime and mtime can be skipped because cached value will be
 // "close enough" to host value, given that operation went directly to host FD.
 // Skipping atime updates is particularly important to reduce the number of
 // operations sent to the Gofer for readonly files.
-func (i *inodeFileState) skipSetAttr(mask fs.AttrMask) bool {
+func (i *inodeFileState) skipSetAttr(mask fs.AttrMask, forceSetTimestamps bool) bool {
 	// First remove attributes that cannot be updated.
 	cpy := mask
 	cpy.Type = false
@@ -277,6 +278,12 @@ func (i *inodeFileState) skipSetAttr(mask fs.AttrMask) bool {
 		return false
 	}
 
+	// If forceSetTimestamps was passed, then we cannot skip.
+	if forceSetTimestamps {
+		return false
+	}
+
+	// Skip if we have a host FD.
 	i.handlesMu.RLock()
 	defer i.handlesMu.RUnlock()
 	return (i.readHandles != nil && i.readHandles.Host != nil) ||
