@@ -144,7 +144,7 @@ func (h *HostMappable) Truncate(ctx context.Context, newSize int64) error {
 
 	mask := fs.AttrMask{Size: true}
 	attr := fs.UnstableAttr{Size: newSize}
-	if err := h.backingFile.SetMaskedAttributes(ctx, mask, attr); err != nil {
+	if err := h.backingFile.SetMaskedAttributes(ctx, mask, attr, false); err != nil {
 		return err
 	}
 
