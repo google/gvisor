@@ -36,6 +36,7 @@ go_library(
     ],
     deps = [
         "//pkg/ilist",
+        "//pkg/rand",
         "//pkg/sleep",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -1504,7 +1506,20 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		// address/port for both local and remote (otherwise this
 		// endpoint would be trying to connect to itself).
 		sameAddr := e.id.LocalAddress == e.id.RemoteAddress
-		if _, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
+
+		// Calculate a port offset based on the destination IP/port and
+		// src IP to ensure that for a given tuple (srcIP, destIP,
+		// destPort) the offset used as a starting point is the same to
+		// ensure that we can cycle through the port space effectively.
+		h := jenkins.Sum32(e.stack.PortSeed())
+		h.Write([]byte(e.id.LocalAddress))
+		h.Write([]byte(e.id.RemoteAddress))
+		portBuf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(portBuf, e.id.RemotePort)
+		h.Write(portBuf)
+		portOffset := h.Sum32()
+
+		if _, err := e.stack.PickEphemeralPortStable(portOffset, func(p uint16) (bool, *tcpip.Error) {
 			if sameAddr && p == e.id.RemotePort {
 				return false, nil
 			}
