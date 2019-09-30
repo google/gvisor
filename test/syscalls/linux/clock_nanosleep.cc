@@ -43,7 +43,7 @@ int sys_clock_nanosleep(clockid_t clkid, int flags,
 
 PosixErrorOr<absl::Time> GetTime(clockid_t clk) {
   struct timespec ts = {};
-  int rc = clock_gettime(clk, &ts);
+  const int rc = clock_gettime(clk, &ts);
   MaybeSave();
   if (rc < 0) {
     return PosixError(errno, "clock_gettime");
@@ -67,31 +67,32 @@ TEST_P(WallClockNanosleepTest, InvalidValues) {
 }
 
 TEST_P(WallClockNanosleepTest, SleepOneSecond) {
-  absl::Duration const duration = absl::Seconds(1);
-  struct timespec dur = absl::ToTimespec(duration);
+  constexpr absl::Duration kSleepDuration = absl::Seconds(1);
+  struct timespec duration = absl::ToTimespec(kSleepDuration);
 
-  absl::Time const before = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
-  EXPECT_THAT(RetryEINTR(sys_clock_nanosleep)(GetParam(), 0, &dur, &dur),
-              SyscallSucceeds());
-  absl::Time const after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  const absl::Time before = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  EXPECT_THAT(
+      RetryEINTR(sys_clock_nanosleep)(GetParam(), 0, &duration, &duration),
+      SyscallSucceeds());
+  const absl::Time after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
 
-  EXPECT_GE(after - before, duration);
+  EXPECT_GE(after - before, kSleepDuration);
 }
 
 TEST_P(WallClockNanosleepTest, InterruptedNanosleep) {
-  absl::Duration const duration = absl::Seconds(60);
-  struct timespec dur = absl::ToTimespec(duration);
+  constexpr absl::Duration kSleepDuration = absl::Seconds(60);
+  struct timespec duration = absl::ToTimespec(kSleepDuration);
 
   // Install no-op signal handler for SIGALRM.
   struct sigaction sa = {};
   sigfillset(&sa.sa_mask);
   sa.sa_handler = +[](int signo) {};
-  auto const cleanup_sa =
+  const auto cleanup_sa =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGALRM, sa));
 
   // Measure time since setting the alarm, since the alarm will interrupt the
   // sleep and hence determine how long we sleep.
-  absl::Time const before = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  const absl::Time before = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
 
   // Set an alarm to go off while sleeping.
   struct itimerval timer = {};
@@ -99,26 +100,51 @@ TEST_P(WallClockNanosleepTest, InterruptedNanosleep) {
   timer.it_value.tv_usec = 0;
   timer.it_interval.tv_sec = 1;
   timer.it_interval.tv_usec = 0;
-  auto const cleanup =
+  const auto cleanup =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedItimer(ITIMER_REAL, timer));
 
-  EXPECT_THAT(sys_clock_nanosleep(GetParam(), 0, &dur, &dur),
+  EXPECT_THAT(sys_clock_nanosleep(GetParam(), 0, &duration, &duration),
               SyscallFailsWithErrno(EINTR));
-  absl::Time const after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  const absl::Time after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
 
-  absl::Duration const remaining = absl::DurationFromTimespec(dur);
-  EXPECT_GE(after - before + remaining, duration);
+  // Remaining time updated.
+  const absl::Duration remaining = absl::DurationFromTimespec(duration);
+  EXPECT_GE(after - before + remaining, kSleepDuration);
+}
+
+// Remaining time is *not* updated if nanosleep completes uninterrupted.
+TEST_P(WallClockNanosleepTest, UninterruptedNanosleep) {
+  constexpr absl::Duration kSleepDuration = absl::Milliseconds(10);
+  const struct timespec duration = absl::ToTimespec(kSleepDuration);
+
+  while (true) {
+    constexpr int kRemainingMagic = 42;
+    struct timespec remaining;
+    remaining.tv_sec = kRemainingMagic;
+    remaining.tv_nsec = kRemainingMagic;
+
+    int ret = sys_clock_nanosleep(GetParam(), 0, &duration, &remaining);
+    if (ret == EINTR) {
+      // Retry from beginning. We want a single uninterrupted call.
+      continue;
+    }
+
+    EXPECT_THAT(ret, SyscallSucceeds());
+    EXPECT_EQ(remaining.tv_sec, kRemainingMagic);
+    EXPECT_EQ(remaining.tv_nsec, kRemainingMagic);
+    break;
+  }
 }
 
 TEST_P(WallClockNanosleepTest, SleepUntil) {
-  absl::Time const now = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
-  absl::Time const until = now + absl::Seconds(2);
-  struct timespec ts = absl::ToTimespec(until);
+  const absl::Time now = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  const absl::Time until = now + absl::Seconds(2);
+  const struct timespec ts = absl::ToTimespec(until);
 
   EXPECT_THAT(
       RetryEINTR(sys_clock_nanosleep)(GetParam(), TIMER_ABSTIME, &ts, nullptr),
       SyscallSucceeds());
-  absl::Time const after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
+  const absl::Time after = ASSERT_NO_ERRNO_AND_VALUE(GetTime(GetParam()));
 
   EXPECT_GE(after, until);
 }
@@ -127,8 +153,8 @@ INSTANTIATE_TEST_SUITE_P(Sleepers, WallClockNanosleepTest,
                          ::testing::Values(CLOCK_REALTIME, CLOCK_MONOTONIC));
 
 TEST(ClockNanosleepProcessTest, SleepFiveSeconds) {
-  absl::Duration const kDuration = absl::Seconds(5);
-  struct timespec dur = absl::ToTimespec(kDuration);
+  const absl::Duration kSleepDuration = absl::Seconds(5);
+  struct timespec duration = absl::ToTimespec(kSleepDuration);
 
   // Ensure that CLOCK_PROCESS_CPUTIME_ID advances.
   std::atomic<bool> done(false);
@@ -136,16 +162,16 @@ TEST(ClockNanosleepProcessTest, SleepFiveSeconds) {
     while (!done.load()) {
     }
   });
-  auto const cleanup_done = Cleanup([&] { done.store(true); });
+  const auto cleanup_done = Cleanup([&] { done.store(true); });
 
-  absl::Time const before =
+  const absl::Time before =
       ASSERT_NO_ERRNO_AND_VALUE(GetTime(CLOCK_PROCESS_CPUTIME_ID));
-  EXPECT_THAT(
-      RetryEINTR(sys_clock_nanosleep)(CLOCK_PROCESS_CPUTIME_ID, 0, &dur, &dur),
-      SyscallSucceeds());
-  absl::Time const after =
+  EXPECT_THAT(RetryEINTR(sys_clock_nanosleep)(CLOCK_PROCESS_CPUTIME_ID, 0,
+                                              &duration, &duration),
+              SyscallSucceeds());
+  const absl::Time after =
       ASSERT_NO_ERRNO_AND_VALUE(GetTime(CLOCK_PROCESS_CPUTIME_ID));
-  EXPECT_GE(after - before, kDuration);
+  EXPECT_GE(after - before, kSleepDuration);
 }
 }  // namespace
 
