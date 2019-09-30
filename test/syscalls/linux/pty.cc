@@ -1527,27 +1527,36 @@ TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
 TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
+  int sync_setsid[2];
+  int sync_exit[2];
+  ASSERT_THAT(pipe(sync_setsid), SyscallSucceeds());
+  ASSERT_THAT(pipe(sync_exit), SyscallSucceeds());
+
   // Create a new process and put it in a new session.
   pid_t child = fork();
   if (!child) {
     TEST_PCHECK(setsid() >= 0);
     // Tell the parent we're in a new session.
-    TEST_PCHECK(!raise(SIGSTOP));
-    TEST_PCHECK(!pause());
-    _exit(1);
+    char c = 'c';
+    TEST_PCHECK(WriteFd(sync_setsid[1], &c, 1) == 1);
+    TEST_PCHECK(ReadFd(sync_exit[0], &c, 1) == 1);
+    _exit(0);
   }
 
   // Wait for the child to tell us it's in a new session.
-  int wstatus;
-  EXPECT_THAT(waitpid(child, &wstatus, WUNTRACED),
-              SyscallSucceedsWithValue(child));
-  EXPECT_TRUE(WSTOPSIG(wstatus));
+  char c = 'c';
+  ASSERT_THAT(ReadFd(sync_setsid[0], &c, 1), SyscallSucceedsWithValue(1));
 
   // Child is in a new session, so we can't make it the foregroup process group.
   EXPECT_THAT(ioctl(slave_.get(), TIOCSPGRP, &child),
               SyscallFailsWithErrno(EPERM));
 
-  EXPECT_THAT(kill(child, SIGKILL), SyscallSucceeds());
+  EXPECT_THAT(WriteFd(sync_exit[1], &c, 1), SyscallSucceedsWithValue(1));
+
+  int wstatus;
+  EXPECT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(wstatus));
+  EXPECT_EQ(WEXITSTATUS(wstatus), 0);
 }
 
 // Verify that we don't hang when creating a new session from an orphaned
