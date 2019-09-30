@@ -15,6 +15,7 @@
 package linux
 
 import (
+	"fmt"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -228,41 +229,35 @@ func clockNanosleepFor(t *kernel.Task, c ktime.Clock, dur time.Duration, rem use
 
 	timer.Destroy()
 
-	var remaining time.Duration
-	// Did we just block for the entire duration?
-	if err == syserror.ETIMEDOUT {
-		remaining = 0
-	} else {
-		remaining = dur - after.Sub(start)
+	switch err {
+	case syserror.ETIMEDOUT:
+		// Slept for entire timeout.
+		return nil
+	case syserror.ErrInterrupted:
+		// Interrupted.
+		remaining := dur - after.Sub(start)
 		if remaining < 0 {
 			remaining = time.Duration(0)
 		}
-	}
 
-	// Copy out remaining time.
-	if err != nil && rem != usermem.Addr(0) {
-		timeleft := linux.NsecToTimespec(remaining.Nanoseconds())
-		if err := copyTimespecOut(t, rem, &timeleft); err != nil {
-			return err
+		// Copy out remaining time.
+		if rem != 0 {
+			timeleft := linux.NsecToTimespec(remaining.Nanoseconds())
+			if err := copyTimespecOut(t, rem, &timeleft); err != nil {
+				return err
+			}
 		}
-	}
 
-	// Did we just block for the entire duration?
-	if err == syserror.ETIMEDOUT {
-		return nil
-	}
-
-	// If interrupted, arrange for a restart with the remaining duration.
-	if err == syserror.ErrInterrupted {
+		// Arrange for a restart with the remaining duration.
 		t.SetSyscallRestartBlock(&clockNanosleepRestartBlock{
 			c:        c,
 			duration: remaining,
 			rem:      rem,
 		})
 		return kernel.ERESTART_RESTARTBLOCK
+	default:
+		panic(fmt.Sprintf("Impossible BlockWithTimer error %v", err))
 	}
-
-	return err
 }
 
 // Nanosleep implements linux syscall Nanosleep(2).
