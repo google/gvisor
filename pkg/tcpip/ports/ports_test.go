@@ -15,6 +15,7 @@
 package ports
 
 import (
+	"math/rand"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -232,7 +233,6 @@ func TestPortReservation(t *testing.T) {
 }
 
 func TestPickEphemeralPort(t *testing.T) {
-	pm := NewPortManager()
 	customErr := &tcpip.Error{}
 	for _, test := range []struct {
 		name     string
@@ -276,7 +276,61 @@ func TestPickEphemeralPort(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			pm := NewPortManager()
 			if port, err := pm.PickEphemeralPort(test.f); port != test.wantPort || err != test.wantErr {
+				t.Errorf("PickEphemeralPort(..) = (port %d, err %v); want (port %d, err %v)", port, err, test.wantPort, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestPickEphemeralPortStable(t *testing.T) {
+	customErr := &tcpip.Error{}
+	for _, test := range []struct {
+		name     string
+		f        func(port uint16) (bool, *tcpip.Error)
+		wantErr  *tcpip.Error
+		wantPort uint16
+	}{
+		{
+			name: "no-port-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				return false, nil
+			},
+			wantErr: tcpip.ErrNoPortAvailable,
+		},
+		{
+			name: "port-tester-error",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				return false, customErr
+			},
+			wantErr: customErr,
+		},
+		{
+			name: "only-port-16042-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				if port == FirstEphemeral+42 {
+					return true, nil
+				}
+				return false, nil
+			},
+			wantPort: FirstEphemeral + 42,
+		},
+		{
+			name: "only-port-under-16000-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				if port < FirstEphemeral {
+					return true, nil
+				}
+				return false, nil
+			},
+			wantErr: tcpip.ErrNoPortAvailable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pm := NewPortManager()
+			portOffset := uint32(rand.Int31n(int32(numEphemeralPorts)))
+			if port, err := pm.PickEphemeralPortStable(portOffset, test.f); port != test.wantPort || err != test.wantErr {
 				t.Errorf("PickEphemeralPort(..) = (port %d, err %v); want (port %d, err %v)", port, err, test.wantPort, test.wantErr)
 			}
 		})

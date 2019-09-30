@@ -49,6 +49,7 @@ go_library(
         "//pkg/sleep",
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",
+        "//pkg/tcpip/hash/jenkins",
         "//pkg/tcpip/header",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/seqnum",
