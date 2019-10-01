@@ -88,7 +88,7 @@ PosixErrorOr<std::vector<ProcMapsEntry>> ParseProcMaps(
   std::vector<ProcMapsEntry> entries;
   auto lines = absl::StrSplit(contents, '\n', absl::SkipEmpty());
   for (const auto& l : lines) {
-    std::cout << "line: " << l;
+    std::cout << "line: " << l << std::endl;
     ASSIGN_OR_RETURN_ERRNO(auto entry, ParseProcMapsLine(l));
     entries.push_back(entry);
   }

@@ -401,12 +401,17 @@ TEST(ElfTest, DataSegment) {
              })));
 }
 
-// Additonal pages beyond filesz are always RW.
+// Additonal pages beyond filesz honor (only) execute protections.
 //
-// N.B. Linux uses set_brk -> vm_brk to additional pages beyond filesz (even
-// though start_brk itself will always be beyond memsz). As a result, the
-// segment permissions don't apply; the mapping is always RW.
+// N.B. Linux changed this in 4.11 (16e72e9b30986 "powerpc: do not make the
+// entire heap executable"). Previously, extra pages were always RW.
 TEST(ElfTest, ExtraMemPages) {
+  // gVisor has the newer behavior.
+  if (!IsRunningOnGvisor()) {
+    auto version = ASSERT_NO_ERRNO_AND_VALUE(GetKernelVersion());
+    SKIP_IF(version.major < 4 || (version.major == 4 && version.minor < 11));
+  }
+
   ElfBinary<64> elf = StandardElf();
 
   // Create a standard ELF, but extend to 1.5 pages. The second page will be the
@@ -415,7 +420,7 @@ TEST(ElfTest, ExtraMemPages) {
 
   decltype(elf)::ElfPhdr phdr = {};
   phdr.p_type = PT_LOAD;
-  // RWX segment. The extra anon page will be RW anyways.
+  // RWX segment. The extra anon page will also be RWX.
   //
   // N.B. Linux uses clear_user to clear the end of the file-mapped page, which
   // respects the mapping protections. Thus if we map this RO with memsz >
@@ -454,7 +459,7 @@ TEST(ElfTest, ExtraMemPages) {
                   {0x41000, 0x42000, true, true, true, true, kPageSize, 0, 0, 0,
                    file.path().c_str()},
                   // extra page from anon.
-                  {0x42000, 0x43000, true, true, false, true, 0, 0, 0, 0, ""},
+                  {0x42000, 0x43000, true, true, true, true, 0, 0, 0, 0, ""},
               })));
 }
 
@@ -469,7 +474,7 @@ TEST(ElfTest, AnonOnlySegment) {
   phdr.p_offset = 0;
   phdr.p_vaddr = 0x41000;
   phdr.p_filesz = 0;
-  phdr.p_memsz = kPageSize - 0xe8;
+  phdr.p_memsz = kPageSize;
   elf.phdrs.push_back(phdr);
 
   elf.UpdateOffsets();
