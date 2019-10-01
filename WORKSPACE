@@ -334,7 +334,7 @@ go_repository(
     name = "com_github_google_go-github",
     importpath = "github.com/google/go-github",
     sum = "h1:N0LgJ1j65A7kfXrZnUDaYCs/Sf4rEjNlfyDHW9dolSY=",
-    version = "v17.0.0",
+    version = "v17.0.0+incompatible",
 )
 
 go_repository(

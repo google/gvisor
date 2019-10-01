@@ -66,22 +66,19 @@ func (*checkVisitor) requiresSplit() bool { return false }
 
 func checkMappings(t *testing.T, pt *PageTables, m []mapping) {
 	// Iterate over all the mappings.
-	w := checkWalker{
-		pageTables: pt,
-		visitor: checkVisitor{
-			expected: m,
-		},
+	v := checkVisitor{
+		expected: m,
 	}
-	w.iterateRange(0, ^uintptr(0))
+	checkIterateRange(pt, &v, 0, ^uintptr(0))
 
 	// Were we expected additional mappings?
-	if w.visitor.failed == "" && w.visitor.current != len(w.visitor.expected) {
-		w.visitor.failed = "insufficient mappings found"
+	if v.failed == "" && v.current != len(v.expected) {
+		v.failed = "insufficient mappings found"
 	}
 
 	// Emit a meaningful error message on failure.
-	if w.visitor.failed != "" {
-		t.Errorf("%s; got %#v, wanted %#v", w.visitor.failed, w.visitor.found, w.visitor.expected)
+	if v.failed != "" {
+		t.Errorf("%s; got %#v, wanted %#v", v.failed, v.found, v.expected)
 	}
 }
 

@@ -86,21 +86,20 @@ func (*mapVisitor) requiresSplit() bool { return true }
 //
 // Precondition: addr & length must be page-aligned, their sum must not overflow.
 //
+// +checkescape:hard
+//
 //go:nosplit
 func (p *PageTables) Map(addr usermem.Addr, length uintptr, opts MapOpts, physical uintptr) bool {
 	if !opts.AccessType.Any() {
-		return p.Unmap(addr, length)
+		return p.Unmap(addr, length) // escapes: false positive.
 	}
-	w := mapWalker{
-		pageTables: p,
-		visitor: mapVisitor{
-			target:   uintptr(addr),
-			physical: physical,
-			opts:     opts,
-		},
+	v := mapVisitor{ // escapes: false positive.
+		target:   uintptr(addr),
+		physical: physical,
+		opts:     opts,
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
-	return w.visitor.prev
+	mapIterateRange(p, &v, uintptr(addr), uintptr(addr)+length)
+	return v.prev
 }
 
 // unmapVisitor is used for unmap.
@@ -128,16 +127,13 @@ func (v *unmapVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 //
 // Precondition: addr & length must be page-aligned.
 //
+// +checkescape:hard
+//
 //go:nosplit
 func (p *PageTables) Unmap(addr usermem.Addr, length uintptr) bool {
-	w := unmapWalker{
-		pageTables: p,
-		visitor: unmapVisitor{
-			count: 0,
-		},
-	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
-	return w.visitor.count > 0
+	v := unmapVisitor{} // escapes: false positive.
+	unmapIterateRange(p, &v, uintptr(addr), uintptr(addr)+length)
+	return v.count > 0
 }
 
 // emptyVisitor is used for emptiness checks.
@@ -162,13 +158,13 @@ func (v *emptyVisitor) visit(start uintptr, pte *PTE, align uintptr) {
 //
 // Precondition: addr & length must be page-aligned.
 //
+// +checkescape:hard
+//
 //go:nosplit
 func (p *PageTables) IsEmpty(addr usermem.Addr, length uintptr) bool {
-	w := emptyWalker{
-		pageTables: p,
-	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+length)
-	return w.visitor.count == 0
+	v := emptyVisitor{} // escapes: false positive.
+	emptyIterateRange(p, &v, uintptr(addr), uintptr(addr)+length)
+	return v.count == 0
 }
 
 // lookupVisitor is used for lookup.
@@ -197,16 +193,15 @@ func (*lookupVisitor) requiresSplit() bool { return false }
 
 // Lookup returns the physical address for the given virtual address.
 //
+// +checkescape:hard
+//
 //go:nosplit
 func (p *PageTables) Lookup(addr usermem.Addr) (physical uintptr, opts MapOpts) {
 	mask := uintptr(usermem.PageSize - 1)
 	offset := uintptr(addr) & mask
-	w := lookupWalker{
-		pageTables: p,
-		visitor: lookupVisitor{
-			target: uintptr(addr &^ usermem.Addr(mask)),
-		},
+	v := lookupVisitor{ // escapes: false positive.
+		target: uintptr(addr &^ usermem.Addr(mask)),
 	}
-	w.iterateRange(uintptr(addr), uintptr(addr)+1)
-	return w.visitor.physical + offset, w.visitor.opts
+	lookupIterateRange(p, &v, uintptr(addr), uintptr(addr)+1)
+	return v.physical + offset, v.opts
 }

@@ -52,6 +52,7 @@ nogo(
     config = "//tools:nogo.js",
     visibility = ["//visibility:public"],
     deps = [
+        "//tools/checkescape",
         "//tools/checkunsafe",
     ],
 )

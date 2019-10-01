@@ -5,7 +5,9 @@ package(licenses = ["notice"])
 
 go_template(
     name = "generic_walker",
-    srcs = select_arch(
+    srcs = [
+        "walker.go",
+    ] + select_arch(
         amd64 = ["walker_amd64.go"],
         arm64 = ["walker_arm64.go"],
     ),
@@ -22,7 +24,7 @@ go_template_instance(
     prefix = "map",
     template = ":generic_walker",
     types = {
-        "Visitor": "mapVisitor",
+        "Visitor": "*mapVisitor",
     },
 )
 
@@ -33,7 +35,7 @@ go_template_instance(
     prefix = "unmap",
     template = ":generic_walker",
     types = {
-        "Visitor": "unmapVisitor",
+        "Visitor": "*unmapVisitor",
     },
 )
 
@@ -44,7 +46,7 @@ go_template_instance(
     prefix = "lookup",
     template = ":generic_walker",
     types = {
-        "Visitor": "lookupVisitor",
+        "Visitor": "*lookupVisitor",
     },
 )
 
@@ -55,7 +57,7 @@ go_template_instance(
     prefix = "empty",
     template = ":generic_walker",
     types = {
-        "Visitor": "emptyVisitor",
+        "Visitor": "*emptyVisitor",
     },
 )
 
@@ -66,7 +68,7 @@ go_template_instance(
     prefix = "check",
     template = ":generic_walker",
     types = {
-        "Visitor": "checkVisitor",
+        "Visitor": "*checkVisitor",
     },
 )
 
@@ -81,8 +83,6 @@ go_library(
         "pagetables_arm64.go",
         "pagetables_x86.go",
         "pcids.go",
-        "walker_amd64.go",
-        "walker_arm64.go",
         "walker_empty.go",
         "walker_lookup.go",
         "walker_map.go",
@@ -93,6 +93,7 @@ go_library(
         "//pkg/sentry/platform/ring0:__subpackages__",
     ],
     deps = [
+        "//pkg/gohacks",
         "//pkg/sync",
         "//pkg/usermem",
     ],

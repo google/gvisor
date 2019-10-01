@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -158,6 +159,7 @@ func (*runApp) handleCPUIDInstruction(t *Task) error {
 // +stateify savable
 type runApp struct{}
 
+// +checkescape
 func (app *runApp) execute(t *Task) taskRunState {
 	if t.interrupted() {
 		// Checkpointing instructs tasks to stop by sending an interrupt, so we
@@ -175,10 +177,14 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if t.haveSyscallReturn {
 		if sre, ok := SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
 			if sre == ERESTART_RESTARTBLOCK {
-				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+				if t.IsLogging(log.Debug) {
+					t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre) // escapes: debug only.
+				}
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {
-				t.Debugf("Restarting syscall %d after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+				if t.IsLogging(log.Debug) {
+					t.Debugf("Restarting syscall %d after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre) // escapes: debug only.
+				}
 				t.Arch().RestartSyscall()
 			}
 		}
@@ -203,14 +209,14 @@ func (app *runApp) execute(t *Task) taskRunState {
 			if t.rseqCPU != cpu {
 				t.rseqCPU = cpu
 				if err := t.rseqCopyOutCPU(); err != nil {
-					t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
+					t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err) // escapes: error path.
 					t.forceSignal(linux.SIGSEGV, false)
 					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 					// Re-enter the task run loop for signal delivery.
 					return (*runApp)(nil)
 				}
 				if err := t.oldRSeqCopyOutCPU(); err != nil {
-					t.Debugf("Failed to copy CPU to %#x for old rseq: %v", t.oldRSeqCPUAddr, err)
+					t.Debugf("Failed to copy CPU to %#x for old rseq: %v", t.oldRSeqCPUAddr, err) // escapes: error path.
 					t.forceSignal(linux.SIGSEGV, false)
 					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 					// Re-enter the task run loop for signal delivery.
@@ -306,7 +312,9 @@ func (app *runApp) execute(t *Task) taskRunState {
 			}
 
 			// Faults are common, log only at debug level.
-			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
+			if t.IsLogging(log.Debug) {
+				t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err) // escapes: debug only.
+			}
 			t.DebugDumpState()
 
 			// Continue to signal handling.
@@ -352,7 +360,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 
 	default:
 		// What happened? Can't continue.
-		t.Warningf("Unexpected SwitchToApp error: %v", err)
+		t.Warningf("Unexpected SwitchToApp error: %v", err) // escapes: error path.
 		t.PrepareExit(ExitStatus{Code: t.ExtractErrno(err, -1)})
 		return (*runExit)(nil)
 	}
