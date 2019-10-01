@@ -859,6 +859,11 @@ TEST(ElfTest, ELFInterpreter) {
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
   uint64_t const offset = interpreter.phdrs[1].p_offset;
+  // N.B. Since Linux 4.10 (0036d1f7eb95b "binfmt_elf: fix calculations for bss
+  // padding"), Linux unconditionally zeroes the remainder of the highest mapped
+  // page in an interpreter, failing if the protections don't allow write. Thus
+  // we must mark this writeable.
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
   interpreter.phdrs[1].p_vaddr = 0x0;
   interpreter.phdrs[1].p_filesz += offset;
@@ -908,15 +913,15 @@ TEST(ElfTest, ELFInterpreter) {
 
   const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
 
-  EXPECT_THAT(child,
-              ContainsMappings(std::vector<ProcMapsEntry>({
-                  // Main binary
-                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                   binary_file.path().c_str()},
-                  // Interpreter
-                  {interp_load_addr, interp_load_addr + 0x1000, true, false,
-                   true, true, 0, 0, 0, 0, interpreter_file.path().c_str()},
-              })));
+  EXPECT_THAT(
+      child, ContainsMappings(std::vector<ProcMapsEntry>({
+                 // Main binary
+                 {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
+                  binary_file.path().c_str()},
+                 // Interpreter
+                 {interp_load_addr, interp_load_addr + 0x1000, true, true, true,
+                  true, 0, 0, 0, 0, interpreter_file.path().c_str()},
+             })));
 }
 
 // Test parameter to ElfInterpterStaticTest cases. The first item is a suffix to
@@ -933,6 +938,8 @@ TEST_P(ElfInterpreterStaticTest, Test) {
   const int expected_errno = std::get<1>(GetParam());
 
   ElfBinary<64> interpreter = StandardElf();
+  // See comment in ElfTest.ELFInterpreter.
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.UpdateOffsets();
   TempPath interpreter_file =
       ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(interpreter));
@@ -962,7 +969,7 @@ TEST_P(ElfInterpreterStaticTest, Test) {
 
     EXPECT_THAT(child, ContainsMappings(std::vector<ProcMapsEntry>({
                            // Interpreter.
-                           {0x40000, 0x41000, true, false, true, true, 0, 0, 0,
+                           {0x40000, 0x41000, true, true, true, true, 0, 0, 0,
                             0, interpreter_file.path().c_str()},
                        })));
   }
@@ -1040,6 +1047,8 @@ TEST(ElfTest, ELFInterpreterRelative) {
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
   uint64_t const offset = interpreter.phdrs[1].p_offset;
+  // See comment in ElfTest.ELFInterpreter.
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
   interpreter.phdrs[1].p_vaddr = 0x0;
   interpreter.phdrs[1].p_filesz += offset;
@@ -1078,15 +1087,15 @@ TEST(ElfTest, ELFInterpreterRelative) {
 
   const uint64_t interp_load_addr = regs.rip & ~(kPageSize - 1);
 
-  EXPECT_THAT(child,
-              ContainsMappings(std::vector<ProcMapsEntry>({
-                  // Main binary
-                  {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
-                   binary_file.path().c_str()},
-                  // Interpreter
-                  {interp_load_addr, interp_load_addr + 0x1000, true, false,
-                   true, true, 0, 0, 0, 0, interpreter_file.path().c_str()},
-              })));
+  EXPECT_THAT(
+      child, ContainsMappings(std::vector<ProcMapsEntry>({
+                 // Main binary
+                 {0x40000, 0x41000, true, false, true, true, 0, 0, 0, 0,
+                  binary_file.path().c_str()},
+                 // Interpreter
+                 {interp_load_addr, interp_load_addr + 0x1000, true, true, true,
+                  true, 0, 0, 0, 0, interpreter_file.path().c_str()},
+             })));
 }
 
 // ELF interpreter architecture doesn't match the binary.
@@ -1100,6 +1109,8 @@ TEST(ElfTest, ELFInterpreterWrongArch) {
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
   uint64_t const offset = interpreter.phdrs[1].p_offset;
+  // See comment in ElfTest.ELFInterpreter.
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
   interpreter.phdrs[1].p_vaddr = 0x0;
   interpreter.phdrs[1].p_filesz += offset;
@@ -1179,6 +1190,8 @@ TEST(ElfTest, ElfInterpreterNoExecute) {
   // The first segment really needs to start at 0 for a normal PIE binary, and
   // thus includes the headers.
   uint64_t const offset = interpreter.phdrs[1].p_offset;
+  // See comment in ElfTest.ELFInterpreter.
+  interpreter.phdrs[1].p_flags = PF_R | PF_W | PF_X;
   interpreter.phdrs[1].p_offset = 0x0;
   interpreter.phdrs[1].p_vaddr = 0x0;
   interpreter.phdrs[1].p_filesz += offset;
