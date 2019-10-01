@@ -47,6 +47,7 @@ go_test(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/bits",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",

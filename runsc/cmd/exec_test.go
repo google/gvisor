@@ -91,7 +91,7 @@ func TestCLIArgs(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		e, err := tc.ex.argsFromCLI(tc.argv)
+		e, err := tc.ex.argsFromCLI(tc.argv, true)
 		if err != nil {
 			t.Errorf("argsFromCLI(%+v): got error: %+v", tc.ex, err)
 		} else if !cmp.Equal(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})) {
@@ -144,7 +144,7 @@ func TestJSONArgs(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		e, err := argsFromProcess(&tc.p)
+		e, err := argsFromProcess(&tc.p, true)
 		if err != nil {
 			t.Errorf("argsFromProcess(%+v): got error: %+v", tc.p, err)
 		} else if !cmp.Equal(*e, tc.expected, cmpopts.IgnoreUnexported(os.File{})) {

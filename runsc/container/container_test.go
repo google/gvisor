@@ -34,6 +34,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -2045,6 +2046,30 @@ func TestMountSymlink(t *testing.T) {
 		}
 		if ws, err := cont.executeSync(execArgs); err != nil || ws != 0 {
 			t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
+		}
+	}
+}
+
+// Check that --net-raw disables the CAP_NET_RAW capability.
+func TestNetRaw(t *testing.T) {
+	capNetRaw := strconv.FormatUint(bits.MaskOf64(int(linux.CAP_NET_RAW)), 10)
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	for _, enableRaw := range []bool{true, false} {
+		conf := testutil.TestConfig()
+		conf.EnableRaw = enableRaw
+
+		test := "--enabled"
+		if !enableRaw {
+			test = "--disabled"
+		}
+
+		spec := testutil.NewSpecWithArgs(app, "capability", test, capNetRaw)
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("Error running container: %v", err)
 		}
 	}
 }

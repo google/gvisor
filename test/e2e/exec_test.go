@@ -30,14 +30,17 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/runsc/dockerutil"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// Test that exec uses the exact same capability set as the container.
 func TestExecCapabilities(t *testing.T) {
 	if err := dockerutil.Pull("alpine"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
-	d := dockerutil.MakeDocker("exec-test")
+	d := dockerutil.MakeDocker("exec-capabilities-test")
 
 	// Start the container.
 	if err := d.Run("alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
@@ -52,27 +55,59 @@ func TestExecCapabilities(t *testing.T) {
 	if len(matches) != 2 {
 		t.Fatalf("There should be a match for the whole line and the capability bitmask")
 	}
-	capString := matches[1]
-	t.Log("Root capabilities:", capString)
-
-	// CAP_NET_RAW was in the capability set for the container, but was
-	// removed. However, `exec` does not remove it. Verify that it's not
-	// set in the container, then re-add it for comparison.
-	caps, err := strconv.ParseUint(capString, 16, 64)
-	if err != nil {
-		t.Fatalf("failed to convert capabilities %q: %v", capString, err)
-	}
-	if caps&(1<<uint64(linux.CAP_NET_RAW)) != 0 {
-		t.Fatalf("CAP_NET_RAW should be filtered, but is set in the container: %x", caps)
-	}
-	caps |= 1 << uint64(linux.CAP_NET_RAW)
-	want := fmt.Sprintf("CapEff:\t%016x\n", caps)
+	want := fmt.Sprintf("CapEff:\t%s\n", matches[1])
+	t.Log("Root capabilities:", want)
 
 	// Now check that exec'd process capabilities match the root.
 	got, err := d.Exec("grep", "CapEff:", "/proc/self/status")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
+	t.Logf("CapEff: %v", got)
+	if got != want {
+		t.Errorf("wrong capabilities, got: %q, want: %q", got, want)
+	}
+}
+
+// Test that 'exec --privileged' adds all capabilities, except for CAP_NET_RAW
+// which is removed from the container when --net-raw=false.
+func TestExecPrivileged(t *testing.T) {
+	if err := dockerutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := dockerutil.MakeDocker("exec-privileged-test")
+
+	// Start the container with all capabilities dropped.
+	if err := d.Run("--cap-drop=all", "alpine", "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+
+	// Check that all capabilities where dropped from container.
+	matches, err := d.WaitForOutputSubmatch("CapEff:\t([0-9a-f]+)\n", 5*time.Second)
+	if err != nil {
+		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("There should be a match for the whole line and the capability bitmask")
+	}
+	containerCaps, err := strconv.ParseUint(matches[1], 16, 64)
+	if err != nil {
+		t.Fatalf("failed to convert capabilities %q: %v", matches[1], err)
+	}
+	t.Logf("Container capabilities: %#x", containerCaps)
+	if containerCaps != 0 {
+		t.Fatalf("Container should have no capabilities: %x", containerCaps)
+	}
+
+	// Check that 'exec --privileged' adds all capabilities, except
+	// for CAP_NET_RAW.
+	got, err := d.ExecWithFlags([]string{"--privileged"}, "grep", "CapEff:", "/proc/self/status")
+	if err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	t.Logf("Exec CapEff: %v", got)
+	want := fmt.Sprintf("CapEff:\t%016x\n", specutils.AllCapabilitiesUint64()&^bits.MaskOf64(int(linux.CAP_NET_RAW)))
 	if got != want {
 		t.Errorf("wrong capabilities, got: %q, want: %q", got, want)
 	}
@@ -184,7 +219,7 @@ func TestExecEnvHasHome(t *testing.T) {
 	if err := dockerutil.Pull("alpine"); err != nil {
 		t.Fatalf("docker pull failed: %v", err)
 	}
-	d := dockerutil.MakeDocker("exec-env-test")
+	d := dockerutil.MakeDocker("exec-env-home-test")
 
 	// We will check that HOME is set for root user, and also for a new
 	// non-root user we will create.
