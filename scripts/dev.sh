@@ -58,7 +58,7 @@ if [[ ${REFRESH} -eq 0 ]]; then
   echo
   echo "Runtimes ${RUNTIME} and ${RUNTIME}-d (debug enabled) setup."
   echo "Use --runtime="${RUNTIME}" with your Docker command."
-  echo "  docker run --rm --runtime="${RUNTIME}" --rm hello-world"
+  echo "  docker run --rm --runtime="${RUNTIME}" hello-world"
   echo
   echo "If you rebuild, use $0 --refresh."
 
