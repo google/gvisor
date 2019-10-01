@@ -245,12 +245,12 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		if inOffset != 0 || outOffset != 0 {
 			return 0, nil, syserror.ESPIPE
 		}
-	default:
-		return 0, nil, syserror.EINVAL
-	}
 
-	// We may not refer to the same pipe; otherwise it's a continuous loop.
-	if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
+		// We may not refer to the same pipe; otherwise it's a continuous loop.
+		if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
+			return 0, nil, syserror.EINVAL
+		}
+	default:
 		return 0, nil, syserror.EINVAL
 	}
 
