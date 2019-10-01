@@ -79,9 +79,16 @@ function collect_logs() {
 
     # Collect sentry logs, if any.
     if [[ -v RUNSC_LOGS_DIR ]] && [[ -d "${RUNSC_LOGS_DIR}" ]]; then
-      local -r logs=$(ls "${RUNSC_LOGS_DIR}")
+      # Check if the directory is empty or not (only the first line it needed).
+      local -r logs=$(ls "${RUNSC_LOGS_DIR}" | head -n1)
       if [[ "${logs}" ]]; then
-        tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${RUNTIME}.tar.gz" -C "${RUNSC_LOGS_DIR}" .
+        local -r archive=runsc_logs_"${RUNTIME}".tar.gz
+        if [[ -v KOKORO_BUILD_ARTIFACTS_SUBDIR ]]; then
+          echo "runsc logs will be uploaded to:"
+          echo "    gsutil cp gs://gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive} /tmp"
+          echo "    https://storage.cloud.google.com/gvisor/logs/${KOKORO_BUILD_ARTIFACTS_SUBDIR}/${archive}"
+        fi
+        tar --create --gzip --file="${KOKORO_ARTIFACTS_DIR}/${archive}" -C "${RUNSC_LOGS_DIR}" .
       fi
     fi
   fi
