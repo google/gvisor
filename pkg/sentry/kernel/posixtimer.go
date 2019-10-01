@@ -117,9 +117,9 @@ func (it *IntervalTimer) signalRejectedLocked() {
 }
 
 // Notify implements ktime.TimerListener.Notify.
-func (it *IntervalTimer) Notify(exp uint64) {
+func (it *IntervalTimer) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	if it.target == nil {
-		return
+		return ktime.Setting{}, false
 	}
 
 	it.target.tg.pidns.owner.mu.RLock()
@@ -129,7 +129,7 @@ func (it *IntervalTimer) Notify(exp uint64) {
 
 	if it.sigpending {
 		it.overrunCur += exp
-		return
+		return ktime.Setting{}, false
 	}
 
 	// sigpending must be set before sendSignalTimerLocked() so that it can be
@@ -148,6 +148,8 @@ func (it *IntervalTimer) Notify(exp uint64) {
 	if err := it.target.sendSignalTimerLocked(si, it.group, it); err != nil {
 		it.signalRejectedLocked()
 	}
+
+	return ktime.Setting{}, false
 }
 
 // Destroy implements ktime.TimerListener.Destroy. Users of Timer should call
