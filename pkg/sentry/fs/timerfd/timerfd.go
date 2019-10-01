@@ -141,9 +141,10 @@ func (t *TimerOperations) Write(context.Context, *fs.File, usermem.IOSequence, i
 }
 
 // Notify implements ktime.TimerListener.Notify.
-func (t *TimerOperations) Notify(exp uint64) {
+func (t *TimerOperations) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	atomic.AddUint64(&t.val, exp)
 	t.events.Notify(waiter.EventIn)
+	return ktime.Setting{}, false
 }
 
 // Destroy implements ktime.TimerListener.Destroy.
