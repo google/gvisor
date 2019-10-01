@@ -6,19 +6,26 @@ def runtime_test(
         lang,
         image,
         shard_count = 50,
-        size = "enormous"):
+        size = "enormous",
+        blacklist_file = ""):
+    args = [
+        "--lang",
+        lang,
+        "--image",
+        image,
+    ]
+    data = [
+        ":runner",
+    ]
+    if blacklist_file != "":
+        args += ["--blacklist_file", "test/runtimes/" + blacklist_file]
+        data += [blacklist_file]
+
     sh_test(
         name = lang + "_test",
         srcs = ["runner.sh"],
-        args = [
-            "--lang",
-            lang,
-            "--image",
-            image,
-        ],
-        data = [
-            ":runner",
-        ],
+        args = args,
+        data = data,
         size = size,
         shard_count = shard_count,
         tags = [

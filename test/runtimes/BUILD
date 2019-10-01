@@ -26,6 +26,7 @@ runtime_test(
 )
 
 runtime_test(
+    blacklist_file = "blacklist_nodejs12.4.0.csv",
     image = "gcr.io/gvisor-presubmit/nodejs12.4.0",
     lang = "nodejs",
 )
