@@ -23,7 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// TODO(b/34161764): Move to pkg/abi/linux along with definitions in
+// FIXME(gvisor.dev/issue/214): Move to pkg/abi/linux along with definitions in
 // pkg/sentry/arch.
 type sigaction struct {
 	handler  uintptr
