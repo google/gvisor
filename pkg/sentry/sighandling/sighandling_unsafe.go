@@ -15,13 +15,14 @@
 package sighandling
 
 import (
-	"fmt"
-	"runtime"
 	"syscall"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
+
+//go:linkname dieFromSignal runtime.dieFromSignal
+func dieFromSignal(signal uin32)
 
 // FIXME(gvisor.dev/issue/214): Move to pkg/abi/linux along with definitions in
 // pkg/sentry/arch.
@@ -47,28 +48,4 @@ func IgnoreChildStop() error {
 	}
 
 	return nil
-}
-
-// dieFromSignal kills the current process with sig.
-//
-// Preconditions: The default action of sig is termination.
-func dieFromSignal(sig linux.Signal) {
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	sa := sigaction{handler: linux.SIG_DFL}
-	if _, _, e := syscall.RawSyscall6(syscall.SYS_RT_SIGACTION, uintptr(sig), uintptr(unsafe.Pointer(&sa)), 0, linux.SignalSetSize, 0, 0); e != 0 {
-		panic(fmt.Sprintf("rt_sigaction failed: %v", e))
-	}
-
-	set := linux.MakeSignalSet(sig)
-	if _, _, e := syscall.RawSyscall6(syscall.SYS_RT_SIGPROCMASK, linux.SIG_UNBLOCK, uintptr(unsafe.Pointer(&set)), 0, linux.SignalSetSize, 0, 0); e != 0 {
-		panic(fmt.Sprintf("rt_sigprocmask failed: %v", e))
-	}
-
-	if err := syscall.Tgkill(syscall.Getpid(), syscall.Gettid(), syscall.Signal(sig)); err != nil {
-		panic(fmt.Sprintf("tgkill failed: %v", err))
-	}
-
-	panic("failed to die")
 }

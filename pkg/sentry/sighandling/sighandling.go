@@ -85,12 +85,9 @@ func handleSignals(sigchans []chan os.Signal, handler func(linux.Signal), start,
 			// src/runtime/sigtab_linux_generic.go.
 			//
 			// Otherwise ignore the signal.
-			//
-			// TODO(b/114489875): Drop in Go 1.12, which uses tgkill
-			// in runtime.raise.
 			switch signal {
 			case linux.SIGHUP, linux.SIGINT, linux.SIGTERM:
-				dieFromSignal(signal)
+				dieFromSignal(uint32(signal))
 				panic(fmt.Sprintf("Failed to die from signal %d", signal))
 			default:
 				continue
