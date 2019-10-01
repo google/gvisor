@@ -31,6 +31,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -239,6 +240,15 @@ func AllCapabilities() *specs.LinuxCapabilities {
 		Permitted:   names,
 		Ambient:     names,
 	}
+}
+
+// AllCapabilitiesUint64 returns a bitmask containing all capabilities set.
+func AllCapabilitiesUint64() uint64 {
+	var rv uint64
+	for _, cap := range capFromName {
+		rv |= bits.MaskOf64(int(cap))
+	}
+	return rv
 }
 
 var capFromName = map[string]linux.Capability{

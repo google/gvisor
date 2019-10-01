@@ -282,7 +282,14 @@ func (d *Docker) Logs() (string, error) {
 
 // Exec calls 'docker exec' with the arguments provided.
 func (d *Docker) Exec(args ...string) (string, error) {
-	a := []string{"exec", d.Name}
+	return d.ExecWithFlags(nil, args...)
+}
+
+// ExecWithFlags calls 'docker exec <flags> name <args>'.
+func (d *Docker) ExecWithFlags(flags []string, args ...string) (string, error) {
+	a := []string{"exec"}
+	a = append(a, flags...)
+	a = append(a, d.Name)
 	a = append(a, args...)
 	return do(a...)
 }

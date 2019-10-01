@@ -19,10 +19,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	sys "syscall"
 	"time"
@@ -35,6 +37,7 @@ import (
 func main() {
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
+	subcommands.Register(new(capability), "")
 	subcommands.Register(new(fdReceiver), "")
 	subcommands.Register(new(fdSender), "")
 	subcommands.Register(new(forkBomb), "")
@@ -285,5 +288,67 @@ func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, args ...interfac
 	} else {
 		fmt.Printf("syscall(%d, 0, 0...) success\n", s.sysno)
 	}
+	return subcommands.ExitSuccess
+}
+
+type capability struct {
+	enabled  uint64
+	disabled uint64
+}
+
+// Name implements subcommands.Command.
+func (*capability) Name() string {
+	return "capability"
+}
+
+// Synopsis implements subcommands.Command.
+func (*capability) Synopsis() string {
+	return "checks if effective capabilities are set/unset"
+}
+
+// Usage implements subcommands.Command.
+func (*capability) Usage() string {
+	return "capability [--enabled=number] [--disabled=number]"
+}
+
+// SetFlags implements subcommands.Command.
+func (c *capability) SetFlags(f *flag.FlagSet) {
+	f.Uint64Var(&c.enabled, "enabled", 0, "")
+	f.Uint64Var(&c.disabled, "disabled", 0, "")
+}
+
+// Execute implements subcommands.Command.
+func (c *capability) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if c.enabled == 0 && c.disabled == 0 {
+		fmt.Println("One of the flags must be set")
+		return subcommands.ExitUsageError
+	}
+
+	status, err := ioutil.ReadFile("/proc/self/status")
+	if err != nil {
+		fmt.Printf("Error reading %q: %v\n", "proc/self/status", err)
+		return subcommands.ExitFailure
+	}
+	re := regexp.MustCompile("CapEff:\t([0-9a-f]+)\n")
+	matches := re.FindStringSubmatch(string(status))
+	if matches == nil || len(matches) != 2 {
+		fmt.Printf("Effective capabilities not found in\n%s\n", status)
+		return subcommands.ExitFailure
+	}
+	caps, err := strconv.ParseUint(matches[1], 16, 64)
+	if err != nil {
+		fmt.Printf("failed to convert capabilities %q: %v\n", matches[1], err)
+		return subcommands.ExitFailure
+	}
+
+	if c.enabled != 0 && (caps&c.enabled) != c.enabled {
+		fmt.Printf("Missing capabilities, want: %#x: got: %#x\n", c.enabled, caps)
+		return subcommands.ExitFailure
+	}
+	if c.disabled != 0 && (caps&c.disabled) != 0 {
+		fmt.Printf("Extra capabilities found, dont_want: %#x: got: %#x\n", c.disabled, caps)
+		return subcommands.ExitFailure
+	}
+
 	return subcommands.ExitSuccess
 }
