@@ -24,6 +24,7 @@
 //       TaskSet.mu
 //         SignalHandlers.mu
 //           Task.mu
+//       runningTasksMu
 //
 // Locking SignalHandlers.mu in multiple SignalHandlers requires locking
 // TaskSet.mu exclusively first. Locking Task.mu in multiple Tasks at the same
@@ -135,6 +136,22 @@ type Kernel struct {
 	// syslog is the kernel log.
 	syslog syslog
 
+	// runningTasksMu synchronizes disable/enable of cpuClockTicker when
+	// the kernel is idle (runningTasks == 0).
+	//
+	// runningTasksMu is used to exclude critical sections when the timer
+	// disables itself and when the first active task enables the timer,
+	// ensuring that tasks always see a valid cpuClock value.
+	runningTasksMu sync.Mutex `state:"nosave"`
+
+	// runningTasks is the total count of tasks currently in
+	// TaskGoroutineRunningSys or TaskGoroutineRunningApp. i.e., they are
+	// not blocked or stopped.
+	//
+	// runningTasks must be accessed atomically. Increments from 0 to 1 are
+	// further protected by runningTasksMu (see incRunningTasks).
+	runningTasks int64
+
 	// cpuClock is incremented every linux.ClockTick. cpuClock is used to
 	// measure task CPU usage, since sampling monotonicClock twice on every
 	// syscall turns out to be unreasonably expensive. This is similar to how
@@ -149,6 +166,22 @@ type Kernel struct {
 
 	// cpuClockTicker increments cpuClock.
 	cpuClockTicker *ktime.Timer `state:"nosave"`
+
+	// cpuClockTickerDisabled indicates that cpuClockTicker has been
+	// disabled because no tasks are running.
+	//
+	// cpuClockTickerDisabled is protected by runningTasksMu.
+	cpuClockTickerDisabled bool
+
+	// cpuClockTickerSetting is the ktime.Setting of cpuClockTicker at the
+	// point it was disabled. It is cached here to avoid a lock ordering
+	// violation with cpuClockTicker.mu when runningTaskMu is held.
+	//
+	// cpuClockTickerSetting is only valid when cpuClockTickerDisabled is
+	// true.
+	//
+	// cpuClockTickerSetting is protected by runningTasksMu.
+	cpuClockTickerSetting ktime.Setting
 
 	// fdMapUids is an ever-increasing counter for generating FDTable uids.
 	//
@@ -910,6 +943,102 @@ func (k *Kernel) resumeTimeLocked() {
 			})
 		}
 	}
+}
+
+func (k *Kernel) incRunningTasks() {
+	for {
+		tasks := atomic.LoadInt64(&k.runningTasks)
+		if tasks != 0 {
+			// Standard case. Simply increment.
+			if !atomic.CompareAndSwapInt64(&k.runningTasks, tasks, tasks+1) {
+				continue
+			}
+			return
+		}
+
+		// Transition from 0 -> 1. Synchronize with other transitions and timer.
+		k.runningTasksMu.Lock()
+		tasks = atomic.LoadInt64(&k.runningTasks)
+		if tasks != 0 {
+			// We're no longer the first task, no need to
+			// re-enable.
+			atomic.AddInt64(&k.runningTasks, 1)
+			k.runningTasksMu.Unlock()
+			return
+		}
+
+		if !k.cpuClockTickerDisabled {
+			// Timer was never disabled.
+			atomic.StoreInt64(&k.runningTasks, 1)
+			k.runningTasksMu.Unlock()
+			return
+		}
+
+		// We need to update cpuClock for all of the ticks missed while we
+		// slept, and then re-enable the timer.
+		//
+		// The Notify in Swap isn't sufficient. kernelCPUClockTicker.Notify
+		// always increments cpuClock by 1 regardless of the number of
+		// expirations as a heuristic to avoid over-accounting in cases of CPU
+		// throttling.
+		//
+		// We want to cover the normal case, when all time should be accounted,
+		// so we increment for all expirations. Throttling is less concerning
+		// here because the ticker is only disabled from Notify. This means
+		// that Notify must schedule and compensate for the throttled period
+		// before the timer is disabled. Throttling while the timer is disabled
+		// doesn't matter, as nothing is running or reading cpuClock anyways.
+		//
+		// S/R also adds complication, as there are two cases. Recall that
+		// monotonicClock will jump forward on restore.
+		//
+		// 1. If the ticker is enabled during save, then on Restore Notify is
+		// called with many expirations, covering the time jump, but cpuClock
+		// is only incremented by 1.
+		//
+		// 2. If the ticker is disabled during save, then after Restore the
+		// first wakeup will call this function and cpuClock will be
+		// incremented by the number of expirations across the S/R.
+		//
+		// These cause very different value of cpuClock. But again, since
+		// nothing was running while the ticker was disabled, those differences
+		// don't matter.
+		setting, exp := k.cpuClockTickerSetting.At(k.monotonicClock.Now())
+		if exp > 0 {
+			atomic.AddUint64(&k.cpuClock, exp)
+		}
+
+		// Now that cpuClock is updated it is safe to allow other tasks to
+		// transition to running.
+		atomic.StoreInt64(&k.runningTasks, 1)
+
+		// N.B. we must unlock before calling Swap to maintain lock ordering.
+		//
+		// cpuClockTickerDisabled need not wait until after Swap to become
+		// true. It is sufficient that the timer *will* be enabled.
+		k.cpuClockTickerDisabled = false
+		k.runningTasksMu.Unlock()
+
+		// This won't call Notify (unless it's been ClockTick since setting.At
+		// above). This means we skip the thread group work in Notify. However,
+		// since nothing was running while we were disabled, none of the timers
+		// could have expired.
+		k.cpuClockTicker.Swap(setting)
+
+		return
+	}
+}
+
+func (k *Kernel) decRunningTasks() {
+	tasks := atomic.AddInt64(&k.runningTasks, -1)
+	if tasks < 0 {
+		panic(fmt.Sprintf("Invalid running count %d", tasks))
+	}
+
+	// Nothing to do. The next CPU clock tick will disable the timer if
+	// there is still nothing running. This provides approximately one tick
+	// of slack in which we can switch back and forth between idle and
+	// active without an expensive transition.
 }
 
 // WaitExited blocks until all tasks in k have exited.
