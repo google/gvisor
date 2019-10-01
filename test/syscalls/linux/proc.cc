@@ -440,6 +440,11 @@ TEST(ProcSelfAuxv, EntryPresence) {
   EXPECT_EQ(auxv_entries.count(AT_PHENT), 1);
   EXPECT_EQ(auxv_entries.count(AT_PHNUM), 1);
   EXPECT_EQ(auxv_entries.count(AT_BASE), 1);
+  EXPECT_EQ(auxv_entries.count(AT_UID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_EUID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_GID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_EGID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_SECURE), 1);
   EXPECT_EQ(auxv_entries.count(AT_CLKTCK), 1);
   EXPECT_EQ(auxv_entries.count(AT_RANDOM), 1);
   EXPECT_EQ(auxv_entries.count(AT_EXECFN), 1);

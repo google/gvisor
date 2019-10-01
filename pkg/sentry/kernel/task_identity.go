@@ -465,8 +465,8 @@ func (t *Task) SetKeepCaps(k bool) {
 // disables the features we don't support anyway, is always set. This
 // drastically simplifies this function.
 //
-// - We don't implement AT_SECURE, because no_new_privs always being set means
-// that the conditions that require AT_SECURE never arise. (Compare Linux's
+// - We don't set AT_SECURE = 1, because no_new_privs always being set means
+// that the conditions that require AT_SECURE = 1 never arise. (Compare Linux's
 // security/commoncap.c:cap_bprm_set_creds() and cap_bprm_secureexec().)
 //
 // - We don't check for CAP_SYS_ADMIN in prctl(PR_SET_SECCOMP), since
