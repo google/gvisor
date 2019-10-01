@@ -139,7 +139,7 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 
 	// Attempt to do a WriteTo; this is likely the most efficient.
 	n, err := src.FileOperations.WriteTo(ctx, src, w, opts.Length, opts.Dup)
-	if n == 0 && err != nil && err != syserror.ErrWouldBlock && !opts.Dup {
+	if n == 0 && err == syserror.ENOSYS && !opts.Dup {
 		// Attempt as a ReadFrom. If a WriteTo, a ReadFrom may also be
 		// more efficient than a copy if buffers are cached or readily
 		// available. (It's unlikely that they can actually be donated).
@@ -151,7 +151,7 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 	// if we block at some point, we could lose data. If the source is
 	// not a pipe then reading is not destructive; if the destination
 	// is a regular file, then it is guaranteed not to block writing.
-	if n == 0 && err != nil && err != syserror.ErrWouldBlock && !opts.Dup && (!dstPipe || !srcPipe) {
+	if n == 0 && err == syserror.ENOSYS && !opts.Dup && (!dstPipe || !srcPipe) {
 		// Fallback to an in-kernel copy.
 		n, err = io.Copy(w, &io.LimitedReader{
 			R: r,
