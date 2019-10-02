@@ -340,7 +340,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 	// Work around IMA by immediately creating a temporary PROT_EXEC mapping,
 	// while the backing file is still small. IMA will ignore any future
 	// mappings.
-	m, _, errno := syscall.Syscall6(
+	m, _, errno := syscall.RawSyscall6(
 		syscall.SYS_MMAP,
 		0,
 		usermem.PageSize,
@@ -353,7 +353,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		// don't return it.
 		log.Warningf("Failed to pre-map MemoryFile PROT_EXEC: %v", errno)
 	} else {
-		if _, _, errno := syscall.Syscall(
+		if _, _, errno := syscall.RawSyscall(
 			syscall.SYS_MUNMAP,
 			m,
 			usermem.PageSize,
@@ -531,7 +531,7 @@ func (f *MemoryFile) Decommit(fr platform.FileRange) error {
 	// "After a successful call, subsequent reads from this range will
 	// return zeroes. The FALLOC_FL_PUNCH_HOLE flag must be ORed with
 	// FALLOC_FL_KEEP_SIZE in mode ..." - fallocate(2)
-	err := syscall.Fallocate(
+	err := nonBlockingFallocate(
 		int(f.file.Fd()),
 		_FALLOC_FL_PUNCH_HOLE|_FALLOC_FL_KEEP_SIZE,
 		int64(fr.Start),
@@ -540,6 +540,13 @@ func (f *MemoryFile) Decommit(fr platform.FileRange) error {
 		return err
 	}
 	f.markDecommitted(fr)
+	return nil
+}
+
+func nonBlockingFallocate(fd int, mode int32, offset int64, length int64) error {
+	if _, _, e := syscall.RawSyscall6(syscall.SYS_FALLOCATE, uintptr(fd), uintptr(mode), uintptr(offset), uintptr(length), 0, 0); e != 0 {
+		return e
+	}
 	return nil
 }
 
@@ -685,7 +692,7 @@ func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 	if m := mappings[chunk]; m != 0 {
 		return mappings, m, nil
 	}
-	m, _, errno := syscall.Syscall6(
+	m, _, errno := syscall.RawSyscall6(
 		syscall.SYS_MMAP,
 		0,
 		chunkSize,
@@ -1054,7 +1061,7 @@ func (f *MemoryFile) runReclaim() {
 	mappings := f.mappings.Load().([]uintptr)
 	for i, m := range mappings {
 		if m != 0 {
-			_, _, errno := syscall.Syscall(syscall.SYS_MUNMAP, m, chunkSize, 0)
+			_, _, errno := syscall.RawSyscall(syscall.SYS_MUNMAP, m, chunkSize, 0)
 			if errno != 0 {
 				log.Warningf("Failed to unmap mapping %#x for MemoryFile chunk %d: %v", m, i, errno)
 			}
