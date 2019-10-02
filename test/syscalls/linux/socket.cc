@@ -17,6 +17,7 @@
 
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -56,6 +57,29 @@ TEST(SocketTest, ProtocolInet) {
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
 }
+
+using SocketOpenTest = ::testing::TestWithParam<int>;
+
+// UDS cannot be opened.
+TEST_P(SocketOpenTest, Unix) {
+  // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
+  SKIP_IF(IsRunningOnGvisor());
+
+  FileDescriptor bound =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
+
+  struct sockaddr_un addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(/*abstract=*/false, AF_UNIX));
+
+  ASSERT_THAT(bind(bound.get(), reinterpret_cast<struct sockaddr*>(&addr),
+                   sizeof(addr)),
+              SyscallSucceeds());
+
+  EXPECT_THAT(open(addr.sun_path, GetParam()), SyscallFailsWithErrno(ENXIO));
+}
+
+INSTANTIATE_TEST_SUITE_P(OpenModes, SocketOpenTest,
+                         ::testing::Values(O_RDONLY, O_RDWR));
 
 }  // namespace testing
 }  // namespace gvisor

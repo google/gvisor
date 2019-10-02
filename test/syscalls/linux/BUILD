@@ -333,6 +333,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         ":socket_test_util",
+        "//test/util:file_descriptor",
         "//test/util:test_main",
         "//test/util:test_util",
         "@com_google_googletest//:gtest",

@@ -83,6 +83,8 @@ inline ssize_t SendFd(int fd, void* buf, size_t count, int flags) {
       count);
 }
 
+PosixErrorOr<struct sockaddr_un> UniqueUnixAddr(bool abstract, int domain);
+
 // A Creator<T> is a function that attempts to create and return a new T. (This
 // is copy/pasted from cloud/gvisor/api/sandbox_util.h and is just duplicated
 // here for clarity.)
