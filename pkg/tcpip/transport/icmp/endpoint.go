@@ -15,7 +15,6 @@
 package icmp
 
 import (
-	"encoding/binary"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -105,7 +104,7 @@ func (e *endpoint) Close() {
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 	switch e.state {
 	case stateBound, stateConnected:
-		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id, e)
+		e.stack.UnregisterTransportEndpoint(e.regNICID, []tcpip.NetworkProtocolNumber{e.netProto}, e.transProto, e.id, e, 0 /* bindToDevice */)
 	}
 
 	// Close the receive list and drain it.
@@ -205,7 +204,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -290,7 +289,7 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		}
 	}
 
-	v, err := p.Get(p.Size())
+	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -320,6 +319,11 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return nil
 }
 
+// SetSockOptInt sets a socket option. Currently not supported.
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	return nil
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
@@ -332,6 +336,18 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		}
 		e.rcvMu.Unlock()
 		return v, nil
+	case tcpip.SendBufferSizeOption:
+		e.mu.Lock()
+		v := e.sndBufSize
+		e.mu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		e.rcvMu.Lock()
+		v := e.rcvBufSizeMax
+		e.rcvMu.Unlock()
+		return v, nil
+
 	}
 	return -1, tcpip.ErrUnknownProtocolOption
 }
@@ -340,18 +356,6 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		e.mu.Lock()
-		*o = tcpip.SendBufferSizeOption(e.sndBufSize)
-		e.mu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		e.rcvMu.Lock()
-		*o = tcpip.ReceiveBufferSizeOption(e.rcvBufSizeMax)
-		e.rcvMu.Unlock()
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:
@@ -368,14 +372,13 @@ func send4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	// Set the ident to the user-specified port. Sequence number should
-	// already be set by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv4PayloadOffset:], ident)
-
 	hdr := buffer.NewPrependable(header.ICMPv4MinimumSize + int(r.MaxHeaderLength()))
 
 	icmpv4 := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 	copy(icmpv4, data)
+	// Set the ident to the user-specified port. Sequence number should
+	// already be set by the user.
+	icmpv4.SetIdent(ident)
 	data = data[header.ICMPv4MinimumSize:]
 
 	// Linux performs these basic checks.
@@ -394,14 +397,13 @@ func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	// Set the ident. Sequence number is provided by the user.
-	binary.BigEndian.PutUint16(data[header.ICMPv6MinimumSize:], ident)
+	hdr := buffer.NewPrependable(header.ICMPv6MinimumSize + int(r.MaxHeaderLength()))
 
-	hdr := buffer.NewPrependable(header.ICMPv6EchoMinimumSize + int(r.MaxHeaderLength()))
-
-	icmpv6 := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
+	icmpv6 := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 	copy(icmpv6, data)
-	data = data[header.ICMPv6EchoMinimumSize:]
+	// Set the ident. Sequence number is provided by the user.
+	icmpv6.SetIdent(ident)
+	data = data[header.ICMPv6MinimumSize:]
 
 	if icmpv6.Type() != header.ICMPv6EchoRequest || icmpv6.Code() != 0 {
 		return tcpip.ErrInvalidEndpointState
@@ -541,14 +543,14 @@ func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.Networ
 	if id.LocalPort != 0 {
 		// The endpoint already has a local port, just attempt to
 		// register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false /* reuse */, 0 /* bindToDevice */)
 		return id, err
 	}
 
 	// We need to find a port for the endpoint.
 	_, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
 		id.LocalPort = p
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, e.transProto, id, e, false /* reuse */, 0 /* bindtodevice */)
 		switch err {
 		case nil:
 			return true, nil

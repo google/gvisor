@@ -418,6 +418,73 @@ var x86FeatureParseOnlyStrings = map[Feature]string{
 	X86FeaturePREFETCHWT1: "prefetchwt1",
 }
 
+// intelCacheDescriptors describe the caches and TLBs on the system. They are
+// returned in the registers for eax=2. Intel only.
+type intelCacheDescriptor uint8
+
+// Valid cache/TLB descriptors. All descriptors can be found in Intel SDM Vol.
+// 2, Ch. 3.2, "CPUID", Table 3-12 "Encoding of CPUID Leaf 2 Descriptors".
+const (
+	intelNullDescriptor    intelCacheDescriptor = 0
+	intelNoTLBDescriptor   intelCacheDescriptor = 0xfe
+	intelNoCacheDescriptor intelCacheDescriptor = 0xff
+
+	// Most descriptors omitted for brevity as they are currently unused.
+)
+
+// CacheType describes the type of a cache, as returned in eax[4:0] for eax=4.
+type CacheType uint8
+
+const (
+	// cacheNull indicates that there are no more entries.
+	cacheNull CacheType = iota
+
+	// CacheData is a data cache.
+	CacheData
+
+	// CacheInstruction is an instruction cache.
+	CacheInstruction
+
+	// CacheUnified is a unified instruction and data cache.
+	CacheUnified
+)
+
+// Cache describes the parameters of a single cache on the system.
+//
+// +stateify savable
+type Cache struct {
+	// Level is the hierarchical level of this cache (L1, L2, etc).
+	Level uint32
+
+	// Type is the type of cache.
+	Type CacheType
+
+	// FullyAssociative indicates that entries may be placed in any block.
+	FullyAssociative bool
+
+	// Partitions is the number of physical partitions in the cache.
+	Partitions uint32
+
+	// Ways is the number of ways of associativity in the cache.
+	Ways uint32
+
+	// Sets is the number of sets in the cache.
+	Sets uint32
+
+	// InvalidateHierarchical indicates that WBINVD/INVD from threads
+	// sharing this cache acts upon lower level caches for threads sharing
+	// this cache.
+	InvalidateHierarchical bool
+
+	// Inclusive indicates that this cache is inclusive of lower cache
+	// levels.
+	Inclusive bool
+
+	// DirectMapped indicates that this cache is directly mapped from
+	// address, rather than using a hash function.
+	DirectMapped bool
+}
+
 // Just a way to wrap cpuid function numbers.
 type cpuidFunction uint32
 
@@ -494,7 +561,7 @@ func (f Feature) flagString(cpuinfoOnly bool) string {
 	return ""
 }
 
-// FeatureSet is a set of Features for a cpu.
+// FeatureSet is a set of Features for a CPU.
 //
 // +stateify savable
 type FeatureSet struct {
@@ -521,6 +588,15 @@ type FeatureSet struct {
 
 	// SteppingID is part of the processor signature.
 	SteppingID uint8
+
+	// Caches describes the caches on the CPU.
+	Caches []Cache
+
+	// CacheLine is the size of a cache line in bytes.
+	//
+	// All caches use the same line size. This is not enforced in the CPUID
+	// encoding, but is true on all known x86 processors.
+	CacheLine uint32
 }
 
 // FlagsString prints out supported CPU flags. If cpuinfoOnly is true, it is
@@ -557,22 +633,27 @@ func (fs FeatureSet) CPUInfo(cpu uint) string {
 	fmt.Fprintln(&b, "wp\t\t: yes")
 	fmt.Fprintf(&b, "flags\t\t: %s\n", fs.FlagsString(true))
 	fmt.Fprintf(&b, "bogomips\t: %.02f\n", cpuFreqMHz) // It's bogus anyway.
-	fmt.Fprintf(&b, "clflush size\t: %d\n", 64)
-	fmt.Fprintf(&b, "cache_alignment\t: %d\n", 64)
+	fmt.Fprintf(&b, "clflush size\t: %d\n", fs.CacheLine)
+	fmt.Fprintf(&b, "cache_alignment\t: %d\n", fs.CacheLine)
 	fmt.Fprintf(&b, "address sizes\t: %d bits physical, %d bits virtual\n", 46, 48)
 	fmt.Fprintln(&b, "power management:") // This is always here, but can be blank.
 	fmt.Fprintln(&b, "")                  // The /proc/cpuinfo file ends with an extra newline.
 	return b.String()
 }
 
+const (
+	amdVendorID   = "AuthenticAMD"
+	intelVendorID = "GenuineIntel"
+)
+
 // AMD returns true if fs describes an AMD CPU.
 func (fs *FeatureSet) AMD() bool {
-	return fs.VendorID == "AuthenticAMD"
+	return fs.VendorID == amdVendorID
 }
 
 // Intel returns true if fs describes an Intel CPU.
 func (fs *FeatureSet) Intel() bool {
-	return fs.VendorID == "GenuineIntel"
+	return fs.VendorID == intelVendorID
 }
 
 // ErrIncompatible is returned by FeatureSet.HostCompatible if fs is not a
@@ -589,9 +670,18 @@ func (e ErrIncompatible) Error() string {
 // CheckHostCompatible returns nil if fs is a subset of the host feature set.
 func (fs *FeatureSet) CheckHostCompatible() error {
 	hfs := HostFeatureSet()
+
 	if diff := fs.Subtract(hfs); diff != nil {
 		return ErrIncompatible{fmt.Sprintf("CPU feature set %v incompatible with host feature set %v (missing: %v)", fs.FlagsString(false), hfs.FlagsString(false), diff)}
 	}
+
+	// The size of a cache line must match, as it is critical to correctly
+	// utilizing CLFLUSH. Other cache properties are allowed to change, as
+	// they are not important to correctness.
+	if fs.CacheLine != hfs.CacheLine {
+		return ErrIncompatible{fmt.Sprintf("CPU cache line size %d incompatible with host cache line size %d", fs.CacheLine, hfs.CacheLine)}
+	}
+
 	return nil
 }
 
@@ -732,14 +822,6 @@ func (fs *FeatureSet) HasFeature(feature Feature) bool {
 	return fs.Set[feature]
 }
 
-// IsSubset returns true if the FeatureSet is a subset of the FeatureSet passed in.
-// This is useful if you want to see if a FeatureSet is compatible with another
-// FeatureSet, since you can only run with a given FeatureSet if it's a subset of
-// the host's.
-func (fs *FeatureSet) IsSubset(other *FeatureSet) bool {
-	return fs.Subtract(other) == nil
-}
-
 // Subtract returns the features present in fs that are not present in other.
 // If all features in fs are present in other, Subtract returns nil.
 func (fs *FeatureSet) Subtract(other *FeatureSet) (diff map[Feature]bool) {
@@ -755,17 +837,6 @@ func (fs *FeatureSet) Subtract(other *FeatureSet) (diff map[Feature]bool) {
 	return
 }
 
-// TakeFeatureIntersection will set the features in `fs` to the intersection of
-// the features in `fs` and `other` (effectively clearing any feature bits on
-// `fs` that are not also set in `other`).
-func (fs *FeatureSet) TakeFeatureIntersection(other *FeatureSet) {
-	for f := range fs.Set {
-		if !other.Set[f] {
-			delete(fs.Set, f)
-		}
-	}
-}
-
 // EmulateID emulates a cpuid instruction based on the feature set.
 func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 	switch cpuidFunction(origAx) {
@@ -773,9 +844,8 @@ func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 		ax = uint32(xSaveInfo) // 0xd (xSaveInfo) is the highest function we support.
 		bx, dx, cx = fs.vendorIDRegs()
 	case featureInfo:
-		// clflush line size (ebx bits[15:8]) hardcoded as 8. This
-		// means cache lines of size 64 bytes.
-		bx = 8 << 8
+		// CLFLUSH line size is encoded in quadwords. Other fields in bx unsupported.
+		bx = (fs.CacheLine / 8) << 8
 		cx = fs.blockMask(block(0))
 		dx = fs.blockMask(block(1))
 		ax = fs.signature()
@@ -789,10 +859,46 @@ func (fs *FeatureSet) EmulateID(origAx, origCx uint32) (ax, bx, cx, dx uint32) {
 		// will always return 01H. Software should ignore this value
 		// and not interpret it as an informational descriptor." - SDM
 		//
-		// We do not support exposing cache information, but we do set
-		// this fixed field because some language runtimes (dlang) get
-		// confused by ax = 0 and will loop infinitely.
-		ax = 1
+		// We only support reporting cache parameters via
+		// intelDeterministicCacheParams; report as much here.
+		//
+		// We do not support exposing TLB information at all.
+		ax = 1 | (uint32(intelNoCacheDescriptor) << 8)
+	case intelDeterministicCacheParams:
+		if !fs.Intel() {
+			// Reserved on non-Intel.
+			return 0, 0, 0, 0
+		}
+
+		// cx is the index of the cache to describe.
+		if int(origCx) >= len(fs.Caches) {
+			return uint32(cacheNull), 0, 0, 0
+		}
+		c := fs.Caches[origCx]
+
+		ax = uint32(c.Type)
+		ax |= c.Level << 5
+		ax |= 1 << 8 // Always claim the cache is "self-initializing".
+		if c.FullyAssociative {
+			ax |= 1 << 9
+		}
+		// Processor topology not supported.
+
+		bx = fs.CacheLine - 1
+		bx |= (c.Partitions - 1) << 12
+		bx |= (c.Ways - 1) << 22
+
+		cx = c.Sets - 1
+
+		if !c.InvalidateHierarchical {
+			dx |= 1
+		}
+		if c.Inclusive {
+			dx |= 1 << 1
+		}
+		if !c.DirectMapped {
+			dx |= 1 << 2
+		}
 	case xSaveInfo:
 		if !fs.UseXsave() {
 			return 0, 0, 0, 0
@@ -845,10 +951,41 @@ func HostFeatureSet() *FeatureSet {
 	vendorID := vendorIDFromRegs(bx, cx, dx)
 
 	// eax=1 gets basic features in ecx:edx.
-	ax, _, cx, dx := HostID(1, 0)
+	ax, bx, cx, dx := HostID(1, 0)
 	featureBlock0 := cx
 	featureBlock1 := dx
 	ef, em, pt, f, m, sid := signatureSplit(ax)
+	cacheLine := 8 * (bx >> 8) & 0xff
+
+	// eax=4, ecx=i gets details about cache index i. Only supported on Intel.
+	var caches []Cache
+	if vendorID == intelVendorID {
+		// ecx selects the cache index until a null type is returned.
+		for i := uint32(0); ; i++ {
+			ax, bx, cx, dx := HostID(4, i)
+			t := CacheType(ax & 0xf)
+			if t == cacheNull {
+				break
+			}
+
+			lineSize := (bx & 0xfff) + 1
+			if lineSize != cacheLine {
+				panic(fmt.Sprintf("Mismatched cache line size: %d vs %d", lineSize, cacheLine))
+			}
+
+			caches = append(caches, Cache{
+				Type:                   t,
+				Level:                  (ax >> 5) & 0x7,
+				FullyAssociative:       ((ax >> 9) & 1) == 1,
+				Partitions:             ((bx >> 12) & 0x3ff) + 1,
+				Ways:                   ((bx >> 22) & 0x3ff) + 1,
+				Sets:                   cx + 1,
+				InvalidateHierarchical: (dx & 1) == 0,
+				Inclusive:              ((dx >> 1) & 1) == 1,
+				DirectMapped:           ((dx >> 2) & 1) == 0,
+			})
+		}
+	}
 
 	// eax=7, ecx=0 gets extended features in ecx:ebx.
 	_, bx, cx, _ = HostID(7, 0)
@@ -883,6 +1020,8 @@ func HostFeatureSet() *FeatureSet {
 		Family:         f,
 		Model:          m,
 		SteppingID:     sid,
+		CacheLine:      cacheLine,
+		Caches:         caches,
 	}
 }
 

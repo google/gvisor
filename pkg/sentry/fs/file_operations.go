@@ -15,6 +15,8 @@
 package fs
 
 import (
+	"io"
+
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -105,8 +107,11 @@ type FileOperations interface {
 	// on the destination, following by a buffered copy with standard Read
 	// and Write operations.
 	//
+	// If dup is set, the data should be duplicated into the destination
+	// and retained.
+	//
 	// The same preconditions as Read apply.
-	WriteTo(ctx context.Context, file *File, dst *File, opts SpliceOpts) (int64, error)
+	WriteTo(ctx context.Context, file *File, dst io.Writer, count int64, dup bool) (int64, error)
 
 	// Write writes src to file at offset and returns the number of bytes
 	// written which must be greater than or equal to 0. Like Read, file
@@ -126,7 +131,7 @@ type FileOperations interface {
 	// source. See WriteTo for details regarding how this is called.
 	//
 	// The same preconditions as Write apply; FileFlags.Write must be set.
-	ReadFrom(ctx context.Context, file *File, src *File, opts SpliceOpts) (int64, error)
+	ReadFrom(ctx context.Context, file *File, src io.Reader, count int64) (int64, error)
 
 	// Fsync writes buffered modifications of file and/or flushes in-flight
 	// operations to backing storage based on syncType. The range to sync is

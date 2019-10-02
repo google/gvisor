@@ -123,6 +123,8 @@ TEST(UnlinkTest, AtBad) {
               SyscallSucceeds());
   EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", AT_REMOVEDIR),
               SyscallFailsWithErrno(ENOTDIR));
+  EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile/", 0),
+              SyscallFailsWithErrno(ENOTDIR));
   ASSERT_THAT(close(fd), SyscallSucceeds());
   EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", 0), SyscallSucceeds());
 

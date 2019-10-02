@@ -586,3 +586,103 @@ func Payload(want []byte) TransportChecker {
 		}
 	}
 }
+
+// ICMPv4 creates a checker that checks that the transport protocol is ICMPv4 and
+// potentially additional ICMPv4 header fields.
+func ICMPv4(checkers ...TransportChecker) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		last := h[len(h)-1]
+
+		if p := last.TransportProtocol(); p != header.ICMPv4ProtocolNumber {
+			t.Fatalf("Bad protocol, got %d, want %d", p, header.ICMPv4ProtocolNumber)
+		}
+
+		icmp := header.ICMPv4(last.Payload())
+		for _, f := range checkers {
+			f(t, icmp)
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+	}
+}
+
+// ICMPv4Type creates a checker that checks the ICMPv4 Type field.
+func ICMPv4Type(want header.ICMPv4Type) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+		icmpv4, ok := h.(header.ICMPv4)
+		if !ok {
+			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv4", h)
+		}
+		if got := icmpv4.Type(); got != want {
+			t.Fatalf("unexpected icmp type got: %d, want: %d", got, want)
+		}
+	}
+}
+
+// ICMPv4Code creates a checker that checks the ICMPv4 Code field.
+func ICMPv4Code(want byte) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+		icmpv4, ok := h.(header.ICMPv4)
+		if !ok {
+			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv4", h)
+		}
+		if got := icmpv4.Code(); got != want {
+			t.Fatalf("unexpected ICMP code got: %d, want: %d", got, want)
+		}
+	}
+}
+
+// ICMPv6 creates a checker that checks that the transport protocol is ICMPv6 and
+// potentially additional ICMPv6 header fields.
+func ICMPv6(checkers ...TransportChecker) NetworkChecker {
+	return func(t *testing.T, h []header.Network) {
+		t.Helper()
+
+		last := h[len(h)-1]
+
+		if p := last.TransportProtocol(); p != header.ICMPv6ProtocolNumber {
+			t.Fatalf("Bad protocol, got %d, want %d", p, header.ICMPv6ProtocolNumber)
+		}
+
+		icmp := header.ICMPv6(last.Payload())
+		for _, f := range checkers {
+			f(t, icmp)
+		}
+		if t.Failed() {
+			t.FailNow()
+		}
+	}
+}
+
+// ICMPv6Type creates a checker that checks the ICMPv6 Type field.
+func ICMPv6Type(want header.ICMPv6Type) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+		icmpv6, ok := h.(header.ICMPv6)
+		if !ok {
+			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv6", h)
+		}
+		if got := icmpv6.Type(); got != want {
+			t.Fatalf("unexpected icmp type got: %d, want: %d", got, want)
+		}
+	}
+}
+
+// ICMPv6Code creates a checker that checks the ICMPv6 Code field.
+func ICMPv6Code(want byte) TransportChecker {
+	return func(t *testing.T, h header.Transport) {
+		t.Helper()
+		icmpv6, ok := h.(header.ICMPv6)
+		if !ok {
+			t.Fatalf("unexpected transport header passed to checker got: %+v, want: header.ICMPv6", h)
+		}
+		if got := icmpv6.Code(); got != want {
+			t.Fatalf("unexpected ICMP code got: %d, want: %d", got, want)
+		}
+	}
+}

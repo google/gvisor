@@ -1,6 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
@@ -79,7 +81,7 @@ go_test(
         "//pkg/sentry/usermem",
         "//pkg/sentry/vfs",
         "//pkg/syserror",
-        "//runsc/test/testutil",
+        "//runsc/testutil",
         "@com_github_google_go-cmp//cmp:go_default_library",
         "@com_github_google_go-cmp//cmp/cmpopts:go_default_library",
     ],

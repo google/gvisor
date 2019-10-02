@@ -66,10 +66,8 @@ type CachingInodeOperations struct {
 	// mfp is used to allocate memory that caches backingFile's contents.
 	mfp pgalloc.MemoryFileProvider
 
-	// forcePageCache indicates the sentry page cache should be used regardless
-	// of whether the platform supports host mapped I/O or not. This must not be
-	// modified after inode creation.
-	forcePageCache bool
+	// opts contains options. opts is immutable.
+	opts CachingInodeOperationsOptions
 
 	attrMu sync.Mutex `state:"nosave"`
 
@@ -116,6 +114,20 @@ type CachingInodeOperations struct {
 	refs frameRefSet
 }
 
+// CachingInodeOperationsOptions configures a CachingInodeOperations.
+//
+// +stateify savable
+type CachingInodeOperationsOptions struct {
+	// If ForcePageCache is true, use the sentry page cache even if a host file
+	// descriptor is available.
+	ForcePageCache bool
+
+	// If LimitHostFDTranslation is true, apply maxFillRange() constraints to
+	// host file descriptor mappings returned by
+	// CachingInodeOperations.Translate().
+	LimitHostFDTranslation bool
+}
+
 // CachedFileObject is a file that may require caching.
 type CachedFileObject interface {
 	// ReadToBlocksAt reads up to dsts.NumBytes() bytes from the file to dsts,
@@ -128,12 +140,16 @@ type CachedFileObject interface {
 	// WriteFromBlocksAt may return a partial write without an error.
 	WriteFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error)
 
-	// SetMaskedAttributes sets the attributes in attr that are true in mask
-	// on the backing file.
+	// SetMaskedAttributes sets the attributes in attr that are true in
+	// mask on the backing file. If the mask contains only ATime or MTime
+	// and the CachedFileObject has an FD to the file, then this operation
+	// is a noop unless forceSetTimestamps is true. This avoids an extra
+	// RPC to the gofer in the open-read/write-close case, when the
+	// timestamps on the file will be updated by the host kernel for us.
 	//
 	// SetMaskedAttributes may be called at any point, regardless of whether
 	// the file was opened.
-	SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error
+	SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr, forceSetTimestamps bool) error
 
 	// Allocate allows the caller to reserve disk space for the inode.
 	// It's equivalent to fallocate(2) with 'mode=0'.
@@ -159,7 +175,7 @@ type CachedFileObject interface {
 
 // NewCachingInodeOperations returns a new CachingInodeOperations backed by
 // a CachedFileObject and its initial unstable attributes.
-func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, forcePageCache bool) *CachingInodeOperations {
+func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject, uattr fs.UnstableAttr, opts CachingInodeOperationsOptions) *CachingInodeOperations {
 	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
@@ -167,7 +183,7 @@ func NewCachingInodeOperations(ctx context.Context, backingFile CachedFileObject
 	return &CachingInodeOperations{
 		backingFile:    backingFile,
 		mfp:            mfp,
-		forcePageCache: forcePageCache,
+		opts:           opts,
 		attr:           uattr,
 		hostFileMapper: NewHostFileMapper(),
 	}
@@ -212,7 +228,7 @@ func (c *CachingInodeOperations) SetPermissions(ctx context.Context, inode *fs.I
 
 	now := ktime.NowFromContext(ctx)
 	masked := fs.AttrMask{Perms: true}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Perms: perms}); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Perms: perms}, false); err != nil {
 		return false
 	}
 	c.attr.Perms = perms
@@ -234,7 +250,7 @@ func (c *CachingInodeOperations) SetOwner(ctx context.Context, inode *fs.Inode, 
 		UID: owner.UID.Ok(),
 		GID: owner.GID.Ok(),
 	}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Owner: owner}); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{Owner: owner}, false); err != nil {
 		return err
 	}
 	if owner.UID.Ok() {
@@ -270,7 +286,9 @@ func (c *CachingInodeOperations) SetTimestamps(ctx context.Context, inode *fs.In
 		AccessTime:       !ts.ATimeOmit,
 		ModificationTime: !ts.MTimeOmit,
 	}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{AccessTime: ts.ATime, ModificationTime: ts.MTime}); err != nil {
+	// Call SetMaskedAttributes with forceSetTimestamps = true to make sure
+	// the timestamp is updated.
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, fs.UnstableAttr{AccessTime: ts.ATime, ModificationTime: ts.MTime}, true); err != nil {
 		return err
 	}
 	if !ts.ATimeOmit {
@@ -293,7 +311,7 @@ func (c *CachingInodeOperations) Truncate(ctx context.Context, inode *fs.Inode, 
 	now := ktime.NowFromContext(ctx)
 	masked := fs.AttrMask{Size: true}
 	attr := fs.UnstableAttr{Size: size}
-	if err := c.backingFile.SetMaskedAttributes(ctx, masked, attr); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, masked, attr, false); err != nil {
 		c.dataMu.Unlock()
 		return err
 	}
@@ -382,7 +400,7 @@ func (c *CachingInodeOperations) WriteOut(ctx context.Context, inode *fs.Inode) 
 	c.dirtyAttr.Size = false
 
 	// Write out cached attributes.
-	if err := c.backingFile.SetMaskedAttributes(ctx, c.dirtyAttr, c.attr); err != nil {
+	if err := c.backingFile.SetMaskedAttributes(ctx, c.dirtyAttr, c.attr, false); err != nil {
 		c.attrMu.Unlock()
 		return err
 	}
@@ -763,7 +781,7 @@ func (rw *inodeReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error
 // and memory mappings, and false if c.cache may contain data cached from
 // c.backingFile.
 func (c *CachingInodeOperations) useHostPageCache() bool {
-	return !c.forcePageCache && c.backingFile.FD() >= 0
+	return !c.opts.ForcePageCache && c.backingFile.FD() >= 0
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -784,11 +802,6 @@ func (c *CachingInodeOperations) AddMapping(ctx context.Context, ms memmap.Mappi
 			mf.MarkUnevictable(c, pgalloc.EvictableRange{r.Start, r.End})
 		}
 	}
-	if c.useHostPageCache() && !usage.IncrementalMappedAccounting {
-		for _, r := range mapped {
-			usage.MemoryAccounting.Inc(r.Length(), usage.Mapped)
-		}
-	}
 	c.mapsMu.Unlock()
 	return nil
 }
@@ -802,11 +815,6 @@ func (c *CachingInodeOperations) RemoveMapping(ctx context.Context, ms memmap.Ma
 		c.hostFileMapper.DecRefOn(r)
 	}
 	if c.useHostPageCache() {
-		if !usage.IncrementalMappedAccounting {
-			for _, r := range unmapped {
-				usage.MemoryAccounting.Dec(r.Length(), usage.Mapped)
-			}
-		}
 		c.mapsMu.Unlock()
 		return
 	}
@@ -835,11 +843,15 @@ func (c *CachingInodeOperations) CopyMapping(ctx context.Context, ms memmap.Mapp
 func (c *CachingInodeOperations) Translate(ctx context.Context, required, optional memmap.MappableRange, at usermem.AccessType) ([]memmap.Translation, error) {
 	// Hot path. Avoid defer.
 	if c.useHostPageCache() {
+		mr := optional
+		if c.opts.LimitHostFDTranslation {
+			mr = maxFillRange(required, optional)
+		}
 		return []memmap.Translation{
 			{
-				Source: optional,
+				Source: mr,
 				File:   c,
-				Offset: optional.Start,
+				Offset: mr.Start,
 				Perms:  usermem.AnyAccess,
 			},
 		}, nil
@@ -985,9 +997,7 @@ func (c *CachingInodeOperations) IncRef(fr platform.FileRange) {
 			seg, gap = seg.NextNonEmpty()
 		case gap.Ok() && gap.Start() < fr.End:
 			newRange := gap.Range().Intersect(fr)
-			if usage.IncrementalMappedAccounting {
-				usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
-			}
+			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
 			seg, gap = c.refs.InsertWithoutMerging(gap, newRange, 1).NextNonEmpty()
 		default:
 			c.refs.MergeAdjacent(fr)
@@ -1008,9 +1018,7 @@ func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
 	for seg.Ok() && seg.Start() < fr.End {
 		seg = c.refs.Isolate(seg, fr)
 		if old := seg.Value(); old == 1 {
-			if usage.IncrementalMappedAccounting {
-				usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
-			}
+			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
 			seg = c.refs.Remove(seg).NextSegment()
 		} else {
 			seg.SetValue(old - 1)

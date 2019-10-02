@@ -2,9 +2,11 @@
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "linux",
@@ -44,6 +46,7 @@ go_library(
         "sem.go",
         "shm.go",
         "signal.go",
+        "signalfd.go",
         "socket.go",
         "splice.go",
         "tcp.go",

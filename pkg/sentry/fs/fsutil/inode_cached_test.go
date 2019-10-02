@@ -39,7 +39,7 @@ func (noopBackingFile) WriteFromBlocksAt(ctx context.Context, srcs safemem.Block
 	return srcs.NumBytes(), nil
 }
 
-func (noopBackingFile) SetMaskedAttributes(context.Context, fs.AttrMask, fs.UnstableAttr) error {
+func (noopBackingFile) SetMaskedAttributes(context.Context, fs.AttrMask, fs.UnstableAttr, bool) error {
 	return nil
 }
 
@@ -61,7 +61,7 @@ func TestSetPermissions(t *testing.T) {
 	uattr := fs.WithCurrentTime(ctx, fs.UnstableAttr{
 		Perms: fs.FilePermsFromMode(0444),
 	})
-	iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, false /*forcePageCache*/)
+	iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, CachingInodeOperationsOptions{})
 	defer iops.Release()
 
 	perms := fs.FilePermsFromMode(0777)
@@ -150,7 +150,7 @@ func TestSetTimestamps(t *testing.T) {
 				ModificationTime: epoch,
 				StatusChangeTime: epoch,
 			}
-			iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, false /*forcePageCache*/)
+			iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, CachingInodeOperationsOptions{})
 			defer iops.Release()
 
 			if err := iops.SetTimestamps(ctx, nil, test.ts); err != nil {
@@ -188,7 +188,7 @@ func TestTruncate(t *testing.T) {
 	uattr := fs.UnstableAttr{
 		Size: 0,
 	}
-	iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, false /*forcePageCache*/)
+	iops := NewCachingInodeOperations(ctx, noopBackingFile{}, uattr, CachingInodeOperationsOptions{})
 	defer iops.Release()
 
 	if err := iops.Truncate(ctx, nil, uattr.Size); err != nil {
@@ -230,7 +230,7 @@ func (f *sliceBackingFile) WriteFromBlocksAt(ctx context.Context, srcs safemem.B
 	return w.WriteFromBlocks(srcs)
 }
 
-func (*sliceBackingFile) SetMaskedAttributes(context.Context, fs.AttrMask, fs.UnstableAttr) error {
+func (*sliceBackingFile) SetMaskedAttributes(context.Context, fs.AttrMask, fs.UnstableAttr, bool) error {
 	return nil
 }
 
@@ -280,7 +280,7 @@ func TestRead(t *testing.T) {
 	uattr := fs.UnstableAttr{
 		Size: int64(len(buf)),
 	}
-	iops := NewCachingInodeOperations(ctx, newSliceBackingFile(buf), uattr, false /*forcePageCache*/)
+	iops := NewCachingInodeOperations(ctx, newSliceBackingFile(buf), uattr, CachingInodeOperationsOptions{})
 	defer iops.Release()
 
 	// Expect the cache to be initially empty.
@@ -336,7 +336,7 @@ func TestWrite(t *testing.T) {
 	uattr := fs.UnstableAttr{
 		Size: int64(len(buf)),
 	}
-	iops := NewCachingInodeOperations(ctx, newSliceBackingFile(buf), uattr, false /*forcePageCache*/)
+	iops := NewCachingInodeOperations(ctx, newSliceBackingFile(buf), uattr, CachingInodeOperationsOptions{})
 	defer iops.Release()
 
 	// Expect the cache to be initially empty.

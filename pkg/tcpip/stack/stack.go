@@ -17,17 +17,15 @@
 //
 // For consumers, the only function of interest is New(), everything else is
 // provided by the tcpip/public package.
-//
-// For protocol implementers, RegisterTransportProtocolFactory() and
-// RegisterNetworkProtocolFactory() are used to register protocol factories with
-// the stack, which will then be used to instantiate protocol objects when
-// consumers interact with the stack.
 package stack
 
 import (
+	"encoding/binary"
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -350,6 +348,9 @@ type Stack struct {
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
+	// unassociatedFactory creates unassociated endpoints. If nil, raw
+	// endpoints are disabled. It is set during Stack creation and is
+	// immutable.
 	unassociatedFactory UnassociatedEndpointFactory
 
 	demux *transportDemuxer
@@ -357,10 +358,6 @@ type Stack struct {
 	stats tcpip.Stats
 
 	linkAddrCache *linkAddrCache
-
-	// raw indicates whether raw sockets may be created. It is set during
-	// Stack creation and is immutable.
-	raw bool
 
 	mu         sync.RWMutex
 	nics       map[tcpip.NICID]*NIC
@@ -389,10 +386,26 @@ type Stack struct {
 	// resumableEndpoints is a list of endpoints that need to be resumed if the
 	// stack is being restored.
 	resumableEndpoints []ResumableEndpoint
+
+	// icmpRateLimiter is a global rate limiter for all ICMP messages generated
+	// by the stack.
+	icmpRateLimiter *ICMPRateLimiter
+
+	// portSeed is a one-time random value initialized at stack startup
+	// and is used to seed the TCP port picking on active connections
+	//
+	// TODO(gvisor.dev/issues/940): S/R this field.
+	portSeed uint32
 }
 
 // Options contains optional Stack configuration.
 type Options struct {
+	// NetworkProtocols lists the network protocols to enable.
+	NetworkProtocols []NetworkProtocol
+
+	// TransportProtocols lists the transport protocols to enable.
+	TransportProtocols []TransportProtocol
+
 	// Clock is an optional clock source used for timestampping packets.
 	//
 	// If no Clock is specified, the clock source will be time.Now.
@@ -406,8 +419,9 @@ type Options struct {
 	// stack (false).
 	HandleLocal bool
 
-	// Raw indicates whether raw sockets may be created.
-	Raw bool
+	// UnassociatedFactory produces unassociated endpoints raw endpoints.
+	// Raw endpoints are enabled only if this is non-nil.
+	UnassociatedFactory UnassociatedEndpointFactory
 }
 
 // New allocates a new networking stack with only the requested networking and
@@ -417,7 +431,7 @@ type Options struct {
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
-func New(network []string, transport []string, opts Options) *Stack {
+func New(opts Options) *Stack {
 	clock := opts.Clock
 	if clock == nil {
 		clock = &tcpip.StdClock{}
@@ -433,16 +447,12 @@ func New(network []string, transport []string, opts Options) *Stack {
 		clock:              clock,
 		stats:              opts.Stats.FillIn(),
 		handleLocal:        opts.HandleLocal,
-		raw:                opts.Raw,
+		icmpRateLimiter:    NewICMPRateLimiter(),
+		portSeed:           generateRandUint32(),
 	}
 
 	// Add specified network protocols.
-	for _, name := range network {
-		netProtoFactory, ok := networkProtocols[name]
-		if !ok {
-			continue
-		}
-		netProto := netProtoFactory()
+	for _, netProto := range opts.NetworkProtocols {
 		s.networkProtocols[netProto.Number()] = netProto
 		if r, ok := netProto.(LinkAddressResolver); ok {
 			s.linkAddrResolvers[r.LinkAddressProtocol()] = r
@@ -450,18 +460,14 @@ func New(network []string, transport []string, opts Options) *Stack {
 	}
 
 	// Add specified transport protocols.
-	for _, name := range transport {
-		transProtoFactory, ok := transportProtocols[name]
-		if !ok {
-			continue
-		}
-		transProto := transProtoFactory()
+	for _, transProto := range opts.TransportProtocols {
 		s.transportProtocols[transProto.Number()] = &transportProtocolState{
 			proto: transProto,
 		}
 	}
 
-	s.unassociatedFactory = unassociatedFactory
+	// Add the factory for unassociated endpoints, if present.
+	s.unassociatedFactory = opts.UnassociatedFactory
 
 	// Create the global transport demuxer.
 	s.demux = newTransportDemuxer(s)
@@ -596,7 +602,7 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // protocol. Raw endpoints receive all traffic for a given protocol regardless
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
-	if !s.raw {
+	if s.unassociatedFactory == nil {
 		return nil, tcpip.ErrNotPermitted
 	}
 
@@ -614,12 +620,7 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 
 // createNIC creates a NIC with the provided id and link-layer endpoint, and
 // optionally enable it.
-func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID, enabled, loopback bool) *tcpip.Error {
-	ep := FindLinkEndpoint(linkEP)
-	if ep == nil {
-		return tcpip.ErrBadLinkEndpoint
-	}
-
+func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled, loopback bool) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -632,40 +633,40 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpoint
 
 	s.nics[id] = n
 	if enabled {
-		n.attachLinkEndpoint()
+		return n.enable()
 	}
 
 	return nil
 }
 
 // CreateNIC creates a NIC with the provided id and link-layer endpoint.
-func (s *Stack) CreateNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, true, false)
+func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, "", ep, true, false)
 }
 
 // CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
 // and a human-readable name.
-func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, true, false)
+func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, true, false)
 }
 
 // CreateNamedLoopbackNIC creates a NIC with the provided id and link-layer
 // endpoint, and a human-readable name.
-func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, true, true)
+func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, true, true)
 }
 
 // CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
 // but leave it disable. Stack.EnableNIC must be called before the link-layer
 // endpoint starts delivering packets to it.
-func (s *Stack) CreateDisabledNIC(id tcpip.NICID, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, "", linkEP, false, false)
+func (s *Stack) CreateDisabledNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, "", ep, false, false)
 }
 
 // CreateDisabledNamedNIC is a combination of CreateNamedNIC and
 // CreateDisabledNIC.
-func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, linkEP tcpip.LinkEndpointID) *tcpip.Error {
-	return s.createNIC(id, name, linkEP, false, false)
+func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
+	return s.createNIC(id, name, ep, false, false)
 }
 
 // EnableNIC enables the given NIC so that the link-layer endpoint can start
@@ -679,9 +680,7 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 		return tcpip.ErrUnknownNICID
 	}
 
-	nic.attachLinkEndpoint()
-
-	return nil
+	return nic.enable()
 }
 
 // CheckNIC checks if a NIC is usable.
@@ -696,14 +695,14 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 }
 
 // NICSubnets returns a map of NICIDs to their associated subnets.
-func (s *Stack) NICSubnets() map[tcpip.NICID][]tcpip.Subnet {
+func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nics := map[tcpip.NICID][]tcpip.Subnet{}
 
 	for id, nic := range s.nics {
-		nics[id] = append(nics[id], nic.Subnets()...)
+		nics[id] = append(nics[id], nic.AddressRanges()...)
 	}
 	return nics
 }
@@ -739,7 +738,7 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		nics[id] = NICInfo{
 			Name:              nic.name,
 			LinkAddress:       nic.linkEP.LinkAddress(),
-			ProtocolAddresses: nic.Addresses(),
+			ProtocolAddresses: nic.PrimaryAddresses(),
 			Flags:             flags,
 			MTU:               nic.linkEP.MTU(),
 			Stats:             nic.stats,
@@ -804,43 +803,33 @@ func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tc
 	return nic.AddAddress(protocolAddress, peb)
 }
 
-// AddSubnet adds a subnet range to the specified NIC.
-func (s *Stack) AddSubnet(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
+// AddAddressRange adds a range of addresses to the specified NIC. The range is
+// given by a subnet address, and all addresses contained in the subnet are
+// used except for the subnet address itself and the subnet's broadcast
+// address.
+func (s *Stack) AddAddressRange(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[id]; ok {
-		nic.AddSubnet(protocol, subnet)
+		nic.AddAddressRange(protocol, subnet)
 		return nil
 	}
 
 	return tcpip.ErrUnknownNICID
 }
 
-// RemoveSubnet removes the subnet range from the specified NIC.
-func (s *Stack) RemoveSubnet(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
+// RemoveAddressRange removes the range of addresses from the specified NIC.
+func (s *Stack) RemoveAddressRange(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if nic, ok := s.nics[id]; ok {
-		nic.RemoveSubnet(subnet)
+		nic.RemoveAddressRange(subnet)
 		return nil
 	}
 
 	return tcpip.ErrUnknownNICID
-}
-
-// ContainsSubnet reports whether the specified NIC contains the specified
-// subnet.
-func (s *Stack) ContainsSubnet(id tcpip.NICID, subnet tcpip.Subnet) (bool, *tcpip.Error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if nic, ok := s.nics[id]; ok {
-		return nic.ContainsSubnet(subnet), nil
-	}
-
-	return false, tcpip.ErrUnknownNICID
 }
 
 // RemoveAddress removes an existing network-layer address from the specified
@@ -856,19 +845,37 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrUnknownNICID
 }
 
-// GetMainNICAddress returns the first primary address (and the subnet that
-// contains it) for the given NIC and protocol. Returns an arbitrary endpoint's
-// address if no primary addresses exist. Returns an error if the NIC doesn't
-// exist or has no endpoints.
+// AllAddresses returns a map of NICIDs to their protocol addresses (primary
+// and non-primary).
+func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nics := make(map[tcpip.NICID][]tcpip.ProtocolAddress)
+	for id, nic := range s.nics {
+		nics[id] = nic.AllAddresses()
+	}
+	return nics
+}
+
+// GetMainNICAddress returns the first primary address and prefix for the given
+// NIC and protocol. Returns an error if the NIC doesn't exist and an empty
+// value if the NIC doesn't have a primary address for the given protocol.
 func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if nic, ok := s.nics[id]; ok {
-		return nic.getMainNICAddress(protocol)
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
 	}
 
-	return tcpip.AddressWithPrefix{}, tcpip.ErrUnknownNICID
+	for _, a := range nic.PrimaryAddresses() {
+		if a.Protocol == protocol {
+			return a.AddressWithPrefix, nil
+		}
+	}
+	return tcpip.AddressWithPrefix{}, nil
 }
 
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
@@ -1035,73 +1042,27 @@ func (s *Stack) RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.
 // transport dispatcher. Received packets that match the provided id will be
 // delivered to the given endpoint; specifying a nic is optional, but
 // nic-specific IDs have precedence over global ones.
-func (s *Stack) RegisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool) *tcpip.Error {
-	if nicID == 0 {
-		return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
-	}
-
-	return nic.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort)
+func (s *Stack) RegisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
 }
 
 // UnregisterTransportEndpoint removes the endpoint with the given id from the
 // stack transport dispatcher.
-func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint) {
-	if nicID == 0 {
-		s.demux.unregisterEndpoint(netProtos, protocol, id, ep)
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic != nil {
-		nic.demux.unregisterEndpoint(netProtos, protocol, id, ep)
-	}
+func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
 func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
-	if nicID == 0 {
-		return s.demux.registerRawEndpoint(netProto, transProto, ep)
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic == nil {
-		return tcpip.ErrUnknownNICID
-	}
-
-	return nic.demux.registerRawEndpoint(netProto, transProto, ep)
+	return s.demux.registerRawEndpoint(netProto, transProto, ep)
 }
 
 // UnregisterRawTransportEndpoint removes the endpoint for the transport
 // protocol from the stack transport dispatcher.
 func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) {
-	if nicID == 0 {
-		s.demux.unregisterRawEndpoint(netProto, transProto, ep)
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	nic := s.nics[nicID]
-	if nic != nil {
-		nic.demux.unregisterRawEndpoint(netProto, transProto, ep)
-	}
+	s.demux.unregisterRawEndpoint(netProto, transProto, ep)
 }
 
 // RegisterRestoredEndpoint records e as an endpoint that has been restored on
@@ -1214,4 +1175,50 @@ func (s *Stack) IPTables() iptables.IPTables {
 // SetIPTables sets the stack's iptables.
 func (s *Stack) SetIPTables(ipt iptables.IPTables) {
 	s.tables = ipt
+}
+
+// ICMPLimit returns the maximum number of ICMP messages that can be sent
+// in one second.
+func (s *Stack) ICMPLimit() rate.Limit {
+	return s.icmpRateLimiter.Limit()
+}
+
+// SetICMPLimit sets the maximum number of ICMP messages that be sent
+// in one second.
+func (s *Stack) SetICMPLimit(newLimit rate.Limit) {
+	s.icmpRateLimiter.SetLimit(newLimit)
+}
+
+// ICMPBurst returns the maximum number of ICMP messages that can be sent
+// in a single burst.
+func (s *Stack) ICMPBurst() int {
+	return s.icmpRateLimiter.Burst()
+}
+
+// SetICMPBurst sets the maximum number of ICMP messages that can be sent
+// in a single burst.
+func (s *Stack) SetICMPBurst(burst int) {
+	s.icmpRateLimiter.SetBurst(burst)
+}
+
+// AllowICMPMessage returns true if we the rate limiter allows at least one
+// ICMP message to be sent at this instant.
+func (s *Stack) AllowICMPMessage() bool {
+	return s.icmpRateLimiter.Allow()
+}
+
+// PortSeed returns a 32 bit value that can be used as a seed value for port
+// picking.
+//
+// NOTE: The seed is generated once during stack initialization only.
+func (s *Stack) PortSeed() uint32 {
+	return s.portSeed
+}
+
+func generateRandUint32() uint32 {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return binary.LittleEndian.Uint32(b)
 }

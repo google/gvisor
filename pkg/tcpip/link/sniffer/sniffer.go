@@ -58,10 +58,10 @@ type endpoint struct {
 
 // New creates a new sniffer link-layer endpoint. It wraps around another
 // endpoint and logs packets and they traverse the endpoint.
-func New(lower tcpip.LinkEndpointID) tcpip.LinkEndpointID {
-	return stack.RegisterLinkEndpoint(&endpoint{
-		lower: stack.FindLinkEndpoint(lower),
-	})
+func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
+	return &endpoint{
+		lower: lower,
+	}
 }
 
 func zoneOffset() (int32, error) {
@@ -102,15 +102,15 @@ func writePCAPHeader(w io.Writer, maxLen uint32) error {
 // snapLen is the maximum amount of a packet to be saved. Packets with a length
 // less than or equal too snapLen will be saved in their entirety. Longer
 // packets will be truncated to snapLen.
-func NewWithFile(lower tcpip.LinkEndpointID, file *os.File, snapLen uint32) (tcpip.LinkEndpointID, error) {
+func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack.LinkEndpoint, error) {
 	if err := writePCAPHeader(file, snapLen); err != nil {
-		return 0, err
+		return nil, err
 	}
-	return stack.RegisterLinkEndpoint(&endpoint{
-		lower:      stack.FindLinkEndpoint(lower),
+	return &endpoint{
+		lower:      lower,
 		file:       file,
 		maxPCAPLen: snapLen,
-	}), nil
+	}, nil
 }
 
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
@@ -239,6 +239,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
 }
+
+// Wait implements stack.LinkEndpoint.Wait.
+func (*endpoint) Wait() {}
 
 func logPacket(prefix string, protocol tcpip.NetworkProtocolNumber, b buffer.View, gso *stack.GSO) {
 	// Figure out the network layer info.

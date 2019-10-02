@@ -137,7 +137,10 @@ type Context struct {
 // New allocates and initializes a test context containing a new
 // stack and a link-layer endpoint.
 func New(t *testing.T, mtu uint32) *Context {
-	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{tcp.NewProtocol()},
+	})
 
 	// Allow minimum send/receive buffer sizes to be 1 during tests.
 	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, tcp.SendBufferSizeOption{1, tcp.DefaultSendBufferSize, 10 * tcp.DefaultSendBufferSize}); err != nil {
@@ -150,11 +153,19 @@ func New(t *testing.T, mtu uint32) *Context {
 
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
-	id, linkEP := channel.New(1000, mtu, "")
+	ep := channel.New(1000, mtu, "")
+	wep := stack.LinkEndpoint(ep)
 	if testing.Verbose() {
-		id = sniffer.New(id)
+		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNamedNIC(1, "nic1", wep); err != nil {
+		t.Fatalf("CreateNIC failed: %v", err)
+	}
+	wep2 := stack.LinkEndpoint(channel.New(1000, mtu, ""))
+	if testing.Verbose() {
+		wep2 = sniffer.New(channel.New(1000, mtu, ""))
+	}
+	if err := s.CreateNamedNIC(2, "nic2", wep2); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -180,7 +191,7 @@ func New(t *testing.T, mtu uint32) *Context {
 	return &Context{
 		t:           t,
 		s:           s,
-		linkEP:      linkEP,
+		linkEP:      ep,
 		WindowScale: uint8(tcp.FindWndScale(tcp.DefaultReceiveBufferSize)),
 	}
 }
@@ -267,7 +278,7 @@ func (c *Context) GetPacketNonBlocking() []byte {
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
 func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byte, maxTotalSize int) {
 	// Allocate a buffer data and headers.
-	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + len(p1) + len(p2))
+	buf := buffer.NewView(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + len(p2))
 	if len(buf) > maxTotalSize {
 		buf = buf[:maxTotalSize]
 	}
@@ -286,9 +297,9 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code uint8, p1, p2 []byt
 	icmp := header.ICMPv4(buf[header.IPv4MinimumSize:])
 	icmp.SetType(typ)
 	icmp.SetCode(code)
-
-	copy(icmp[header.ICMPv4PayloadOffset:], p1)
-	copy(icmp[header.ICMPv4PayloadOffset+len(p1):], p2)
+	const icmpv4VariableHeaderOffset = 4
+	copy(icmp[icmpv4VariableHeaderOffset:], p1)
+	copy(icmp[header.ICMPv4PayloadOffset:], p2)
 
 	// Inject packet.
 	c.linkEP.Inject(ipv4.ProtocolNumber, buf.ToVectorisedView())
@@ -511,7 +522,7 @@ func (c *Context) SendV6Packet(payload []byte, h *Headers) {
 }
 
 // CreateConnected creates a connected TCP endpoint.
-func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption) {
+func (c *Context) CreateConnected(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf int) {
 	c.CreateConnectedWithRawOptions(iss, rcvWnd, epRcvBuf, nil)
 }
 
@@ -584,12 +595,8 @@ func (c *Context) Connect(iss seqnum.Value, rcvWnd seqnum.Size, options []byte) 
 	c.Port = tcpHdr.SourcePort()
 }
 
-// CreateConnectedWithRawOptions creates a connected TCP endpoint and sends
-// the specified option bytes as the Option field in the initial SYN packet.
-//
-// It also sets the receive buffer for the endpoint to the specified
-// value in epRcvBuf.
-func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf *tcpip.ReceiveBufferSizeOption, options []byte) {
+// Create creates a TCP endpoint.
+func (c *Context) Create(epRcvBuf int) {
 	// Create TCP endpoint.
 	var err *tcpip.Error
 	c.EP, err = c.s.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
@@ -597,11 +604,20 @@ func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.
 		c.t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if epRcvBuf != nil {
-		if err := c.EP.SetSockOpt(*epRcvBuf); err != nil {
+	if epRcvBuf != -1 {
+		if err := c.EP.SetSockOptInt(tcpip.ReceiveBufferSizeOption, epRcvBuf); err != nil {
 			c.t.Fatalf("SetSockOpt failed failed: %v", err)
 		}
 	}
+}
+
+// CreateConnectedWithRawOptions creates a connected TCP endpoint and sends
+// the specified option bytes as the Option field in the initial SYN packet.
+//
+// It also sets the receive buffer for the endpoint to the specified
+// value in epRcvBuf.
+func (c *Context) CreateConnectedWithRawOptions(iss seqnum.Value, rcvWnd seqnum.Size, epRcvBuf int, options []byte) {
+	c.Create(epRcvBuf)
 	c.Connect(iss, rcvWnd, options)
 }
 

@@ -64,6 +64,21 @@ type filer interface {
 	SetFilePayload(*fd.FD)
 }
 
+// filePayload embeds a File object.
+type filePayload struct {
+	File *fd.FD
+}
+
+// FilePayload returns the file payload.
+func (f *filePayload) FilePayload() *fd.FD {
+	return f.File
+}
+
+// SetFilePayload sets the received file.
+func (f *filePayload) SetFilePayload(file *fd.FD) {
+	f.File = file
+}
+
 // Tversion is a version request.
 type Tversion struct {
 	// MSize is the message size to use.
@@ -524,10 +539,7 @@ type Rlopen struct {
 	// IoUnit is the recommended I/O unit.
 	IoUnit uint32
 
-	// File may be attached via the socket.
-	//
-	// This is an extension specific to this package.
-	File *fd.FD
+	filePayload
 }
 
 // Decode implements encoder.Decode.
@@ -545,16 +557,6 @@ func (r *Rlopen) Encode(b *buffer) {
 // Type implements message.Type.
 func (*Rlopen) Type() MsgType {
 	return MsgRlopen
-}
-
-// FilePayload returns the file payload.
-func (r *Rlopen) FilePayload() *fd.FD {
-	return r.File
-}
-
-// SetFilePayload sets the received file.
-func (r *Rlopen) SetFilePayload(file *fd.FD) {
-	r.File = file
 }
 
 // String implements fmt.Stringer.
@@ -2171,8 +2173,7 @@ func (t *Tlconnect) String() string {
 
 // Rlconnect is a connect response.
 type Rlconnect struct {
-	// File is a host socket.
-	File *fd.FD
+	filePayload
 }
 
 // Decode implements encoder.Decode.
@@ -2186,19 +2187,71 @@ func (*Rlconnect) Type() MsgType {
 	return MsgRlconnect
 }
 
-// FilePayload returns the file payload.
-func (r *Rlconnect) FilePayload() *fd.FD {
-	return r.File
-}
-
-// SetFilePayload sets the received file.
-func (r *Rlconnect) SetFilePayload(file *fd.FD) {
-	r.File = file
-}
-
 // String implements fmt.Stringer.
 func (r *Rlconnect) String() string {
 	return fmt.Sprintf("Rlconnect{File: %v}", r.File)
+}
+
+// Tchannel creates a new channel.
+type Tchannel struct {
+	// ID is the channel ID.
+	ID uint32
+
+	// Control is 0 if the Rchannel response should provide the flipcall
+	// component of the channel, and 1 if the Rchannel response should
+	// provide the fdchannel component of the channel.
+	Control uint32
+}
+
+// Decode implements encoder.Decode.
+func (t *Tchannel) Decode(b *buffer) {
+	t.ID = b.Read32()
+	t.Control = b.Read32()
+}
+
+// Encode implements encoder.Encode.
+func (t *Tchannel) Encode(b *buffer) {
+	b.Write32(t.ID)
+	b.Write32(t.Control)
+}
+
+// Type implements message.Type.
+func (*Tchannel) Type() MsgType {
+	return MsgTchannel
+}
+
+// String implements fmt.Stringer.
+func (t *Tchannel) String() string {
+	return fmt.Sprintf("Tchannel{ID: %d, Control: %d}", t.ID, t.Control)
+}
+
+// Rchannel is the channel response.
+type Rchannel struct {
+	Offset uint64
+	Length uint64
+	filePayload
+}
+
+// Decode implements encoder.Decode.
+func (r *Rchannel) Decode(b *buffer) {
+	r.Offset = b.Read64()
+	r.Length = b.Read64()
+}
+
+// Encode implements encoder.Encode.
+func (r *Rchannel) Encode(b *buffer) {
+	b.Write64(r.Offset)
+	b.Write64(r.Length)
+}
+
+// Type implements message.Type.
+func (*Rchannel) Type() MsgType {
+	return MsgRchannel
+}
+
+// String implements fmt.Stringer.
+func (r *Rchannel) String() string {
+	return fmt.Sprintf("Rchannel{Offset: %d, Length: %d}", r.Offset, r.Length)
 }
 
 const maxCacheSize = 3
@@ -2356,4 +2409,6 @@ func init() {
 	msgRegistry.register(MsgRlconnect, func() message { return &Rlconnect{} })
 	msgRegistry.register(MsgTallocate, func() message { return &Tallocate{} })
 	msgRegistry.register(MsgRallocate, func() message { return &Rallocate{} })
+	msgRegistry.register(MsgTchannel, func() message { return &Tchannel{} })
+	msgRegistry.register(MsgRchannel, func() message { return &Rchannel{} })
 }

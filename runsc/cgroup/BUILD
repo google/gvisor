@@ -6,9 +6,7 @@ go_library(
     name = "cgroup",
     srcs = ["cgroup.go"],
     importpath = "gvisor.dev/gvisor/runsc/cgroup",
-    visibility = [
-        "//runsc:__subpackages__",
-    ],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
         "//runsc/specutils",

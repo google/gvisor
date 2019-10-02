@@ -17,10 +17,10 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -28,9 +28,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
 // newNet creates a new proc net entry.
@@ -57,9 +59,8 @@ func (p *proc) newNetDir(ctx context.Context, k *kernel.Kernel, msrc *fs.MountSo
 			"ptype":  newStaticProcInode(ctx, msrc, []byte("Type Device      Function")),
 			"route":  newStaticProcInode(ctx, msrc, []byte("Iface   Destination     Gateway         Flags   RefCnt  Use     Metric  Mask            MTU     Window  IRTT")),
 			"tcp":    seqfile.NewSeqFileInode(ctx, &netTCP{k: k}, msrc),
-			"udp":    newStaticProcInode(ctx, msrc, []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops")),
-
-			"unix": seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
+			"udp":    seqfile.NewSeqFileInode(ctx, &netUDP{k: k}, msrc),
+			"unix":   seqfile.NewSeqFileInode(ctx, &netUnix{k: k}, msrc),
 		}
 
 		if s.SupportsIPv6() {
@@ -216,7 +217,7 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 	for _, se := range n.k.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
-			log.Debugf("Couldn't resolve weakref %v in socket table, racing with destruction?", se.Sock)
+			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
 			continue
 		}
 		sfile := s.(*fs.File)
@@ -297,6 +298,42 @@ func (n *netUnix) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]s
 	return data, 0
 }
 
+func networkToHost16(n uint16) uint16 {
+	// n is in network byte order, so is big-endian. The most-significant byte
+	// should be stored in the lower address.
+	//
+	// We manually inline binary.BigEndian.Uint16() because Go does not support
+	// non-primitive consts, so binary.BigEndian is a (mutable) var, so calls to
+	// binary.BigEndian.Uint16() require a read of binary.BigEndian and an
+	// interface method call, defeating inlining.
+	buf := [2]byte{byte(n >> 8 & 0xff), byte(n & 0xff)}
+	return usermem.ByteOrder.Uint16(buf[:])
+}
+
+func writeInetAddr(w io.Writer, a linux.SockAddrInet) {
+	// linux.SockAddrInet.Port is stored in the network byte order and is
+	// printed like a number in host byte order. Note that all numbers in host
+	// byte order are printed with the most-significant byte first when
+	// formatted with %X. See get_tcp4_sock() and udp4_format_sock() in Linux.
+	port := networkToHost16(a.Port)
+
+	// linux.SockAddrInet.Addr is stored as a byte slice in big-endian order
+	// (i.e. most-significant byte in index 0). Linux represents this as a
+	// __be32 which is a typedef for an unsigned int, and is printed with
+	// %X. This means that for a little-endian machine, Linux prints the
+	// least-significant byte of the address first. To emulate this, we first
+	// invert the byte order for the address using usermem.ByteOrder.Uint32,
+	// which makes it have the equivalent encoding to a __be32 on a little
+	// endian machine. Note that this operation is a no-op on a big endian
+	// machine. Then similar to Linux, we format it with %X, which will print
+	// the most-significant byte of the __be32 address first, which is now
+	// actually the least-significant byte of the original address in
+	// linux.SockAddrInet.Addr on little endian machines, due to the conversion.
+	addr := usermem.ByteOrder.Uint32(a.Addr[:])
+
+	fmt.Fprintf(w, "%08X:%04X ", addr, port)
+}
+
 // netTCP implements seqfile.SeqSource for /proc/net/tcp.
 //
 // +stateify savable
@@ -311,6 +348,9 @@ func (*netTCP) NeedsUpdate(generation int64) bool {
 
 // ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
 func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	// t may be nil here if our caller is not part of a task goroutine. This can
+	// happen for example if we're here for "sentryctl cat". When t is nil,
+	// degrade gracefully and retrieve what we can.
 	t := kernel.TaskFromContext(ctx)
 
 	if h != nil {
@@ -321,7 +361,7 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	for _, se := range n.k.ListSockets() {
 		s := se.Sock.Get()
 		if s == nil {
-			log.Debugf("Couldn't resolve weakref %+v in socket table, racing with destruction?", se.Sock)
+			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
 			continue
 		}
 		sfile := s.(*fs.File)
@@ -343,27 +383,23 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 		// Field: sl; entry number.
 		fmt.Fprintf(&buf, "%4d: ", se.ID)
 
-		portBuf := make([]byte, 2)
-
 		// Field: local_adddress.
 		var localAddr linux.SockAddrInet
-		if local, _, err := sops.GetSockName(t); err == nil {
-			localAddr = *local.(*linux.SockAddrInet)
+		if t != nil {
+			if local, _, err := sops.GetSockName(t); err == nil {
+				localAddr = *local.(*linux.SockAddrInet)
+			}
 		}
-		binary.LittleEndian.PutUint16(portBuf, localAddr.Port)
-		fmt.Fprintf(&buf, "%08X:%04X ",
-			binary.LittleEndian.Uint32(localAddr.Addr[:]),
-			portBuf)
+		writeInetAddr(&buf, localAddr)
 
 		// Field: rem_address.
 		var remoteAddr linux.SockAddrInet
-		if remote, _, err := sops.GetPeerName(t); err == nil {
-			remoteAddr = *remote.(*linux.SockAddrInet)
+		if t != nil {
+			if remote, _, err := sops.GetPeerName(t); err == nil {
+				remoteAddr = *remote.(*linux.SockAddrInet)
+			}
 		}
-		binary.LittleEndian.PutUint16(portBuf, remoteAddr.Port)
-		fmt.Fprintf(&buf, "%08X:%04X ",
-			binary.LittleEndian.Uint32(remoteAddr.Addr[:]),
-			portBuf)
+		writeInetAddr(&buf, remoteAddr)
 
 		// Field: state; socket state.
 		fmt.Fprintf(&buf, "%02X ", sops.State())
@@ -386,7 +422,8 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 			log.Warningf("Failed to retrieve unstable attr for socket file: %v", err)
 			fmt.Fprintf(&buf, "%5d ", 0)
 		} else {
-			fmt.Fprintf(&buf, "%5d ", uint32(uattr.Owner.UID.In(t.UserNamespace()).OrOverflow()))
+			creds := auth.CredentialsFromContext(ctx)
+			fmt.Fprintf(&buf, "%5d ", uint32(uattr.Owner.UID.In(creds.UserNamespace).OrOverflow()))
 		}
 
 		// Field: timeout; number of unanswered 0-window probes.
@@ -429,6 +466,128 @@ func (n *netTCP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]se
 	data := []seqfile.SeqData{
 		{
 			Buf:    []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode                                                     \n"),
+			Handle: n,
+		},
+		{
+			Buf:    buf.Bytes(),
+			Handle: n,
+		},
+	}
+	return data, 0
+}
+
+// netUDP implements seqfile.SeqSource for /proc/net/udp.
+//
+// +stateify savable
+type netUDP struct {
+	k *kernel.Kernel
+}
+
+// NeedsUpdate implements seqfile.SeqSource.NeedsUpdate.
+func (*netUDP) NeedsUpdate(generation int64) bool {
+	return true
+}
+
+// ReadSeqFileData implements seqfile.SeqSource.ReadSeqFileData.
+func (n *netUDP) ReadSeqFileData(ctx context.Context, h seqfile.SeqHandle) ([]seqfile.SeqData, int64) {
+	// t may be nil here if our caller is not part of a task goroutine. This can
+	// happen for example if we're here for "sentryctl cat". When t is nil,
+	// degrade gracefully and retrieve what we can.
+	t := kernel.TaskFromContext(ctx)
+
+	if h != nil {
+		return nil, 0
+	}
+
+	var buf bytes.Buffer
+	for _, se := range n.k.ListSockets() {
+		s := se.Sock.Get()
+		if s == nil {
+			log.Debugf("Couldn't resolve weakref with ID %v in socket table, racing with destruction?", se.ID)
+			continue
+		}
+		sfile := s.(*fs.File)
+		sops, ok := sfile.FileOperations.(socket.Socket)
+		if !ok {
+			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", sfile))
+		}
+		if family, stype, _ := sops.Type(); family != linux.AF_INET || stype != linux.SOCK_DGRAM {
+			s.DecRef()
+			// Not udp4 socket.
+			continue
+		}
+
+		// For Linux's implementation, see net/ipv4/udp.c:udp4_format_sock().
+
+		// Field: sl; entry number.
+		fmt.Fprintf(&buf, "%5d: ", se.ID)
+
+		// Field: local_adddress.
+		var localAddr linux.SockAddrInet
+		if t != nil {
+			if local, _, err := sops.GetSockName(t); err == nil {
+				localAddr = *local.(*linux.SockAddrInet)
+			}
+		}
+		writeInetAddr(&buf, localAddr)
+
+		// Field: rem_address.
+		var remoteAddr linux.SockAddrInet
+		if t != nil {
+			if remote, _, err := sops.GetPeerName(t); err == nil {
+				remoteAddr = *remote.(*linux.SockAddrInet)
+			}
+		}
+		writeInetAddr(&buf, remoteAddr)
+
+		// Field: state; socket state.
+		fmt.Fprintf(&buf, "%02X ", sops.State())
+
+		// Field: tx_queue, rx_queue; number of packets in the transmit and
+		// receive queue. Unimplemented.
+		fmt.Fprintf(&buf, "%08X:%08X ", 0, 0)
+
+		// Field: tr, tm->when. Always 0 for UDP.
+		fmt.Fprintf(&buf, "%02X:%08X ", 0, 0)
+
+		// Field: retrnsmt. Always 0 for UDP.
+		fmt.Fprintf(&buf, "%08X ", 0)
+
+		// Field: uid.
+		uattr, err := sfile.Dirent.Inode.UnstableAttr(ctx)
+		if err != nil {
+			log.Warningf("Failed to retrieve unstable attr for socket file: %v", err)
+			fmt.Fprintf(&buf, "%5d ", 0)
+		} else {
+			creds := auth.CredentialsFromContext(ctx)
+			fmt.Fprintf(&buf, "%5d ", uint32(uattr.Owner.UID.In(creds.UserNamespace).OrOverflow()))
+		}
+
+		// Field: timeout. Always 0 for UDP.
+		fmt.Fprintf(&buf, "%8d ", 0)
+
+		// Field: inode.
+		fmt.Fprintf(&buf, "%8d ", sfile.InodeID())
+
+		// Field: ref; reference count on the socket inode. Don't count the ref
+		// we obtain while deferencing the weakref to this socket.
+		fmt.Fprintf(&buf, "%d ", sfile.ReadRefs()-1)
+
+		// Field: Socket struct address. Redacted due to the same reason as
+		// the 'Num' field in /proc/net/unix, see netUnix.ReadSeqFileData.
+		fmt.Fprintf(&buf, "%#016p ", (*socket.Socket)(nil))
+
+		// Field: drops; number of dropped packets. Unimplemented.
+		fmt.Fprintf(&buf, "%d", 0)
+
+		fmt.Fprintf(&buf, "\n")
+
+		s.DecRef()
+	}
+
+	data := []seqfile.SeqData{
+		{
+			Buf:    []byte("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops             \n"),
 			Handle: n,
 		},
 		{

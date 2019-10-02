@@ -26,6 +26,31 @@
 namespace gvisor {
 namespace testing {
 
+// Possible values of the "st" field in a /proc/net/{tcp,udp} entry. Source:
+// Linux kernel, include/net/tcp_states.h.
+enum {
+  TCP_ESTABLISHED = 1,
+  TCP_SYN_SENT,
+  TCP_SYN_RECV,
+  TCP_FIN_WAIT1,
+  TCP_FIN_WAIT2,
+  TCP_TIME_WAIT,
+  TCP_CLOSE,
+  TCP_CLOSE_WAIT,
+  TCP_LAST_ACK,
+  TCP_LISTEN,
+  TCP_CLOSING,
+  TCP_NEW_SYN_RECV,
+
+  TCP_MAX_STATES
+};
+
+// Extracts the IP address from an inet sockaddr in network byte order.
+uint32_t IPFromInetSockaddr(const struct sockaddr* addr);
+
+// Extracts the port from an inet sockaddr in host byte order.
+uint16_t PortFromInetSockaddr(const struct sockaddr* addr);
+
 // InterfaceIndex returns the index of the named interface.
 PosixErrorOr<int> InterfaceIndex(std::string name);
 

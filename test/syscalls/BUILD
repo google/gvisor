@@ -305,6 +305,8 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:proc_pid_uid_gid_map_test")
 
+syscall_test(test = "//test/syscalls/linux:proc_net_test")
+
 syscall_test(
     size = "medium",
     test = "//test/syscalls/linux:pselect_test",
@@ -341,6 +343,11 @@ syscall_test(test = "//test/syscalls/linux:raw_socket_ipv4_test")
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:read_test",
+)
+
+syscall_test(
+    add_overlay = True,
+    test = "//test/syscalls/linux:readahead_test",
 )
 
 syscall_test(
@@ -691,8 +698,13 @@ syscall_test(
 
 syscall_test(test = "//test/syscalls/linux:proc_net_unix_test")
 
+syscall_test(test = "//test/syscalls/linux:proc_net_tcp_test")
+
+syscall_test(test = "//test/syscalls/linux:proc_net_udp_test")
+
 go_binary(
     name = "syscall_test_runner",
+    testonly = 1,
     srcs = ["syscall_test_runner.go"],
     data = [
         "//runsc",
@@ -700,7 +712,7 @@ go_binary(
     deps = [
         "//pkg/log",
         "//runsc/specutils",
-        "//runsc/test/testutil",
+        "//runsc/testutil",
         "//test/syscalls/gtest",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",

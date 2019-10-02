@@ -20,7 +20,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
+	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
@@ -505,4 +508,78 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// the restart into EINTR. We'll emulate that behaviour.
 	t.Debugf("Restart block missing in restart_syscall(2). Did ptrace inject a return value of ERESTART_RESTARTBLOCK?")
 	return 0, nil, syserror.EINTR
+}
+
+// sharedSignalfd is shared between the two calls.
+func sharedSignalfd(t *kernel.Task, fd int32, sigset usermem.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
+	// Copy in the signal mask.
+	mask, err := copyInSigSet(t, sigset, sigsetsize)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Always check for valid flags, even if not creating.
+	if flags&^(linux.SFD_NONBLOCK|linux.SFD_CLOEXEC) != 0 {
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Is this a change to an existing signalfd?
+	//
+	// The spec indicates that this should adjust the mask.
+	if fd != -1 {
+		file := t.GetFile(fd)
+		if file == nil {
+			return 0, nil, syserror.EBADF
+		}
+		defer file.DecRef()
+
+		// Is this a signalfd?
+		if s, ok := file.FileOperations.(*signalfd.SignalOperations); ok {
+			s.SetMask(mask)
+			return 0, nil, nil
+		}
+
+		// Not a signalfd.
+		return 0, nil, syserror.EINVAL
+	}
+
+	// Create a new file.
+	file, err := signalfd.New(t, mask)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer file.DecRef()
+
+	// Set appropriate flags.
+	file.SetFlags(fs.SettableFileFlags{
+		NonBlocking: flags&linux.SFD_NONBLOCK != 0,
+	})
+
+	// Create a new descriptor.
+	fd, err = t.NewFDFrom(0, file, kernel.FDFlags{
+		CloseOnExec: flags&linux.SFD_CLOEXEC != 0,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Done.
+	return uintptr(fd), nil, nil
+}
+
+// Signalfd implements the linux syscall signalfd(2).
+func Signalfd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	sigset := args[1].Pointer()
+	sigsetsize := args[2].SizeT()
+	return sharedSignalfd(t, fd, sigset, sigsetsize, 0)
+}
+
+// Signalfd4 implements the linux syscall signalfd4(2).
+func Signalfd4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	sigset := args[1].Pointer()
+	sigsetsize := args[2].SizeT()
+	flags := args[3].Int()
+	return sharedSignalfd(t, fd, sigset, sigsetsize, flags)
 }

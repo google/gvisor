@@ -43,12 +43,15 @@ type TTYFileOperations struct {
 	// fgProcessGroup is the foreground process group that is currently
 	// connected to this TTY.
 	fgProcessGroup *kernel.ProcessGroup
+
+	termios linux.KernelTermios
 }
 
 // newTTYFile returns a new fs.File that wraps a TTY FD.
 func newTTYFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags, iops *inodeOperations) *fs.File {
 	return fs.NewFile(ctx, dirent, flags, &TTYFileOperations{
 		fileOperations: fileOperations{iops: iops},
+		termios:        linux.DefaultSlaveTermios,
 	})
 }
 
@@ -97,9 +100,12 @@ func (t *TTYFileOperations) Write(ctx context.Context, file *fs.File, src userme
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// Are we allowed to do the write?
-	if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
-		return 0, err
+	// Check whether TOSTOP is enabled. This corresponds to the check in
+	// drivers/tty/n_tty.c:n_tty_write().
+	if t.termios.LEnabled(linux.TOSTOP) {
+		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
+			return 0, err
+		}
 	}
 	return t.fileOperations.Write(ctx, file, src, offset)
 }
@@ -144,6 +150,9 @@ func (t *TTYFileOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO
 			return 0, err
 		}
 		err := ioctlSetTermios(fd, ioctl, &termios)
+		if err == nil {
+			t.termios.FromTermios(termios)
+		}
 		return 0, err
 
 	case linux.TIOCGPGRP:

@@ -15,10 +15,10 @@
 # limitations under the License.
 
 if [ "$1" != configure ]; then
-    exit 0
+  exit 0
 fi
 
 if [ -f /etc/docker/daemon.json ]; then
-	/usr/libexec/runsc/dockercfg runtime-add runsc /usr/bin/runsc
-	systemctl restart docker
+  runsc install
+  systemctl restart docker || echo "unable to restart docker; you must do so manually." >&2
 fi

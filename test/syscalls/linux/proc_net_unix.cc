@@ -56,19 +56,44 @@ struct UnixEntry {
   std::string path;
 };
 
+// Abstract socket paths can have either trailing null bytes or '@'s as padding
+// at the end, depending on the linux version. This function strips any such
+// padding.
+void StripAbstractPathPadding(std::string* s) {
+  const char pad_char = s->back();
+  if (pad_char != '\0' && pad_char != '@') {
+    return;
+  }
+
+  const auto last_pos = s->find_last_not_of(pad_char);
+  if (last_pos != std::string::npos) {
+    s->resize(last_pos + 1);
+  }
+}
+
+// Precondition: addr must be a unix socket address (i.e. sockaddr_un) and
+// addr->sun_path must be null-terminated. This is always the case if addr comes
+// from Linux:
+//
+// Per man unix(7):
+//
+// "When the address of a pathname socket is returned (by [getsockname(2)]), its
+//  length is
+//
+//     offsetof(struct sockaddr_un, sun_path) + strlen(sun_path) + 1
+//
+//  and sun_path contains the null-terminated pathname."
 std::string ExtractPath(const struct sockaddr* addr) {
   const char* path =
       reinterpret_cast<const struct sockaddr_un*>(addr)->sun_path;
   // Note: sockaddr_un.sun_path is an embedded character array of length
   // UNIX_PATH_MAX, so we can always safely dereference the first 2 bytes below.
   //
-  // The kernel also enforces that the path is always null terminated.
+  // We also rely on the path being null-terminated.
   if (path[0] == 0) {
-    // Abstract socket paths are null padded to the end of the struct
-    // sockaddr. However, these null bytes may or may not show up in
-    // /proc/net/unix depending on the kernel version. Truncate after the first
-    // null byte (by treating path as a c-string).
-    return StrCat("@", &path[1]);
+    std::string abstract_path = StrCat("@", &path[1]);
+    StripAbstractPathPadding(&abstract_path);
+    return abstract_path;
   }
   return std::string(path);
 }
@@ -94,14 +119,6 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
     }
     if (line.empty()) {
       continue;
-    }
-
-    // Abstract socket paths can have trailing null bytes in them depending on
-    // the linux version. Strip off everything after a null byte, including the
-    // null byte.
-    std::size_t null_pos = line.find('\0');
-    if (null_pos != std::string::npos) {
-      line.erase(null_pos);
     }
 
     // Parse a single entry from /proc/net/unix.
@@ -151,6 +168,7 @@ PosixErrorOr<std::vector<UnixEntry>> ProcNetUnixEntries() {
     entry.path = "";
     if (fields.size() > 1) {
       entry.path = fields[1];
+      StripAbstractPathPadding(&entry.path);
     }
 
     entries.push_back(entry);
@@ -200,8 +218,8 @@ TEST(ProcNetUnix, FilesystemBindAcceptConnect) {
 
   std::string path1 = ExtractPath(sockets->first_addr());
   std::string path2 = ExtractPath(sockets->second_addr());
-  std::cout << StreamFormat("Server socket address: %s\n", path1);
-  std::cout << StreamFormat("Client socket address: %s\n", path2);
+  std::cerr << StreamFormat("Server socket address (path1): %s\n", path1);
+  std::cerr << StreamFormat("Client socket address (path2): %s\n", path2);
 
   std::vector<UnixEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());
@@ -224,8 +242,8 @@ TEST(ProcNetUnix, AbstractBindAcceptConnect) {
 
   std::string path1 = ExtractPath(sockets->first_addr());
   std::string path2 = ExtractPath(sockets->second_addr());
-  std::cout << StreamFormat("Server socket address: '%s'\n", path1);
-  std::cout << StreamFormat("Client socket address: '%s'\n", path2);
+  std::cerr << StreamFormat("Server socket address (path1): '%s'\n", path1);
+  std::cerr << StreamFormat("Client socket address (path2): '%s'\n", path2);
 
   std::vector<UnixEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcNetUnixEntries());

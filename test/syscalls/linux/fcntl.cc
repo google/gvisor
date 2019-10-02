@@ -17,9 +17,12 @@
 #include <syscall.h>
 #include <unistd.h>
 
+#include <string>
+
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/base/port.h"
+#include "absl/flags/flag.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
@@ -33,18 +36,19 @@
 #include "test/util/test_util.h"
 #include "test/util/timer_util.h"
 
-DEFINE_string(child_setlock_on, "",
-              "Contains the path to try to set a file lock on.");
-DEFINE_bool(child_setlock_write, false,
-            "Whether to set a writable lock (otherwise readable)");
-DEFINE_bool(blocking, false,
-            "Whether to set a blocking lock (otherwise non-blocking).");
-DEFINE_bool(retry_eintr, false, "Whether to retry in the subprocess on EINTR.");
-DEFINE_uint64(child_setlock_start, 0, "The value of struct flock start");
-DEFINE_uint64(child_setlock_len, 0, "The value of struct flock len");
-DEFINE_int32(socket_fd, -1,
-             "A socket to use for communicating more state back "
-             "to the parent.");
+ABSL_FLAG(std::string, child_setlock_on, "",
+          "Contains the path to try to set a file lock on.");
+ABSL_FLAG(bool, child_setlock_write, false,
+          "Whether to set a writable lock (otherwise readable)");
+ABSL_FLAG(bool, blocking, false,
+          "Whether to set a blocking lock (otherwise non-blocking).");
+ABSL_FLAG(bool, retry_eintr, false,
+          "Whether to retry in the subprocess on EINTR.");
+ABSL_FLAG(uint64_t, child_setlock_start, 0, "The value of struct flock start");
+ABSL_FLAG(uint64_t, child_setlock_len, 0, "The value of struct flock len");
+ABSL_FLAG(int32_t, socket_fd, -1,
+          "A socket to use for communicating more state back "
+          "to the parent.");
 
 namespace gvisor {
 namespace testing {
@@ -918,25 +922,26 @@ TEST(FcntlTest, GetOwn) {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (!FLAGS_child_setlock_on.empty()) {
-    int socket_fd = FLAGS_socket_fd;
-    int fd = open(FLAGS_child_setlock_on.c_str(), O_RDWR, 0666);
+  const std::string setlock_on = absl::GetFlag(FLAGS_child_setlock_on);
+  if (!setlock_on.empty()) {
+    int socket_fd = absl::GetFlag(FLAGS_socket_fd);
+    int fd = open(setlock_on.c_str(), O_RDWR, 0666);
     if (fd == -1 && errno != 0) {
       int err = errno;
-      std::cerr << "CHILD open " << FLAGS_child_setlock_on << " failed " << err
+      std::cerr << "CHILD open " << setlock_on << " failed " << err
                 << std::endl;
       exit(err);
     }
 
     struct flock fl;
-    if (FLAGS_child_setlock_write) {
+    if (absl::GetFlag(FLAGS_child_setlock_write)) {
       fl.l_type = F_WRLCK;
     } else {
       fl.l_type = F_RDLCK;
     }
     fl.l_whence = SEEK_SET;
-    fl.l_start = FLAGS_child_setlock_start;
-    fl.l_len = FLAGS_child_setlock_len;
+    fl.l_start = absl::GetFlag(FLAGS_child_setlock_start);
+    fl.l_len = absl::GetFlag(FLAGS_child_setlock_len);
 
     // Test the fcntl, no need to log, the error is unambiguously
     // from fcntl at this point.
@@ -946,8 +951,8 @@ int main(int argc, char** argv) {
     gvisor::testing::MonotonicTimer timer;
     timer.Start();
     do {
-      ret = fcntl(fd, FLAGS_blocking ? F_SETLKW : F_SETLK, &fl);
-    } while (FLAGS_retry_eintr && ret == -1 && errno == EINTR);
+      ret = fcntl(fd, absl::GetFlag(FLAGS_blocking) ? F_SETLKW : F_SETLK, &fl);
+    } while (absl::GetFlag(FLAGS_retry_eintr) && ret == -1 && errno == EINTR);
     auto usec = absl::ToInt64Microseconds(timer.Duration());
 
     if (ret == -1 && errno != 0) {

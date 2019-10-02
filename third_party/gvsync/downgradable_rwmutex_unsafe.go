@@ -57,9 +57,6 @@ func (rw *DowngradableRWMutex) RLock() {
 // RUnlock undoes a single RLock call.
 func (rw *DowngradableRWMutex) RUnlock() {
 	if RaceEnabled {
-		// TODO(jamieliu): Why does this need to be ReleaseMerge instead of
-		// Release? IIUC this establishes Unlock happens-before RUnlock, which
-		// seems unnecessary.
 		RaceReleaseMerge(unsafe.Pointer(&rw.writerSem))
 		RaceDisable()
 	}

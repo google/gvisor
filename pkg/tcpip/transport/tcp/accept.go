@@ -143,6 +143,15 @@ func decSynRcvdCount() {
 	synRcvdCount.Unlock()
 }
 
+// synCookiesInUse() returns true if the synRcvdCount is greater than
+// SynRcvdCountThreshold.
+func synCookiesInUse() bool {
+	synRcvdCount.Lock()
+	v := synRcvdCount.value
+	synRcvdCount.Unlock()
+	return v >= SynRcvdCountThreshold
+}
+
 // newListenContext creates a new listen context.
 func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, v6only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
 	l := &listenContext{
@@ -233,7 +242,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.initGSO()
 
 	// Register new endpoint so that packets are routed to it.
-	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.id, n, n.reusePort); err != nil {
+	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.id, n, n.reusePort, n.bindToDevice); err != nil {
 		n.Close()
 		return nil, err
 	}
@@ -446,6 +455,27 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			return
 		}
 
+		if !synCookiesInUse() {
+			// Send a reset as this is an ACK for which there is no
+			// half open connections and we are not using cookies
+			// yet.
+			//
+			// The only time we should reach here when a connection
+			// was opened and closed really quickly and a delayed
+			// ACK was received from the sender.
+			replyWithReset(s)
+			return
+		}
+
+		// Since SYN cookies are in use this is potentially an ACK to a
+		// SYN-ACK we sent but don't have a half open connection state
+		// as cookies are being used to protect against a potential SYN
+		// flood. In such cases validate the cookie and if valid create
+		// a fully connected endpoint and deliver to the accept queue.
+		//
+		// If not, silently drop the ACK to avoid leaking information
+		// when under a potential syn flood attack.
+		//
 		// Validate the cookie.
 		data, ok := ctx.isCookieValid(s.id, s.ackNumber-1, s.sequenceNumber-1)
 		if !ok || int(data) >= len(mssTable) {

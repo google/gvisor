@@ -25,19 +25,21 @@ import (
 
 	// Include filesystem types that OCI spec might mount.
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/dev"
-	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/host"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/proc"
-	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/sys"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
 	_ "gvisor.dev/gvisor/pkg/sentry/fs/tty"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fs/gofer"
+	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -259,6 +261,18 @@ func subtargets(root string, mnts []specs.Mount) []string {
 		}
 	}
 	return targets
+}
+
+func setupContainerFS(ctx context.Context, conf *Config, mntr *containerMounter, procArgs *kernel.CreateProcessArgs) error {
+	mns, err := mntr.setupFS(conf, procArgs)
+	if err != nil {
+		return err
+	}
+
+	// Set namespace here so that it can be found in ctx.
+	procArgs.MountNamespace = mns
+
+	return setExecutablePath(ctx, procArgs)
 }
 
 // setExecutablePath sets the procArgs.Filename by searching the PATH for an
@@ -500,33 +514,88 @@ func newContainerMounter(spec *specs.Spec, goferFDs []int, k *kernel.Kernel, hin
 	}
 }
 
-// setupChildContainer is used to set up the file system for non-root containers
-// and amend the procArgs accordingly. This is the main entry point for this
-// rest of functions in this file. procArgs are passed by reference and the
-// FDMap field is modified. It dups stdioFDs.
-func (c *containerMounter) setupChildContainer(conf *Config, procArgs *kernel.CreateProcessArgs) error {
-	// Setup a child container.
-	log.Infof("Creating new process in child container.")
+// processHints processes annotations that container hints about how volumes
+// should be mounted (e.g. a volume shared between containers). It must be
+// called for the root container only.
+func (c *containerMounter) processHints(conf *Config) error {
+	ctx := c.k.SupervisorContext()
+	for _, hint := range c.hints.mounts {
+		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
+		inode, err := c.mountSharedMaster(ctx, conf, hint)
+		if err != nil {
+			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
+		}
+		hint.root = inode
+	}
+	return nil
+}
 
-	// Create a new root inode and mount namespace for the container.
-	rootCtx := c.k.SupervisorContext()
-	rootInode, err := c.createRootMount(rootCtx, conf)
+// setupFS is used to set up the file system for all containers. This is the
+// main entry point method, with most of the other being internal only. It
+// returns the mount namespace that is created for the container.
+func (c *containerMounter) setupFS(conf *Config, procArgs *kernel.CreateProcessArgs) (*fs.MountNamespace, error) {
+	log.Infof("Configuring container's file system")
+
+	// Create context with root credentials to mount the filesystem (the current
+	// user may not be privileged enough).
+	rootProcArgs := *procArgs
+	rootProcArgs.WorkingDirectory = "/"
+	rootProcArgs.Credentials = auth.NewRootCredentials(procArgs.Credentials.UserNamespace)
+	rootProcArgs.Umask = 0022
+	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
+	rootCtx := rootProcArgs.NewContext(c.k)
+
+	mns, err := c.createMountNamespace(rootCtx, conf)
 	if err != nil {
-		return fmt.Errorf("creating filesystem for container: %v", err)
+		return nil, err
 	}
-	mns, err := fs.NewMountNamespace(rootCtx, rootInode)
+
+	// Set namespace here so that it can be found in rootCtx.
+	rootProcArgs.MountNamespace = mns
+
+	if err := c.mountSubmounts(rootCtx, conf, mns); err != nil {
+		return nil, err
+	}
+	return mns, nil
+}
+
+func (c *containerMounter) createMountNamespace(ctx context.Context, conf *Config) (*fs.MountNamespace, error) {
+	rootInode, err := c.createRootMount(ctx, conf)
 	if err != nil {
-		return fmt.Errorf("creating new mount namespace for container: %v", err)
+		return nil, fmt.Errorf("creating filesystem for container: %v", err)
 	}
-	procArgs.MountNamespace = mns
+	mns, err := fs.NewMountNamespace(ctx, rootInode)
+	if err != nil {
+		return nil, fmt.Errorf("creating new mount namespace for container: %v", err)
+	}
+	return mns, nil
+}
+
+func (c *containerMounter) mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace) error {
 	root := mns.Root()
 	defer root.DecRef()
 
-	// Mount all submounts.
-	if err := c.mountSubmounts(rootCtx, conf, mns, root); err != nil {
+	for _, m := range c.mounts {
+		log.Debugf("Mounting %q to %q, type: %s, options: %s", m.Source, m.Destination, m.Type, m.Options)
+		if hint := c.hints.findMount(m); hint != nil && hint.isSupported() {
+			if err := c.mountSharedSubmount(ctx, mns, root, m, hint); err != nil {
+				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, m.Destination, err)
+			}
+		} else {
+			if err := c.mountSubmount(ctx, conf, mns, root, m); err != nil {
+				return fmt.Errorf("mount submount %q: %v", m.Destination, err)
+			}
+		}
+	}
+
+	if err := c.mountTmp(ctx, conf, mns, root); err != nil {
+		return fmt.Errorf("mount submount %q: %v", "tmp", err)
+	}
+
+	if err := c.checkDispenser(); err != nil {
 		return err
 	}
-	return c.checkDispenser()
+	return nil
 }
 
 func (c *containerMounter) checkDispenser() error {
@@ -534,39 +603,6 @@ func (c *containerMounter) checkDispenser() error {
 		return fmt.Errorf("not all gofer FDs were consumed, remaining: %v", c.fds)
 	}
 	return nil
-}
-
-// setupRootContainer creates a mount namespace containing the root filesystem
-// and all mounts. 'rootCtx' is used to walk directories to find mount points.
-// The 'setMountNS' callback is called after the mount namespace is created and
-// will get a reference on that namespace. The callback must ensure that the
-// rootCtx has the provided mount namespace.
-func (c *containerMounter) setupRootContainer(userCtx context.Context, rootCtx context.Context, conf *Config, setMountNS func(*fs.MountNamespace)) error {
-	for _, hint := range c.hints.mounts {
-		log.Infof("Mounting master of shared mount %q from %q type %q", hint.name, hint.mount.Source, hint.mount.Type)
-		inode, err := c.mountSharedMaster(rootCtx, conf, hint)
-		if err != nil {
-			return fmt.Errorf("mounting shared master %q: %v", hint.name, err)
-		}
-		hint.root = inode
-	}
-
-	rootInode, err := c.createRootMount(rootCtx, conf)
-	if err != nil {
-		return fmt.Errorf("creating root mount: %v", err)
-	}
-	mns, err := fs.NewMountNamespace(userCtx, rootInode)
-	if err != nil {
-		return fmt.Errorf("creating root mount namespace: %v", err)
-	}
-	setMountNS(mns)
-
-	root := mns.Root()
-	defer root.DecRef()
-	if err := c.mountSubmounts(rootCtx, conf, mns, root); err != nil {
-		return fmt.Errorf("mounting submounts: %v", err)
-	}
-	return c.checkDispenser()
 }
 
 // mountSharedMaster mounts the master of a volume that is shared among
@@ -682,25 +718,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
 	return fsName, opts, useOverlay, err
-}
-
-func (c *containerMounter) mountSubmounts(ctx context.Context, conf *Config, mns *fs.MountNamespace, root *fs.Dirent) error {
-	for _, m := range c.mounts {
-		if hint := c.hints.findMount(m); hint != nil && hint.isSupported() {
-			if err := c.mountSharedSubmount(ctx, mns, root, m, hint); err != nil {
-				return fmt.Errorf("mount shared mount %q to %q: %v", hint.name, m.Destination, err)
-			}
-		} else {
-			if err := c.mountSubmount(ctx, conf, mns, root, m); err != nil {
-				return fmt.Errorf("mount submount %q: %v", m.Destination, err)
-			}
-		}
-	}
-
-	if err := c.mountTmp(ctx, conf, mns, root); err != nil {
-		return fmt.Errorf("mount submount %q: %v", "tmp", err)
-	}
-	return nil
 }
 
 // mountSubmount mounts volumes inside the container's root. Because mounts may

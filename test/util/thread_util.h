@@ -16,7 +16,9 @@
 #define GVISOR_TEST_UTIL_THREAD_UTIL_H_
 
 #include <pthread.h>
+#ifdef __linux__
 #include <sys/syscall.h>
+#endif
 #include <unistd.h>
 
 #include <functional>
@@ -66,13 +68,13 @@ class ScopedThread {
 
  private:
   void CreateThread() {
-    TEST_PCHECK_MSG(
-        pthread_create(&pt_, /* attr = */ nullptr,
-                       +[](void* arg) -> void* {
-                         return static_cast<ScopedThread*>(arg)->f_();
-                       },
-                       this) == 0,
-        "thread creation failed");
+    TEST_PCHECK_MSG(pthread_create(
+                        &pt_, /* attr = */ nullptr,
+                        +[](void* arg) -> void* {
+                          return static_cast<ScopedThread*>(arg)->f_();
+                        },
+                        this) == 0,
+                    "thread creation failed");
   }
 
   std::function<void*()> f_;
@@ -81,7 +83,9 @@ class ScopedThread {
   void* retval_ = nullptr;
 };
 
+#ifdef __linux__
 inline pid_t gettid() { return syscall(SYS_gettid); }
+#endif
 
 }  // namespace testing
 }  // namespace gvisor

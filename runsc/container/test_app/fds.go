@@ -24,7 +24,7 @@ import (
 	"flag"
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 const fileContents = "foobarbaz"
@@ -60,7 +60,7 @@ func (fds *fdSender) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 		log.Fatalf("socket flag must be set")
 	}
 
-	dir, err := ioutil.TempDir(testutil.TmpDir(), "")
+	dir, err := ioutil.TempDir("", "")
 	if err != nil {
 		log.Fatalf("TempDir failed: %v", err)
 	}

@@ -23,6 +23,16 @@
 namespace gvisor {
 namespace testing {
 
+uint32_t IPFromInetSockaddr(const struct sockaddr* addr) {
+  auto* in_addr = reinterpret_cast<const struct sockaddr_in*>(addr);
+  return in_addr->sin_addr.s_addr;
+}
+
+uint16_t PortFromInetSockaddr(const struct sockaddr* addr) {
+  auto* in_addr = reinterpret_cast<const struct sockaddr_in*>(addr);
+  return ntohs(in_addr->sin_port);
+}
+
 PosixErrorOr<int> InterfaceIndex(std::string name) {
   // TODO(igudger): Consider using netlink.
   ifreq req = {};

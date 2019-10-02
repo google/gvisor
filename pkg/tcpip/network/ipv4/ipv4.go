@@ -14,9 +14,9 @@
 
 // Package ipv4 contains the implementation of the ipv4 network protocol. To use
 // it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing ipv4.ProtocolName (or "ipv4") as one of the
-// network protocols when calling stack.New(). Then endpoints can be created
-// by passing ipv4.ProtocolNumber as the network protocol number when calling
+// activated on the stack by passing ipv4.NewProtocol() as one of the network
+// protocols when calling stack.New(). Then endpoints can be created by passing
+// ipv4.ProtocolNumber as the network protocol number when calling
 // Stack.NewEndpoint().
 package ipv4
 
@@ -32,9 +32,6 @@ import (
 )
 
 const (
-	// ProtocolName is the string representation of the ipv4 protocol name.
-	ProtocolName = "ipv4"
-
 	// ProtocolNumber is the ipv4 protocol number.
 	ProtocolNumber = header.IPv4ProtocolNumber
 
@@ -53,6 +50,7 @@ type endpoint struct {
 	linkEP        stack.LinkEndpoint
 	dispatcher    stack.TransportDispatcher
 	fragmentation *fragmentation.Fragmentation
+	protocol      *protocol
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
@@ -64,6 +62,7 @@ func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		linkEP:        linkEP,
 		dispatcher:    dispatcher,
 		fragmentation: fragmentation.NewFragmentation(fragmentation.HighFragThreshold, fragmentation.LowFragThreshold, fragmentation.DefaultReassembleTimeout),
+		protocol:      p,
 	}
 
 	return e, nil
@@ -204,7 +203,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	if length > header.IPv4MaximumHeaderSize+8 {
 		// Packets of 68 bytes or less are required by RFC 791 to not be
 		// fragmented, so we only assign ids to larger packets.
-		id = atomic.AddUint32(&ids[hashRoute(r, protocol)%buckets], 1)
+		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, protocol, e.protocol.hashIV)%buckets], 1)
 	}
 	ip.Encode(&header.IPv4Fields{
 		IHL:         header.IPv4MinimumSize,
@@ -267,7 +266,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.Vect
 		if payload.Size() > header.IPv4MaximumHeaderSize+8 {
 			// Packets of 68 bytes or less are required by RFC 791 to not be
 			// fragmented, so we only assign ids to larger packets.
-			id = atomic.AddUint32(&ids[hashRoute(r, 0 /* protocol */)%buckets], 1)
+			id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, 0 /* protocol */, e.protocol.hashIV)%buckets], 1)
 		}
 		ip.SetID(uint16(id))
 	}
@@ -325,14 +324,9 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 // Close cleans up resources associated with the endpoint.
 func (e *endpoint) Close() {}
 
-type protocol struct{}
-
-// NewProtocol creates a new protocol ipv4 protocol descriptor. This is exported
-// only for tests that short-circuit the stack. Regular use of the protocol is
-// done via the stack, which gets a protocol descriptor from the init() function
-// below.
-func NewProtocol() stack.NetworkProtocol {
-	return &protocol{}
+type protocol struct {
+	ids    []uint32
+	hashIV uint32
 }
 
 // Number returns the ipv4 protocol number.
@@ -378,7 +372,7 @@ func calculateMTU(mtu uint32) uint32 {
 // hashRoute calculates a hash value for the given route. It uses the source &
 // destination address, the transport protocol number, and a random initial
 // value (generated once on initialization) to generate the hash.
-func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber) uint32 {
+func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber, hashIV uint32) uint32 {
 	t := r.LocalAddress
 	a := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
 	t = r.RemoteAddress
@@ -386,22 +380,16 @@ func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber) uint32 {
 	return hash.Hash3Words(a, b, uint32(protocol), hashIV)
 }
 
-var (
-	ids    []uint32
-	hashIV uint32
-)
-
-func init() {
-	ids = make([]uint32, buckets)
+// NewProtocol returns an IPv4 network protocol.
+func NewProtocol() stack.NetworkProtocol {
+	ids := make([]uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.
 	r := hash.RandN32(1 + buckets)
 	for i := range ids {
 		ids[i] = r[i]
 	}
-	hashIV = r[buckets]
+	hashIV := r[buckets]
 
-	stack.RegisterNetworkProtocolFactory(ProtocolName, func() stack.NetworkProtocol {
-		return &protocol{}
-	})
+	return &protocol{ids: ids, hashIV: hashIV}
 }

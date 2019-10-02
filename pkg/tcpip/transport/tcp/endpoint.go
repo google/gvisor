@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -279,6 +281,9 @@ type endpoint struct {
 
 	// reusePort is set to true if SO_REUSEPORT is enabled.
 	reusePort bool
+
+	// bindToDevice is set to the NIC on which to bind or disabled if 0.
+	bindToDevice tcpip.NICID
 
 	// delay enables Nagle's algorithm.
 	//
@@ -564,11 +569,11 @@ func (e *endpoint) Close() {
 	// in Listen() when trying to register.
 	if e.state == StateListen && e.isPortReserved {
 		if e.isRegistered {
-			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
 			e.isRegistered = false
 		}
 
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -625,12 +630,12 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e)
+		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
 		e.isRegistered = false
 	}
 
 	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -806,7 +811,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
-func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -821,47 +826,52 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		return 0, nil, err
 	}
 
-	e.sndBufMu.Unlock()
-	e.mu.RUnlock()
-
-	// Nothing to do if the buffer is empty.
-	if p.Size() == 0 {
-		return 0, nil, nil
+	// We can release locks while copying data.
+	//
+	// This is not possible if atomic is set, because we can't allow the
+	// available buffer space to be consumed by some other caller while we
+	// are copying data in.
+	if !opts.Atomic {
+		e.sndBufMu.Unlock()
+		e.mu.RUnlock()
 	}
 
-	// Copy in memory without holding sndBufMu so that worker goroutine can
-	// make progress independent of this operation.
-	v, perr := p.Get(avail)
-	if perr != nil {
+	// Fetch data.
+	v, perr := p.Payload(avail)
+	if perr != nil || len(v) == 0 {
+		if opts.Atomic { // See above.
+			e.sndBufMu.Unlock()
+			e.mu.RUnlock()
+		}
+		// Note that perr may be nil if len(v) == 0.
 		return 0, nil, perr
 	}
 
-	e.mu.RLock()
-	e.sndBufMu.Lock()
+	if !opts.Atomic { // See above.
+		e.mu.RLock()
+		e.sndBufMu.Lock()
 
-	// Because we released the lock before copying, check state again
-	// to make sure the endpoint is still in a valid state for a
-	// write.
-	avail, err = e.isEndpointWritableLocked()
-	if err != nil {
-		e.sndBufMu.Unlock()
-		e.mu.RUnlock()
-		return 0, nil, err
-	}
+		// Because we released the lock before copying, check state again
+		// to make sure the endpoint is still in a valid state for a write.
+		avail, err = e.isEndpointWritableLocked()
+		if err != nil {
+			e.sndBufMu.Unlock()
+			e.mu.RUnlock()
+			return 0, nil, err
+		}
 
-	// Discard any excess data copied in due to avail being reduced due to a
-	// simultaneous write call to the socket.
-	if avail < len(v) {
-		v = v[:avail]
+		// Discard any excess data copied in due to avail being reduced due
+		// to a simultaneous write call to the socket.
+		if avail < len(v) {
+			v = v[:avail]
+		}
 	}
 
 	// Add data to the send queue.
-	l := len(v)
 	s := newSegmentFromView(&e.route, e.id, v)
-	e.sndBufUsed += l
-	e.sndBufInQueue += seqnum.Size(l)
+	e.sndBufUsed += len(v)
+	e.sndBufInQueue += seqnum.Size(len(v))
 	e.sndQueue.PushBack(s)
-
 	e.sndBufMu.Unlock()
 	// Release the endpoint lock to prevent deadlocks due to lock
 	// order inversion when acquiring workMu.
@@ -875,7 +885,8 @@ func (e *endpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-cha
 		// Let the protocol goroutine do the work.
 		e.sndWaker.Assert()
 	}
-	return int64(l), nil, nil
+
+	return int64(len(v)), nil, nil
 }
 
 // Peek reads data without consuming it from the endpoint.
@@ -946,62 +957,9 @@ func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
 	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
 }
 
-// SetSockOpt sets a socket option.
-func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	switch v := opt.(type) {
-	case tcpip.DelayOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.delay, 0)
-
-			// Handle delayed data.
-			e.sndWaker.Assert()
-		} else {
-			atomic.StoreUint32(&e.delay, 1)
-		}
-		return nil
-
-	case tcpip.CorkOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.cork, 0)
-
-			// Handle the corked data.
-			e.sndWaker.Assert()
-		} else {
-			atomic.StoreUint32(&e.cork, 1)
-		}
-		return nil
-
-	case tcpip.ReuseAddressOption:
-		e.mu.Lock()
-		e.reuseAddr = v != 0
-		e.mu.Unlock()
-		return nil
-
-	case tcpip.ReusePortOption:
-		e.mu.Lock()
-		e.reusePort = v != 0
-		e.mu.Unlock()
-		return nil
-
-	case tcpip.QuickAckOption:
-		if v == 0 {
-			atomic.StoreUint32(&e.slowAck, 1)
-		} else {
-			atomic.StoreUint32(&e.slowAck, 0)
-		}
-		return nil
-
-	case tcpip.MaxSegOption:
-		userMSS := v
-		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
-			return tcpip.ErrInvalidOptionValue
-		}
-		e.mu.Lock()
-		e.userMSS = int(userMSS)
-		e.mu.Unlock()
-		e.notifyProtocolGoroutine(notifyMSSChanged)
-		return nil
-
+// SetSockOptInt sets a socket option.
+func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	switch opt {
 	case tcpip.ReceiveBufferSizeOption:
 		// Make sure the receive buffer size is within the min and max
 		// allowed.
@@ -1063,6 +1021,82 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.sndBufMu.Lock()
 		e.sndBufSize = size
 		e.sndBufMu.Unlock()
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// SetSockOpt sets a socket option.
+func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	switch v := opt.(type) {
+	case tcpip.DelayOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.delay, 0)
+
+			// Handle delayed data.
+			e.sndWaker.Assert()
+		} else {
+			atomic.StoreUint32(&e.delay, 1)
+		}
+		return nil
+
+	case tcpip.CorkOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.cork, 0)
+
+			// Handle the corked data.
+			e.sndWaker.Assert()
+		} else {
+			atomic.StoreUint32(&e.cork, 1)
+		}
+		return nil
+
+	case tcpip.ReuseAddressOption:
+		e.mu.Lock()
+		e.reuseAddr = v != 0
+		e.mu.Unlock()
+		return nil
+
+	case tcpip.ReusePortOption:
+		e.mu.Lock()
+		e.reusePort = v != 0
+		e.mu.Unlock()
+		return nil
+
+	case tcpip.BindToDeviceOption:
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		if v == "" {
+			e.bindToDevice = 0
+			return nil
+		}
+		for nicid, nic := range e.stack.NICInfo() {
+			if nic.Name == string(v) {
+				e.bindToDevice = nicid
+				return nil
+			}
+		}
+		return tcpip.ErrUnknownDevice
+
+	case tcpip.QuickAckOption:
+		if v == 0 {
+			atomic.StoreUint32(&e.slowAck, 1)
+		} else {
+			atomic.StoreUint32(&e.slowAck, 0)
+		}
+		return nil
+
+	case tcpip.MaxSegOption:
+		userMSS := v
+		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
+			return tcpip.ErrInvalidOptionValue
+		}
+		e.mu.Lock()
+		e.userMSS = int(userMSS)
+		e.mu.Unlock()
+		e.notifyProtocolGoroutine(notifyMSSChanged)
 		return nil
 
 	case tcpip.V6OnlyOption:
@@ -1176,6 +1210,18 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
+	case tcpip.SendBufferSizeOption:
+		e.sndBufMu.Lock()
+		v := e.sndBufSize
+		e.sndBufMu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		e.rcvListMu.Lock()
+		v := e.rcvBufSize
+		e.rcvListMu.Unlock()
+		return v, nil
+
 	}
 	return -1, tcpip.ErrUnknownProtocolOption
 }
@@ -1196,18 +1242,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		// actual current MSS. Netstack just returns the defaultMSS
 		// always for now.
 		*o = header.TCPDefaultMSS
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		e.sndBufMu.Lock()
-		*o = tcpip.SendBufferSizeOption(e.sndBufSize)
-		e.sndBufMu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		e.rcvListMu.Lock()
-		*o = tcpip.ReceiveBufferSizeOption(e.rcvBufSize)
-		e.rcvListMu.Unlock()
 		return nil
 
 	case *tcpip.DelayOption:
@@ -1244,6 +1278,16 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		if v {
 			*o = 1
 		}
+		return nil
+
+	case *tcpip.BindToDeviceOption:
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		if nic, ok := e.stack.NICInfo()[e.bindToDevice]; ok {
+			*o = tcpip.BindToDeviceOption(nic.Name)
+			return nil
+		}
+		*o = ""
 		return nil
 
 	case *tcpip.QuickAckOption:
@@ -1452,7 +1496,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 
 	if e.id.LocalPort != 0 {
 		// The endpoint is bound to a port, attempt to register it.
-		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e, e.reusePort)
+		err := e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, e.id, e, e.reusePort, e.bindToDevice)
 		if err != nil {
 			return err
 		}
@@ -1462,17 +1506,32 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 		// address/port for both local and remote (otherwise this
 		// endpoint would be trying to connect to itself).
 		sameAddr := e.id.LocalAddress == e.id.RemoteAddress
-		if _, err := e.stack.PickEphemeralPort(func(p uint16) (bool, *tcpip.Error) {
+
+		// Calculate a port offset based on the destination IP/port and
+		// src IP to ensure that for a given tuple (srcIP, destIP,
+		// destPort) the offset used as a starting point is the same to
+		// ensure that we can cycle through the port space effectively.
+		h := jenkins.Sum32(e.stack.PortSeed())
+		h.Write([]byte(e.id.LocalAddress))
+		h.Write([]byte(e.id.RemoteAddress))
+		portBuf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(portBuf, e.id.RemotePort)
+		h.Write(portBuf)
+		portOffset := h.Sum32()
+
+		if _, err := e.stack.PickEphemeralPortStable(portOffset, func(p uint16) (bool, *tcpip.Error) {
 			if sameAddr && p == e.id.RemotePort {
 				return false, nil
 			}
-			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p, false) {
+			// reusePort is false below because connect cannot reuse a port even if
+			// reusePort was set.
+			if !e.stack.IsPortAvailable(netProtos, ProtocolNumber, e.id.LocalAddress, p, false /* reusePort */, e.bindToDevice) {
 				return false, nil
 			}
 
 			id := e.id
 			id.LocalPort = p
-			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort) {
+			switch e.stack.RegisterTransportEndpoint(nicid, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice) {
 			case nil:
 				e.id = id
 				return true, nil
@@ -1490,7 +1549,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool, run bool) (er
 	// before Connect: in such a case we don't want to hold on to
 	// reservations anymore.
 	if e.isPortReserved {
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, origID.LocalAddress, origID.LocalPort)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, origID.LocalAddress, origID.LocalPort, e.bindToDevice)
 		e.isPortReserved = false
 	}
 
@@ -1634,7 +1693,7 @@ func (e *endpoint) Listen(backlog int) (err *tcpip.Error) {
 	}
 
 	// Register the endpoint.
-	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.reusePort); err != nil {
+	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.reusePort, e.bindToDevice); err != nil {
 		return err
 	}
 
@@ -1715,7 +1774,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 		}
 	}
 
-	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.reusePort)
+	port, err := e.stack.ReservePort(netProtos, ProtocolNumber, addr.Addr, addr.Port, e.reusePort, e.bindToDevice)
 	if err != nil {
 		return err
 	}
@@ -1725,16 +1784,16 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 	e.id.LocalPort = port
 
 	// Any failures beyond this point must remove the port registration.
-	defer func() {
+	defer func(bindToDevice tcpip.NICID) {
 		if err != nil {
-			e.stack.ReleasePort(netProtos, ProtocolNumber, addr.Addr, port)
+			e.stack.ReleasePort(netProtos, ProtocolNumber, addr.Addr, port, bindToDevice)
 			e.isPortReserved = false
 			e.effectiveNetProtos = nil
 			e.id.LocalPort = 0
 			e.id.LocalAddress = ""
 			e.boundNICID = 0
 		}
-	}()
+	}(e.bindToDevice)
 
 	// If an address is specified, we must ensure that it's one of our
 	// local addresses.

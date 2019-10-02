@@ -25,7 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/boot"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 // TestSharedVolume checks that modifications to a volume mount are propagated

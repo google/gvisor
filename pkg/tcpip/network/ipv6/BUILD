@@ -1,4 +1,5 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(licenses = ["notice"])
 
@@ -23,7 +24,11 @@ go_library(
 go_test(
     name = "ipv6_test",
     size = "small",
-    srcs = ["icmp_test.go"],
+    srcs = [
+        "icmp_test.go",
+        "ipv6_test.go",
+        "ndp_test.go",
+    ],
     embed = [":ipv6"],
     deps = [
         "//pkg/tcpip",
@@ -33,6 +38,7 @@ go_test(
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/udp",
         "//pkg/waiter",
     ],
 )

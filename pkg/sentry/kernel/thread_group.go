@@ -511,8 +511,9 @@ type itimerRealListener struct {
 }
 
 // Notify implements ktime.TimerListener.Notify.
-func (l *itimerRealListener) Notify(exp uint64) {
+func (l *itimerRealListener) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	l.tg.SendSignal(SignalInfoPriv(linux.SIGALRM))
+	return ktime.Setting{}, false
 }
 
 // Destroy implements ktime.TimerListener.Destroy.

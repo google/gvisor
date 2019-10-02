@@ -401,17 +401,16 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 			defer cleanup()
 
-			// setupRootContainer needs to find root from the context after the
-			// namespace is created.
-			var mns *fs.MountNamespace
-			setMountNS := func(m *fs.MountNamespace) {
-				mns = m
-				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
-			}
 			mntr := newContainerMounter(&tc.spec, []int{sandEnd}, nil, &podMountHints{})
-			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
-				t.Fatalf("createMountNamespace test case %q failed: %v", tc.name, err)
+			mns, err := mntr.createMountNamespace(ctx, conf)
+			if err != nil {
+				t.Fatalf("failed to create mount namespace: %v", err)
 			}
+			ctx = fs.WithRoot(ctx, mns.Root())
+			if err := mntr.mountSubmounts(ctx, conf, mns); err != nil {
+				t.Fatalf("failed to create mount namespace: %v", err)
+			}
+
 			root := mns.Root()
 			defer root.DecRef()
 			for _, p := range tc.expectedPaths {

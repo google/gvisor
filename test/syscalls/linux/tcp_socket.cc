@@ -579,7 +579,7 @@ TEST_P(TcpSocketTest, TcpInq) {
     if (size == sizeof(buf)) {
       break;
     }
-    usleep(10000);
+    absl::SleepFor(absl::Milliseconds(10));
   }
 
   struct msghdr msg = {};
@@ -606,6 +606,25 @@ TEST_P(TcpSocketTest, TcpInq) {
 
     int inq = 0;
     memcpy(&inq, CMSG_DATA(cmsg), sizeof(int));
+    ASSERT_EQ(inq, size);
+  }
+}
+
+TEST_P(TcpSocketTest, Tiocinq) {
+  char buf[1024];
+  size_t size = sizeof(buf);
+  ASSERT_THAT(RetryEINTR(write)(s_, buf, size), SyscallSucceedsWithValue(size));
+
+  uint32_t seed = time(nullptr);
+  const size_t max_chunk = size / 10;
+  while (size > 0) {
+    size_t chunk = (rand_r(&seed) % max_chunk) + 1;
+    ssize_t read = RetryEINTR(recvfrom)(t_, buf, chunk, 0, nullptr, nullptr);
+    ASSERT_THAT(read, SyscallSucceeds());
+    size -= read;
+
+    int inq = 0;
+    ASSERT_THAT(ioctl(t_, TIOCINQ, &inq), SyscallSucceeds());
     ASSERT_EQ(inq, size);
   }
 }

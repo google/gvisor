@@ -87,8 +87,8 @@ func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tc
 	if err != nil {
 		t.Fatal("Failed to create socket pair:", err)
 	}
-	_, underlyingEndpoint := fdbased.NewInjectable(pair[1], 6500, stack.CapabilityNone)
+	underlyingEndpoint := fdbased.NewInjectable(pair[1], 6500, stack.CapabilityNone)
 	routes := map[tcpip.Address]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
-	_, endpoint := NewInjectableEndpoint(routes)
+	endpoint := NewInjectableEndpoint(routes)
 	return endpoint, os.NewFile(uintptr(pair[0]), "test route end"), dstIP
 }

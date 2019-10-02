@@ -38,7 +38,7 @@ func TestFastRecovery(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 7
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
@@ -190,7 +190,7 @@ func TestExponentialIncreaseDuringSlowStart(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 7
 	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))
@@ -232,7 +232,7 @@ func TestCongestionAvoidance(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 7
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
@@ -336,7 +336,7 @@ func TestCubicCongestionAvoidance(t *testing.T) {
 
 	enableCUBIC(t, c)
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 7
 	data := buffer.NewView(2 * maxPayload * (tcp.InitialCwnd << (iterations + 1)))
@@ -445,7 +445,7 @@ func TestRetransmit(t *testing.T) {
 	c := context.New(t, uint32(header.TCPMinimumSize+header.IPv4MinimumSize+maxPayload))
 	defer c.Cleanup()
 
-	c.CreateConnected(789, 30000, nil)
+	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
 	const iterations = 7
 	data := buffer.NewView(maxPayload * (tcp.InitialCwnd << (iterations + 1)))

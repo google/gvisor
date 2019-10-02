@@ -31,6 +31,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd"
@@ -67,6 +68,7 @@ var (
 	network            = flag.String("network", "sandbox", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
 	gso                = flag.Bool("gso", true, "enable generic segmenation offload")
 	fileAccess         = flag.String("file-access", "exclusive", "specifies which filesystem to use for the root mount: exclusive (default), shared. Volume mounts are always shared.")
+	fsGoferHostUDS     = flag.Bool("fsgofer-host-uds", false, "Allow the gofer to mount Unix Domain Sockets.")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable overlay. All modifications are stored in memory inside the sandbox.")
 	watchdogAction     = flag.String("watchdog-action", "log", "sets what action the watchdog takes when triggered: log (default), panic.")
 	panicSignal        = flag.Int("panic-signal", -1, "register signal handling that panics. Usually set to SIGUSR2(12) to troubleshoot hangs. -1 disables it.")
@@ -74,9 +76,11 @@ var (
 	netRaw             = flag.Bool("net-raw", false, "enable raw sockets. When false, raw sockets are disabled by removing CAP_NET_RAW from containers (`runsc exec` will still be able to utilize raw sockets). Raw sockets allow malicious containers to craft packets and potentially attack the network.")
 	numNetworkChannels = flag.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	rootless           = flag.Bool("rootless", false, "it allows the sandbox to be started with a user that is not root. Sandbox and Gofer processes may run with same privileges as current user.")
+	referenceLeakMode  = flag.String("ref-leak-mode", "disabled", "sets reference leak check mode: disabled (default), log-names, log-traces.")
 
 	// Test flags, not to be used outside tests, ever.
 	testOnlyAllowRunAsCurrentUserWithoutChroot = flag.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
+	testOnlyTestNameEnv                        = flag.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
 )
 
 func main() {
@@ -85,6 +89,11 @@ func main() {
 	help.Register(new(cmd.Syscalls))
 	subcommands.Register(help, "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
+
+	// Installation helpers.
+	const helperGroup = "helpers"
+	subcommands.Register(new(cmd.Install), helperGroup)
+	subcommands.Register(new(cmd.Uninstall), helperGroup)
 
 	// Register user-facing runsc commands.
 	subcommands.Register(new(cmd.Checkpoint), "")
@@ -169,6 +178,15 @@ func main() {
 		cmd.Fatalf("num_network_channels must be > 0, got: %d", *numNetworkChannels)
 	}
 
+	refsLeakMode, err := boot.MakeRefsLeakMode(*referenceLeakMode)
+	if err != nil {
+		cmd.Fatalf("%v", err)
+	}
+
+	// Sets the reference leak check mode. Also set it in config below to
+	// propagate it to child processes.
+	refs.SetLeakMode(refsLeakMode)
+
 	// Create a new Config from the flags.
 	conf := &boot.Config{
 		RootDir:            *rootDir,
@@ -178,6 +196,7 @@ func main() {
 		DebugLog:           *debugLog,
 		DebugLogFormat:     *debugLogFormat,
 		FileAccess:         fsAccess,
+		FSGoferHostUDS:     *fsGoferHostUDS,
 		Overlay:            *overlay,
 		Network:            netType,
 		GSO:                *gso,
@@ -192,8 +211,10 @@ func main() {
 		NumNetworkChannels: *numNetworkChannels,
 		Rootless:           *rootless,
 		AlsoLogToStderr:    *alsoLogToStderr,
+		ReferenceLeakMode:  refsLeakMode,
 
 		TestOnlyAllowRunAsCurrentUserWithoutChroot: *testOnlyAllowRunAsCurrentUserWithoutChroot,
+		TestOnlyTestNameEnv:                        *testOnlyTestNameEnv,
 	}
 	if len(*straceSyscalls) != 0 {
 		conf.StraceSyscalls = strings.Split(*straceSyscalls, ",")
@@ -220,14 +241,14 @@ func main() {
 		// want with them. Since Docker and Containerd both eat boot's stderr, we
 		// dup our stderr to the provided log FD so that panics will appear in the
 		// logs, rather than just disappear.
-		if err := syscall.Dup2(int(f.Fd()), int(os.Stderr.Fd())); err != nil {
+		if err := syscall.Dup3(int(f.Fd()), int(os.Stderr.Fd()), 0); err != nil {
 			cmd.Fatalf("error dup'ing fd %d to stderr: %v", f.Fd(), err)
 		}
 
 		e = newEmitter(*debugLogFormat, f)
 
 	} else if *debugLog != "" {
-		f, err := specutils.DebugLogFile(*debugLog, subcommand)
+		f, err := specutils.DebugLogFile(*debugLog, subcommand, "" /* name */)
 		if err != nil {
 			cmd.Fatalf("error opening debug log file in %q: %v", *debugLog, err)
 		}

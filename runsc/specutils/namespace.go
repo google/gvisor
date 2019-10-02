@@ -33,19 +33,19 @@ import (
 func nsCloneFlag(nst specs.LinuxNamespaceType) uintptr {
 	switch nst {
 	case specs.IPCNamespace:
-		return syscall.CLONE_NEWIPC
+		return unix.CLONE_NEWIPC
 	case specs.MountNamespace:
-		return syscall.CLONE_NEWNS
+		return unix.CLONE_NEWNS
 	case specs.NetworkNamespace:
-		return syscall.CLONE_NEWNET
+		return unix.CLONE_NEWNET
 	case specs.PIDNamespace:
-		return syscall.CLONE_NEWPID
+		return unix.CLONE_NEWPID
 	case specs.UTSNamespace:
-		return syscall.CLONE_NEWUTS
+		return unix.CLONE_NEWUTS
 	case specs.UserNamespace:
-		return syscall.CLONE_NEWUSER
+		return unix.CLONE_NEWUSER
 	case specs.CgroupNamespace:
-		panic("cgroup namespace has no associated clone flag")
+		return unix.CLONE_NEWCGROUP
 	default:
 		panic(fmt.Sprintf("unknown namespace %v", nst))
 	}

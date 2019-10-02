@@ -33,7 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserror"
 
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 const (
@@ -584,7 +584,7 @@ func TestIterDirents(t *testing.T) {
 			// Ignore the inode number and offset of dirents because those are likely to
 			// change as the underlying image changes.
 			cmpIgnoreFields := cmp.FilterPath(func(p cmp.Path) bool {
-				return p.String() == "Ino" || p.String() == "Off"
+				return p.String() == "Ino" || p.String() == "NextOff"
 			}, cmp.Ignore())
 			if diff := cmp.Diff(cb.dirents, test.want, cmpIgnoreFields); diff != "" {
 				t.Errorf("dirents mismatch (-want +got):\n%s", diff)

@@ -1,5 +1,7 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
 
 package(licenses = ["notice"])
 
@@ -19,6 +21,12 @@ proto_library(
     name = "metric_proto",
     srcs = ["metric.proto"],
     visibility = ["//:sandbox"],
+)
+
+cc_proto_library(
+    name = "metric_cc_proto",
+    visibility = ["//:sandbox"],
+    deps = [":metric_proto"],
 )
 
 go_proto_library(

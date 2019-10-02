@@ -13,6 +13,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/bits",
         "//pkg/log",
         "//pkg/sentry/kernel/auth",
         "@com_github_cenkalti_backoff//:go_default_library",

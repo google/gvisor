@@ -14,9 +14,9 @@
 
 // Package ipv6 contains the implementation of the ipv6 network protocol. To use
 // it in the networking stack, this package must be added to the project, and
-// activated on the stack by passing ipv6.ProtocolName (or "ipv6") as one of the
-// network protocols when calling stack.New(). Then endpoints can be created
-// by passing ipv6.ProtocolNumber as the network protocol number when calling
+// activated on the stack by passing ipv6.NewProtocol() as one of the network
+// protocols when calling stack.New(). Then endpoints can be created by passing
+// ipv6.ProtocolNumber as the network protocol number when calling
 // Stack.NewEndpoint().
 package ipv6
 
@@ -28,9 +28,6 @@ import (
 )
 
 const (
-	// ProtocolName is the string representation of the ipv6 protocol name.
-	ProtocolName = "ipv6"
-
 	// ProtocolNumber is the ipv6 protocol number.
 	ProtocolNumber = header.IPv6ProtocolNumber
 
@@ -160,14 +157,6 @@ func (*endpoint) Close() {}
 
 type protocol struct{}
 
-// NewProtocol creates a new protocol ipv6 protocol descriptor. This is exported
-// only for tests that short-circuit the stack. Regular use of the protocol is
-// done via the stack, which gets a protocol descriptor from the init() function
-// below.
-func NewProtocol() stack.NetworkProtocol {
-	return &protocol{}
-}
-
 // Number returns the ipv6 protocol number.
 func (p *protocol) Number() tcpip.NetworkProtocolNumber {
 	return ProtocolNumber
@@ -221,8 +210,7 @@ func calculateMTU(mtu uint32) uint32 {
 	return maxPayloadSize
 }
 
-func init() {
-	stack.RegisterNetworkProtocolFactory(ProtocolName, func() stack.NetworkProtocol {
-		return &protocol{}
-	})
+// NewProtocol returns an IPv6 network protocol.
+func NewProtocol() stack.NetworkProtocol {
+	return &protocol{}
 }

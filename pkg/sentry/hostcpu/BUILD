@@ -1,4 +1,5 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(licenses = ["notice"])
 
@@ -6,6 +7,7 @@ go_library(
     name = "hostcpu",
     srcs = [
         "getcpu_amd64.s",
+        "getcpu_arm64.s",
         "hostcpu.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/hostcpu",

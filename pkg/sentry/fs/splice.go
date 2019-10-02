@@ -18,7 +18,6 @@ import (
 	"io"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/secio"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -33,146 +32,131 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 	}
 
 	// Check whether or not the objects being sliced are stream-oriented
-	// (i.e. pipes or sockets). If yes, we elide checks and offset locks.
-	srcPipe := IsPipe(src.Dirent.Inode.StableAttr) || IsSocket(src.Dirent.Inode.StableAttr)
-	dstPipe := IsPipe(dst.Dirent.Inode.StableAttr) || IsSocket(dst.Dirent.Inode.StableAttr)
+	// (i.e. pipes or sockets). For all stream-oriented files and files
+	// where a specific offiset is not request, we acquire the file mutex.
+	// This has two important side effects. First, it provides the standard
+	// protection against concurrent writes that would mutate the offset.
+	// Second, it prevents Splice deadlocks. Only internal anonymous files
+	// implement the ReadFrom and WriteTo methods directly, and since such
+	// anonymous files are referred to by a unique fs.File object, we know
+	// that the file mutex takes strict precedence over internal locks.
+	// Since we enforce lock ordering here, we can't deadlock by using
+	// using a file in two different splice operations simultaneously.
+	srcPipe := !IsRegular(src.Dirent.Inode.StableAttr)
+	dstPipe := !IsRegular(dst.Dirent.Inode.StableAttr)
+	dstAppend := !dstPipe && dst.Flags().Append
+	srcLock := srcPipe || !opts.SrcOffset
+	dstLock := dstPipe || !opts.DstOffset || dstAppend
 
-	if !dstPipe && !opts.DstOffset && !srcPipe && !opts.SrcOffset {
+	switch {
+	case srcLock && dstLock:
 		switch {
 		case dst.UniqueID < src.UniqueID:
 			// Acquire dst first.
 			if !dst.mu.Lock(ctx) {
 				return 0, syserror.ErrInterrupted
 			}
-			defer dst.mu.Unlock()
 			if !src.mu.Lock(ctx) {
+				dst.mu.Unlock()
 				return 0, syserror.ErrInterrupted
 			}
-			defer src.mu.Unlock()
 		case dst.UniqueID > src.UniqueID:
 			// Acquire src first.
 			if !src.mu.Lock(ctx) {
 				return 0, syserror.ErrInterrupted
 			}
-			defer src.mu.Unlock()
 			if !dst.mu.Lock(ctx) {
+				src.mu.Unlock()
 				return 0, syserror.ErrInterrupted
 			}
-			defer dst.mu.Unlock()
 		case dst.UniqueID == src.UniqueID:
 			// Acquire only one lock; it's the same file. This is a
 			// bit of a edge case, but presumably it's possible.
 			if !dst.mu.Lock(ctx) {
 				return 0, syserror.ErrInterrupted
 			}
-			defer dst.mu.Unlock()
+			srcLock = false // Only need one unlock.
 		}
 		// Use both offsets (locked).
 		opts.DstStart = dst.offset
 		opts.SrcStart = src.offset
-	} else if !dstPipe && !opts.DstOffset {
+	case dstLock:
 		// Acquire only dst.
 		if !dst.mu.Lock(ctx) {
 			return 0, syserror.ErrInterrupted
 		}
-		defer dst.mu.Unlock()
 		opts.DstStart = dst.offset // Safe: locked.
-	} else if !srcPipe && !opts.SrcOffset {
+	case srcLock:
 		// Acquire only src.
 		if !src.mu.Lock(ctx) {
 			return 0, syserror.ErrInterrupted
 		}
-		defer src.mu.Unlock()
 		opts.SrcStart = src.offset // Safe: locked.
 	}
 
-	// Check append-only mode and the limit.
-	if !dstPipe {
+	var err error
+	if dstAppend {
 		unlock := dst.Dirent.Inode.lockAppendMu(dst.Flags().Append)
 		defer unlock()
-		if dst.Flags().Append {
-			if opts.DstOffset {
-				// We need to acquire the lock.
-				if !dst.mu.Lock(ctx) {
-					return 0, syserror.ErrInterrupted
-				}
-				defer dst.mu.Unlock()
-			}
-			// Figure out the appropriate offset to use.
-			if err := dst.offsetForAppend(ctx, &opts.DstStart); err != nil {
-				return 0, err
-			}
-		}
 
+		// Figure out the appropriate offset to use.
+		err = dst.offsetForAppend(ctx, &opts.DstStart)
+	}
+	if err == nil && !dstPipe {
 		// Enforce file limits.
 		limit, ok := dst.checkLimit(ctx, opts.DstStart)
 		switch {
 		case ok && limit == 0:
-			return 0, syserror.ErrExceedsFileSizeLimit
+			err = syserror.ErrExceedsFileSizeLimit
 		case ok && limit < opts.Length:
 			opts.Length = limit // Cap the write.
 		}
 	}
+	if err != nil {
+		if dstLock {
+			dst.mu.Unlock()
+		}
+		if srcLock {
+			src.mu.Unlock()
+		}
+		return 0, err
+	}
+
+	// Construct readers and writers for the splice. This is used to
+	// provide a safer locking path for the WriteTo/ReadFrom operations
+	// (since they will otherwise go through public interface methods which
+	// conflict with locking done above), and simplifies the fallback path.
+	w := &lockedWriter{
+		Ctx:    ctx,
+		File:   dst,
+		Offset: opts.DstStart,
+	}
+	r := &lockedReader{
+		Ctx:    ctx,
+		File:   src,
+		Offset: opts.SrcStart,
+	}
 
 	// Attempt to do a WriteTo; this is likely the most efficient.
-	//
-	// The underlying implementation may be able to donate buffers.
-	newOpts := SpliceOpts{
-		Length:    opts.Length,
-		SrcStart:  opts.SrcStart,
-		SrcOffset: !srcPipe,
-		Dup:       opts.Dup,
-		DstStart:  opts.DstStart,
-		DstOffset: !dstPipe,
+	n, err := src.FileOperations.WriteTo(ctx, src, w, opts.Length, opts.Dup)
+	if n == 0 && err == syserror.ENOSYS && !opts.Dup {
+		// Attempt as a ReadFrom. If a WriteTo, a ReadFrom may also be
+		// more efficient than a copy if buffers are cached or readily
+		// available. (It's unlikely that they can actually be donated).
+		n, err = dst.FileOperations.ReadFrom(ctx, dst, r, opts.Length)
 	}
-	n, err := src.FileOperations.WriteTo(ctx, src, dst, newOpts)
-	if n == 0 && err != nil {
-		// Attempt as a ReadFrom. If a WriteTo, a ReadFrom may also
-		// be more efficient than a copy if buffers are cached or readily
-		// available. (It's unlikely that they can actually be donate
-		n, err = dst.FileOperations.ReadFrom(ctx, dst, src, newOpts)
-	}
-	if n == 0 && err != nil {
-		// If we've failed up to here, and at least one of the sources
-		// is a pipe or socket, then we can't properly support dup.
-		// Return an error indicating that this operation is not
-		// supported.
-		if (srcPipe || dstPipe) && newOpts.Dup {
-			return 0, syserror.EINVAL
-		}
 
-		// We failed to splice the files. But that's fine; we just fall
-		// back to a slow path in this case. This copies without doing
-		// any mode changes, so should still be more efficient.
-		var (
-			r io.Reader
-			w io.Writer
-		)
-		fw := &lockedWriter{
-			Ctx:  ctx,
-			File: dst,
-		}
-		if newOpts.DstOffset {
-			// Use the provided offset.
-			w = secio.NewOffsetWriter(fw, newOpts.DstStart)
-		} else {
-			// Writes will proceed with no offset.
-			w = fw
-		}
-		fr := &lockedReader{
-			Ctx:  ctx,
-			File: src,
-		}
-		if newOpts.SrcOffset {
-			// Limit to the given offset and length.
-			r = io.NewSectionReader(fr, opts.SrcStart, opts.Length)
-		} else {
-			// Limit just to the given length.
-			r = &io.LimitedReader{fr, opts.Length}
-		}
-
-		// Copy between the two.
-		n, err = io.Copy(w, r)
+	// Support one last fallback option, but only if at least one of
+	// the source and destination are regular files. This is because
+	// if we block at some point, we could lose data. If the source is
+	// not a pipe then reading is not destructive; if the destination
+	// is a regular file, then it is guaranteed not to block writing.
+	if n == 0 && err == syserror.ENOSYS && !opts.Dup && (!dstPipe || !srcPipe) {
+		// Fallback to an in-kernel copy.
+		n, err = io.Copy(w, &io.LimitedReader{
+			R: r,
+			N: opts.Length,
+		})
 	}
 
 	// Update offsets, if required.
@@ -183,6 +167,14 @@ func Splice(ctx context.Context, dst *File, src *File, opts SpliceOpts) (int64, 
 		if !srcPipe && !opts.SrcOffset {
 			atomic.StoreInt64(&src.offset, src.offset+n)
 		}
+	}
+
+	// Drop locks.
+	if dstLock {
+		dst.mu.Unlock()
+	}
+	if srcLock {
+		src.mu.Unlock()
 	}
 
 	return n, err

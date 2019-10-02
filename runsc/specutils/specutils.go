@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
@@ -240,6 +242,15 @@ func AllCapabilities() *specs.LinuxCapabilities {
 	}
 }
 
+// AllCapabilitiesUint64 returns a bitmask containing all capabilities set.
+func AllCapabilitiesUint64() uint64 {
+	var rv uint64
+	for _, cap := range capFromName {
+		rv |= bits.MaskOf64(int(cap))
+	}
+	return rv
+}
+
 var capFromName = map[string]linux.Capability{
 	"CAP_CHOWN":            linux.CAP_CHOWN,
 	"CAP_DAC_OVERRIDE":     linux.CAP_DAC_OVERRIDE,
@@ -398,13 +409,15 @@ func WaitForReady(pid int, timeout time.Duration, ready func() (bool, error)) er
 //   - %TIMESTAMP%: is replaced with a timestamp using the following format:
 //			<yyyymmdd-hhmmss.uuuuuu>
 //	 - %COMMAND%: is replaced with 'command'
-func DebugLogFile(logPattern, command string) (*os.File, error) {
+//	 - %TEST%: is replaced with 'test' (omitted by default)
+func DebugLogFile(logPattern, command, test string) (*os.File, error) {
 	if strings.HasSuffix(logPattern, "/") {
 		// Default format: <debug-log>/runsc.log.<yyyymmdd-hhmmss.uuuuuu>.<command>
 		logPattern += "runsc.log.%TIMESTAMP%.%COMMAND%"
 	}
 	logPattern = strings.Replace(logPattern, "%TIMESTAMP%", time.Now().Format("20060102-150405.000000"), -1)
 	logPattern = strings.Replace(logPattern, "%COMMAND%", command, -1)
+	logPattern = strings.Replace(logPattern, "%TEST%", test, -1)
 
 	dir := filepath.Dir(logPattern)
 	if err := os.MkdirAll(dir, 0775); err != nil {
@@ -502,4 +515,54 @@ func RetryEintr(f func() (uintptr, uintptr, error)) (uintptr, uintptr, error) {
 			return r1, r2, err
 		}
 	}
+}
+
+// GetOOMScoreAdj reads the given process' oom_score_adj
+func GetOOMScoreAdj(pid int) (int, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/oom_score_adj", pid))
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(data)))
+}
+
+// GetParentPid gets the parent process ID of the specified PID.
+func GetParentPid(pid int) (int, error) {
+	data, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, err
+	}
+
+	var cpid string
+	var name string
+	var state string
+	var ppid int
+	// Parse after the binary name.
+	_, err = fmt.Sscanf(string(data),
+		"%v %v %v %d",
+		// cpid is ignored.
+		&cpid,
+		// name is ignored.
+		&name,
+		// state is ignored.
+		&state,
+		&ppid)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return ppid, nil
+}
+
+// EnvVar looks for a varible value in the env slice assuming the following
+// format: "NAME=VALUE".
+func EnvVar(env []string, name string) (string, bool) {
+	prefix := name + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return strings.TrimPrefix(e, prefix), true
+		}
+	}
+	return "", false
 }

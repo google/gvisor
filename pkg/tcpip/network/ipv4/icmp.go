@@ -15,8 +15,6 @@
 package ipv4
 
 import (
-	"encoding/binary"
-
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -117,7 +115,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			e.handleControl(stack.ControlPortUnreachable, 0, vv)
 
 		case header.ICMPv4FragmentationNeeded:
-			mtu := uint32(binary.BigEndian.Uint16(v[header.ICMPv4PayloadOffset+2:]))
+			mtu := uint32(h.MTU())
 			e.handleControl(stack.ControlPacketTooBig, calculateMTU(mtu), vv)
 		}
 

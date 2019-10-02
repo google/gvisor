@@ -21,6 +21,7 @@
 #include <csignal>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -31,8 +32,8 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid, 65534, "scratch UID");
-DEFINE_int32(scratch_gid, 65534, "scratch GID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "scratch GID");
 
 using ::testing::Ge;
 
@@ -255,8 +256,8 @@ TEST(KillTest, ProcessGroups) {
 TEST(KillTest, ChildDropsPrivsCannotKill) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
 
-  int uid = FLAGS_scratch_uid;
-  int gid = FLAGS_scratch_gid;
+  const int uid = absl::GetFlag(FLAGS_scratch_uid);
+  const int gid = absl::GetFlag(FLAGS_scratch_gid);
 
   // Create the child that drops privileges and tries to kill the parent.
   pid_t pid = fork();
@@ -331,8 +332,8 @@ TEST(KillTest, CanSIGCONTSameSession) {
   EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
       << "status " << status;
 
-  int uid = FLAGS_scratch_uid;
-  int gid = FLAGS_scratch_gid;
+  const int uid = absl::GetFlag(FLAGS_scratch_uid);
+  const int gid = absl::GetFlag(FLAGS_scratch_gid);
 
   // Drop privileges only in child process, or else this parent process won't be
   // able to open some log files after the test ends.

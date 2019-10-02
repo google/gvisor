@@ -279,7 +279,7 @@ func (h *Harness) NewSocket() Generator {
 
 // Finish completes all checks and shuts down the server.
 func (h *Harness) Finish() {
-	h.clientSocket.Close()
+	h.clientSocket.Shutdown()
 	h.wg.Wait()
 	h.mockCtrl.Finish()
 }
@@ -315,7 +315,7 @@ func NewHarness(t *testing.T) (*Harness, *p9.Client) {
 	}()
 
 	// Create the client.
-	client, err := p9.NewClient(clientSocket, 1024, p9.HighestVersionString())
+	client, err := p9.NewClient(clientSocket, p9.DefaultMessageSize, p9.HighestVersionString())
 	if err != nil {
 		serverSocket.Close()
 		clientSocket.Close()

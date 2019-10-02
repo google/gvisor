@@ -343,7 +343,7 @@ func TestRemoveExtraRefs(t *testing.T) {
 			}
 			d := f.Dirent
 
-			if err := test.root.Remove(contexttest.Context(t), test.root, name); err != nil {
+			if err := test.root.Remove(contexttest.Context(t), test.root, name, false /* dirPath */); err != nil {
 				t.Fatalf("root.Remove(root, %q) failed: %v", name, err)
 			}
 

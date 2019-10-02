@@ -50,7 +50,7 @@ TEST(JobControlRootTest, StealTTY) {
   // of 1.
   pid_t child = fork();
   if (!child) {
-    TEST_PCHECK(setsid() >= 0);
+    ASSERT_THAT(setsid(), SyscallSucceeds());
     // We shouldn't be able to steal the terminal with the wrong arg value.
     TEST_PCHECK(ioctl(slave.get(), TIOCSCTTY, 0));
     // We should be able to steal it here.

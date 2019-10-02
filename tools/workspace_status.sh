@@ -14,4 +14,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-echo VERSION $(git describe --always --tags --abbrev=12 --dirty)
+# The STABLE_ prefix will trigger a re-link if it changes.
+echo STABLE_VERSION $(git describe --always --tags --abbrev=12 --dirty)

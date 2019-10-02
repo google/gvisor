@@ -15,8 +15,6 @@
 package stack
 
 import (
-	"sync"
-
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -109,7 +107,7 @@ type TransportProtocol interface {
 	//
 	// The return value indicates whether the packet was well-formed (for
 	// stats purposes only).
-	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView) bool
+	HandleUnknownDestinationPacket(r *Route, id TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -297,6 +295,15 @@ type LinkEndpoint interface {
 	// IsAttached returns whether a NetworkDispatcher is attached to the
 	// endpoint.
 	IsAttached() bool
+
+	// Wait waits for any worker goroutines owned by the endpoint to stop.
+	//
+	// For now, requesting that an endpoint's worker goroutine(s) stop is
+	// implementation specific.
+	//
+	// Wait will not block if the endpoint hasn't started any goroutines
+	// yet, even if it might later.
+	Wait()
 }
 
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
@@ -359,73 +366,11 @@ type LinkAddressCache interface {
 	RemoveWaker(nicid tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
 }
 
-// TransportProtocolFactory functions are used by the stack to instantiate
-// transport protocols.
-type TransportProtocolFactory func() TransportProtocol
-
-// NetworkProtocolFactory provides methods to be used by the stack to
-// instantiate network protocols.
-type NetworkProtocolFactory func() NetworkProtocol
-
 // UnassociatedEndpointFactory produces endpoints for writing packets not
 // associated with a particular transport protocol. Such endpoints can be used
 // to write arbitrary packets that include the IP header.
 type UnassociatedEndpointFactory interface {
 	NewUnassociatedRawEndpoint(stack *Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error)
-}
-
-var (
-	transportProtocols = make(map[string]TransportProtocolFactory)
-	networkProtocols   = make(map[string]NetworkProtocolFactory)
-
-	unassociatedFactory UnassociatedEndpointFactory
-
-	linkEPMu           sync.RWMutex
-	nextLinkEndpointID tcpip.LinkEndpointID = 1
-	linkEndpoints                           = make(map[tcpip.LinkEndpointID]LinkEndpoint)
-)
-
-// RegisterTransportProtocolFactory registers a new transport protocol factory
-// with the stack so that it becomes available to users of the stack. This
-// function is intended to be called by init() functions of the protocols.
-func RegisterTransportProtocolFactory(name string, p TransportProtocolFactory) {
-	transportProtocols[name] = p
-}
-
-// RegisterNetworkProtocolFactory registers a new network protocol factory with
-// the stack so that it becomes available to users of the stack. This function
-// is intended to be called by init() functions of the protocols.
-func RegisterNetworkProtocolFactory(name string, p NetworkProtocolFactory) {
-	networkProtocols[name] = p
-}
-
-// RegisterUnassociatedFactory registers a factory to produce endpoints not
-// associated with any particular transport protocol. This function is intended
-// to be called by init() functions of the protocols.
-func RegisterUnassociatedFactory(f UnassociatedEndpointFactory) {
-	unassociatedFactory = f
-}
-
-// RegisterLinkEndpoint register a link-layer protocol endpoint and returns an
-// ID that can be used to refer to it.
-func RegisterLinkEndpoint(linkEP LinkEndpoint) tcpip.LinkEndpointID {
-	linkEPMu.Lock()
-	defer linkEPMu.Unlock()
-
-	v := nextLinkEndpointID
-	nextLinkEndpointID++
-
-	linkEndpoints[v] = linkEP
-
-	return v
-}
-
-// FindLinkEndpoint finds the link endpoint associated with the given ID.
-func FindLinkEndpoint(id tcpip.LinkEndpointID) LinkEndpoint {
-	linkEPMu.RLock()
-	defer linkEPMu.RUnlock()
-
-	return linkEndpoints[id]
 }
 
 // GSOType is the type of GSO segments.

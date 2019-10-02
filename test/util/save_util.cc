@@ -16,8 +16,8 @@
 
 #include <stddef.h>
 #include <stdlib.h>
-#include <sys/syscall.h>
 #include <unistd.h>
+
 #include <atomic>
 #include <cerrno>
 
@@ -61,13 +61,11 @@ void DisableSave::reset() {
   }
 }
 
-void MaybeSave() {
-  if (CooperativeSaveEnabled() && !save_disable.load()) {
-    int orig_errno = errno;
-    syscall(SYS_create_module, nullptr, 0);
-    errno = orig_errno;
-  }
+namespace internal {
+bool ShouldSave() {
+  return CooperativeSaveEnabled() && (save_disable.load() == 0);
 }
+}  // namespace internal
 
 }  // namespace testing
 }  // namespace gvisor

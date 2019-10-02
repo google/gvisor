@@ -1,3 +1,6 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//test/syscalls:build_defs.bzl", "select_for_linux")
+
 package(
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
@@ -139,7 +142,11 @@ cc_library(
 cc_library(
     name = "save_util",
     testonly = 1,
-    srcs = ["save_util.cc"],
+    srcs = ["save_util.cc"] +
+           select_for_linux(
+               ["save_util_linux.cc"],
+               ["save_util_other.cc"],
+           ),
     hdrs = ["save_util.h"],
 )
 
@@ -232,8 +239,9 @@ cc_library(
         ":logging",
         ":posix_error",
         ":save_util",
-        "@com_github_gflags_gflags//:gflags",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
@@ -314,5 +322,16 @@ cc_library(
         ":logging",
         ":posix_error",
         ":test_util",
+    ],
+)
+
+cc_library(
+    name = "uid_util",
+    testonly = 1,
+    srcs = ["uid_util.cc"],
+    hdrs = ["uid_util.h"],
+    deps = [
+        ":posix_error",
+        ":save_util",
     ],
 )

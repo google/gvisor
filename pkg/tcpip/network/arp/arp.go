@@ -16,9 +16,9 @@
 // IPv4 addresses into link-local MAC addresses, and advertises IPv4
 // addresses of its stack with the local network.
 //
-// To use it in the networking stack, pass arp.ProtocolName as one of the
-// network protocols when calling stack.New. Then add an "arp" address to
-// every NIC on the stack that should respond to ARP requests. That is:
+// To use it in the networking stack, pass arp.NewProtocol() as one of the
+// network protocols when calling stack.New. Then add an "arp" address to every
+// NIC on the stack that should respond to ARP requests. That is:
 //
 //	if err := s.AddAddress(1, arp.ProtocolNumber, "arp"); err != nil {
 //		// handle err
@@ -33,9 +33,6 @@ import (
 )
 
 const (
-	// ProtocolName is the string representation of the ARP protocol name.
-	ProtocolName = "arp"
-
 	// ProtocolNumber is the ARP protocol number.
 	ProtocolNumber = header.ARPProtocolNumber
 
@@ -112,11 +109,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 		copy(pkt.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(pkt.ProtocolAddressTarget(), h.ProtocolAddressSender())
 		e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
-		fallthrough // also fill the cache from requests
 	case header.ARPReply:
-		addr := tcpip.Address(h.ProtocolAddressSender())
-		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
-		e.linkAddrCache.AddLinkAddress(e.nicid, addr, linkAddr)
 	}
 }
 
@@ -204,8 +197,7 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 
 var broadcastMAC = tcpip.LinkAddress([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 
-func init() {
-	stack.RegisterNetworkProtocolFactory(ProtocolName, func() stack.NetworkProtocol {
-		return &protocol{}
-	})
+// NewProtocol returns an ARP network protocol.
+func NewProtocol() stack.NetworkProtocol {
+	return &protocol{}
 }

@@ -20,6 +20,8 @@ import (
 	"sync"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 )
@@ -77,6 +79,47 @@ type Client struct {
 	// fidPool is the collection of available fids.
 	fidPool pool
 
+	// messageSize is the maximum total size of a message.
+	messageSize uint32
+
+	// payloadSize is the maximum payload size of a read or write.
+	//
+	// For large reads and writes this means that the read or write is
+	// broken up into buffer-size/payloadSize requests.
+	payloadSize uint32
+
+	// version is the agreed upon version X of 9P2000.L.Google.X.
+	// version 0 implies 9P2000.L.
+	version uint32
+
+	// closedWg is marked as done when the Client.watch() goroutine, which is
+	// responsible for closing channels and the socket fd, returns.
+	closedWg sync.WaitGroup
+
+	// sendRecv is the transport function.
+	//
+	// This is determined dynamically based on whether or not the server
+	// supports flipcall channels (preferred as it is faster and more
+	// efficient, and does not require tags).
+	sendRecv func(message, message) error
+
+	// -- below corresponds to sendRecvChannel --
+
+	// channelsMu protects channels.
+	channelsMu sync.Mutex
+
+	// channelsWg counts the number of channels for which channel.active ==
+	// true.
+	channelsWg sync.WaitGroup
+
+	// channels is the set of all initialized channels.
+	channels []*channel
+
+	// availableChannels is a FIFO of inactive channels.
+	availableChannels []*channel
+
+	// -- below corresponds to sendRecvLegacy --
+
 	// pending is the set of pending messages.
 	pending   map[Tag]*response
 	pendingMu sync.Mutex
@@ -89,25 +132,12 @@ type Client struct {
 	// Whoever writes to this channel is permitted to call recv. When
 	// finished calling recv, this channel should be emptied.
 	recvr chan bool
-
-	// messageSize is the maximum total size of a message.
-	messageSize uint32
-
-	// payloadSize is the maximum payload size of a read or write
-	// request.  For large reads and writes this means that the
-	// read or write is broken up into buffer-size/payloadSize
-	// requests.
-	payloadSize uint32
-
-	// version is the agreed upon version X of 9P2000.L.Google.X.
-	// version 0 implies 9P2000.L.
-	version uint32
 }
 
 // NewClient creates a new client.  It performs a Tversion exchange with
 // the server to assert that messageSize is ok to use.
 //
-// You should not use the same socket for multiple clients.
+// If NewClient succeeds, ownership of socket is transferred to the new Client.
 func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client, error) {
 	// Need at least one byte of payload.
 	if messageSize <= msgRegistry.largestFixedSize {
@@ -138,8 +168,15 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 		return nil, ErrBadVersionString
 	}
 	for {
+		// Always exchange the version using the legacy version of the
+		// protocol. If the protocol supports flipcall, then we switch
+		// our sendRecv function to use that functionality.  Otherwise,
+		// we stick to sendRecvLegacy.
 		rversion := Rversion{}
-		err := c.sendRecv(&Tversion{Version: versionString(requested), MSize: messageSize}, &rversion)
+		err := c.sendRecvLegacy(&Tversion{
+			Version: versionString(requested),
+			MSize:   messageSize,
+		}, &rversion)
 
 		// The server told us to try again with a lower version.
 		if err == syscall.EAGAIN {
@@ -165,7 +202,153 @@ func NewClient(socket *unet.Socket, messageSize uint32, version string) (*Client
 		c.version = version
 		break
 	}
+
+	// Can we switch to use the more advanced channels and create
+	// independent channels for communication? Prefer it if possible.
+	if versionSupportsFlipcall(c.version) {
+		// Attempt to initialize IPC-based communication.
+		for i := 0; i < channelsPerClient; i++ {
+			if err := c.openChannel(i); err != nil {
+				log.Warningf("error opening flipcall channel: %v", err)
+				break // Stop.
+			}
+		}
+		if len(c.channels) >= 1 {
+			// At least one channel created.
+			c.sendRecv = c.sendRecvChannel
+		} else {
+			// Channel setup failed; fallback.
+			c.sendRecv = c.sendRecvLegacy
+		}
+	} else {
+		// No channels available: use the legacy mechanism.
+		c.sendRecv = c.sendRecvLegacy
+	}
+
+	// Ensure that the socket and channels are closed when the socket is shut
+	// down.
+	c.closedWg.Add(1)
+	go c.watch(socket) // S/R-SAFE: not relevant.
+
 	return c, nil
+}
+
+// watch watches the given socket and releases resources on hangup events.
+//
+// This is intended to be called as a goroutine.
+func (c *Client) watch(socket *unet.Socket) {
+	defer c.closedWg.Done()
+
+	events := []unix.PollFd{
+		unix.PollFd{
+			Fd:     int32(socket.FD()),
+			Events: unix.POLLHUP | unix.POLLRDHUP,
+		},
+	}
+
+	// Wait for a shutdown event.
+	for {
+		n, err := unix.Ppoll(events, nil, nil)
+		if err == syscall.EINTR || err == syscall.EAGAIN {
+			continue
+		}
+		if err != nil {
+			log.Warningf("p9.Client.watch(): %v", err)
+			break
+		}
+		if n != 1 {
+			log.Warningf("p9.Client.watch(): got %d events, wanted 1", n)
+		}
+		break
+	}
+
+	// Set availableChannels to nil so that future calls to c.sendRecvChannel()
+	// don't attempt to activate a channel, and concurrent calls to
+	// c.sendRecvChannel() don't mark released channels as available.
+	c.channelsMu.Lock()
+	c.availableChannels = nil
+
+	// Shut down all active channels.
+	for _, ch := range c.channels {
+		if ch.active {
+			log.Debugf("shutting down active channel@%p...", ch)
+			ch.Shutdown()
+		}
+	}
+	c.channelsMu.Unlock()
+
+	// Wait for active channels to become inactive.
+	c.channelsWg.Wait()
+
+	// Close all channels.
+	c.channelsMu.Lock()
+	for _, ch := range c.channels {
+		ch.Close()
+	}
+	c.channelsMu.Unlock()
+
+	// Close the main socket.
+	c.socket.Close()
+}
+
+// openChannel attempts to open a client channel.
+//
+// Note that this function returns naked errors which should not be propagated
+// directly to a caller. It is expected that the errors will be logged and a
+// fallback path will be used instead.
+func (c *Client) openChannel(id int) error {
+	var (
+		rchannel0 Rchannel
+		rchannel1 Rchannel
+		res       = new(channel)
+	)
+
+	// Open the data channel.
+	if err := c.sendRecvLegacy(&Tchannel{
+		ID:      uint32(id),
+		Control: 0,
+	}, &rchannel0); err != nil {
+		return fmt.Errorf("error handling Tchannel message: %v", err)
+	}
+	if rchannel0.FilePayload() == nil {
+		return fmt.Errorf("missing file descriptor on primary channel")
+	}
+
+	// We don't need to hold this.
+	defer rchannel0.FilePayload().Close()
+
+	// Open the channel for file descriptors.
+	if err := c.sendRecvLegacy(&Tchannel{
+		ID:      uint32(id),
+		Control: 1,
+	}, &rchannel1); err != nil {
+		return err
+	}
+	if rchannel1.FilePayload() == nil {
+		return fmt.Errorf("missing file descriptor on file descriptor channel")
+	}
+
+	// Construct the endpoints.
+	res.desc = flipcall.PacketWindowDescriptor{
+		FD:     rchannel0.FilePayload().FD(),
+		Offset: int64(rchannel0.Offset),
+		Length: int(rchannel0.Length),
+	}
+	if err := res.data.Init(flipcall.ClientSide, res.desc); err != nil {
+		rchannel1.FilePayload().Close()
+		return err
+	}
+
+	// The fds channel owns the control payload, and it will be closed when
+	// the channel object is closed.
+	res.fds.Init(rchannel1.FilePayload().Release())
+
+	// Save the channel.
+	c.channelsMu.Lock()
+	defer c.channelsMu.Unlock()
+	c.channels = append(c.channels, res)
+	c.availableChannels = append(c.availableChannels, res)
+	return nil
 }
 
 // handleOne handles a single incoming message.
@@ -247,10 +430,10 @@ func (c *Client) waitAndRecv(done chan error) error {
 	}
 }
 
-// sendRecv performs a roundtrip message exchange.
+// sendRecvLegacy performs a roundtrip message exchange.
 //
 // This is called by internal functions.
-func (c *Client) sendRecv(t message, r message) error {
+func (c *Client) sendRecvLegacy(t message, r message) error {
 	tag, ok := c.tagPool.Get()
 	if !ok {
 		return ErrOutOfTags
@@ -296,12 +479,62 @@ func (c *Client) sendRecv(t message, r message) error {
 	return nil
 }
 
+// sendRecvChannel uses channels to send a message.
+func (c *Client) sendRecvChannel(t message, r message) error {
+	// Acquire an available channel.
+	c.channelsMu.Lock()
+	if len(c.availableChannels) == 0 {
+		c.channelsMu.Unlock()
+		return c.sendRecvLegacy(t, r)
+	}
+	idx := len(c.availableChannels) - 1
+	ch := c.availableChannels[idx]
+	c.availableChannels = c.availableChannels[:idx]
+	ch.active = true
+	c.channelsWg.Add(1)
+	c.channelsMu.Unlock()
+
+	// Ensure that it's connected.
+	if !ch.connected {
+		ch.connected = true
+		if err := ch.data.Connect(); err != nil {
+			// The channel is unusable, so don't return it to
+			// c.availableChannels. However, we still have to mark it as
+			// inactive so c.watch() doesn't wait for it.
+			c.channelsMu.Lock()
+			ch.active = false
+			c.channelsMu.Unlock()
+			c.channelsWg.Done()
+			return err
+		}
+	}
+
+	// Send the message.
+	err := ch.sendRecv(c, t, r)
+
+	// Release the channel.
+	c.channelsMu.Lock()
+	ch.active = false
+	// If c.availableChannels is nil, c.watch() has fired and we should not
+	// mark this channel as available.
+	if c.availableChannels != nil {
+		c.availableChannels = append(c.availableChannels, ch)
+	}
+	c.channelsMu.Unlock()
+	c.channelsWg.Done()
+
+	return err
+}
+
 // Version returns the negotiated 9P2000.L.Google version number.
 func (c *Client) Version() uint32 {
 	return c.version
 }
 
-// Close closes the underlying socket.
-func (c *Client) Close() error {
-	return c.socket.Close()
+// Close closes the underlying socket and channels.
+func (c *Client) Close() {
+	// unet.Socket.Shutdown() has no effect if unet.Socket.Close() has already
+	// been called (by c.watch()).
+	c.socket.Shutdown()
+	c.closedWg.Wait()
 }

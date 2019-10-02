@@ -267,7 +267,7 @@ func (s *subprocess) newThread() *thread {
 
 // attach attaches to the thread.
 func (t *thread) attach() {
-	if _, _, errno := syscall.RawSyscall(syscall.SYS_PTRACE, syscall.PTRACE_ATTACH, uintptr(t.tid), 0); errno != 0 {
+	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 		panic(fmt.Sprintf("unable to attach: %v", errno))
 	}
 
@@ -355,7 +355,8 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			}
 			if stopSig == syscall.SIGTRAP {
 				if status.TrapCause() == syscall.PTRACE_EVENT_EXIT {
-					t.dumpAndPanic("wait failed: the process exited")
+					msg, err := t.getEventMessage()
+					t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
 				}
 				// Re-encode the trap cause the way it's expected.
 				return stopSig | syscall.Signal(status.TrapCause()<<8)
@@ -416,7 +417,7 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 
 	for {
 		// Execute the syscall instruction.
-		if _, _, errno := syscall.RawSyscall(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0); errno != 0 {
+		if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 			panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 		}
 
@@ -426,12 +427,15 @@ func (t *thread) syscall(regs *syscall.PtraceRegs) (uintptr, error) {
 			break
 		} else {
 			// Some other signal caused a thread stop; ignore.
+			if sig != syscall.SIGSTOP && sig != syscall.SIGCHLD {
+				log.Warningf("The thread %d:%d has been interrupted by %d", t.tgid, t.tid, sig)
+			}
 			continue
 		}
 	}
 
 	// Complete the actual system call.
-	if _, _, errno := syscall.RawSyscall(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0); errno != 0 {
+	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PTRACE, syscall.PTRACE_SYSCALL, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 		panic(fmt.Sprintf("ptrace syscall-enter failed: %v", errno))
 	}
 
@@ -522,17 +526,17 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	for {
 		// Start running until the next system call.
 		if isSingleStepping(regs) {
-			if _, _, errno := syscall.RawSyscall(
+			if _, _, errno := syscall.RawSyscall6(
 				syscall.SYS_PTRACE,
 				syscall.PTRACE_SYSEMU_SINGLESTEP,
-				uintptr(t.tid), 0); errno != 0 {
+				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				panic(fmt.Sprintf("ptrace sysemu failed: %v", errno))
 			}
 		} else {
-			if _, _, errno := syscall.RawSyscall(
+			if _, _, errno := syscall.RawSyscall6(
 				syscall.SYS_PTRACE,
 				syscall.PTRACE_SYSEMU,
-				uintptr(t.tid), 0); errno != 0 {
+				uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
 				panic(fmt.Sprintf("ptrace sysemu failed: %v", errno))
 			}
 		}

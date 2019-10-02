@@ -94,7 +94,7 @@ type endpoint struct {
 
 // New creates a new shared-memory-based endpoint. Buffers will be broken up
 // into buffers of "bufferSize" bytes.
-func New(mtu, bufferSize uint32, addr tcpip.LinkAddress, tx, rx QueueConfig) (tcpip.LinkEndpointID, error) {
+func New(mtu, bufferSize uint32, addr tcpip.LinkAddress, tx, rx QueueConfig) (stack.LinkEndpoint, error) {
 	e := &endpoint{
 		mtu:        mtu,
 		bufferSize: bufferSize,
@@ -102,15 +102,15 @@ func New(mtu, bufferSize uint32, addr tcpip.LinkAddress, tx, rx QueueConfig) (tc
 	}
 
 	if err := e.tx.init(bufferSize, &tx); err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	if err := e.rx.init(bufferSize, &rx); err != nil {
 		e.tx.cleanup()
-		return 0, err
+		return nil, err
 	}
 
-	return stack.RegisterLinkEndpoint(e), nil
+	return e, nil
 }
 
 // Close frees all resources associated with the endpoint.
@@ -132,7 +132,8 @@ func (e *endpoint) Close() {
 	}
 }
 
-// Wait waits until all workers have stopped after a Close() call.
+// Wait implements stack.LinkEndpoint.Wait. It waits until all workers have
+// stopped after a Close() call.
 func (e *endpoint) Wait() {
 	e.completed.Wait()
 }

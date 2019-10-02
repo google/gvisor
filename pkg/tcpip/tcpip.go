@@ -219,6 +219,15 @@ func (s *Subnet) Mask() AddressMask {
 	return s.mask
 }
 
+// Broadcast returns the subnet's broadcast address.
+func (s *Subnet) Broadcast() Address {
+	addr := []byte(s.address)
+	for i := range addr {
+		addr[i] |= ^s.mask[i]
+	}
+	return Address(addr)
+}
+
 // NICID is a number that uniquely identifies a NIC.
 type NICID int32
 
@@ -252,31 +261,34 @@ type FullAddress struct {
 	Port uint16
 }
 
-// Payload provides an interface around data that is being sent to an endpoint.
-// This allows the endpoint to request the amount of data it needs based on
-// internal buffers without exposing them. 'p.Get(p.Size())' reads all the data.
-type Payload interface {
-	// Get returns a slice containing exactly 'min(size, p.Size())' bytes.
-	Get(size int) ([]byte, *Error)
+// Payloader is an interface that provides data.
+//
+// This interface allows the endpoint to request the amount of data it needs
+// based on internal buffers without exposing them.
+type Payloader interface {
+	// FullPayload returns all available bytes.
+	FullPayload() ([]byte, *Error)
 
-	// Size returns the payload size.
-	Size() int
+	// Payload returns a slice containing at most size bytes.
+	Payload(size int) ([]byte, *Error)
 }
 
-// SlicePayload implements Payload on top of slices for convenience.
+// SlicePayload implements Payloader for slices.
+//
+// This is typically used for tests.
 type SlicePayload []byte
 
-// Get implements Payload.
-func (s SlicePayload) Get(size int) ([]byte, *Error) {
-	if size > s.Size() {
-		size = s.Size()
-	}
-	return s[:size], nil
+// FullPayload implements Payloader.FullPayload.
+func (s SlicePayload) FullPayload() ([]byte, *Error) {
+	return s, nil
 }
 
-// Size implements Payload.
-func (s SlicePayload) Size() int {
-	return len(s)
+// Payload implements Payloader.Payload.
+func (s SlicePayload) Payload(size int) ([]byte, *Error) {
+	if size > len(s) {
+		size = len(s)
+	}
+	return s[:size], nil
 }
 
 // A ControlMessages contains socket control messages for IP sockets.
@@ -329,7 +341,7 @@ type Endpoint interface {
 	// ErrNoLinkAddress and a notification channel is returned for the caller to
 	// block. Channel is closed once address resolution is complete (success or
 	// not). The channel is only non-nil in this case.
-	Write(Payload, WriteOptions) (int64, <-chan struct{}, *Error)
+	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
 
 	// Peek reads data without consuming it from the endpoint.
 	//
@@ -389,6 +401,10 @@ type Endpoint interface {
 	// SetSockOpt sets a socket option. opt should be one of the *Option types.
 	SetSockOpt(opt interface{}) *Error
 
+	// SetSockOptInt sets a socket option, for simple cases where a value
+	// has the int type.
+	SetSockOptInt(opt SockOpt, v int) *Error
+
 	// GetSockOpt gets a socket option. opt should be a pointer to one of the
 	// *Option types.
 	GetSockOpt(opt interface{}) *Error
@@ -423,15 +439,32 @@ type WriteOptions struct {
 
 	// EndOfRecord has the same semantics as Linux's MSG_EOR.
 	EndOfRecord bool
+
+	// Atomic means that all data fetched from Payloader must be written to the
+	// endpoint. If Atomic is false, then data fetched from the Payloader may be
+	// discarded if available endpoint buffer space is unsufficient.
+	Atomic bool
 }
 
 // SockOpt represents socket options which values have the int type.
 type SockOpt int
 
 const (
-	// ReceiveQueueSizeOption is used in GetSockOpt to specify that the number of
-	// unread bytes in the input buffer should be returned.
+	// ReceiveQueueSizeOption is used in GetSockOptInt to specify that the
+	// number of unread bytes in the input buffer should be returned.
 	ReceiveQueueSizeOption SockOpt = iota
+
+	// SendBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
+	// specify the send buffer size option.
+	SendBufferSizeOption
+
+	// ReceiveBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
+	// specify the receive buffer size option.
+	ReceiveBufferSizeOption
+
+	// SendQueueSizeOption is used in GetSockOptInt to specify that the
+	// number of unread bytes in the output buffer should be returned.
+	SendQueueSizeOption
 
 	// TODO(b/137664753): convert all int socket options to be handled via
 	// GetSockOptInt.
@@ -440,18 +473,6 @@ const (
 // ErrorOption is used in GetSockOpt to specify that the last error reported by
 // the endpoint should be cleared and returned.
 type ErrorOption struct{}
-
-// SendBufferSizeOption is used by SetSockOpt/GetSockOpt to specify the send
-// buffer size option.
-type SendBufferSizeOption int
-
-// ReceiveBufferSizeOption is used by SetSockOpt/GetSockOpt to specify the
-// receive buffer size option.
-type ReceiveBufferSizeOption int
-
-// SendQueueSizeOption is used in GetSockOpt to specify that the number of
-// unread bytes in the output buffer should be returned.
-type SendQueueSizeOption int
 
 // V6OnlyOption is used by SetSockOpt/GetSockOpt to specify whether an IPv6
 // socket is to be restricted to sending and receiving IPv6 packets only.
@@ -473,6 +494,10 @@ type ReuseAddressOption int
 // ReusePortOption is used by SetSockOpt/GetSockOpt to permit multiple sockets
 // to be bound to an identical socket address.
 type ReusePortOption int
+
+// BindToDeviceOption is used by SetSockOpt/GetSockOpt to specify that sockets
+// should bind only on a specific NIC.
+type BindToDeviceOption string
 
 // QuickAckOption is stubbed out in SetSockOpt/GetSockOpt.
 type QuickAckOption int
@@ -581,7 +606,7 @@ type Route struct {
 }
 
 // String implements the fmt.Stringer interface.
-func (r *Route) String() string {
+func (r Route) String() string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "%s", r.Destination)
 	if len(r.Gateway) > 0 {
@@ -590,9 +615,6 @@ func (r *Route) String() string {
 	fmt.Fprintf(&out, " nic %d", r.NIC)
 	return out.String()
 }
-
-// LinkEndpointID represents a data link layer endpoint.
-type LinkEndpointID uint64
 
 // TransportProtocolNumber is the number of a transport protocol.
 type TransportProtocolNumber uint32
@@ -720,6 +742,10 @@ type ICMPv4SentPacketStats struct {
 	// Dropped is the total number of ICMPv4 packets dropped due to link
 	// layer errors.
 	Dropped *StatCounter
+
+	// RateLimited is the total number of ICMPv6 packets dropped due to
+	// rate limit being exceeded.
+	RateLimited *StatCounter
 }
 
 // ICMPv4ReceivedPacketStats collects inbound ICMPv4-specific stats.
@@ -738,6 +764,10 @@ type ICMPv6SentPacketStats struct {
 	// Dropped is the total number of ICMPv6 packets dropped due to link
 	// layer errors.
 	Dropped *StatCounter
+
+	// RateLimited is the total number of ICMPv6 packets dropped due to
+	// rate limit being exceeded.
+	RateLimited *StatCounter
 }
 
 // ICMPv6ReceivedPacketStats collects inbound ICMPv6-specific stats.

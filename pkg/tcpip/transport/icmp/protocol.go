@@ -14,16 +14,14 @@
 
 // Package icmp contains the implementation of the ICMP and IPv6-ICMP transport
 // protocols for use in ping. To use it in the networking stack, this package
-// must be added to the project, and
-// activated on the stack by passing icmp.ProtocolName (or "icmp") and/or
-// icmp.ProtocolName6 (or "icmp6") as one of the transport protocols when
-// calling stack.New(). Then endpoints can be created by passing
+// must be added to the project, and activated on the stack by passing
+// icmp.NewProtocol4() and/or icmp.NewProtocol6() as one of the transport
+// protocols when calling stack.New(). Then endpoints can be created by passing
 // icmp.ProtocolNumber or icmp.ProtocolNumber6 as the transport protocol number
 // when calling Stack.NewEndpoint().
 package icmp
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -35,14 +33,8 @@ import (
 )
 
 const (
-	// ProtocolName4 is the string representation of the icmp protocol name.
-	ProtocolName4 = "icmp4"
-
 	// ProtocolNumber4 is the ICMP protocol number.
 	ProtocolNumber4 = header.ICMPv4ProtocolNumber
-
-	// ProtocolName6 is the string representation of the icmp protocol name.
-	ProtocolName6 = "icmp6"
 
 	// ProtocolNumber6 is the IPv6-ICMP protocol number.
 	ProtocolNumber6 = header.ICMPv6ProtocolNumber
@@ -92,7 +84,7 @@ func (p *protocol) MinimumPacketSize() int {
 	case ProtocolNumber4:
 		return header.ICMPv4MinimumSize
 	case ProtocolNumber6:
-		return header.ICMPv6EchoMinimumSize
+		return header.ICMPv6MinimumSize
 	}
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
@@ -101,16 +93,18 @@ func (p *protocol) MinimumPacketSize() int {
 func (p *protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	switch p.number {
 	case ProtocolNumber4:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv4PayloadOffset:]), nil
+		hdr := header.ICMPv4(v)
+		return 0, hdr.Ident(), nil
 	case ProtocolNumber6:
-		return 0, binary.BigEndian.Uint16(v[header.ICMPv6MinimumSize:]), nil
+		hdr := header.ICMPv6(v)
+		return 0, hdr.Ident(), nil
 	}
 	panic(fmt.Sprint("unknown protocol number: ", p.number))
 }
 
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
-func (p *protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.VectorisedView) bool {
+func (p *protocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.View, buffer.VectorisedView) bool {
 	return true
 }
 
@@ -124,12 +118,12 @@ func (p *protocol) Option(option interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
-func init() {
-	stack.RegisterTransportProtocolFactory(ProtocolName4, func() stack.TransportProtocol {
-		return &protocol{ProtocolNumber4}
-	})
+// NewProtocol4 returns an ICMPv4 transport protocol.
+func NewProtocol4() stack.TransportProtocol {
+	return &protocol{ProtocolNumber4}
+}
 
-	stack.RegisterTransportProtocolFactory(ProtocolName6, func() stack.TransportProtocol {
-		return &protocol{ProtocolNumber6}
-	})
+// NewProtocol6 returns an ICMPv6 transport protocol.
+func NewProtocol6() stack.TransportProtocol {
+	return &protocol{ProtocolNumber6}
 }

@@ -18,17 +18,19 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "test/util/capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+#include "test/util/uid_util.h"
 
-DEFINE_int32(scratch_uid1, 65534, "first scratch UID");
-DEFINE_int32(scratch_uid2, 65533, "second scratch UID");
-DEFINE_int32(scratch_gid1, 65534, "first scratch GID");
-DEFINE_int32(scratch_gid2, 65533, "second scratch GID");
+ABSL_FLAG(int32_t, scratch_uid1, 65534, "first scratch UID");
+ABSL_FLAG(int32_t, scratch_uid2, 65533, "second scratch UID");
+ABSL_FLAG(int32_t, scratch_gid1, 65534, "first scratch GID");
+ABSL_FLAG(int32_t, scratch_gid2, 65533, "second scratch GID");
 
 using ::testing::UnorderedElementsAreArray;
 
@@ -65,30 +67,6 @@ TEST(UidGidTest, Getgroups) {
 
   // Testing for EFAULT requires actually having groups, which isn't guaranteed
   // here; see the setgroups test below.
-}
-
-// If the caller's real/effective/saved user/group IDs are all 0, IsRoot returns
-// true. Otherwise IsRoot logs an explanatory message and returns false.
-PosixErrorOr<bool> IsRoot() {
-  uid_t ruid, euid, suid;
-  int rc = getresuid(&ruid, &euid, &suid);
-  MaybeSave();
-  if (rc < 0) {
-    return PosixError(errno, "getresuid");
-  }
-  if (ruid != 0 || euid != 0 || suid != 0) {
-    return false;
-  }
-  gid_t rgid, egid, sgid;
-  rc = getresgid(&rgid, &egid, &sgid);
-  MaybeSave();
-  if (rc < 0) {
-    return PosixError(errno, "getresgid");
-  }
-  if (rgid != 0 || egid != 0 || sgid != 0) {
-    return false;
-  }
-  return true;
 }
 
 // Checks that the calling process' real/effective/saved user IDs are
@@ -146,7 +124,7 @@ TEST(UidGidRootTest, Setuid) {
     // real UID.
     EXPECT_THAT(syscall(SYS_setuid, -1), SyscallFailsWithErrno(EINVAL));
 
-    const uid_t uid = FLAGS_scratch_uid1;
+    const uid_t uid = absl::GetFlag(FLAGS_scratch_uid1);
     EXPECT_THAT(syscall(SYS_setuid, uid), SyscallSucceeds());
     // "If the effective UID of the caller is root (more precisely: if the
     // caller has the CAP_SETUID capability), the real UID and saved set-user-ID
@@ -160,7 +138,7 @@ TEST(UidGidRootTest, Setgid) {
 
   EXPECT_THAT(setgid(-1), SyscallFailsWithErrno(EINVAL));
 
-  const gid_t gid = FLAGS_scratch_gid1;
+  const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
   ASSERT_THAT(setgid(gid), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
 }
@@ -168,7 +146,7 @@ TEST(UidGidRootTest, Setgid) {
 TEST(UidGidRootTest, SetgidNotFromThreadGroupLeader) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(IsRoot()));
 
-  const gid_t gid = FLAGS_scratch_gid1;
+  const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
   // NOTE(b/64676707): Do setgid in a separate thread so that we can test if
   // info.si_pid is set correctly.
   ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
@@ -189,8 +167,8 @@ TEST(UidGidRootTest, Setreuid) {
   // cannot be opened by the `uid` set below after the test. After calling
   // setuid(non-zero-UID), there is no way to get root privileges back.
   ScopedThread([&] {
-    const uid_t ruid = FLAGS_scratch_uid1;
-    const uid_t euid = FLAGS_scratch_uid2;
+    const uid_t ruid = absl::GetFlag(FLAGS_scratch_uid1);
+    const uid_t euid = absl::GetFlag(FLAGS_scratch_uid2);
 
     // Use syscall instead of glibc setuid wrapper because we want this setuid
     // call to only apply to this task. posix threads, however, require that all
@@ -211,8 +189,8 @@ TEST(UidGidRootTest, Setregid) {
   EXPECT_THAT(setregid(-1, -1), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckGIDs(0, 0, 0));
 
-  const gid_t rgid = FLAGS_scratch_gid1;
-  const gid_t egid = FLAGS_scratch_gid2;
+  const gid_t rgid = absl::GetFlag(FLAGS_scratch_gid1);
+  const gid_t egid = absl::GetFlag(FLAGS_scratch_gid2);
   ASSERT_THAT(setregid(rgid, egid), SyscallSucceeds());
   EXPECT_NO_ERRNO(CheckGIDs(rgid, egid, egid));
 }

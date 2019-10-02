@@ -323,18 +323,22 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 			return syserror.ENOEXEC
 		}
 
+		// N.B. Linux uses vm_brk_flags to map these pages, which only
+		// honors the X bit, always mapping at least RW. ignoring These
+		// pages are not included in the final brk region.
+		prot := usermem.ReadWrite
+		if phdr.Flags&elf.PF_X == elf.PF_X {
+			prot.Execute = true
+		}
+
 		if _, err := m.MMap(ctx, memmap.MMapOpts{
 			Length: uint64(anonSize),
 			Addr:   anonAddr,
 			// Fixed without Unmap will fail the mmap if something is
 			// already at addr.
-			Fixed:   true,
-			Private: true,
-			// N.B. Linux uses vm_brk to map these pages, ignoring
-			// the segment protections, instead always mapping RW.
-			// These pages are not included in the final brk
-			// region.
-			Perms:    usermem.ReadWrite,
+			Fixed:    true,
+			Private:  true,
+			Perms:    prot,
 			MaxPerms: usermem.AnyAccess,
 		}); err != nil {
 			ctx.Infof("Error mapping PT_LOAD segment %v anonymous memory: %v", phdr, err)
@@ -464,7 +468,7 @@ func loadParsedELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, info el
 	// base address big enough to fit all segments, so we first create a
 	// mapping for the total size just to find a region that is big enough.
 	//
-	// It is safe to unmap it immediately with racing with another mapping
+	// It is safe to unmap it immediately without racing with another mapping
 	// because we are the only one in control of the MemoryManager.
 	//
 	// Note that the vaddr of the first PT_LOAD segment is ignored when

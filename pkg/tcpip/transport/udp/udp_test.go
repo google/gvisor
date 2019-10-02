@@ -17,7 +17,6 @@ package udp_test
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -274,13 +274,17 @@ type testContext struct {
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 
-	s := stack.New([]string{ipv4.ProtocolName, ipv6.ProtocolName}, []string{udp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
+	})
+	ep := channel.New(256, mtu, "")
+	wep := stack.LinkEndpoint(ep)
 
-	id, linkEP := channel.New(256, mtu, "")
 	if testing.Verbose() {
-		id = sniffer.New(id)
+		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(1, id); err != nil {
+	if err := s.CreateNIC(1, wep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -306,7 +310,7 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	return &testContext{
 		t:      t,
 		s:      s,
-		linkEP: linkEP,
+		linkEP: ep,
 	}
 }
 
@@ -461,94 +465,70 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple) {
 }
 
 func newPayload() []byte {
-	b := make([]byte, 30+rand.Intn(100))
+	return newMinPayload(30)
+}
+
+func newMinPayload(minSize int) []byte {
+	b := make([]byte, minSize+rand.Intn(100))
 	for i := range b {
 		b[i] = byte(rand.Intn(256))
 	}
 	return b
 }
 
-func TestBindPortReuse(t *testing.T) {
-	c := newDualTestContext(t, defaultMTU)
-	defer c.cleanup()
+func TestBindToDeviceOption(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()}})
 
-	c.createEndpoint(ipv6.ProtocolNumber)
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
+	if err != nil {
+		t.Fatalf("NewEndpoint failed; %v", err)
+	}
+	defer ep.Close()
 
-	var eps [5]tcpip.Endpoint
-	reusePortOpt := tcpip.ReusePortOption(1)
-
-	pollChannel := make(chan tcpip.Endpoint)
-	for i := 0; i < len(eps); i++ {
-		// Try to receive the data.
-		wq := waiter.Queue{}
-		we, ch := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&we, waiter.EventIn)
-		defer wq.EventUnregister(&we)
-		defer close(ch)
-
-		var err *tcpip.Error
-		eps[i], err = c.s.NewEndpoint(udp.ProtocolNumber, ipv6.ProtocolNumber, &wq)
-		if err != nil {
-			c.t.Fatalf("NewEndpoint failed: %v", err)
-		}
-
-		go func(ep tcpip.Endpoint) {
-			for range ch {
-				pollChannel <- ep
-			}
-		}(eps[i])
-
-		defer eps[i].Close()
-		if err := eps[i].SetSockOpt(reusePortOpt); err != nil {
-			c.t.Fatalf("SetSockOpt failed failed: %v", err)
-		}
-		if err := eps[i].Bind(tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort}); err != nil {
-			t.Fatalf("ep.Bind(...) failed: %v", err)
-		}
+	if err := s.CreateNamedNIC(321, "my_device", loopback.New()); err != nil {
+		t.Errorf("CreateNamedNIC failed: %v", err)
 	}
 
-	npackets := 100000
-	nports := 10000
-	ports := make(map[uint16]tcpip.Endpoint)
-	stats := make(map[tcpip.Endpoint]int)
-	for i := 0; i < npackets; i++ {
-		// Send a packet.
-		port := uint16(i % nports)
-		payload := newPayload()
-		c.injectV6Packet(payload, &header4Tuple{
-			srcAddr: tcpip.FullAddress{Addr: testV6Addr, Port: testPort + port},
-			dstAddr: tcpip.FullAddress{Addr: stackV6Addr, Port: stackPort},
+	// Make an nameless NIC.
+	if err := s.CreateNIC(54321, loopback.New()); err != nil {
+		t.Errorf("CreateNIC failed: %v", err)
+	}
+
+	// strPtr is used instead of taking the address of string literals, which is
+	// a compiler error.
+	strPtr := func(s string) *string {
+		return &s
+	}
+
+	testActions := []struct {
+		name                 string
+		setBindToDevice      *string
+		setBindToDeviceError *tcpip.Error
+		getBindToDevice      tcpip.BindToDeviceOption
+	}{
+		{"GetDefaultValue", nil, nil, ""},
+		{"BindToNonExistent", strPtr("non_existent_device"), tcpip.ErrUnknownDevice, ""},
+		{"BindToExistent", strPtr("my_device"), nil, "my_device"},
+		{"UnbindToDevice", strPtr(""), nil, ""},
+	}
+	for _, testAction := range testActions {
+		t.Run(testAction.name, func(t *testing.T) {
+			if testAction.setBindToDevice != nil {
+				bindToDevice := tcpip.BindToDeviceOption(*testAction.setBindToDevice)
+				if got, want := ep.SetSockOpt(bindToDevice), testAction.setBindToDeviceError; got != want {
+					t.Errorf("SetSockOpt(%v) got %v, want %v", bindToDevice, got, want)
+				}
+			}
+			bindToDevice := tcpip.BindToDeviceOption("to be modified by GetSockOpt")
+			if ep.GetSockOpt(&bindToDevice) != nil {
+				t.Errorf("GetSockOpt got %v, want %v", ep.GetSockOpt(&bindToDevice), nil)
+			}
+			if got, want := bindToDevice, testAction.getBindToDevice; got != want {
+				t.Errorf("bindToDevice got %q, want %q", got, want)
+			}
 		})
-
-		var addr tcpip.FullAddress
-		ep := <-pollChannel
-		_, _, err := ep.Read(&addr)
-		if err != nil {
-			c.t.Fatalf("Read failed: %v", err)
-		}
-		stats[ep]++
-		if i < nports {
-			ports[uint16(i)] = ep
-		} else {
-			// Check that all packets from one client are handled
-			// by the same socket.
-			if ports[port] != ep {
-				t.Fatalf("Port mismatch")
-			}
-		}
-	}
-
-	if len(stats) != len(eps) {
-		t.Fatalf("Only %d(expected %d) sockets received packets", len(stats), len(eps))
-	}
-
-	// Check that a packet distribution is fair between sockets.
-	for _, c := range stats {
-		n := float64(npackets) / float64(len(eps))
-		// The deviation is less than 10%.
-		if math.Abs(float64(c)-n) > n/10 {
-			t.Fatal(c, n)
-		}
 	}
 }
 
@@ -1234,6 +1214,156 @@ func TestMulticastInterfaceOption(t *testing.T) {
 						})
 					}
 				})
+			}
+		})
+	}
+}
+
+// TestV4UnknownDestination verifies that we generate an ICMPv4 Destination
+// Unreachable message when a udp datagram is received on ports for which there
+// is no bound udp socket.
+func TestV4UnknownDestination(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	testCases := []struct {
+		flow         testFlow
+		icmpRequired bool
+		// largePayload if true, will result in a payload large enough
+		// so that the final generated IPv4 packet is larger than
+		// header.IPv4MinimumProcessableDatagramSize.
+		largePayload bool
+	}{
+		{unicastV4, true, false},
+		{unicastV4, true, true},
+		{multicastV4, false, false},
+		{multicastV4, false, true},
+		{broadcast, false, false},
+		{broadcast, false, true},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+			payload := newPayload()
+			if tc.largePayload {
+				payload = newMinPayload(576)
+			}
+			c.injectPacket(tc.flow, payload)
+			if !tc.icmpRequired {
+				select {
+				case p := <-c.linkEP.C:
+					t.Fatalf("unexpected packet received: %+v", p)
+				case <-time.After(1 * time.Second):
+					return
+				}
+			}
+
+			select {
+			case p := <-c.linkEP.C:
+				var pkt []byte
+				pkt = append(pkt, p.Header...)
+				pkt = append(pkt, p.Payload...)
+				if got, want := len(pkt), header.IPv4MinimumProcessableDatagramSize; got > want {
+					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+				}
+
+				hdr := header.IPv4(pkt)
+				checker.IPv4(t, hdr, checker.ICMPv4(
+					checker.ICMPv4Type(header.ICMPv4DstUnreachable),
+					checker.ICMPv4Code(header.ICMPv4PortUnreachable)))
+
+				icmpPkt := header.ICMPv4(hdr.Payload())
+				payloadIPHeader := header.IPv4(icmpPkt.Payload())
+				wantLen := len(payload)
+				if tc.largePayload {
+					wantLen = header.IPv4MinimumProcessableDatagramSize - header.IPv4MinimumSize*2 - header.ICMPv4MinimumSize - header.UDPMinimumSize
+				}
+
+				// In case of large payloads the IP packet may be truncated. Update
+				// the length field before retrieving the udp datagram payload.
+				payloadIPHeader.SetTotalLength(uint16(wantLen + header.UDPMinimumSize + header.IPv4MinimumSize))
+
+				origDgram := header.UDP(payloadIPHeader.Payload())
+				if got, want := len(origDgram.Payload()), wantLen; got != want {
+					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+				}
+				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+					t.Fatalf("unexpected payload got: %d, want: %d", got, want)
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatalf("packet wasn't written out")
+			}
+		})
+	}
+}
+
+// TestV6UnknownDestination verifies that we generate an ICMPv6 Destination
+// Unreachable message when a udp datagram is received on ports for which there
+// is no bound udp socket.
+func TestV6UnknownDestination(t *testing.T) {
+	c := newDualTestContext(t, defaultMTU)
+	defer c.cleanup()
+
+	testCases := []struct {
+		flow         testFlow
+		icmpRequired bool
+		// largePayload if true will result in a payload large enough to
+		// create an IPv6 packet > header.IPv6MinimumMTU bytes.
+		largePayload bool
+	}{
+		{unicastV6, true, false},
+		{unicastV6, true, true},
+		{multicastV6, false, false},
+		{multicastV6, false, true},
+	}
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("flow:%s icmpRequired:%t largePayload:%t", tc.flow, tc.icmpRequired, tc.largePayload), func(t *testing.T) {
+			payload := newPayload()
+			if tc.largePayload {
+				payload = newMinPayload(1280)
+			}
+			c.injectPacket(tc.flow, payload)
+			if !tc.icmpRequired {
+				select {
+				case p := <-c.linkEP.C:
+					t.Fatalf("unexpected packet received: %+v", p)
+				case <-time.After(1 * time.Second):
+					return
+				}
+			}
+
+			select {
+			case p := <-c.linkEP.C:
+				var pkt []byte
+				pkt = append(pkt, p.Header...)
+				pkt = append(pkt, p.Payload...)
+				if got, want := len(pkt), header.IPv6MinimumMTU; got > want {
+					t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
+				}
+
+				hdr := header.IPv6(pkt)
+				checker.IPv6(t, hdr, checker.ICMPv6(
+					checker.ICMPv6Type(header.ICMPv6DstUnreachable),
+					checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+
+				icmpPkt := header.ICMPv6(hdr.Payload())
+				payloadIPHeader := header.IPv6(icmpPkt.Payload())
+				wantLen := len(payload)
+				if tc.largePayload {
+					wantLen = header.IPv6MinimumMTU - header.IPv6MinimumSize*2 - header.ICMPv6MinimumSize - header.UDPMinimumSize
+				}
+				// In case of large payloads the IP packet may be truncated. Update
+				// the length field before retrieving the udp datagram payload.
+				payloadIPHeader.SetPayloadLength(uint16(wantLen + header.UDPMinimumSize))
+
+				origDgram := header.UDP(payloadIPHeader.Payload())
+				if got, want := len(origDgram.Payload()), wantLen; got != want {
+					t.Fatalf("unexpected payload length got: %d, want: %d", got, want)
+				}
+				if got, want := origDgram.Payload(), payload[:wantLen]; !bytes.Equal(got, want) {
+					t.Fatalf("unexpected payload got: %v, want: %v", got, want)
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatalf("packet wasn't written out")
 			}
 		})
 	}

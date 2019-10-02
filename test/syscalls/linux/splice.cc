@@ -14,12 +14,16 @@
 
 #include <fcntl.h>
 #include <sys/eventfd.h>
+#include <sys/resource.h>
 #include <sys/sendfile.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -36,23 +40,23 @@ TEST(SpliceTest, TwoRegularFiles) {
   const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   // Open the input file as read only.
-  const FileDescriptor inf =
+  const FileDescriptor in_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
   // Open the output file as write only.
-  const FileDescriptor outf =
+  const FileDescriptor out_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
 
   // Verify that it is rejected as expected; regardless of offsets.
   loff_t in_offset = 0;
   loff_t out_offset = 0;
-  EXPECT_THAT(splice(inf.get(), &in_offset, outf.get(), &out_offset, 1, 0),
+  EXPECT_THAT(splice(in_fd.get(), &in_offset, out_fd.get(), &out_offset, 1, 0),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(splice(inf.get(), nullptr, outf.get(), &out_offset, 1, 0),
+  EXPECT_THAT(splice(in_fd.get(), nullptr, out_fd.get(), &out_offset, 1, 0),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(splice(inf.get(), &in_offset, outf.get(), nullptr, 1, 0),
+  EXPECT_THAT(splice(in_fd.get(), &in_offset, out_fd.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(splice(inf.get(), nullptr, outf.get(), nullptr, 1, 0),
+  EXPECT_THAT(splice(in_fd.get(), nullptr, out_fd.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -75,8 +79,6 @@ TEST(SpliceTest, SamePipe) {
 }
 
 TEST(TeeTest, SamePipe) {
-  SKIP_IF(IsRunningOnGvisor());
-
   // Create a new pipe.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -95,11 +97,9 @@ TEST(TeeTest, SamePipe) {
 }
 
 TEST(TeeTest, RegularFile) {
-  SKIP_IF(IsRunningOnGvisor());
-
   // Open some file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const FileDescriptor inf =
+  const FileDescriptor in_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
 
   // Create a new pipe.
@@ -109,9 +109,9 @@ TEST(TeeTest, RegularFile) {
   const FileDescriptor wfd(fds[1]);
 
   // Attempt to tee from the file.
-  EXPECT_THAT(tee(inf.get(), wfd.get(), kPageSize, 0),
+  EXPECT_THAT(tee(in_fd.get(), wfd.get(), kPageSize, 0),
               SyscallFailsWithErrno(EINVAL));
-  EXPECT_THAT(tee(rfd.get(), inf.get(), kPageSize, 0),
+  EXPECT_THAT(tee(rfd.get(), in_fd.get(), kPageSize, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -142,7 +142,7 @@ TEST(SpliceTest, FromEventFD) {
   constexpr uint64_t kEventFDValue = 1;
   int efd;
   ASSERT_THAT(efd = eventfd(kEventFDValue, 0), SyscallSucceeds());
-  const FileDescriptor inf(efd);
+  const FileDescriptor in_fd(efd);
 
   // Create a new pipe.
   int fds[2];
@@ -152,7 +152,7 @@ TEST(SpliceTest, FromEventFD) {
 
   // Splice 8-byte eventfd value to pipe.
   constexpr int kEventFDSize = 8;
-  EXPECT_THAT(splice(inf.get(), nullptr, wfd.get(), nullptr, kEventFDSize, 0),
+  EXPECT_THAT(splice(in_fd.get(), nullptr, wfd.get(), nullptr, kEventFDSize, 0),
               SyscallSucceedsWithValue(kEventFDSize));
 
   // Contents should be equal.
@@ -166,7 +166,7 @@ TEST(SpliceTest, FromEventFD) {
 TEST(SpliceTest, FromEventFDOffset) {
   int efd;
   ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
-  const FileDescriptor inf(efd);
+  const FileDescriptor in_fd(efd);
 
   // Create a new pipe.
   int fds[2];
@@ -179,7 +179,7 @@ TEST(SpliceTest, FromEventFDOffset) {
   // This is not allowed because eventfd doesn't support pread.
   constexpr int kEventFDSize = 8;
   loff_t in_off = 0;
-  EXPECT_THAT(splice(inf.get(), &in_off, wfd.get(), nullptr, kEventFDSize, 0),
+  EXPECT_THAT(splice(in_fd.get(), &in_off, wfd.get(), nullptr, kEventFDSize, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -200,28 +200,29 @@ TEST(SpliceTest, ToEventFDOffset) {
 
   int efd;
   ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
-  const FileDescriptor outf(efd);
+  const FileDescriptor out_fd(efd);
 
   // Attempt to splice 8-byte eventfd value to pipe with offset.
   //
   // This is not allowed because eventfd doesn't support pwrite.
   loff_t out_off = 0;
-  EXPECT_THAT(splice(rfd.get(), nullptr, outf.get(), &out_off, kEventFDSize, 0),
-              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(
+      splice(rfd.get(), nullptr, out_fd.get(), &out_off, kEventFDSize, 0),
+      SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SpliceTest, ToPipe) {
   // Open the input file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const FileDescriptor inf =
+  const FileDescriptor in_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
 
   // Fill with some random data.
   std::vector<char> buf(kPageSize);
   RandomizeBuffer(buf.data(), buf.size());
-  ASSERT_THAT(write(inf.get(), buf.data(), buf.size()),
+  ASSERT_THAT(write(in_fd.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(kPageSize));
-  ASSERT_THAT(lseek(inf.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(lseek(in_fd.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
 
   // Create a new pipe.
   int fds[2];
@@ -230,7 +231,7 @@ TEST(SpliceTest, ToPipe) {
   const FileDescriptor wfd(fds[1]);
 
   // Splice to the pipe.
-  EXPECT_THAT(splice(inf.get(), nullptr, wfd.get(), nullptr, kPageSize, 0),
+  EXPECT_THAT(splice(in_fd.get(), nullptr, wfd.get(), nullptr, kPageSize, 0),
               SyscallSucceedsWithValue(kPageSize));
 
   // Contents should be equal.
@@ -243,13 +244,13 @@ TEST(SpliceTest, ToPipe) {
 TEST(SpliceTest, ToPipeOffset) {
   // Open the input file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const FileDescriptor inf =
+  const FileDescriptor in_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
 
   // Fill with some random data.
   std::vector<char> buf(kPageSize);
   RandomizeBuffer(buf.data(), buf.size());
-  ASSERT_THAT(write(inf.get(), buf.data(), buf.size()),
+  ASSERT_THAT(write(in_fd.get(), buf.data(), buf.size()),
               SyscallSucceedsWithValue(kPageSize));
 
   // Create a new pipe.
@@ -261,7 +262,7 @@ TEST(SpliceTest, ToPipeOffset) {
   // Splice to the pipe.
   loff_t in_offset = kPageSize / 2;
   EXPECT_THAT(
-      splice(inf.get(), &in_offset, wfd.get(), nullptr, kPageSize / 2, 0),
+      splice(in_fd.get(), &in_offset, wfd.get(), nullptr, kPageSize / 2, 0),
       SyscallSucceedsWithValue(kPageSize / 2));
 
   // Contents should be equal to only the second part.
@@ -286,22 +287,22 @@ TEST(SpliceTest, FromPipe) {
 
   // Open the input file.
   const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const FileDescriptor outf =
+  const FileDescriptor out_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_RDWR));
 
   // Splice to the output file.
-  EXPECT_THAT(splice(rfd.get(), nullptr, outf.get(), nullptr, kPageSize, 0),
+  EXPECT_THAT(splice(rfd.get(), nullptr, out_fd.get(), nullptr, kPageSize, 0),
               SyscallSucceedsWithValue(kPageSize));
 
   // The offset of the output should be equal to kPageSize. We assert that and
   // reset to zero so that we can read the contents and ensure they match.
-  EXPECT_THAT(lseek(outf.get(), 0, SEEK_CUR),
+  EXPECT_THAT(lseek(out_fd.get(), 0, SEEK_CUR),
               SyscallSucceedsWithValue(kPageSize));
-  ASSERT_THAT(lseek(outf.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(lseek(out_fd.get(), 0, SEEK_SET), SyscallSucceedsWithValue(0));
 
   // Contents should be equal.
   std::vector<char> rbuf(kPageSize);
-  ASSERT_THAT(read(outf.get(), rbuf.data(), rbuf.size()),
+  ASSERT_THAT(read(out_fd.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
 }
@@ -321,18 +322,19 @@ TEST(SpliceTest, FromPipeOffset) {
 
   // Open the input file.
   const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const FileDescriptor outf =
+  const FileDescriptor out_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_RDWR));
 
   // Splice to the output file.
   loff_t out_offset = kPageSize / 2;
-  EXPECT_THAT(splice(rfd.get(), nullptr, outf.get(), &out_offset, kPageSize, 0),
-              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_THAT(
+      splice(rfd.get(), nullptr, out_fd.get(), &out_offset, kPageSize, 0),
+      SyscallSucceedsWithValue(kPageSize));
 
   // Content should reflect the splice. We write to a specific offset in the
   // file, so the internals should now be allocated sparsely.
   std::vector<char> rbuf(kPageSize);
-  ASSERT_THAT(read(outf.get(), rbuf.data(), rbuf.size()),
+  ASSERT_THAT(read(out_fd.get(), rbuf.data(), rbuf.size()),
               SyscallSucceedsWithValue(kPageSize));
   std::vector<char> zbuf(kPageSize / 2);
   memset(zbuf.data(), 0, zbuf.size());
@@ -404,8 +406,6 @@ TEST(SpliceTest, Blocking) {
 }
 
 TEST(TeeTest, Blocking) {
-  SKIP_IF(IsRunningOnGvisor());
-
   // Create two new pipes.
   int first[2], second[2];
   ASSERT_THAT(pipe(first), SyscallSucceeds());
@@ -440,6 +440,49 @@ TEST(TeeTest, Blocking) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), kPageSize), 0);
 }
 
+TEST(TeeTest, BlockingWrite) {
+  // Create two new pipes.
+  int first[2], second[2];
+  ASSERT_THAT(pipe(first), SyscallSucceeds());
+  const FileDescriptor rfd1(first[0]);
+  const FileDescriptor wfd1(first[1]);
+  ASSERT_THAT(pipe(second), SyscallSucceeds());
+  const FileDescriptor rfd2(second[0]);
+  const FileDescriptor wfd2(second[1]);
+
+  // Make some data available to be read.
+  std::vector<char> buf1(kPageSize);
+  RandomizeBuffer(buf1.data(), buf1.size());
+  ASSERT_THAT(write(wfd1.get(), buf1.data(), buf1.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Fill up the write pipe's buffer.
+  int pipe_size = -1;
+  ASSERT_THAT(pipe_size = fcntl(wfd2.get(), F_GETPIPE_SZ), SyscallSucceeds());
+  std::vector<char> buf2(pipe_size);
+  ASSERT_THAT(write(wfd2.get(), buf2.data(), buf2.size()),
+              SyscallSucceedsWithValue(pipe_size));
+
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(read(rfd2.get(), buf2.data(), buf2.size()),
+                SyscallSucceedsWithValue(pipe_size));
+  });
+
+  // Attempt a tee immediately; it should block.
+  EXPECT_THAT(tee(rfd1.get(), wfd2.get(), kPageSize, 0),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Thread should be joinable.
+  t.Join();
+
+  // Content should reflect the tee.
+  std::vector<char> rbuf(kPageSize);
+  ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_EQ(memcmp(rbuf.data(), buf1.data(), kPageSize), 0);
+}
+
 TEST(SpliceTest, NonBlocking) {
   // Create two new pipes.
   int first[2], second[2];
@@ -457,8 +500,6 @@ TEST(SpliceTest, NonBlocking) {
 }
 
 TEST(TeeTest, NonBlocking) {
-  SKIP_IF(IsRunningOnGvisor());
-
   // Create two new pipes.
   int first[2], second[2];
   ASSERT_THAT(pipe(first), SyscallSucceeds());
@@ -471,6 +512,79 @@ TEST(TeeTest, NonBlocking) {
   // Splice with no data to back it.
   EXPECT_THAT(tee(rfd1.get(), wfd2.get(), kPageSize, SPLICE_F_NONBLOCK),
               SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST(TeeTest, MultiPage) {
+  // Create two new pipes.
+  int first[2], second[2];
+  ASSERT_THAT(pipe(first), SyscallSucceeds());
+  const FileDescriptor rfd1(first[0]);
+  const FileDescriptor wfd1(first[1]);
+  ASSERT_THAT(pipe(second), SyscallSucceeds());
+  const FileDescriptor rfd2(second[0]);
+  const FileDescriptor wfd2(second[1]);
+
+  // Make some data available to be read.
+  std::vector<char> wbuf(8 * kPageSize);
+  RandomizeBuffer(wbuf.data(), wbuf.size());
+  ASSERT_THAT(write(wfd1.get(), wbuf.data(), wbuf.size()),
+              SyscallSucceedsWithValue(wbuf.size()));
+
+  // Attempt a tee immediately; it should complete.
+  EXPECT_THAT(tee(rfd1.get(), wfd2.get(), wbuf.size(), 0),
+              SyscallSucceedsWithValue(wbuf.size()));
+
+  // Content should reflect the tee.
+  std::vector<char> rbuf(wbuf.size());
+  ASSERT_THAT(read(rfd2.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(rbuf.size()));
+  EXPECT_EQ(memcmp(rbuf.data(), wbuf.data(), rbuf.size()), 0);
+  ASSERT_THAT(read(rfd1.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(rbuf.size()));
+  EXPECT_EQ(memcmp(rbuf.data(), wbuf.data(), rbuf.size()), 0);
+}
+
+TEST(SpliceTest, FromPipeMaxFileSize) {
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill with some random data.
+  std::vector<char> buf(kPageSize);
+  RandomizeBuffer(buf.data(), buf.size());
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  // Open the input file.
+  const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor out_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_RDWR));
+
+  EXPECT_THAT(ftruncate(out_fd.get(), 13 << 20), SyscallSucceeds());
+  EXPECT_THAT(lseek(out_fd.get(), 0, SEEK_END),
+              SyscallSucceedsWithValue(13 << 20));
+
+  // Set our file size limit.
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGXFSZ);
+  TEST_PCHECK(sigprocmask(SIG_BLOCK, &set, nullptr) == 0);
+  rlimit rlim = {};
+  rlim.rlim_cur = rlim.rlim_max = (13 << 20);
+  EXPECT_THAT(setrlimit(RLIMIT_FSIZE, &rlim), SyscallSucceeds());
+
+  // Splice to the output file.
+  EXPECT_THAT(
+      splice(rfd.get(), nullptr, out_fd.get(), nullptr, 3 * kPageSize, 0),
+      SyscallFailsWithErrno(EFBIG));
+
+  // Contents should be equal.
+  std::vector<char> rbuf(kPageSize);
+  ASSERT_THAT(read(rfd.get(), rbuf.data(), rbuf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+  EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
 }
 
 }  // namespace

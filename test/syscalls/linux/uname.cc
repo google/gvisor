@@ -41,6 +41,19 @@ TEST(UnameTest, Sanity) {
 TEST(UnameTest, SetNames) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
+  char hostname[65];
+  ASSERT_THAT(sethostname("0123456789", 3), SyscallSucceeds());
+  EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(hostname), "012");
+
+  ASSERT_THAT(sethostname("0123456789\0xxx", 11), SyscallSucceeds());
+  EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(hostname), "0123456789");
+
+  ASSERT_THAT(sethostname("0123456789\0xxx", 12), SyscallSucceeds());
+  EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
+  EXPECT_EQ(absl::string_view(hostname), "0123456789");
+
   constexpr char kHostname[] = "wubbalubba";
   ASSERT_THAT(sethostname(kHostname, sizeof(kHostname)), SyscallSucceeds());
 
@@ -54,7 +67,6 @@ TEST(UnameTest, SetNames) {
   EXPECT_EQ(absl::string_view(buf.domainname), kDomainname);
 
   // These should just be glibc wrappers that also call uname(2).
-  char hostname[65];
   EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
   EXPECT_EQ(absl::string_view(hostname), kHostname);
 

@@ -16,6 +16,7 @@ package container
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -33,13 +34,14 @@ import (
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/boot/platforms"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 )
 
 // waitForProcessList waits for the given process list to show up in the container.
@@ -155,12 +157,7 @@ func waitForFile(f *os.File) error {
 		return nil
 	}
 
-	timeout := 5 * time.Second
-	if testutil.RaceEnabled {
-		// Race makes slow things even slow, so bump the timeout.
-		timeout = 3 * timeout
-	}
-	return testutil.Poll(op, timeout)
+	return testutil.Poll(op, 30*time.Second)
 }
 
 // readOutputNum reads a file at given filepath and returns the int at the
@@ -254,10 +251,6 @@ func configs(opts ...configOption) []*boot.Config {
 			// TODO(b/112165693): KVM tests are flaky. Disable until fixed.
 			continue
 
-			// TODO(b/68787993): KVM doesn't work with --race.
-			if testutil.RaceEnabled {
-				continue
-			}
 			c.Platform = platforms.KVM
 		case nonExclusiveFS:
 			c.FileAccess = boot.FileAccessShared
@@ -1310,10 +1303,13 @@ func TestRunNonRoot(t *testing.T) {
 		t.Logf("Running test with conf: %+v", conf)
 
 		spec := testutil.NewSpecWithArgs("/bin/true")
+
+		// Set a random user/group with no access to "blocked" dir.
 		spec.Process.User.UID = 343
 		spec.Process.User.GID = 2401
+		spec.Process.Capabilities = nil
 
-		// User that container runs as can't list '$TMP/blocked' and would fail to
+		// User running inside container can't list '$TMP/blocked' and would fail to
 		// mount it.
 		dir, err := ioutil.TempDir(testutil.TmpDir(), "blocked")
 		if err != nil {
@@ -1326,6 +1322,17 @@ func TestRunNonRoot(t *testing.T) {
 		if err := os.Mkdir(dir, 0755); err != nil {
 			t.Fatalf("os.MkDir(%q) failed: %v", dir, err)
 		}
+
+		src, err := ioutil.TempDir(testutil.TmpDir(), "src")
+		if err != nil {
+			t.Fatalf("ioutil.TempDir() failed: %v", err)
+		}
+
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: dir,
+			Source:      src,
+			Type:        "bind",
+		})
 
 		if err := run(spec, conf); err != nil {
 			t.Fatalf("error running sandbox: %v", err)
@@ -1637,21 +1644,26 @@ func TestGoferExits(t *testing.T) {
 }
 
 func TestRootNotMount(t *testing.T) {
-	if testutil.RaceEnabled {
-		// Requires statically linked binary, since it's mapping the root to a
-		// random dir, libs cannot be located.
-		t.Skip("race makes test_app not statically linked")
-	}
-
 	appSym, err := testutil.FindFile("runsc/container/test_app/test_app")
 	if err != nil {
 		t.Fatal("error finding test_app:", err)
 	}
+
 	app, err := filepath.EvalSymlinks(appSym)
 	if err != nil {
 		t.Fatalf("error resolving %q symlink: %v", appSym, err)
 	}
 	log.Infof("App path %q is a symlink to %q", appSym, app)
+
+	static, err := testutil.IsStatic(app)
+	if err != nil {
+		t.Fatalf("error reading application binary: %v", err)
+	}
+	if !static {
+		// This happens during race builds; we cannot map in shared
+		// libraries also, so we need to skip the test.
+		t.Skip()
+	}
 
 	root := filepath.Dir(app)
 	exe := "/" + filepath.Base(app)
@@ -2038,6 +2050,30 @@ func TestMountSymlink(t *testing.T) {
 	}
 }
 
+// Check that --net-raw disables the CAP_NET_RAW capability.
+func TestNetRaw(t *testing.T) {
+	capNetRaw := strconv.FormatUint(bits.MaskOf64(int(linux.CAP_NET_RAW)), 10)
+	app, err := testutil.FindFile("runsc/container/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	for _, enableRaw := range []bool{true, false} {
+		conf := testutil.TestConfig()
+		conf.EnableRaw = enableRaw
+
+		test := "--enabled"
+		if !enableRaw {
+			test = "--disabled"
+		}
+
+		spec := testutil.NewSpecWithArgs(app, "capability", test, capNetRaw)
+		if err := run(spec, conf); err != nil {
+			t.Fatalf("Error running container: %v", err)
+		}
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)
@@ -2053,10 +2089,10 @@ func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, 
 
 func TestMain(m *testing.M) {
 	log.SetLevel(log.Debug)
+	flag.Parse()
 	if err := testutil.ConfigureExePath(); err != nil {
 		panic(err.Error())
 	}
 	specutils.MaybeRunAsRoot()
-
 	os.Exit(m.Run())
 }

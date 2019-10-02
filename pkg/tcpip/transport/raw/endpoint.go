@@ -207,7 +207,7 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 }
 
 // Write implements tcpip.Endpoint.Write.
-func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -220,9 +220,8 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64
 		return 0, nil, tcpip.ErrInvalidEndpointState
 	}
 
-	payloadBytes, err := payload.Get(payload.Size())
+	payloadBytes, err := p.FullPayload()
 	if err != nil {
-		ep.mu.RUnlock()
 		return 0, nil, err
 	}
 
@@ -230,7 +229,7 @@ func (ep *endpoint) Write(payload tcpip.Payload, opts tcpip.WriteOptions) (int64
 	// destination address, route using that address.
 	if !ep.associated {
 		ip := header.IPv4(payloadBytes)
-		if !ip.IsValid(payload.Size()) {
+		if !ip.IsValid(len(payloadBytes)) {
 			ep.mu.RUnlock()
 			return 0, nil, tcpip.ErrInvalidOptionValue
 		}
@@ -493,6 +492,11 @@ func (ep *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	return tcpip.ErrUnknownProtocolOption
 }
 
+// SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
+func (ep *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	return tcpip.ErrUnknownProtocolOption
+}
+
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
@@ -505,6 +509,19 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		}
 		ep.rcvMu.Unlock()
 		return v, nil
+
+	case tcpip.SendBufferSizeOption:
+		ep.mu.Lock()
+		v := ep.sndBufSize
+		ep.mu.Unlock()
+		return v, nil
+
+	case tcpip.ReceiveBufferSizeOption:
+		ep.rcvMu.Lock()
+		v := ep.rcvBufSizeMax
+		ep.rcvMu.Unlock()
+		return v, nil
+
 	}
 
 	return -1, tcpip.ErrUnknownProtocolOption
@@ -514,18 +531,6 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 func (ep *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
-		return nil
-
-	case *tcpip.SendBufferSizeOption:
-		ep.mu.Lock()
-		*o = tcpip.SendBufferSizeOption(ep.sndBufSize)
-		ep.mu.Unlock()
-		return nil
-
-	case *tcpip.ReceiveBufferSizeOption:
-		ep.rcvMu.Lock()
-		*o = tcpip.ReceiveBufferSizeOption(ep.rcvBufSizeMax)
-		ep.rcvMu.Unlock()
 		return nil
 
 	case *tcpip.KeepaliveEnabledOption:

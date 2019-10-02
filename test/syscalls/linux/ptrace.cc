@@ -27,6 +27,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/logging.h"
@@ -36,10 +37,10 @@
 #include "test/util/thread_util.h"
 #include "test/util/time_util.h"
 
-DEFINE_bool(ptrace_test_execve_child, false,
-            "If true, run the "
-            "PtraceExecveTest_Execve_GetRegs_PeekUser_SIGKILL_TraceClone_"
-            "TraceExit child workload.");
+ABSL_FLAG(bool, ptrace_test_execve_child, false,
+          "If true, run the "
+          "PtraceExecveTest_Execve_GetRegs_PeekUser_SIGKILL_TraceClone_"
+          "TraceExit child workload.");
 
 namespace gvisor {
 namespace testing {
@@ -1206,7 +1207,7 @@ TEST(PtraceTest, SeizeSetOptions) {
 int main(int argc, char** argv) {
   gvisor::testing::TestInit(&argc, &argv);
 
-  if (FLAGS_ptrace_test_execve_child) {
+  if (absl::GetFlag(FLAGS_ptrace_test_execve_child)) {
     gvisor::testing::RunExecveChild();
   }
 

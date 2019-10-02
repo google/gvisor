@@ -171,8 +171,6 @@ type MountNamespace struct {
 // NewMountNamespace returns a new MountNamespace, with the provided node at the
 // root, and the given cache size. A root must always be provided.
 func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error) {
-	creds := auth.CredentialsFromContext(ctx)
-
 	// Set the root dirent and id on the root mount. The reference returned from
 	// NewDirent will be donated to the MountNamespace constructed below.
 	d := NewDirent(ctx, root, "/")
@@ -181,6 +179,7 @@ func NewMountNamespace(ctx context.Context, root *Inode) (*MountNamespace, error
 		d: newRootMount(1, d),
 	}
 
+	creds := auth.CredentialsFromContext(ctx)
 	mns := MountNamespace{
 		userns:  creds.UserNamespace,
 		root:    d,

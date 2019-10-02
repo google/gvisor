@@ -65,13 +65,13 @@ func (*fakeTransportEndpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.Contr
 	return buffer.View{}, tcpip.ControlMessages{}, nil
 }
 
-func (f *fakeTransportEndpoint) Write(p tcpip.Payload, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	if len(f.route.RemoteAddress) == 0 {
 		return 0, nil, tcpip.ErrNoRoute
 	}
 
 	hdr := buffer.NewPrependable(int(f.route.MaxHeaderLength()))
-	v, err := p.Get(p.Size())
+	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
@@ -88,6 +88,11 @@ func (f *fakeTransportEndpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *t
 
 // SetSockOpt sets a socket option. Currently not supported.
 func (*fakeTransportEndpoint) SetSockOpt(interface{}) *tcpip.Error {
+	return tcpip.ErrInvalidEndpointState
+}
+
+// SetSockOptInt sets a socket option. Currently not supported.
+func (*fakeTransportEndpoint) SetSockOptInt(tcpip.SockOpt, int) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
@@ -122,7 +127,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Try to register so that we can start receiving packets.
 	f.id.RemoteAddress = addr.Addr
-	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.id, f, false)
+	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.id, f, false /* reuse */, 0 /* bindToDevice */)
 	if err != nil {
 		return err
 	}
@@ -163,7 +168,8 @@ func (f *fakeTransportEndpoint) Bind(a tcpip.FullAddress) *tcpip.Error {
 		fakeTransNumber,
 		stack.TransportEndpointID{LocalAddress: a.Addr},
 		f,
-		false,
+		false, /* reuse */
+		0,     /* bindtoDevice */
 	); err != nil {
 		return err
 	}
@@ -251,7 +257,7 @@ func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err *tcp
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.VectorisedView) bool {
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(*stack.Route, stack.TransportEndpointID, buffer.View, buffer.VectorisedView) bool {
 	return true
 }
 
@@ -277,10 +283,17 @@ func (f *fakeTransportProtocol) Option(option interface{}) *tcpip.Error {
 	}
 }
 
+func fakeTransFactory() stack.TransportProtocol {
+	return &fakeTransportProtocol{}
+}
+
 func TestTransportReceive(t *testing.T) {
-	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	linkEP := channel.New(10, defaultMTU, "")
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -340,9 +353,12 @@ func TestTransportReceive(t *testing.T) {
 }
 
 func TestTransportControlReceive(t *testing.T) {
-	id, linkEP := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	linkEP := channel.New(10, defaultMTU, "")
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -408,9 +424,12 @@ func TestTransportControlReceive(t *testing.T) {
 }
 
 func TestTransportSend(t *testing.T) {
-	id, _ := channel.New(10, defaultMTU, "")
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
-	if err := s.CreateNIC(1, id); err != nil {
+	linkEP := channel.New(10, defaultMTU, "")
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
+	if err := s.CreateNIC(1, linkEP); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
@@ -452,7 +471,10 @@ func TestTransportSend(t *testing.T) {
 }
 
 func TestTransportOptions(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 
 	// Try an unsupported transport protocol.
 	if err := s.SetTransportProtocolOption(tcpip.TransportProtocolNumber(99999), fakeTransportGoodOption(false)); err != tcpip.ErrUnknownProtocol {
@@ -493,20 +515,23 @@ func TestTransportOptions(t *testing.T) {
 }
 
 func TestTransportForwarding(t *testing.T) {
-	s := stack.New([]string{"fakeNet"}, []string{"fakeTrans"}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
+		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
+	})
 	s.SetForwarding(true)
 
 	// TODO(b/123449044): Change this to a channel NIC.
-	id1 := loopback.New()
-	if err := s.CreateNIC(1, id1); err != nil {
+	ep1 := loopback.New()
+	if err := s.CreateNIC(1, ep1); err != nil {
 		t.Fatalf("CreateNIC #1 failed: %v", err)
 	}
 	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
 		t.Fatalf("AddAddress #1 failed: %v", err)
 	}
 
-	id2, linkEP2 := channel.New(10, defaultMTU, "")
-	if err := s.CreateNIC(2, id2); err != nil {
+	ep2 := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(2, ep2); err != nil {
 		t.Fatalf("CreateNIC #2 failed: %v", err)
 	}
 	if err := s.AddAddress(2, fakeNetNumber, "\x02"); err != nil {
@@ -545,7 +570,7 @@ func TestTransportForwarding(t *testing.T) {
 	req[0] = 1
 	req[1] = 3
 	req[2] = byte(fakeTransNumber)
-	linkEP2.Inject(fakeNetNumber, req.ToVectorisedView())
+	ep2.Inject(fakeNetNumber, req.ToVectorisedView())
 
 	aep, _, err := ep.Accept()
 	if err != nil || aep == nil {
@@ -559,7 +584,7 @@ func TestTransportForwarding(t *testing.T) {
 
 	var p channel.PacketInfo
 	select {
-	case p = <-linkEP2.C:
+	case p = <-ep2.C:
 	default:
 		t.Fatal("Response packet not forwarded")
 	}
@@ -570,10 +595,4 @@ func TestTransportForwarding(t *testing.T) {
 	if src := p.Header[1]; src != 1 {
 		t.Errorf("Response packet has incorrect source addresss: got = %d, want = 3", src)
 	}
-}
-
-func init() {
-	stack.RegisterTransportProtocolFactory("fakeTrans", func() stack.TransportProtocol {
-		return &fakeTransportProtocol{}
-	})
 }
