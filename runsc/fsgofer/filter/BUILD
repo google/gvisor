@@ -17,6 +17,7 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/flipcall",
         "//pkg/log",
         "//pkg/seccomp",
         "@org_golang_x_sys//unix:go_default_library",

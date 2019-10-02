@@ -70,9 +70,12 @@ func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.P
 	return nil
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*countedEndpoint) Wait() {}
+
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
-	_, wep := New(stack.RegisterLinkEndpoint(ep))
+	wep := New(ep)
 
 	// Write and check that it goes through.
 	wep.WritePacket(nil, nil /* gso */, buffer.Prependable{}, buffer.VectorisedView{}, 0)
@@ -97,7 +100,7 @@ func TestWaitWrite(t *testing.T) {
 
 func TestWaitDispatch(t *testing.T) {
 	ep := &countedEndpoint{}
-	_, wep := New(stack.RegisterLinkEndpoint(ep))
+	wep := New(ep)
 
 	// Check that attach happens.
 	wep.Attach(ep)
@@ -139,7 +142,7 @@ func TestOtherMethods(t *testing.T) {
 		hdrLen:       hdrLen,
 		linkAddr:     linkAddr,
 	}
-	_, wep := New(stack.RegisterLinkEndpoint(ep))
+	wep := New(ep)
 
 	if v := wep.MTU(); v != mtu {
 		t.Fatalf("Unexpected mtu: got=%v, want=%v", v, mtu)

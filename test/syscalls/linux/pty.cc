@@ -1292,10 +1292,9 @@ TEST_F(JobControlTest, ReleaseTTY) {
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
-  struct sigaction sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sa, &old_sa), SyscallSucceeds());
@@ -1362,10 +1361,9 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   received = 0;
-  struct sigaction sa = {
-      .sa_handler = sig_handler,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = sig_handler;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sigaddset(&sa.sa_mask, SIGHUP);
   sigaddset(&sa.sa_mask, SIGCONT);
@@ -1403,10 +1401,9 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
   // disconnect they TTY.
-  struct sigaction sighup_sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sighup_sa = {};
+  sighup_sa.sa_handler = SIG_IGN;
+  sighup_sa.sa_flags = 0;
   sigemptyset(&sighup_sa.sa_mask);
   struct sigaction old_sa;
   EXPECT_THAT(sigaction(SIGHUP, &sighup_sa, &old_sa), SyscallSucceeds());
@@ -1456,10 +1453,9 @@ TEST_F(JobControlTest, SetForegroundProcessGroup) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
-  struct sigaction sa = {
-      .sa_handler = SIG_IGN,
-      .sa_flags = 0,
-  };
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
   sigemptyset(&sa.sa_mask);
   sigaction(SIGTTOU, &sa, NULL);
 
@@ -1531,27 +1527,70 @@ TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
 TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
   ASSERT_THAT(ioctl(slave_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
+  int sync_setsid[2];
+  int sync_exit[2];
+  ASSERT_THAT(pipe(sync_setsid), SyscallSucceeds());
+  ASSERT_THAT(pipe(sync_exit), SyscallSucceeds());
+
   // Create a new process and put it in a new session.
   pid_t child = fork();
   if (!child) {
     TEST_PCHECK(setsid() >= 0);
     // Tell the parent we're in a new session.
-    TEST_PCHECK(!raise(SIGSTOP));
-    TEST_PCHECK(!pause());
-    _exit(1);
+    char c = 'c';
+    TEST_PCHECK(WriteFd(sync_setsid[1], &c, 1) == 1);
+    TEST_PCHECK(ReadFd(sync_exit[0], &c, 1) == 1);
+    _exit(0);
   }
 
   // Wait for the child to tell us it's in a new session.
-  int wstatus;
-  EXPECT_THAT(waitpid(child, &wstatus, WUNTRACED),
-              SyscallSucceedsWithValue(child));
-  EXPECT_TRUE(WSTOPSIG(wstatus));
+  char c = 'c';
+  ASSERT_THAT(ReadFd(sync_setsid[0], &c, 1), SyscallSucceedsWithValue(1));
 
   // Child is in a new session, so we can't make it the foregroup process group.
   EXPECT_THAT(ioctl(slave_.get(), TIOCSPGRP, &child),
               SyscallFailsWithErrno(EPERM));
 
-  EXPECT_THAT(kill(child, SIGKILL), SyscallSucceeds());
+  EXPECT_THAT(WriteFd(sync_exit[1], &c, 1), SyscallSucceedsWithValue(1));
+
+  int wstatus;
+  EXPECT_THAT(waitpid(child, &wstatus, 0), SyscallSucceedsWithValue(child));
+  EXPECT_TRUE(WIFEXITED(wstatus));
+  EXPECT_EQ(WEXITSTATUS(wstatus), 0);
+}
+
+// Verify that we don't hang when creating a new session from an orphaned
+// process group (b/139968068). Calling setsid() creates an orphaned process
+// group, as process groups that contain the session's leading process are
+// orphans.
+//
+// We create 2 sessions in this test. The init process in gVisor is considered
+// not to be an orphan (see sessions.go), so we have to create a session from
+// which to create a session. The latter session is being created from an
+// orphaned process group.
+TEST_F(JobControlTest, OrphanRegression) {
+  pid_t session_2_leader = fork();
+  if (!session_2_leader) {
+    TEST_PCHECK(setsid() >= 0);
+
+    pid_t session_3_leader = fork();
+    if (!session_3_leader) {
+      TEST_PCHECK(setsid() >= 0);
+
+      _exit(0);
+    }
+
+    int wstatus;
+    TEST_PCHECK(waitpid(session_3_leader, &wstatus, 0) == session_3_leader);
+    TEST_PCHECK(wstatus == 0);
+
+    _exit(0);
+  }
+
+  int wstatus;
+  ASSERT_THAT(waitpid(session_2_leader, &wstatus, 0),
+              SyscallSucceedsWithValue(session_2_leader));
+  ASSERT_EQ(wstatus, 0);
 }
 
 }  // namespace

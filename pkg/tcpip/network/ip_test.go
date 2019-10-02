@@ -144,6 +144,9 @@ func (*testObject) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*testObject) Wait() {}
+
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
@@ -169,7 +172,10 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 }
 
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
-	s := stack.New([]string{ipv4.ProtocolName}, []string{udp.ProtocolName, tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
+	})
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv4.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
@@ -182,7 +188,10 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 }
 
 func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
-	s := stack.New([]string{ipv6.ProtocolName}, []string{udp.ProtocolName, tcp.ProtocolName}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
+	})
 	s.CreateNIC(1, loopback.New())
 	s.AddAddress(1, ipv6.ProtocolNumber, local)
 	s.SetRouteTable([]tcpip.Route{{
@@ -319,7 +328,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			icmp := header.ICMPv4(view[header.IPv4MinimumSize:])
 			icmp.SetType(header.ICMPv4DstUnreachable)
 			icmp.SetCode(c.code)
-			copy(view[header.IPv4MinimumSize+header.ICMPv4PayloadOffset:], []byte{0xde, 0xad, 0xbe, 0xef})
+			icmp.SetIdent(0xdead)
+			icmp.SetSequence(0xbeef)
 
 			// Create the inner IPv4 header.
 			ip = header.IPv4(view[header.IPv4MinimumSize+header.ICMPv4MinimumSize:])
@@ -539,7 +549,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 
 			defer ep.Close()
 
-			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize + 4
+			dataOffset := header.IPv6MinimumSize*2 + header.ICMPv6MinimumSize
 			if c.fragmentOffset != nil {
 				dataOffset += header.IPv6FragmentHeaderSize
 			}
@@ -559,10 +569,11 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			icmp := header.ICMPv6(view[header.IPv6MinimumSize:])
 			icmp.SetType(c.typ)
 			icmp.SetCode(c.code)
-			copy(view[header.IPv6MinimumSize+header.ICMPv6MinimumSize:], []byte{0xde, 0xad, 0xbe, 0xef})
+			icmp.SetIdent(0xdead)
+			icmp.SetSequence(0xbeef)
 
 			// Create the inner IPv6 header.
-			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6MinimumSize+4:])
+			ip = header.IPv6(view[header.IPv6MinimumSize+header.ICMPv6PayloadOffset:])
 			ip.Encode(&header.IPv6Fields{
 				PayloadLength: 100,
 				NextHeader:    10,
@@ -574,7 +585,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			// Build the fragmentation header if needed.
 			if c.fragmentOffset != nil {
 				ip.SetNextHeader(header.IPv6FragmentHeader)
-				frag := header.IPv6Fragment(view[2*header.IPv6MinimumSize+header.ICMPv6MinimumSize+4:])
+				frag := header.IPv6Fragment(view[2*header.IPv6MinimumSize+header.ICMPv6MinimumSize:])
 				frag.Encode(&header.IPv6FragmentFields{
 					NextHeader:     10,
 					FragmentOffset: *c.fragmentOffset,

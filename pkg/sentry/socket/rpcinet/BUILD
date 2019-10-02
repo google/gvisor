@@ -1,5 +1,6 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
 
 package(licenses = ["notice"])
 
@@ -47,6 +48,14 @@ proto_library(
     visibility = [
         "//visibility:public",
     ],
+)
+
+cc_proto_library(
+    name = "syscall_rpc_cc_proto",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [":syscall_rpc_proto"],
 )
 
 go_proto_library(

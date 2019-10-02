@@ -492,6 +492,11 @@ uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
 uint16_t ICMPChecksum(struct icmphdr icmphdr, const char* payload,
                       ssize_t payload_len);
 
+namespace internal {
+PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
+                                   SocketType type, bool reuse_addr);
+}  // namespace internal
+
 }  // namespace testing
 }  // namespace gvisor
 

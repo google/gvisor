@@ -277,8 +277,3 @@ func TotalMemory(memSize, used uint64) uint64 {
 	}
 	return memSize
 }
-
-// IncrementalMappedAccounting controls whether host mapped memory is accounted
-// incrementally during map translation. This may be modified during early
-// initialization, and is read-only afterward.
-var IncrementalMappedAccounting = false

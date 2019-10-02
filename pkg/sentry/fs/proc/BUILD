@@ -1,6 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
 package(licenses = ["notice"])
 
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "proc",
@@ -31,7 +33,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/log",
         "//pkg/sentry/context",
         "//pkg/sentry/fs",

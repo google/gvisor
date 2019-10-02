@@ -15,6 +15,7 @@
 package ports
 
 import (
+	"math/rand"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -34,6 +35,7 @@ type portReserveTestAction struct {
 	want    *tcpip.Error
 	reuse   bool
 	release bool
+	device  tcpip.NICID
 }
 
 func TestPortReservation(t *testing.T) {
@@ -100,6 +102,112 @@ func TestPortReservation(t *testing.T) {
 				{port: 24, ip: anyIPAddress, release: true},
 				{port: 24, ip: anyIPAddress, reuse: false, want: nil},
 			},
+		}, {
+			tname: "bind twice with device fails",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 3, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 3, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind to device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 1, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 2, want: nil},
+			},
+		}, {
+			tname: "bind to device and then without device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind without device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, reuse: true, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 456, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 789, want: nil},
+				{port: 24, ip: fakeIPAddress, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, reuse: true, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind with reuse",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
+			},
+		}, {
+			tname: "binding with reuse and device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 123, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 456, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 999, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "mixing reuse and not reuse by binding to device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 456, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 999, want: nil},
+			},
+		}, {
+			tname: "can't bind to 0 after mixing reuse and not reuse",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 456, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "bind and release",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: tcpip.ErrPortInUse},
+				{port: 24, ip: fakeIPAddress, device: 789, reuse: true, want: nil},
+
+				// Release the bind to device 0 and try again.
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: nil},
+			},
+		}, {
+			tname: "bind twice with reuse once",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 0, reuse: true, want: tcpip.ErrPortInUse},
+			},
+		}, {
+			tname: "release an unreserved device",
+			actions: []portReserveTestAction{
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil},
+				{port: 24, ip: fakeIPAddress, device: 456, reuse: false, want: nil},
+				// The below don't exist.
+				{port: 24, ip: fakeIPAddress, device: 345, reuse: false, want: nil, release: true},
+				{port: 9999, ip: fakeIPAddress, device: 123, reuse: false, want: nil, release: true},
+				// Release all.
+				{port: 24, ip: fakeIPAddress, device: 123, reuse: false, want: nil, release: true},
+				{port: 24, ip: fakeIPAddress, device: 456, reuse: false, want: nil, release: true},
+			},
 		},
 	} {
 		t.Run(test.tname, func(t *testing.T) {
@@ -108,12 +216,12 @@ func TestPortReservation(t *testing.T) {
 
 			for _, test := range test.actions {
 				if test.release {
-					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port)
+					pm.ReleasePort(net, fakeTransNumber, test.ip, test.port, test.device)
 					continue
 				}
-				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.reuse)
+				gotPort, err := pm.ReservePort(net, fakeTransNumber, test.ip, test.port, test.reuse, test.device)
 				if err != test.want {
-					t.Fatalf("ReservePort(.., .., %s, %d, %t) = %v, want %v", test.ip, test.port, test.release, err, test.want)
+					t.Fatalf("ReservePort(.., .., %s, %d, %t, %d) = %v, want %v", test.ip, test.port, test.reuse, test.device, err, test.want)
 				}
 				if test.port == 0 && (gotPort == 0 || gotPort < FirstEphemeral) {
 					t.Fatalf("ReservePort(.., .., .., 0) = %d, want port number >= %d to be picked", gotPort, FirstEphemeral)
@@ -125,7 +233,6 @@ func TestPortReservation(t *testing.T) {
 }
 
 func TestPickEphemeralPort(t *testing.T) {
-	pm := NewPortManager()
 	customErr := &tcpip.Error{}
 	for _, test := range []struct {
 		name     string
@@ -169,7 +276,61 @@ func TestPickEphemeralPort(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			pm := NewPortManager()
 			if port, err := pm.PickEphemeralPort(test.f); port != test.wantPort || err != test.wantErr {
+				t.Errorf("PickEphemeralPort(..) = (port %d, err %v); want (port %d, err %v)", port, err, test.wantPort, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestPickEphemeralPortStable(t *testing.T) {
+	customErr := &tcpip.Error{}
+	for _, test := range []struct {
+		name     string
+		f        func(port uint16) (bool, *tcpip.Error)
+		wantErr  *tcpip.Error
+		wantPort uint16
+	}{
+		{
+			name: "no-port-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				return false, nil
+			},
+			wantErr: tcpip.ErrNoPortAvailable,
+		},
+		{
+			name: "port-tester-error",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				return false, customErr
+			},
+			wantErr: customErr,
+		},
+		{
+			name: "only-port-16042-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				if port == FirstEphemeral+42 {
+					return true, nil
+				}
+				return false, nil
+			},
+			wantPort: FirstEphemeral + 42,
+		},
+		{
+			name: "only-port-under-16000-available",
+			f: func(port uint16) (bool, *tcpip.Error) {
+				if port < FirstEphemeral {
+					return true, nil
+				}
+				return false, nil
+			},
+			wantErr: tcpip.ErrNoPortAvailable,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pm := NewPortManager()
+			portOffset := uint32(rand.Int31n(int32(numEphemeralPorts)))
+			if port, err := pm.PickEphemeralPortStable(portOffset, test.f); port != test.wantPort || err != test.wantErr {
 				t.Errorf("PickEphemeralPort(..) = (port %d, err %v); want (port %d, err %v)", port, err, test.wantPort, test.wantErr)
 			}
 		})

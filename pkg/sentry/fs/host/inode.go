@@ -114,7 +114,7 @@ func (i *inodeFileState) WriteFromBlocksAt(ctx context.Context, srcs safemem.Blo
 }
 
 // SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
-func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr) error {
+func (i *inodeFileState) SetMaskedAttributes(ctx context.Context, mask fs.AttrMask, attr fs.UnstableAttr, _ bool) error {
 	if mask.Empty() {
 		return nil
 	}
@@ -163,7 +163,7 @@ func (i *inodeFileState) unstableAttr(ctx context.Context) (fs.UnstableAttr, err
 	return unstableAttr(i.mops, &s), nil
 }
 
-// SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
+// Allocate implements fsutil.CachedFileObject.Allocate.
 func (i *inodeFileState) Allocate(_ context.Context, offset, length int64) error {
 	return syscall.Fallocate(i.FD(), 0, offset, length)
 }
@@ -200,8 +200,10 @@ func newInode(ctx context.Context, msrc *fs.MountSource, fd int, saveable bool, 
 	// Build the fs.InodeOperations.
 	uattr := unstableAttr(msrc.MountSourceOperations.(*superOperations), &s)
 	iops := &inodeOperations{
-		fileState:       fileState,
-		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, msrc.Flags.ForcePageCache),
+		fileState: fileState,
+		cachingInodeOps: fsutil.NewCachingInodeOperations(ctx, fileState, uattr, fsutil.CachingInodeOperationsOptions{
+			ForcePageCache: msrc.Flags.ForcePageCache,
+		}),
 	}
 
 	// Return the fs.Inode.

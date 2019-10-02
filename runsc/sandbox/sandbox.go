@@ -351,7 +351,15 @@ func (s *Sandbox) createSandboxProcess(conf *boot.Config, args *Args, startSyncF
 		nextFD++
 	}
 	if conf.DebugLog != "" {
-		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot")
+		test := ""
+		if len(conf.TestOnlyTestNameEnv) != 0 {
+			// Fetch test name if one is provided and the test only flag was set.
+			if t, ok := specutils.EnvVar(args.Spec.Process.Env, conf.TestOnlyTestNameEnv); ok {
+				test = t
+			}
+		}
+
+		debugLogFile, err := specutils.DebugLogFile(conf.DebugLog, "boot", test)
 		if err != nil {
 			return fmt.Errorf("opening debug log file in %q: %v", conf.DebugLog, err)
 		}

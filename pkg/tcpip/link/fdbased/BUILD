@@ -1,4 +1,5 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(licenses = ["notice"])
 
@@ -8,8 +9,8 @@ go_library(
         "endpoint.go",
         "endpoint_unsafe.go",
         "mmap.go",
-        "mmap_amd64.go",
-        "mmap_amd64_unsafe.go",
+        "mmap_stub.go",
+        "mmap_unsafe.go",
         "packet_dispatchers.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/tcpip/link/fdbased",

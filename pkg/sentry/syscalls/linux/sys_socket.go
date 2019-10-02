@@ -531,7 +531,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, syserror.ENOTSOCK
 	}
 
-	if optLen <= 0 {
+	if optLen < 0 {
 		return 0, nil, syserror.EINVAL
 	}
 	if optLen > maxOptLen {

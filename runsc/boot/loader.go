@@ -20,7 +20,6 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -33,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
-	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
@@ -56,6 +54,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
@@ -527,34 +526,21 @@ func (l *Loader) run() error {
 
 		// Setup the root container file system.
 		l.startGoferMonitor(l.sandboxID, l.goferFDs)
+
 		mntr := newContainerMounter(l.spec, l.goferFDs, l.k, l.mountHints)
-		if err := mntr.setupRootContainer(ctx, ctx, l.conf, func(mns *fs.MountNamespace) {
-			l.rootProcArgs.MountNamespace = mns
-		}); err != nil {
+		if err := mntr.processHints(l.conf); err != nil {
+			return err
+		}
+		if err := setupContainerFS(ctx, l.conf, mntr, &l.rootProcArgs); err != nil {
 			return err
 		}
 
-		if err := setExecutablePath(ctx, &l.rootProcArgs); err != nil {
+		// Add the HOME enviroment variable if it is not already set.
+		envv, err := maybeAddExecUserHome(ctx, l.rootProcArgs.MountNamespace, l.rootProcArgs.Credentials.RealKUID, l.rootProcArgs.Envv)
+		if err != nil {
 			return err
 		}
-
-		// Read /etc/passwd for the user's HOME directory and set the HOME
-		// environment variable as required by POSIX if it is not overridden by
-		// the user.
-		hasHomeEnvv := false
-		for _, envv := range l.rootProcArgs.Envv {
-			if strings.HasPrefix(envv, "HOME=") {
-				hasHomeEnvv = true
-			}
-		}
-		if !hasHomeEnvv {
-			homeDir, err := getExecUserHome(ctx, l.rootProcArgs.MountNamespace, uint32(l.rootProcArgs.Credentials.RealKUID))
-			if err != nil {
-				return fmt.Errorf("error reading exec user: %v", err)
-			}
-
-			l.rootProcArgs.Envv = append(l.rootProcArgs.Envv, "HOME="+homeDir)
-		}
+		l.rootProcArgs.Envv = envv
 
 		// Create the root container init task. It will begin running
 		// when the kernel is started.
@@ -687,13 +673,10 @@ func (l *Loader) startContainer(spec *specs.Spec, conf *Config, cid string, file
 
 	// Setup the child container file system.
 	l.startGoferMonitor(cid, goferFDs)
-	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
-	if err := mntr.setupChildContainer(conf, &procArgs); err != nil {
-		return fmt.Errorf("configuring container FS: %v", err)
-	}
 
-	if err := setExecutablePath(ctx, &procArgs); err != nil {
-		return fmt.Errorf("setting executable path for %+v: %v", procArgs, err)
+	mntr := newContainerMounter(spec, goferFDs, l.k, l.mountHints)
+	if err := setupContainerFS(ctx, conf, mntr, &procArgs); err != nil {
+		return err
 	}
 
 	// Create and start the new process.
@@ -766,25 +749,33 @@ func (l *Loader) destroyContainer(cid string) error {
 		if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
 			return fmt.Errorf("sending SIGKILL to all container processes: %v", err)
 		}
+		// Wait for all processes that belong to the container to exit (including
+		// exec'd processes).
+		for _, t := range l.k.TaskSet().Root.Tasks() {
+			if t.ContainerID() == cid {
+				t.ThreadGroup().WaitExited()
+			}
+		}
+
+		// At this point, all processes inside of the container have exited,
+		// releasing all references to the container's MountNamespace and
+		// causing all submounts and overlays to be unmounted.
+		//
+		// Since the container's MountNamespace has been released,
+		// MountNamespace.destroy() will have executed, but that function may
+		// trigger async close operations. We must wait for those to complete
+		// before returning, otherwise the caller may kill the gofer before
+		// they complete, causing a cascade of failing RPCs.
+		fs.AsyncBarrier()
 	}
 
-	// Remove all container thread groups from the map.
+	// No more failure from this point on. Remove all container thread groups
+	// from the map.
 	for key := range l.processes {
 		if key.cid == cid {
 			delete(l.processes, key)
 		}
 	}
-
-	// At this point, all processes inside of the container have exited,
-	// releasing all references to the container's MountNamespace and
-	// causing all submounts and overlays to be unmounted.
-	//
-	// Since the container's MountNamespace has been released,
-	// MountNamespace.destroy() will have executed, but that function may
-	// trigger async close operations. We must wait for those to complete
-	// before returning, otherwise the caller may kill the gofer before
-	// they complete, causing a cascade of failing RPCs.
-	fs.AsyncBarrier()
 
 	log.Debugf("Container destroyed %q", cid)
 	return nil
@@ -812,6 +803,16 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 		args.MountNamespace.IncRef()
 	})
 	defer args.MountNamespace.DecRef()
+
+	// Add the HOME enviroment varible if it is not already set.
+	root := args.MountNamespace.Root()
+	defer root.DecRef()
+	ctx := fs.WithRoot(l.k.SupervisorContext(), root)
+	envv, err := maybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
+	if err != nil {
+		return 0, err
+	}
+	args.Envv = envv
 
 	// Start the process.
 	proc := control.Proc{Kernel: l.k}
@@ -911,15 +912,17 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 
 	case NetworkNone, NetworkSandbox:
 		// NetworkNone sets up loopback using netstack.
-		netProtos := []string{ipv4.ProtocolName, ipv6.ProtocolName, arp.ProtocolName}
-		protoNames := []string{tcp.ProtocolName, udp.ProtocolName, icmp.ProtocolName4}
-		s := epsocket.Stack{stack.New(netProtos, protoNames, stack.Options{
-			Clock:       clock,
-			Stats:       epsocket.Metrics,
-			HandleLocal: true,
+		netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
+		transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
+		s := epsocket.Stack{stack.New(stack.Options{
+			NetworkProtocols:   netProtos,
+			TransportProtocols: transProtos,
+			Clock:              clock,
+			Stats:              epsocket.Metrics,
+			HandleLocal:        true,
 			// Enable raw sockets for users with sufficient
 			// privileges.
-			Raw: true,
+			UnassociatedFactory: raw.EndpointFactory{},
 		})}
 
 		// Enable SACK Recovery.
@@ -1043,21 +1046,8 @@ func (l *Loader) signalAllProcesses(cid string, signo int32) error {
 	// the signal is delivered. This prevents process leaks when SIGKILL is
 	// sent to the entire container.
 	l.k.Pause()
-	if err := l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo}); err != nil {
-		l.k.Unpause()
-		return err
-	}
-	l.k.Unpause()
-
-	// If SIGKILLing all processes, wait for them to exit.
-	if linux.Signal(signo) == linux.SIGKILL {
-		for _, t := range l.k.TaskSet().Root.Tasks() {
-			if t.ContainerID() == cid {
-				t.ThreadGroup().WaitExited()
-			}
-		}
-	}
-	return nil
+	defer l.k.Unpause()
+	return l.k.SendContainerSignal(cid, &arch.SignalInfo{Signo: signo})
 }
 
 // threadGroupFromID same as threadGroupFromIDLocked except that it acquires
@@ -1089,9 +1079,4 @@ func (l *Loader) threadGroupFromIDLocked(key execID) (*kernel.ThreadGroup, *host
 		return nil, nil, false, nil
 	}
 	return ep.tg, ep.tty, true, nil
-}
-
-func init() {
-	// TODO(gvisor.dev/issue/365): Make this configurable.
-	refs.SetLeakMode(refs.NoLeakChecking)
 }

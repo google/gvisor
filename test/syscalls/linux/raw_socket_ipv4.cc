@@ -67,7 +67,11 @@ class RawSocketTest : public ::testing::TestWithParam<int> {
 };
 
 void RawSocketTest::SetUp() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_INET, SOCK_RAW, Protocol()),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   ASSERT_THAT(s_ = socket(AF_INET, SOCK_RAW, Protocol()), SyscallSucceeds());
 
@@ -79,9 +83,10 @@ void RawSocketTest::SetUp() {
 }
 
 void RawSocketTest::TearDown() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
-  EXPECT_THAT(close(s_), SyscallSucceeds());
+  // TearDown will be run even if we skip the test.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    EXPECT_THAT(close(s_), SyscallSucceeds());
+  }
 }
 
 // We should be able to create multiple raw sockets for the same protocol.

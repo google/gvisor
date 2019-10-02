@@ -27,6 +27,11 @@ const (
 	udpChecksum = 6
 )
 
+const (
+	// UDPMaximumPacketSize is the largest possible UDP packet.
+	UDPMaximumPacketSize = 0xffff
+)
+
 // UDPFields contains the fields of a UDP packet. It is used to describe the
 // fields of a packet that needs to be encoded.
 type UDPFields struct {

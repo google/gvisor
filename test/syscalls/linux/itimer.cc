@@ -336,7 +336,9 @@ int main(int argc, char** argv) {
     }
     if (arg == gvisor::testing::kSIGPROFFairnessIdle) {
       MaskSIGPIPE();
-      return gvisor::testing::TestSIGPROFFairness(absl::Milliseconds(10));
+      // Sleep time > ClockTick (10ms) exercises sleeping gVisor's
+      // kernel.cpuClockTicker.
+      return gvisor::testing::TestSIGPROFFairness(absl::Milliseconds(25));
     }
   }
 

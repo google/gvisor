@@ -19,9 +19,12 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
+#include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -299,10 +302,30 @@ TEST(SendFileTest, DoNotSendfileIfOutfileIsAppendOnly) {
 
   // Open the output file as append only.
   const FileDescriptor outf =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_APPEND));
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY | O_APPEND));
 
   // Send data and verify that sendfile returns the correct errno.
   EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, kDataSize),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SendFileTest, AppendCheckOrdering) {
+  constexpr char kData[] = "And by opposing end them: to die, to sleep";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+
+  const FileDescriptor read =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  const FileDescriptor write =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY));
+  const FileDescriptor append =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_APPEND));
+
+  // Check that read/write file mode is verified before append.
+  EXPECT_THAT(sendfile(append.get(), read.get(), nullptr, kDataSize),
+              SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(sendfile(write.get(), write.get(), nullptr, kDataSize),
               SyscallFailsWithErrno(EBADF));
 }
 
@@ -422,6 +445,72 @@ TEST(SendFileTest, SendToNotARegularFile) {
   EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 0),
               SyscallFailsWithErrno(EINVAL));
 }
+
+TEST(SendFileTest, SendPipeWouldBlock) {
+  // Create temp file.
+  constexpr char kData[] =
+      "The fool doth think he is wise, but the wise man knows himself to be a "
+      "fool.";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+
+  // Open the input file as read only.
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Setup the output named pipe.
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_NONBLOCK), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill up the pipe's buffer.
+  int pipe_size = -1;
+  ASSERT_THAT(pipe_size = fcntl(wfd.get(), F_GETPIPE_SZ), SyscallSucceeds());
+  std::vector<char> buf(2 * pipe_size);
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(pipe_size));
+
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize),
+              SyscallFailsWithErrno(EWOULDBLOCK));
+}
+
+TEST(SendFileTest, SendPipeBlocks) {
+  // Create temp file.
+  constexpr char kData[] =
+      "The fault, dear Brutus, is not in our stars, but in ourselves.";
+  constexpr int kDataSize = sizeof(kData) - 1;
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
+
+  // Open the input file as read only.
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
+
+  // Setup the output named pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill up the pipe's buffer.
+  int pipe_size = -1;
+  ASSERT_THAT(pipe_size = fcntl(wfd.get(), F_GETPIPE_SZ), SyscallSucceeds());
+  std::vector<char> buf(pipe_size);
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(pipe_size));
+
+  ScopedThread t([&]() {
+    absl::SleepFor(absl::Milliseconds(100));
+    ASSERT_THAT(read(rfd.get(), buf.data(), buf.size()),
+                SyscallSucceedsWithValue(pipe_size));
+  });
+
+  EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize),
+              SyscallSucceedsWithValue(kDataSize));
+}
+
 }  // namespace
 
 }  // namespace testing

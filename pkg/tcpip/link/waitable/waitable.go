@@ -40,11 +40,10 @@ type Endpoint struct {
 // New creates a new waitable link-layer endpoint. It wraps around another
 // endpoint and allows the caller to block new write/dispatch calls and wait for
 // the inflight ones to finish before returning.
-func New(lower tcpip.LinkEndpointID) (tcpip.LinkEndpointID, *Endpoint) {
-	e := &Endpoint{
-		lower: stack.FindLinkEndpoint(lower),
+func New(lower stack.LinkEndpoint) *Endpoint {
+	return &Endpoint{
+		lower: lower,
 	}
-	return stack.RegisterLinkEndpoint(e), e
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.DeliverNetworkPacket.
@@ -121,3 +120,6 @@ func (e *Endpoint) WaitWrite() {
 func (e *Endpoint) WaitDispatch() {
 	e.dispatchGate.Close()
 }
+
+// Wait implements stack.LinkEndpoint.Wait.
+func (e *Endpoint) Wait() {}

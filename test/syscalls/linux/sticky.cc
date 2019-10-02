@@ -17,9 +17,11 @@
 #include <sys/prctl.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -27,8 +29,8 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid, 65534, "first scratch UID");
-DEFINE_int32(scratch_gid, 65534, "first scratch GID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "first scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "first scratch GID");
 
 namespace gvisor {
 namespace testing {
@@ -52,10 +54,12 @@ TEST(StickyTest, StickyBitPermDenied) {
     }
 
     // Change EUID and EGID.
-    EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
-                SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid, -1),
-                SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid), -1),
+        SyscallSucceeds());
 
     EXPECT_THAT(rmdir(path.c_str()), SyscallFailsWithErrno(EPERM));
   });
@@ -78,8 +82,9 @@ TEST(StickyTest, StickyBitSameUID) {
     }
 
     // Change EGID.
-    EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
-                SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
 
     // We still have the same EUID.
     EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds());
@@ -101,10 +106,12 @@ TEST(StickyTest, StickyBitCapFOWNER) {
     EXPECT_THAT(prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0), SyscallSucceeds());
 
     // Change EUID and EGID.
-    EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
-                SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid, -1),
-                SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid), -1),
+        SyscallSucceeds());
 
     EXPECT_NO_ERRNO(SetCapability(CAP_FOWNER, true));
     EXPECT_THAT(rmdir(path.c_str()), SyscallSucceeds());

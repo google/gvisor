@@ -41,6 +41,11 @@ class DisableSave {
 //
 // errno is guaranteed to be preserved.
 void MaybeSave();
+
+namespace internal {
+bool ShouldSave();
+}  // namespace internal
+
 }  // namespace testing
 }  // namespace gvisor
 

@@ -20,12 +20,10 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"math"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -35,7 +33,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
-	"gvisor.dev/gvisor/runsc/test/testutil"
+	"gvisor.dev/gvisor/runsc/testutil"
 	"gvisor.dev/gvisor/test/syscalls/gtest"
 )
 
@@ -358,32 +356,14 @@ func main() {
 		fatalf("ParseTestCases(%q) failed: %v", testBin, err)
 	}
 
-	// If sharding, then get the subset of tests to run based on the shard index.
-	if indexStr, totalStr := os.Getenv("TEST_SHARD_INDEX"), os.Getenv("TEST_TOTAL_SHARDS"); indexStr != "" && totalStr != "" {
-		// Parse index and total to ints.
-		index, err := strconv.Atoi(indexStr)
-		if err != nil {
-			fatalf("invalid TEST_SHARD_INDEX %q: %v", indexStr, err)
-		}
-		total, err := strconv.Atoi(totalStr)
-		if err != nil {
-			fatalf("invalid TEST_TOTAL_SHARDS %q: %v", totalStr, err)
-		}
-		// Calculate subslice of tests to run.
-		shardSize := int(math.Ceil(float64(len(testCases)) / float64(total)))
-		begin := index * shardSize
-		// Set end as begin of next subslice.
-		end := ((index + 1) * shardSize)
-		if begin > len(testCases) {
-			// Nothing to run.
-			return
-		}
-		if end > len(testCases) {
-			end = len(testCases)
-		}
-		testCases = testCases[begin:end]
+	// Get subset of tests corresponding to shard.
+	begin, end, err := testutil.TestBoundsForShard(len(testCases))
+	if err != nil {
+		fatalf("TestsForShard() failed: %v", err)
 	}
+	testCases = testCases[begin:end]
 
+	// Run the tests.
 	var tests []testing.InternalTest
 	for _, tc := range testCases {
 		// Capture tc.

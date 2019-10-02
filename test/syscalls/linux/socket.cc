@@ -30,12 +30,25 @@ TEST(SocketTest, UnixSocketPairProtocol) {
   close(socks[1]);
 }
 
-TEST(SocketTest, Protocol) {
+TEST(SocketTest, ProtocolUnix) {
   struct {
     int domain, type, protocol;
   } tests[] = {
-      {AF_UNIX, SOCK_STREAM, PF_UNIX},     {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
-      {AF_UNIX, SOCK_DGRAM, PF_UNIX},      {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
+      {AF_UNIX, SOCK_STREAM, PF_UNIX},
+      {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
+      {AF_UNIX, SOCK_DGRAM, PF_UNIX},
+  };
+  for (int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+    ASSERT_NO_ERRNO_AND_VALUE(
+        Socket(tests[i].domain, tests[i].type, tests[i].protocol));
+  }
+}
+
+TEST(SocketTest, ProtocolInet) {
+  struct {
+    int domain, type, protocol;
+  } tests[] = {
+      {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
       {AF_INET, SOCK_STREAM, IPPROTO_TCP},
   };
   for (int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {

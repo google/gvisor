@@ -125,6 +125,10 @@ int futex_lock_pi(bool priv, std::atomic<int>* uaddr) {
   if (priv) {
     op |= FUTEX_PRIVATE_FLAG;
   }
+  int zero = 0;
+  if (uaddr->compare_exchange_strong(zero, gettid())) {
+    return 0;
+  }
   return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
 }
 
@@ -133,6 +137,10 @@ int futex_trylock_pi(bool priv, std::atomic<int>* uaddr) {
   if (priv) {
     op |= FUTEX_PRIVATE_FLAG;
   }
+  int zero = 0;
+  if (uaddr->compare_exchange_strong(zero, gettid())) {
+    return 0;
+  }
   return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
 }
 
@@ -140,6 +148,10 @@ int futex_unlock_pi(bool priv, std::atomic<int>* uaddr) {
   int op = FUTEX_UNLOCK_PI;
   if (priv) {
     op |= FUTEX_PRIVATE_FLAG;
+  }
+  int tid = gettid();
+  if (uaddr->compare_exchange_strong(tid, 0)) {
+    return 0;
   }
   return RetryEINTR(syscall)(SYS_futex, uaddr, op, nullptr, nullptr);
 }
@@ -692,8 +704,8 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
   std::unique_ptr<ScopedThread> threads[10];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
     threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
-      for (size_t j = 0; j < 100;) {
-        if (futex_trylock_pi(is_priv, &a) >= 0) {
+      for (size_t j = 0; j < 10;) {
+        if (futex_trylock_pi(is_priv, &a) == 0) {
           ++j;
           EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
           SleepSafe(absl::Milliseconds(5));

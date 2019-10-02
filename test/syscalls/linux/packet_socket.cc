@@ -83,8 +83,14 @@ void SendUDPMessage(int sock) {
 
 // Send an IP packet and make sure ETH_P_<something else> doesn't pick it up.
 TEST(BasicCookedPacketTest, WrongType) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // (b/129292371): Remove once we support packet sockets.
   SKIP_IF(IsRunningOnGvisor());
+
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, ETH_P_PUP),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   FileDescriptor sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_DGRAM, ETH_P_PUP));
@@ -118,18 +124,27 @@ class CookedPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void CookedPacketTest::SetUp() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // (b/129292371): Remove once we support packet sockets.
   SKIP_IF(IsRunningOnGvisor());
+
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
 }
 
 void CookedPacketTest::TearDown() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // (b/129292371): Remove once we support packet sockets.
   SKIP_IF(IsRunningOnGvisor());
 
-  EXPECT_THAT(close(socket_), SyscallSucceeds());
+  // TearDown will be run even if we skip the test.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    EXPECT_THAT(close(socket_), SyscallSucceeds());
+  }
 }
 
 int CookedPacketTest::GetLoopbackIndex() {
@@ -142,9 +157,6 @@ int CookedPacketTest::GetLoopbackIndex() {
 
 // Receive via a packet socket.
 TEST_P(CookedPacketTest, Receive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(IsRunningOnGvisor());
-
   // Let's use a simple IP payload: a UDP datagram.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -201,9 +213,6 @@ TEST_P(CookedPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(CookedPacketTest, Send) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(IsRunningOnGvisor());
-
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));

@@ -1,4 +1,5 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(licenses = ["notice"])
 
@@ -18,6 +19,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/memutil",
+        "//third_party/gvsync",
     ],
 )
 

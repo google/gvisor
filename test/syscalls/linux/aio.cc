@@ -14,30 +14,56 @@
 
 #include <fcntl.h>
 #include <linux/aio_abi.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <string>
+
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/file_base.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
+#include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/proc_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+
+using ::testing::_;
 
 namespace gvisor {
 namespace testing {
 namespace {
+
+// Returns the size of the VMA containing the given address.
+PosixErrorOr<size_t> VmaSizeAt(uintptr_t addr) {
+  ASSIGN_OR_RETURN_ERRNO(std::string proc_self_maps,
+                         GetContents("/proc/self/maps"));
+  ASSIGN_OR_RETURN_ERRNO(auto entries, ParseProcMaps(proc_self_maps));
+  // Use binary search to find the first VMA that might contain addr.
+  ProcMapsEntry target = {};
+  target.end = addr;
+  auto it =
+      std::upper_bound(entries.begin(), entries.end(), target,
+                       [](const ProcMapsEntry& x, const ProcMapsEntry& y) {
+                         return x.end < y.end;
+                       });
+  // Check that it actually contains addr.
+  if (it == entries.end() || addr < it->start) {
+    return PosixError(ENOENT, absl::StrCat("no VMA contains address ", addr));
+  }
+  return it->end - it->start;
+}
 
 constexpr char kData[] = "hello world!";
 
 int SubmitCtx(aio_context_t ctx, long nr, struct iocb** iocbpp) {
   return syscall(__NR_io_submit, ctx, nr, iocbpp);
 }
-
-}  // namespace
 
 class AIOTest : public FileTest {
  public:
@@ -124,10 +150,10 @@ TEST_F(AIOTest, BasicWrite) {
   EXPECT_EQ(events[0].res, strlen(kData));
 
   // Verify that the file contains the contents.
-  char verify_buf[32] = {};
-  ASSERT_THAT(read(test_file_fd_.get(), &verify_buf[0], strlen(kData)),
-              SyscallSucceeds());
-  EXPECT_EQ(strcmp(kData, &verify_buf[0]), 0);
+  char verify_buf[sizeof(kData)] = {};
+  ASSERT_THAT(read(test_file_fd_.get(), verify_buf, sizeof(kData)),
+              SyscallSucceedsWithValue(strlen(kData)));
+  EXPECT_STREQ(verify_buf, kData);
 }
 
 TEST_F(AIOTest, BadWrite) {
@@ -220,38 +246,25 @@ TEST_F(AIOTest, CloneVm) {
 TEST_F(AIOTest, Mremap) {
   // Setup a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
+  const size_t ctx_size =
+      ASSERT_NO_ERRNO_AND_VALUE(VmaSizeAt(reinterpret_cast<uintptr_t>(ctx_)));
 
   struct iocb cb = CreateCallback();
   struct iocb* cbs[1] = {&cb};
 
   // Reserve address space for the mremap target so we have something safe to
   // map over.
-  //
-  // N.B. We reserve 2 pages because we'll attempt to remap to 2 pages below.
-  // That should fail with EFAULT, but will fail with EINVAL if this mmap
-  // returns the page immediately below ctx_, as
-  // [new_address, new_address+2*kPageSize) overlaps [ctx_, ctx_+kPageSize).
-  void* new_address = mmap(nullptr, 2 * kPageSize, PROT_READ,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_THAT(reinterpret_cast<intptr_t>(new_address), SyscallSucceeds());
-  auto mmap_cleanup = Cleanup([new_address] {
-    EXPECT_THAT(munmap(new_address, 2 * kPageSize), SyscallSucceeds());
-  });
-
-  // Test that remapping to a larger address fails.
-  void* res = mremap(reinterpret_cast<void*>(ctx_), kPageSize, 2 * kPageSize,
-                     MREMAP_FIXED | MREMAP_MAYMOVE, new_address);
-  ASSERT_THAT(reinterpret_cast<intptr_t>(res), SyscallFailsWithErrno(EFAULT));
+  Mapping dst =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(ctx_size, PROT_READ, MAP_PRIVATE));
 
   // Remap context 'handle' to a different address.
-  res = mremap(reinterpret_cast<void*>(ctx_), kPageSize, kPageSize,
-               MREMAP_FIXED | MREMAP_MAYMOVE, new_address);
-  ASSERT_THAT(
-      reinterpret_cast<intptr_t>(res),
-      SyscallSucceedsWithValue(reinterpret_cast<intptr_t>(new_address)));
-  mmap_cleanup.Release();
+  ASSERT_THAT(Mremap(reinterpret_cast<void*>(ctx_), ctx_size, dst.len(),
+                     MREMAP_FIXED | MREMAP_MAYMOVE, dst.ptr()),
+              IsPosixErrorOkAndHolds(dst.ptr()));
   aio_context_t old_ctx = ctx_;
-  ctx_ = reinterpret_cast<aio_context_t>(new_address);
+  ctx_ = reinterpret_cast<aio_context_t>(dst.addr());
+  // io_destroy() will unmap dst now.
+  dst.release();
 
   // Check that submitting the request with the old 'ctx_' fails.
   ASSERT_THAT(SubmitCtx(old_ctx, 1, cbs), SyscallFailsWithErrno(EINVAL));
@@ -260,18 +273,12 @@ TEST_F(AIOTest, Mremap) {
   ASSERT_THAT(Submit(1, cbs), SyscallSucceedsWithValue(1));
 
   // Remap again.
-  new_address =
-      mmap(nullptr, kPageSize, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_THAT(reinterpret_cast<int64_t>(new_address), SyscallSucceeds());
-  auto mmap_cleanup2 = Cleanup([new_address] {
-    EXPECT_THAT(munmap(new_address, kPageSize), SyscallSucceeds());
-  });
-  res = mremap(reinterpret_cast<void*>(ctx_), kPageSize, kPageSize,
-               MREMAP_FIXED | MREMAP_MAYMOVE, new_address);
-  ASSERT_THAT(reinterpret_cast<int64_t>(res),
-              SyscallSucceedsWithValue(reinterpret_cast<int64_t>(new_address)));
-  mmap_cleanup2.Release();
-  ctx_ = reinterpret_cast<aio_context_t>(new_address);
+  dst = ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(ctx_size, PROT_READ, MAP_PRIVATE));
+  ASSERT_THAT(Mremap(reinterpret_cast<void*>(ctx_), ctx_size, dst.len(),
+                     MREMAP_FIXED | MREMAP_MAYMOVE, dst.ptr()),
+              IsPosixErrorOkAndHolds(dst.ptr()));
+  ctx_ = reinterpret_cast<aio_context_t>(dst.addr());
+  dst.release();
 
   // Get the reply with yet another 'ctx_' and verify it.
   struct io_event events[1];
@@ -281,51 +288,33 @@ TEST_F(AIOTest, Mremap) {
   EXPECT_EQ(events[0].res, strlen(kData));
 
   // Verify that the file contains the contents.
-  char verify_buf[32] = {};
-  ASSERT_THAT(read(test_file_fd_.get(), &verify_buf[0], strlen(kData)),
-              SyscallSucceeds());
-  EXPECT_EQ(strcmp(kData, &verify_buf[0]), 0);
+  char verify_buf[sizeof(kData)] = {};
+  ASSERT_THAT(read(test_file_fd_.get(), verify_buf, sizeof(kData)),
+              SyscallSucceedsWithValue(strlen(kData)));
+  EXPECT_STREQ(verify_buf, kData);
 }
 
-// Tests that AIO context can be replaced with a different mapping at the same
-// address and continue working. Don't ask why, but Linux allows it.
-TEST_F(AIOTest, MremapOver) {
+// Tests that AIO context cannot be expanded with mremap.
+TEST_F(AIOTest, MremapExpansion) {
   // Setup a context that is 128 entries deep.
   ASSERT_THAT(SetupContext(128), SyscallSucceeds());
+  const size_t ctx_size =
+      ASSERT_NO_ERRNO_AND_VALUE(VmaSizeAt(reinterpret_cast<uintptr_t>(ctx_)));
 
-  struct iocb cb = CreateCallback();
-  struct iocb* cbs[1] = {&cb};
+  // Reserve address space for the mremap target so we have something safe to
+  // map over.
+  Mapping dst = ASSERT_NO_ERRNO_AND_VALUE(
+      MmapAnon(ctx_size + kPageSize, PROT_NONE, MAP_PRIVATE));
 
-  ASSERT_THAT(Submit(1, cbs), SyscallSucceedsWithValue(1));
+  // Test that remapping to a larger address range fails.
+  ASSERT_THAT(Mremap(reinterpret_cast<void*>(ctx_), ctx_size, dst.len(),
+                     MREMAP_FIXED | MREMAP_MAYMOVE, dst.ptr()),
+              PosixErrorIs(EFAULT, _));
 
-  // Allocate a new VMA, copy 'ctx_' content over, and remap it on top
-  // of 'ctx_'.
-  void* new_address = mmap(nullptr, kPageSize, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  ASSERT_THAT(reinterpret_cast<int64_t>(new_address), SyscallSucceeds());
-  auto mmap_cleanup = Cleanup([new_address] {
-    EXPECT_THAT(munmap(new_address, kPageSize), SyscallSucceeds());
-  });
-
-  memcpy(new_address, reinterpret_cast<void*>(ctx_), kPageSize);
-  void* res =
-      mremap(new_address, kPageSize, kPageSize, MREMAP_FIXED | MREMAP_MAYMOVE,
-             reinterpret_cast<void*>(ctx_));
-  ASSERT_THAT(reinterpret_cast<int64_t>(res), SyscallSucceedsWithValue(ctx_));
-  mmap_cleanup.Release();
-
-  // Everything continues to work just fine.
-  struct io_event events[1];
-  ASSERT_THAT(GetEvents(1, 1, events, nullptr), SyscallSucceedsWithValue(1));
-  EXPECT_EQ(events[0].data, 0x123);
-  EXPECT_EQ(events[0].obj, reinterpret_cast<long>(&cb));
-  EXPECT_EQ(events[0].res, strlen(kData));
-
-  // Verify that the file contains the contents.
-  char verify_buf[32] = {};
-  ASSERT_THAT(read(test_file_fd_.get(), &verify_buf[0], strlen(kData)),
-              SyscallSucceeds());
-  EXPECT_EQ(strcmp(kData, &verify_buf[0]), 0);
+  // mm/mremap.c:sys_mremap() => mremap_to() does do_munmap() of the destination
+  // before it hits the VM_DONTEXPAND check in vma_to_resize(), so we should no
+  // longer munmap it (another thread may have created a mapping there).
+  dst.release();
 }
 
 // Tests that AIO calls fail if context's address is inaccessible.
@@ -428,6 +417,8 @@ TEST_P(AIOVectorizedParamTest, BadIOVecs) {
 
 INSTANTIATE_TEST_SUITE_P(BadIOVecs, AIOVectorizedParamTest,
                          ::testing::Values(IOCB_CMD_PREADV, IOCB_CMD_PWRITEV));
+
+}  // namespace
 
 }  // namespace testing
 }  // namespace gvisor

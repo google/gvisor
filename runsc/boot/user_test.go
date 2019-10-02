@@ -25,6 +25,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/sentry/context/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
 func setupTempDir() (string, error) {
@@ -68,7 +69,7 @@ func setupPasswd(contents string, perms os.FileMode) func() (string, error) {
 // TestGetExecUserHome tests the getExecUserHome function.
 func TestGetExecUserHome(t *testing.T) {
 	tests := map[string]struct {
-		uid        uint32
+		uid        auth.KUID
 		createRoot func() (string, error)
 		expected   string
 	}{
@@ -164,13 +165,13 @@ func TestGetExecUserHome(t *testing.T) {
 				},
 			}
 
-			var mns *fs.MountNamespace
-			setMountNS := func(m *fs.MountNamespace) {
-				mns = m
-				ctx.(*contexttest.TestContext).RegisterValue(fs.CtxRoot, mns.Root())
-			}
 			mntr := newContainerMounter(spec, []int{sandEnd}, nil, &podMountHints{})
-			if err := mntr.setupRootContainer(ctx, ctx, conf, setMountNS); err != nil {
+			mns, err := mntr.createMountNamespace(ctx, conf)
+			if err != nil {
+				t.Fatalf("failed to create mount namespace: %v", err)
+			}
+			ctx = fs.WithRoot(ctx, mns.Root())
+			if err := mntr.mountSubmounts(ctx, conf, mns); err != nil {
 				t.Fatalf("failed to create mount namespace: %v", err)
 			}
 

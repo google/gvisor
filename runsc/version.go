@@ -15,4 +15,4 @@
 package main
 
 // version is set during linking.
-var version = ""
+var version = "VERSION_MISSING"

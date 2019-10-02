@@ -77,7 +77,11 @@ class RawSocketICMPTest : public ::testing::Test {
 };
 
 void RawSocketICMPTest::SetUp() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_ICMP),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   ASSERT_THAT(s_ = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP), SyscallSucceeds());
 
@@ -90,9 +94,10 @@ void RawSocketICMPTest::SetUp() {
 }
 
 void RawSocketICMPTest::TearDown() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-
-  EXPECT_THAT(close(s_), SyscallSucceeds());
+  // TearDown will be run even if we skip the test.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    EXPECT_THAT(close(s_), SyscallSucceeds());
+  }
 }
 
 // We'll only read an echo in this case, as the kernel won't respond to the

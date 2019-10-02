@@ -22,12 +22,14 @@ import (
 )
 
 const (
-	versTCFL   = 0
-	payloadLen = 4
-	nextHdr    = 6
-	hopLimit   = 7
-	v6SrcAddr  = 8
-	v6DstAddr  = 24
+	versTCFL = 0
+	// IPv6PayloadLenOffset is the offset of the PayloadLength field in
+	// IPv6 header.
+	IPv6PayloadLenOffset = 4
+	nextHdr              = 6
+	hopLimit             = 7
+	v6SrcAddr            = 8
+	v6DstAddr            = v6SrcAddr + IPv6AddressSize
 )
 
 // IPv6Fields contains the fields of an IPv6 packet. It is used to describe the
@@ -74,6 +76,13 @@ const (
 	// IPv6Version is the version of the ipv6 protocol.
 	IPv6Version = 6
 
+	// IPv6AllNodesMulticastAddress is a link-local multicast group that
+	// all IPv6 nodes MUST join, as per RFC 4291, section 2.8. Packets
+	// destined to this address will reach all nodes on a link.
+	//
+	// The address is ff02::1.
+	IPv6AllNodesMulticastAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+
 	// IPv6MinimumMTU is the minimum MTU required by IPv6, per RFC 2460,
 	// section 5.
 	IPv6MinimumMTU = 1280
@@ -94,7 +103,7 @@ var IPv6EmptySubnet = func() tcpip.Subnet {
 // PayloadLength returns the value of the "payload length" field of the ipv6
 // header.
 func (b IPv6) PayloadLength() uint16 {
-	return binary.BigEndian.Uint16(b[payloadLen:])
+	return binary.BigEndian.Uint16(b[IPv6PayloadLenOffset:])
 }
 
 // HopLimit returns the value of the "hop limit" field of the ipv6 header.
@@ -119,13 +128,13 @@ func (b IPv6) Payload() []byte {
 
 // SourceAddress returns the "source address" field of the ipv6 header.
 func (b IPv6) SourceAddress() tcpip.Address {
-	return tcpip.Address(b[v6SrcAddr : v6SrcAddr+IPv6AddressSize])
+	return tcpip.Address(b[v6SrcAddr:][:IPv6AddressSize])
 }
 
 // DestinationAddress returns the "destination address" field of the ipv6
 // header.
 func (b IPv6) DestinationAddress() tcpip.Address {
-	return tcpip.Address(b[v6DstAddr : v6DstAddr+IPv6AddressSize])
+	return tcpip.Address(b[v6DstAddr:][:IPv6AddressSize])
 }
 
 // Checksum implements Network.Checksum. Given that IPv6 doesn't have a
@@ -148,18 +157,18 @@ func (b IPv6) SetTOS(t uint8, l uint32) {
 
 // SetPayloadLength sets the "payload length" field of the ipv6 header.
 func (b IPv6) SetPayloadLength(payloadLength uint16) {
-	binary.BigEndian.PutUint16(b[payloadLen:], payloadLength)
+	binary.BigEndian.PutUint16(b[IPv6PayloadLenOffset:], payloadLength)
 }
 
 // SetSourceAddress sets the "source address" field of the ipv6 header.
 func (b IPv6) SetSourceAddress(addr tcpip.Address) {
-	copy(b[v6SrcAddr:v6SrcAddr+IPv6AddressSize], addr)
+	copy(b[v6SrcAddr:][:IPv6AddressSize], addr)
 }
 
 // SetDestinationAddress sets the "destination address" field of the ipv6
 // header.
 func (b IPv6) SetDestinationAddress(addr tcpip.Address) {
-	copy(b[v6DstAddr:v6DstAddr+IPv6AddressSize], addr)
+	copy(b[v6DstAddr:][:IPv6AddressSize], addr)
 }
 
 // SetNextHeader sets the value of the "next header" field of the ipv6 header.
@@ -178,8 +187,8 @@ func (b IPv6) Encode(i *IPv6Fields) {
 	b.SetPayloadLength(i.PayloadLength)
 	b[nextHdr] = i.NextHeader
 	b[hopLimit] = i.HopLimit
-	copy(b[v6SrcAddr:v6SrcAddr+IPv6AddressSize], i.SrcAddr)
-	copy(b[v6DstAddr:v6DstAddr+IPv6AddressSize], i.DstAddr)
+	b.SetSourceAddress(i.SrcAddr)
+	b.SetDestinationAddress(i.DstAddr)
 }
 
 // IsValid performs basic validation on the packet.
@@ -217,6 +226,24 @@ func IsV6MulticastAddress(addr tcpip.Address) bool {
 		return false
 	}
 	return addr[0] == 0xff
+}
+
+// IsV6UnicastAddress determines if the provided address is a valid IPv6
+// unicast (and specified) address. That is, IsV6UnicastAddress returns
+// true if addr contains IPv6AddressSize bytes, is not the unspecified
+// address and is not a multicast address.
+func IsV6UnicastAddress(addr tcpip.Address) bool {
+	if len(addr) != IPv6AddressSize {
+		return false
+	}
+
+	// Must not be unspecified
+	if addr == IPv6Any {
+		return false
+	}
+
+	// Return if not a multicast.
+	return addr[0] != 0xff
 }
 
 // SolicitedNodeAddr computes the solicited-node multicast address. This is

@@ -47,6 +47,7 @@ go_test(
     ],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/bits",
         "//pkg/log",
         "//pkg/sentry/control",
         "//pkg/sentry/kernel",
@@ -56,7 +57,7 @@ go_test(
         "//runsc/boot",
         "//runsc/boot/platforms",
         "//runsc/specutils",
-        "//runsc/test/testutil",
+        "//runsc/testutil",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",

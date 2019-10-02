@@ -14,6 +14,7 @@
 
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
+#include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/test_util.h"
@@ -27,7 +28,7 @@ TEST(ProcNetIfInet6, Format) {
   EXPECT_THAT(ifinet6,
               ::testing::MatchesRegex(
                   // Ex: "00000000000000000000000000000001 01 80 10 80 lo\n"
-                  "^([a-f\\d]{32}( [a-f\\d]{2}){4} +[a-z][a-z\\d]*\\n)+$"));
+                  "^([a-f0-9]{32}( [a-f0-9]{2}){4} +[a-z][a-z0-9]*\n)+$"));
 }
 
 TEST(ProcSysNetIpv4Sack, Exists) {
@@ -35,6 +36,8 @@ TEST(ProcSysNetIpv4Sack, Exists) {
 }
 
 TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+
   auto const fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
 

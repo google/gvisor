@@ -16,10 +16,12 @@
 #include <grp.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/synchronization/notification.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -29,9 +31,9 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid1, 65534, "first scratch UID");
-DEFINE_int32(scratch_uid2, 65533, "second scratch UID");
-DEFINE_int32(scratch_gid, 65534, "first scratch GID");
+ABSL_FLAG(int32_t, scratch_uid1, 65534, "first scratch UID");
+ABSL_FLAG(int32_t, scratch_uid2, 65533, "second scratch UID");
+ABSL_FLAG(int32_t, scratch_gid, 65534, "first scratch GID");
 
 namespace gvisor {
 namespace testing {
@@ -100,10 +102,12 @@ TEST_P(ChownParamTest, ChownFilePermissionDenied) {
     // Change EUID and EGID.
     //
     // See note about POSIX below.
-    EXPECT_THAT(syscall(SYS_setresgid, -1, FLAGS_scratch_gid, -1),
-                SyscallSucceeds());
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid1, -1),
-                SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid1), -1),
+        SyscallSucceeds());
 
     EXPECT_THAT(GetParam()(file.path(), geteuid(), getegid()),
                 PosixErrorIs(EPERM, ::testing::ContainsRegex("chown")));
@@ -125,8 +129,9 @@ TEST_P(ChownParamTest, ChownFileSucceedsAsRoot) {
     // setresuid syscall. However, we want this thread to have its own set of
     // credentials different from the parent process, so we use the raw
     // syscall.
-    EXPECT_THAT(syscall(SYS_setresuid, -1, FLAGS_scratch_uid2, -1),
-                SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid2), -1),
+        SyscallSucceeds());
 
     // Create file and immediately close it.
     FileDescriptor fd =
@@ -143,12 +148,13 @@ TEST_P(ChownParamTest, ChownFileSucceedsAsRoot) {
   fileCreated.WaitForNotification();
 
   // Set file's owners to someone different.
-  EXPECT_NO_ERRNO(GetParam()(filename, FLAGS_scratch_uid1, FLAGS_scratch_gid));
+  EXPECT_NO_ERRNO(GetParam()(filename, absl::GetFlag(FLAGS_scratch_uid1),
+                             absl::GetFlag(FLAGS_scratch_gid)));
 
   struct stat s;
   EXPECT_THAT(stat(filename.c_str(), &s), SyscallSucceeds());
-  EXPECT_EQ(s.st_uid, FLAGS_scratch_uid1);
-  EXPECT_EQ(s.st_gid, FLAGS_scratch_gid);
+  EXPECT_EQ(s.st_uid, absl::GetFlag(FLAGS_scratch_uid1));
+  EXPECT_EQ(s.st_gid, absl::GetFlag(FLAGS_scratch_gid));
 
   fileChowned.Notify();
 }

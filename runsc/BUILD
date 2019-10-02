@@ -1,7 +1,7 @@
 package(licenses = ["notice"])  # Apache 2.0
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
-load("@bazel_tools//tools/build_defs/pkg:pkg.bzl", "pkg_deb", "pkg_tar")
+load("@rules_pkg//:pkg.bzl", "pkg_deb", "pkg_tar")
 
 go_binary(
     name = "runsc",
@@ -13,9 +13,10 @@ go_binary(
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{VERSION}"},
+    x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
@@ -45,9 +46,10 @@ go_binary(
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{VERSION}"},
+    x_defs = {"main.version": "{STABLE_VERSION}"},
     deps = [
         "//pkg/log",
+        "//pkg/refs",
         "//pkg/sentry/platform",
         "//runsc/boot",
         "//runsc/cmd",
@@ -65,19 +67,10 @@ pkg_tar(
 )
 
 pkg_tar(
-    name = "runsc-tools",
-    srcs = ["//runsc/tools/dockercfg"],
-    mode = "0755",
-    package_dir = "/usr/libexec/runsc",
-    strip_prefix = "/runsc/tools/dockercfg/linux_amd64_stripped",
-)
-
-pkg_tar(
     name = "debian-data",
     extension = "tar.gz",
     deps = [
         ":runsc-bin",
-        ":runsc-tools",
     ],
 )
 
@@ -98,13 +91,15 @@ pkg_deb(
     maintainer = "The gVisor Authors <gvisor-dev@googlegroups.com>",
     package = "runsc",
     postinst = "debian/postinst.sh",
-    tags = [
-        # TODO(b/135475885): pkg_deb requires python2:
-        # https://github.com/bazelbuild/bazel/issues/8443
-        "manual",
-    ],
     version_file = ":version.txt",
     visibility = [
         "//visibility:public",
     ],
+)
+
+sh_test(
+    name = "version_test",
+    size = "small",
+    srcs = ["version_test.sh"],
+    data = [":runsc"],
 )

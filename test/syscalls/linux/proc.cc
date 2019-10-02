@@ -440,6 +440,11 @@ TEST(ProcSelfAuxv, EntryPresence) {
   EXPECT_EQ(auxv_entries.count(AT_PHENT), 1);
   EXPECT_EQ(auxv_entries.count(AT_PHNUM), 1);
   EXPECT_EQ(auxv_entries.count(AT_BASE), 1);
+  EXPECT_EQ(auxv_entries.count(AT_UID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_EUID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_GID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_EGID), 1);
+  EXPECT_EQ(auxv_entries.count(AT_SECURE), 1);
   EXPECT_EQ(auxv_entries.count(AT_CLKTCK), 1);
   EXPECT_EQ(auxv_entries.count(AT_RANDOM), 1);
   EXPECT_EQ(auxv_entries.count(AT_EXECFN), 1);
@@ -1602,9 +1607,9 @@ class BlockingChild {
   }
 
   mutable absl::Mutex mu_;
-  bool stop_ GUARDED_BY(mu_) = false;
+  bool stop_ ABSL_GUARDED_BY(mu_) = false;
   pid_t tid_;
-  bool tid_ready_ GUARDED_BY(mu_) = false;
+  bool tid_ready_ ABSL_GUARDED_BY(mu_) = false;
 
   // Must be last to ensure that the destructor for the thread is run before
   // any other member of the object is destroyed.
@@ -1882,7 +1887,9 @@ void CheckDuplicatesRecursively(std::string path) {
   errno = 0;
   DIR* dir = opendir(path.c_str());
   if (dir == nullptr) {
-    ASSERT_THAT(errno, ::testing::AnyOf(EPERM, EACCES)) << path;
+    // Ignore any directories we can't read or missing directories as the
+    // directory could have been deleted/mutated from the time the parent
+    // directory contents were read.
     return;
   }
   auto dir_closer = Cleanup([&dir]() { closedir(dir); });

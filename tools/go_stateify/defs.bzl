@@ -35,7 +35,7 @@ go_library(
 )
 """
 
-load("@io_bazel_rules_go//go:def.bzl", _go_library = "go_library", _go_test = "go_test")
+load("@io_bazel_rules_go//go:def.bzl", _go_library = "go_library")
 
 def _go_stateify_impl(ctx):
     """Implementation for the stateify tool."""
@@ -60,28 +60,57 @@ def _go_stateify_impl(ctx):
         executable = ctx.executable._tool,
     )
 
-# Generates save and restore logic from a set of Go files.
-#
-# Args:
-#   name: the name of the rule.
-#   srcs: the input source files. These files should include all structs in the package that need to be saved.
-#   imports: an optional list of extra non-aliased, Go-style absolute import paths.
-#   out: the name of the generated file output. This must not conflict with any other files and must be added to the srcs of the relevant go_library.
-#   package: the package name for the input sources.
 go_stateify = rule(
     implementation = _go_stateify_impl,
+    doc = "Generates save and restore logic from a set of Go files.",
     attrs = {
-        "srcs": attr.label_list(mandatory = True, allow_files = True),
-        "imports": attr.string_list(mandatory = False),
-        "package": attr.string(mandatory = True),
-        "out": attr.output(mandatory = True),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_stateify:stateify")),
+        "srcs": attr.label_list(
+            doc = """
+The input source files. These files should include all structs in the package
+that need to be saved.
+""",
+            mandatory = True,
+            allow_files = True,
+        ),
+        "imports": attr.string_list(
+            doc = """
+An optional list of extra non-aliased, Go-style absolute import paths required
+for statified types.
+""",
+            mandatory = False,
+        ),
+        "package": attr.string(
+            doc = "The package name for the input sources.",
+            mandatory = True,
+        ),
+        "out": attr.output(
+            doc = """
+The name of the generated file output. This must not conflict with any other
+files and must be added to the srcs of the relevant go_library.
+""",
+            mandatory = True,
+        ),
+        "_tool": attr.label(
+            executable = True,
+            cfg = "host",
+            default = Label("//tools/go_stateify:stateify"),
+        ),
         "_statepkg": attr.string(default = "gvisor.dev/gvisor/pkg/state"),
     },
 )
 
 def go_library(name, srcs, deps = [], imports = [], **kwargs):
-    """wraps the standard go_library and does stateification."""
+    """Standard go_library wrapped which generates state source files.
+
+    Args:
+      name: the name of the go_library rule.
+      srcs: sources of the go_library. Each will be processed for stateify
+            annotations.
+      deps: dependencies for the go_library.
+      imports: an optional list of extra non-aliased, Go-style absolute import
+               paths required for stateified types.
+      **kwargs: passed to go_library.
+    """
     if "encode_unsafe.go" not in srcs and (name + "_state_autogen.go") not in srcs:
         # Only do stateification for non-state packages without manual autogen.
         go_stateify(
@@ -103,11 +132,5 @@ def go_library(name, srcs, deps = [], imports = [], **kwargs):
         name = name,
         srcs = all_srcs,
         deps = all_deps,
-        **kwargs
-    )
-
-def go_test(**kwargs):
-    """Wraps the standard go_test."""
-    _go_test(
         **kwargs
     )

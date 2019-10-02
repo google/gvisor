@@ -126,12 +126,22 @@ func (t *Task) accountTaskGoroutineEnter(state TaskGoroutineState) {
 	t.gosched.Timestamp = now
 	t.gosched.State = state
 	t.goschedSeq.EndWrite()
+
+	if state != TaskGoroutineRunningApp {
+		// Task is blocking/stopping.
+		t.k.decRunningTasks()
+	}
 }
 
 // Preconditions: The caller must be running on the task goroutine, and leaving
 // a state indicated by a previous call to
 // t.accountTaskGoroutineEnter(state).
 func (t *Task) accountTaskGoroutineLeave(state TaskGoroutineState) {
+	if state != TaskGoroutineRunningApp {
+		// Task is unblocking/continuing.
+		t.k.incRunningTasks()
+	}
+
 	now := t.k.CPUClockNow()
 	if t.gosched.State != state {
 		panic(fmt.Sprintf("Task goroutine switching from state %v (expected %v) to %v", t.gosched.State, state, TaskGoroutineRunningSys))
@@ -330,7 +340,7 @@ func newKernelCPUClockTicker(k *Kernel) *kernelCPUClockTicker {
 }
 
 // Notify implements ktime.TimerListener.Notify.
-func (ticker *kernelCPUClockTicker) Notify(exp uint64) {
+func (ticker *kernelCPUClockTicker) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	// Only increment cpuClock by 1 regardless of the number of expirations.
 	// This approximately compensates for cases where thread throttling or bad
 	// Go runtime scheduling prevents the kernelCPUClockTicker goroutine, and
@@ -426,6 +436,27 @@ func (ticker *kernelCPUClockTicker) Notify(exp uint64) {
 		tgs[i] = nil
 	}
 	ticker.tgs = tgs[:0]
+
+	// If nothing is running, we can disable the timer.
+	tasks := atomic.LoadInt64(&ticker.k.runningTasks)
+	if tasks == 0 {
+		ticker.k.runningTasksMu.Lock()
+		defer ticker.k.runningTasksMu.Unlock()
+		tasks := atomic.LoadInt64(&ticker.k.runningTasks)
+		if tasks != 0 {
+			// Raced with a 0 -> 1 transition.
+			return setting, false
+		}
+
+		// Stop the timer. We must cache the current setting so the
+		// kernel can access it without violating the lock order.
+		ticker.k.cpuClockTickerSetting = setting
+		ticker.k.cpuClockTickerDisabled = true
+		setting.Enabled = false
+		return setting, true
+	}
+
+	return setting, false
 }
 
 // Destroy implements ktime.TimerListener.Destroy.

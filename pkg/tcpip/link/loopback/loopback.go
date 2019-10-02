@@ -32,8 +32,8 @@ type endpoint struct {
 
 // New creates a new loopback endpoint. This link-layer endpoint just turns
 // outbound packets into inbound packets.
-func New() tcpip.LinkEndpointID {
-	return stack.RegisterLinkEndpoint(&endpoint{})
+func New() stack.LinkEndpoint {
+	return &endpoint{}
 }
 
 // Attach implements stack.LinkEndpoint.Attach. It just saves the stack network-
@@ -85,3 +85,6 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 
 	return nil
 }
+
+// Wait implements stack.LinkEndpoint.Wait.
+func (*endpoint) Wait() {}

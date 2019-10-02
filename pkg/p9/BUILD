@@ -1,4 +1,5 @@
-load("//tools/go_stateify:defs.bzl", "go_library", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -19,11 +20,14 @@ go_library(
         "pool.go",
         "server.go",
         "transport.go",
+        "transport_flipcall.go",
         "version.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/p9",
     deps = [
         "//pkg/fd",
+        "//pkg/fdchannel",
+        "//pkg/flipcall",
         "//pkg/log",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",

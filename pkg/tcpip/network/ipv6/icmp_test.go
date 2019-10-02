@@ -81,10 +81,12 @@ func (*stubLinkAddressCache) AddLinkAddress(tcpip.NICID, tcpip.Address, tcpip.Li
 }
 
 func TestICMPCounts(t *testing.T) {
-	s := stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{})
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+		TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+	})
 	{
-		id := stack.RegisterLinkEndpoint(&stubLinkEndpoint{})
-		if err := s.CreateNIC(1, id); err != nil {
+		if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
 			t.Fatalf("CreateNIC(_) = %s", err)
 		}
 		if err := s.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
@@ -153,7 +155,7 @@ func TestICMPCounts(t *testing.T) {
 		hdr := buffer.NewPrependable(header.IPv6MinimumSize + typ.size)
 		pkt := header.ICMPv6(hdr.Prepend(typ.size))
 		pkt.SetType(typ.typ)
-		pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 		handleIPv6Payload(hdr)
 	}
@@ -206,40 +208,37 @@ func (e endpointWithResolutionCapability) Capabilities() stack.LinkEndpointCapab
 
 func newTestContext(t *testing.T) *testContext {
 	c := &testContext{
-		s0: stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
-		s1: stack.New([]string{ProtocolName}, []string{icmp.ProtocolName6}, stack.Options{}),
+		s0: stack.New(stack.Options{
+			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		}),
+		s1: stack.New(stack.Options{
+			NetworkProtocols:   []stack.NetworkProtocol{NewProtocol()},
+			TransportProtocols: []stack.TransportProtocol{icmp.NewProtocol6()},
+		}),
 	}
 
 	const defaultMTU = 65536
-	_, linkEP0 := channel.New(256, defaultMTU, linkAddr0)
-	c.linkEP0 = linkEP0
-	wrappedEP0 := endpointWithResolutionCapability{LinkEndpoint: linkEP0}
-	id0 := stack.RegisterLinkEndpoint(wrappedEP0)
+	c.linkEP0 = channel.New(256, defaultMTU, linkAddr0)
+
+	wrappedEP0 := stack.LinkEndpoint(endpointWithResolutionCapability{LinkEndpoint: c.linkEP0})
 	if testing.Verbose() {
-		id0 = sniffer.New(id0)
+		wrappedEP0 = sniffer.New(wrappedEP0)
 	}
-	if err := c.s0.CreateNIC(1, id0); err != nil {
+	if err := c.s0.CreateNIC(1, wrappedEP0); err != nil {
 		t.Fatalf("CreateNIC s0: %v", err)
 	}
 	if err := c.s0.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
 		t.Fatalf("AddAddress lladdr0: %v", err)
 	}
-	if err := c.s0.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr0)); err != nil {
-		t.Fatalf("AddAddress sn lladdr0: %v", err)
-	}
 
-	_, linkEP1 := channel.New(256, defaultMTU, linkAddr1)
-	c.linkEP1 = linkEP1
-	wrappedEP1 := endpointWithResolutionCapability{LinkEndpoint: linkEP1}
-	id1 := stack.RegisterLinkEndpoint(wrappedEP1)
-	if err := c.s1.CreateNIC(1, id1); err != nil {
+	c.linkEP1 = channel.New(256, defaultMTU, linkAddr1)
+	wrappedEP1 := stack.LinkEndpoint(endpointWithResolutionCapability{LinkEndpoint: c.linkEP1})
+	if err := c.s1.CreateNIC(1, wrappedEP1); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 	if err := c.s1.AddAddress(1, ProtocolNumber, lladdr1); err != nil {
 		t.Fatalf("AddAddress lladdr1: %v", err)
-	}
-	if err := c.s1.AddAddress(1, ProtocolNumber, header.SolicitedNodeAddr(lladdr1)); err != nil {
-		t.Fatalf("AddAddress sn lladdr1: %v", err)
 	}
 
 	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
@@ -321,7 +320,7 @@ func TestLinkResolution(t *testing.T) {
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.IPv6MinimumSize + header.ICMPv6EchoMinimumSize)
 	pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))
 	pkt.SetType(header.ICMPv6EchoRequest)
-	pkt.SetChecksum(icmpChecksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
+	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 	payload := tcpip.SlicePayload(hdr.View())
 
 	// We can't send our payload directly over the route because that

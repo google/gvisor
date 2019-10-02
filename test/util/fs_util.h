@@ -35,6 +35,9 @@ PosixErrorOr<bool> Exists(absl::string_view path);
 // Returns a stat structure for the given path or an error.
 PosixErrorOr<struct stat> Stat(absl::string_view path);
 
+// Returns a stat struct for the given fd.
+PosixErrorOr<struct stat> Fstat(int fd);
+
 // Deletes the file or directory at path or returns an error.
 PosixError Delete(absl::string_view path);
 

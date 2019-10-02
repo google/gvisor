@@ -118,6 +118,18 @@ inline PosixErrorOr<Mapping> MmapAnon(size_t length, int prot, int flags) {
   return Mmap(nullptr, length, prot, flags | MAP_ANONYMOUS, -1, 0);
 }
 
+// Wrapper for mremap that returns a PosixErrorOr<>, since the return type of
+// void* isn't directly compatible with SyscallSucceeds.
+inline PosixErrorOr<void*> Mremap(void* old_address, size_t old_size,
+                                  size_t new_size, int flags,
+                                  void* new_address) {
+  void* rv = mremap(old_address, old_size, new_size, flags, new_address);
+  if (rv == MAP_FAILED) {
+    return PosixError(errno, "mremap failed");
+  }
+  return rv;
+}
+
 // Returns true if the page containing addr is mapped.
 inline bool IsMapped(uintptr_t addr) {
   int const rv = msync(reinterpret_cast<void*>(addr & ~(kPageSize - 1)),

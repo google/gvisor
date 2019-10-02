@@ -21,6 +21,9 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fdchannel"
+	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
 )
@@ -45,7 +48,6 @@ type Server struct {
 }
 
 // NewServer returns a new server.
-//
 func NewServer(attacher Attacher) *Server {
 	return &Server{
 		attacher: attacher,
@@ -85,6 +87,8 @@ type connState struct {
 	// version 0 implies 9P2000.L.
 	version uint32
 
+	// -- below relates to the legacy handler --
+
 	// recvOkay indicates that a receive may start.
 	recvOkay chan bool
 
@@ -93,6 +97,20 @@ type connState struct {
 
 	// sendDone is signalled when a send is finished.
 	sendDone chan error
+
+	// -- below relates to the flipcall handler --
+
+	// channelMu protects below.
+	channelMu sync.Mutex
+
+	// channelWg represents active workers.
+	channelWg sync.WaitGroup
+
+	// channelAlloc allocates channel memory.
+	channelAlloc *flipcall.PacketWindowAllocator
+
+	// channels are the set of initialized channels.
+	channels []*channel
 }
 
 // fidRef wraps a node and tracks references.
@@ -386,6 +404,99 @@ func (cs *connState) WaitTag(t Tag) {
 	<-ch
 }
 
+// initializeChannels initializes all channels.
+//
+// This is a no-op if channels are already initialized.
+func (cs *connState) initializeChannels() (err error) {
+	cs.channelMu.Lock()
+	defer cs.channelMu.Unlock()
+
+	// Initialize our channel allocator.
+	if cs.channelAlloc == nil {
+		alloc, err := flipcall.NewPacketWindowAllocator()
+		if err != nil {
+			return err
+		}
+		cs.channelAlloc = alloc
+	}
+
+	// Create all the channels.
+	for len(cs.channels) < channelsPerClient {
+		res := &channel{
+			done: make(chan struct{}),
+		}
+
+		res.desc, err = cs.channelAlloc.Allocate(channelSize)
+		if err != nil {
+			return err
+		}
+		if err := res.data.Init(flipcall.ServerSide, res.desc); err != nil {
+			return err
+		}
+
+		socks, err := fdchannel.NewConnectedSockets()
+		if err != nil {
+			res.data.Destroy() // Cleanup.
+			return err
+		}
+		res.fds.Init(socks[0])
+		res.client = fd.New(socks[1])
+
+		cs.channels = append(cs.channels, res)
+
+		// Start servicing the channel.
+		//
+		// When we call stop, we will close all the channels and these
+		// routines should finish. We need the wait group to ensure
+		// that active handlers are actually finished before cleanup.
+		cs.channelWg.Add(1)
+		go func() { // S/R-SAFE: Server side.
+			defer cs.channelWg.Done()
+			res.service(cs)
+		}()
+	}
+
+	return nil
+}
+
+// lookupChannel looks up the channel with given id.
+//
+// The function returns nil if no such channel is available.
+func (cs *connState) lookupChannel(id uint32) *channel {
+	cs.channelMu.Lock()
+	defer cs.channelMu.Unlock()
+	if id >= uint32(len(cs.channels)) {
+		return nil
+	}
+	return cs.channels[id]
+}
+
+// handle handles a single message.
+func (cs *connState) handle(m message) (r message) {
+	defer func() {
+		if r == nil {
+			// Don't allow a panic to propagate.
+			recover()
+
+			// Include a useful log message.
+			log.Warningf("panic in handler: %s", debug.Stack())
+
+			// Wrap in an EFAULT error; we don't really have a
+			// better way to describe this kind of error. It will
+			// usually manifest as a result of the test framework.
+			r = newErr(syscall.EFAULT)
+		}
+	}()
+	if handler, ok := m.(handler); ok {
+		// Call the message handler.
+		r = handler.handle(cs)
+	} else {
+		// Produce an ENOSYS error.
+		r = newErr(syscall.ENOSYS)
+	}
+	return
+}
+
 // handleRequest handles a single request.
 //
 // The recvDone channel is signaled when recv is done (with a error if
@@ -428,41 +539,20 @@ func (cs *connState) handleRequest() {
 	}
 
 	// Handle the message.
-	var r message // r is the response.
-	defer func() {
-		if r == nil {
-			// Don't allow a panic to propagate.
-			recover()
+	r := cs.handle(m)
 
-			// Include a useful log message.
-			log.Warningf("panic in handler: %s", debug.Stack())
+	// Clear the tag before sending. That's because as soon as this hits
+	// the wire, the client can legally send the same tag.
+	cs.ClearTag(tag)
 
-			// Wrap in an EFAULT error; we don't really have a
-			// better way to describe this kind of error. It will
-			// usually manifest as a result of the test framework.
-			r = newErr(syscall.EFAULT)
-		}
+	// Send back the result.
+	cs.sendMu.Lock()
+	err = send(cs.conn, tag, r)
+	cs.sendMu.Unlock()
+	cs.sendDone <- err
 
-		// Clear the tag before sending. That's because as soon as this
-		// hits the wire, the client can legally send another message
-		// with the same tag.
-		cs.ClearTag(tag)
-
-		// Send back the result.
-		cs.sendMu.Lock()
-		err = send(cs.conn, tag, r)
-		cs.sendMu.Unlock()
-		cs.sendDone <- err
-	}()
-	if handler, ok := m.(handler); ok {
-		// Call the message handler.
-		r = handler.handle(cs)
-	} else {
-		// Produce an ENOSYS error.
-		r = newErr(syscall.ENOSYS)
-	}
+	// Return the message to the cache.
 	msgRegistry.put(m)
-	m = nil // 'm' should not be touched after this point.
 }
 
 func (cs *connState) handleRequests() {
@@ -477,7 +567,27 @@ func (cs *connState) stop() {
 	close(cs.recvDone)
 	close(cs.sendDone)
 
-	for _, fidRef := range cs.fids {
+	// Free the channels.
+	cs.channelMu.Lock()
+	for _, ch := range cs.channels {
+		ch.Shutdown()
+	}
+	cs.channelWg.Wait()
+	for _, ch := range cs.channels {
+		ch.Close()
+	}
+	cs.channels = nil // Clear.
+	cs.channelMu.Unlock()
+
+	// Free the channel memory.
+	if cs.channelAlloc != nil {
+		cs.channelAlloc.Destroy()
+	}
+
+	// Close all remaining fids.
+	for fid, fidRef := range cs.fids {
+		delete(cs.fids, fid)
+
 		// Drop final reference in the FID table. Note this should
 		// always close the file, since we've ensured that there are no
 		// handlers running via the wait for Pending => 0 below.
@@ -510,7 +620,7 @@ func (cs *connState) service() error {
 				for i := 0; i < pending; i++ {
 					<-cs.sendDone
 				}
-				return err
+				return nil
 			}
 
 			// This handler is now pending.

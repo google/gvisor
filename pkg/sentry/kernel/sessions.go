@@ -328,8 +328,14 @@ func (tg *ThreadGroup) createSession() error {
 			childTG.processGroup.incRefWithParent(pg)
 			childTG.processGroup.decRefWithParent(oldParentPG)
 		})
-		tg.processGroup.decRefWithParent(oldParentPG)
+		// If tg.processGroup is an orphan, decRefWithParent will lock
+		// the signal mutex of each thread group in tg.processGroup.
+		// However, tg's signal mutex may already be locked at this
+		// point. We change tg's process group before calling
+		// decRefWithParent to avoid locking tg's signal mutex twice.
+		oldPG := tg.processGroup
 		tg.processGroup = pg
+		oldPG.decRefWithParent(oldParentPG)
 	} else {
 		// The current process group may be nil only in the case of an
 		// unparented thread group (i.e. the init process). This would

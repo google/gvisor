@@ -16,6 +16,7 @@ package boot
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
 
@@ -42,7 +44,7 @@ func (r *fileReader) Read(buf []byte) (int, error) {
 
 // getExecUserHome returns the home directory of the executing user read from
 // /etc/passwd as read from the container filesystem.
-func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid uint32) (string, error) {
+func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid auth.KUID) (string, error) {
 	// The default user home directory to return if no user matching the user
 	// if found in the /etc/passwd found in the image.
 	const defaultHome = "/"
@@ -82,12 +84,34 @@ func getExecUserHome(ctx context.Context, rootMns *fs.MountNamespace, uid uint32
 		File: f,
 	}
 
-	homeDir, err := findHomeInPasswd(uid, r, defaultHome)
+	homeDir, err := findHomeInPasswd(uint32(uid), r, defaultHome)
 	if err != nil {
 		return "", err
 	}
 
 	return homeDir, nil
+}
+
+// maybeAddExecUserHome returns a new slice with the HOME enviroment variable
+// set if the slice does not already contain it, otherwise it returns the
+// original slice unmodified.
+func maybeAddExecUserHome(ctx context.Context, mns *fs.MountNamespace, uid auth.KUID, envv []string) ([]string, error) {
+	// Check if the envv already contains HOME.
+	for _, env := range envv {
+		if strings.HasPrefix(env, "HOME=") {
+			// We have it. Return the original slice unmodified.
+			return envv, nil
+		}
+	}
+
+	// Read /etc/passwd for the user's HOME directory and set the HOME
+	// environment variable as required by POSIX if it is not overridden by
+	// the user.
+	homeDir, err := getExecUserHome(ctx, mns, uid)
+	if err != nil {
+		return nil, fmt.Errorf("error reading exec user: %v", err)
+	}
+	return append(envv, "HOME="+homeDir), nil
 }
 
 // findHomeInPasswd parses a passwd file and returns the given user's home

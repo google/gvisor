@@ -97,8 +97,14 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void RawPacketTest::SetUp() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // (b/129292371): Remove once we support packet sockets.
   SKIP_IF(IsRunningOnGvisor());
+
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
+                SyscallFailsWithErrno(EPERM));
+    GTEST_SKIP();
+  }
 
   if (!IsRunningOnGvisor()) {
     FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
@@ -119,10 +125,13 @@ void RawPacketTest::SetUp() {
 }
 
 void RawPacketTest::TearDown() {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
+  // (b/129292371): Remove once we support packet sockets.
   SKIP_IF(IsRunningOnGvisor());
 
-  EXPECT_THAT(close(socket_), SyscallSucceeds());
+  // TearDown will be run even if we skip the test.
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+    EXPECT_THAT(close(socket_), SyscallSucceeds());
+  }
 }
 
 int RawPacketTest::GetLoopbackIndex() {
@@ -135,9 +144,6 @@ int RawPacketTest::GetLoopbackIndex() {
 
 // Receive via a packet socket.
 TEST_P(RawPacketTest, Receive) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(IsRunningOnGvisor());
-
   // Let's use a simple IP payload: a UDP datagram.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -208,9 +214,6 @@ TEST_P(RawPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(RawPacketTest, Send) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW)));
-  SKIP_IF(IsRunningOnGvisor());
-
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));

@@ -22,6 +22,7 @@
 #include <string>
 
 #include "gtest/gtest.h"
+#include "absl/flags/flag.h"
 #include "absl/strings/str_cat.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -31,7 +32,7 @@
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
-DEFINE_int32(scratch_uid, 65534, "scratch UID");
+ABSL_FLAG(int32_t, scratch_uid, 65534, "scratch UID");
 
 namespace gvisor {
 namespace testing {
@@ -92,7 +93,8 @@ TEST(LinkTest, PermissionDenied) {
     // threads have the same UIDs, so using the setuid wrapper sets all threads'
     // real UID.
     // Also drops capabilities.
-    EXPECT_THAT(syscall(SYS_setuid, FLAGS_scratch_uid), SyscallSucceeds());
+    EXPECT_THAT(syscall(SYS_setuid, absl::GetFlag(FLAGS_scratch_uid)),
+                SyscallSucceeds());
 
     EXPECT_THAT(link(oldfile.path().c_str(), newname.c_str()),
                 SyscallFailsWithErrno(EPERM));

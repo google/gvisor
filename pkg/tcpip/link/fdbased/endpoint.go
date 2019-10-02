@@ -41,6 +41,7 @@ package fdbased
 
 import (
 	"fmt"
+	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -81,6 +82,19 @@ const (
 	PacketMMap
 )
 
+func (p PacketDispatchMode) String() string {
+	switch p {
+	case Readv:
+		return "Readv"
+	case RecvMMsg:
+		return "RecvMMsg"
+	case PacketMMap:
+		return "PacketMMap"
+	default:
+		return fmt.Sprintf("unknown packet dispatch mode %v", p)
+	}
+}
+
 type endpoint struct {
 	// fds is the set of file descriptors each identifying one inbound/outbound
 	// channel. The endpoint will dispatch from all inbound channels as well as
@@ -114,6 +128,9 @@ type endpoint struct {
 	// gsoMaxSize is the maximum GSO packet size. It is zero if GSO is
 	// disabled.
 	gsoMaxSize uint32
+
+	// wg keeps track of running goroutines.
+	wg sync.WaitGroup
 }
 
 // Options specify the details about the fd-based endpoint to be created.
@@ -164,8 +181,9 @@ type Options struct {
 // New creates a new fd-based endpoint.
 //
 // Makes fd non-blocking, but does not take ownership of fd, which must remain
-// open for the lifetime of the returned endpoint.
-func New(opts *Options) (tcpip.LinkEndpointID, error) {
+// open for the lifetime of the returned endpoint (until after the endpoint has
+// stopped being using and Wait returns).
+func New(opts *Options) (stack.LinkEndpoint, error) {
 	caps := stack.LinkEndpointCapabilities(0)
 	if opts.RXChecksumOffload {
 		caps |= stack.CapabilityRXChecksumOffload
@@ -190,7 +208,7 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 	}
 
 	if len(opts.FDs) == 0 {
-		return 0, fmt.Errorf("opts.FD is empty, at least one FD must be specified")
+		return nil, fmt.Errorf("opts.FD is empty, at least one FD must be specified")
 	}
 
 	e := &endpoint{
@@ -207,12 +225,12 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 	for i := 0; i < len(e.fds); i++ {
 		fd := e.fds[i]
 		if err := syscall.SetNonblock(fd, true); err != nil {
-			return 0, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", fd, err)
+			return nil, fmt.Errorf("syscall.SetNonblock(%v) failed: %v", fd, err)
 		}
 
 		isSocket, err := isSocketFD(fd)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
@@ -222,12 +240,12 @@ func New(opts *Options) (tcpip.LinkEndpointID, error) {
 		}
 		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket)
 		if err != nil {
-			return 0, fmt.Errorf("createInboundDispatcher(...) = %v", err)
+			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
 		}
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
 
-	return stack.RegisterLinkEndpoint(e), nil
+	return e, nil
 }
 
 func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher, error) {
@@ -290,7 +308,11 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	// saved, they stop sending outgoing packets and all incoming packets
 	// are rejected.
 	for i := range e.inboundDispatchers {
-		go e.dispatchLoop(e.inboundDispatchers[i]) // S/R-SAFE: See above.
+		e.wg.Add(1)
+		go func(i int) { // S/R-SAFE: See above.
+			e.dispatchLoop(e.inboundDispatchers[i])
+			e.wg.Done()
+		}(i)
 	}
 }
 
@@ -318,6 +340,12 @@ func (e *endpoint) MaxHeaderLength() uint16 {
 // LinkAddress returns the link address of this endpoint.
 func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.addr
+}
+
+// Wait implements stack.LinkEndpoint.Wait. It waits for the endpoint to stop
+// reading from its FD.
+func (e *endpoint) Wait() {
+	e.wg.Wait()
 }
 
 // virtioNetHdr is declared in linux/virtio_net.h.
@@ -435,14 +463,12 @@ func (e *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buf
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
-func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) (tcpip.LinkEndpointID, *InjectableEndpoint) {
+func NewInjectable(fd int, mtu uint32, capabilities stack.LinkEndpointCapabilities) *InjectableEndpoint {
 	syscall.SetNonblock(fd, true)
 
-	e := &InjectableEndpoint{endpoint: endpoint{
+	return &InjectableEndpoint{endpoint: endpoint{
 		fds:  []int{fd},
 		mtu:  mtu,
 		caps: capabilities,
 	}}
-
-	return stack.RegisterLinkEndpoint(e), e
 }
