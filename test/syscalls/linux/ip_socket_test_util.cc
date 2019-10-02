@@ -60,6 +60,14 @@ SocketPairKind IPv6TCPAcceptBindSocketPair(int type) {
                                      /* dual_stack = */ false)};
 }
 
+SocketKind IPv6TCPUnboundSocket(int type) {
+  std::string description =
+      absl::StrCat(DescribeSocketType(type), "IPv6 TCP socket");
+  return SocketKind{
+      description, AF_INET6, type | SOCK_STREAM, IPPROTO_TCP,
+      UnboundSocketCreator(AF_INET6, type | SOCK_STREAM, IPPROTO_TCP)};
+}
+
 SocketPairKind IPv4TCPAcceptBindSocketPair(int type) {
   std::string description =
       absl::StrCat(DescribeSocketType(type), "connected IPv4 TCP socket");

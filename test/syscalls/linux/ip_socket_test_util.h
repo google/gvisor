@@ -96,6 +96,10 @@ SocketKind IPv4UDPUnboundSocket(int type);
 // a SimpleSocket created with AF_INET, SOCK_STREAM and the given type.
 SocketKind IPv4TCPUnboundSocket(int type);
 
+// IPv6TCPUnboundSocketPair returns a SocketKind that represents
+// a SimpleSocket created with AF_INET6, SOCK_STREAM and the given type.
+SocketKind IPv6TCPUnboundSocket(int type);
+
 // IfAddrHelper is a helper class that determines the local interfaces present
 // and provides functions to obtain their names, index numbers, and IP address.
 class IfAddrHelper {
