@@ -230,7 +230,7 @@ func (rpf *rootProcFile) Readdir(ctx context.Context, file *fs.File, ser fs.Dent
 	// But for whatever crazy reason, you can still walk to the given node.
 	for _, tg := range rpf.iops.pidns.ThreadGroups() {
 		if leader := tg.Leader(); leader != nil {
-			name := strconv.FormatUint(uint64(tg.ID()), 10)
+			name := strconv.FormatUint(uint64(rpf.iops.pidns.IDOfThreadGroup(tg)), 10)
 			m[name] = fs.GenericDentAttr(fs.SpecialDirectory, device.ProcDevice)
 			names = append(names, name)
 		}
