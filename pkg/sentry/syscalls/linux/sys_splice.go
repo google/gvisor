@@ -159,9 +159,14 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		}, outFile.Flags().NonBlocking)
 	}
 
+	// Sendfile can't lose any data because inFD is always a regual file.
+	if n != 0 {
+		err = nil
+	}
+
 	// We can only pass a single file to handleIOError, so pick inFile
 	// arbitrarily. This is used only for debugging purposes.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "sendfile", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "sendfile", inFile)
 }
 
 // Splice implements splice(2).
@@ -305,6 +310,11 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 		Dup:    true,
 	}, nonBlock)
 
+	// Tee doesn't change a state of inFD, so it can't lose any data.
+	if n != 0 {
+		err = nil
+	}
+
 	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, kernel.ERESTARTSYS, "tee", inFile)
+	return uintptr(n), nil, handleIOError(t, false, err, kernel.ERESTARTSYS, "tee", inFile)
 }

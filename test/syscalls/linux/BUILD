@@ -1905,6 +1905,7 @@ cc_binary(
     srcs = ["sendfile.cc"],
     linkstatic = 1,
     deps = [
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:temp_path",
         "//test/util:test_main",

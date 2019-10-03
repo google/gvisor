@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/eventfd.h>
 #include <sys/sendfile.h>
 #include <unistd.h>
 
@@ -21,6 +22,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -509,6 +511,23 @@ TEST(SendFileTest, SendPipeBlocks) {
 
   EXPECT_THAT(sendfile(wfd.get(), inf.get(), nullptr, kDataSize),
               SyscallSucceedsWithValue(kDataSize));
+}
+
+TEST(SendFileTest, SendToSpecialFile) {
+  // Create temp file.
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
+
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
+  constexpr int kSize = 0x7ff;
+  ASSERT_THAT(ftruncate(inf.get(), kSize), SyscallSucceeds());
+
+  auto eventfd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
+
+  // eventfd can accept a number of bytes which is a multiple of 8.
+  EXPECT_THAT(sendfile(eventfd.get(), inf.get(), nullptr, 0xfffff),
+              SyscallSucceedsWithValue(kSize & (~7)));
 }
 
 }  // namespace
