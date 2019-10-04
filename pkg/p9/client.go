@@ -505,12 +505,27 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 			ch.active = false
 			c.channelsMu.Unlock()
 			c.channelsWg.Done()
-			return err
+			// Map all transport errors to EIO, but ensure that the real error
+			// is logged.
+			log.Warningf("p9.Client.sendRecvChannel: flipcall.Endpoint.Connect: %v", err)
+			return syscall.EIO
 		}
 	}
 
-	// Send the message.
-	err := ch.sendRecv(c, t, r)
+	// Send the request and receive the server's response.
+	rsz, err := ch.send(t)
+	if err != nil {
+		// See above.
+		c.channelsMu.Lock()
+		ch.active = false
+		c.channelsMu.Unlock()
+		c.channelsWg.Done()
+		log.Warningf("p9.Client.sendRecvChannel: p9.channel.send: %v", err)
+		return syscall.EIO
+	}
+
+	// Parse the server's response.
+	_, retErr := ch.recv(r, rsz)
 
 	// Release the channel.
 	c.channelsMu.Lock()
@@ -523,7 +538,7 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 	c.channelsMu.Unlock()
 	c.channelsWg.Done()
 
-	return err
+	return retErr
 }
 
 // Version returns the negotiated 9P2000.L.Google version number.

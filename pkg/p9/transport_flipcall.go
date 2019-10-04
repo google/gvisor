@@ -132,7 +132,7 @@ func (ch *channel) send(m message) (uint32, error) {
 	if filer, ok := m.(filer); ok {
 		if f := filer.FilePayload(); f != nil {
 			if err := ch.fds.SendFD(f.FD()); err != nil {
-				return 0, syscall.EIO // Map everything to EIO.
+				return 0, err
 			}
 			f.Close()     // Per sendRecvLegacy.
 			sentFD = true // To mark below.
@@ -162,15 +162,7 @@ func (ch *channel) send(m message) (uint32, error) {
 	}
 
 	// Perform the one-shot communication.
-	n, err := ch.data.SendRecv(ssz)
-	if err != nil {
-		if n > 0 {
-			return n, nil
-		}
-		return 0, syscall.EIO // See above.
-	}
-
-	return n, nil
+	return ch.data.SendRecv(ssz)
 }
 
 // recv decodes a message that exists on the channel.
@@ -248,16 +240,4 @@ func (ch *channel) recv(r message, rsz uint32) (message, error) {
 	}
 
 	return r, nil
-}
-
-// sendRecv sends the given message over the channel.
-//
-// This is used by the client.
-func (ch *channel) sendRecv(c *Client, m, r message) error {
-	rsz, err := ch.send(m)
-	if err != nil {
-		return err
-	}
-	_, err = ch.recv(r, rsz)
-	return err
 }
