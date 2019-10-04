@@ -452,7 +452,9 @@ func (cs *connState) initializeChannels() (err error) {
 		cs.channelWg.Add(1)
 		go func() { // S/R-SAFE: Server side.
 			defer cs.channelWg.Done()
-			res.service(cs)
+			if err := res.service(cs); err != nil {
+				log.Warningf("p9.channel.service: %v", err)
+			}
 		}()
 	}
 
