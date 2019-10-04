@@ -31,14 +31,14 @@ type GetDentryOptions struct {
 // FilesystemImpl.MkdirAt().
 type MkdirOptions struct {
 	// Mode is the file mode bits for the created directory.
-	Mode uint16
+	Mode linux.FileMode
 }
 
 // MknodOptions contains options to VirtualFilesystem.MknodAt() and
 // FilesystemImpl.MknodAt().
 type MknodOptions struct {
 	// Mode is the file type and mode bits for the created file.
-	Mode uint16
+	Mode linux.FileMode
 
 	// If Mode specifies a character or block device special file, DevMajor and
 	// DevMinor are the major and minor device numbers for the created device.
@@ -61,7 +61,7 @@ type OpenOptions struct {
 
 	// If FilesystemImpl.OpenAt() creates a file, Mode is the file mode for the
 	// created file.
-	Mode uint16
+	Mode linux.FileMode
 }
 
 // ReadOptions contains options to FileDescription.PRead(),
