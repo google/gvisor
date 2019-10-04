@@ -42,6 +42,26 @@ TestAddress V4EmptyAddress() {
   return t;
 }
 
+constexpr char kMulticastAddress[] = "224.0.2.1";
+
+TestAddress V4Multicast() {
+  TestAddress t("V4Multicast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      inet_addr(kMulticastAddress);
+  return t;
+}
+
+TestAddress V4Broadcast() {
+  TestAddress t("V4Broadcast");
+  t.addr.ss_family = AF_INET;
+  t.addr_len = sizeof(sockaddr_in);
+  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
+      htonl(INADDR_BROADCAST);
+  return t;
+}
+
 void IPv4UDPUnboundExternalNetworkingSocketTest::SetUp() {
   got_if_infos_ = false;
 
@@ -116,7 +136,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, SetUDPBroadcast) {
 // Verifies that a broadcast UDP packet will arrive at all UDP sockets with
 // the destination port number.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
-       UDPBroadcastReceivedOnAllExpectedEndpoints) {
+       UDPBroadcastReceivedOnExpectedPort) {
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto rcvr1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto rcvr2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
@@ -136,51 +156,48 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                          sizeof(kSockOptOn)),
               SyscallSucceedsWithValue(0));
 
-  sockaddr_in rcv_addr = {};
-  socklen_t rcv_addr_sz = sizeof(rcv_addr);
-  rcv_addr.sin_family = AF_INET;
-  rcv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  ASSERT_THAT(bind(rcvr1->get(), reinterpret_cast<struct sockaddr*>(&rcv_addr),
-                   rcv_addr_sz),
+  // Bind the first socket to the ANY address and let the system assign a port.
+  auto rcv1_addr = V4Any();
+  ASSERT_THAT(bind(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
+                   rcv1_addr.addr_len),
               SyscallSucceedsWithValue(0));
   // Retrieve port number from first socket so that it can be bound to the
   // second socket.
-  rcv_addr = {};
+  socklen_t rcv_addr_sz = rcv1_addr.addr_len;
   ASSERT_THAT(
-      getsockname(rcvr1->get(), reinterpret_cast<struct sockaddr*>(&rcv_addr),
+      getsockname(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
                   &rcv_addr_sz),
       SyscallSucceedsWithValue(0));
-  ASSERT_THAT(bind(rcvr2->get(), reinterpret_cast<struct sockaddr*>(&rcv_addr),
+  EXPECT_EQ(rcv_addr_sz, rcv1_addr.addr_len);
+  auto port = reinterpret_cast<sockaddr_in*>(&rcv1_addr.addr)->sin_port;
+
+  // Bind the second socket to the same address:port as the first.
+  ASSERT_THAT(bind(rcvr2->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
                    rcv_addr_sz),
               SyscallSucceedsWithValue(0));
 
   // Bind the non-receiving socket to an ephemeral port.
-  sockaddr_in norcv_addr = {};
-  norcv_addr.sin_family = AF_INET;
-  norcv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  ASSERT_THAT(
-      bind(norcv->get(), reinterpret_cast<struct sockaddr*>(&norcv_addr),
-           sizeof(norcv_addr)),
-      SyscallSucceedsWithValue(0));
+  auto norecv_addr = V4Any();
+  ASSERT_THAT(bind(norcv->get(), reinterpret_cast<sockaddr*>(&norecv_addr.addr),
+                   norecv_addr.addr_len),
+              SyscallSucceedsWithValue(0));
 
   // Broadcast a test message.
-  sockaddr_in dst_addr = {};
-  dst_addr.sin_family = AF_INET;
-  dst_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-  dst_addr.sin_port = rcv_addr.sin_port;
+  auto dst_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port = port;
   constexpr char kTestMsg[] = "hello, world";
   EXPECT_THAT(
       sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-             reinterpret_cast<struct sockaddr*>(&dst_addr), sizeof(dst_addr)),
+             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
       SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
   // Verify that the receiving sockets received the test message.
   char buf[sizeof(kTestMsg)] = {};
-  EXPECT_THAT(read(rcvr1->get(), buf, sizeof(buf)),
+  EXPECT_THAT(recv(rcvr1->get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
   EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
   memset(buf, 0, sizeof(buf));
-  EXPECT_THAT(read(rcvr2->get(), buf, sizeof(buf)),
+  EXPECT_THAT(recv(rcvr2->get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
   EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
 
@@ -190,10 +207,98 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
               SyscallFailsWithErrno(EAGAIN));
 }
 
-// Verifies that a UDP broadcast sent via the loopback interface is not received
-// by the sender.
+// Verifies that a broadcast UDP packet will arrive at all UDP sockets bound to
+// the destination port number and either INADDR_ANY or INADDR_BROADCAST, but
+// not a unicast address.
 TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
-       UDPBroadcastViaLoopbackFails) {
+       UDPBroadcastReceivedOnExpectedAddresses) {
+  // FIXME(b/137899561): Linux instance for syscall tests sometimes misses its
+  // IPv4 address on eth0.
+  SKIP_IF(!got_if_infos_);
+
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto rcvr1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto rcvr2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  auto norcv = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Enable SO_BROADCAST on the sending socket.
+  ASSERT_THAT(setsockopt(sender->get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  // Enable SO_REUSEPORT on all sockets so that they may all be bound to the
+  // broadcast messages destination port.
+  ASSERT_THAT(setsockopt(rcvr1->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(setsockopt(rcvr2->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+  ASSERT_THAT(setsockopt(norcv->get(), SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  // Bind the first socket the ANY address and let the system assign a port.
+  auto rcv1_addr = V4Any();
+  ASSERT_THAT(bind(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
+                   rcv1_addr.addr_len),
+              SyscallSucceedsWithValue(0));
+  // Retrieve port number from first socket so that it can be bound to the
+  // second socket.
+  socklen_t rcv_addr_sz = rcv1_addr.addr_len;
+  ASSERT_THAT(
+      getsockname(rcvr1->get(), reinterpret_cast<sockaddr*>(&rcv1_addr.addr),
+                  &rcv_addr_sz),
+      SyscallSucceedsWithValue(0));
+  EXPECT_EQ(rcv_addr_sz, rcv1_addr.addr_len);
+  auto port = reinterpret_cast<sockaddr_in*>(&rcv1_addr.addr)->sin_port;
+
+  // Bind the second socket to the broadcast address.
+  auto rcv2_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&rcv2_addr.addr)->sin_port = port;
+  ASSERT_THAT(bind(rcvr2->get(), reinterpret_cast<sockaddr*>(&rcv2_addr.addr),
+                   rcv2_addr.addr_len),
+              SyscallSucceedsWithValue(0));
+
+  // Bind the non-receiving socket to the unicast ethernet address.
+  auto norecv_addr = rcv1_addr;
+  reinterpret_cast<sockaddr_in*>(&norecv_addr.addr)->sin_addr =
+      eth_if_sin_addr_;
+  ASSERT_THAT(bind(norcv->get(), reinterpret_cast<sockaddr*>(&norecv_addr.addr),
+                   norecv_addr.addr_len),
+              SyscallSucceedsWithValue(0));
+
+  // Broadcast a test message.
+  auto dst_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port = port;
+  constexpr char kTestMsg[] = "hello, world";
+  EXPECT_THAT(
+      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+
+  // Verify that the receiving sockets received the test message.
+  char buf[sizeof(kTestMsg)] = {};
+  EXPECT_THAT(recv(rcvr1->get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
+  memset(buf, 0, sizeof(buf));
+  EXPECT_THAT(recv(rcvr2->get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
+
+  // Verify that the non-receiving socket did not receive the test message.
+  memset(buf, 0, sizeof(buf));
+  EXPECT_THAT(RetryEINTR(recv)(norcv->get(), buf, sizeof(buf), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+// Verifies that a UDP broadcast can be sent and then received back on the same
+// socket that is bound to the broadcast address (255.255.255.255).
+// FIXME(b/141938460): This can be combined with the next test
+//                     (UDPBroadcastSendRecvOnSocketBoundToAny).
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       UDPBroadcastSendRecvOnSocketBoundToBroadcast) {
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
   // Enable SO_BROADCAST.
@@ -201,33 +306,73 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
                          sizeof(kSockOptOn)),
               SyscallSucceedsWithValue(0));
 
-  // Bind the sender to the loopback interface.
-  sockaddr_in src = {};
-  socklen_t src_sz = sizeof(src);
-  src.sin_family = AF_INET;
-  src.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  ASSERT_THAT(
-      bind(sender->get(), reinterpret_cast<struct sockaddr*>(&src), src_sz),
-      SyscallSucceedsWithValue(0));
-  ASSERT_THAT(getsockname(sender->get(),
-                          reinterpret_cast<struct sockaddr*>(&src), &src_sz),
+  // Bind the sender to the broadcast address.
+  auto src_addr = V4Broadcast();
+  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&src_addr.addr),
+                   src_addr.addr_len),
               SyscallSucceedsWithValue(0));
-  ASSERT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+  socklen_t src_sz = src_addr.addr_len;
+  ASSERT_THAT(getsockname(sender->get(),
+                          reinterpret_cast<sockaddr*>(&src_addr.addr), &src_sz),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(src_sz, src_addr.addr_len);
 
   // Send the message.
-  sockaddr_in dst = {};
-  dst.sin_family = AF_INET;
-  dst.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-  dst.sin_port = src.sin_port;
+  auto dst_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&src_addr.addr)->sin_port;
   constexpr char kTestMsg[] = "hello, world";
-  EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-                     reinterpret_cast<struct sockaddr*>(&dst), sizeof(dst)),
-              SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_THAT(
+      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(kTestMsg)));
 
-  // Verify that the message was not received by the sender (loopback).
+  // Verify that the message was received.
   char buf[sizeof(kTestMsg)] = {};
-  EXPECT_THAT(RetryEINTR(recv)(sender->get(), buf, sizeof(buf), MSG_DONTWAIT),
-              SyscallFailsWithErrno(EAGAIN));
+  EXPECT_THAT(RetryEINTR(recv)(sender->get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
+}
+
+// Verifies that a UDP broadcast can be sent and then received back on the same
+// socket that is bound to the ANY address (0.0.0.0).
+// FIXME(b/141938460): This can be combined with the previous test
+//                     (UDPBroadcastSendRecvOnSocketBoundToBroadcast).
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       UDPBroadcastSendRecvOnSocketBoundToAny) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  // Enable SO_BROADCAST.
+  ASSERT_THAT(setsockopt(sender->get(), SOL_SOCKET, SO_BROADCAST, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceedsWithValue(0));
+
+  // Bind the sender to the ANY address.
+  auto src_addr = V4Any();
+  ASSERT_THAT(bind(sender->get(), reinterpret_cast<sockaddr*>(&src_addr.addr),
+                   src_addr.addr_len),
+              SyscallSucceedsWithValue(0));
+  socklen_t src_sz = src_addr.addr_len;
+  ASSERT_THAT(getsockname(sender->get(),
+                          reinterpret_cast<sockaddr*>(&src_addr.addr), &src_sz),
+              SyscallSucceedsWithValue(0));
+  EXPECT_EQ(src_sz, src_addr.addr_len);
+
+  // Send the message.
+  auto dst_addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&dst_addr.addr)->sin_port =
+      reinterpret_cast<sockaddr_in*>(&src_addr.addr)->sin_port;
+  constexpr char kTestMsg[] = "hello, world";
+  EXPECT_THAT(
+      sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
+             reinterpret_cast<sockaddr*>(&dst_addr.addr), dst_addr.addr_len),
+      SyscallSucceedsWithValue(sizeof(kTestMsg)));
+
+  // Verify that the message was received.
+  char buf[sizeof(kTestMsg)] = {};
+  EXPECT_THAT(RetryEINTR(recv)(sender->get(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(kTestMsg)));
+  EXPECT_EQ(0, memcmp(buf, kTestMsg, sizeof(kTestMsg)));
 }
 
 // Verifies that a UDP broadcast fails to send on a socket with SO_BROADCAST
@@ -237,15 +382,12 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendBroadcast) {
 
   // Broadcast a test message without having enabled SO_BROADCAST on the sending
   // socket.
-  sockaddr_in addr = {};
-  socklen_t addr_sz = sizeof(addr);
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(12345);
-  addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+  auto addr = V4Broadcast();
+  reinterpret_cast<sockaddr_in*>(&addr.addr)->sin_port = htons(12345);
   constexpr char kTestMsg[] = "hello, world";
 
   EXPECT_THAT(sendto(sender->get(), kTestMsg, sizeof(kTestMsg), 0,
-                     reinterpret_cast<struct sockaddr*>(&addr), addr_sz),
+                     reinterpret_cast<sockaddr*>(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(EACCES));
 }
 
@@ -274,19 +416,8 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendUnicastOnUnbound) {
                      reinterpret_cast<struct sockaddr*>(&addr), addr_sz),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
   char buf[sizeof(kTestMsg)] = {};
-  ASSERT_THAT(read(rcvr->get(), buf, sizeof(buf)),
+  ASSERT_THAT(recv(rcvr->get(), buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(kTestMsg)));
-}
-
-constexpr char kMulticastAddress[] = "224.0.2.1";
-
-TestAddress V4Multicast() {
-  TestAddress t("V4Multicast");
-  t.addr.ss_family = AF_INET;
-  t.addr_len = sizeof(sockaddr_in);
-  reinterpret_cast<sockaddr_in*>(&t.addr)->sin_addr.s_addr =
-      inet_addr(kMulticastAddress);
-  return t;
 }
 
 // Check that multicast packets won't be delivered to the sending socket with no
@@ -609,8 +740,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
 }
 
 // Check that two sockets can join the same multicast group at the same time,
-// and both will receive data on it.
-TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastToTwo) {
+// and both will receive data on it when bound to the ANY address.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastToTwoBoundToAny) {
   auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   std::unique_ptr<FileDescriptor> receivers[2] = {
       ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
@@ -624,8 +756,7 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastToTwo) {
     ASSERT_THAT(setsockopt(receiver->get(), SOL_SOCKET, SO_REUSEPORT,
                            &kSockOptOn, sizeof(kSockOptOn)),
                 SyscallSucceeds());
-    // Bind the receiver to the v4 any address to ensure that we can receive the
-    // multicast packet.
+    // Bind to ANY to receive multicast packets.
     ASSERT_THAT(
         bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
              receiver_addr.addr_len),
@@ -636,6 +767,9 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastToTwo) {
                             &receiver_addr_len),
                 SyscallSucceeds());
     EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+    EXPECT_EQ(
+        htonl(INADDR_ANY),
+        reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_addr.s_addr);
     // On the first iteration, save the port we are bound to. On the second
     // iteration, verify the port is the same as the one from the first
     // iteration. In other words, both sockets listen on the same port.
@@ -643,6 +777,148 @@ TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest, TestSendMulticastToTwo) {
       bound_port =
           reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
     } else {
+      EXPECT_EQ(bound_port,
+                reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port);
+    }
+
+    // Register to receive multicast packets.
+    ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+  }
+
+  // Send a multicast packet to the group and verify both receivers get it.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  for (auto& receiver : receivers) {
+    char recv_buf[sizeof(send_buf)] = {};
+    ASSERT_THAT(
+        RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf), 0),
+        SyscallSucceedsWithValue(sizeof(recv_buf)));
+    EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+  }
+}
+
+// Check that two sockets can join the same multicast group at the same time,
+// and both will receive data on it when bound to the multicast address.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastToTwoBoundToMulticastAddress) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  std::unique_ptr<FileDescriptor> receivers[2] = {
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())};
+
+  ip_mreq group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  auto receiver_addr = V4Multicast();
+  int bound_port = 0;
+  for (auto& receiver : receivers) {
+    ASSERT_THAT(setsockopt(receiver->get(), SOL_SOCKET, SO_REUSEPORT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    ASSERT_THAT(
+        bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+             receiver_addr.addr_len),
+        SyscallSucceeds());
+    socklen_t receiver_addr_len = receiver_addr.addr_len;
+    ASSERT_THAT(getsockname(receiver->get(),
+                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                            &receiver_addr_len),
+                SyscallSucceeds());
+    EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+    EXPECT_EQ(
+        inet_addr(kMulticastAddress),
+        reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_addr.s_addr);
+    // On the first iteration, save the port we are bound to. On the second
+    // iteration, verify the port is the same as the one from the first
+    // iteration. In other words, both sockets listen on the same port.
+    if (bound_port == 0) {
+      bound_port =
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+    } else {
+      EXPECT_EQ(
+          inet_addr(kMulticastAddress),
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_addr.s_addr);
+      EXPECT_EQ(bound_port,
+                reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port);
+    }
+
+    // Register to receive multicast packets.
+    ASSERT_THAT(setsockopt(receiver->get(), IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                           &group, sizeof(group)),
+                SyscallSucceeds());
+  }
+
+  // Send a multicast packet to the group and verify both receivers get it.
+  auto send_addr = V4Multicast();
+  reinterpret_cast<sockaddr_in*>(&send_addr.addr)->sin_port = bound_port;
+  char send_buf[200];
+  RandomizeBuffer(send_buf, sizeof(send_buf));
+  ASSERT_THAT(RetryEINTR(sendto)(sender->get(), send_buf, sizeof(send_buf), 0,
+                                 reinterpret_cast<sockaddr*>(&send_addr.addr),
+                                 send_addr.addr_len),
+              SyscallSucceedsWithValue(sizeof(send_buf)));
+  for (auto& receiver : receivers) {
+    char recv_buf[sizeof(send_buf)] = {};
+    ASSERT_THAT(
+        RetryEINTR(recv)(receiver->get(), recv_buf, sizeof(recv_buf), 0),
+        SyscallSucceedsWithValue(sizeof(recv_buf)));
+    EXPECT_EQ(0, memcmp(send_buf, recv_buf, sizeof(send_buf)));
+  }
+}
+
+// Check that two sockets can join the same multicast group at the same time,
+// and with one bound to the wildcard address and the other bound to the
+// multicast address, both will receive data.
+TEST_P(IPv4UDPUnboundExternalNetworkingSocketTest,
+       TestSendMulticastToTwoBoundToAnyAndMulticastAddress) {
+  auto sender = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+  std::unique_ptr<FileDescriptor> receivers[2] = {
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())};
+
+  ip_mreq group = {};
+  group.imr_multiaddr.s_addr = inet_addr(kMulticastAddress);
+  // The first receiver binds to the wildcard address.
+  auto receiver_addr = V4Any();
+  int bound_port = 0;
+  for (auto& receiver : receivers) {
+    ASSERT_THAT(setsockopt(receiver->get(), SOL_SOCKET, SO_REUSEPORT,
+                           &kSockOptOn, sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    ASSERT_THAT(
+        bind(receiver->get(), reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+             receiver_addr.addr_len),
+        SyscallSucceeds());
+    socklen_t receiver_addr_len = receiver_addr.addr_len;
+    ASSERT_THAT(getsockname(receiver->get(),
+                            reinterpret_cast<sockaddr*>(&receiver_addr.addr),
+                            &receiver_addr_len),
+                SyscallSucceeds());
+    EXPECT_EQ(receiver_addr_len, receiver_addr.addr_len);
+    // On the first iteration, save the port we are bound to and change the
+    // receiver address from V4Any to V4Multicast so the second receiver binds
+    // to that. On the second iteration, verify the port is the same as the one
+    // from the first iteration but the address is different.
+    if (bound_port == 0) {
+      EXPECT_EQ(
+          htonl(INADDR_ANY),
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_addr.s_addr);
+      bound_port =
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port;
+      receiver_addr = V4Multicast();
+      reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port =
+          bound_port;
+    } else {
+      EXPECT_EQ(
+          inet_addr(kMulticastAddress),
+          reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_addr.s_addr);
       EXPECT_EQ(bound_port,
                 reinterpret_cast<sockaddr_in*>(&receiver_addr.addr)->sin_port);
     }

@@ -195,3 +195,34 @@ func TestStatsString(t *testing.T) {
 		t.Logf(`got = fmt.Sprintf("%%+v", Stats{}.FillIn()) = %q`, got)
 	}
 }
+
+func TestAddressWithPrefixSubnet(t *testing.T) {
+	tests := []struct {
+		addr       Address
+		prefixLen  int
+		subnetAddr Address
+		subnetMask AddressMask
+	}{
+		{"\xaa\x55\x33\x42", -1, "\x00\x00\x00\x00", "\x00\x00\x00\x00"},
+		{"\xaa\x55\x33\x42", 0, "\x00\x00\x00\x00", "\x00\x00\x00\x00"},
+		{"\xaa\x55\x33\x42", 1, "\x80\x00\x00\x00", "\x80\x00\x00\x00"},
+		{"\xaa\x55\x33\x42", 7, "\xaa\x00\x00\x00", "\xfe\x00\x00\x00"},
+		{"\xaa\x55\x33\x42", 8, "\xaa\x00\x00\x00", "\xff\x00\x00\x00"},
+		{"\xaa\x55\x33\x42", 24, "\xaa\x55\x33\x00", "\xff\xff\xff\x00"},
+		{"\xaa\x55\x33\x42", 31, "\xaa\x55\x33\x42", "\xff\xff\xff\xfe"},
+		{"\xaa\x55\x33\x42", 32, "\xaa\x55\x33\x42", "\xff\xff\xff\xff"},
+		{"\xaa\x55\x33\x42", 33, "\xaa\x55\x33\x42", "\xff\xff\xff\xff"},
+	}
+	for _, tt := range tests {
+		ap := AddressWithPrefix{Address: tt.addr, PrefixLen: tt.prefixLen}
+		gotSubnet := ap.Subnet()
+		wantSubnet, err := NewSubnet(tt.subnetAddr, tt.subnetMask)
+		if err != nil {
+			t.Error("NewSubnet(%q, %q) failed: %s", tt.subnetAddr, tt.subnetMask, err)
+			continue
+		}
+		if gotSubnet != wantSubnet {
+			t.Errorf("got subnet = %q, want = %q", gotSubnet, wantSubnet)
+		}
+	}
+}

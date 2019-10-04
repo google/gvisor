@@ -532,10 +532,11 @@ func TestBindToDeviceOption(t *testing.T) {
 	}
 }
 
-// testRead sends a packet of the given test flow into the stack by injecting it
-// into the link endpoint. It then reads it from the UDP endpoint and verifies
-// its correctness.
-func testRead(c *testContext, flow testFlow) {
+// testReadInternal sends a packet of the given test flow into the stack by
+// injecting it into the link endpoint. It then attempts to read it from the
+// UDP endpoint and depending on if this was expected to succeed verifies its
+// correctness.
+func testReadInternal(c *testContext, flow testFlow, packetShouldBeDropped bool) {
 	c.t.Helper()
 
 	payload := newPayload()
@@ -553,25 +554,49 @@ func testRead(c *testContext, flow testFlow) {
 		select {
 		case <-ch:
 			v, _, err = c.ep.Read(&addr)
-			if err != nil {
-				c.t.Fatalf("Read failed: %v", err)
-			}
 
-		case <-time.After(1 * time.Second):
-			c.t.Fatalf("Timed out waiting for data")
+		case <-time.After(300 * time.Millisecond):
+			if packetShouldBeDropped {
+				return // expected to time out
+			}
+			c.t.Fatal("timed out waiting for data")
 		}
+	}
+
+	if err != nil {
+		c.t.Fatal("Read failed:", err)
+	}
+
+	if packetShouldBeDropped {
+		c.t.Fatalf("Read unexpectedly received data from %s", addr.Addr)
 	}
 
 	// Check the peer address.
 	h := flow.header4Tuple(incoming)
 	if addr.Addr != h.srcAddr.Addr {
-		c.t.Fatalf("Unexpected remote address: got %v, want %v", addr.Addr, h.srcAddr)
+		c.t.Fatalf("unexpected remote address: got %s, want %s", addr.Addr, h.srcAddr)
 	}
 
 	// Check the payload.
 	if !bytes.Equal(payload, v) {
-		c.t.Fatalf("Bad payload: got %x, want %x", v, payload)
+		c.t.Fatalf("bad payload: got %x, want %x", v, payload)
 	}
+}
+
+// testRead sends a packet of the given test flow into the stack by injecting it
+// into the link endpoint. It then reads it from the UDP endpoint and verifies
+// its correctness.
+func testRead(c *testContext, flow testFlow) {
+	c.t.Helper()
+	testReadInternal(c, flow, false /* packetShouldBeDropped */)
+}
+
+// testFailingRead sends a packet of the given test flow into the stack by
+// injecting it into the link endpoint. It then tries to read it from the UDP
+// endpoint and expects this to fail.
+func testFailingRead(c *testContext, flow testFlow) {
+	c.t.Helper()
+	testReadInternal(c, flow, true /* packetShouldBeDropped */)
 }
 
 func TestBindEphemeralPort(t *testing.T) {
@@ -743,13 +768,17 @@ func TestReadOnBoundToMulticast(t *testing.T) {
 				c.t.Fatal("SetSockOpt failed:", err)
 			}
 
+			// Check that we receive multicast packets but not unicast or broadcast
+			// ones.
 			testRead(c, flow)
+			testFailingRead(c, broadcast)
+			testFailingRead(c, unicastV4)
 		})
 	}
 }
 
 // TestV4ReadOnBoundToBroadcast checks that an endpoint can bind to a broadcast
-// address and receive broadcast data on it.
+// address and can receive only broadcast data.
 func TestV4ReadOnBoundToBroadcast(t *testing.T) {
 	for _, flow := range []testFlow{broadcast, broadcastIn6} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
@@ -764,8 +793,31 @@ func TestV4ReadOnBoundToBroadcast(t *testing.T) {
 				c.t.Fatalf("Bind failed: %s", err)
 			}
 
-			// Test acceptance.
+			// Check that we receive broadcast packets but not unicast ones.
 			testRead(c, flow)
+			testFailingRead(c, unicastV4)
+		})
+	}
+}
+
+// TestV4ReadBroadcastOnBoundToWildcard checks that an endpoint can bind to ANY
+// and receive broadcast and unicast data.
+func TestV4ReadBroadcastOnBoundToWildcard(t *testing.T) {
+	for _, flow := range []testFlow{broadcast, broadcastIn6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			// Bind to wildcard.
+			if err := c.ep.Bind(tcpip.FullAddress{Port: stackPort}); err != nil {
+				c.t.Fatalf("Bind failed: %s (", err)
+			}
+
+			// Check that we receive both broadcast and unicast packets.
+			testRead(c, flow)
+			testRead(c, unicastV4)
 		})
 	}
 }
