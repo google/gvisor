@@ -19,7 +19,9 @@ a good place to put the `runsc` binary.
 ```bash
 (
   set -e 
+  if [ -e runsc ]; then rm runsc; fi
   wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
+  if [ -e runsc.sha512 ]; then rm runsc.sha512; fi
   wget https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
   sha512sum -c runsc.sha512
   sudo mv runsc /usr/local/bin
