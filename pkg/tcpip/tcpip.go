@@ -57,6 +57,9 @@ type Error struct {
 
 // String implements fmt.Stringer.String.
 func (e *Error) String() string {
+	if e == nil {
+		return "<nil>"
+	}
 	return e.msg
 }
 
@@ -1093,6 +1096,47 @@ type AddressWithPrefix struct {
 // String implements the fmt.Stringer interface.
 func (a AddressWithPrefix) String() string {
 	return fmt.Sprintf("%s/%d", a.Address, a.PrefixLen)
+}
+
+// Subnet converts the address and prefix into a Subnet value and returns it.
+func (a AddressWithPrefix) Subnet() Subnet {
+	addrLen := len(a.Address)
+	if a.PrefixLen <= 0 {
+		return Subnet{
+			address: Address(strings.Repeat("\x00", addrLen)),
+			mask:    AddressMask(strings.Repeat("\x00", addrLen)),
+		}
+	}
+	if a.PrefixLen >= addrLen*8 {
+		return Subnet{
+			address: a.Address,
+			mask:    AddressMask(strings.Repeat("\xff", addrLen)),
+		}
+	}
+
+	sa := make([]byte, addrLen)
+	sm := make([]byte, addrLen)
+	n := uint(a.PrefixLen)
+	for i := 0; i < addrLen; i++ {
+		if n >= 8 {
+			sa[i] = a.Address[i]
+			sm[i] = 0xff
+			n -= 8
+			continue
+		}
+		sm[i] = ^byte(0xff >> n)
+		sa[i] = a.Address[i] & sm[i]
+		n = 0
+	}
+
+	// For extra caution, call NewSubnet rather than directly creating the Subnet
+	// value. If that fails it indicates a serious bug in this code, so panic is
+	// in order.
+	s, err := NewSubnet(Address(sa), AddressMask(sm))
+	if err != nil {
+		panic("invalid subnet: " + err.Error())
+	}
+	return s
 }
 
 // ProtocolAddress is an address and the network protocol it is associated
