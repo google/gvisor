@@ -952,10 +952,10 @@ func TestSpoofingWithAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
+		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet works.
 	testSendTo(t, s, dstAddr, ep, nil)
@@ -967,10 +967,10 @@ func TestSpoofingWithAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != localAddr {
-		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
+		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet using the route works.
 	testSend(t, r, ep, nil)
@@ -1016,17 +1016,33 @@ func TestSpoofingNoAddress(t *testing.T) {
 		t.Fatal("FindRoute failed:", err)
 	}
 	if r.LocalAddress != nonExistentLocalAddr {
-		t.Errorf("Route has wrong local address: got %s, want %s", r.LocalAddress, nonExistentLocalAddr)
+		t.Errorf("got Route.LocalAddress = %s, want = %s", r.LocalAddress, nonExistentLocalAddr)
 	}
 	if r.RemoteAddress != dstAddr {
-		t.Errorf("Route has wrong remote address: got %s, want %s", r.RemoteAddress, dstAddr)
+		t.Errorf("got Route.RemoteAddress = %s, want = %s", r.RemoteAddress, dstAddr)
 	}
 	// Sending a packet works.
 	// FIXME(b/139841518):Spoofing doesn't work if there is no primary address.
 	// testSendTo(t, s, remoteAddr, ep, nil)
 }
 
-func TestBroadcastNeedsNoRoute(t *testing.T) {
+func verifyRoute(gotRoute, wantRoute stack.Route) error {
+	if gotRoute.LocalAddress != wantRoute.LocalAddress {
+		return fmt.Errorf("bad local address: got %s, want = %s", gotRoute.LocalAddress, wantRoute.LocalAddress)
+	}
+	if gotRoute.RemoteAddress != wantRoute.RemoteAddress {
+		return fmt.Errorf("bad remote address: got %s, want = %s", gotRoute.RemoteAddress, wantRoute.RemoteAddress)
+	}
+	if gotRoute.RemoteLinkAddress != wantRoute.RemoteLinkAddress {
+		return fmt.Errorf("bad remote link address: got %s, want = %s", gotRoute.RemoteLinkAddress, wantRoute.RemoteLinkAddress)
+	}
+	if gotRoute.NextHop != wantRoute.NextHop {
+		return fmt.Errorf("bad next-hop address: got %s, want = %s", gotRoute.NextHop, wantRoute.NextHop)
+	}
+	return nil
+}
+
+func TestOutgoingBroadcastWithEmptyRouteTable(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
 	})
@@ -1039,28 +1055,99 @@ func TestBroadcastNeedsNoRoute(t *testing.T) {
 
 	// If there is no endpoint, it won't work.
 	if _, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */); err != tcpip.ErrNetworkUnreachable {
-		t.Fatalf("got FindRoute(1, %v, %v, %v) = %v, want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
+		t.Fatalf("got FindRoute(1, %s, %s, %d) = %s, want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, header.IPv4Any); err != nil {
-		t.Fatalf("AddAddress(%v, %v) failed: %s", fakeNetNumber, header.IPv4Any, err)
+	protoAddr := tcpip.ProtocolAddress{Protocol: fakeNetNumber, AddressWithPrefix: tcpip.AddressWithPrefix{header.IPv4Any, 0}}
+	if err := s.AddProtocolAddress(1, protoAddr); err != nil {
+		t.Fatalf("AddProtocolAddress(1, %s) failed: %s", protoAddr, err)
 	}
 	r, err := s.FindRoute(1, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		t.Fatalf("FindRoute(1, %v, %v, %v) failed: %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
+		t.Fatalf("FindRoute(1, %s, %s, %d) failed: %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
-
-	if r.LocalAddress != header.IPv4Any {
-		t.Errorf("Bad local address: got %v, want = %v", r.LocalAddress, header.IPv4Any)
-	}
-
-	if r.RemoteAddress != header.IPv4Broadcast {
-		t.Errorf("Bad remote address: got %v, want = %v", r.RemoteAddress, header.IPv4Broadcast)
+	if err := verifyRoute(r, stack.Route{LocalAddress: header.IPv4Any, RemoteAddress: header.IPv4Broadcast}); err != nil {
+		t.Errorf("FindRoute(1, %s, %s, %d) returned unexpected Route: %s)", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err)
 	}
 
 	// If the NIC doesn't exist, it won't work.
 	if _, err := s.FindRoute(2, header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */); err != tcpip.ErrNetworkUnreachable {
-		t.Fatalf("got FindRoute(2, %v, %v, %v) = %v want = %v", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
+		t.Fatalf("got FindRoute(2, %s, %s, %d) = %s want = %s", header.IPv4Any, header.IPv4Broadcast, fakeNetNumber, err, tcpip.ErrNetworkUnreachable)
+	}
+}
+
+func TestOutgoingBroadcastWithRouteTable(t *testing.T) {
+	defaultAddr := tcpip.AddressWithPrefix{header.IPv4Any, 0}
+	// Local subnet on NIC1: 192.168.1.58/24, gateway 192.168.1.1.
+	nic1Addr := tcpip.AddressWithPrefix{"\xc0\xa8\x01\x3a", 24}
+	nic1Gateway := tcpip.Address("\xc0\xa8\x01\x01")
+	// Local subnet on NIC2: 10.10.10.5/24, gateway 10.10.10.1.
+	nic2Addr := tcpip.AddressWithPrefix{"\x0a\x0a\x0a\x05", 24}
+	nic2Gateway := tcpip.Address("\x0a\x0a\x0a\x01")
+
+	// Create a new stack with two NICs.
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+	ep := channel.New(10, defaultMTU, "")
+	if err := s.CreateNIC(1, ep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
+	}
+	if err := s.CreateNIC(2, ep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
+	}
+	nic1ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic1Addr}
+	if err := s.AddProtocolAddress(1, nic1ProtoAddr); err != nil {
+		t.Fatalf("AddProtocolAddress(1, %s) failed: %s", nic1ProtoAddr, err)
+	}
+
+	nic2ProtoAddr := tcpip.ProtocolAddress{fakeNetNumber, nic2Addr}
+	if err := s.AddProtocolAddress(2, nic2ProtoAddr); err != nil {
+		t.Fatalf("AddAddress(2, %s) failed: %s", nic2ProtoAddr, err)
+	}
+
+	// Set the initial route table.
+	rt := []tcpip.Route{
+		{Destination: nic1Addr.Subnet(), NIC: 1},
+		{Destination: nic2Addr.Subnet(), NIC: 2},
+		{Destination: defaultAddr.Subnet(), Gateway: nic2Gateway, NIC: 2},
+		{Destination: defaultAddr.Subnet(), Gateway: nic1Gateway, NIC: 1},
+	}
+	s.SetRouteTable(rt)
+
+	// When an interface is given, the route for a broadcast goes through it.
+	r, err := s.FindRoute(1, nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(1, %s, %s, %d) failed: %s", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+		t.Errorf("FindRoute(1, %s, %s, %d) returned unexpected Route: %s)", nic1Addr.Address, header.IPv4Broadcast, fakeNetNumber, err)
+	}
+
+	// When an interface is not given, it consults the route table.
+	// 1. Case: Using the default route.
+	r, err = s.FindRoute(0, "", header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic2Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
+	}
+
+	// 2. Case: Having an explicit route for broadcast will select that one.
+	rt = append(
+		[]tcpip.Route{
+			{Destination: tcpip.AddressWithPrefix{header.IPv4Broadcast, 8 * header.IPv4AddressSize}.Subnet(), NIC: 1},
+		},
+		rt...,
+	)
+	s.SetRouteTable(rt)
+	r, err = s.FindRoute(0, "", header.IPv4Broadcast, fakeNetNumber, false /* multicastLoop */)
+	if err != nil {
+		t.Fatalf("FindRoute(0, \"\", %s, %d) failed: %s", header.IPv4Broadcast, fakeNetNumber, err)
+	}
+	if err := verifyRoute(r, stack.Route{LocalAddress: nic1Addr.Address, RemoteAddress: header.IPv4Broadcast}); err != nil {
+		t.Errorf("FindRoute(0, \"\", %s, %d) returned unexpected Route: %s)", header.IPv4Broadcast, fakeNetNumber, err)
 	}
 }
 

@@ -47,9 +47,6 @@ func TestExcludeBroadcast(t *testing.T) {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, header.IPv4Broadcast); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
-	}
 	if err := s.AddAddress(1, ipv4.ProtocolNumber, header.IPv4Any); err != nil {
 		t.Fatalf("AddAddress failed: %v", err)
 	}

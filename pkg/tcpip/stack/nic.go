@@ -104,6 +104,16 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 func (n *NIC) enable() *tcpip.Error {
 	n.attachLinkEndpoint()
 
+	// Create an endpoint to receive broadcast packets on this interface.
+	if _, ok := n.stack.networkProtocols[header.IPv4ProtocolNumber]; ok {
+		if err := n.AddAddress(tcpip.ProtocolAddress{
+			Protocol:          header.IPv4ProtocolNumber,
+			AddressWithPrefix: tcpip.AddressWithPrefix{header.IPv4Broadcast, 8 * header.IPv4AddressSize},
+		}, NeverPrimaryEndpoint); err != nil {
+			return err
+		}
+	}
+
 	// Join the IPv6 All-Nodes Multicast group if the stack is configured to
 	// use IPv6. This is required to ensure that this node properly receives
 	// and responds to the various NDP messages that are destined to the
@@ -372,7 +382,7 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 
 	addrs := make([]tcpip.ProtocolAddress, 0, len(n.endpoints))
 	for nid, ref := range n.endpoints {
-		// Don't include expired or tempory endpoints to avoid confusion and
+		// Don't include expired or temporary endpoints to avoid confusion and
 		// prevent the caller from using those.
 		switch ref.getKind() {
 		case permanentExpired, temporary:
@@ -623,21 +633,6 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 	src, dst := netProto.ParseAddresses(vv.First())
 
 	n.stack.AddLinkAddress(n.id, src, remote)
-
-	// If the packet is destined to the IPv4 Broadcast address, then make a
-	// route to each IPv4 network endpoint and let each endpoint handle the
-	// packet.
-	if dst == header.IPv4Broadcast {
-		// n.endpoints is mutex protected so acquire lock.
-		n.mu.RLock()
-		for _, ref := range n.endpoints {
-			if ref.isValidForIncoming() && ref.protocol == header.IPv4ProtocolNumber && ref.tryIncRef() {
-				handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, vv)
-			}
-		}
-		n.mu.RUnlock()
-		return
-	}
 
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, vv)

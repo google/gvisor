@@ -59,6 +59,8 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 		loop = PacketLoop
 	} else if multicastLoop && (header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)) {
 		loop |= PacketLoop
+	} else if remoteAddr == header.IPv4Broadcast {
+		loop |= PacketLoop
 	}
 
 	return Route{
@@ -208,10 +210,17 @@ func (r *Route) Clone() Route {
 	return *r
 }
 
-// MakeLoopedRoute duplicates the given route and tweaks it in case of multicast.
+// MakeLoopedRoute duplicates the given route with special handling for routes
+// used for sending multicast or broadcast packets. In those cases the
+// multicast/broadcast address is the remote address when sending out, but for
+// incoming (looped) packets it becomes the local address. Similarly, the local
+// interface address that was the local address going out becomes the remote
+// address coming in. This is different to unicast routes where local and
+// remote addresses remain the same as they identify location (local vs remote)
+// not direction (source vs destination).
 func (r *Route) MakeLoopedRoute() Route {
 	l := r.Clone()
-	if header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress) {
+	if r.RemoteAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress) {
 		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
 		l.RemoteLinkAddress = l.LocalLinkAddress
 	}
