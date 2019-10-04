@@ -32,7 +32,7 @@ type directory struct {
 	childList dentryList
 }
 
-func (fs *filesystem) newDirectory(creds *auth.Credentials, mode uint16) *inode {
+func (fs *filesystem) newDirectory(creds *auth.Credentials, mode linux.FileMode) *inode {
 	dir := &directory{}
 	dir.inode.init(dir, fs, creds, mode)
 	dir.inode.nlink = 2 // from "." and parent directory or ".." for root

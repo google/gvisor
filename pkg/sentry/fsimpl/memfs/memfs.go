@@ -137,7 +137,7 @@ type inode struct {
 	impl interface{} // immutable
 }
 
-func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode uint16) {
+func (i *inode) init(impl interface{}, fs *filesystem, creds *auth.Credentials, mode linux.FileMode) {
 	i.refs = 1
 	i.mode = uint32(mode)
 	i.uid = uint32(creds.EffectiveKUID)

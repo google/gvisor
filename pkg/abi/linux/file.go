@@ -271,7 +271,7 @@ type Statx struct {
 }
 
 // FileMode represents a mode_t.
-type FileMode uint
+type FileMode uint16
 
 // Permissions returns just the permission bits.
 func (m FileMode) Permissions() FileMode {

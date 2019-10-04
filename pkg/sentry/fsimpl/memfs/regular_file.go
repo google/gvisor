@@ -37,7 +37,7 @@ type regularFile struct {
 	dataLen int64
 }
 
-func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode uint16) *inode {
+func (fs *filesystem) newRegularFile(creds *auth.Credentials, mode linux.FileMode) *inode {
 	file := &regularFile{}
 	file.inode.init(file, fs, creds, mode)
 	file.inode.nlink = 1 // from parent directory
