@@ -1,7 +1,95 @@
 {
+  "assign": {
+    "exclude_files": {
+      "/external/bazel_gazelle/walk/walk.go": "allowed: false positive"
+    }
+  },
   "checkunsafe": {
     "exclude_files": {
-      "/external/": "not subject to constraint"
+      "/external/": "allowed: not subject to unsafe naming rules"
+    }
+  },
+  "copylocks": {
+    "exclude_files": {
+      ".*_state_autogen.go": "fix: m.Failf copies by value",
+      "/pkg/log/json.go": "fix: Emit passes lock by value: gvisor.dev/gvisor/pkg/log.JSONEmitter contains gvisor.dev/gvisor/pkg/log.Writer contains gvisor.dev/gvisor/pkg/sync.Mutex",
+      "/pkg/log/log_test.go": "fix: call of fmt.Printf copies lock value: gvisor.dev/gvisor/pkg/log.Writer contains gvisor.dev/gvisor/pkg/sync.Mutex",
+      "/pkg/sentry/fs/host/socket_test.go": "fix: call of t.Errorf copies lock value: gvisor.dev/gvisor/pkg/sentry/fs/host.ConnectedEndpoint contains gvisor.dev/gvisor/pkg/refs.AtomicRefCount contains gvisor.dev/gvisor/pkg/sync.Mutex",
+      "/pkg/sentry/fs/proc/sys_net.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/proc.tcpMemInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
+      "/pkg/sentry/fs/proc/sys_net.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/proc.tcpSack contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
+      "/pkg/sentry/fs/tty/slave.go": "fix: Truncate passes lock by value: gvisor.dev/gvisor/pkg/sentry/fs/tty.slaveInodeOperations contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.SimpleFileInode contains gvisor.dev/gvisor/pkg/sentry/fs/fsutil.InodeSimpleAttributes contains gvisor.dev/gvisor/pkg/sync.RWMutex",
+      "/pkg/sentry/kernel/time/time.go": "fix: Readiness passes lock by value: gvisor.dev/gvisor/pkg/sentry/kernel/time.ClockEventsQueue contains gvisor.dev/gvisor/pkg/waiter.Queue contains gvisor.dev/gvisor/pkg/sync.RWMutex",
+      "/pkg/sentry/kernel/syscalls_state.go": "fix: assignment copies lock value to *s: gvisor.dev/gvisor/pkg/sentry/kernel.SyscallTable contains gvisor.dev/gvisor/pkg/sentry/kernel.SyscallFlagsTable contains gvisor.dev/gvisor/pkg/sync.Mutex"
+    }
+  },
+  "lostcancel": {
+    "exclude_files": {
+      "/pkg/tcpip/network/arp/arp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
+      "/pkg/tcpip/stack/ndp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
+      "/pkg/tcpip/transport/udp/udp_test.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak",
+      "/pkg/tcpip/transport/tcp/testing/context/context.go": "fix: the cancel function returned by context.WithTimeout should be called, not discarded, to avoid a context leak"
+    }
+  },
+  "nilness": {
+    "exclude_files": {
+      "/com_github_vishvananda_netlink/route_linux.go": "allowed: false positive",
+      "/external/bazel_gazelle/cmd/gazelle/.*": "allowed: false positive",
+      "/org_golang_x_tools/go/packages/golist.go": "allowed: runtime internals",
+      "/pkg/sentry/platform/kvm/kvm_test.go": "allowed: intentional"
+    }
+  },
+  "printf": {
+    "exclude_files": {
+      ".*_abi_autogen_test.go": "fix: Sprintf format has insufficient args",
+      "/pkg/segment/test/segment_test.go": "fix: Errorf format %d arg seg.Start is a func value, not called",
+      "/pkg/tcpip/tcpip_test.go": "fix: Error call has possible formatting directive %q",
+      "/pkg/tcpip/header/eth_test.go": "fix: Fatalf format %s reads arg #3, but call has 2 args",
+      "/pkg/tcpip/header/ndp_test.go": "fix: Errorf format %d reads arg #1, but call has 0 args",
+      "/pkg/eventchannel/event_test.go": "fix: Fatal call has possible formatting directive %v",
+      "/pkg/tcpip/stack/ndp.go": "fix: Fatalf format %s has arg protocolAddr of wrong type gvisor.dev/gvisor/pkg/tcpip.ProtocolAddress",
+      "/pkg/sentry/fs/fdpipe/pipe_test.go": "fix: Errorf format %s has arg flags of wrong type gvisor.dev/gvisor/pkg/sentry/fs.FileFlags",
+      "/pkg/sentry/fs/fdpipe/pipe_test.go": "fix: Errorf format %d arg f.FD is a func value, not called",
+      "/pkg/tcpip/link/fdbased/endpoint.go": "fix: Sprintf format %v with arg p causes recursive String method call",
+      "/pkg/tcpip/transport/udp/udp_test.go": "fix: Fatalf format %s has arg h.srcAddr of wrong type gvisor.dev/gvisor/pkg/tcpip.FullAddress",
+      "/pkg/tcpip/transport/tcp/tcp_test.go": "fix: Fatalf format %s has arg tcpTW of wrong type gvisor.dev/gvisor/pkg/tcpip.TCPTimeWaitTimeoutOption",
+      "/pkg/tcpip/transport/tcp/tcp_test.go": "fix: Errorf call needs 1 arg but has 2 args",
+      "/pkg/tcpip/stack/ndp_test.go": "fix: Errorf format %s reads arg #3, but call has 2 args",
+      "/pkg/tcpip/stack/ndp_test.go": "fix: Fatalf format %s reads arg #5, but call has 4 args",
+      "/pkg/tcpip/stack/stack_test.go": "fix: Fatalf format %s has arg protoAddr of wrong type gvisor.dev/gvisor/pkg/tcpip.ProtocolAddress",
+      "/pkg/tcpip/stack/stack_test.go": "fix: Fatalf format %s has arg nic1ProtoAddr of wrong type gvisor.dev/gvisor/pkg/tcpip.ProtocolAddress",
+      "/pkg/tcpip/stack/stack_test.go": "fix: Fatalf format %s has arg nic2ProtoAddr of wrong type gvisor.dev/gvisor/pkg/tcpip.ProtocolAddress",
+      "/pkg/tcpip/stack/stack_test.go": "fix: Fatal call has possible formatting directive %t",
+      "/pkg/tcpip/stack/stack_test.go": "fix: Fatalf call has arguments but no formatting directives",
+      "/pkg/tcpip/link/fdbased/endpoint.go": "fix: Sprintf format %v with arg p causes recursive String method call",
+      "/pkg/sentry/fsimpl/tmpfs/stat_test.go": "fix: Errorf format %v reads arg #1, but call has 0 args",
+      "/runsc/container/test_app/test_app.go": "fix: Fatal call has possible formatting directive %q",
+      "/test/root/cgroup_test.go": "fix: Errorf format %s has arg gots of wrong type []int",
+      "/test/root/cgroup_test.go": "fix: Fatalf format %v reads arg #3, but call has 2 args",
+      "/test/runtimes/runner.go": "fix: Skip call has possible formatting directive %q",
+      "/test/runtimes/blacklist_test.go": "fix: Errorf format %q has arg blacklistFile of wrong type *string"
+    }
+  },
+  "structtag": {
+    "exclude_files": {
+      "/external/": "allowed: may use arbitrary tags"
+    }
+  },
+  "unsafeptr": {
+    "exclude_files": {
+      ".*_test.go": "allowed: exclude tests",
+      "/pkg/flipcall/flipcall_unsafe.go": "allowed: special case",
+      "/pkg/gohacks/gohacks_unsafe.go": "allowed: special case",
+      "/pkg/sentry/fs/fsutil/host_file_mapper_unsafe.go": "allowed: special case",
+      "/pkg/sentry/platform/kvm/(bluepill|machine)_unsafe.go": "allowed: special case",
+      "/pkg/sentry/platform/ring0/pagetables/allocator_unsafe.go": "allowed: special case",
+      "/pkg/sentry/platform/safecopy/safecopy_unsafe.go": "allowed: special case",
+      "/pkg/sentry/vfs/mount_unsafe.go": "allowed: special case"
+    }
+  },
+  "unusedresult": {
+    "exclude_files": {
+      "/pkg/sentry/fsimpl/proc/task_net.go": "fix: result of fmt.Sprintf call not used",
+      "/pkg/sentry/fsimpl/proc/tasks_net.go": "fix: result of fmt.Sprintf call not used"
     }
   }
 }
