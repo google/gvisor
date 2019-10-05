@@ -185,12 +185,6 @@ go_repository(
 )
 
 go_repository(
-    name = "org_golang_x_tools",
-    commit = "36563e24a262",
-    importpath = "golang.org/x/tools",
-)
-
-go_repository(
     name = "org_golang_x_sync",
     importpath = "golang.org/x/sync",
     sum = "h1:8gQV6CLnAEikrhgkHFbMAEhagSSnXWGV915qUMm9mrU=",
@@ -212,7 +206,7 @@ go_repository(
 
 go_repository(
     name = "org_golang_x_tools",
-    commit = "aa82965741a9fecd12b026fbb3d3c6ed3231b8f8",
+    commit = "65e3620a7ae7ac25e8494a60f0e5ef4e4fba03b3",
     importpath = "golang.org/x/tools",
 )
 
