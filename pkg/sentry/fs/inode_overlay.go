@@ -15,6 +15,7 @@
 package fs
 
 import (
+	"fmt"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -207,6 +208,11 @@ func overlayLookup(ctx context.Context, parent *overlayEntry, inode *Inode, name
 }
 
 func overlayCreate(ctx context.Context, o *overlayEntry, parent *Dirent, name string, flags FileFlags, perm FilePermissions) (*File, error) {
+	// Sanity check.
+	if parent.Inode.overlay == nil {
+		panic(fmt.Sprintf("overlayCreate called with non-overlay parent inode (parent InodeOperations type is %T)", parent.Inode.InodeOperations))
+	}
+
 	// Dirent.Create takes renameMu if the Inode is an overlay Inode.
 	if err := copyUpLockedForRename(ctx, parent); err != nil {
 		return nil, err
