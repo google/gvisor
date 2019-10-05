@@ -1,3 +1,3 @@
 package(licenses = ["notice"])
 
-exports_files(["nogo.js"])
+exports_files(["nogo.json"])
