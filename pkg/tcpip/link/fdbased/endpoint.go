@@ -248,6 +248,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
+var fanoutID int
+
 func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher, error) {
 	// By default use the readv() dispatcher as it works with all kinds of
 	// FDs (tap/tun/unix domain sockets and af_packet).
@@ -265,7 +267,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 		case *unix.SockaddrLinklayer:
 			// enable PACKET_FANOUT mode is the underlying socket is
 			// of type AF_PACKET.
-			const fanoutID = 1
+			fanoutID++
 			const fanoutType = 0x8000 // PACKET_FANOUT_HASH | PACKET_FANOUT_FLAG_DEFRAG
 			fanoutArg := fanoutID | fanoutType<<16
 			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
