@@ -8,6 +8,8 @@ go_library(
         "error.go",
         "flags.go",
         "linux64.go",
+        "linux64_amd64.go",
+        "linux64_arm64.go",
         "sigset.go",
         "sys_aio.go",
         "sys_capability.go",
