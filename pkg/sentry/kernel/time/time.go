@@ -428,7 +428,10 @@ type Timer struct {
 
 	// kicker is used to wake the Timer goroutine. The kicker pointer is
 	// immutable, but its state is protected by mu.
-	kicker *time.Timer `state:"nosave"`
+	kicker *timer `state:"nosave"`
+
+	// kickerChan is used by the kicker timer to notify when it expires.
+	kickerChan chan struct{} `state:"nosave"`
 
 	// entry is registered with clock.EventRegister. entry is immutable.
 	//
@@ -488,7 +491,10 @@ func (t *Timer) init() {
 	}
 	// If t.kicker is nil, the Timer goroutine can't be running, so we can't
 	// race with it.
-	t.kicker = time.NewTimer(0)
+	t.kickerChan = make(chan struct{}, 1)
+	t.kicker = &timer{clock: t.clock}
+	t.kicker.init(t.kickerChan)
+	t.kicker.enable(0)
 	t.entry, t.events = waiter.NewChannelEntry(nil)
 	t.clock.EventRegister(&t.entry, timerTickEvents)
 	go t.runGoroutine() // S/R-SAFE: synchronized by t.mu
@@ -502,7 +508,7 @@ func (t *Timer) Destroy() {
 	t.mu.Lock()
 	t.setting.Enabled = false
 	t.mu.Unlock()
-	t.kicker.Stop()
+	t.kicker.cleanup()
 	// Unregister t.entry, ensuring that the Clock will not send to t.events,
 	// before closing t.events to instruct the Timer goroutine to exit.
 	t.clock.EventUnregister(&t.entry)
@@ -513,7 +519,11 @@ func (t *Timer) Destroy() {
 func (t *Timer) runGoroutine() {
 	for {
 		select {
-		case <-t.kicker.C:
+		case <-t.kickerChan:
+			if !t.kicker.checkExpiration() {
+				// spurious wake move along.
+				continue
+			}
 		case _, ok := <-t.events:
 			if !ok {
 				// Channel closed by Destroy.
@@ -529,8 +539,8 @@ func (t *Timer) runGoroutine() {
 func (t *Timer) Tick() {
 	now := t.clock.Now()
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.paused {
+		t.mu.Unlock()
 		return
 	}
 	s, exp := t.setting.At(now)
@@ -541,6 +551,7 @@ func (t *Timer) Tick() {
 		}
 	}
 	t.resetKickerLocked(now)
+	t.mu.Unlock()
 }
 
 // Pause pauses the Timer, ensuring that it does not generate any further
@@ -552,7 +563,7 @@ func (t *Timer) Pause() {
 	t.paused = true
 	// t.kicker may be nil if we were restored but never resumed.
 	if t.kicker != nil {
-		t.kicker.Stop()
+		t.kicker.disable()
 	}
 }
 
@@ -575,7 +586,7 @@ func (t *Timer) Resume() {
 
 	// Kick the Timer goroutine in case it was already initialized, but the
 	// Timer goroutine was sleeping.
-	t.kicker.Reset(0)
+	t.kicker.enable(0)
 }
 
 // Get returns a snapshot of the Timer's current Setting and the time
@@ -586,7 +597,6 @@ func (t *Timer) Resume() {
 func (t *Timer) Get() (Time, Setting) {
 	now := t.clock.Now()
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.paused {
 		panic(fmt.Sprintf("Timer.Get called on paused Timer %p", t))
 	}
@@ -598,6 +608,7 @@ func (t *Timer) Get() (Time, Setting) {
 		}
 	}
 	t.resetKickerLocked(now)
+	t.mu.Unlock()
 	return now, s
 }
 
@@ -621,7 +632,6 @@ func (t *Timer) Swap(s Setting) (Time, Setting) {
 func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	now := t.clock.Now()
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.paused {
 		panic(fmt.Sprintf("Timer.SwapAnd called on paused Timer %p", t))
 	}
@@ -642,6 +652,7 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 		}
 	}
 	t.resetKickerLocked(now)
+	t.mu.Unlock()
 	return now, oldS
 }
 
@@ -652,8 +663,8 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 // Timer mutex locked.
 func (t *Timer) Atomically(f func()) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	f()
+	t.mu.Unlock()
 }
 
 // Preconditions: t.mu must be locked.
@@ -661,7 +672,7 @@ func (t *Timer) resetKickerLocked(now Time) {
 	if t.setting.Enabled {
 		// Clock.WallTimeUntil may return a negative value. This is fine;
 		// time.when treats negative Durations as 0.
-		t.kicker.Reset(t.clock.WallTimeUntil(t.setting.Next, now))
+		t.kicker.enable(t.clock.WallTimeUntil(t.setting.Next, now))
 	}
 	// We don't call t.kicker.Stop if !t.setting.Enabled because in most cases
 	// resetKickerLocked will be called from the Timer goroutine itself, in

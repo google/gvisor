@@ -6,6 +6,7 @@ go_library(
     name = "time",
     srcs = [
         "context.go",
+        "kicker_timer.go",
         "time.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/kernel/time",
