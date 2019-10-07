@@ -157,13 +157,55 @@ func (cc *Crictl) RmPod(podID string) error {
 	return err
 }
 
+// StartContainer pulls the given image ands starts the container in the
+// sandbox with the given podID.
+func (cc *Crictl) StartContainer(podID, image, sbSpec, contSpec string) (string, error) {
+	// Write the specs to files that can be read by crictl.
+	sbSpecFile, err := testutil.WriteTmpFile("sbSpec", sbSpec)
+	if err != nil {
+		return "", fmt.Errorf("failed to write sandbox spec: %v", err)
+	}
+	contSpecFile, err := testutil.WriteTmpFile("contSpec", contSpec)
+	if err != nil {
+		return "", fmt.Errorf("failed to write container spec: %v", err)
+	}
+
+	return cc.startContainer(podID, image, sbSpecFile, contSpecFile)
+}
+
+func (cc *Crictl) startContainer(podID, image, sbSpecFile, contSpecFile string) (string, error) {
+	if err := cc.Pull(image); err != nil {
+		return "", fmt.Errorf("failed to pull %s: %v", image, err)
+	}
+
+	contID, err := cc.Create(podID, contSpecFile, sbSpecFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to create container in pod %q: %v", podID, err)
+	}
+
+	if _, err := cc.Start(contID); err != nil {
+		return "", fmt.Errorf("failed to start container %q in pod %q: %v", contID, podID, err)
+	}
+
+	return contID, nil
+}
+
+// StopContainer stops and deletes the container with the given container ID.
+func (cc *Crictl) StopContainer(contID string) error {
+	if err := cc.Stop(contID); err != nil {
+		return fmt.Errorf("failed to stop container %q: %v", contID, err)
+	}
+
+	if err := cc.Rm(contID); err != nil {
+		return fmt.Errorf("failed to remove container %q: %v", contID, err)
+	}
+
+	return nil
+}
+
 // StartPodAndContainer pulls an image, then starts a sandbox and container in
 // that sandbox. It returns the pod ID and container ID.
 func (cc *Crictl) StartPodAndContainer(image, sbSpec, contSpec string) (string, string, error) {
-	if err := cc.Pull(image); err != nil {
-		return "", "", fmt.Errorf("failed to pull %s: %v", image, err)
-	}
-
 	// Write the specs to files that can be read by crictl.
 	sbSpecFile, err := testutil.WriteTmpFile("sbSpec", sbSpec)
 	if err != nil {
@@ -179,26 +221,15 @@ func (cc *Crictl) StartPodAndContainer(image, sbSpec, contSpec string) (string, 
 		return "", "", err
 	}
 
-	contID, err := cc.Create(podID, contSpecFile, sbSpecFile)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create container in pod %q: %v", podID, err)
-	}
+	contID, err := cc.startContainer(podID, image, sbSpecFile, contSpecFile)
 
-	if _, err := cc.Start(contID); err != nil {
-		return "", "", fmt.Errorf("failed to start container %q in pod %q: %v", contID, podID, err)
-	}
-
-	return podID, contID, nil
+	return podID, contID, err
 }
 
 // StopPodAndContainer stops a container and pod.
 func (cc *Crictl) StopPodAndContainer(podID, contID string) error {
-	if err := cc.Stop(contID); err != nil {
+	if err := cc.StopContainer(contID); err != nil {
 		return fmt.Errorf("failed to stop container %q in pod %q: %v", contID, podID, err)
-	}
-
-	if err := cc.Rm(contID); err != nil {
-		return fmt.Errorf("failed to remove container %q in pod %q: %v", contID, podID, err)
 	}
 
 	if err := cc.StopPod(podID); err != nil {

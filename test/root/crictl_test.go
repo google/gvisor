@@ -126,6 +126,59 @@ func TestMountOverSymlinks(t *testing.T) {
 	}
 }
 
+// TestHomeDir tests that the HOME environment variable is set for
+// multi-containers.
+func TestHomeDir(t *testing.T) {
+	// Setup containerd and crictl.
+	crictl, cleanup, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+	contSpec := testdata.SimpleSpec("root", "k8s.gcr.io/busybox", []string{"sleep", "1000"})
+	podID, contID, err := crictl.StartPodAndContainer("k8s.gcr.io/busybox", testdata.Sandbox, contSpec)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("root container", func(t *testing.T) {
+		out, err := crictl.Exec(contID, "sh", "-c", "echo $HOME")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
+			t.Fatalf("Home directory invalid. Got %q, Want : %q", got, want)
+		}
+	})
+
+	t.Run("sub-container", func(t *testing.T) {
+		// Create a sub container in the same pod.
+		subContSpec := testdata.SimpleSpec("subcontainer", "k8s.gcr.io/busybox", []string{"sleep", "1000"})
+		subContID, err := crictl.StartContainer(podID, "k8s.gcr.io/busybox", testdata.Sandbox, subContSpec)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := crictl.Exec(subContID, "sh", "-c", "echo $HOME")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := strings.TrimSpace(string(out)), "/root"; got != want {
+			t.Fatalf("Home directory invalid. Got %q, Want: %q", got, want)
+		}
+
+		if err := crictl.StopContainer(subContID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	// Stop everything.
+	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+		t.Fatal(err)
+	}
+
+}
+
 // setup sets up before a test. Specifically it:
 // * Creates directories and a socket for containerd to utilize.
 // * Runs containerd and waits for it to reach a "ready" state for testing.
