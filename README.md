@@ -133,11 +133,9 @@ The [gvisor-users mailing list][gvisor-users-list] and
 [gvisor-dev mailing list][gvisor-dev-list] are good starting points for
 questions and discussion.
 
-## Security
+## Security Policy
 
-Sensitive security-related questions, comments and disclosures can be sent to
-the [gvisor-security mailing list][gvisor-security-list]. The full security
-disclosure policy is defined in the [community][community] repository.
+See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
@@ -147,7 +145,6 @@ See [Contributing.md](CONTRIBUTING.md).
 [community]: https://gvisor.googlesource.com/community
 [docker]: https://www.docker.com
 [git]: https://git-scm.com
-[gvisor-security-list]: https://groups.google.com/forum/#!forum/gvisor-security
 [gvisor-users-list]: https://groups.google.com/forum/#!forum/gvisor-users
 [gvisor-dev-list]: https://groups.google.com/forum/#!forum/gvisor-dev
 [oci]: https://www.opencontainers.org
