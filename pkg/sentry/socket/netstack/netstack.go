@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package epsocket provides an implementation of the socket.Socket interface
+// Package netstack provides an implementation of the socket.Socket interface
 // that is backed by a tcpip.Endpoint.
 //
 // It does not depend on any particular endpoint implementation, and thus can
@@ -22,7 +22,7 @@
 // Lock ordering: netstack => mm: ioSequencePayload copies user memory inside
 // tcpip.Endpoint.Write(). Netstack is allowed to (and does) hold locks during
 // this operation.
-package epsocket
+package netstack
 
 import (
 	"bytes"
@@ -176,7 +176,7 @@ var Metrics = tcpip.Stats{
 
 const sizeOfInt32 int = 4
 
-var errStackType = syserr.New("expected but did not receive an epsocket.Stack", linux.EINVAL)
+var errStackType = syserr.New("expected but did not receive a netstack.Stack", linux.EINVAL)
 
 // ntohs converts a 16-bit number from network byte order to host byte order. It
 // assumes that the host is little endian.
@@ -262,8 +262,8 @@ type SocketOperations struct {
 	// valid when timestampValid is true. It is protected by readMu.
 	timestampNS int64
 
-	// sockOptInq corresponds to TCP_INQ. It is implemented on the epsocket
-	// level, because it takes into account data from readView.
+	// sockOptInq corresponds to TCP_INQ. It is implemented at this level
+	// because it takes into account data from readView.
 	sockOptInq bool
 }
 
@@ -275,7 +275,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 		}
 	}
 
-	dirent := socket.NewDirent(t, epsocketDevice)
+	dirent := socket.NewDirent(t, netstackDevice)
 	defer dirent.DecRef()
 	return fs.NewFile(t, dirent, fs.FileFlags{Read: true, Write: true, NonSeekable: true}, &SocketOperations{
 		Queue:    queue,
@@ -760,7 +760,7 @@ func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
 // tcpip.Endpoint.
 func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
-	// implemented specifically for epsocket.SocketOperations rather than
+	// implemented specifically for netstack.SocketOperations rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
 	// options where the implementation is not shared, as unix sockets need
 	// their own support for SO_TIMESTAMP.
@@ -1229,7 +1229,7 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfac
 // tcpip.Endpoint.
 func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
 	// TODO(b/78348848): Unlike other socket options, SO_TIMESTAMP is
-	// implemented specifically for epsocket.SocketOperations rather than
+	// implemented specifically for netstack.SocketOperations rather than
 	// commonEndpoint. commonEndpoint should be extended to support socket
 	// options where the implementation is not shared, as unix sockets need
 	// their own support for SO_TIMESTAMP.
@@ -2235,7 +2235,7 @@ func (s *SocketOperations) SendMsg(t *kernel.Task, src usermem.IOSequence, to []
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	// SIOCGSTAMP is implemented by epsocket rather than all commonEndpoint
+	// SIOCGSTAMP is implemented by netstack rather than all commonEndpoint
 	// sockets.
 	// TODO(b/78348848): Add a commonEndpoint method to support SIOCGSTAMP.
 	switch args[1].Int() {
@@ -2538,7 +2538,7 @@ func ifconfIoctl(ctx context.Context, io usermem.IO, ifc *linux.IFConf) error {
 // Flag values and meanings are described in greater detail in netdevice(7) in
 // the SIOCGIFFLAGS section.
 func interfaceStatusFlags(stack inet.Stack, name string) (uint32, *syserr.Error) {
-	// epsocket should only ever be passed an epsocket.Stack.
+	// We should only ever be passed a netstack.Stack.
 	epstack, ok := stack.(*Stack)
 	if !ok {
 		return 0, errStackType
