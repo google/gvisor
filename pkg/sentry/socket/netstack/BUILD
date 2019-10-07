@@ -3,15 +3,15 @@ package(licenses = ["notice"])
 load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
-    name = "epsocket",
+    name = "netstack",
     srcs = [
         "device.go",
-        "epsocket.go",
+        "netstack.go",
         "provider.go",
         "save_restore.go",
         "stack.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/epsocket",
+    importpath = "gvisor.dev/gvisor/pkg/sentry/socket/netstack",
     visibility = [
         "//pkg/sentry:internal",
     ],

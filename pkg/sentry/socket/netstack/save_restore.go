@@ -12,9 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package epsocket
+package netstack
 
-import "gvisor.dev/gvisor/pkg/sentry/device"
+import (
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+)
 
-// epsocketDevice is the endpoint socket virtual device.
-var epsocketDevice = device.NewAnonDevice()
+// afterLoad is invoked by stateify.
+func (s *Stack) afterLoad() {
+	s.Stack = stack.StackFromEnv // FIXME(b/36201077)
+	if s.Stack == nil {
+		panic("can't restore without netstack/tcpip/stack.Stack")
+	}
+}
