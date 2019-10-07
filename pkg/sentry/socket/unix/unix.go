@@ -31,7 +31,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
-	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -40,8 +40,8 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// SocketOperations is a Unix socket. It is similar to an epsocket, except it
-// is backed by a transport.Endpoint instead of a tcpip.Endpoint.
+// SocketOperations is a Unix socket. It is similar to a netstack socket,
+// except it is backed by a transport.Endpoint instead of a tcpip.Endpoint.
 //
 // +stateify savable
 type SocketOperations struct {
@@ -116,7 +116,7 @@ func (s *SocketOperations) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, _, err := epsocket.AddressAndFamily(linux.AF_UNIX, sockaddr, true /* strict */)
+	addr, _, err := netstack.AddressAndFamily(linux.AF_UNIX, sockaddr, true /* strict */)
 	if err != nil {
 		return "", err
 	}
@@ -143,7 +143,7 @@ func (s *SocketOperations) GetPeerName(t *kernel.Task) (linux.SockAddr, uint32, 
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := epsocket.ConvertAddress(linux.AF_UNIX, addr)
+	a, l := netstack.ConvertAddress(linux.AF_UNIX, addr)
 	return a, l, nil
 }
 
@@ -155,19 +155,19 @@ func (s *SocketOperations) GetSockName(t *kernel.Task) (linux.SockAddr, uint32, 
 		return nil, 0, syserr.TranslateNetstackError(err)
 	}
 
-	a, l := epsocket.ConvertAddress(linux.AF_UNIX, addr)
+	a, l := netstack.ConvertAddress(linux.AF_UNIX, addr)
 	return a, l, nil
 }
 
 // Ioctl implements fs.FileOperations.Ioctl.
 func (s *SocketOperations) Ioctl(ctx context.Context, _ *fs.File, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return epsocket.Ioctl(ctx, s.ep, io, args)
+	return netstack.Ioctl(ctx, s.ep, io, args)
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketOperations) GetSockOpt(t *kernel.Task, level, name int, outPtr usermem.Addr, outLen int) (interface{}, *syserr.Error) {
-	return epsocket.GetSockOpt(t, s, s.ep, linux.AF_UNIX, s.ep.Type(), level, name, outLen)
+	return netstack.GetSockOpt(t, s, s.ep, linux.AF_UNIX, s.ep.Type(), level, name, outLen)
 }
 
 // Listen implements the linux syscall listen(2) for sockets backed by
@@ -474,13 +474,13 @@ func (s *SocketOperations) EventUnregister(e *waiter.Entry) {
 // SetSockOpt implements the linux syscall setsockopt(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketOperations) SetSockOpt(t *kernel.Task, level int, name int, optVal []byte) *syserr.Error {
-	return epsocket.SetSockOpt(t, s, s.ep, level, name, optVal)
+	return netstack.SetSockOpt(t, s, s.ep, level, name, optVal)
 }
 
 // Shutdown implements the linux syscall shutdown(2) for sockets backed by
 // a transport.Endpoint.
 func (s *SocketOperations) Shutdown(t *kernel.Task, how int) *syserr.Error {
-	f, err := epsocket.ConvertShutdown(how)
+	f, err := netstack.ConvertShutdown(how)
 	if err != nil {
 		return err
 	}
@@ -546,7 +546,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 		var from linux.SockAddr
 		var fromLen uint32
 		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
-			from, fromLen = epsocket.ConvertAddress(linux.AF_UNIX, *r.From)
+			from, fromLen = netstack.ConvertAddress(linux.AF_UNIX, *r.From)
 		}
 
 		if r.ControlTrunc {
@@ -581,7 +581,7 @@ func (s *SocketOperations) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags
 			var from linux.SockAddr
 			var fromLen uint32
 			if r.From != nil {
-				from, fromLen = epsocket.ConvertAddress(linux.AF_UNIX, *r.From)
+				from, fromLen = netstack.ConvertAddress(linux.AF_UNIX, *r.From)
 			}
 
 			if r.ControlTrunc {

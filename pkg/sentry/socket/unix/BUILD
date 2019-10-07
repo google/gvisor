@@ -24,7 +24,7 @@ go_library(
         "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/control",
-        "//pkg/sentry/socket/epsocket",
+        "//pkg/sentry/socket/netstack",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/usermem",
         "//pkg/syserr",
