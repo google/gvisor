@@ -62,10 +62,10 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 
 	// Include supported socket providers.
-	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/netlink/route"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
@@ -914,11 +914,11 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 		// NetworkNone sets up loopback using netstack.
 		netProtos := []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol(), arp.NewProtocol()}
 		transProtos := []stack.TransportProtocol{tcp.NewProtocol(), udp.NewProtocol(), icmp.NewProtocol4()}
-		s := epsocket.Stack{stack.New(stack.Options{
+		s := netstack.Stack{stack.New(stack.Options{
 			NetworkProtocols:   netProtos,
 			TransportProtocols: transProtos,
 			Clock:              clock,
-			Stats:              epsocket.Metrics,
+			Stats:              netstack.Metrics,
 			HandleLocal:        true,
 			// Enable raw sockets for users with sufficient
 			// privileges.

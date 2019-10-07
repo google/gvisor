@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
@@ -142,7 +142,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 	}
 	srv.Register(manager)
 
-	if eps, ok := l.k.NetworkStack().(*epsocket.Stack); ok {
+	if eps, ok := l.k.NetworkStack().(*netstack.Stack); ok {
 		net := &Network{
 			Stack: eps.Stack,
 		}
@@ -355,7 +355,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	fs.SetRestoreEnvironment(*renv)
 
 	// Prepare to load from the state file.
-	if eps, ok := networkStack.(*epsocket.Stack); ok {
+	if eps, ok := networkStack.(*netstack.Stack); ok {
 		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
 	}
 	info, err := specFile.Stat()

@@ -23,8 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
-	"gvisor.dev/gvisor/pkg/sentry/socket/epsocket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	slinux "gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 )
@@ -332,7 +332,7 @@ func sockAddr(t *kernel.Task, addr usermem.Addr, length uint32) string {
 
 	switch family {
 	case linux.AF_INET, linux.AF_INET6, linux.AF_UNIX:
-		fa, _, err := epsocket.AddressAndFamily(int(family), b, true /* strict */)
+		fa, _, err := netstack.AddressAndFamily(int(family), b, true /* strict */)
 		if err != nil {
 			return fmt.Sprintf("%#x {Family: %s, error extracting address: %v}", addr, familyStr, err)
 		}
