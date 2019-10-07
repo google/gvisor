@@ -10,6 +10,7 @@ go_library(
         "httpd.go",
         "httpd_mount_paths.go",
         "sandbox.go",
+        "simple.go",
     ],
     importpath = "gvisor.dev/gvisor/test/root/testdata",
     visibility = [

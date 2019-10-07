@@ -208,8 +208,27 @@ func TestExecEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	if want := "BAR"; !strings.Contains(got, want) {
-		t.Errorf("wanted exec output to contain %q, got %q", want, got)
+	if got, want := strings.TrimSpace(got), "BAR"; got != want {
+		t.Errorf("bad output from 'docker exec'. Got %q; Want %q.", got, want)
+	}
+}
+
+// TestRunEnvHasHome tests that run always has HOME environment set.
+func TestRunEnvHasHome(t *testing.T) {
+	// Base alpine image does not have any environment variables set.
+	if err := dockerutil.Pull("alpine"); err != nil {
+		t.Fatalf("docker pull failed: %v", err)
+	}
+	d := dockerutil.MakeDocker("run-env-test")
+
+	// Exec "echo $HOME". The 'bin' user's home dir is '/bin'.
+	got, err := d.RunFg("--user", "bin", "alpine", "/bin/sh", "-c", "echo $HOME")
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	defer d.CleanUp()
+	if got, want := strings.TrimSpace(got), "/bin"; got != want {
+		t.Errorf("bad output from 'docker run'. Got %q; Want %q.", got, want)
 	}
 }
 
