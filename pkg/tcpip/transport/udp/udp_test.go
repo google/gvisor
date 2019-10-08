@@ -1207,6 +1207,39 @@ func TestTTL(t *testing.T) {
 	}
 }
 
+func TestSetTTL(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, broadcast, broadcastIn6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
+				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
+					c := newDualTestContext(t, defaultMTU)
+					defer c.cleanup()
+
+					c.createEndpointForFlow(flow)
+
+					if err := c.ep.SetSockOpt(tcpip.TTLOption(wantTTL)); err != nil {
+						c.t.Fatalf("SetSockOpt failed: %v", err)
+					}
+
+					var p stack.NetworkProtocol
+					if flow.isV4() {
+						p = ipv4.NewProtocol()
+					} else {
+						p = ipv6.NewProtocol()
+					}
+					ep, err := p.NewEndpoint(0, tcpip.AddressWithPrefix{}, nil, nil, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					ep.Close()
+
+					testWrite(c, flow, checker.TTL(wantTTL))
+				})
+			}
+		})
+	}
+}
+
 func TestMulticastInterfaceOption(t *testing.T) {
 	for _, flow := range []testFlow{multicastV4, multicastV4in6, multicastV6, multicastV6Only} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {

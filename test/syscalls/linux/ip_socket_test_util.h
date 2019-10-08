@@ -92,6 +92,10 @@ SocketPairKind IPv4UDPUnboundSocketPair(int type);
 // a SimpleSocket created with AF_INET, SOCK_DGRAM, and the given type.
 SocketKind IPv4UDPUnboundSocket(int type);
 
+// IPv6UDPUnboundSocketPair returns a SocketKind that represents
+// a SimpleSocket created with AF_INET6, SOCK_DGRAM, and the given type.
+SocketKind IPv6UDPUnboundSocket(int type);
+
 // IPv4TCPUnboundSocketPair returns a SocketKind that represents
 // a SimpleSocket created with AF_INET, SOCK_STREAM and the given type.
 SocketKind IPv4TCPUnboundSocket(int type);

@@ -21,6 +21,8 @@
 package ipv6
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -35,9 +37,9 @@ const (
 	// PayloadLength field of the ipv6 header.
 	maxPayloadSize = 0xffff
 
-	// defaultIPv6HopLimit is the default hop limit for IPv6 Packets
-	// egressed by Netstack.
-	defaultIPv6HopLimit = 255
+	// DefaultTTL is the default hop limit for IPv6 Packets egressed by
+	// Netstack.
+	DefaultTTL = 64
 )
 
 type endpoint struct {
@@ -47,11 +49,12 @@ type endpoint struct {
 	linkEP        stack.LinkEndpoint
 	linkAddrCache stack.LinkAddressCache
 	dispatcher    stack.TransportDispatcher
+	protocol      *protocol
 }
 
 // DefaultTTL is the default hop limit for this endpoint.
 func (e *endpoint) DefaultTTL() uint8 {
-	return 255
+	return e.protocol.DefaultTTL()
 }
 
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
@@ -155,7 +158,12 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 // Close cleans up resources associated with the endpoint.
 func (*endpoint) Close() {}
 
-type protocol struct{}
+type protocol struct {
+	// defaultTTL is the current default TTL for the protocol. Only the
+	// uint8 portion of it is meaningful and it must be accessed
+	// atomically.
+	defaultTTL uint32
+}
 
 // Number returns the ipv6 protocol number.
 func (p *protocol) Number() tcpip.NetworkProtocolNumber {
@@ -187,17 +195,40 @@ func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWi
 		linkEP:        linkEP,
 		linkAddrCache: linkAddrCache,
 		dispatcher:    dispatcher,
+		protocol:      p,
 	}, nil
 }
 
 // SetOption implements NetworkProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch v := option.(type) {
+	case tcpip.DefaultTTLOption:
+		p.SetDefaultTTL(uint8(v))
+		return nil
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // Option implements NetworkProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch v := option.(type) {
+	case *tcpip.DefaultTTLOption:
+		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
+		return nil
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
+}
+
+// SetDefaultTTL sets the default TTL for endpoints created with this protocol.
+func (p *protocol) SetDefaultTTL(ttl uint8) {
+	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+}
+
+// DefaultTTL returns the default TTL for endpoints created with this protocol.
+func (p *protocol) DefaultTTL() uint8 {
+	return uint8(atomic.LoadUint32(&p.defaultTTL))
 }
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
@@ -212,5 +243,5 @@ func calculateMTU(mtu uint32) uint32 {
 
 // NewProtocol returns an IPv6 network protocol.
 func NewProtocol() stack.NetworkProtocol {
-	return &protocol{}
+	return &protocol{defaultTTL: DefaultTTL}
 }

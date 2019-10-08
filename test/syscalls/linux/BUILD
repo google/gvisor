@@ -2555,6 +2555,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_ip_unbound_test",
+    testonly = 1,
+    srcs = [
+        "socket_ip_unbound.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        ":socket_test_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "socket_domain_test",
     testonly = 1,
     srcs = [

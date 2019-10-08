@@ -39,6 +39,9 @@ const (
 	// TotalLength field of the ipv4 header.
 	MaxTotalSize = 0xffff
 
+	// DefaultTTL is the default time-to-live value for this endpoint.
+	DefaultTTL = 64
+
 	// buckets is the number of identifier buckets.
 	buckets = 2048
 )
@@ -70,7 +73,7 @@ func (p *protocol) NewEndpoint(nicid tcpip.NICID, addrWithPrefix tcpip.AddressWi
 
 // DefaultTTL is the default time-to-live value for this endpoint.
 func (e *endpoint) DefaultTTL() uint8 {
-	return 255
+	return e.protocol.DefaultTTL()
 }
 
 // MTU implements stack.NetworkEndpoint.MTU. It returns the link-layer MTU minus
@@ -327,6 +330,11 @@ func (e *endpoint) Close() {}
 type protocol struct {
 	ids    []uint32
 	hashIV uint32
+
+	// defaultTTL is the current default TTL for the protocol. Only the
+	// uint8 portion of it is meaningful and it must be accessed
+	// atomically.
+	defaultTTL uint32
 }
 
 // Number returns the ipv4 protocol number.
@@ -352,12 +360,34 @@ func (*protocol) ParseAddresses(v buffer.View) (src, dst tcpip.Address) {
 
 // SetOption implements NetworkProtocol.SetOption.
 func (p *protocol) SetOption(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch v := option.(type) {
+	case tcpip.DefaultTTLOption:
+		p.SetDefaultTTL(uint8(v))
+		return nil
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
 }
 
 // Option implements NetworkProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch v := option.(type) {
+	case *tcpip.DefaultTTLOption:
+		*v = tcpip.DefaultTTLOption(p.DefaultTTL())
+		return nil
+	default:
+		return tcpip.ErrUnknownProtocolOption
+	}
+}
+
+// SetDefaultTTL sets the default TTL for endpoints created with this protocol.
+func (p *protocol) SetDefaultTTL(ttl uint8) {
+	atomic.StoreUint32(&p.defaultTTL, uint32(ttl))
+}
+
+// DefaultTTL returns the default TTL for endpoints created with this protocol.
+func (p *protocol) DefaultTTL() uint8 {
+	return uint8(atomic.LoadUint32(&p.defaultTTL))
 }
 
 // calculateMTU calculates the network-layer payload MTU based on the link-layer
@@ -391,5 +421,5 @@ func NewProtocol() stack.NetworkProtocol {
 	}
 	hashIV := r[buckets]
 
-	return &protocol{ids: ids, hashIV: hashIV}
+	return &protocol{ids: ids, hashIV: hashIV, defaultTTL: DefaultTTL}
 }

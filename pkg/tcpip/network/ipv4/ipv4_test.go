@@ -302,7 +302,7 @@ func TestFragmentation(t *testing.T) {
 				Payload: payload.Clone([]buffer.View{}),
 			}
 			c := buildContext(t, nil, ft.mtu)
-			err := c.Route.WritePacket(ft.gso, hdr, payload, tcp.ProtocolNumber, 42)
+			err := c.Route.WritePacket(ft.gso, hdr, payload, tcp.ProtocolNumber, 42 /* ttl */, false /* useDefaultTTL */)
 			if err != nil {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
@@ -349,7 +349,7 @@ func TestFragmentationErrors(t *testing.T) {
 		t.Run(ft.description, func(t *testing.T) {
 			hdr, payload := makeHdrAndPayload(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
 			c := buildContext(t, ft.packetCollectorErrors, ft.mtu)
-			err := c.Route.WritePacket(&stack.GSO{}, hdr, payload, tcp.ProtocolNumber, 42)
+			err := c.Route.WritePacket(&stack.GSO{}, hdr, payload, tcp.ProtocolNumber, 42 /* ttl */, false /* useDefaultTTL */)
 			for i := 0; i < len(ft.packetCollectorErrors)-1; i++ {
 				if got, want := ft.packetCollectorErrors[i], (*tcpip.Error)(nil); got != want {
 					t.Errorf("ft.packetCollectorErrors[%d] got %v, want %v", i, got, want)
