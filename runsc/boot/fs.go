@@ -64,6 +64,9 @@ const (
 	nonefs   = "none"
 )
 
+// tmpfs has some extra supported options that we must pass through.
+var tmpfsAllowedOptions = []string{"mode", "uid", "gid"}
+
 func addOverlay(ctx context.Context, conf *Config, lower *fs.Inode, name string, lowerFlags fs.MountSourceFlags) (*fs.Inode, error) {
 	// Upper layer uses the same flags as lower, but it must be read-write.
 	upperFlags := lowerFlags
@@ -172,25 +175,23 @@ func p9MountOptions(fd int, fa FileAccessType) []string {
 func parseAndFilterOptions(opts []string, allowedKeys ...string) ([]string, error) {
 	var out []string
 	for _, o := range opts {
-		kv := strings.Split(o, "=")
-		switch len(kv) {
-		case 1:
-			if specutils.ContainsStr(allowedKeys, o) {
-				out = append(out, o)
-				continue
-			}
-			log.Warningf("ignoring unsupported key %q", kv)
-		case 2:
-			if specutils.ContainsStr(allowedKeys, kv[0]) {
-				out = append(out, o)
-				continue
-			}
-			log.Warningf("ignoring unsupported key %q", kv[0])
-		default:
-			return nil, fmt.Errorf("invalid option %q", o)
+		ok, err := parseMountOption(o, allowedKeys...)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, o)
 		}
 	}
 	return out, nil
+}
+
+func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
+	kv := strings.SplitN(opt, "=", 3)
+	if len(kv) > 2 {
+		return false, fmt.Errorf("invalid option %q", opt)
+	}
+	return specutils.ContainsStr(allowedKeys, kv[0]), nil
 }
 
 // mountDevice returns a device string based on the fs type and target
@@ -207,6 +208,8 @@ func mountDevice(m specs.Mount) string {
 
 func mountFlags(opts []string) fs.MountSourceFlags {
 	mf := fs.MountSourceFlags{}
+	// Note: changes to supported options must be reflected in
+	// isSupportedMountFlag() as well.
 	for _, o := range opts {
 		switch o {
 		case "rw":
@@ -222,6 +225,18 @@ func mountFlags(opts []string) fs.MountSourceFlags {
 		}
 	}
 	return mf
+}
+
+func isSupportedMountFlag(fstype, opt string) bool {
+	switch opt {
+	case "rw", "ro", "noatime", "noexec":
+		return true
+	}
+	if fstype == tmpfs {
+		ok, err := parseMountOption(opt, tmpfsAllowedOptions...)
+		return ok && err == nil
+	}
+	return false
 }
 
 func mustFindFilesystem(name string) fs.Filesystem {
@@ -425,6 +440,39 @@ func (m *mountHint) setOptions(val string) error {
 
 func (m *mountHint) isSupported() bool {
 	return m.mount.Type == tmpfs && m.share == pod
+}
+
+// checkCompatible verifies that shared mount is compatible with master.
+// For now enforce that all options are the same. Once bind mount is properly
+// supported, then we should ensure the master is less restrictive than the
+// container, e.g. master can be 'rw' while container mounts as 'ro'.
+func (m *mountHint) checkCompatible(mount specs.Mount) error {
+	// Remove options that don't affect to mount's behavior.
+	masterOpts := filterUnsupportedOptions(m.mount)
+	slaveOpts := filterUnsupportedOptions(mount)
+
+	if len(masterOpts) != len(slaveOpts) {
+		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, slaveOpts)
+	}
+
+	sort.Strings(masterOpts)
+	sort.Strings(slaveOpts)
+	for i, opt := range masterOpts {
+		if opt != slaveOpts[i] {
+			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", masterOpts, slaveOpts)
+		}
+	}
+	return nil
+}
+
+func filterUnsupportedOptions(mount specs.Mount) []string {
+	rv := make([]string, 0, len(mount.Options))
+	for _, o := range mount.Options {
+		if isSupportedMountFlag(mount.Type, o) {
+			rv = append(rv, o)
+		}
+	}
+	return rv
 }
 
 // podMountHints contains a collection of mountHints for the pod.
@@ -699,9 +747,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		fsName = sysfs
 	case tmpfs:
 		fsName = m.Type
-
-		// tmpfs has some extra supported options that we must pass through.
-		opts, err = parseAndFilterOptions(m.Options, "mode", "uid", "gid")
+		opts, err = parseAndFilterOptions(m.Options, tmpfsAllowedOptions...)
 
 	case bind:
 		fd := c.fds.remove()
@@ -786,17 +832,8 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *Config, mns 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
 func (c *containerMounter) mountSharedSubmount(ctx context.Context, mns *fs.MountNamespace, root *fs.Dirent, mount specs.Mount, source *mountHint) error {
-	// For now enforce that all options are the same. Once bind mount is properly
-	// supported, then we should ensure the master is less restrictive than the
-	// container, e.g. master can be 'rw' while container mounts as 'ro'.
-	if len(mount.Options) != len(source.mount.Options) {
-		return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", source.mount.Options, mount.Options)
-	}
-	sort.Strings(mount.Options)
-	for i, opt := range mount.Options {
-		if opt != source.mount.Options[i] {
-			return fmt.Errorf("mount options in annotations differ from container mount, annotation: %s, mount: %s", source.mount.Options, mount.Options)
-		}
+	if err := source.checkCompatible(mount); err != nil {
+		return err
 	}
 
 	maxTraversals := uint(0)
