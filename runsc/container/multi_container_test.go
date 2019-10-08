@@ -1297,6 +1297,53 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 	}
 }
 
+// Test that unsupported pod mounts options are ignored when matching master and
+// slave mounts.
+func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
+	conf := testutil.TestConfig()
+	t.Logf("Running test with conf: %+v", conf)
+
+	// Setup the containers.
+	sleep := []string{"/bin/sleep", "100"}
+	podSpec, ids := createSpecs(sleep, sleep)
+	mnt0 := specs.Mount{
+		Destination: "/mydir/test",
+		Source:      "/some/dir",
+		Type:        "tmpfs",
+		Options:     []string{"rw", "rbind", "relatime"},
+	}
+	podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+	mnt1 := mnt0
+	mnt1.Destination = "/mydir2/test2"
+	mnt1.Options = []string{"rw", "nosuid"}
+	podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+	createSharedMount(mnt0, "test-mount", podSpec...)
+
+	containers, cleanup, err := startContainers(conf, podSpec, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	execs := []execDesc{
+		{
+			c:    containers[0],
+			cmd:  []string{"/usr/bin/test", "-d", mnt0.Destination},
+			desc: "directory is mounted in container0",
+		},
+		{
+			c:    containers[1],
+			cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
+			desc: "directory is mounted in container1",
+		},
+	}
+	if err := execMany(execs); err != nil {
+		t.Fatal(err.Error())
+	}
+}
+
 // Test that one container can send an FD to another container, even though
 // they have distinct MountNamespaces.
 func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
