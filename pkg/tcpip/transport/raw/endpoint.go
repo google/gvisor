@@ -332,7 +332,7 @@ func (ep *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64,
 			break
 		}
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), ep.transProto, route.DefaultTTL()); err != nil {
+		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), ep.transProto, 0, true /* useDefaultTTL */); err != nil {
 			return 0, nil, err
 		}
 

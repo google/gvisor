@@ -154,7 +154,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		r.LocalAddress = targetAddr
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, r.DefaultTTL()); err != nil {
+		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, header.ICMPv6ProtocolNumber, 0, true /* useDefaultTTL */); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -185,7 +185,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		copy(pkt, h)
 		pkt.SetType(header.ICMPv6EchoReply)
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, vv))
-		if err := r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv6ProtocolNumber, r.DefaultTTL()); err != nil {
+		if err := r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv6ProtocolNumber, 0, true /* useDefaultTTL */); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -262,7 +262,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
 		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-		HopLimit:      defaultIPv6HopLimit,
+		HopLimit:      ndpHopLimit,
 		SrcAddr:       r.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})

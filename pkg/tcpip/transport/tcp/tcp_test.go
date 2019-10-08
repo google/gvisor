@@ -1752,6 +1752,34 @@ func TestSendGreaterThanMTU(t *testing.T) {
 	testBrokenUpWrite(t, c, maxPayload)
 }
 
+func TestSetTTL(t *testing.T) {
+	for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
+		t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
+			c := context.New(t, 65535)
+			defer c.Cleanup()
+
+			var err *tcpip.Error
+			c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &waiter.Queue{})
+			if err != nil {
+				t.Fatalf("NewEndpoint failed: %v", err)
+			}
+
+			if err := c.EP.SetSockOpt(tcpip.TTLOption(wantTTL)); err != nil {
+				t.Fatalf("SetSockOpt failed: %v", err)
+			}
+
+			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
+				t.Fatalf("Unexpected return value from Connect: %v", err)
+			}
+
+			// Receive SYN packet.
+			b := c.GetPacket()
+
+			checker.IPv4(t, b, checker.TTL(wantTTL))
+		})
+	}
+}
+
 func TestActiveSendMSSLessThanMTU(t *testing.T) {
 	const maxPayload = 100
 	c := context.New(t, 65535)

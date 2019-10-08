@@ -84,6 +84,7 @@ type endpoint struct {
 	// NIC.
 	regNICID tcpip.NICID
 	route    stack.Route `state:"manual"`
+	ttl      uint8
 }
 
 func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
@@ -296,10 +297,10 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	switch e.netProto {
 	case header.IPv4ProtocolNumber:
-		err = send4(route, e.id.LocalPort, v)
+		err = send4(route, e.id.LocalPort, v, e.ttl)
 
 	case header.IPv6ProtocolNumber:
-		err = send6(route, e.id.LocalPort, v)
+		err = send6(route, e.id.LocalPort, v, e.ttl)
 	}
 
 	if err != nil {
@@ -314,8 +315,15 @@ func (e *endpoint) Peek([][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
 	return 0, tcpip.ControlMessages{}, nil
 }
 
-// SetSockOpt sets a socket option. Currently not supported.
+// SetSockOpt sets a socket option.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	switch o := opt.(type) {
+	case tcpip.TTLOption:
+		e.mu.Lock()
+		e.ttl = uint8(o)
+		e.mu.Unlock()
+	}
+
 	return nil
 }
 
@@ -362,12 +370,18 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		*o = 0
 		return nil
 
+	case *tcpip.TTLOption:
+		e.rcvMu.Lock()
+		*o = tcpip.TTLOption(e.ttl)
+		e.rcvMu.Unlock()
+		return nil
+
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}
 }
 
-func send4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
+func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -389,10 +403,10 @@ func send4(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv4.SetChecksum(0)
 	icmpv4.SetChecksum(^header.Checksum(icmpv4, header.Checksum(data, 0)))
 
-	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv4ProtocolNumber, ttl, ttl == 0 /* useDefaultTTL */)
 }
 
-func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
+func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Error {
 	if len(data) < header.ICMPv6EchoMinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -412,7 +426,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View) *tcpip.Error {
 	icmpv6.SetChecksum(0)
 	icmpv6.SetChecksum(^header.Checksum(icmpv6, header.Checksum(data, 0)))
 
-	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv6ProtocolNumber, r.DefaultTTL())
+	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), header.ICMPv6ProtocolNumber, ttl, ttl == 0 /* useDefaultTTL */)
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {

@@ -553,6 +553,12 @@ type ModerateReceiveBufferOption bool
 // Maximum Segment Size(MSS) value as specified using the TCP_MAXSEG option.
 type MaxSegOption int
 
+// TTLOption is used by SetSockOpt/GetSockOpt to control the default TTL/hop
+// limit value for unicast messages. The default is protocol specific.
+//
+// A zero value indicates the default.
+type TTLOption uint8
+
 // MulticastTTLOption is used by SetSockOpt/GetSockOpt to control the default
 // TTL value for multicast messages. The default is 1.
 type MulticastTTLOption uint8
@@ -593,6 +599,10 @@ type OutOfBandInlineOption int
 // BroadcastOption is used by SetSockOpt/GetSockOpt to specify whether
 // datagram sockets are allowed to send packets to a broadcast address.
 type BroadcastOption int
+
+// DefaultTTLOption is used by stack.(*Stack).NetworkProtocolOption to specify
+// a default TTL.
+type DefaultTTLOption uint8
 
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
