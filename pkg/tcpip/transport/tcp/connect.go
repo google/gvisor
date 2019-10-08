@@ -238,6 +238,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	h.state = handshakeSynRcvd
 	h.ep.mu.Lock()
 	h.ep.state = StateSynRecv
+	ttl := h.ep.ttl
 	h.ep.mu.Unlock()
 	synOpts := header.TCPSynOptions{
 		WS:    int(h.effectiveRcvWndScale()),
@@ -251,7 +252,10 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		SACKPermitted: rcvSynOpts.SACKPermitted,
 		MSS:           h.ep.amss,
 	}
-	sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+	if ttl == 0 {
+		ttl = s.route.DefaultTTL()
+	}
+	sendSynTCP(&s.route, h.ep.id, ttl, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 
 	return nil
 }
@@ -296,7 +300,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
-		sendSynTCP(&s.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+		sendSynTCP(&s.route, h.ep.id, h.ep.ttl, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 		return nil
 	}
 
@@ -460,7 +464,7 @@ func (h *handshake) execute() *tcpip.Error {
 			synOpts.WS = -1
 		}
 	}
-	sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+	sendSynTCP(&h.ep.route, h.ep.id, h.ep.ttl, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 	for h.state != handshakeCompleted {
 		switch index, _ := s.Fetch(true); index {
 		case wakerForResend:
@@ -469,7 +473,7 @@ func (h *handshake) execute() *tcpip.Error {
 				return tcpip.ErrTimeout
 			}
 			rt.Reset(timeOut)
-			sendSynTCP(&h.ep.route, h.ep.id, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
+			sendSynTCP(&h.ep.route, h.ep.id, h.ep.ttl, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
@@ -579,9 +583,9 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 	return options[:offset]
 }
 
-func sendSynTCP(r *stack.Route, id stack.TransportEndpointID, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts header.TCPSynOptions) *tcpip.Error {
+func sendSynTCP(r *stack.Route, id stack.TransportEndpointID, ttl uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts header.TCPSynOptions) *tcpip.Error {
 	options := makeSynOptions(opts)
-	err := sendTCP(r, id, buffer.VectorisedView{}, r.DefaultTTL(), flags, seq, ack, rcvWnd, options, nil)
+	err := sendTCP(r, id, buffer.VectorisedView{}, ttl, flags, seq, ack, rcvWnd, options, nil)
 	putOptions(options)
 	return err
 }
@@ -629,7 +633,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		r.Stats().TCP.ResetsSent.Increment()
 	}
 
-	return r.WritePacket(gso, hdr, data, ProtocolNumber, ttl)
+	return r.WritePacket(gso, hdr, data, ProtocolNumber, ttl, ttl == 0 /* useDefaultTTL */)
 }
 
 // makeOptions makes an options slice.
@@ -678,7 +682,7 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
-	err := sendTCP(&e.route, e.id, data, e.route.DefaultTTL(), flags, seq, ack, rcvWnd, options, e.gso)
+	err := sendTCP(&e.route, e.id, data, e.ttl, flags, seq, ack, rcvWnd, options, e.gso)
 	putOptions(options)
 	return err
 }

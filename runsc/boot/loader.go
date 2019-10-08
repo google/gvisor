@@ -930,6 +930,10 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			return nil, fmt.Errorf("failed to enable SACK: %v", err)
 		}
 
+		// Set default TTLs as required by socket/netstack.
+		s.Stack.SetNetworkProtocolOption(ipv4.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+		s.Stack.SetNetworkProtocolOption(ipv6.ProtocolNumber, tcpip.DefaultTTLOption(netstack.DefaultTTL))
+
 		// Enable Receive Buffer Auto-Tuning.
 		if err := s.Stack.SetTransportProtocolOption(tcp.ProtocolNumber, tcpip.ModerateReceiveBufferOption(true)); err != nil {
 			return nil, fmt.Errorf("SetTransportProtocolOption failed: %v", err)
