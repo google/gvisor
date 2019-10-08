@@ -98,7 +98,7 @@ type Pipe struct {
 // NewPipe initializes and returns a pipe.
 //
 // N.B. The size and atomicIOBytes will be bounded.
-func NewPipe(ctx context.Context, isNamed bool, sizeBytes, atomicIOBytes int64) *Pipe {
+func NewPipe(isNamed bool, sizeBytes, atomicIOBytes int64) *Pipe {
 	if sizeBytes < MinimumPipeSize {
 		sizeBytes = MinimumPipeSize
 	}
@@ -121,7 +121,7 @@ func NewPipe(ctx context.Context, isNamed bool, sizeBytes, atomicIOBytes int64) 
 // NewConnectedPipe initializes a pipe and returns a pair of objects
 // representing the read and write ends of the pipe.
 func NewConnectedPipe(ctx context.Context, sizeBytes, atomicIOBytes int64) (*fs.File, *fs.File) {
-	p := NewPipe(ctx, false /* isNamed */, sizeBytes, atomicIOBytes)
+	p := NewPipe(false /* isNamed */, sizeBytes, atomicIOBytes)
 
 	// Build an fs.Dirent for the pipe which will be shared by both
 	// returned files.
