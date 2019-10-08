@@ -7,6 +7,7 @@ go_library(
     name = "sleep",
     srcs = [
         "commit_amd64.s",
+        "commit_arm64.s",
         "commit_asm.go",
         "commit_noasm.go",
         "sleep_unsafe.go",
