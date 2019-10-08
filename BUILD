@@ -21,6 +21,9 @@ go_path(
     mode = "link",
     deps = [
         "//runsc",
+
+        # Packages that are not dependencies of //runsc.
+        "//pkg/tcpip/link/channel",
     ],
 )
 
