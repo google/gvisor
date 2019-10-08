@@ -85,11 +85,11 @@ func testOpen(ctx context.Context, t *testing.T, n fs.InodeOperations, flags fs.
 }
 
 func newNamedPipe(t *testing.T) *Pipe {
-	return NewPipe(contexttest.Context(t), true, DefaultPipeSize, usermem.PageSize)
+	return NewPipe(true, DefaultPipeSize, usermem.PageSize)
 }
 
 func newAnonPipe(t *testing.T) *Pipe {
-	return NewPipe(contexttest.Context(t), false, DefaultPipeSize, usermem.PageSize)
+	return NewPipe(false, DefaultPipeSize, usermem.PageSize)
 }
 
 // assertRecvBlocks ensures that a recv attempt on c blocks for at least
