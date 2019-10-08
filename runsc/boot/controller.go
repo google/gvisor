@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"syscall"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -233,13 +232,6 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	}
 	if args.CID == "" {
 		return errors.New("start argument missing container ID")
-	}
-	// Prevent CIDs containing ".." from confusing the sentry when creating
-	// /containers/<cid> directory.
-	// TODO(b/129293409): Once we have multiple independent roots, this
-	// check won't be necessary.
-	if path.Clean(args.CID) != args.CID {
-		return fmt.Errorf("container ID shouldn't contain directory traversals such as \"..\": %q", args.CID)
 	}
 	if len(args.FilePayload.Files) < 4 {
 		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
