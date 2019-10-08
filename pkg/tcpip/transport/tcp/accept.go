@@ -439,7 +439,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TSEcr: opts.TSVal,
 				MSS:   uint16(mss),
 			}
-			sendSynTCP(&s.route, s.id, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
+			sendSynTCP(&s.route, s.id, e.ttl, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 

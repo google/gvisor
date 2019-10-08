@@ -43,6 +43,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("bindNICID", &x.bindNICID)
 	m.Save("bindAddr", &x.bindAddr)
 	m.Save("regNICID", &x.regNICID)
+	m.Save("ttl", &x.ttl)
 }
 
 func (x *endpoint) load(m state.Map) {
@@ -60,6 +61,7 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("bindNICID", &x.bindNICID)
 	m.Load("bindAddr", &x.bindAddr)
 	m.Load("regNICID", &x.regNICID)
+	m.Load("ttl", &x.ttl)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }

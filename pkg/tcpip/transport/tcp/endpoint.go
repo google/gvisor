@@ -228,6 +228,7 @@ type endpoint struct {
 	isRegistered      bool
 	boundNICID        tcpip.NICID `state:"manual"`
 	route             stack.Route `state:"manual"`
+	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
 	// TCP should never broadcast but Linux nevertheless supports enabling/
@@ -1116,6 +1117,12 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.v6only = v != 0
 		return nil
 
+	case tcpip.TTLOption:
+		e.mu.Lock()
+		e.ttl = uint8(v)
+		e.mu.Unlock()
+		return nil
+
 	case tcpip.KeepaliveEnabledOption:
 		e.keepalive.Lock()
 		e.keepalive.enabled = v != 0
@@ -1311,6 +1318,12 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		if v {
 			*o = 1
 		}
+		return nil
+
+	case *tcpip.TTLOption:
+		e.mu.Lock()
+		*o = tcpip.TTLOption(e.ttl)
+		e.mu.Unlock()
 		return nil
 
 	case *tcpip.TCPInfoOption:
