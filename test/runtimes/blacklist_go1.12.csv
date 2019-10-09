@@ -1,0 +1,16 @@
+test name,bug id,comment
+cgo_errors,,FLAKY
+cgo_test,,FLAKY
+go_test:cmd/go,,FLAKY
+go_test:cmd/vendor/golang.org/x/sys/unix,b/118783622,/dev devices missing
+go_test:net,b/118784196,socket: invalid argument. Works as intended: see bug.
+go_test:os,b/118780122,we have a pollable filesystem but that's a surprise
+go_test:os/signal,b/118780860,/dev/pts not properly supported
+go_test:runtime,b/118782341,sigtrap not reported or caught or something
+go_test:syscall,b/118781998,bad bytes -- bad mem addr
+race,b/118782931,thread sanitizer. Works as intended: b/62219744.
+runtime:cpu124,b/118778254,segmentation fault
+test:0_1,,FLAKY
+testasan,,
+testcarchive,b/118782924,no sigpipe
+testshared,,FLAKY
