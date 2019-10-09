@@ -555,6 +555,10 @@ func newInit(ctx context.Context, path, workDir, runtimeRoot, namespace string, 
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
+	if err := utils.UpdateVolumeAnnotations(r.Bundle, spec); err != nil {
+		return nil, errors.Wrap(err, "update volume annotations")
+	}
+
 	runsc.FormatLogPath(r.ID, config)
 	rootfs := filepath.Join(path, "rootfs")
 	runtime := proc.NewRunsc(runtimeRoot, path, namespace, r.Runtime, config)

@@ -709,6 +709,9 @@ func newInit(ctx context.Context, path, workDir, namespace string, platform rpro
 	if err != nil {
 		return nil, errors.Wrap(err, "read oci spec")
 	}
+	if err := utils.UpdateVolumeAnnotations(r.Bundle, spec); err != nil {
+		return nil, errors.Wrap(err, "update volume annotations")
+	}
 	runsc.FormatLogPath(r.ID, options.RunscConfig)
 	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
 	p := proc.New(r.ID, runtime, rproc.Stdio{

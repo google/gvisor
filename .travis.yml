@@ -24,4 +24,6 @@ before_install:
   - sudo apt-get -q update
   - sudo apt-get install -y libseccomp-dev/trusty-backports
 
-script: ./test/e2e/${TEST}/test.sh
+script:
+  - make test
+  - ./test/e2e/${TEST}/test.sh
