@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // +build !race
-// +build !amd64
+// +build !amd64,!arm64
 
 package sleep
 
