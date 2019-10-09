@@ -1,0 +1,126 @@
+test name,bug id,comment
+com/sun/crypto/provider/Cipher/PBE/PKCS12Cipher.java,,Fails in Docker
+com/sun/jdi/NashornPopFrameTest.java,,
+com/sun/jdi/ProcessAttachTest.java,,
+com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,Fails in Docker
+com/sun/management/OperatingSystemMXBean/GetCommittedVirtualMemorySize.java,,
+com/sun/management/UnixOperatingSystemMXBean/GetMaxFileDescriptorCount.sh,,
+com/sun/tools/attach/AttachSelf.java,,
+com/sun/tools/attach/BasicTests.java,,
+com/sun/tools/attach/PermissionTest.java,,
+com/sun/tools/attach/StartManagementAgent.java,,
+com/sun/tools/attach/TempDirTest.java,,
+com/sun/tools/attach/modules/Driver.java,,
+java/lang/Character/CheckScript.java,,Fails in Docker
+java/lang/Character/CheckUnicode.java,,Fails in Docker
+java/lang/Class/GetPackageBootLoaderChildLayer.java,,
+java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Fails in Docker
+java/lang/String/nativeEncoding/StringPlatformChars.java,,
+java/net/DatagramSocket/ReuseAddressTest.java,,
+java/net/DatagramSocket/SendDatagramToBadAddress.java,b/78473345,
+java/net/Inet4Address/PingThis.java,,
+java/net/InterfaceAddress/NetworkPrefixLength.java,b/78507103,
+java/net/MulticastSocket/MulticastTTL.java,,
+java/net/MulticastSocket/Promiscuous.java,,
+java/net/MulticastSocket/SetLoopbackMode.java,,
+java/net/MulticastSocket/SetTTLAndGetTTL.java,,
+java/net/MulticastSocket/Test.java,,
+java/net/MulticastSocket/TestDefaults.java,,
+java/net/MulticastSocket/TimeToLive.java,,
+java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
+java/net/Socket/SetSoLinger.java,b/78527327,SO_LINGER is not yet supported
+java/net/Socket/TrafficClass.java,b/78527818,Not supported on gVisor
+java/net/Socket/UrgentDataTest.java,b/111515323,
+java/net/Socket/setReuseAddress/Basic.java,b/78519214,SO_REUSEADDR enabled by default
+java/net/SocketOption/OptionsTest.java,,Fails in Docker
+java/net/SocketOption/TcpKeepAliveTest.java,,
+java/net/SocketPermission/SocketPermissionTest.java,,
+java/net/URLConnection/6212146/TestDriver.java,,Fails in Docker
+java/net/httpclient/RequestBuilderTest.java,,Fails in Docker
+java/net/httpclient/ShortResponseBody.java,,
+java/net/httpclient/ShortResponseBodyWithRetry.java,,
+java/nio/channels/AsyncCloseAndInterrupt.java,,
+java/nio/channels/AsynchronousServerSocketChannel/Basic.java,,
+java/nio/channels/AsynchronousSocketChannel/Basic.java,b/77921528,SO_KEEPALIVE is not settable
+java/nio/channels/DatagramChannel/BasicMulticastTests.java,,
+java/nio/channels/DatagramChannel/SocketOptionTests.java,,Fails in Docker
+java/nio/channels/DatagramChannel/UseDGWithIPv6.java,,
+java/nio/channels/FileChannel/directio/DirectIOTest.java,,Fails in Docker
+java/nio/channels/Selector/OutOfBand.java,,
+java/nio/channels/Selector/SelectWithConsumer.java,,Flaky
+java/nio/channels/ServerSocketChannel/SocketOptionTests.java,,
+java/nio/channels/SocketChannel/LingerOnClose.java,,
+java/nio/channels/SocketChannel/SocketOptionTests.java,b/77965901,
+java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Fails in Docker
+java/rmi/activation/Activatable/extLoadedImpl/ext.sh,,
+java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,
+java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
+java/text/Format/NumberFormat/CurrencyFormat.java,,Fails in Docker
+java/util/Calendar/JapaneseEraNameTest.java,,
+java/util/Currency/CurrencyTest.java,,Fails in Docker
+java/util/Currency/ValidateISO4217.java,,Fails in Docker
+java/util/Locale/LSRDataTest.java,,
+java/util/concurrent/locks/Lock/TimedAcquireLeak.java,,
+java/util/jar/JarFile/mrjar/MultiReleaseJarAPI.java,,Fails in Docker
+java/util/logging/LogManager/Configuration/updateConfiguration/SimpleUpdateConfigWithInputStreamTest.java,,
+java/util/logging/TestLoggerWeakRefLeak.java,,
+javax/imageio/AppletResourceTest.java,,
+javax/management/security/HashedPasswordFileTest.java,,
+javax/net/ssl/SSLSession/JSSERenegotiate.java,,Fails in Docker
+javax/sound/sampled/AudioInputStream/FrameLengthAfterConversion.java,,
+jdk/jfr/event/runtime/TestNetworkUtilizationEvent.java,,
+jdk/jfr/event/runtime/TestThreadParkEvent.java,,
+jdk/jfr/event/sampling/TestNative.java,,
+jdk/jfr/jcmd/TestJcmdChangeLogLevel.java,,
+jdk/jfr/jcmd/TestJcmdConfigure.java,,
+jdk/jfr/jcmd/TestJcmdDump.java,,
+jdk/jfr/jcmd/TestJcmdDumpGeneratedFilename.java,,
+jdk/jfr/jcmd/TestJcmdDumpLimited.java,,
+jdk/jfr/jcmd/TestJcmdDumpPathToGCRoots.java,,
+jdk/jfr/jcmd/TestJcmdLegacy.java,,
+jdk/jfr/jcmd/TestJcmdSaveToFile.java,,
+jdk/jfr/jcmd/TestJcmdStartDirNotExist.java,,
+jdk/jfr/jcmd/TestJcmdStartInvaldFile.java,,
+jdk/jfr/jcmd/TestJcmdStartPathToGCRoots.java,,
+jdk/jfr/jcmd/TestJcmdStartStopDefault.java,,
+jdk/jfr/jcmd/TestJcmdStartWithOptions.java,,
+jdk/jfr/jcmd/TestJcmdStartWithSettings.java,,
+jdk/jfr/jcmd/TestJcmdStopInvalidFile.java,,
+jdk/jfr/jvm/TestJfrJavaBase.java,,
+jdk/jfr/startupargs/TestStartRecording.java,,
+jdk/modules/incubator/ImageModules.java,,
+jdk/net/Sockets/ExtOptionTest.java,,
+jdk/net/Sockets/QuickAckTest.java,,
+lib/security/cacerts/VerifyCACerts.java,,
+sun/management/jmxremote/bootstrap/CustomLauncherTest.java,,
+sun/management/jmxremote/bootstrap/JvmstatCountersTest.java,,
+sun/management/jmxremote/bootstrap/LocalManagementTest.java,,
+sun/management/jmxremote/bootstrap/RmiRegistrySslTest.java,,
+sun/management/jmxremote/bootstrap/RmiSslBootstrapTest.sh,,
+sun/management/jmxremote/startstop/JMXStartStopTest.java,,
+sun/management/jmxremote/startstop/JMXStatusPerfCountersTest.java,,
+sun/management/jmxremote/startstop/JMXStatusTest.java,,
+sun/text/resources/LocaleDataTest.java,,
+sun/tools/jcmd/TestJcmdSanity.java,,
+sun/tools/jhsdb/AlternateHashingTest.java,,
+sun/tools/jhsdb/BasicLauncherTest.java,,
+sun/tools/jhsdb/HeapDumpTest.java,,
+sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,
+sun/tools/jinfo/BasicJInfoTest.java,,
+sun/tools/jinfo/JInfoTest.java,,
+sun/tools/jmap/BasicJMapTest.java,,
+sun/tools/jstack/BasicJStackTest.java,,
+sun/tools/jstack/DeadlockDetectionTest.java,,
+sun/tools/jstatd/TestJstatdExternalRegistry.java,,
+sun/tools/jstatd/TestJstatdPort.java,,Flaky
+sun/tools/jstatd/TestJstatdPortAndServer.java,,Flaky
+sun/util/calendar/zi/TestZoneInfo310.java,,
+tools/jar/modularJar/Basic.java,,
+tools/jar/multiRelease/Basic.java,,
+tools/jimage/JImageExtractTest.java,,
+tools/jimage/JImageTest.java,,
+tools/jlink/JLinkTest.java,,
+tools/jlink/plugins/IncludeLocalesPluginTest.java,,
+tools/jmod/hashes/HashesTest.java,,
+tools/launcher/BigJar.java,b/111611473,
+tools/launcher/modules/patch/systemmodules/PatchSystemModules.java,,

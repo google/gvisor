@@ -1,4 +1,6 @@
-"""Defines a rule for runsc test targets."""
+"""Defines a rule for runtime test targets."""
+
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 # runtime_test is a macro that will create targets to run the given test target
 # with different runtime options.
@@ -21,6 +23,9 @@ def runtime_test(
         args += ["--blacklist_file", "test/runtimes/" + blacklist_file]
         data += [blacklist_file]
 
+        # Add a test that the blacklist parses correctly.
+        blacklist_test(lang, blacklist_file)
+
     sh_test(
         name = lang + "_test",
         srcs = ["runner.sh"],
@@ -33,6 +38,16 @@ def runtime_test(
             "manual",
             "local",
         ],
+    )
+
+def blacklist_test(lang, blacklist_file):
+    """Test that a blacklist parses correctly."""
+    go_test(
+        name = lang + "_blacklist_test",
+        embed = [":runner"],
+        srcs = ["blacklist_test.go"],
+        args = ["--blacklist_file", "test/runtimes/" + blacklist_file],
+        data = [blacklist_file],
     )
 
 def sh_test(**kwargs):
