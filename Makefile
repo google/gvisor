@@ -35,3 +35,8 @@ push: binaries
 	gsutil cp ./bin/gvisor-containerd-shim gs://$(DEPLOY_PATH)/gvisor-containerd-shim-$(VERSION)
 	gsutil cp ./bin/containerd-shim-runsc-v1 gs://$(DEPLOY_PATH)/containerd-shim-runsc-v1-$(VERSION)
 	echo "$(VERSION)" | gsutil cp - "gs://$(DEPLOY_PATH)/latest"
+
+.PHONY: test
+
+test:
+	GO111MODULE=${GO_MODULE} CGO_ENABLED=0 ${GC} test -v ./pkg/... ${SHIM_GO_LDFLAGS} ${GO_TAGS}
