@@ -38,9 +38,8 @@ const (
 // Headers of this protocol are fakeTransHeaderLen bytes, but we currently don't
 // use it.
 type fakeTransportEndpoint struct {
-	id       stack.TransportEndpointID
+	stack.TransportEndpointInfo
 	stack    *stack.Stack
-	netProto tcpip.NetworkProtocolNumber
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
 	route    stack.Route
@@ -49,8 +48,16 @@ type fakeTransportEndpoint struct {
 	acceptQueue []fakeTransportEndpoint
 }
 
-func newFakeTransportEndpoint(stack *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber) tcpip.Endpoint {
-	return &fakeTransportEndpoint{stack: stack, netProto: netProto, proto: proto}
+func (f *fakeTransportEndpoint) Info() tcpip.EndpointInfo {
+	return &f.TransportEndpointInfo
+}
+
+func (f *fakeTransportEndpoint) Stats() tcpip.EndpointStats {
+	return nil
+}
+
+func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber) tcpip.Endpoint {
+	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto}
 }
 
 func (f *fakeTransportEndpoint) Close() {
@@ -126,8 +133,8 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	defer r.Release()
 
 	// Try to register so that we can start receiving packets.
-	f.id.RemoteAddress = addr.Addr
-	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.id, f, false /* reuse */, 0 /* bindToDevice */)
+	f.ID.RemoteAddress = addr.Addr
+	err = f.stack.RegisterTransportEndpoint(0, []tcpip.NetworkProtocolNumber{fakeNetNumber}, fakeTransNumber, f.ID, f, false /* reuse */, 0 /* bindToDevice */)
 	if err != nil {
 		return err
 	}
@@ -190,9 +197,11 @@ func (f *fakeTransportEndpoint) HandlePacket(r *stack.Route, id stack.TransportE
 	f.proto.packetCount++
 	if f.acceptQueue != nil {
 		f.acceptQueue = append(f.acceptQueue, fakeTransportEndpoint{
-			id:       id,
-			stack:    f.stack,
-			netProto: f.netProto,
+			stack: f.stack,
+			TransportEndpointInfo: stack.TransportEndpointInfo{
+				ID:       f.ID,
+				NetProto: f.NetProto,
+			},
 			proto:    f.proto,
 			peerAddr: r.RemoteAddress,
 			route:    r.Clone(),

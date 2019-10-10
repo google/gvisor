@@ -99,7 +99,10 @@ func TestConnectDoesNotIncrementFailedConnectionAttempts(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 	if got := stats.TCP.FailedConnectionAttempts.Value(); got != want {
-		t.Errorf("got stats.TCP.FailedConnectionOpenings.Value() = %v, want = %v", got, want)
+		t.Errorf("got stats.TCP.FailedConnectionAttempts.Value() = %v, want = %v", got, want)
+	}
+	if got := c.EP.Stats().(*tcp.Stats).FailedConnectionAttempts.Value(); got != want {
+		t.Errorf("got EP stats.FailedConnectionAttempts = %v, want = %v", got, want)
 	}
 }
 
@@ -122,6 +125,9 @@ func TestActiveFailedConnectionAttemptIncrement(t *testing.T) {
 	if got := stats.TCP.FailedConnectionAttempts.Value(); got != want {
 		t.Errorf("got stats.TCP.FailedConnectionAttempts.Value() = %v, want = %v", got, want)
 	}
+	if got := c.EP.Stats().(*tcp.Stats).FailedConnectionAttempts.Value(); got != want {
+		t.Errorf("got EP stats FailedConnectionAttempts = %v, want = %v", got, want)
+	}
 }
 
 func TestTCPSegmentsSentIncrement(t *testing.T) {
@@ -135,6 +141,9 @@ func TestTCPSegmentsSentIncrement(t *testing.T) {
 
 	if got := stats.TCP.SegmentsSent.Value(); got != want {
 		t.Errorf("got stats.TCP.SegmentsSent.Value() = %v, want = %v", got, want)
+	}
+	if got := c.EP.Stats().(*tcp.Stats).SegmentsSent.Value(); got != want {
+		t.Errorf("got EP stats SegmentsSent.Value() = %v, want = %v", got, want)
 	}
 }
 
@@ -857,6 +866,10 @@ func TestShutdownRead(t *testing.T) {
 	if _, _, err := c.EP.Read(nil); err != tcpip.ErrClosedForReceive {
 		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrClosedForReceive)
 	}
+	var want uint64 = 1
+	if got := c.EP.Stats().(*tcp.Stats).ReadErrors.ReadClosed.Value(); got != want {
+		t.Fatalf("got EP stats Stats.ReadErrors.ReadClosed got %v want %v", got, want)
+	}
 }
 
 func TestFullWindowReceive(t *testing.T) {
@@ -911,6 +924,11 @@ func TestFullWindowReceive(t *testing.T) {
 
 	if !bytes.Equal(data, v) {
 		t.Fatalf("got data = %v, want = %v", v, data)
+	}
+
+	var want uint64 = 1
+	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.ZeroRcvWindowState.Value(); got != want {
+		t.Fatalf("got EP stats ReceiveErrors.ZeroRcvWindowState got %v want %v", got, want)
 	}
 
 	// Check that we get an ACK for the newly non-zero window.
@@ -2085,6 +2103,13 @@ loop:
 			t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrConnectionReset)
 		}
 	}
+	// Expect the state to be StateError and subsequent Reads to fail with HardError.
+	if _, _, err := c.EP.Read(nil); err != tcpip.ErrConnectionReset {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrConnectionReset)
+	}
+	if tcp.EndpointState(c.EP.State()) != tcp.StateError {
+		t.Fatalf("got EP state is not StateError")
+	}
 }
 
 func TestSendOnResetConnection(t *testing.T) {
@@ -2656,6 +2681,17 @@ func TestReceivedValidSegmentCountIncrement(t *testing.T) {
 	if got := stats.TCP.ValidSegmentsReceived.Value(); got != want {
 		t.Errorf("got stats.TCP.ValidSegmentsReceived.Value() = %v, want = %v", got, want)
 	}
+	if got := c.EP.Stats().(*tcp.Stats).SegmentsReceived.Value(); got != want {
+		t.Errorf("got EP stats Stats.SegmentsReceived = %v, want = %v", got, want)
+	}
+	// Ensure there were no errors during handshake. If these stats have
+	// incremented, then the connection should not have been established.
+	if got := c.EP.Stats().(*tcp.Stats).SendErrors.NoRoute.Value(); got != 0 {
+		t.Errorf("got EP stats Stats.SendErrors.NoRoute = %v, want = %v", got, 0)
+	}
+	if got := c.EP.Stats().(*tcp.Stats).SendErrors.NoLinkAddr.Value(); got != 0 {
+		t.Errorf("got EP stats Stats.SendErrors.NoLinkAddr = %v, want = %v", got, 0)
+	}
 }
 
 func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
@@ -2679,6 +2715,9 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 
 	if got := stats.TCP.InvalidSegmentsReceived.Value(); got != want {
 		t.Errorf("got stats.TCP.InvalidSegmentsReceived.Value() = %v, want = %v", got, want)
+	}
+	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.MalformedPacketsReceived.Value(); got != want {
+		t.Errorf("got EP Stats.ReceiveErrors.MalformedPacketsReceived stats = %v, want = %v", got, want)
 	}
 }
 
@@ -2705,6 +2744,9 @@ func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 
 	if got := stats.TCP.ChecksumErrors.Value(); got != want {
 		t.Errorf("got stats.TCP.ChecksumErrors.Value() = %d, want = %d", got, want)
+	}
+	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.ChecksumErrors.Value(); got != want {
+		t.Errorf("got EP stats Stats.ReceiveErrors.ChecksumErrors = %d, want = %d", got, want)
 	}
 }
 
@@ -4158,6 +4200,9 @@ func TestPassiveFailedConnectionAttemptIncrement(t *testing.T) {
 	if got := stats.TCP.ListenOverflowSynDrop.Value(); got != want {
 		t.Errorf("got stats.TCP.ListenOverflowSynDrop.Value() = %v, want = %v", got, want)
 	}
+	if got := c.EP.Stats().(*tcp.Stats).ReceiveErrors.ListenOverflowSynDrop.Value(); got != want {
+		t.Errorf("got EP stats Stats.ReceiveErrors.ListenOverflowSynDrop = %v, want = %v", got, want)
+	}
 
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventIn)
@@ -4194,6 +4239,14 @@ func TestEndpointBindListenAcceptState(t *testing.T) {
 	}
 	if got, want := tcp.EndpointState(ep.State()), tcp.StateBound; got != want {
 		t.Errorf("Unexpected endpoint state: want %v, got %v", want, got)
+	}
+
+	// Expect InvalidEndpointState errors on a read at this point.
+	if _, _, err := ep.Read(nil); err != tcpip.ErrInvalidEndpointState {
+		t.Fatalf("got c.EP.Read(nil) = %v, want = %v", err, tcpip.ErrInvalidEndpointState)
+	}
+	if got := ep.Stats().(*tcp.Stats).ReadErrors.InvalidEndpointState.Value(); got != 1 {
+		t.Fatalf("got EP stats Stats.ReadErrors.InvalidEndpointState got %v want %v", got, 1)
 	}
 
 	if err := ep.Listen(10); err != nil {

@@ -424,6 +424,34 @@ type Options struct {
 	UnassociatedFactory UnassociatedEndpointFactory
 }
 
+// TransportEndpointInfo holds useful information about a transport endpoint
+// which can be queried by monitoring tools.
+//
+// +stateify savable
+type TransportEndpointInfo struct {
+	// The following fields are initialized at creation time and are
+	// immutable.
+
+	NetProto   tcpip.NetworkProtocolNumber
+	TransProto tcpip.TransportProtocolNumber
+
+	// The following fields are protected by endpoint mu.
+
+	ID TransportEndpointID
+	// BindNICID and bindAddr are set via calls to Bind(). They are used to
+	// reject attempts to send data or connect via a different NIC or
+	// address
+	BindNICID tcpip.NICID
+	BindAddr  tcpip.Address
+	// RegisterNICID is the default NICID registered as a side-effect of
+	// connect or datagram write.
+	RegisterNICID tcpip.NICID
+}
+
+// IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
+// marker interface.
+func (*TransportEndpointInfo) IsEndpointInfo() {}
+
 // New allocates a new networking stack with only the requested networking and
 // transport protocols configured with default options.
 //

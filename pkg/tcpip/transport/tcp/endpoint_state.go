@@ -55,7 +55,7 @@ func (e *endpoint) beforeSave() {
 	case StateEstablished, StateSynSent, StateSynRecv, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
 		if e.route.Capabilities()&stack.CapabilitySaveRestore == 0 {
 			if e.route.Capabilities()&stack.CapabilityDisconnectOk == 0 {
-				panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.id.LocalAddress, e.id.LocalPort, e.id.RemoteAddress, e.id.RemotePort)})
+				panic(tcpip.ErrSaveRejection{fmt.Errorf("endpoint cannot be saved in connected state: local %v:%d, remote %v:%d", e.ID.LocalAddress, e.ID.LocalPort, e.ID.RemoteAddress, e.ID.RemotePort)})
 			}
 			e.resetConnectionLocked(tcpip.ErrConnectionAborted)
 			e.mu.Unlock()
@@ -190,10 +190,10 @@ func (e *endpoint) Resume(s *stack.Stack) {
 
 	bind := func() {
 		e.state = StateInitial
-		if len(e.bindAddress) == 0 {
-			e.bindAddress = e.id.LocalAddress
+		if len(e.BindAddr) == 0 {
+			e.BindAddr = e.ID.LocalAddress
 		}
-		if err := e.Bind(tcpip.FullAddress{Addr: e.bindAddress, Port: e.id.LocalPort}); err != nil {
+		if err := e.Bind(tcpip.FullAddress{Addr: e.BindAddr, Port: e.ID.LocalPort}); err != nil {
 			panic("endpoint binding failed: " + err.String())
 		}
 	}
@@ -202,19 +202,19 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	case StateEstablished, StateFinWait1, StateFinWait2, StateTimeWait, StateCloseWait, StateLastAck, StateClosing:
 		bind()
 		if len(e.connectingAddress) == 0 {
-			e.connectingAddress = e.id.RemoteAddress
+			e.connectingAddress = e.ID.RemoteAddress
 			// This endpoint is accepted by netstack but not yet by
 			// the app. If the endpoint is IPv6 but the remote
 			// address is IPv4, we need to connect as IPv6 so that
 			// dual-stack mode can be properly activated.
-			if e.netProto == header.IPv6ProtocolNumber && len(e.id.RemoteAddress) != header.IPv6AddressSize {
-				e.connectingAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + e.id.RemoteAddress
+			if e.NetProto == header.IPv6ProtocolNumber && len(e.ID.RemoteAddress) != header.IPv6AddressSize {
+				e.connectingAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + e.ID.RemoteAddress
 			}
 		}
 		// Reset the scoreboard to reinitialize the sack information as
 		// we do not restore SACK information.
 		e.scoreboard.Reset()
-		if err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.id.RemotePort}, false, e.workerRunning); err != tcpip.ErrConnectStarted {
+		if err := e.connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}, false, e.workerRunning); err != tcpip.ErrConnectStarted {
 			panic("endpoint connecting failed: " + err.String())
 		}
 		connectedLoading.Done()
@@ -236,7 +236,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 			connectedLoading.Wait()
 			listenLoading.Wait()
 			bind()
-			if err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.id.RemotePort}); err != tcpip.ErrConnectStarted {
+			if err := e.Connect(tcpip.FullAddress{NIC: e.boundNICID, Addr: e.connectingAddress, Port: e.ID.RemotePort}); err != tcpip.ErrConnectStarted {
 				panic("endpoint connecting failed: " + err.String())
 			}
 			connectingLoading.Done()
@@ -288,21 +288,21 @@ func (e *endpoint) loadLastError(s string) {
 }
 
 // saveHardError is invoked by stateify.
-func (e *endpoint) saveHardError() string {
-	if e.hardError == nil {
+func (e *EndpointInfo) saveHardError() string {
+	if e.HardError == nil {
 		return ""
 	}
 
-	return e.hardError.String()
+	return e.HardError.String()
 }
 
 // loadHardError is invoked by stateify.
-func (e *endpoint) loadHardError(s string) {
+func (e *EndpointInfo) loadHardError(s string) {
 	if s == "" {
 		return
 	}
 
-	e.hardError = loadError(s)
+	e.HardError = loadError(s)
 }
 
 var messageToError map[string]*tcpip.Error

@@ -417,6 +417,7 @@ func (s *sender) resendSegment() {
 		s.fr.rescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size())) - 1
 		s.sendSegment(seg)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
+		s.ep.stats.SendErrors.FastRetransmit.Increment()
 
 		// Run SetPipe() as per RFC 6675 section 5 Step 4.4
 		s.SetPipe()
@@ -435,6 +436,7 @@ func (s *sender) retransmitTimerExpired() bool {
 	}
 
 	s.ep.stack.Stats().TCP.Timeouts.Increment()
+	s.ep.stats.SendErrors.Timeouts.Increment()
 
 	// Give up if we've waited more than a minute since the last resend.
 	if s.rto >= 60*time.Second {
@@ -1188,6 +1190,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 	if !seg.xmitTime.IsZero() {
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
+		s.ep.stats.SendErrors.Retransmits.Increment()
 		if s.sndCwnd < s.sndSsthresh {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}

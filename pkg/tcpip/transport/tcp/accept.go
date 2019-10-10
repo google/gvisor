@@ -229,7 +229,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	}
 	n := newEndpoint(l.stack, netProto, nil)
 	n.v6only = l.v6only
-	n.id = s.id
+	n.ID = s.id
 	n.boundNICID = s.route.NICID()
 	n.route = s.route.Clone()
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
@@ -242,7 +242,7 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	n.initGSO()
 
 	// Register new endpoint so that packets are routed to it.
-	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.id, n, n.reusePort, n.bindToDevice); err != nil {
+	if err := n.stack.RegisterTransportEndpoint(n.boundNICID, n.effectiveNetProtos, ProtocolNumber, n.ID, n, n.reusePort, n.bindToDevice); err != nil {
 		n.Close()
 		return nil, err
 	}
@@ -290,7 +290,6 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 
 	h.resetToSynRcvd(cookie, irs, opts)
 	if err := h.execute(); err != nil {
-		ep.stack.Stats().TCP.FailedConnectionAttempts.Increment()
 		ep.Close()
 		if l.listenEP != nil {
 			l.removePendingEndpoint(ep)
@@ -311,14 +310,14 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 
 func (l *listenContext) addPendingEndpoint(n *endpoint) {
 	l.pendingMu.Lock()
-	l.pendingEndpoints[n.id] = n
+	l.pendingEndpoints[n.ID] = n
 	l.pending.Add(1)
 	l.pendingMu.Unlock()
 }
 
 func (l *listenContext) removePendingEndpoint(n *endpoint) {
 	l.pendingMu.Lock()
-	delete(l.pendingEndpoints, n.id)
+	delete(l.pendingEndpoints, n.ID)
 	l.pending.Done()
 	l.pendingMu.Unlock()
 }
@@ -363,6 +362,7 @@ func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts)
 	if err != nil {
 		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+		e.stats.FailedConnectionAttempts.Increment()
 		return
 	}
 	ctx.removePendingEndpoint(n)
@@ -414,6 +414,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			}
 			decSynRcvdCount()
 			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		} else {
@@ -421,6 +422,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// is full then drop the syn.
 			if e.acceptQueueIsFull() {
 				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
+				e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 				e.stack.Stats().DroppedPackets.Increment()
 				return
 			}
@@ -439,7 +441,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TSEcr: opts.TSVal,
 				MSS:   uint16(mss),
 			}
-			sendSynTCP(&s.route, s.id, e.ttl, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
+			e.sendSynTCP(&s.route, s.id, e.ttl, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 
@@ -451,6 +453,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// complete the connection at the time of retransmit if
 			// the backlog has space.
 			e.stack.Stats().TCP.ListenOverflowAckDrop.Increment()
+			e.stats.ReceiveErrors.ListenOverflowAckDrop.Increment()
 			e.stack.Stats().DroppedPackets.Increment()
 			return
 		}
@@ -505,6 +508,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 		n, err := ctx.createConnectingEndpoint(s, s.ackNumber-1, s.sequenceNumber-1, rcvdSynOptions)
 		if err != nil {
 			e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
+			e.stats.FailedConnectionAttempts.Increment()
 			return
 		}
 
@@ -536,7 +540,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	e.mu.Lock()
 	v6only := e.v6only
 	e.mu.Unlock()
-	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.netProto)
+	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
 	defer func() {
 		// Mark endpoint as closed. This will prevent goroutines running
