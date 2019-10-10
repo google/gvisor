@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build amd64
+// +build amd64 arm64
 
 // Package atomicbitops provides basic bitwise operations in an atomic way.
 // The implementation on amd64 leverages the LOCK prefix directly instead of
-// relying on the generic cas primitives.
+// relying on the generic cas primitives, and the arm64 leverages the LDAXR
+// and STLXR pair primitives.
 //
 // WARNING: the bitwise ops provided in this package doesn't imply any memory
 // ordering. Using them to construct locks must employ proper memory barriers.
