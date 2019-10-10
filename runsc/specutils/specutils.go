@@ -92,7 +92,7 @@ func ValidateSpec(spec *specs.Spec) error {
 		log.Warningf("AppArmor profile %q is being ignored", spec.Process.ApparmorProfile)
 	}
 
-	// TODO(b/72226747): Apply seccomp to application inside sandbox.
+	// TODO(gvisor.dev/issue/510): Apply seccomp to application inside sandbox.
 	if spec.Linux != nil && spec.Linux.Seccomp != nil {
 		log.Warningf("Seccomp spec is being ignored")
 	}
