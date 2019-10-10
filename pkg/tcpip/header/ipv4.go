@@ -284,7 +284,7 @@ func (b IPv4) IsValid(pktSize int) bool {
 
 	hlen := int(b.HeaderLength())
 	tlen := int(b.TotalLength())
-	if hlen > tlen || tlen > pktSize {
+	if hlen < IPv4MinimumSize || hlen > tlen || tlen > pktSize {
 		return false
 	}
 

@@ -853,6 +853,14 @@ type IPStats struct {
 	// OutgoingPacketErrors is the total number of IP packets which failed
 	// to write to a link-layer endpoint.
 	OutgoingPacketErrors *StatCounter
+
+	// MalformedPacketsReceived is the total number of IP Packets that were
+	// dropped due to the IP packet header failing validation checks.
+	MalformedPacketsReceived *StatCounter
+
+	// MalformedFragmentsReceived is the total number of IP Fragments that were
+	// dropped due to the fragment failing validation checks.
+	MalformedFragmentsReceived *StatCounter
 }
 
 // TCPStats collects TCP-specific stats.
