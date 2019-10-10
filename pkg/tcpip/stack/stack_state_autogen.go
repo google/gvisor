@@ -78,10 +78,32 @@ func (x *GSO) load(m state.Map) {
 	m.Load("MaxSize", &x.MaxSize)
 }
 
+func (x *TransportEndpointInfo) beforeSave() {}
+func (x *TransportEndpointInfo) save(m state.Map) {
+	x.beforeSave()
+	m.Save("NetProto", &x.NetProto)
+	m.Save("TransProto", &x.TransProto)
+	m.Save("ID", &x.ID)
+	m.Save("BindNICID", &x.BindNICID)
+	m.Save("BindAddr", &x.BindAddr)
+	m.Save("RegisterNICID", &x.RegisterNICID)
+}
+
+func (x *TransportEndpointInfo) afterLoad() {}
+func (x *TransportEndpointInfo) load(m state.Map) {
+	m.Load("NetProto", &x.NetProto)
+	m.Load("TransProto", &x.TransProto)
+	m.Load("ID", &x.ID)
+	m.Load("BindNICID", &x.BindNICID)
+	m.Load("BindAddr", &x.BindAddr)
+	m.Load("RegisterNICID", &x.RegisterNICID)
+}
+
 func init() {
 	state.Register("stack.linkAddrEntryList", (*linkAddrEntryList)(nil), state.Fns{Save: (*linkAddrEntryList).save, Load: (*linkAddrEntryList).load})
 	state.Register("stack.linkAddrEntryEntry", (*linkAddrEntryEntry)(nil), state.Fns{Save: (*linkAddrEntryEntry).save, Load: (*linkAddrEntryEntry).load})
 	state.Register("stack.TransportEndpointID", (*TransportEndpointID)(nil), state.Fns{Save: (*TransportEndpointID).save, Load: (*TransportEndpointID).load})
 	state.Register("stack.GSOType", (*GSOType)(nil), state.Fns{Save: (*GSOType).save, Load: (*GSOType).load})
 	state.Register("stack.GSO", (*GSO)(nil), state.Fns{Save: (*GSO).save, Load: (*GSO).load})
+	state.Register("stack.TransportEndpointInfo", (*TransportEndpointInfo)(nil), state.Fns{Save: (*TransportEndpointInfo).save, Load: (*TransportEndpointInfo).load})
 }

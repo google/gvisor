@@ -75,17 +75,29 @@ func (x *rcvBufAutoTuneParams) load(m state.Map) {
 	m.LoadValue("rttMeasureTime", new(unixTime), func(y interface{}) { x.loadRttMeasureTime(y.(unixTime)) })
 }
 
+func (x *EndpointInfo) beforeSave() {}
+func (x *EndpointInfo) save(m state.Map) {
+	x.beforeSave()
+	var HardError string = x.saveHardError()
+	m.SaveValue("HardError", HardError)
+	m.Save("TransportEndpointInfo", &x.TransportEndpointInfo)
+}
+
+func (x *EndpointInfo) afterLoad() {}
+func (x *EndpointInfo) load(m state.Map) {
+	m.Load("TransportEndpointInfo", &x.TransportEndpointInfo)
+	m.LoadValue("HardError", new(string), func(y interface{}) { x.loadHardError(y.(string)) })
+}
+
 func (x *endpoint) save(m state.Map) {
 	x.beforeSave()
 	var lastError string = x.saveLastError()
 	m.SaveValue("lastError", lastError)
 	var state EndpointState = x.saveState()
 	m.SaveValue("state", state)
-	var hardError string = x.saveHardError()
-	m.SaveValue("hardError", hardError)
 	var acceptedChan []*endpoint = x.saveAcceptedChan()
 	m.SaveValue("acceptedChan", acceptedChan)
-	m.Save("netProto", &x.netProto)
+	m.Save("EndpointInfo", &x.EndpointInfo)
 	m.Save("waiterQueue", &x.waiterQueue)
 	m.Save("rcvList", &x.rcvList)
 	m.Save("rcvClosed", &x.rcvClosed)
@@ -93,7 +105,6 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("rcvBufUsed", &x.rcvBufUsed)
 	m.Save("rcvAutoParams", &x.rcvAutoParams)
 	m.Save("zeroWindow", &x.zeroWindow)
-	m.Save("id", &x.id)
 	m.Save("isRegistered", &x.isRegistered)
 	m.Save("ttl", &x.ttl)
 	m.Save("v6only", &x.v6only)
@@ -128,14 +139,13 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("keepalive", &x.keepalive)
 	m.Save("rcv", &x.rcv)
 	m.Save("snd", &x.snd)
-	m.Save("bindAddress", &x.bindAddress)
 	m.Save("connectingAddress", &x.connectingAddress)
 	m.Save("amss", &x.amss)
 	m.Save("gso", &x.gso)
 }
 
 func (x *endpoint) load(m state.Map) {
-	m.Load("netProto", &x.netProto)
+	m.Load("EndpointInfo", &x.EndpointInfo)
 	m.LoadWait("waiterQueue", &x.waiterQueue)
 	m.LoadWait("rcvList", &x.rcvList)
 	m.Load("rcvClosed", &x.rcvClosed)
@@ -143,7 +153,6 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("rcvBufUsed", &x.rcvBufUsed)
 	m.Load("rcvAutoParams", &x.rcvAutoParams)
 	m.Load("zeroWindow", &x.zeroWindow)
-	m.Load("id", &x.id)
 	m.Load("isRegistered", &x.isRegistered)
 	m.Load("ttl", &x.ttl)
 	m.Load("v6only", &x.v6only)
@@ -178,13 +187,11 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("keepalive", &x.keepalive)
 	m.LoadWait("rcv", &x.rcv)
 	m.LoadWait("snd", &x.snd)
-	m.Load("bindAddress", &x.bindAddress)
 	m.Load("connectingAddress", &x.connectingAddress)
 	m.Load("amss", &x.amss)
 	m.Load("gso", &x.gso)
 	m.LoadValue("lastError", new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.LoadValue("state", new(EndpointState), func(y interface{}) { x.loadState(y.(EndpointState)) })
-	m.LoadValue("hardError", new(string), func(y interface{}) { x.loadHardError(y.(string)) })
 	m.LoadValue("acceptedChan", new([]*endpoint), func(y interface{}) { x.loadAcceptedChan(y.([]*endpoint)) })
 	m.AfterLoad(x.afterLoad)
 }
@@ -457,6 +464,7 @@ func init() {
 	state.Register("tcp.cubicState", (*cubicState)(nil), state.Fns{Save: (*cubicState).save, Load: (*cubicState).load})
 	state.Register("tcp.SACKInfo", (*SACKInfo)(nil), state.Fns{Save: (*SACKInfo).save, Load: (*SACKInfo).load})
 	state.Register("tcp.rcvBufAutoTuneParams", (*rcvBufAutoTuneParams)(nil), state.Fns{Save: (*rcvBufAutoTuneParams).save, Load: (*rcvBufAutoTuneParams).load})
+	state.Register("tcp.EndpointInfo", (*EndpointInfo)(nil), state.Fns{Save: (*EndpointInfo).save, Load: (*EndpointInfo).load})
 	state.Register("tcp.endpoint", (*endpoint)(nil), state.Fns{Save: (*endpoint).save, Load: (*endpoint).load})
 	state.Register("tcp.keepalive", (*keepalive)(nil), state.Fns{Save: (*keepalive).save, Load: (*keepalive).load})
 	state.Register("tcp.receiver", (*receiver)(nil), state.Fns{Save: (*receiver).save, Load: (*receiver).load})

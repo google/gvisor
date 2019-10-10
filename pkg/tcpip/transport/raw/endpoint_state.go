@@ -73,7 +73,7 @@ func (ep *endpoint) Resume(s *stack.Stack) {
 	// If the endpoint is connected, re-connect.
 	if ep.connected {
 		var err *tcpip.Error
-		ep.route, err = ep.stack.FindRoute(ep.registeredNIC, ep.boundAddr, ep.route.RemoteAddress, ep.netProto, false)
+		ep.route, err = ep.stack.FindRoute(ep.RegisterNICID, ep.BindAddr, ep.route.RemoteAddress, ep.NetProto, false)
 		if err != nil {
 			panic(err)
 		}
@@ -81,12 +81,12 @@ func (ep *endpoint) Resume(s *stack.Stack) {
 
 	// If the endpoint is bound, re-bind.
 	if ep.bound {
-		if ep.stack.CheckLocalAddress(ep.registeredNIC, ep.netProto, ep.boundAddr) == 0 {
+		if ep.stack.CheckLocalAddress(ep.RegisterNICID, ep.NetProto, ep.BindAddr) == 0 {
 			panic(tcpip.ErrBadLocalAddress)
 		}
 	}
 
-	if err := ep.stack.RegisterRawTransportEndpoint(ep.registeredNIC, ep.netProto, ep.transProto, ep); err != nil {
+	if err := ep.stack.RegisterRawTransportEndpoint(ep.RegisterNICID, ep.NetProto, ep.TransProto, ep); err != nil {
 		panic(err)
 	}
 }
