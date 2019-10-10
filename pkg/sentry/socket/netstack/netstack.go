@@ -137,11 +137,13 @@ var Metrics = tcpip.Stats{
 		},
 	},
 	IP: tcpip.IPStats{
-		PacketsReceived:          mustCreateMetric("/netstack/ip/packets_received", "Total number of IP packets received from the link layer in nic.DeliverNetworkPacket."),
-		InvalidAddressesReceived: mustCreateMetric("/netstack/ip/invalid_addresses_received", "Total number of IP packets received with an unknown or invalid destination address."),
-		PacketsDelivered:         mustCreateMetric("/netstack/ip/packets_delivered", "Total number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
-		PacketsSent:              mustCreateMetric("/netstack/ip/packets_sent", "Total number of IP packets sent via WritePacket."),
-		OutgoingPacketErrors:     mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Total number of IP packets which failed to write to a link-layer endpoint."),
+		PacketsReceived:            mustCreateMetric("/netstack/ip/packets_received", "Total number of IP packets received from the link layer in nic.DeliverNetworkPacket."),
+		InvalidAddressesReceived:   mustCreateMetric("/netstack/ip/invalid_addresses_received", "Total number of IP packets received with an unknown or invalid destination address."),
+		PacketsDelivered:           mustCreateMetric("/netstack/ip/packets_delivered", "Total number of incoming IP packets that are successfully delivered to the transport layer via HandlePacket."),
+		PacketsSent:                mustCreateMetric("/netstack/ip/packets_sent", "Total number of IP packets sent via WritePacket."),
+		OutgoingPacketErrors:       mustCreateMetric("/netstack/ip/outgoing_packet_errors", "Total number of IP packets which failed to write to a link-layer endpoint."),
+		MalformedPacketsReceived:   mustCreateMetric("/netstack/ip/malformed_packets_received", "Total number of IP packets which failed IP header validation checks."),
+		MalformedFragmentsReceived: mustCreateMetric("/netstack/ip/malformed_fragments_received", "Total number of IP fragments which failed IP fragment validation checks."),
 	},
 	TCP: tcpip.TCPStats{
 		ActiveConnectionOpenings:           mustCreateMetric("/netstack/tcp/active_connection_openings", "Number of connections opened successfully via Connect."),

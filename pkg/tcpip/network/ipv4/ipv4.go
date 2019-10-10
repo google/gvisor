@@ -296,6 +296,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 	headerView := vv.First()
 	h := header.IPv4(headerView)
 	if !h.IsValid(vv.Size()) {
+		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
 
@@ -306,8 +307,23 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 
 	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
 	if more || h.FragmentOffset() != 0 {
+		if vv.Size() == 0 {
+			// Drop the packet as it's marked as a fragment but has
+			// no payload.
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
 		// The packet is a fragment, let's try to reassemble it.
 		last := h.FragmentOffset() + uint16(vv.Size()) - 1
+		// Drop the packet if the fragmentOffset is incorrect. i.e the
+		// combination of fragmentOffset and vv.size() causes a wrap
+		// around resulting in last being less than the offset.
+		if last < h.FragmentOffset() {
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
 		var ready bool
 		vv, ready = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
 		if !ready {
