@@ -49,6 +49,22 @@ const (
 	StateClosed
 )
 
+// String implements fmt.Stringer.String.
+func (s EndpointState) String() string {
+	switch s {
+	case StateInitial:
+		return "INITIAL"
+	case StateBound:
+		return "BOUND"
+	case StateConnected:
+		return "CONNECTING"
+	case StateClosed:
+		return "CLOSED"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 // endpoint represents a UDP endpoint. This struct serves as the interface
 // between users of the endpoint and the protocol implementation; it is legal to
 // have concurrent goroutines make calls into the endpoint, they are properly
@@ -58,10 +74,11 @@ const (
 //
 // +stateify savable
 type endpoint struct {
+	stack.TransportEndpointInfo
+
 	// The following fields are initialized at creation time and do not
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack `state:"manual"`
-	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
 
 	// The following fields are used to manage the receive queue, and are
@@ -76,10 +93,7 @@ type endpoint struct {
 	// The following fields are protected by the mu mutex.
 	mu             sync.RWMutex `state:"nosave"`
 	sndBufSize     int
-	id             stack.TransportEndpointID
 	state          EndpointState
-	bindNICID      tcpip.NICID
-	regNICID       tcpip.NICID
 	route          stack.Route `state:"manual"`
 	dstPort        uint16
 	v6only         bool
@@ -106,6 +120,9 @@ type endpoint struct {
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
+
+	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
+	stats tcpip.TransportEndpointStats `state:"nosave"`
 }
 
 // +stateify savable
@@ -114,10 +131,13 @@ type multicastMembership struct {
 	multicastAddr tcpip.Address
 }
 
-func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
+func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
 	return &endpoint{
-		stack:       stack,
-		netProto:    netProto,
+		stack: s,
+		TransportEndpointInfo: stack.TransportEndpointInfo{
+			NetProto:   netProto,
+			TransProto: header.TCPProtocolNumber,
+		},
 		waiterQueue: waiterQueue,
 		// RFC 1075 section 5.4 recommends a TTL of 1 for membership
 		// requests.
@@ -135,6 +155,7 @@ func newEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, waite
 		multicastLoop: true,
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
+		state:         StateInitial,
 	}
 }
 
@@ -146,12 +167,12 @@ func (e *endpoint) Close() {
 
 	switch e.state {
 	case StateBound, StateConnected:
-		e.stack.UnregisterTransportEndpoint(e.regNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
-		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
+		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
+		e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.bindToDevice)
 	}
 
 	for _, mem := range e.multicastMemberships {
-		e.stack.LeaveGroup(e.netProto, mem.nicID, mem.multicastAddr)
+		e.stack.LeaveGroup(e.NetProto, mem.nicID, mem.multicastAddr)
 	}
 	e.multicastMemberships = nil
 
@@ -191,6 +212,7 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
+			e.stats.ReadErrors.ReadClosed.Increment()
 			err = tcpip.ErrClosedForReceive
 		}
 		e.rcvMu.Unlock()
@@ -253,7 +275,7 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
 func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
-	localAddr := e.id.LocalAddress
+	localAddr := e.ID.LocalAddress
 	if isBroadcastOrMulticast(localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
 		localAddr = ""
@@ -279,6 +301,29 @@ func (e *endpoint) connectRoute(nicid tcpip.NICID, addr tcpip.FullAddress, netPr
 // Write writes data to the endpoint's peer. This method does not block
 // if the data cannot be written.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+	n, ch, err := e.write(p, opts)
+	switch err {
+	case nil:
+		e.stats.PacketsSent.Increment()
+	case tcpip.ErrMessageTooLong, tcpip.ErrInvalidOptionValue:
+		e.stats.WriteErrors.InvalidArgs.Increment()
+	case tcpip.ErrClosedForSend:
+		e.stats.WriteErrors.WriteClosed.Increment()
+	case tcpip.ErrInvalidEndpointState:
+		e.stats.WriteErrors.InvalidEndpointState.Increment()
+	case tcpip.ErrNoLinkAddress:
+		e.stats.SendErrors.NoLinkAddr.Increment()
+	case tcpip.ErrNoRoute, tcpip.ErrBroadcastDisabled, tcpip.ErrNetworkUnreachable:
+		// Errors indicating any problem with IP routing of the packet.
+		e.stats.SendErrors.NoRoute.Increment()
+	default:
+		// For all other errors when writing to the network layer.
+		e.stats.SendErrors.SendToNetworkFailed.Increment()
+	}
+	return n, ch, err
+}
+
+func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -330,12 +375,12 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicid := to.NIC
-		if e.bindNICID != 0 {
-			if nicid != 0 && nicid != e.bindNICID {
+		if e.BindNICID != 0 {
+			if nicid != 0 && nicid != e.BindNICID {
 				return 0, nil, tcpip.ErrNoRoute
 			}
 
-			nicid = e.bindNICID
+			nicid = e.BindNICID
 		}
 
 		if to.Addr == header.IPv4Broadcast && !e.broadcast {
@@ -384,7 +429,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		useDefaultTTL = false
 	}
 
-	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.id.LocalPort, dstPort, ttl, useDefaultTTL); err != nil {
+	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL); err != nil {
 		return 0, nil, err
 	}
 	return int64(len(v)), nil, nil
@@ -405,7 +450,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 	switch v := opt.(type) {
 	case tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
-		if e.netProto != header.IPv6ProtocolNumber {
+		if e.NetProto != header.IPv6ProtocolNumber {
 			return tcpip.ErrInvalidEndpointState
 		}
 
@@ -458,7 +503,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			}
 		}
 
-		if e.bindNICID != 0 && e.bindNICID != nic {
+		if e.BindNICID != 0 && e.BindNICID != nic {
 			return tcpip.ErrInvalidEndpointState
 		}
 
@@ -485,7 +530,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 				}
 			}
 		} else {
-			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
 			return tcpip.ErrUnknownDevice
@@ -502,7 +547,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			}
 		}
 
-		if err := e.stack.JoinGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+		if err := e.stack.JoinGroup(e.NetProto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
 
@@ -523,7 +568,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 				}
 			}
 		} else {
-			nicID = e.stack.CheckLocalAddress(nicID, e.netProto, v.InterfaceAddr)
+			nicID = e.stack.CheckLocalAddress(nicID, e.NetProto, v.InterfaceAddr)
 		}
 		if nicID == 0 {
 			return tcpip.ErrUnknownDevice
@@ -545,7 +590,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			return tcpip.ErrBadLocalAddress
 		}
 
-		if err := e.stack.LeaveGroup(e.netProto, nicID, v.MulticastAddr); err != nil {
+		if err := e.stack.LeaveGroup(e.NetProto, nicID, v.MulticastAddr); err != nil {
 			return err
 		}
 
@@ -624,7 +669,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 
 	case *tcpip.V6OnlyOption:
 		// We only recognize this option on v6 endpoints.
-		if e.netProto != header.IPv6ProtocolNumber {
+		if e.NetProto != header.IPv6ProtocolNumber {
 			return tcpip.ErrUnknownProtocolOption
 		}
 
@@ -733,14 +778,18 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
+	if err := r.WritePacket(nil /* gso */, hdr, data, ProtocolNumber, ttl, useDefaultTTL); err != nil {
+		r.Stats().UDP.PacketSendErrors.Increment()
+		return err
+	}
+
 	// Track count of packets sent.
 	r.Stats().UDP.PacketsSent.Increment()
-
-	return r.WritePacket(nil /* gso */, hdr, data, ProtocolNumber, ttl, useDefaultTTL)
+	return nil
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
-	netProto := e.netProto
+	netProto := e.NetProto
 	if len(addr.Addr) == 0 {
 		return netProto, nil
 	}
@@ -757,14 +806,14 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 		}
 
 		// Fail if we are bound to an IPv6 address.
-		if !allowMismatch && len(e.id.LocalAddress) == 16 {
+		if !allowMismatch && len(e.ID.LocalAddress) == 16 {
 			return 0, tcpip.ErrNetworkUnreachable
 		}
 	}
 
 	// Fail if we're bound to an address length different from the one we're
 	// checking.
-	if l := len(e.id.LocalAddress); l != 0 && l != len(addr.Addr) {
+	if l := len(e.ID.LocalAddress); l != 0 && l != len(addr.Addr) {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
@@ -781,27 +830,27 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 	}
 	id := stack.TransportEndpointID{}
 	// Exclude ephemerally bound endpoints.
-	if e.bindNICID != 0 || e.id.LocalAddress == "" {
+	if e.BindNICID != 0 || e.ID.LocalAddress == "" {
 		var err *tcpip.Error
 		id = stack.TransportEndpointID{
-			LocalPort:    e.id.LocalPort,
-			LocalAddress: e.id.LocalAddress,
+			LocalPort:    e.ID.LocalPort,
+			LocalAddress: e.ID.LocalAddress,
 		}
-		id, err = e.registerWithStack(e.regNICID, e.effectiveNetProtos, id)
+		id, err = e.registerWithStack(e.RegisterNICID, e.effectiveNetProtos, id)
 		if err != nil {
 			return err
 		}
 		e.state = StateBound
 	} else {
-		if e.id.LocalPort != 0 {
+		if e.ID.LocalPort != 0 {
 			// Release the ephemeral port.
-			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.id.LocalAddress, e.id.LocalPort, e.bindToDevice)
+			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.bindToDevice)
 		}
 		e.state = StateInitial
 	}
 
-	e.stack.UnregisterTransportEndpoint(e.regNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
-	e.id = id
+	e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
+	e.ID = id
 	e.route.Release()
 	e.route = stack.Route{}
 	e.dstPort = 0
@@ -828,16 +877,16 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	switch e.state {
 	case StateInitial:
 	case StateBound, StateConnected:
-		localPort = e.id.LocalPort
-		if e.bindNICID == 0 {
+		localPort = e.ID.LocalPort
+		if e.BindNICID == 0 {
 			break
 		}
 
-		if nicid != 0 && nicid != e.bindNICID {
+		if nicid != 0 && nicid != e.BindNICID {
 			return tcpip.ErrInvalidEndpointState
 		}
 
-		nicid = e.bindNICID
+		nicid = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -849,7 +898,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	defer r.Release()
 
 	id := stack.TransportEndpointID{
-		LocalAddress:  e.id.LocalAddress,
+		LocalAddress:  e.ID.LocalAddress,
 		LocalPort:     localPort,
 		RemotePort:    addr.Port,
 		RemoteAddress: r.RemoteAddress,
@@ -876,14 +925,14 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Remove the old registration.
-	if e.id.LocalPort != 0 {
-		e.stack.UnregisterTransportEndpoint(e.regNICID, e.effectiveNetProtos, ProtocolNumber, e.id, e, e.bindToDevice)
+	if e.ID.LocalPort != 0 {
+		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
 	}
 
-	e.id = id
+	e.ID = id
 	e.route = r.Clone()
 	e.dstPort = addr.Port
-	e.regNICID = nicid
+	e.RegisterNICID = nicid
 	e.effectiveNetProtos = netProtos
 
 	e.state = StateConnected
@@ -939,7 +988,7 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 func (e *endpoint) registerWithStack(nicid tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
-	if e.id.LocalPort == 0 {
+	if e.ID.LocalPort == 0 {
 		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.reusePort, e.bindToDevice)
 		if err != nil {
 			return id, err
@@ -995,8 +1044,8 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return err
 	}
 
-	e.id = id
-	e.regNICID = nicid
+	e.ID = id
+	e.RegisterNICID = nicid
 	e.effectiveNetProtos = netProtos
 
 	// Mark endpoint as bound.
@@ -1021,7 +1070,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Save the effective NICID generated by bindLocked.
-	e.bindNICID = e.regNICID
+	e.BindNICID = e.RegisterNICID
 
 	return nil
 }
@@ -1032,9 +1081,9 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	defer e.mu.RUnlock()
 
 	return tcpip.FullAddress{
-		NIC:  e.regNICID,
-		Addr: e.id.LocalAddress,
-		Port: e.id.LocalPort,
+		NIC:  e.RegisterNICID,
+		Addr: e.ID.LocalAddress,
+		Port: e.ID.LocalPort,
 	}, nil
 }
 
@@ -1048,9 +1097,9 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 	}
 
 	return tcpip.FullAddress{
-		NIC:  e.regNICID,
-		Addr: e.id.RemoteAddress,
-		Port: e.id.RemotePort,
+		NIC:  e.RegisterNICID,
+		Addr: e.ID.RemoteAddress,
+		Port: e.ID.RemotePort,
 	}, nil
 }
 
@@ -1080,6 +1129,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 	if int(hdr.Length()) > vv.Size() {
 		// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
+		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
 
@@ -1087,11 +1137,20 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 
 	e.rcvMu.Lock()
 	e.stack.Stats().UDP.PacketsReceived.Increment()
+	e.stats.PacketsReceived.Increment()
 
 	// Drop the packet if our buffer is currently full.
-	if !e.rcvReady || e.rcvClosed || e.rcvBufSize >= e.rcvBufSizeMax {
-		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
+	if !e.rcvReady || e.rcvClosed {
 		e.rcvMu.Unlock()
+		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
+		e.stats.ReceiveErrors.ClosedReceiver.Increment()
+		return
+	}
+
+	if e.rcvBufSize >= e.rcvBufSizeMax {
+		e.rcvMu.Unlock()
+		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
+		e.stats.ReceiveErrors.ReceiveBufferOverflow.Increment()
 		return
 	}
 
@@ -1128,6 +1187,20 @@ func (e *endpoint) State() uint32 {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return uint32(e.state)
+}
+
+// Info returns a copy of the endpoint info.
+func (e *endpoint) Info() tcpip.EndpointInfo {
+	e.mu.RLock()
+	// Make a copy of the endpoint info.
+	ret := e.TransportEndpointInfo
+	e.mu.RUnlock()
+	return &ret
+}
+
+// Stats returns a pointer to the endpoint stats.
+func (e *endpoint) Stats() tcpip.EndpointStats {
+	return &e.stats
 }
 
 func isBroadcastOrMulticast(a tcpip.Address) bool {

@@ -79,10 +79,10 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 		return nil, err
 	}
 
-	ep.id = r.id
+	ep.ID = r.id
 	ep.route = r.route.Clone()
 	ep.dstPort = r.id.RemotePort
-	ep.regNICID = r.route.NICID()
+	ep.RegisterNICID = r.route.NICID()
 
 	ep.state = StateConnected
 

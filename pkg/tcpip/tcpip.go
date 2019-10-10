@@ -429,6 +429,26 @@ type Endpoint interface {
 
 	// IPTables returns the iptables for this endpoint's stack.
 	IPTables() (iptables.IPTables, error)
+
+	// Info returns a copy to the transport endpoint info.
+	Info() EndpointInfo
+
+	// Stats returns a reference to the endpoint stats.
+	Stats() EndpointStats
+}
+
+// EndpointInfo is the interface implemented by each endpoint info struct.
+type EndpointInfo interface {
+	// IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo
+	// marker interface.
+	IsEndpointInfo()
+}
+
+// EndpointStats is the interface implemented by each endpoint stats struct.
+type EndpointStats interface {
+	// IsEndpointStats is an empty method to implement the tcpip.EndpointStats
+	// marker interface.
+	IsEndpointStats()
 }
 
 // WriteOptions contains options for Endpoint.Write.
@@ -879,6 +899,9 @@ type TCPStats struct {
 	// SegmentsSent is the number of TCP segments sent.
 	SegmentsSent *StatCounter
 
+	// SegmentSendErrors is the number of TCP segments failed to be sent.
+	SegmentSendErrors *StatCounter
+
 	// ResetsSent is the number of TCP resets sent.
 	ResetsSent *StatCounter
 
@@ -931,6 +954,9 @@ type UDPStats struct {
 
 	// PacketsSent is the number of UDP datagrams sent via sendUDP.
 	PacketsSent *StatCounter
+
+	// PacketSendErrors is the number of datagrams failed to be sent.
+	PacketSendErrors *StatCounter
 }
 
 // Stats holds statistics about the networking stack.
@@ -941,7 +967,7 @@ type Stats struct {
 	// stack that were for an unknown or unsupported protocol.
 	UnknownProtocolRcvdPackets *StatCounter
 
-	// MalformedRcvPackets is the number of packets received by the stack
+	// MalformedRcvdPackets is the number of packets received by the stack
 	// that were deemed malformed.
 	MalformedRcvdPackets *StatCounter
 
@@ -960,6 +986,86 @@ type Stats struct {
 	// UDP breaks out UDP-specific stats.
 	UDP UDPStats
 }
+
+// ReceiveErrors collects packet receive errors within transport endpoint.
+type ReceiveErrors struct {
+	// ReceiveBufferOverflow is the number of received packets dropped
+	// due to the receive buffer being full.
+	ReceiveBufferOverflow StatCounter
+
+	// MalformedPacketsReceived is the number of incoming packets
+	// dropped due to the packet header being in a malformed state.
+	MalformedPacketsReceived StatCounter
+
+	// ClosedReceiver is the number of received packets dropped because
+	// of receiving endpoint state being closed.
+	ClosedReceiver StatCounter
+}
+
+// SendErrors collects packet send errors within the transport layer for
+// an endpoint.
+type SendErrors struct {
+	// SendToNetworkFailed is the number of packets failed to be written to
+	// the network endpoint.
+	SendToNetworkFailed StatCounter
+
+	// NoRoute is the number of times we failed to resolve IP route.
+	NoRoute StatCounter
+
+	// NoLinkAddr is the number of times we failed to resolve ARP.
+	NoLinkAddr StatCounter
+}
+
+// ReadErrors collects segment read errors from an endpoint read call.
+type ReadErrors struct {
+	// ReadClosed is the number of received packet drops because the endpoint
+	// was shutdown for read.
+	ReadClosed StatCounter
+
+	// InvalidEndpointState is the number of times we found the endpoint state
+	// to be unexpected.
+	InvalidEndpointState StatCounter
+}
+
+// WriteErrors collects packet write errors from an endpoint write call.
+type WriteErrors struct {
+	// WriteClosed is the number of packet drops because the endpoint
+	// was shutdown for write.
+	WriteClosed StatCounter
+
+	// InvalidEndpointState is the number of times we found the endpoint state
+	// to be unexpected.
+	InvalidEndpointState StatCounter
+
+	// InvalidArgs is the number of times invalid input arguments were
+	// provided for endpoint Write call.
+	InvalidArgs StatCounter
+}
+
+// TransportEndpointStats collects statistics about the endpoint.
+type TransportEndpointStats struct {
+	// PacketsReceived is the number of successful packet receives.
+	PacketsReceived StatCounter
+
+	// PacketsSent is the number of successful packet sends.
+	PacketsSent StatCounter
+
+	// ReceiveErrors collects packet receive errors within transport layer.
+	ReceiveErrors ReceiveErrors
+
+	// ReadErrors collects packet read errors from an endpoint read call.
+	ReadErrors ReadErrors
+
+	// SendErrors collects packet send errors within the transport layer.
+	SendErrors SendErrors
+
+	// WriteErrors collects packet write errors from an endpoint write call.
+	WriteErrors WriteErrors
+}
+
+// IsEndpointStats is an empty method to implement the tcpip.EndpointStats
+// marker interface.
+func (*TransportEndpointStats) IsEndpointStats() {}
 
 func fillIn(v reflect.Value) {
 	for i := 0; i < v.NumField(); i++ {
@@ -981,6 +1087,26 @@ func fillIn(v reflect.Value) {
 func (s Stats) FillIn() Stats {
 	fillIn(reflect.ValueOf(&s).Elem())
 	return s
+}
+
+// Clone returns a copy of the TransportEndpointStats by atomically reading
+// each field.
+func (src *TransportEndpointStats) Clone() TransportEndpointStats {
+	var dst TransportEndpointStats
+	clone(reflect.ValueOf(&dst).Elem(), reflect.ValueOf(src).Elem())
+	return dst
+}
+
+func clone(dst reflect.Value, src reflect.Value) {
+	for i := 0; i < dst.NumField(); i++ {
+		d := dst.Field(i)
+		s := src.Field(i)
+		if c, ok := s.Addr().Interface().(*StatCounter); ok {
+			d.Addr().Interface().(*StatCounter).IncrementBy(c.Value())
+		} else {
+			clone(d, s)
+		}
+	}
 }
 
 // String implements the fmt.Stringer interface.

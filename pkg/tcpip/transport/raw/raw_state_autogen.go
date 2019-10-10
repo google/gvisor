@@ -29,8 +29,7 @@ func (x *endpoint) save(m state.Map) {
 	x.beforeSave()
 	var rcvBufSizeMax int = x.saveRcvBufSizeMax()
 	m.SaveValue("rcvBufSizeMax", rcvBufSizeMax)
-	m.Save("netProto", &x.netProto)
-	m.Save("transProto", &x.transProto)
+	m.Save("TransportEndpointInfo", &x.TransportEndpointInfo)
 	m.Save("waiterQueue", &x.waiterQueue)
 	m.Save("associated", &x.associated)
 	m.Save("rcvList", &x.rcvList)
@@ -40,14 +39,10 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("closed", &x.closed)
 	m.Save("connected", &x.connected)
 	m.Save("bound", &x.bound)
-	m.Save("registeredNIC", &x.registeredNIC)
-	m.Save("boundNIC", &x.boundNIC)
-	m.Save("boundAddr", &x.boundAddr)
 }
 
 func (x *endpoint) load(m state.Map) {
-	m.Load("netProto", &x.netProto)
-	m.Load("transProto", &x.transProto)
+	m.Load("TransportEndpointInfo", &x.TransportEndpointInfo)
 	m.Load("waiterQueue", &x.waiterQueue)
 	m.Load("associated", &x.associated)
 	m.Load("rcvList", &x.rcvList)
@@ -57,9 +52,6 @@ func (x *endpoint) load(m state.Map) {
 	m.Load("closed", &x.closed)
 	m.Load("connected", &x.connected)
 	m.Load("bound", &x.bound)
-	m.Load("registeredNIC", &x.registeredNIC)
-	m.Load("boundNIC", &x.boundNIC)
-	m.Load("boundAddr", &x.boundAddr)
 	m.LoadValue("rcvBufSizeMax", new(int), func(y interface{}) { x.loadRcvBufSizeMax(y.(int)) })
 	m.AfterLoad(x.afterLoad)
 }
