@@ -500,6 +500,14 @@ func TestRetransmit(t *testing.T) {
 		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
 	}
 
+	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Timeouts.Value(), uint64(1); got != want {
+		t.Errorf("got EP SendErrors.Timeouts.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(1); got != want {
+		t.Errorf("got EP stats SendErrors.Retransmits.Value = %v, want = %v", got, want)
+	}
+
 	if got, want := c.Stack().Stats().TCP.SlowStartRetransmits.Value(), uint64(1); got != want {
 		t.Errorf("got stats.TCP.SlowStartRetransmits.Value = %v, want = %v", got, want)
 	}

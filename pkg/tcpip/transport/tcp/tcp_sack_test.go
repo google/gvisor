@@ -520,8 +520,16 @@ func TestSACKRecovery(t *testing.T) {
 		t.Errorf("got stats.TCP.FastRetransmit.Value = %v, want = %v", got, want)
 	}
 
+	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.FastRetransmit.Value(), uint64(1); got != want {
+		t.Errorf("got EP stats SendErrors.FastRetransmit = %v, want = %v", got, want)
+	}
+
 	if got, want := c.Stack().Stats().TCP.Retransmits.Value(), uint64(4); got != want {
 		t.Errorf("got stats.TCP.Retransmits.Value = %v, want = %v", got, want)
+	}
+
+	if got, want := c.EP.Stats().(*tcp.Stats).SendErrors.Retransmits.Value(), uint64(4); got != want {
+		t.Errorf("got EP stats Stats.SendErrors.Retransmits = %v, want = %v", got, want)
 	}
 
 	c.CheckNoPacketTimeout("More packets received than expected during recovery after partial ack for this cwnd.", 50*time.Millisecond)
