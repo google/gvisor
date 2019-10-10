@@ -312,6 +312,23 @@ TEST(Signalfd, KillStillKills) {
   EXPECT_EXIT(tgkill(getpid(), gettid(), SIGKILL), KilledBySignal(SIGKILL), "");
 }
 
+TEST(Signalfd, Ppoll) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGKILL);
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, SFD_CLOEXEC));
+
+  // Ensure that the given ppoll blocks.
+  struct pollfd pfd = {};
+  pfd.fd = fd.get();
+  pfd.events = POLLIN;
+  struct timespec timeout = {};
+  timeout.tv_sec = 1;
+  EXPECT_THAT(RetryEINTR(ppoll)(&pfd, 1, &timeout, &mask),
+              SyscallSucceedsWithValue(0));
+}
+
 }  // namespace
 
 }  // namespace testing
