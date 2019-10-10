@@ -121,7 +121,10 @@ func (s *SignalOperations) Read(ctx context.Context, _ *fs.File, dst usermem.IOS
 
 // Readiness implements waiter.Waitable.Readiness.
 func (s *SignalOperations) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return mask & waiter.EventIn
+	if mask&waiter.EventIn != 0 && s.target.PendingSignals()&s.Mask() != 0 {
+		return waiter.EventIn // Pending signals.
+	}
+	return 0
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
