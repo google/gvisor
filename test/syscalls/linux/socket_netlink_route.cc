@@ -539,6 +539,159 @@ TEST(NetlinkRouteTest, GetRouteDump) {
   EXPECT_TRUE(dstFound);
 }
 
+// RecvmsgTrunc tests the recvmsg MSG_TRUNC flag with zero length output
+// buffer. MSG_TRUNC with a zero length buffer should consume subsequent
+// messages off the socket.
+TEST(NetlinkRouteTest, RecvmsgTrunc) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req;
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETADDR;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rgm.rtgen_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  iov.iov_base = NULL;
+  iov.iov_len = 0;
+
+  int trunclen, trunclen2;
+
+  // Note: This test assumes at least two messages are returned by the
+  // RTM_GETADDR request. That means at least one RTM_NEWLINK message and one
+  // NLMSG_DONE message. We cannot read all the messages without blocking
+  // because we would need to read the message into a buffer and check the
+  // nlmsg_type for NLMSG_DONE. However, the test depends on reading into a
+  // zero-length buffer.
+
+  // First, call recvmsg with MSG_TRUNC. This will read the full message from
+  // the socket and return it's full length. Subsequent calls to recvmsg will
+  // read the next messages from the socket.
+  ASSERT_THAT(trunclen = RetryEINTR(recvmsg)(fd.get(), &msg, MSG_TRUNC),
+              SyscallSucceeds());
+
+  // Message should always be truncated. However, While the destination iov is
+  // zero length, MSG_TRUNC returns the size of the next message so it should
+  // not be zero.
+  ASSERT_EQ(msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+  ASSERT_NE(trunclen, 0);
+  // Returned length is at least the header and ifaddrmsg.
+  EXPECT_GE(trunclen, sizeof(struct nlmsghdr) + sizeof(struct ifaddrmsg));
+
+  // Reset the msg_flags to make sure that the recvmsg call is setting them
+  // properly.
+  msg.msg_flags = 0;
+
+  // Make a second recvvmsg call to get the next message.
+  ASSERT_THAT(trunclen2 = RetryEINTR(recvmsg)(fd.get(), &msg, MSG_TRUNC),
+              SyscallSucceeds());
+  ASSERT_EQ(msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+  ASSERT_NE(trunclen2, 0);
+
+  // Assert that the received messages are not the same.
+  //
+  // We are calling recvmsg with a zero length buffer so we have no way to
+  // inspect the messages to make sure they are not equal in value. The best
+  // we can do is to compare their lengths.
+  ASSERT_NE(trunclen, trunclen2);
+}
+
+// RecvmsgTruncPeek tests recvmsg with the combination of the MSG_TRUNC and
+// MSG_PEEK flags and a zero length output buffer. This is normally used to
+// read the full length of the next message on the socket without consuming
+// it, so a properly sized buffer can be allocated to store the message. This
+// test tests that scenario.
+TEST(NetlinkRouteTest, RecvmsgTruncPeek) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req;
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETADDR;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rgm.rtgen_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  int type = -1;
+  do {
+    int peeklen;
+    int len;
+
+    iov.iov_base = NULL;
+    iov.iov_len = 0;
+
+    // Call recvmsg with MSG_PEEK and MSG_TRUNC. This will peek at the message
+    // and return it's full length.
+    // See: MSG_TRUNC http://man7.org/linux/man-pages/man2/recv.2.html
+    ASSERT_THAT(
+        peeklen = RetryEINTR(recvmsg)(fd.get(), &msg, MSG_PEEK | MSG_TRUNC),
+        SyscallSucceeds());
+
+    // Message should always be truncated.
+    ASSERT_EQ(msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+    ASSERT_NE(peeklen, 0);
+
+    // Reset the message flags for the next call.
+    msg.msg_flags = 0;
+
+    // Make the actual call to recvmsg to get the actual data. We will use
+    // the length returned from the peek call for the allocated buffer size..
+    std::vector<char> buf(peeklen);
+    iov.iov_base = buf.data();
+    iov.iov_len = buf.size();
+    ASSERT_THAT(len = RetryEINTR(recvmsg)(fd.get(), &msg, 0),
+                SyscallSucceeds());
+
+    // Message should not be truncated since we allocated the correct buffer
+    // size.
+    EXPECT_NE(msg.msg_flags & MSG_TRUNC, MSG_TRUNC);
+
+    // MSG_PEEK should have left data on the socket and the subsequent call
+    // with should have retrieved the same data. Both calls should have
+    // returned the message's full length so they should be equal.
+    ASSERT_NE(len, 0);
+    ASSERT_EQ(peeklen, len);
+
+    for (struct nlmsghdr* hdr = reinterpret_cast<struct nlmsghdr*>(buf.data());
+         NLMSG_OK(hdr, len); hdr = NLMSG_NEXT(hdr, len)) {
+      type = hdr->nlmsg_type;
+    }
+  } while (type != NLMSG_DONE && type != NLMSG_ERROR);
+}
+
 }  // namespace
 
 }  // namespace testing

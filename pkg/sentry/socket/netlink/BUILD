@@ -21,6 +21,7 @@ go_library(
         "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/safemem",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",

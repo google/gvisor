@@ -91,6 +91,13 @@ PosixError NetlinkRequestResponse(
          NLMSG_OK(hdr, len); hdr = NLMSG_NEXT(hdr, len)) {
       fn(hdr);
       type = hdr->nlmsg_type;
+      // Done should include an integer payload for dump_done_errno.
+      // See net/netlink/af_netlink.c:netlink_dump
+      // Some tools like the 'ip' tool check the minimum length of the
+      // NLMSG_DONE message.
+      if (type == NLMSG_DONE) {
+        EXPECT_GE(hdr->nlmsg_len, NLMSG_LENGTH(sizeof(int)));
+      }
     }
   } while (type != NLMSG_DONE && type != NLMSG_ERROR);
 
