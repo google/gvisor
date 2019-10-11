@@ -81,6 +81,9 @@ type FDTable struct {
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
+	// next is start position to find fd.
+	next int32
+
 	// used contains the number of non-nil entries. It must be accessed
 	// atomically. It may be read atomically without holding mu (but not
 	// written).
@@ -226,6 +229,11 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// From f.next to find available fd.
+	if fd < f.next {
+		fd = f.next
+	}
+
 	// Install all entries.
 	for i := fd; i < end && len(fds) < len(files); i++ {
 		if d, _, _ := f.get(i); d == nil {
@@ -238,6 +246,9 @@ func (f *FDTable) NewFDs(ctx context.Context, fd int32, files []*fs.File, flags 
 	if len(fds) < len(files) {
 		for _, i := range fds {
 			f.set(i, nil, FDFlags{}) // Zap entry.
+		}
+		if fd == f.next {
+			f.next = fds[len(fds)-1] + 1
 		}
 		return nil, syscall.EMFILE
 	}
@@ -361,6 +372,11 @@ func (f *FDTable) Remove(fd int32) *fs.File {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// Update current available position.
+	if fd < f.next {
+		f.next = fd
+	}
+
 	orig, _, _ := f.get(fd)
 	if orig != nil {
 		orig.IncRef()             // Reference for caller.
@@ -377,6 +393,10 @@ func (f *FDTable) RemoveIf(cond func(*fs.File, FDFlags) bool) {
 	f.forEach(func(fd int32, file *fs.File, flags FDFlags) {
 		if cond(file, flags) {
 			f.set(fd, nil, FDFlags{}) // Clear from table.
+			// Update current available position.
+			if fd < f.next {
+				f.next = fd
+			}
 		}
 	})
 }
