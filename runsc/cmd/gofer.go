@@ -423,6 +423,7 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 		path := filepath.Join(base, name)
 		if !strings.HasPrefix(path, root) {
 			// One cannot '..' their way out of root.
+			base = root
 			continue
 		}
 		fi, err := os.Lstat(path)
