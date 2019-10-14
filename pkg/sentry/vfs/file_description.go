@@ -695,3 +695,14 @@ func (fd *FileDescription) InodeID() uint64 {
 func (fd *FileDescription) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	return fd.Sync(ctx)
 }
+
+// DenyWrite implements memmap.MappingIdentity.DenyWrite.
+func (fd *FileDescription) DenyWrite() error {
+	// TODO(gvisor.dev/issue/1395): Support writecount for vfs2.
+	return nil
+}
+
+// AllowWrite implements memmap.MappingIdentity.AllowWrite.
+func (fd *FileDescription) AllowWrite() {
+	// TODO(gvisor.dev/issue/1395): Support writecount for vfs2.
+}

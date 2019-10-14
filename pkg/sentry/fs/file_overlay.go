@@ -554,3 +554,13 @@ func (omi *overlayMappingIdentity) MappedName(ctx context.Context) string {
 func (omi *overlayMappingIdentity) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	return omi.id.Msync(ctx, mr)
 }
+
+// DenyWrite implements MappingIdentity.DenyWrite.
+func (omi *overlayMappingIdentity) DenyWrite() error {
+	return omi.overlayFile.Dirent.Inode.DenyWriteAccess()
+}
+
+// AllowWrite implements MappingIdentity.AllowWrite.
+func (omi *overlayMappingIdentity) AllowWrite() {
+	omi.overlayFile.Dirent.Inode.AllowWriteAccess()
+}

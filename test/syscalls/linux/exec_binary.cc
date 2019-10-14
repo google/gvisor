@@ -337,6 +337,143 @@ TEST(ElfTest, Execute) {
                      })));
 }
 
+TEST(ElfTest, ExecAfterWrite) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  pid_t child;
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  fd.reset();
+
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+          ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+                  ASSERT_EQ(execve_errno, 0);
+  // Kill the process.
+  cleanup.Release()();
+
+  // Wait until the child process has exited.
+  siginfo_t info;
+  waitid(P_PID, child, &info, WEXITED);
+}
+
+TEST(ElfTest, OpenDuringExec) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+          ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+  ASSERT_THAT(open(file.path().c_str(), O_WRONLY), SyscallFailsWithErrno(ETXTBSY));
+
+  // Kill the process.
+  cleanup.Release()();
+
+  // Wait until the child process has exited.
+  siginfo_t info;
+  waitid(P_PID, child, &info, WEXITED);
+}
+
+TEST(ElfTest, ExecDuringWrite) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  pid_t child;
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+          ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+                  ASSERT_EQ(execve_errno, ETXTBSY);
+  // Kill the process.
+  cleanup.Release()();
+
+  // Wait until the child process has exited.
+  siginfo_t info;
+  waitid(P_PID, child, &info, WEXITED);
+
+  fd.reset();
+}
+
+TEST(ElfTest, ExecDuringRead) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+  pid_t child;
+
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+    ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+  // Kill the process.
+  cleanup.Release()();
+
+  // Wait until the child process has exited.
+  siginfo_t info;
+  waitid(P_PID, child, &info, WEXITED);
+
+  fd.reset();
+}
+
+TEST(ElfTest, ExecDuringExec) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child1;
+  int execve_errno1;
+  auto cleanup1 = ASSERT_NO_ERRNO_AND_VALUE(
+    ForkAndExec(file.path(), {file.path()}, {}, &child1, &execve_errno1));
+  ASSERT_EQ(execve_errno1, 0);
+
+  pid_t child2;
+  int execve_errno2;
+  auto cleanup2 = ASSERT_NO_ERRNO_AND_VALUE(
+    ForkAndExec(file.path(), {file.path()}, {}, &child2, &execve_errno2));
+  ASSERT_EQ(execve_errno2, 0);
+
+  cleanup1.Release()();
+  cleanup2.Release()();
+
+  siginfo_t info1;
+  siginfo_t info2;
+  waitid(P_PID, child1, &info1, WEXITED);
+  waitid(P_PID, child2, &info2, WEXITED);
+}
+
+// Test ETXTBSY (Text file busy) when overwriting a binary file in executing.
+TEST(ElfTest, OpenTextFileBusy) {
+  ElfBinary<64> elf = StandardElf();
+  elf.UpdateOffsets();
+
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(CreateElfWith(elf));
+
+  pid_t child;
+  int execve_errno;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+    ForkAndExec(file.path(), {file.path()}, {}, &child, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  ASSERT_THAT(open(file.path().c_str(), O_RDWR), SyscallFailsWithErrno(ETXTBSY));
+
+  // Kill the process.
+  cleanup.Release()();
+
+  // Wait until the child process has exited.
+  siginfo_t info;
+  waitid(P_PID, child, &info, WEXITED);
+
+  // After the process exits, we can open again.
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  fd.reset();
+}
+
 // StandardElf without data completes execve, but faults once running.
 TEST(ElfTest, MissingText) {
   ElfBinary<64> elf = StandardElf();

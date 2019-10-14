@@ -78,6 +78,15 @@ func (m *SpecialMappable) Msync(ctx context.Context, mr memmap.MappableRange) er
 	return nil
 }
 
+// DenyWrite implements memmap.MappingIdentity.DenyWrite.
+func (m *SpecialMappable) DenyWrite() error {
+	return nil
+}
+
+// AllowWrite implements memmap.MappingIdentity.AllowWrite.
+func (m *SpecialMappable) AllowWrite() {
+}
+
 // AddMapping implements memmap.Mappable.AddMapping.
 func (*SpecialMappable) AddMapping(context.Context, memmap.MappingSpace, usermem.AddrRange, uint64, bool) error {
 	return nil

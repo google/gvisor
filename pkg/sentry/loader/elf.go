@@ -270,6 +270,9 @@ func mapSegment(ctx context.Context, m *mm.MemoryManager, f *fs.File, phdr *elf.
 			Perms:    prot,
 			MaxPerms: usermem.AnyAccess,
 		}
+		if prot.Execute {
+			mopts.DenyWrite = true
+		}
 		defer func() {
 			if mopts.MappingIdentity != nil {
 				mopts.MappingIdentity.DecRef()

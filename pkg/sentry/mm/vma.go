@@ -94,6 +94,12 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 	// Take a reference on opts.MappingIdentity before inserting the vma since
 	// vma merging can drop the reference.
 	if opts.MappingIdentity != nil {
+		if opts.DenyWrite {
+			if err := opts.MappingIdentity.DenyWrite(); err != nil {
+				return vmaIterator{}, usermem.AddrRange{}, err
+			}
+		}
+
 		opts.MappingIdentity.IncRef()
 	}
 
@@ -110,6 +116,7 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 		numaPolicy:     linux.MPOL_DEFAULT,
 		id:             opts.MappingIdentity,
 		hint:           opts.Hint,
+		denyWrite:      opts.DenyWrite,
 	}
 
 	vseg := mm.vmas.Insert(vgap, ar, v)
@@ -364,7 +371,6 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 			panic(fmt.Sprintf("invalid ar: %v", ar))
 		}
 	}
-
 	vseg, vgap := mm.vmas.Find(ar.Start)
 	if vgap.Ok() {
 		vseg = vgap.NextSegment()
@@ -377,6 +383,9 @@ func (mm *MemoryManager) removeVMAsLocked(ctx context.Context, ar usermem.AddrRa
 			vma.mappable.RemoveMapping(ctx, mm, vmaAR, vma.off, vma.canWriteMappableLocked())
 		}
 		if vma.id != nil {
+			if vma.denyWrite {
+				vma.id.AllowWrite()
+			}
 			vma.id.DecRef()
 		}
 		mm.usageAS -= uint64(vmaAR.Length())

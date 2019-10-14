@@ -148,6 +148,10 @@ func (f *File) DecRef() {
 		lockRng := lock.LockRange{Start: 0, End: lock.LockEOF}
 		f.Dirent.Inode.LockCtx.BSD.UnlockRegion(lock.UniqueID(f.UniqueID), lockRng)
 
+		if f.flags.Write {
+			f.Dirent.Inode.PutWriteAccess()
+		}
+
 		// Release resources held by the FileOperations.
 		f.FileOperations.Release()
 
@@ -480,6 +484,16 @@ func (f *File) InodeID() uint64 {
 // Msync implements memmap.MappingIdentity.Msync.
 func (f *File) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	return f.Fsync(ctx, int64(mr.Start), int64(mr.End-1), SyncData)
+}
+
+// DenyWrite implements memmap.MappingIdentity.DenyWrite.
+func (f *File) DenyWrite() error {
+	return f.Dirent.Inode.DenyWriteAccess()
+}
+
+// AllowWrite implements memmap.MappingIdentity.AllowWrite.
+func (f *File) AllowWrite() {
+	f.Dirent.Inode.AllowWriteAccess()
 }
 
 // A FileAsync sends signals to its owner when w is ready for IO.

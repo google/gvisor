@@ -290,6 +290,8 @@ type vma struct {
 	// If hint is non-empty, it is a description of the vma printed in
 	// /proc/[pid]/maps. hint takes priority over id.MappedName().
 	hint string
+
+	denyWrite bool
 }
 
 const (

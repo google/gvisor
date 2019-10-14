@@ -327,7 +327,15 @@ func (d *Dir) Create(ctx context.Context, dir *fs.Inode, name string, flags fs.F
 	// Create the Dirent and corresponding file.
 	created := fs.NewDirent(ctx, inode, name)
 	defer created.DecRef()
-	return created.Inode.GetFile(ctx, created, flags)
+
+	f, err := created.Inode.GetFile(ctx, created, flags)
+	// Get an extra reference to pin inode in kernel. See Linux's
+	// fs/ramfs/inode.c:ramfs_mknod(). But here it also increments
+	// WriteCount. Let's decrement one in advance.
+	if err == nil && flags.Write {
+		created.Inode.PutWriteAccess()
+	}
+	return f, err
 }
 
 // CreateLink returns a new link.

@@ -533,6 +533,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 			vma.off = vseg.mappableOffsetAt(oldAR.Start)
 		}
 		if vma.id != nil {
+			if vma.denyWrite {
+				vma.id.DenyWrite()
+			}
 			vma.id.IncRef()
 		}
 		vseg := mm.vmas.Insert(mm.vmas.FindGap(newAR.Start), newAR, vma)
@@ -587,6 +590,9 @@ func (mm *MemoryManager) MRemap(ctx context.Context, oldAddr usermem.Addr, oldSi
 	// oldAR is no longer mapped.
 	if vma.mappable != nil {
 		vma.mappable.RemoveMapping(ctx, mm, oldAR, vma.off, vma.canWriteMappableLocked())
+		if vma.id != nil && vma.denyWrite {
+			vma.id.AllowWrite()
+		}
 	}
 
 	if vma.mlockMode == memmap.MLockEager {

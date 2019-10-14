@@ -256,6 +256,14 @@ type MappingIdentity interface {
 	// exclusive, hence mr.End-1.) It is defined rather than Fsync so that
 	// implementors don't need to depend on the fs package for fs.SyncType.
 	Msync(ctx context.Context, mr MappableRange) error
+
+	// DenyWrite is used to negative increment inode's counter, WriteCount,
+	// to deny further write access. If it's already opened with write
+	// access, the error, ETXTBSY, shall be returned.
+	DenyWrite() error
+
+	// AllowWrite is the pair operation to the above operation, DenyWrite.
+	AllowWrite()
 }
 
 // MLockMode specifies the memory locking behavior of a memory mapping.
@@ -343,6 +351,12 @@ type MMapOpts struct {
 	// Private is true if writes to the mapping should be propagated to a copy
 	// that is exclusive to the MemoryManager.
 	Private bool
+
+	// DenyWrite is used to deny any further write to this area. If true,
+	// attempts to write to the underlying file should fail with ETXTBUSY.
+	// In the other side, if it's already mmaped with write access, this mmap
+	// will also fail with ETXTBUSY.
+	DenyWrite bool
 
 	// GrowsDown is true if the mapping should be automatically expanded
 	// downward on guard page faults.

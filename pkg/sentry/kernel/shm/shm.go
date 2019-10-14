@@ -442,6 +442,15 @@ func (s *Shm) Msync(context.Context, memmap.MappableRange) error {
 	return nil
 }
 
+// DenyWrite implements memmap.MappingIdentity.DenyWrite.
+func (s *Shm) DenyWrite() error {
+	return nil
+}
+
+// AllowWrite implements memmap.MappingIdentity.AllowWrite.
+func (s *Shm) AllowWrite() {
+}
+
 // AddMapping implements memmap.Mappable.AddMapping.
 func (s *Shm) AddMapping(ctx context.Context, _ memmap.MappingSpace, _ usermem.AddrRange, _ uint64, _ bool) error {
 	s.mu.Lock()

@@ -110,6 +110,9 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 			}
 		}
 		if vma.id != nil {
+			if vma.denyWrite {
+				vma.id.DenyWrite()
+			}
 			vma.id.IncRef()
 		}
 		vma.mlockMode = memmap.MLockNone

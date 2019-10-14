@@ -245,6 +245,15 @@ func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error 
 	return syserror.EINVAL
 }
 
+// DenyWrite implements memmap.MappingIdentity.DenyWrite.
+func (m *aioMappable) DenyWrite() error {
+	return nil
+}
+
+// AllowWrite implements memmap.MappingIdentity.AllowWrite.
+func (m *aioMappable) AllowWrite() {
+}
+
 // AddMapping implements memmap.Mappable.AddMapping.
 func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar usermem.AddrRange, offset uint64, _ bool) error {
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()

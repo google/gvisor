@@ -218,10 +218,24 @@ func (i *Inode) Lookup(ctx context.Context, name string) (*Dirent, error) {
 
 // Create calls i.InodeOperations.Create with i as the directory.
 func (i *Inode) Create(ctx context.Context, d *Dirent, name string, flags FileFlags, perm FilePermissions) (*File, error) {
+	var (
+		f   *File
+		err error
+	)
 	if i.overlay != nil {
-		return overlayCreate(ctx, i.overlay, d, name, flags, perm)
+		f, err = overlayCreate(ctx, i.overlay, d, name, flags, perm)
+	} else {
+		f, err = i.InodeOperations.Create(ctx, i, name, flags, perm)
 	}
-	return i.InodeOperations.Create(ctx, i, name, flags, perm)
+	if err != nil {
+		return nil, err
+	}
+	if flags.Write {
+		if err := f.Dirent.Inode.GetWriteAccess(); err != nil {
+			panic("Fail to get write access of a new file")
+		}
+	}
+	return f, nil
 }
 
 // CreateDirectory calls i.InodeOperations.CreateDirectory with i as the directory.
@@ -295,11 +309,25 @@ func (i *Inode) BoundEndpoint(path string) transport.BoundEndpoint {
 
 // GetFile calls i.InodeOperations.GetFile with the given arguments.
 func (i *Inode) GetFile(ctx context.Context, d *Dirent, flags FileFlags) (*File, error) {
-	if i.overlay != nil {
-		return overlayGetFile(ctx, i.overlay, d, flags)
+	var (
+		f   *File
+		err error
+	)
+	if flags.Write {
+		if err := d.Inode.GetWriteAccess(); err != nil {
+			return nil, err
+		}
 	}
-	opens.Increment()
-	return i.InodeOperations.GetFile(ctx, d, flags)
+	if i.overlay != nil {
+		f, err = overlayGetFile(ctx, i.overlay, d, flags)
+	} else {
+		opens.Increment()
+		f, err = i.InodeOperations.GetFile(ctx, d, flags)
+	}
+	if flags.Write && err != nil {
+		d.Inode.PutWriteAccess()
+	}
+	return f, err
 }
 
 // UnstableAttr calls i.InodeOperations.UnstableAttr with i as the Inode.
