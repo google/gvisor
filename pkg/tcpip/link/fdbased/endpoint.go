@@ -178,6 +178,14 @@ type Options struct {
 	RXChecksumOffload bool
 }
 
+// fanoutID is used for AF_PACKET based endpoints to enable PACKET_FANOUT
+// support in the host kernel. This allows us to use multiple FD's to receive
+// from the same underlying NIC. The fanoutID needs to be the same for a given
+// set of FD's that point to the same NIC. Trying to set the PACKET_FANOUT
+// option for an FD with a fanoutID already in use by another FD for a different
+// NIC will return an EINVAL.
+var fanoutID = 1
+
 // New creates a new fd-based endpoint.
 //
 // Makes fd non-blocking, but does not take ownership of fd, which must remain
@@ -245,6 +253,10 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		e.inboundDispatchers = append(e.inboundDispatchers, inboundDispatcher)
 	}
 
+	// Increment fanoutID to ensure that we don't re-use the same fanoutID for
+	// the next endpoint.
+	fanoutID++
+
 	return e, nil
 }
 
@@ -265,7 +277,6 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool) (linkDispatcher
 		case *unix.SockaddrLinklayer:
 			// enable PACKET_FANOUT mode is the underlying socket is
 			// of type AF_PACKET.
-			const fanoutID = 1
 			const fanoutType = 0x8000 // PACKET_FANOUT_HASH | PACKET_FANOUT_FLAG_DEFRAG
 			fanoutArg := fanoutID | fanoutType<<16
 			if err := syscall.SetsockoptInt(fd, syscall.SOL_PACKET, unix.PACKET_FANOUT, fanoutArg); err != nil {
