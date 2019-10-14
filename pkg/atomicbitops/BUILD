@@ -9,6 +9,7 @@ go_library(
         "atomic_bitops_amd64.s",
         "atomic_bitops_arm64.s",
         "atomic_bitops_common.go",
+	"atomic_bitops_noarch.go",
     ],
     visibility = ["//:sandbox"],
 )

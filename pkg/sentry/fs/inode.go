@@ -15,7 +15,10 @@
 package fs
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
@@ -62,6 +65,52 @@ type Inode struct {
 	// have to take this lock for read. Write operations to files with
 	// O_APPEND have to take this lock for write.
 	appendMu sync.RWMutex `state:"nosave"`
+
+	// WriteCount can have the following values:
+	// - 0: no writers, no VM_DENYWRITE mappings
+	// - < 0: (-InodeWriteCount) vmas with VM_DENYWRITE set exist
+	// - > 0: (InodeWriteCount) users are writing to the file.
+	// Refer to Linux's i_writecount field of struct inode.
+	WriteCount int32
+}
+
+// Refer to Linux/include/linux/fs.h for below helper functions on WriteCount.
+
+// GetWriteAccess gets write permission for the file.
+func (i *Inode) GetWriteAccess() error {
+	if !IsRegular(i.StableAttr) {
+		return nil
+	}
+	if atomicbitops.IncUnlessNegativeInt32(&i.WriteCount) {
+		return nil
+	}
+	return syserror.ETXTBSY
+}
+
+// PutWriteAccess releases write permission for the file.
+func (i *Inode) PutWriteAccess() {
+	if !IsRegular(i.StableAttr) {
+		return
+	}
+	atomic.AddInt32(&i.WriteCount, -1)
+}
+
+// DenyWriteAccess blocks write access to the file.
+func (i *Inode) DenyWriteAccess() error {
+	if atomicbitops.DecUnlessPositiveInt32(&i.WriteCount) {
+		return nil
+	}
+	return syserror.ETXTBSY
+}
+
+// AllowWriteAccess releases the block on write access to the file.
+func (i *Inode) AllowWriteAccess() {
+	atomic.AddInt32(&i.WriteCount, 1);
+}
+
+// InodeIsOpenForWrite returns true if the inode is open for write.
+func (i *Inode) InodeIsOpenForWrite() bool {
+	return atomic.LoadInt32(&i.WriteCount) > 0
 }
 
 // LockCtx is an Inode's lock context and contains different personalities of locks; both

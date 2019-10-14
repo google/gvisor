@@ -168,7 +168,7 @@ var (
 	ErrFileTableOverflow          = newWithHost("file table overflow", linux.ENFILE, syscall.ENFILE)
 	ErrTooManyOpenFiles           = newWithHost("too many open files", linux.EMFILE, syscall.EMFILE)
 	ErrNotTTY                     = newWithHost("not a typewriter", linux.ENOTTY, syscall.ENOTTY)
-	ErrTestFileBusy               = newWithHost("text file busy", linux.ETXTBSY, syscall.ETXTBSY)
+	ErrTextFileBusy               = newWithHost("text file busy", linux.ETXTBSY, syscall.ETXTBSY)
 	ErrFileTooBig                 = newWithHost("file too large", linux.EFBIG, syscall.EFBIG)
 	ErrNoSpace                    = newWithHost("no space left on device", linux.ENOSPC, syscall.ENOSPC)
 	ErrIllegalSeek                = newWithHost("illegal seek", linux.ESPIPE, syscall.ESPIPE)

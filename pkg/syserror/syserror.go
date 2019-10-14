@@ -74,6 +74,7 @@ var (
 	ESPIPE       = error(syscall.ESPIPE)
 	ESRCH        = error(syscall.ESRCH)
 	ETIMEDOUT    = error(syscall.ETIMEDOUT)
+	ETXTBSY      = error(syscall.ETXTBSY)
 	EUSERS       = error(syscall.EUSERS)
 	EWOULDBLOCK  = error(syscall.EWOULDBLOCK)
 	EXDEV        = error(syscall.EXDEV)
