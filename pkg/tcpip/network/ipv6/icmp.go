@@ -121,7 +121,6 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 
 	case header.ICMPv6NeighborSolicit:
 		received.NeighborSolicit.Increment()
-
 		if len(v) < header.ICMPv6NeighborSolicitMinimumSize {
 			received.Invalid.Increment()
 			return
@@ -131,7 +130,6 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			// We don't have a useful answer; the best we can do is ignore the request.
 			return
 		}
-
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6NeighborAdvertSize)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6NeighborAdvertSize))
 		pkt.SetType(header.ICMPv6NeighborAdvert)
@@ -154,7 +152,22 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		r.LocalAddress = targetAddr
 		pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
-		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: r.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		// TODO(tamird/ghanan): there exists an explicit NDP option that is
+		// used to update the neighbor table with link addresses for a
+		// neighbor from an NS (see the Source Link Layer option RFC
+		// 4861 section 4.6.1 and section 7.2.3).
+		//
+		// Furthermore, the entirety of NDP handling here seems to be
+		// contradicted by RFC 4861.
+		e.linkAddrCache.AddLinkAddress(e.nicid, r.RemoteAddress, r.RemoteLinkAddress)
+
+		// RFC 4861 Neighbor Discovery for IP version 6 (IPv6)
+		//
+		// 7.1.2. Validation of Neighbor Advertisements
+		//
+		// The IP Hop Limit field has a value of 255, i.e., the packet
+		// could not possibly have been forwarded by a router.
+		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ndpHopLimit, TOS: stack.DefaultTOS}); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -178,7 +191,6 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 			received.Invalid.Increment()
 			return
 		}
-
 		vv.TrimFront(header.ICMPv6EchoMinimumSize)
 		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6EchoMinimumSize))

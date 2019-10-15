@@ -15,7 +15,6 @@
 package ipv6
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -179,13 +178,10 @@ func visitStats(v reflect.Value, f func(string, *tcpip.StatCounter)) {
 	t := v.Type()
 	for i := 0; i < v.NumField(); i++ {
 		v := v.Field(i)
-		switch v.Kind() {
-		case reflect.Ptr:
-			f(t.Field(i).Name, v.Interface().(*tcpip.StatCounter))
-		case reflect.Struct:
+		if s, ok := v.Interface().(*tcpip.StatCounter); ok {
+			f(t.Field(i).Name, s)
+		} else {
 			visitStats(v, f)
-		default:
-			panic(fmt.Sprintf("unexpected type %s", v.Type()))
 		}
 	}
 }
