@@ -632,8 +632,6 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, _ tcpip.LinkAddr
 
 	src, dst := netProto.ParseAddresses(vv.First())
 
-	n.stack.AddLinkAddress(n.id, src, remote)
-
 	if ref := n.getRef(protocol, dst); ref != nil {
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, vv)
 		return
