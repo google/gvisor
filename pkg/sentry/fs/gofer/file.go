@@ -231,7 +231,7 @@ func (f *fileOperations) maybeSync(ctx context.Context, file *fs.File, offset, n
 	flags := file.Flags()
 	var syncType fs.SyncType
 	switch {
-	case flags.Direct || flags.Sync:
+	case flags.Sync:
 		syncType = fs.SyncAll
 	case flags.DSync:
 		syncType = fs.SyncData
@@ -254,9 +254,12 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		n   int64
 		err error
 	)
-	// The write is handled in different ways depending on the cache policy
-	// and availability of a host-mappable FD.
-	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
+
+	// Write through the page cache if O_DIRECT is not set and the cache
+	// policy allows it.
+	flags := file.Flags()
+	useCachingInodeOps := f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode)
+	if !flags.Direct && useCachingInodeOps {
 		n, err = f.inodeOperations.cachingInodeOps.Write(ctx, src, offset)
 	} else if f.inodeOperations.fileState.hostMappable != nil {
 		n, err = f.inodeOperations.fileState.hostMappable.Write(ctx, src, offset)
@@ -269,6 +272,12 @@ func (f *fileOperations) Write(ctx context.Context, file *fs.File, src usermem.I
 		// Sync failed. Report 0 bytes written, since none of them are
 		// guaranteed to have been synced.
 		return 0, syncErr
+	}
+
+	// If O_DIRECT is set, then we must invalidate any cached pages that
+	// were touched by the write.
+	if file.Flags().Direct && useCachingInodeOps {
+		f.inodeOperations.cachingInodeOps.Invalidate(offset, offset+n)
 	}
 
 	return n, err
@@ -298,11 +307,22 @@ func (f *fileOperations) Read(ctx context.Context, file *fs.File, dst usermem.IO
 		return 0, syserror.EISDIR
 	}
 
-	if f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
+	// If O_DIRECT is set, then sync the range we are about to read.
+	flags := file.Flags()
+	if flags.Direct {
+		if err := f.Fsync(ctx, file, offset, offset+dst.NumBytes(), fs.SyncAll); err != nil {
+			return 0, err
+		}
+	}
+
+	// Read through the page cache if O_DIRECT is not set and the cache
+	// policy allows it.
+	if !flags.Direct && f.inodeOperations.session().cachePolicy.useCachingInodeOps(file.Dirent.Inode) {
 		n, err := f.inodeOperations.cachingInodeOps.Read(ctx, file, dst, offset)
 		f.incrementReadCounters(start)
 		return n, err
 	}
+
 	n, err := dst.CopyOutFrom(ctx, f.handles.readWriterAt(ctx, offset))
 	f.incrementReadCounters(start)
 	return n, err

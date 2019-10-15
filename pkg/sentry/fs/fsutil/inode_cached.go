@@ -932,6 +932,22 @@ func maxFillRange(required, optional memmap.MappableRange) memmap.MappableRange 
 	return optional
 }
 
+// Invalidate invalidates the mappings in the given range.
+func (c *CachingInodeOperations) Invalidate(start, end int64) {
+	pstart, pend := fs.OffsetPageEnd(start), fs.OffsetPageEnd(end)
+	r := memmap.MappableRange{pstart, pend}
+	c.dataMu.Lock()
+	c.cache.RemoveRange(r)
+	c.dirty.RemoveRange(r)
+	c.dataMu.Unlock()
+
+	c.mapsMu.Lock()
+	c.mappings.Invalidate(r, memmap.InvalidateOpts{InvalidatePrivate: true})
+	c.mapsMu.Unlock()
+
+	c.DecRef(platform.FileRange{Start: pstart, End: pend})
+}
+
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error {
 	// Whether we have a host fd (and consequently what platform.File is
