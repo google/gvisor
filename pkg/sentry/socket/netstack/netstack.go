@@ -1177,6 +1177,25 @@ func getSockOptIPv6(t *kernel.Task, ep commonEndpoint, name, outLen int) (interf
 	case linux.IPV6_PATHMTU:
 		t.Kernel().EmitUnimplementedEvent(t)
 
+	case linux.IPV6_TCLASS:
+		// Length handling for parity with Linux.
+		if outLen == 0 {
+			return make([]byte, 0), nil
+		}
+		var v tcpip.IPv6TrafficClassOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+
+		uintv := uint32(v)
+		// Linux truncates the output binary to outLen.
+		ib := binary.Marshal(nil, usermem.ByteOrder, &uintv)
+		// Handle cases where outLen is lesser than sizeOfInt32.
+		if len(ib) > outLen {
+			ib = ib[:outLen]
+		}
+		return ib, nil
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -1243,6 +1262,20 @@ func getSockOptIP(t *kernel.Task, ep commonEndpoint, name, outLen int, family in
 			return int32(1), nil
 		}
 		return int32(0), nil
+
+	case linux.IP_TOS:
+		// Length handling for parity with Linux.
+		if outLen == 0 {
+			return []byte(nil), nil
+		}
+		var v tcpip.IPv4TOSOption
+		if err := ep.GetSockOpt(&v); err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		if outLen < sizeOfInt32 {
+			return uint8(v), nil
+		}
+		return int32(v), nil
 
 	default:
 		emitUnimplementedEventIP(t, name)
@@ -1542,6 +1575,19 @@ func setSockOptIPv6(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) 
 
 		t.Kernel().EmitUnimplementedEvent(t)
 
+	case linux.IPV6_TCLASS:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := int32(usermem.ByteOrder.Uint32(optVal))
+		if v < -1 || v > 255 {
+			return syserr.ErrInvalidArgument
+		}
+		if v == -1 {
+			v = 0
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.IPv6TrafficClassOption(v)))
+
 	default:
 		emitUnimplementedEventIPv6(t, name)
 	}
@@ -1687,6 +1733,16 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		}
 		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.TTLOption(v)))
 
+	case linux.IP_TOS:
+		if len(optVal) == 0 {
+			return nil
+		}
+		v, err := parseIntOrChar(optVal)
+		if err != nil {
+			return err
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOpt(tcpip.IPv4TOSOption(v)))
+
 	case linux.IP_ADD_SOURCE_MEMBERSHIP,
 		linux.IP_BIND_ADDRESS_NO_PORT,
 		linux.IP_BLOCK_SOURCE,
@@ -1710,7 +1766,6 @@ func setSockOptIP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *s
 		linux.IP_RECVTOS,
 		linux.IP_RECVTTL,
 		linux.IP_RETOPTS,
-		linux.IP_TOS,
 		linux.IP_TRANSPARENT,
 		linux.IP_UNBLOCK_SOURCE,
 		linux.IP_UNICAST_IF,

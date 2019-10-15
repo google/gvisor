@@ -141,6 +141,7 @@ func (x *endpoint) save(m state.Map) {
 	m.Save("snd", &x.snd)
 	m.Save("connectingAddress", &x.connectingAddress)
 	m.Save("amss", &x.amss)
+	m.Save("sendTOS", &x.sendTOS)
 	m.Save("gso", &x.gso)
 }
 
@@ -189,6 +190,7 @@ func (x *endpoint) load(m state.Map) {
 	m.LoadWait("snd", &x.snd)
 	m.Load("connectingAddress", &x.connectingAddress)
 	m.Load("amss", &x.amss)
+	m.Load("sendTOS", &x.sendTOS)
 	m.Load("gso", &x.gso)
 	m.LoadValue("lastError", new(string), func(y interface{}) { x.loadLastError(y.(string)) })
 	m.LoadValue("state", new(EndpointState), func(y interface{}) { x.loadState(y.(EndpointState)) })
