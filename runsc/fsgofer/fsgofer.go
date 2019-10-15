@@ -21,7 +21,6 @@
 package fsgofer
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -126,13 +125,6 @@ func NewAttachPoint(prefix string, c Config) (p9.Attacher, error) {
 
 // Attach implements p9.Attacher.
 func (a *attachPoint) Attach() (p9.File, error) {
-	// dirFD (1st argument) is ignored because 'prefix' is always absolute.
-	stat, err := statAt(-1, a.prefix)
-	if err != nil {
-		return nil, fmt.Errorf("stat file %q, err: %v", a.prefix, err)
-	}
-
-	// Acquire the attach point lock.
 	a.attachedMu.Lock()
 	defer a.attachedMu.Unlock()
 
@@ -140,47 +132,24 @@ func (a *attachPoint) Attach() (p9.File, error) {
 		return nil, fmt.Errorf("attach point already attached, prefix: %s", a.prefix)
 	}
 
-	// Hold the file descriptor we are converting into a p9.File.
-	var f *fd.FD
-
-	// Apply the S_IFMT bitmask so we can detect file type appropriately.
-	switch fmtStat := stat.Mode & syscall.S_IFMT; fmtStat {
-	case syscall.S_IFSOCK:
-		// Check to see if the CLI option has been set to allow the UDS mount.
-		if !a.conf.HostUDS {
-			return nil, errors.New("host UDS support is disabled")
-		}
-
-		// Attempt to open a connection. Bubble up the failures.
-		f, err = fd.DialUnix(a.prefix)
-		if err != nil {
-			return nil, err
-		}
-
-	default:
-		// Default to Read/Write permissions.
-		mode := syscall.O_RDWR
-
-		// If the configuration is Read Only or the mount point is a directory,
-		// set the mode to Read Only.
-		if a.conf.ROMount || fmtStat == syscall.S_IFDIR {
-			mode = syscall.O_RDONLY
-		}
-
-		// Open the mount point & capture the FD.
-		f, err = fd.Open(a.prefix, openFlags|mode, 0)
-		if err != nil {
-			return nil, fmt.Errorf("unable to open file %q, err: %v", a.prefix, err)
-		}
+	f, err := openAnyFile(a.prefix, func(mode int) (*fd.FD, error) {
+		return fd.Open(a.prefix, openFlags|mode, 0)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to open %q: %v", a.prefix, err)
 	}
 
-	// Return a localFile object to the caller with the UDS FD included.
-	rv, err := newLocalFile(a, f, a.prefix, stat)
+	stat, err := stat(f.FD())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to stat %q: %v", a.prefix, err)
+	}
+
+	lf, err := newLocalFile(a, f, a.prefix, stat)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create localFile %q: %v", a.prefix, err)
 	}
 	a.attached = true
-	return rv, nil
+	return lf, nil
 }
 
 // makeQID returns a unique QID for the given stat buffer.
