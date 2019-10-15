@@ -146,6 +146,19 @@ const (
 	PacketLoop
 )
 
+// NetworkHeaderParams are the header parameters given as input by the
+// transport endpoint to the network.
+type NetworkHeaderParams struct {
+	// Protocol refers to the transport protocol number.
+	Protocol tcpip.TransportProtocolNumber
+
+	// TTL refers to Time To Live field of the IP-header.
+	TTL uint8
+
+	// TOS refers to TypeOfService or TrafficClass field of the IP-header.
+	TOS uint8
+}
+
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
@@ -170,7 +183,7 @@ type NetworkEndpoint interface {
 
 	// WritePacket writes a packet to the given destination address and
 	// protocol.
-	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop PacketLooping) *tcpip.Error
+	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) *tcpip.Error
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address.

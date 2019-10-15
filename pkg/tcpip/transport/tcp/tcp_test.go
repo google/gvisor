@@ -474,6 +474,107 @@ func TestSimpleReceive(t *testing.T) {
 	)
 }
 
+func TestTOSV4(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+	c.EP = ep
+
+	const tos = 0xC0
+	if err := c.EP.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
+		t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv4TOSOption(tos), err)
+	}
+
+	var v tcpip.IPv4TOSOption
+	if err := c.EP.GetSockOpt(&v); err != nil {
+		t.Errorf("GetSockopt failed: %s", err)
+	}
+
+	if want := tcpip.IPv4TOSOption(tos); v != want {
+		t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+	}
+
+	testV4Connect(t, c, checker.TOS(tos, 0))
+
+	data := []byte{1, 2, 3}
+	view := buffer.NewView(len(data))
+	copy(view, data)
+
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	// Check that data is received.
+	b := c.GetPacket()
+	checker.IPv4(t, b,
+		checker.PayloadLen(len(data)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(790), // Acknum is initial sequence number + 1
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+		checker.TOS(tos, 0),
+	)
+
+	if p := b[header.IPv4MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(data, p) {
+		t.Errorf("got data = %x, want = %x", p, data)
+	}
+}
+
+func TestTrafficClassV6(t *testing.T) {
+	c := context.New(t, defaultMTU)
+	defer c.Cleanup()
+
+	c.CreateV6Endpoint(false)
+
+	const tos = 0xC0
+	if err := c.EP.SetSockOpt(tcpip.IPv6TrafficClassOption(tos)); err != nil {
+		t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv6TrafficClassOption(tos), err)
+	}
+
+	var v tcpip.IPv6TrafficClassOption
+	if err := c.EP.GetSockOpt(&v); err != nil {
+		t.Fatalf("GetSockopt failed: %s", err)
+	}
+
+	if want := tcpip.IPv6TrafficClassOption(tos); v != want {
+		t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+	}
+
+	// Test the connection request.
+	testV6Connect(t, c, checker.TOS(tos, 0))
+
+	data := []byte{1, 2, 3}
+	view := buffer.NewView(len(data))
+	copy(view, data)
+
+	if _, _, err := c.EP.Write(tcpip.SlicePayload(view), tcpip.WriteOptions{}); err != nil {
+		t.Fatalf("Write failed: %s", err)
+	}
+
+	// Check that data is received.
+	b := c.GetV6Packet()
+	checker.IPv6(t, b,
+		checker.PayloadLen(len(data)+header.TCPMinimumSize),
+		checker.TCP(
+			checker.DstPort(context.TestPort),
+			checker.SeqNum(uint32(c.IRS)+1),
+			checker.AckNum(790),
+			checker.TCPFlagsMatch(header.TCPFlagAck, ^uint8(header.TCPFlagPsh)),
+		),
+		checker.TOS(tos, 0),
+	)
+
+	if p := b[header.IPv6MinimumSize+header.TCPMinimumSize:]; !bytes.Equal(data, p) {
+		t.Errorf("got data = %x, want = %x", p, data)
+	}
+}
+
 func TestConnectBindToDevice(t *testing.T) {
 	for _, test := range []struct {
 		name   string

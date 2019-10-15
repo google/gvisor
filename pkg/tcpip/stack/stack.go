@@ -43,6 +43,9 @@ const (
 	resolutionTimeout = 1 * time.Second
 	// resolutionAttempts is set to the same ARP retries used in Linux.
 	resolutionAttempts = 3
+
+	// DefaultTOS is the default type of service value for network endpoints.
+	DefaultTOS = 0
 )
 
 type transportProtocolState struct {
@@ -394,7 +397,7 @@ type Stack struct {
 	// portSeed is a one-time random value initialized at stack startup
 	// and is used to seed the TCP port picking on active connections
 	//
-	// TODO(gvisor.dev/issues/940): S/R this field.
+	// TODO(gvisor.dev/issue/940): S/R this field.
 	portSeed uint32
 }
 

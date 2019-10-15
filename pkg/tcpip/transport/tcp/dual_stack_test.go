@@ -42,7 +42,7 @@ func TestV4MappedConnectOnV6Only(t *testing.T) {
 	}
 }
 
-func testV4Connect(t *testing.T, c *context.Context) {
+func testV4Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
 	// Start connection attempt.
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventOut)
@@ -55,12 +55,11 @@ func testV4Connect(t *testing.T, c *context.Context) {
 
 	// Receive SYN packet.
 	b := c.GetPacket()
-	checker.IPv4(t, b,
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagSyn),
-		),
-	)
+	synCheckers := append(checkers, checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagSyn),
+	))
+	checker.IPv4(t, b, synCheckers...)
 
 	tcp := header.TCP(header.IPv4(b).Payload())
 	c.IRS = seqnum.Value(tcp.SequenceNumber())
@@ -76,14 +75,13 @@ func testV4Connect(t *testing.T, c *context.Context) {
 	})
 
 	// Receive ACK packet.
-	checker.IPv4(t, c.GetPacket(),
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagAck),
-			checker.SeqNum(uint32(c.IRS)+1),
-			checker.AckNum(uint32(iss)+1),
-		),
-	)
+	ackCheckers := append(checkers, checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(c.IRS)+1),
+		checker.AckNum(uint32(iss)+1),
+	))
+	checker.IPv4(t, c.GetPacket(), ackCheckers...)
 
 	// Wait for connection to be established.
 	select {
@@ -152,7 +150,7 @@ func TestV4ConnectWhenBoundToV4Mapped(t *testing.T) {
 	testV4Connect(t, c)
 }
 
-func testV6Connect(t *testing.T, c *context.Context) {
+func testV6Connect(t *testing.T, c *context.Context, checkers ...checker.NetworkChecker) {
 	// Start connection attempt to IPv6 address.
 	we, ch := waiter.NewChannelEntry(nil)
 	c.WQ.EventRegister(&we, waiter.EventOut)
@@ -165,12 +163,11 @@ func testV6Connect(t *testing.T, c *context.Context) {
 
 	// Receive SYN packet.
 	b := c.GetV6Packet()
-	checker.IPv6(t, b,
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagSyn),
-		),
-	)
+	synCheckers := append(checkers, checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagSyn),
+	))
+	checker.IPv6(t, b, synCheckers...)
 
 	tcp := header.TCP(header.IPv6(b).Payload())
 	c.IRS = seqnum.Value(tcp.SequenceNumber())
@@ -186,14 +183,13 @@ func testV6Connect(t *testing.T, c *context.Context) {
 	})
 
 	// Receive ACK packet.
-	checker.IPv6(t, c.GetV6Packet(),
-		checker.TCP(
-			checker.DstPort(context.TestPort),
-			checker.TCPFlags(header.TCPFlagAck),
-			checker.SeqNum(uint32(c.IRS)+1),
-			checker.AckNum(uint32(iss)+1),
-		),
-	)
+	ackCheckers := append(checkers, checker.TCP(
+		checker.DstPort(context.TestPort),
+		checker.TCPFlags(header.TCPFlagAck),
+		checker.SeqNum(uint32(c.IRS)+1),
+		checker.AckNum(uint32(iss)+1),
+	))
+	checker.IPv6(t, c.GetV6Packet(), ackCheckers...)
 
 	// Wait for connection to be established.
 	select {
