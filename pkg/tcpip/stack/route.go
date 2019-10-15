@@ -154,16 +154,12 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, useDefaultTTL bool) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if useDefaultTTL {
-		ttl = r.DefaultTTL()
-	}
-
-	err := r.ref.ep.WritePacket(r, gso, hdr, payload, protocol, ttl, r.loop)
+	err := r.ref.ep.WritePacket(r, gso, hdr, payload, params, r.loop)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {

@@ -494,6 +494,10 @@ type endpoint struct {
 	// amss is the advertised MSS to the peer by this endpoint.
 	amss uint16
 
+	// sendTOS represents IPv4 TOS or IPv6 TrafficClass,
+	// applied while sending packets. Defaults to 0 as on Linux.
+	sendTOS uint8
+
 	gso *stack.GSO
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
@@ -1136,6 +1140,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 
 // SetSockOpt sets a socket option.
 func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	// Lower 2 bits represents ECN bits. RFC 3168, section 23.1
+	const inetECNMask = 3
 	switch v := opt.(type) {
 	case tcpip.DelayOption:
 		if v == 0 {
@@ -1296,6 +1302,23 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		// Linux returns ENOENT when an invalid congestion
 		// control algorithm is specified.
 		return tcpip.ErrNoSuchFile
+
+	case tcpip.IPv4TOSOption:
+		e.mu.Lock()
+		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
+		// ignore the bits for now.
+		e.sendTOS = uint8(v) & ^uint8(inetECNMask)
+		e.mu.Unlock()
+		return nil
+
+	case tcpip.IPv6TrafficClassOption:
+		e.mu.Lock()
+		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
+		// ignore the bits for now.
+		e.sendTOS = uint8(v) & ^uint8(inetECNMask)
+		e.mu.Unlock()
+		return nil
+
 	default:
 		return nil
 	}
@@ -1493,6 +1516,18 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.mu.Lock()
 		*o = e.cc
 		e.mu.Unlock()
+		return nil
+
+	case *tcpip.IPv4TOSOption:
+		e.mu.RLock()
+		*o = tcpip.IPv4TOSOption(e.sendTOS)
+		e.mu.RUnlock()
+		return nil
+
+	case *tcpip.IPv6TrafficClassOption:
+		e.mu.RLock()
+		*o = tcpip.IPv6TrafficClassOption(e.sendTOS)
+		e.mu.RUnlock()
 		return nil
 
 	default:

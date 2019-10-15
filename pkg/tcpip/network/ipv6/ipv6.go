@@ -98,13 +98,14 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
 	length := uint16(hdr.UsedLength() + payload.Size())
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
-		NextHeader:    uint8(protocol),
-		HopLimit:      ttl,
+		NextHeader:    uint8(params.Protocol),
+		HopLimit:      params.TTL,
+		TrafficClass:  params.TOS,
 		SrcAddr:       r.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})

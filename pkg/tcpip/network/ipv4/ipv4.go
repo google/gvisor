@@ -199,21 +199,22 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.TransportProtocolNumber, ttl uint8, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	length := uint16(hdr.UsedLength() + payload.Size())
 	id := uint32(0)
 	if length > header.IPv4MaximumHeaderSize+8 {
 		// Packets of 68 bytes or less are required by RFC 791 to not be
 		// fragmented, so we only assign ids to larger packets.
-		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, protocol, e.protocol.hashIV)%buckets], 1)
+		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, params.Protocol, e.protocol.hashIV)%buckets], 1)
 	}
 	ip.Encode(&header.IPv4Fields{
 		IHL:         header.IPv4MinimumSize,
 		TotalLength: length,
 		ID:          uint16(id),
-		TTL:         ttl,
-		Protocol:    uint8(protocol),
+		TTL:         params.TTL,
+		TOS:         params.TOS,
+		Protocol:    uint8(params.Protocol),
 		SrcAddr:     r.LocalAddress,
 		DstAddr:     r.RemoteAddress,
 	})
