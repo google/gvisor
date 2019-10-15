@@ -624,6 +624,14 @@ type BroadcastOption int
 // a default TTL.
 type DefaultTTLOption uint8
 
+// IPv4TOSOption is used by SetSockOpt/GetSockOpt to specify TOS
+// for all subsequent outgoing IPv4 packets from the endpoint.
+type IPv4TOSOption uint8
+
+// IPv6TrafficClassOption is used by SetSockOpt/GetSockOpt to specify TOS
+// for all subsequent outgoing IPv6 packets from the endpoint.
+type IPv6TrafficClassOption uint8
+
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination address in the row.

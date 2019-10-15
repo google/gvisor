@@ -64,7 +64,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	}
 }
 
-// testReceiveICMP tests receiving a UDP packet from src to dst. want is the
+// testReceiveUDP tests receiving a UDP packet from src to dst. want is the
 // expected UDP received count after receiving the packet.
 func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst tcpip.Address, want uint64) {
 	t.Helper()

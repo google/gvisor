@@ -1267,6 +1267,76 @@ func TestSetTTL(t *testing.T) {
 	}
 }
 
+func TestTOSV4(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, multicastV4, broadcast} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			const tos = 0xC0
+			var v tcpip.IPv4TOSOption
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt failed: %s", err)
+			}
+			// Test for expected default value.
+			if v != 0 {
+				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+			}
+
+			if err := c.ep.SetSockOpt(tcpip.IPv4TOSOption(tos)); err != nil {
+				c.t.Errorf("SetSockOpt(%#v) failed: %s", tcpip.IPv4TOSOption(tos), err)
+			}
+
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt failed: %s", err)
+			}
+
+			if want := tcpip.IPv4TOSOption(tos); v != want {
+				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+			}
+
+			testWrite(c, flow, checker.TOS(tos, 0))
+		})
+	}
+}
+
+func TestTOSV6(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4in6, unicastV6, unicastV6Only, multicastV4in6, multicastV6, broadcastIn6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			const tos = 0xC0
+			var v tcpip.IPv6TrafficClassOption
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt failed: %s", err)
+			}
+			// Test for expected default value.
+			if v != 0 {
+				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, 0)
+			}
+
+			if err := c.ep.SetSockOpt(tcpip.IPv6TrafficClassOption(tos)); err != nil {
+				c.t.Errorf("SetSockOpt failed: %s", err)
+			}
+
+			if err := c.ep.GetSockOpt(&v); err != nil {
+				c.t.Errorf("GetSockopt failed: %s", err)
+			}
+
+			if want := tcpip.IPv6TrafficClassOption(tos); v != want {
+				c.t.Errorf("got GetSockOpt(...) = %#v, want = %#v", v, want)
+			}
+
+			testWrite(c, flow, checker.TOS(tos, 0))
+		})
+	}
+}
+
 func TestMulticastInterfaceOption(t *testing.T) {
 	for _, flow := range []testFlow{multicastV4, multicastV4in6, multicastV6, multicastV6Only} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
