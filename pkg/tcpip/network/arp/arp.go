@@ -109,7 +109,11 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 		copy(pkt.HardwareAddressTarget(), h.HardwareAddressSender())
 		copy(pkt.ProtocolAddressTarget(), h.ProtocolAddressSender())
 		e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+		fallthrough // also fill the cache from requests
 	case header.ARPReply:
+		addr := tcpip.Address(h.ProtocolAddressSender())
+		linkAddr := tcpip.LinkAddress(h.HardwareAddressSender())
+		e.linkAddrCache.AddLinkAddress(e.nicid, addr, linkAddr)
 	}
 }
 

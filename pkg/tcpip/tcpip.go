@@ -1086,15 +1086,12 @@ func (*TransportEndpointStats) IsEndpointStats() {}
 func fillIn(v reflect.Value) {
 	for i := 0; i < v.NumField(); i++ {
 		v := v.Field(i)
-		switch v.Kind() {
-		case reflect.Ptr:
-			if s := v.Addr().Interface().(**StatCounter); *s == nil {
-				*s = &StatCounter{}
+		if s, ok := v.Addr().Interface().(**StatCounter); ok {
+			if *s == nil {
+				*s = new(StatCounter)
 			}
-		case reflect.Struct:
+		} else {
 			fillIn(v)
-		default:
-			panic(fmt.Sprintf("unexpected type %s", v.Type()))
 		}
 	}
 }
