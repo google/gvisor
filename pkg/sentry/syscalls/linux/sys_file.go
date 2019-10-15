@@ -171,20 +171,23 @@ func openAt(t *kernel.Task, dirFD int32, addr usermem.Addr, flags uint) (fd uint
 			}
 		}
 
-		// Truncate is called when O_TRUNC is specified for any kind of
-		// existing Dirent. Behavior is delegated to the entry's Truncate
-		// implementation.
-		if flags&linux.O_TRUNC != 0 {
-			if err := d.Inode.Truncate(t, d, 0); err != nil {
-				return err
-			}
-		}
-
 		file, err := d.Inode.GetFile(t, d, fileFlags)
 		if err != nil {
 			return syserror.ConvertIntr(err, kernel.ERESTARTSYS)
 		}
 		defer file.DecRef()
+
+
+		// Truncate is called when O_TRUNC is specified for any kind of
+		// existing Dirent. Behavior is delegated to the entry's Truncate
+		// implementation.
+		// And only operate file when we get one, as we will check if
+		// this file can be written in GetFile.
+		if flags&linux.O_TRUNC != 0 {
+			if err := d.Inode.Truncate(t, d, 0); err != nil {
+				return err
+			}
+		}
 
 		// Success.
 		newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{
