@@ -1,9 +1,8 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
-
-package(licenses = ["notice"])
-
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools/go_stateify:defs.bzl", "go_library")
+
+package(licenses = ["notice"])
 
 go_library(
     name = "fs",

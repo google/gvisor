@@ -1,12 +1,11 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools/go_stateify:defs.bzl", "go_library")
+
 # Package linux contains the constants and types needed to interface with a
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
-load("@io_bazel_rules_go//go:def.bzl", "go_test")
-
 package(licenses = ["notice"])
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "linux",

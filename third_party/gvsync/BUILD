@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
     default_visibility = ["//:sandbox"],
@@ -6,8 +7,6 @@ package(
 )
 
 exports_files(["LICENSE"])
-
-load("//tools/go_generics:defs.bzl", "go_template")
 
 go_template(
     name = "generic_atomicptr",

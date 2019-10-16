@@ -1,9 +1,9 @@
+load("//tools/go_stateify:defs.bzl", "go_library")
+
 package(
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )
-
-load("//tools/go_stateify:defs.bzl", "go_library")
 
 go_library(
     name = "inet",

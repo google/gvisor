@@ -1,7 +1,7 @@
-package(licenses = ["notice"])
-
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+
+package(licenses = ["notice"])
 
 go_template_instance(
     name = "transport_message_list",
