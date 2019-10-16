@@ -39,14 +39,22 @@ type handles struct {
 
 	// Host is an *fd.FD handle. May be nil.
 	Host *fd.FD
+
+	// isHostBorrowed tells whether 'Host' is owned or borrowed. If owned, it's
+	// closed on destruction, otherwise it's released.
+	isHostBorrowed bool
 }
 
 // DecRef drops a reference on handles.
 func (h *handles) DecRef() {
 	h.DecRefWithDestructor(func() {
 		if h.Host != nil {
-			if err := h.Host.Close(); err != nil {
-				log.Warningf("error closing host file: %v", err)
+			if h.isHostBorrowed {
+				h.Host.Release()
+			} else {
+				if err := h.Host.Close(); err != nil {
+					log.Warningf("error closing host file: %v", err)
+				}
 			}
 		}
 		// FIXME(b/38173783): Context is not plumbed here.

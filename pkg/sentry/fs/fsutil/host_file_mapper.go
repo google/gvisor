@@ -209,3 +209,29 @@ func (f *HostFileMapper) unmapAndRemoveLocked(chunkStart uint64, m mapping) {
 	}
 	delete(f.mappings, chunkStart)
 }
+
+// RegenerateMappings must be called when the file description mapped by f
+// changes, to replace existing mappings of the previous file description.
+func (f *HostFileMapper) RegenerateMappings(fd int) error {
+	f.mapsMu.Lock()
+	defer f.mapsMu.Unlock()
+
+	for chunkStart, m := range f.mappings {
+		prot := syscall.PROT_READ
+		if m.writable {
+			prot |= syscall.PROT_WRITE
+		}
+		_, _, errno := syscall.Syscall6(
+			syscall.SYS_MMAP,
+			m.addr,
+			chunkSize,
+			uintptr(prot),
+			syscall.MAP_SHARED|syscall.MAP_FIXED,
+			uintptr(fd),
+			uintptr(chunkStart))
+		if errno != 0 {
+			return errno
+		}
+	}
+	return nil
+}

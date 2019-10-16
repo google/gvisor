@@ -100,10 +100,27 @@ func (h *HostMappable) Translate(ctx context.Context, required, optional memmap.
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (h *HostMappable) InvalidateUnsavable(ctx context.Context) error {
+func (h *HostMappable) InvalidateUnsavable(_ context.Context) error {
 	h.mu.Lock()
 	h.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	h.mu.Unlock()
+	return nil
+}
+
+// NotifyChangeFD must be called after the file description represented by
+// CachedFileObject.FD() changes.
+func (h *HostMappable) NotifyChangeFD() error {
+	// Update existing sentry mappings to refer to the new file description.
+	if err := h.hostFileMapper.RegenerateMappings(h.backingFile.FD()); err != nil {
+		return err
+	}
+
+	// Shoot down existing application mappings of the old file description;
+	// they will be remapped with the new file description on demand.
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.mappings.InvalidateAll(memmap.InvalidateOpts{})
 	return nil
 }
 
