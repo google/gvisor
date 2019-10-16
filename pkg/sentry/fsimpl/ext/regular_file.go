@@ -152,8 +152,8 @@ func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (
 	return offset, nil
 }
 
-// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
-func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts memmap.MMapOpts) error {
+// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	// TODO(b/134676337): Implement mmap(2).
 	return syserror.ENODEV
 }

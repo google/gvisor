@@ -301,8 +301,8 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	return offset, nil
 }
 
-// IterDirents implements vfs.FileDescriptionImpl.IterDirents.
-func (fd *directoryFD) ConfigureMMap(ctx context.Context, opts memmap.MMapOpts) error {
+// ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
+func (fd *directoryFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	// mmap(2) specifies that EACCESS should be returned for non-regular file fds.
 	return syserror.EACCES
 }

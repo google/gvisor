@@ -43,9 +43,6 @@ func (fd *fileDescription) inode() *inode {
 	return fd.vfsfd.VirtualDentry().Dentry().Impl().(*dentry).inode
 }
 
-// OnClose implements vfs.FileDescriptionImpl.OnClose.
-func (fd *fileDescription) OnClose() error { return nil }
-
 // StatusFlags implements vfs.FileDescriptionImpl.StatusFlags.
 func (fd *fileDescription) StatusFlags(ctx context.Context) (uint32, error) {
 	return fd.flags, nil
