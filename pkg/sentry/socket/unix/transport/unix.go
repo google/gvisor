@@ -608,6 +608,10 @@ type ConnectedEndpoint interface {
 	// Release releases any resources owned by the ConnectedEndpoint. It should
 	// be called before droping all references to a ConnectedEndpoint.
 	Release()
+
+	// CloseUnread sets the fact that this end is closed with unread data to
+	// the peer socket.
+	CloseUnread()
 }
 
 // +stateify savable
@@ -709,6 +713,11 @@ func (e *connectedEndpoint) SendMaxQueueSize() int64 {
 // Release implements ConnectedEndpoint.Release.
 func (e *connectedEndpoint) Release() {
 	e.writeQueue.DecRef()
+}
+
+// CloseUnread implements ConnectedEndpoint.CloseUnread.
+func (e *connectedEndpoint) CloseUnread() {
+	e.writeQueue.CloseUnread()
 }
 
 // baseEndpoint is an embeddable unix endpoint base used in both the connected and connectionless

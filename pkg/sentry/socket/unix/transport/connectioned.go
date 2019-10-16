@@ -220,6 +220,11 @@ func (e *connectionedEndpoint) Close() {
 	case e.Connected():
 		e.connected.CloseSend()
 		e.receiver.CloseRecv()
+		// Still have unread data? If yes, we set this into the write
+		// end so that the peer can get ECONNRESET) when it does read.
+		if e.receiver.RecvQueuedSize() > 0 {
+			e.connected.CloseUnread()
+		}
 		c = e.connected
 		r = e.receiver
 		e.connected = nil
