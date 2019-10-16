@@ -231,6 +231,10 @@ type Config struct {
 	// ReferenceLeakMode sets reference leak check mode
 	ReferenceLeakMode refs.LeakMode
 
+	// OverlayfsStaleRead causes cached FDs to reopen after a file is opened for
+	// write to workaround overlayfs limitation on kernels before 4.19.
+	OverlayfsStaleRead bool
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
@@ -271,6 +275,7 @@ func (c *Config) ToFlags() []string {
 		"--rootless=" + strconv.FormatBool(c.Rootless),
 		"--alsologtostderr=" + strconv.FormatBool(c.AlsoLogToStderr),
 		"--ref-leak-mode=" + refsLeakModeToString(c.ReferenceLeakMode),
+		"--overlayfs-stale-read=" + strconv.FormatBool(c.OverlayfsStaleRead),
 	}
 	// Only include these if set since it is never to be used by users.
 	if c.TestOnlyAllowRunAsCurrentUserWithoutChroot {

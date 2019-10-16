@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -236,6 +237,9 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if len(args.FilePayload.Files) < 4 {
 		return fmt.Errorf("start arguments must contain stdin, stderr, and stdout followed by at least one file for the container root gofer")
 	}
+
+	// All validation passed, logs the spec for debugging.
+	specutils.LogSpec(args.Spec)
 
 	err := cm.l.startContainer(args.Spec, args.Conf, args.CID, args.FilePayload.Files)
 	if err != nil {
