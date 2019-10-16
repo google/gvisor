@@ -385,3 +385,6 @@ func (c *ConnectedEndpoint) RecvMaxQueueSize() int64 {
 func (c *ConnectedEndpoint) Release() {
 	c.ref.DecRefWithDestructor(c.close)
 }
+
+// CloseUnread implements transport.ConnectedEndpoint.CloseUnread.
+func (c *ConnectedEndpoint) CloseUnread() {}
