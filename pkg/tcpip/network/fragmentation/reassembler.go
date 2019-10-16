@@ -78,7 +78,7 @@ func (r *reassembler) updateHoles(first, last uint16, more bool) bool {
 	return used
 }
 
-func (r *reassembler) process(first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, int) {
+func (r *reassembler) process(first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	consumed := 0
@@ -86,7 +86,7 @@ func (r *reassembler) process(first, last uint16, more bool, vv buffer.Vectorise
 		// A concurrent goroutine might have already reassembled
 		// the packet and emptied the heap while this goroutine
 		// was waiting on the mutex. We don't have to do anything in this case.
-		return buffer.VectorisedView{}, false, consumed
+		return buffer.VectorisedView{}, false, consumed, nil
 	}
 	if r.updateHoles(first, last, more) {
 		// We store the incoming packet only if it filled some holes.
@@ -96,13 +96,13 @@ func (r *reassembler) process(first, last uint16, more bool, vv buffer.Vectorise
 	}
 	// Check if all the holes have been deleted and we are ready to reassamble.
 	if r.deleted < len(r.holes) {
-		return buffer.VectorisedView{}, false, consumed
+		return buffer.VectorisedView{}, false, consumed, nil
 	}
 	res, err := r.heap.reassemble()
 	if err != nil {
-		panic(fmt.Sprintf("reassemble failed with: %v. There is probably a bug in the code handling the holes.", err))
+		return buffer.VectorisedView{}, false, consumed, fmt.Errorf("fragment reassembly failed: %v", err)
 	}
-	return res, true, consumed
+	return res, true, consumed, nil
 }
 
 func (r *reassembler) tooOld(timeout time.Duration) bool {

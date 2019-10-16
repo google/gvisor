@@ -28,6 +28,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/tcpip",
         "//pkg/tcpip/buffer",
     ],
 )

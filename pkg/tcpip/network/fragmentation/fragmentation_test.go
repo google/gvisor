@@ -83,7 +83,10 @@ func TestFragmentationProcess(t *testing.T) {
 		t.Run(c.comment, func(t *testing.T) {
 			f := NewFragmentation(1024, 512, DefaultReassembleTimeout)
 			for i, in := range c.in {
-				vv, done := f.Process(in.id, in.first, in.last, in.more, in.vv)
+				vv, done, err := f.Process(in.id, in.first, in.last, in.more, in.vv)
+				if err != nil {
+					t.Fatalf("f.Process(%+v, %+d, %+d, %t, %+v) failed: %v", in.id, in.first, in.last, in.more, in.vv, err)
+				}
 				if !reflect.DeepEqual(vv, c.out[i].vv) {
 					t.Errorf("got Process(%d) = %+v, want = %+v", i, vv, c.out[i].vv)
 				}
@@ -114,7 +117,10 @@ func TestReassemblingTimeout(t *testing.T) {
 	time.Sleep(2 * timeout)
 	// Send another fragment that completes a packet.
 	// However, no packet should be reassembled because the fragment arrived after the timeout.
-	_, done := f.Process(0, 1, 1, false, vv(1, "1"))
+	_, done, err := f.Process(0, 1, 1, false, vv(1, "1"))
+	if err != nil {
+		t.Fatalf("f.Process(0, 1, 1, false, vv(1, \"1\")) failed: %v", err)
+	}
 	if done {
 		t.Errorf("Fragmentation does not respect the reassembling timeout.")
 	}

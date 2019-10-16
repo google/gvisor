@@ -326,7 +326,13 @@ func (e *endpoint) HandlePacket(r *stack.Route, vv buffer.VectorisedView) {
 			return
 		}
 		var ready bool
-		vv, ready = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
+		var err error
+		vv, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, vv)
+		if err != nil {
+			r.Stats().IP.MalformedPacketsReceived.Increment()
+			r.Stats().IP.MalformedFragmentsReceived.Increment()
+			return
+		}
 		if !ready {
 			return
 		}
