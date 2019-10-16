@@ -1,12 +1,11 @@
 load("//tools/go_stateify:defs.bzl", "go_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
     default_visibility = ["//visibility:private"],
     licenses = ["notice"],
 )
-
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 go_template_instance(
     name = "int_range",
