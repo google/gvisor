@@ -17,6 +17,6 @@ package linux
 
 const (
 	_LINUX_SYSNAME = "Linux"
-	_LINUX_RELEASE = "4.4"
+	_LINUX_RELEASE = "4.4.0"
 	_LINUX_VERSION = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
 )
