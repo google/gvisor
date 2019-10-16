@@ -107,10 +107,10 @@ var ARM64 = &kernel.SyscallTable{
 		71:  syscalls.Supported("sendfile", Sendfile),
 		72:  syscalls.Supported("pselect", Pselect),
 		73:  syscalls.Supported("ppoll", Ppoll),
-		74:  syscalls.ErrorWithEvent("signalfd4", syserror.ENOSYS, "", []string{"gvisor.dev/issue/139"}),             // TODO(b/19846426)
+		74:  syscalls.PartiallySupported("signalfd4", Signalfd4, "Semantics are slightly different.", []string{"gvisor.dev/issue/139"}),
 		75:  syscalls.ErrorWithEvent("vmsplice", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}),              // TODO(b/29354098)
 		76:  syscalls.PartiallySupported("splice", Splice, "Stub implementation.", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)
-		77:  syscalls.ErrorWithEvent("tee", syserror.ENOSYS, "", []string{"gvisor.dev/issue/138"}),                   // TODO(b/29354098)
+		77:  syscalls.Supported("tee", Tee),
 		78:  syscalls.Supported("readlinkat", Readlinkat),
 		80:  syscalls.Supported("fstat", Fstat),
 		81:  syscalls.PartiallySupported("sync", Sync, "Full data flush is not guaranteed at this time.", nil),
@@ -245,7 +245,7 @@ var ARM64 = &kernel.SyscallTable{
 		210: syscalls.PartiallySupported("shutdown", Shutdown, "Not all flags and control messages are supported.", nil),
 		211: syscalls.Supported("sendmsg", SendMsg),
 		212: syscalls.PartiallySupported("recvmsg", RecvMsg, "Not all flags and control messages are supported.", nil),
-		213: syscalls.ErrorWithEvent("readahead", syserror.ENOSYS, "", []string{"gvisor.dev/issue/261"}), // TODO(b/29351341)
+		213: syscalls.Supported("readahead", Readahead),
 		214: syscalls.Supported("brk", Brk),
 		215: syscalls.Supported("munmap", Munmap),
 		216: syscalls.Supported("mremap", Mremap),
