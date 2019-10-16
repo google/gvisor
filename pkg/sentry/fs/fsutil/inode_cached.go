@@ -959,6 +959,23 @@ func (c *CachingInodeOperations) InvalidateUnsavable(ctx context.Context) error 
 	return nil
 }
 
+// NotifyChangeFD must be called after the file description represented by
+// CachedFileObject.FD() changes.
+func (c *CachingInodeOperations) NotifyChangeFD() error {
+	// Update existing sentry mappings to refer to the new file description.
+	if err := c.hostFileMapper.RegenerateMappings(c.backingFile.FD()); err != nil {
+		return err
+	}
+
+	// Shoot down existing application mappings of the old file description;
+	// they will be remapped with the new file description on demand.
+	c.mapsMu.Lock()
+	defer c.mapsMu.Unlock()
+
+	c.mappings.InvalidateAll(memmap.InvalidateOpts{})
+	return nil
+}
+
 // Evict implements pgalloc.EvictableMemoryUser.Evict.
 func (c *CachingInodeOperations) Evict(ctx context.Context, er pgalloc.EvictableRange) {
 	c.mapsMu.Lock()
@@ -1027,7 +1044,6 @@ func (c *CachingInodeOperations) DecRef(fr platform.FileRange) {
 	}
 	c.refs.MergeAdjacent(fr)
 	c.dataMu.Unlock()
-
 }
 
 // MapInternal implements platform.File.MapInternal. This is used when we

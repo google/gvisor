@@ -2074,6 +2074,43 @@ func TestNetRaw(t *testing.T) {
 	}
 }
 
+// TestOverlayfsStaleRead most basic test that '--overlayfs-stale-read' works.
+func TestOverlayfsStaleRead(t *testing.T) {
+	conf := testutil.TestConfig()
+	conf.OverlayfsStaleRead = true
+
+	in, err := ioutil.TempFile(testutil.TmpDir(), "stale-read.in")
+	if err != nil {
+		t.Fatalf("ioutil.TempFile() failed: %v", err)
+	}
+	defer in.Close()
+	if _, err := in.WriteString("stale data"); err != nil {
+		t.Fatalf("in.Write() failed: %v", err)
+	}
+
+	out, err := ioutil.TempFile(testutil.TmpDir(), "stale-read.out")
+	if err != nil {
+		t.Fatalf("ioutil.TempFile() failed: %v", err)
+	}
+	defer out.Close()
+
+	const want = "foobar"
+	cmd := fmt.Sprintf("cat %q && echo %q> %q && cp %q %q", in.Name(), want, in.Name(), in.Name(), out.Name())
+	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", cmd)
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("Error running container: %v", err)
+	}
+
+	gotBytes, err := ioutil.ReadAll(out)
+	if err != nil {
+		t.Fatalf("out.Read() failed: %v", err)
+	}
+	got := strings.TrimSpace(string(gotBytes))
+	if want != got {
+		t.Errorf("Wrong content in out file, got: %q. want: %q", got, want)
+	}
+}
+
 // executeSync synchronously executes a new process.
 func (cont *Container) executeSync(args *control.ExecArgs) (syscall.WaitStatus, error) {
 	pid, err := cont.Execute(args)

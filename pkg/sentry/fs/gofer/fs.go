@@ -58,6 +58,11 @@ const (
 	// If present, sets CachingInodeOperationsOptions.LimitHostFDTranslation to
 	// true.
 	limitHostFDTranslationKey = "limit_host_fd_translation"
+
+	// overlayfsStaleRead if present closes cached readonly file after the first
+	// write. This is done to workaround a limitation of overlayfs in kernels
+	// before 4.19 where open FDs are not updated after the file is copied up.
+	overlayfsStaleRead = "overlayfs_stale_read"
 )
 
 // defaultAname is the default attach name.
@@ -145,6 +150,7 @@ type opts struct {
 	version                string
 	privateunixsocket      bool
 	limitHostFDTranslation bool
+	overlayfsStaleRead     bool
 }
 
 // options parses mount(2) data into structured options.
@@ -245,6 +251,11 @@ func options(data string) (opts, error) {
 	if _, ok := options[limitHostFDTranslationKey]; ok {
 		o.limitHostFDTranslation = true
 		delete(options, limitHostFDTranslationKey)
+	}
+
+	if _, ok := options[overlayfsStaleRead]; ok {
+		o.overlayfsStaleRead = true
+		delete(options, overlayfsStaleRead)
 	}
 
 	// Fail to attach if the caller wanted us to do something that we

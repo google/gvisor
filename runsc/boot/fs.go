@@ -703,6 +703,14 @@ func (c *containerMounter) createRootMount(ctx context.Context, conf *Config) (*
 	log.Infof("Mounting root over 9P, ioFD: %d", fd)
 	p9FS := mustFindFilesystem("9p")
 	opts := p9MountOptions(fd, conf.FileAccess)
+
+	if conf.OverlayfsStaleRead {
+		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
+		// can only send mount options for specs.Mounts (specs.Root is missing
+		// Options field). So assume root is always on top of overlayfs.
+		opts = append(opts, "overlayfs_stale_read")
+	}
+
 	rootInode, err := p9FS.Mount(ctx, rootDevice, mf, strings.Join(opts, ","), nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating root mount point: %v", err)
@@ -737,7 +745,6 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		fsName     string
 		opts       []string
 		useOverlay bool
-		err        error
 	)
 
 	switch m.Type {
@@ -747,7 +754,12 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		fsName = sysfs
 	case tmpfs:
 		fsName = m.Type
+
+		var err error
 		opts, err = parseAndFilterOptions(m.Options, tmpfsAllowedOptions...)
+		if err != nil {
+			return "", nil, false, err
+		}
 
 	case bind:
 		fd := c.fds.remove()
@@ -763,7 +775,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *Config, m specs.Mount) (
 		// for now.
 		log.Warningf("ignoring unknown filesystem type %q", m.Type)
 	}
-	return fsName, opts, useOverlay, err
+	return fsName, opts, useOverlay, nil
 }
 
 // mountSubmount mounts volumes inside the container's root. Because mounts may
