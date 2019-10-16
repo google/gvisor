@@ -140,57 +140,57 @@ void CheckOutput(const std::string& filename, const ExecveArray& argv,
   EXPECT_TRUE(absl::StrContains(output, expect_stderr)) << output;
 }
 
-TEST(ExecDeathTest, EmptyPath) {
+TEST(ExecTest, EmptyPath) {
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec("", {}, {}, nullptr, &execve_errno));
   EXPECT_EQ(execve_errno, ENOENT);
 }
 
-TEST(ExecDeathTest, Basic) {
+TEST(ExecTest, Basic) {
   CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)}, {},
               ArgEnvExitStatus(0, 0),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\n"));
 }
 
-TEST(ExecDeathTest, OneArg) {
+TEST(ExecTest, OneArg) {
   CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload), "1"},
               {}, ArgEnvExitStatus(1, 0),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
 }
 
-TEST(ExecDeathTest, FiveArg) {
+TEST(ExecTest, FiveArg) {
   CheckOutput(WorkloadPath(kBasicWorkload),
               {WorkloadPath(kBasicWorkload), "1", "2", "3", "4", "5"}, {},
               ArgEnvExitStatus(5, 0),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
 }
 
-TEST(ExecDeathTest, OneEnv) {
+TEST(ExecTest, OneEnv) {
   CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)},
               {"1"}, ArgEnvExitStatus(0, 1),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
 }
 
-TEST(ExecDeathTest, FiveEnv) {
+TEST(ExecTest, FiveEnv) {
   CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)},
               {"1", "2", "3", "4", "5"}, ArgEnvExitStatus(0, 5),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
 }
 
-TEST(ExecDeathTest, OneArgOneEnv) {
+TEST(ExecTest, OneArgOneEnv) {
   CheckOutput(WorkloadPath(kBasicWorkload),
               {WorkloadPath(kBasicWorkload), "arg"}, {"env"},
               ArgEnvExitStatus(1, 1),
               absl::StrCat(WorkloadPath(kBasicWorkload), "\narg\nenv\n"));
 }
 
-TEST(ExecDeathTest, InterpreterScript) {
+TEST(ExecTest, InterpreterScript) {
   CheckOutput(WorkloadPath(kExitScript), {WorkloadPath(kExitScript), "25"}, {},
               ArgEnvExitStatus(25, 0), "");
 }
 
 // Everything after the path in the interpreter script is a single argument.
-TEST(ExecDeathTest, InterpreterScriptArgSplit) {
+TEST(ExecTest, InterpreterScriptArgSplit) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -204,7 +204,7 @@ TEST(ExecDeathTest, InterpreterScriptArgSplit) {
 }
 
 // Original argv[0] is replaced with the script path.
-TEST(ExecDeathTest, InterpreterScriptArgvZero) {
+TEST(ExecTest, InterpreterScriptArgvZero) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -218,7 +218,7 @@ TEST(ExecDeathTest, InterpreterScriptArgvZero) {
 
 // Original argv[0] is replaced with the script path, exactly as passed to
 // execve.
-TEST(ExecDeathTest, InterpreterScriptArgvZeroRelative) {
+TEST(ExecTest, InterpreterScriptArgvZeroRelative) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -235,7 +235,7 @@ TEST(ExecDeathTest, InterpreterScriptArgvZeroRelative) {
 }
 
 // argv[0] is added as the script path, even if there was none.
-TEST(ExecDeathTest, InterpreterScriptArgvZeroAdded) {
+TEST(ExecTest, InterpreterScriptArgvZeroAdded) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -248,7 +248,7 @@ TEST(ExecDeathTest, InterpreterScriptArgvZeroAdded) {
 }
 
 // A NUL byte in the script line ends parsing.
-TEST(ExecDeathTest, InterpreterScriptArgNUL) {
+TEST(ExecTest, InterpreterScriptArgNUL) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -263,7 +263,7 @@ TEST(ExecDeathTest, InterpreterScriptArgNUL) {
 }
 
 // Trailing whitespace following interpreter path is ignored.
-TEST(ExecDeathTest, InterpreterScriptTrailingWhitespace) {
+TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -276,7 +276,7 @@ TEST(ExecDeathTest, InterpreterScriptTrailingWhitespace) {
 }
 
 // Multiple whitespace characters between interpreter and arg allowed.
-TEST(ExecDeathTest, InterpreterScriptArgWhitespace) {
+TEST(ExecTest, InterpreterScriptArgWhitespace) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
@@ -288,7 +288,7 @@ TEST(ExecDeathTest, InterpreterScriptArgWhitespace) {
               absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
 }
 
-TEST(ExecDeathTest, InterpreterScriptNoPath) {
+TEST(ExecTest, InterpreterScriptNoPath) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!", 0755));
 
@@ -299,7 +299,7 @@ TEST(ExecDeathTest, InterpreterScriptNoPath) {
 }
 
 // AT_EXECFN is the path passed to execve.
-TEST(ExecDeathTest, ExecFn) {
+TEST(ExecTest, ExecFn) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kStateWorkload)));
@@ -318,14 +318,14 @@ TEST(ExecDeathTest, ExecFn) {
               absl::StrCat(script_relative, "\n"));
 }
 
-TEST(ExecDeathTest, ExecName) {
+TEST(ExecTest, ExecName) {
   std::string path = WorkloadPath(kStateWorkload);
 
   CheckOutput(path, {path, "PrintExecName"}, {}, ArgEnvExitStatus(0, 0),
               absl::StrCat(Basename(path).substr(0, 15), "\n"));
 }
 
-TEST(ExecDeathTest, ExecNameScript) {
+TEST(ExecTest, ExecNameScript) {
   // Symlink through /tmp to ensure the path is short enough.
   TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kStateWorkload)));
@@ -341,14 +341,14 @@ TEST(ExecDeathTest, ExecNameScript) {
 }
 
 // execve may be called by a multithreaded process.
-TEST(ExecDeathTest, WithSiblingThread) {
+TEST(ExecTest, WithSiblingThread) {
   CheckOutput("/proc/self/exe", {"/proc/self/exe", kExecWithThread}, {},
               W_EXITCODE(42, 0), "");
 }
 
 // execve may be called from a thread other than the leader of a multithreaded
 // process.
-TEST(ExecDeathTest, FromSiblingThread) {
+TEST(ExecTest, FromSiblingThread) {
   CheckOutput("/proc/self/exe", {"/proc/self/exe", kExecFromThread}, {},
               W_EXITCODE(42, 0), "");
 }
@@ -376,7 +376,7 @@ void SignalHandler(int signo) {
 
 // Signal handlers are reset on execve(2), unless they have default or ignored
 // disposition.
-TEST(ExecStateDeathTest, HandlerReset) {
+TEST(ExecStateTest, HandlerReset) {
   struct sigaction sa;
   sa.sa_handler = SignalHandler;
   ASSERT_THAT(sigaction(SIGUSR1, &sa, nullptr), SyscallSucceeds());
@@ -392,7 +392,7 @@ TEST(ExecStateDeathTest, HandlerReset) {
 }
 
 // Ignored signal dispositions are not reset.
-TEST(ExecStateDeathTest, IgnorePreserved) {
+TEST(ExecStateTest, IgnorePreserved) {
   struct sigaction sa;
   sa.sa_handler = SIG_IGN;
   ASSERT_THAT(sigaction(SIGUSR1, &sa, nullptr), SyscallSucceeds());
@@ -408,7 +408,7 @@ TEST(ExecStateDeathTest, IgnorePreserved) {
 }
 
 // Signal masks are not reset on exec
-TEST(ExecStateDeathTest, SignalMask) {
+TEST(ExecStateTest, SignalMask) {
   sigset_t s;
   sigemptyset(&s);
   sigaddset(&s, SIGUSR1);
@@ -425,7 +425,7 @@ TEST(ExecStateDeathTest, SignalMask) {
 
 // itimers persist across execve.
 // N.B. Timers created with timer_create(2) should not be preserved!
-TEST(ExecStateDeathTest, ItimerPreserved) {
+TEST(ExecStateTest, ItimerPreserved) {
   // The fork in ForkAndExec clears itimers, so only set them up after fork.
   auto setup_itimer = [] {
     // Ignore SIGALRM, as we don't actually care about timer
