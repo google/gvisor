@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <poll.h>
 #include <stdio.h>
 #include <sys/un.h>
+
 #include "gtest/gtest.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -42,6 +44,50 @@ TEST_P(StreamUnixSocketPairTest, ReadOneSideClosed) {
   char data[10] = {};
   ASSERT_THAT(read(sockets->second_fd(), data, sizeof(data)),
               SyscallSucceedsWithValue(0));
+}
+
+TEST_P(StreamUnixSocketPairTest, RecvmsgOneSideClosed) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Set timeout so that it will not wait for ever.
+  struct timeval tv {
+    .tv_sec = 0, .tv_usec = 10
+  };
+  EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
+                         sizeof(tv)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  char received_data[10] = {};
+  struct iovec iov;
+  iov.iov_base = received_data;
+  iov.iov_len = sizeof(received_data);
+  struct msghdr msg = {};
+  msg.msg_flags = -1;
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(recvmsg(sockets->second_fd(), &msg, MSG_WAITALL),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST_P(StreamUnixSocketPairTest, ReadOneSideClosedWithUnreadData) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char buf[10] = {};
+  ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+
+  ASSERT_THAT(shutdown(sockets->first_fd(), SHUT_RDWR), SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallSucceedsWithValue(0));
+
+  ASSERT_THAT(close(sockets->release_first_fd()), SyscallSucceeds());
+
+  ASSERT_THAT(RetryEINTR(read)(sockets->second_fd(), buf, sizeof(buf)),
+              SyscallFailsWithErrno(ECONNRESET));
 }
 
 INSTANTIATE_TEST_SUITE_P(
