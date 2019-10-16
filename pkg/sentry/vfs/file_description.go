@@ -102,7 +102,7 @@ type FileDescriptionImpl interface {
 	// OnClose is called when a file descriptor representing the
 	// FileDescription is closed. Note that returning a non-nil error does not
 	// prevent the file descriptor from being closed.
-	OnClose() error
+	OnClose(ctx context.Context) error
 
 	// StatusFlags returns file description status flags, as for
 	// fcntl(F_GETFL).
@@ -180,7 +180,7 @@ type FileDescriptionImpl interface {
 	// ConfigureMMap mutates opts to implement mmap(2) for the file. Most
 	// implementations that support memory mapping can call
 	// GenericConfigureMMap with the appropriate memmap.Mappable.
-	ConfigureMMap(ctx context.Context, opts memmap.MMapOpts) error
+	ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error
 
 	// Ioctl implements the ioctl(2) syscall.
 	Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error)

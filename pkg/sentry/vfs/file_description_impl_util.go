@@ -45,7 +45,7 @@ type FileDescriptionDefaultImpl struct{}
 
 // OnClose implements FileDescriptionImpl.OnClose analogously to
 // file_operations::flush == NULL in Linux.
-func (FileDescriptionDefaultImpl) OnClose() error {
+func (FileDescriptionDefaultImpl) OnClose(ctx context.Context) error {
 	return nil
 }
 
@@ -117,7 +117,7 @@ func (FileDescriptionDefaultImpl) Sync(ctx context.Context) error {
 
 // ConfigureMMap implements FileDescriptionImpl.ConfigureMMap analogously to
 // file_operations::mmap == NULL in Linux.
-func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts memmap.MMapOpts) error {
+func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return syserror.ENODEV
 }
 
