@@ -17,6 +17,7 @@
 package fragmentation
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -82,7 +83,7 @@ func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout t
 
 // Process processes an incoming fragment belonging to an ID
 // and returns a complete packet when all the packets belonging to that ID have been received.
-func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool) {
+func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
 	f.mu.Lock()
 	r, ok := f.reassemblers[id]
 	if ok && r.tooOld(f.timeout) {
@@ -97,8 +98,15 @@ func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buf
 	}
 	f.mu.Unlock()
 
-	res, done, consumed := r.process(first, last, more, vv)
-
+	res, done, consumed, err := r.process(first, last, more, vv)
+	if err != nil {
+		// We probably got an invalid sequence of fragments. Just
+		// discard the reassembler and move on.
+		f.mu.Lock()
+		f.release(r)
+		f.mu.Unlock()
+		return buffer.VectorisedView{}, false, fmt.Errorf("fragmentation processing error: %v", err)
+	}
 	f.mu.Lock()
 	f.size += consumed
 	if done {
@@ -114,7 +122,7 @@ func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buf
 		}
 	}
 	f.mu.Unlock()
-	return res, done
+	return res, done, nil
 }
 
 func (f *Fragmentation) release(r *reassembler) {
