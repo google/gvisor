@@ -122,6 +122,10 @@ type session struct {
 	// CachingInodeOperations created by the session.
 	limitHostFDTranslation bool
 
+	// overlayfsStaleRead when set causes the readonly handle to be invalidated
+	// after file is open for write.
+	overlayfsStaleRead bool
+
 	// connID is a unique identifier for the session connection.
 	connID string `state:"wait"`
 
@@ -257,6 +261,7 @@ func Root(ctx context.Context, dev string, filesystem fs.Filesystem, superBlockF
 		aname:                  o.aname,
 		superBlockFlags:        superBlockFlags,
 		limitHostFDTranslation: o.limitHostFDTranslation,
+		overlayfsStaleRead:     o.overlayfsStaleRead,
 		mounter:                mounter,
 	}
 	s.EnableLeakCheck("gofer.session")

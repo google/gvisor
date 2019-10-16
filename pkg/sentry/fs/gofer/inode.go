@@ -100,7 +100,7 @@ type inodeFileState struct {
 	// true.
 	//
 	// Once readHandles becomes non-nil, it can't be changed until
-	// inodeFileState.Release(), because of a defect in the
+	// inodeFileState.Release()*, because of a defect in the
 	// fsutil.CachedFileObject interface: there's no way for the caller of
 	// fsutil.CachedFileObject.FD() to keep the returned FD open, so if we
 	// racily replace readHandles after inodeFileState.FD() has returned
@@ -108,6 +108,9 @@ type inodeFileState struct {
 	// FD. writeHandles can be changed if writeHandlesRW is false, since
 	// inodeFileState.FD() can't return a write-only FD, but can't be changed
 	// if writeHandlesRW is true for the same reason.
+	//
+	// * There is one notable exception in recreateReadHandles(), where it dup's
+	// the FD and invalidates the page cache.
 	readHandles    *handles `state:"nosave"`
 	writeHandles   *handles `state:"nosave"`
 	writeHandlesRW bool     `state:"nosave"`
@@ -175,43 +178,124 @@ func (i *inodeFileState) setSharedHandlesLocked(flags fs.FileFlags, h *handles) 
 
 // getHandles returns a set of handles for a new file using i opened with the
 // given flags.
-func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags) (*handles, error) {
+func (i *inodeFileState) getHandles(ctx context.Context, flags fs.FileFlags, cache *fsutil.CachingInodeOperations) (*handles, error) {
 	if !i.canShareHandles() {
 		return newHandles(ctx, i.file, flags)
 	}
+
 	i.handlesMu.Lock()
-	defer i.handlesMu.Unlock()
+	h, invalidate, err := i.getHandlesLocked(ctx, flags)
+	i.handlesMu.Unlock()
+
+	if invalidate {
+		cache.NotifyChangeFD()
+		if i.hostMappable != nil {
+			i.hostMappable.NotifyChangeFD()
+		}
+	}
+
+	return h, err
+}
+
+// getHandlesLocked returns a pointer to cached handles and a boolean indicating
+// whether previously open read handle was recreated. Host mappings must be
+// invalidated if so.
+func (i *inodeFileState) getHandlesLocked(ctx context.Context, flags fs.FileFlags) (*handles, bool, error) {
 	// Do we already have usable shared handles?
 	if flags.Write {
 		if i.writeHandles != nil && (i.writeHandlesRW || !flags.Read) {
 			i.writeHandles.IncRef()
-			return i.writeHandles, nil
+			return i.writeHandles, false, nil
 		}
 	} else if i.readHandles != nil {
 		i.readHandles.IncRef()
-		return i.readHandles, nil
+		return i.readHandles, false, nil
 	}
+
 	// No; get new handles and cache them for future sharing.
 	h, err := newHandles(ctx, i.file, flags)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+
+	// Read handles invalidation is needed if:
+	//   - Mount option 'overlayfs_stale_read' is set
+	//   - Read handle is open: nothing to invalidate otherwise
+	//   - Write handle is not open: file was not open for write and is being open
+	//     for write now (will trigger copy up in overlayfs).
+	invalidate := false
+	if i.s.overlayfsStaleRead && i.readHandles != nil && i.writeHandles == nil && flags.Write {
+		if err := i.recreateReadHandles(ctx, h, flags); err != nil {
+			return nil, false, err
+		}
+		invalidate = true
 	}
 	i.setSharedHandlesLocked(flags, h)
-	return h, nil
+	return h, invalidate, nil
+}
+
+func (i *inodeFileState) recreateReadHandles(ctx context.Context, writer *handles, flags fs.FileFlags) error {
+	h := writer
+	if !flags.Read {
+		// Writer can't be used for read, must create a new handle.
+		var err error
+		h, err = newHandles(ctx, i.file, fs.FileFlags{Read: true})
+		if err != nil {
+			return err
+		}
+		defer h.DecRef()
+	}
+
+	if i.readHandles.Host == nil {
+		// If current readHandles doesn't have a host FD, it can simply be replaced.
+		i.readHandles.DecRef()
+
+		h.IncRef()
+		i.readHandles = h
+		return nil
+	}
+
+	if h.Host == nil {
+		// Current read handle has a host FD and can't be replaced with one that
+		// doesn't, because it breaks fsutil.CachedFileObject.FD() contract.
+		log.Warningf("Read handle can't be invalidated, reads may return stale data")
+		return nil
+	}
+
+	// Due to a defect in the fsutil.CachedFileObject interface,
+	// readHandles.Host.FD() may be used outside locks, making it impossible to
+	// reliably close it. To workaround it, we dup the new FD into the old one, so
+	// operations on the old will see the new data. Then, make the new handle take
+	// ownereship of the old FD and mark the old readHandle to not close the FD
+	// when done.
+	if err := syscall.Dup2(h.Host.FD(), i.readHandles.Host.FD()); err != nil {
+		return err
+	}
+
+	h.Host.Close()
+	h.Host = fd.New(i.readHandles.Host.FD())
+	i.readHandles.isHostBorrowed = true
+	i.readHandles.DecRef()
+
+	h.IncRef()
+	i.readHandles = h
+	return nil
 }
 
 // ReadToBlocksAt implements fsutil.CachedFileObject.ReadToBlocksAt.
 func (i *inodeFileState) ReadToBlocksAt(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error) {
 	i.handlesMu.RLock()
-	defer i.handlesMu.RUnlock()
-	return i.readHandles.readWriterAt(ctx, int64(offset)).ReadToBlocks(dsts)
+	n, err := i.readHandles.readWriterAt(ctx, int64(offset)).ReadToBlocks(dsts)
+	i.handlesMu.RUnlock()
+	return n, err
 }
 
 // WriteFromBlocksAt implements fsutil.CachedFileObject.WriteFromBlocksAt.
 func (i *inodeFileState) WriteFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, offset uint64) (uint64, error) {
 	i.handlesMu.RLock()
-	defer i.handlesMu.RUnlock()
-	return i.writeHandles.readWriterAt(ctx, int64(offset)).WriteFromBlocks(srcs)
+	n, err := i.writeHandles.readWriterAt(ctx, int64(offset)).WriteFromBlocks(srcs)
+	i.handlesMu.RUnlock()
+	return n, err
 }
 
 // SetMaskedAttributes implements fsutil.CachedFileObject.SetMaskedAttributes.
@@ -449,7 +533,7 @@ func (i *inodeOperations) NonBlockingOpen(ctx context.Context, p fs.PermMask) (*
 }
 
 func (i *inodeOperations) getFileDefault(ctx context.Context, d *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
-	h, err := i.fileState.getHandles(ctx, flags)
+	h, err := i.fileState.getHandles(ctx, flags, i.cachingInodeOps)
 	if err != nil {
 		return nil, err
 	}
