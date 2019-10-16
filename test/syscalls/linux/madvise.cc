@@ -25,7 +25,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/logging.h"
 #include "test/util/memory_util.h"

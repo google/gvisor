@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/util/cleanup.h"
 #include "test/util/fs_util.h"
 #include "test/util/multiprocess_util.h"

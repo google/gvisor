@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <vector>
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"

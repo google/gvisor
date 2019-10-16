@@ -20,7 +20,6 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/socket_test_util.h"
