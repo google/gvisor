@@ -44,6 +44,7 @@ def _go_stateify_impl(ctx):
     # Run the stateify command.
     args = ["-output=%s" % output.path]
     args += ["-pkg=%s" % ctx.attr.package]
+    args += ["-arch=%s" % ctx.attr.arch]
     if ctx.attr._statepkg:
         args += ["-statepkg=%s" % ctx.attr._statepkg]
     if ctx.attr.imports:
@@ -83,6 +84,10 @@ for statified types.
             doc = "The package name for the input sources.",
             mandatory = True,
         ),
+        "arch": attr.string(
+            doc = "Target platform.",
+            mandatory = True,
+        ),
         "out": attr.output(
             doc = """
 The name of the generated file output. This must not conflict with any other
@@ -118,6 +123,10 @@ def go_library(name, srcs, deps = [], imports = [], **kwargs):
             srcs = [src for src in srcs if src.endswith(".go")],
             imports = imports,
             package = name,
+            arch = select({
+                   "@bazel_tools//src/conditions:linux_aarch64": "arm64",
+                   "//conditions:default": "amd64",
+            }),
             out = name + "_state_autogen.go",
         )
         all_srcs = srcs + [name + "_state_autogen.go"]
