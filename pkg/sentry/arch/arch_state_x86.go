@@ -89,7 +89,7 @@ func (s *State) afterLoad() {
 	copy(s.x86FPState, old)
 }
 
-// +stateify savable
+// +stateify savable_amd64
 type syscallPtraceRegs struct {
 	R15      uint64
 	R14      uint64

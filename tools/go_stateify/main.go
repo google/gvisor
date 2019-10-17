@@ -33,6 +33,7 @@ var (
 	imports  = flag.String("imports", "", "extra imports for the output file")
 	output   = flag.String("output", "", "output file")
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
+	arch     = flag.String("arch", "", "specify the target platform")
 )
 
 // resolveTypeName returns a qualified type name.
@@ -318,8 +319,8 @@ func main() {
 			}
 
 			// Only generate code for types marked
-			// "// +stateify savable" in one of the proceeding
-			// comment lines.
+			// "// +stateify savable" or "// +stateify savable_amd64" or "// +stateify savable_arm64"
+			// in one of the proceeding comment lines.
 			if d.Doc == nil {
 				continue
 			}
@@ -328,6 +329,18 @@ func main() {
 				if l.Text == "// +stateify savable" {
 					savable = true
 					break
+				}
+				// Currently, only 2 target platforms were supported: amd64, arm64.
+				if *arch == "arm64" {
+					if l.Text == "// +stateify savable_arm64" {
+						savable = true
+						break
+					}
+				} else {
+					if l.Text == "// +stateify savable_amd64" {
+						savable = true
+						break
+					}
 				}
 			}
 			if !savable {

@@ -101,7 +101,7 @@ const (
 
 // context64 represents an AMD64 context.
 //
-// +stateify savable
+// +stateify savable_amd64
 type context64 struct {
 	State
 	sigFPState []x86FPState // fpstate to be restored on sigreturn.
