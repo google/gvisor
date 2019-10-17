@@ -22,7 +22,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -33,7 +35,116 @@ var (
 	imports  = flag.String("imports", "", "extra imports for the output file")
 	output   = flag.String("output", "", "output file")
 	statePkg = flag.String("statepkg", "", "state import package; defaults to empty")
+	arch     = flag.String("arch", "", "specify the target platform")
 )
+
+// The known architectures.
+var okgoarch = []string{
+	"386",
+	"amd64",
+	"arm",
+	"arm64",
+	"mips",
+	"mipsle",
+	"mips64",
+	"mips64le",
+	"ppc64",
+	"ppc64le",
+	"riscv64",
+	"s390x",
+	"sparc64",
+	"wasm",
+}
+
+// readfile returns the content of the named file.
+func readfile(file string) string {
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		panic(fmt.Sprintf("readfile err: %v", err))
+	}
+	return string(data)
+}
+
+// matchfield reports whether the field (x,y,z) matches this build.
+// all the elements in the field must be satisfied.
+func matchfield(f string, goarch string) bool {
+	for _, tag := range strings.Split(f, ",") {
+		if !matchtag(tag, goarch) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchtag reports whether the tag (x or !x) matches this build.
+func matchtag(tag string, goarch string) bool {
+	if tag == "" {
+		return false
+	}
+	if tag[0] == '!' {
+		if len(tag) == 1 || tag[1] == '!' {
+			return false
+		}
+		return !matchtag(tag[1:], goarch)
+	}
+	return tag == goarch
+}
+
+// canBuild reports whether we can build this file for target platform by checking file name and build tags.
+// The code is derived from the Go source cmd.dist.build.shouldbuild.
+func canBuild(file, goTargetArch string) bool {
+	name := filepath.Base(file)
+	excluded := func(list []string, ok string) bool {
+		for _, x := range list {
+			if x == ok || (ok == "android" && x == "linux") || (ok == "illumos" && x == "solaris") {
+				continue
+			}
+			i := strings.Index(name, x)
+			if i <= 0 || name[i-1] != '_' {
+				continue
+			}
+			i += len(x)
+			if i == len(name) || name[i] == '.' || name[i] == '_' {
+				return true
+			}
+		}
+		return false
+	}
+	if excluded(okgoarch, goTargetArch) {
+		return false
+	}
+
+	// Check file contents for // +build lines.
+	for _, p := range strings.Split(readfile(file), "\n") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		code := p
+		i := strings.Index(code, "//")
+		if i > 0 {
+			code = strings.TrimSpace(code[:i])
+		}
+		if !strings.HasPrefix(p, "//") {
+			break
+		}
+		if !strings.Contains(p, "+build") {
+			continue
+		}
+		fields := strings.Fields(p[2:])
+		if len(fields) < 1 || fields[0] != "+build" {
+			continue
+		}
+		for _, p := range fields[1:] {
+			if matchfield(p, goTargetArch) {
+				goto fieldmatch
+			}
+		}
+		return false
+	fieldmatch:
+	}
+	return true
+}
 
 // resolveTypeName returns a qualified type name.
 func resolveTypeName(name string, typ ast.Expr) (field string, qualified string) {
@@ -256,6 +367,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Input %q can't be parsed: %v\n", filename, err)
 			os.Exit(1)
 		}
+
+		if !canBuild(filename, *arch) {
+			continue
+		}
+
 		files = append(files, f)
 	}
 
