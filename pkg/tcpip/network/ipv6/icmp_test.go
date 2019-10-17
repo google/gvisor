@@ -143,7 +143,7 @@ func TestICMPCounts(t *testing.T) {
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength: uint16(payloadLength),
 			NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-			HopLimit:      ndpHopLimit,
+			HopLimit:      header.NDPHopLimit,
 			SrcAddr:       r.LocalAddress,
 			DstAddr:       r.RemoteAddress,
 		})

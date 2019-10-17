@@ -173,6 +173,7 @@ func TestDADResolve(t *testing.T) {
 
 				// Check NDP packet.
 				checker.IPv6(t, p.Header.ToVectorisedView().First(),
+					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1)))
 			}
