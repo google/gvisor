@@ -80,6 +80,13 @@ const (
 	// icmpv6SequenceOffset is the offset of the sequence field
 	// in a ICMPv6 Echo Request/Reply message.
 	icmpv6SequenceOffset = 6
+
+	// NDPHopLimit is the expected IP hop limit value of 255 for received
+	// NDP packets, as per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1,
+	// 7.1.2 and 8.1. If the hop limit value is not 255, nodes MUST silently
+	// drop the NDP packet. All outgoing NDP packets must use this value for
+	// its IP hop limit field.
+	NDPHopLimit = 255
 )
 
 // ICMPv6Type is the ICMP type field described in RFC 4443 and friends.
