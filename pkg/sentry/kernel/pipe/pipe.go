@@ -111,11 +111,27 @@ func NewPipe(isNamed bool, sizeBytes, atomicIOBytes int64) *Pipe {
 	if atomicIOBytes > sizeBytes {
 		atomicIOBytes = sizeBytes
 	}
-	return &Pipe{
-		isNamed:       isNamed,
-		max:           sizeBytes,
-		atomicIOBytes: atomicIOBytes,
+	var p Pipe
+	initPipe(&p, isNamed, sizeBytes, atomicIOBytes)
+	return &p
+}
+
+func initPipe(pipe *Pipe, isNamed bool, sizeBytes, atomicIOBytes int64) {
+	if sizeBytes < MinimumPipeSize {
+		sizeBytes = MinimumPipeSize
 	}
+	if sizeBytes > MaximumPipeSize {
+		sizeBytes = MaximumPipeSize
+	}
+	if atomicIOBytes <= 0 {
+		atomicIOBytes = 1
+	}
+	if atomicIOBytes > sizeBytes {
+		atomicIOBytes = sizeBytes
+	}
+	pipe.isNamed = isNamed
+	pipe.max = sizeBytes
+	pipe.atomicIOBytes = atomicIOBytes
 }
 
 // NewConnectedPipe initializes a pipe and returns a pair of objects
