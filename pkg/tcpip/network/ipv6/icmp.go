@@ -21,15 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-const (
-	// ndpHopLimit is the expected IP hop limit value of 255 for received
-	// NDP packets, as per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1,
-	// 7.1.2 and 8.1. If the hop limit value is not 255, nodes MUST silently
-	// drop the NDP packet. All outgoing NDP packets must use this value for
-	// its IP hop limit field.
-	ndpHopLimit = 255
-)
-
 // handleControl handles the case when an ICMP packet contains the headers of
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
@@ -90,7 +81,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		header.ICMPv6RouterSolicit,
 		header.ICMPv6RouterAdvert,
 		header.ICMPv6RedirectMsg:
-		if iph.HopLimit() != ndpHopLimit {
+		if iph.HopLimit() != header.NDPHopLimit {
 			received.Invalid.Increment()
 			return
 		}
@@ -217,7 +208,7 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ndpHopLimit, TOS: stack.DefaultTOS}); err != nil {
+		if err := r.WritePacket(nil /* gso */, hdr, buffer.VectorisedView{}, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}); err != nil {
 			sent.Dropped.Increment()
 			return
 		}
@@ -359,7 +350,7 @@ func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
 		NextHeader:    uint8(header.ICMPv6ProtocolNumber),
-		HopLimit:      ndpHopLimit,
+		HopLimit:      header.NDPHopLimit,
 		SrcAddr:       r.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})
