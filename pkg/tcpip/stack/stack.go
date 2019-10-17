@@ -399,6 +399,9 @@ type Stack struct {
 	//
 	// TODO(gvisor.dev/issue/940): S/R this field.
 	portSeed uint32
+
+	// ndpConfigs is the NDP configurations used by interfaces.
+	ndpConfigs NDPConfigurations
 }
 
 // Options contains optional Stack configuration.
@@ -425,6 +428,13 @@ type Options struct {
 	// UnassociatedFactory produces unassociated endpoints raw endpoints.
 	// Raw endpoints are enabled only if this is non-nil.
 	UnassociatedFactory UnassociatedEndpointFactory
+
+	// NDPConfigs is the NDP configurations used by interfaces.
+	//
+	// By default, NDPConfigs will have a zero value for its
+	// DupAddrDetectTransmits field, implying that DAD will not be performed
+	// before assigning an address to a NIC.
+	NDPConfigs NDPConfigurations
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -458,6 +468,9 @@ func (*TransportEndpointInfo) IsEndpointInfo() {}
 // New allocates a new networking stack with only the requested networking and
 // transport protocols configured with default options.
 //
+// Note, NDPConfigurations will be fixed before being used by the Stack. That
+// is, if an invalid value was provided, it will be reset to the default value.
+//
 // Protocol options can be changed by calling the
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
@@ -467,6 +480,9 @@ func New(opts Options) *Stack {
 	if clock == nil {
 		clock = &tcpip.StdClock{}
 	}
+
+	// Make sure opts.NDPConfigs contains valid values only.
+	opts.NDPConfigs.validate()
 
 	s := &Stack{
 		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
@@ -480,6 +496,7 @@ func New(opts Options) *Stack {
 		handleLocal:        opts.HandleLocal,
 		icmpRateLimiter:    NewICMPRateLimiter(),
 		portSeed:           generateRandUint32(),
+		ndpConfigs:         opts.NDPConfigs,
 	}
 
 	// Add specified network protocols.
@@ -1236,6 +1253,37 @@ func (s *Stack) SetICMPBurst(burst int) {
 // ICMP message to be sent at this instant.
 func (s *Stack) AllowICMPMessage() bool {
 	return s.icmpRateLimiter.Allow()
+}
+
+// IsAddrTentative returns true if addr is tentative on the NIC with ID id.
+//
+// Note that if addr is not associated with a NIC with id ID, then this
+// function will return false. It will only return true if the address is
+// associated with the NIC AND it is tentative.
+func (s *Stack) IsAddrTentative(id tcpip.NICID, addr tcpip.Address) (bool, *tcpip.Error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return false, tcpip.ErrUnknownNICID
+	}
+
+	return nic.isAddrTentative(addr), nil
+}
+
+// DupTentativeAddrDetected attempts to inform the NIC with ID id that a
+// tentative addr on it is a duplicate on a link.
+func (s *Stack) DupTentativeAddrDetected(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	return nic.dupTentativeAddrDetected(addr)
 }
 
 // PortSeed returns a 32 bit value that can be used as a seed value for port
