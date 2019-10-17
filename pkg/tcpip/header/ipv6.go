@@ -87,7 +87,8 @@ const (
 	// section 5.
 	IPv6MinimumMTU = 1280
 
-	// IPv6Any is the non-routable IPv6 "any" meta address.
+	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
+	// known as the unspecified address.
 	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
 )
 
