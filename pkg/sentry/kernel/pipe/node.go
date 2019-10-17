@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
@@ -91,10 +90,10 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 	switch {
 	case flags.Read && !flags.Write: // O_RDONLY.
 		r := i.p.Open(ctx, d, flags)
-		i.newHandleLocked(&i.rWakeup)
+		newHandleLocked(&i.rWakeup)
 
 		if i.p.isNamed && !flags.NonBlocking && !i.p.HasWriters() {
-			if !i.waitFor(&i.wWakeup, ctx) {
+			if !waitFor(&i.mu, &i.wWakeup, ctx) {
 				r.DecRef()
 				return nil, syserror.ErrInterrupted
 			}
@@ -107,7 +106,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 
 	case flags.Write && !flags.Read: // O_WRONLY.
 		w := i.p.Open(ctx, d, flags)
-		i.newHandleLocked(&i.wWakeup)
+		newHandleLocked(&i.wWakeup)
 
 		if i.p.isNamed && !i.p.HasReaders() {
 			// On a nonblocking, write-only open, the open fails with ENXIO if the
@@ -117,7 +116,7 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 				return nil, syserror.ENXIO
 			}
 
-			if !i.waitFor(&i.rWakeup, ctx) {
+			if !waitFor(&i.mu, &i.rWakeup, ctx) {
 				w.DecRef()
 				return nil, syserror.ErrInterrupted
 			}
@@ -127,71 +126,12 @@ func (i *inodeOperations) GetFile(ctx context.Context, d *fs.Dirent, flags fs.Fi
 	case flags.Read && flags.Write: // O_RDWR.
 		// Pipes opened for read-write always succeeds without blocking.
 		rw := i.p.Open(ctx, d, flags)
-		i.newHandleLocked(&i.rWakeup)
-		i.newHandleLocked(&i.wWakeup)
+		newHandleLocked(&i.rWakeup)
+		newHandleLocked(&i.wWakeup)
 		return rw, nil
 
 	default:
 		return nil, syserror.EINVAL
-	}
-}
-
-// waitFor blocks until the underlying pipe has at least one reader/writer is
-// announced via 'wakeupChan', or until 'sleeper' is cancelled. Any call to this
-// function will block for either readers or writers, depending on where
-// 'wakeupChan' points.
-//
-// f.mu must be held by the caller. waitFor returns with f.mu held, but it will
-// drop f.mu before blocking for any reader/writers.
-func (i *inodeOperations) waitFor(wakeupChan *chan struct{}, sleeper amutex.Sleeper) bool {
-	// Ideally this function would simply use a condition variable. However, the
-	// wait needs to be interruptible via 'sleeper', so we must sychronize via a
-	// channel. The synchronization below relies on the fact that closing a
-	// channel unblocks all receives on the channel.
-
-	// Does an appropriate wakeup channel already exist? If not, create a new
-	// one. This is all done under f.mu to avoid races.
-	if *wakeupChan == nil {
-		*wakeupChan = make(chan struct{})
-	}
-
-	// Grab a local reference to the wakeup channel since it may disappear as
-	// soon as we drop f.mu.
-	wakeup := *wakeupChan
-
-	// Drop the lock and prepare to sleep.
-	i.mu.Unlock()
-	cancel := sleeper.SleepStart()
-
-	// Wait for either a new reader/write to be signalled via 'wakeup', or
-	// for the sleep to be cancelled.
-	select {
-	case <-wakeup:
-		sleeper.SleepFinish(true)
-	case <-cancel:
-		sleeper.SleepFinish(false)
-	}
-
-	// Take the lock and check if we were woken. If we were woken and
-	// interrupted, the former takes priority.
-	i.mu.Lock()
-	select {
-	case <-wakeup:
-		return true
-	default:
-		return false
-	}
-}
-
-// newHandleLocked signals a new pipe reader or writer depending on where
-// 'wakeupChan' points. This unblocks any corresponding reader or writer
-// waiting for the other end of the channel to be opened, see Fifo.waitFor.
-//
-// i.mu must be held.
-func (*inodeOperations) newHandleLocked(wakeupChan *chan struct{}) {
-	if *wakeupChan != nil {
-		close(*wakeupChan)
-		*wakeupChan = nil
 	}
 }
 
