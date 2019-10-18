@@ -220,6 +220,18 @@ var udsSyscalls = seccomp.SyscallRules{
 	syscall.SYS_SOCKET: []seccomp.Rule{
 		{
 			seccomp.AllowValue(syscall.AF_UNIX),
+			seccomp.AllowValue(syscall.SOCK_STREAM),
+			seccomp.AllowValue(0),
+		},
+		{
+			seccomp.AllowValue(syscall.AF_UNIX),
+			seccomp.AllowValue(syscall.SOCK_DGRAM),
+			seccomp.AllowValue(0),
+		},
+		{
+			seccomp.AllowValue(syscall.AF_UNIX),
+			seccomp.AllowValue(syscall.SOCK_SEQPACKET),
+			seccomp.AllowValue(0),
 		},
 	},
 	syscall.SYS_CONNECT: []seccomp.Rule{
