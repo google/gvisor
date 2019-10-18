@@ -140,6 +140,18 @@ TEST_P(AllSocketPairTest, Connect) {
               SyscallSucceeds());
 }
 
+TEST_P(AllSocketPairTest, ConnectNonListening) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  ASSERT_THAT(bind(sockets->first_fd(), sockets->first_addr(),
+                   sockets->first_addr_size()),
+              SyscallSucceeds());
+
+  ASSERT_THAT(connect(sockets->second_fd(), sockets->first_addr(),
+                      sockets->first_addr_size()),
+              SyscallFailsWithErrno(ECONNREFUSED));
+}
+
 TEST_P(AllSocketPairTest, ConnectToFilePath) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 

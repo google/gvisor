@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -42,6 +41,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -286,7 +286,7 @@ func WaitForHTTP(port int, timeout time.Duration) error {
 		url := fmt.Sprintf("http://localhost:%d/", port)
 		resp, err := c.Get(url)
 		if err != nil {
-			log.Printf("Waiting %s: %v", url, err)
+			log.Infof("Waiting %s: %v", url, err)
 			return err
 		}
 		resp.Body.Close()

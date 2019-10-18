@@ -265,10 +265,10 @@ func openAnyFileFromParent(parent *localFile, name string) (*fd.FD, string, erro
 // actual file open and is customizable by the caller.
 func openAnyFile(path string, fn func(mode int) (*fd.FD, error)) (*fd.FD, error) {
 	// Attempt to open file in the following mode in order:
-	//   1. RDONLY | NONBLOCK: for all files, works for directories and ro mounts too.
-	//      Use non-blocking to prevent getting stuck inside open(2) for FIFOs. This option
-	//      has no effect on regular files.
-	//   2. PATH: for symlinks
+	//   1. RDONLY | NONBLOCK: for all files, directories, ro mounts, FIFOs.
+	//      Use non-blocking to prevent getting stuck inside open(2) for
+	//      FIFOs. This option has no effect on regular files.
+	//   2. PATH: for symlinks, sockets.
 	modes := []int{syscall.O_RDONLY | syscall.O_NONBLOCK, unix.O_PATH}
 
 	var err error
@@ -1032,12 +1032,48 @@ func (l *localFile) Flush() error {
 }
 
 // Connect implements p9.File.
-func (l *localFile) Connect(p9.ConnectFlags) (*fd.FD, error) {
-	// Check to see if the CLI option has been set to allow the UDS mount.
+func (l *localFile) Connect(flags p9.ConnectFlags) (*fd.FD, error) {
 	if !l.attachPoint.conf.HostUDS {
 		return nil, syscall.ECONNREFUSED
 	}
-	return fd.DialUnix(l.hostPath)
+
+	// TODO(gvisor.dev/issue/1003): Due to different app vs replacement
+	// mappings, the app path may have fit in the sockaddr, but we can't
+	// fit f.path in our sockaddr. We'd need to redirect through a shorter
+	// path in order to actually connect to this socket.
+	if len(l.hostPath) > linux.UnixPathMax {
+		return nil, syscall.ECONNREFUSED
+	}
+
+	var stype int
+	switch flags {
+	case p9.StreamSocket:
+		stype = syscall.SOCK_STREAM
+	case p9.DgramSocket:
+		stype = syscall.SOCK_DGRAM
+	case p9.SeqpacketSocket:
+		stype = syscall.SOCK_SEQPACKET
+	default:
+		return nil, syscall.ENXIO
+	}
+
+	f, err := syscall.Socket(syscall.AF_UNIX, stype, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := syscall.SetNonblock(f, true); err != nil {
+		syscall.Close(f)
+		return nil, err
+	}
+
+	sa := syscall.SockaddrUnix{Name: l.hostPath}
+	if err := syscall.Connect(f, &sa); err != nil {
+		syscall.Close(f)
+		return nil, err
+	}
+
+	return fd.New(f), nil
 }
 
 // Close implements p9.File.

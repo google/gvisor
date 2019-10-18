@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/runsc/testutil"
 	"gvisor.dev/gvisor/test/syscalls/gtest"
+	"gvisor.dev/gvisor/test/uds"
 )
 
 // Location of syscall tests, relative to the repo root.
@@ -50,6 +51,8 @@ var (
 	overlay    = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	parallel   = flag.Bool("parallel", false, "run tests in parallel")
 	runscPath  = flag.String("runsc", "", "path to runsc binary")
+
+	addUDSTree = flag.Bool("add-uds-tree", false, "expose a tree of UDS utilities for use in tests")
 )
 
 // runTestCaseNative runs the test case directly on the host machine.
@@ -86,6 +89,19 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	// intepret them.
 	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
+	if *addUDSTree {
+		socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+		if err != nil {
+			t.Fatalf("failed to create socket tree: %v", err)
+		}
+		defer cleanup()
+
+		env = append(env, "TEST_UDS_TREE="+socketDir)
+		// On Linux, the concept of "attach" location doesn't exist.
+		// Just pass the same path to make these test identical.
+		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
+	}
+
 	cmd := exec.Command(testBin, gtest.FilterTestFlag+"="+tc.FullName())
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
@@ -96,14 +112,186 @@ func runTestCaseNative(testBin string, tc gtest.TestCase, t *testing.T) {
 	}
 }
 
-// runsTestCaseRunsc runs the test case in runsc.
-func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
+// runRunsc runs spec in runsc in a standard test configuration.
+//
+// runsc logs will be saved to a path in TEST_UNDECLARED_OUTPUTS_DIR.
+//
+// Returns an error if the sandboxed application exits non-zero.
+func runRunsc(tc gtest.TestCase, spec *specs.Spec) error {
+	bundleDir, err := testutil.SetupBundleDir(spec)
+	if err != nil {
+		return fmt.Errorf("SetupBundleDir failed: %v", err)
+	}
+	defer os.RemoveAll(bundleDir)
+
 	rootDir, err := testutil.SetupRootDir()
 	if err != nil {
-		t.Fatalf("SetupRootDir failed: %v", err)
+		return fmt.Errorf("SetupRootDir failed: %v", err)
 	}
 	defer os.RemoveAll(rootDir)
 
+	name := tc.FullName()
+	id := testutil.UniqueContainerID()
+	log.Infof("Running test %q in container %q", name, id)
+	specutils.LogSpec(spec)
+
+	args := []string{
+		"-root", rootDir,
+		"-network=none",
+		"-log-format=text",
+		"-TESTONLY-unsafe-nonroot=true",
+		"-net-raw=true",
+		fmt.Sprintf("-panic-signal=%d", syscall.SIGTERM),
+		"-watchdog-action=panic",
+		"-platform", *platform,
+		"-file-access", *fileAccess,
+	}
+	if *overlay {
+		args = append(args, "-overlay")
+	}
+	if *debug {
+		args = append(args, "-debug", "-log-packets=true")
+	}
+	if *strace {
+		args = append(args, "-strace")
+	}
+	if *addUDSTree {
+		args = append(args, "-fsgofer-host-uds")
+	}
+
+	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+		tdir := filepath.Join(outDir, strings.Replace(name, "/", "_", -1))
+		if err := os.MkdirAll(tdir, 0755); err != nil {
+			return fmt.Errorf("could not create test dir: %v", err)
+		}
+		debugLogDir, err := ioutil.TempDir(tdir, "runsc")
+		if err != nil {
+			return fmt.Errorf("could not create temp dir: %v", err)
+		}
+		debugLogDir += "/"
+		log.Infof("runsc logs: %s", debugLogDir)
+		args = append(args, "-debug-log", debugLogDir)
+
+		// Default -log sends messages to stderr which makes reading the test log
+		// difficult. Instead, drop them when debug log is enabled given it's a
+		// better place for these messages.
+		args = append(args, "-log=/dev/null")
+	}
+
+	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
+	// as root inside that namespace to get it.
+	rArgs := append(args, "run", "--bundle", bundleDir, id)
+	cmd := exec.Command(*runscPath, rArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+		// Set current user/group as root inside the namespace.
+		UidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
+		},
+		GidMappings: []syscall.SysProcIDMap{
+			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
+		},
+		GidMappingsEnableSetgroups: false,
+		Credential: &syscall.Credential{
+			Uid: 0,
+			Gid: 0,
+		},
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM)
+	go func() {
+		s, ok := <-sig
+		if !ok {
+			return
+		}
+		log.Warningf("%s: Got signal: %v", name, s)
+		done := make(chan bool)
+		go func() {
+			dArgs := append(args, "-alsologtostderr=true", "debug", "--stacks", id)
+			cmd := exec.Command(*runscPath, dArgs...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+			done <- true
+		}()
+
+		timeout := time.After(3 * time.Second)
+		select {
+		case <-timeout:
+			log.Infof("runsc debug --stacks is timeouted")
+		case <-done:
+		}
+
+		log.Warningf("Send SIGTERM to the sandbox process")
+		dArgs := append(args, "debug",
+			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
+			id)
+		cmd = exec.Command(*runscPath, dArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Run()
+	}()
+
+	err = cmd.Run()
+
+	signal.Stop(sig)
+	close(sig)
+
+	return err
+}
+
+// setupUDSTree updates the spec to expose a UDS tree for gofer socket testing.
+func setupUDSTree(spec *specs.Spec) (cleanup func(), err error) {
+	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create socket tree: %v", err)
+	}
+
+	// Standard access to entire tree.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets",
+		Source:      socketDir,
+		Type:        "bind",
+	})
+
+	// Individial attach points for each socket to test mounts that attach
+	// directly to the sockets.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/stream/echo",
+		Source:      filepath.Join(socketDir, "stream/echo"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/stream/nonlistening",
+		Source:      filepath.Join(socketDir, "stream/nonlistening"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/seqpacket/echo",
+		Source:      filepath.Join(socketDir, "seqpacket/echo"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/seqpacket/nonlistening",
+		Source:      filepath.Join(socketDir, "seqpacket/nonlistening"),
+		Type:        "bind",
+	})
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/sockets-attach/dgram/null",
+		Source:      filepath.Join(socketDir, "dgram/null"),
+		Type:        "bind",
+	})
+
+	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_TREE=/tmp/sockets")
+	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
+
+	return cleanup, nil
+}
+
+// runsTestCaseRunsc runs the test case in runsc.
+func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 	// Run a new container with the test executable and filter for the
 	// given test suite and name.
 	spec := testutil.NewSpecWithArgs(testBin, gtest.FilterTestFlag+"="+tc.FullName())
@@ -171,115 +359,17 @@ func runTestCaseRunsc(testBin string, tc gtest.TestCase, t *testing.T) {
 
 	spec.Process.Env = env
 
-	bundleDir, err := testutil.SetupBundleDir(spec)
-	if err != nil {
-		t.Fatalf("SetupBundleDir failed: %v", err)
-	}
-	defer os.RemoveAll(bundleDir)
-
-	id := testutil.UniqueContainerID()
-	log.Infof("Running test %q in container %q", tc.FullName(), id)
-	specutils.LogSpec(spec)
-
-	args := []string{
-		"-platform", *platform,
-		"-root", rootDir,
-		"-file-access", *fileAccess,
-		"-network=none",
-		"-log-format=text",
-		"-TESTONLY-unsafe-nonroot=true",
-		"-net-raw=true",
-		fmt.Sprintf("-panic-signal=%d", syscall.SIGTERM),
-		"-watchdog-action=panic",
-	}
-	if *overlay {
-		args = append(args, "-overlay")
-	}
-	if *debug {
-		args = append(args, "-debug", "-log-packets=true")
-	}
-	if *strace {
-		args = append(args, "-strace")
-	}
-	if outDir, ok := syscall.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
-		tdir := filepath.Join(outDir, strings.Replace(tc.FullName(), "/", "_", -1))
-		if err := os.MkdirAll(tdir, 0755); err != nil {
-			t.Fatalf("could not create test dir: %v", err)
-		}
-		debugLogDir, err := ioutil.TempDir(tdir, "runsc")
+	if *addUDSTree {
+		cleanup, err := setupUDSTree(spec)
 		if err != nil {
-			t.Fatalf("could not create temp dir: %v", err)
+			t.Fatalf("error creating UDS tree: %v", err)
 		}
-		debugLogDir += "/"
-		log.Infof("runsc logs: %s", debugLogDir)
-		args = append(args, "-debug-log", debugLogDir)
-
-		// Default -log sends messages to stderr which makes reading the test log
-		// difficult. Instead, drop them when debug log is enabled given it's a
-		// better place for these messages.
-		args = append(args, "-log=/dev/null")
+		defer cleanup()
 	}
 
-	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
-	// as root inside that namespace to get it.
-	rArgs := append(args, "run", "--bundle", bundleDir, id)
-	cmd := exec.Command(*runscPath, rArgs...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
-		// Set current user/group as root inside the namespace.
-		UidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
-		},
-		GidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
-		},
-		GidMappingsEnableSetgroups: false,
-		Credential: &syscall.Credential{
-			Uid: 0,
-			Gid: 0,
-		},
+	if err := runRunsc(tc, spec); err != nil {
+		t.Errorf("test %q failed with error %v, want nil", tc.FullName(), err)
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGTERM)
-	go func() {
-		s, ok := <-sig
-		if !ok {
-			return
-		}
-		t.Errorf("%s: Got signal: %v", tc.FullName(), s)
-		done := make(chan bool)
-		go func() {
-			dArgs := append(args, "-alsologtostderr=true", "debug", "--stacks", id)
-			cmd := exec.Command(*runscPath, dArgs...)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Run()
-			done <- true
-		}()
-
-		timeout := time.Tick(3 * time.Second)
-		select {
-		case <-timeout:
-			t.Logf("runsc debug --stacks is timeouted")
-		case <-done:
-		}
-
-		t.Logf("Send SIGTERM to the sandbox process")
-		dArgs := append(args, "debug",
-			fmt.Sprintf("--signal=%d", syscall.SIGTERM),
-			id)
-		cmd = exec.Command(*runscPath, dArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Run()
-	}()
-	if err = cmd.Run(); err != nil {
-		t.Errorf("test %q exited with status %v, want 0", tc.FullName(), err)
-	}
-	signal.Stop(sig)
-	close(sig)
 }
 
 // filterEnv returns an environment with the blacklisted variables removed.
