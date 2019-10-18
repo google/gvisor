@@ -163,6 +163,26 @@ PosixError Chmod(absl::string_view path, int mode) {
   return NoError();
 }
 
+PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
+                   dev_t dev) {
+  int res = mknodat(dfd.get(), std::string(path).c_str(), mode, dev);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("mknod ", path));
+  }
+
+  return NoError();
+}
+
+PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
+                    int flags) {
+  int res = unlinkat(dfd.get(), std::string(path).c_str(), flags);
+  if (res < 0) {
+    return PosixError(errno, absl::StrCat("unlink ", path));
+  }
+
+  return NoError();
+}
+
 PosixError Mkdir(absl::string_view path, int mode) {
   int res = mkdir(std::string(path).c_str(), mode);
   if (res < 0) {
