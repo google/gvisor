@@ -231,11 +231,21 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
       setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
       SyscallSucceeds());
 
-  char buf[100] = {};
+  const int buf_size = 5 * kPageSize;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF, &buf_size,
+                         sizeof(buf_size)),
+              SyscallSucceeds());
+  EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVBUF, &buf_size,
+                         sizeof(buf_size)),
+              SyscallSucceeds());
+
+  // The buffer size should be big enough to avoid many iterations in the next
+  // loop. Otherwise, this will slow down cooperative_save tests.
+  std::vector<char> buf(kPageSize);
   for (;;) {
     int ret;
     ASSERT_THAT(
-        ret = RetryEINTR(send)(sockets->first_fd(), buf, sizeof(buf), 0),
+        ret = RetryEINTR(send)(sockets->first_fd(), buf.data(), buf.size(), 0),
         ::testing::AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EAGAIN)));
     if (ret == -1) {
       break;
