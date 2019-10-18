@@ -14,7 +14,7 @@ APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
 default: website
 .PHONY: default
 
-website: all-upstream app public/static
+website: all-upstream app static-production
 .PHONY: website
 
 app: $(APP_TARGET)
@@ -44,8 +44,13 @@ content/docs/community/sigs: upstream/community $(wildcard upstream/community/si
 $(APP_TARGET): public $(APP_SOURCE)
 	cp -a cmd/gvisor-website/$(patsubst public/%,%,$@) public/
 
-public/static: compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
+static-production: compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')
 	HUGO_ENV="production" $(HUGO)
+.PHONY: static-production
+
+static-staging: compatibility-docs node_modules config.toml $(shell find archetypes assets content themes -type f | sed 's/ /\\ /g')                           
+	$(HUGO) -b  "https://staging-$(shell git branch | grep \* | cut -d ' ' -f2)-dot-gvisor-website.appspot.com"
+.PHONY: static-staging
 
 node_modules: package.json package-lock.json
 	# Use npm ci because npm install will update the package-lock.json.
@@ -77,9 +82,16 @@ server: website
 .PHONY: server
 
 # Deploy the website to App Engine.
-deploy: $(APP_TARGET)
+deploy: website
 	cd public && $(GCLOUD) app deploy
 .PHONY: deploy
+
+# Stage the website to App Engine at a version based on the git branch name.
+stage: all-upstream app static-staging
+	# Disallow indexing staged content.
+	printf "User-agent: *\nDisallow: /" > public/static/robots.txt
+	cd public && $(GCLOUD) app deploy -v staging-$(shell git branch | grep \* | cut -d ' ' -f2) --no-promote
+.PHONY: stage
 
 # CI related Commmands
 ##############################################################################
