@@ -173,11 +173,6 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 
 	for e := list.Front(); e != nil; e = e.Next() {
 		r := e.(*referencedNetworkEndpoint)
-		// TODO(crawshaw): allow broadcast address when SO_BROADCAST is set.
-		switch r.ep.ID().LocalAddress {
-		case header.IPv4Broadcast, header.IPv4Any:
-			continue
-		}
 		if r.isValidForOutgoing() && r.tryIncRef() {
 			return r
 		}
