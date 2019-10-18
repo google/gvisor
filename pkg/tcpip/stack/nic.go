@@ -19,7 +19,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/ilist"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,7 +36,7 @@ type NIC struct {
 	mu            sync.RWMutex
 	spoofing      bool
 	promiscuous   bool
-	primary       map[tcpip.NetworkProtocolNumber]*ilist.List
+	primary       map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
 	endpoints     map[NetworkEndpointID]*referencedNetworkEndpoint
 	addressRanges []tcpip.Subnet
 	mcastJoins    map[NetworkEndpointID]int32
@@ -85,7 +84,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 		name:       name,
 		linkEP:     ep,
 		loopback:   loopback,
-		primary:    make(map[tcpip.NetworkProtocolNumber]*ilist.List),
+		primary:    make(map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint),
 		endpoints:  make(map[NetworkEndpointID]*referencedNetworkEndpoint),
 		mcastJoins: make(map[NetworkEndpointID]int32),
 		stats: NICStats{
@@ -166,13 +165,7 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-	list := n.primary[protocol]
-	if list == nil {
-		return nil
-	}
-
-	for e := list.Front(); e != nil; e = e.Next() {
-		r := e.(*referencedNetworkEndpoint)
+	for _, r := range n.primary[protocol] {
 		if r.isValidForOutgoing() && r.tryIncRef() {
 			return r
 		}
@@ -357,17 +350,11 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	n.endpoints[id] = ref
 
-	l, ok := n.primary[protocolAddress.Protocol]
-	if !ok {
-		l = &ilist.List{}
-		n.primary[protocolAddress.Protocol] = l
-	}
-
 	switch peb {
 	case CanBePrimaryEndpoint:
-		l.PushBack(ref)
+		n.primary[protocolAddress.Protocol] = append(n.primary[protocolAddress.Protocol], ref)
 	case FirstPrimaryEndpoint:
-		l.PushFront(ref)
+		n.primary[protocolAddress.Protocol] = append([]*referencedNetworkEndpoint{ref}, n.primary[protocolAddress.Protocol]...)
 	}
 
 	// If we are adding a tentative IPv6 address, start DAD.
@@ -425,8 +412,7 @@ func (n *NIC) PrimaryAddresses() []tcpip.ProtocolAddress {
 
 	var addrs []tcpip.ProtocolAddress
 	for proto, list := range n.primary {
-		for e := list.Front(); e != nil; e = e.Next() {
-			ref := e.(*referencedNetworkEndpoint)
+		for _, ref := range list {
 			// Don't include tentative, expired or tempory endpoints
 			// to avoid confusion and prevent the caller from using
 			// those.
@@ -508,9 +494,11 @@ func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 	}
 
 	delete(n.endpoints, id)
-	wasInList := r.Next() != nil || r.Prev() != nil || r == n.primary[r.protocol].Front()
-	if wasInList {
-		n.primary[r.protocol].Remove(r)
+	for i, ref := range n.primary[r.protocol] {
+		if ref == r {
+			n.primary[r.protocol] = append(n.primary[r.protocol][:i], n.primary[r.protocol][i+1:]...)
+			break
+		}
 	}
 
 	r.ep.Close()
@@ -869,7 +857,6 @@ const (
 )
 
 type referencedNetworkEndpoint struct {
-	ilist.Entry
 	ep       NetworkEndpoint
 	nic      *NIC
 	protocol tcpip.NetworkProtocolNumber
