@@ -140,7 +140,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
 			NetProto:   netProto,
-			TransProto: header.TCPProtocolNumber,
+			TransProto: header.UDPProtocolNumber,
 		},
 		waiterQueue: waiterQueue,
 		// RFC 1075 section 5.4 recommends a TTL of 1 for membership
