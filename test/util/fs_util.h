@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "absl/strings/string_view.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 
 namespace gvisor {
@@ -43,6 +44,14 @@ PosixError Delete(absl::string_view path);
 
 // Changes the mode of a file or returns an error.
 PosixError Chmod(absl::string_view path, int mode);
+
+// Create a special or ordinary file.
+PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
+                   dev_t dev);
+
+// Unlink the file.
+PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
+                    int flags);
 
 // Truncates a file to the given length or returns an error.
 PosixError Truncate(absl::string_view path, int length);
