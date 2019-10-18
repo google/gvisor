@@ -109,7 +109,7 @@ func TestExecPrivileged(t *testing.T) {
 	t.Logf("Exec CapEff: %v", got)
 	want := fmt.Sprintf("CapEff:\t%016x\n", specutils.AllCapabilitiesUint64()&^bits.MaskOf64(int(linux.CAP_NET_RAW)))
 	if got != want {
-		t.Errorf("wrong capabilities, got: %q, want: %q", got, want)
+		t.Errorf("Wrong capabilities, got: %q, want: %q. Make sure runsc is not using '--net-raw'", got, want)
 	}
 }
 
