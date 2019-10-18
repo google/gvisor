@@ -85,9 +85,12 @@ $ docker run --runtime=runsc -it ubuntu dmesg
 Note that this is easily replicated by an attacker so applications should never
 use `dmesg` to verify the runtime in a security sensitive context.
 
-Next, look at the different options available for gVisor: [platform](../platforms/),
-[network](../networking/), [filesystem](../filesystem/).
+Next, look at the different options available for gVisor: [platform][platforms],
+[network][networking], [filesystem][filesystem].
 
 [docker]: https://docs.docker.com/install/
-
 [storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
+
+[filesystem]: /docs/user_guide/filesystem/
+[networking]: /docs/user_guide/networking/
+[platforms]: /docs/user_guide/platforms/

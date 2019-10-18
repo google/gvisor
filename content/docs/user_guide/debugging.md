@@ -4,7 +4,7 @@ weight = 120
 +++
 
 To enable debug and system call logging, add the `runtimeArgs` below to your
-[Docker](../docker/) configuration (`/etc/docker/daemon.json`):
+[Docker](../quick_start/docker/) configuration (`/etc/docker/daemon.json`):
 
 ```json
 {

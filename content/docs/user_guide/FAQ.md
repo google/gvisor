@@ -25,15 +25,15 @@ Binaries run in gVisor should be built for the
 
 ### Can I run Docker images using gVisor.
 
-Yes. Please see the [Docker Quick Start](/docs/user_guide/docker/).
+Yes. Please see the [Docker Quick Start][docker].
 
 ### Can I run Kubernetes pods using gVisor.
 
-Yes. Please see the [Docker Quick Start](/docs/user_guide/kubernetes/).
+Yes. Please see the [Docker Quick Start][k8s].
 
 ### What's the security model?
 
-See the [Security Model](../../architecture_guide/security/).
+See the [Security Model][security-model].
 
 ## Troubleshooting
 
@@ -41,18 +41,18 @@ See the [Security Model](../../architecture_guide/security/).
 
 If you’re having problems running a container with `runsc` it’s most likely due
 to a compatibility issue or a missing feature in gVisor. See
-[Debugging](../debugging/).
+[Debugging][debugging].
 
 ### When I run my container, docker fails with: `open /run/containerd/.../<containerid>/log.json: no such file or directory`
 
 You are using an older version of Linux which doesn't support `memfd_create`.
 gVisor requires Linux {{< required_linux >}} ([older Linux][old-linux]).
 
-[comment]: # (TODO[gvisor.dev/issue/268] remove when better error messages are implemented.)
+This is tracked in [bug #268](https://gvisor.dev/issue/268).
 
 ### When I run my container, docker fails with: `flag provided but not defined: -console`
 
-You're using an old version of Docker. See [Docker Quick Start](../docker/).
+You're using an old version of Docker. See [Docker Quick Start][docker].
 
 ### I can’t see a file copied with: `docker cp`
 
@@ -61,9 +61,9 @@ not realize a new file was copied to a given directory. To invalidate the cache
 and force a refresh, create a file under the directory in question and list the
 contents again.
 
-As a workaround, shared root filesystem can be enabled. See [Filesystem](../filesystem/).
+As a workaround, shared root filesystem can be enabled. See [Filesystem][filesystem].
 
-This bug is tracked in [bug #4](https://github.com/google/gvisor/issues/4).
+This bug is tracked in [bug #4](https://gvisor.dev/issue/4).
 
 Note that `kubectl cp` works because it does the copy by exec'ing inside the
 sandbox, and thus gVisor's internal cache is made aware of the new files and
@@ -96,6 +96,10 @@ sandbox isolation. There are a few different workarounds you can try:
 * Use IPs instead of container names.
 * Use [Kubernetes][k8s]. Container name lookup works fine in Kubernetes.
 
+[security-model]: /docs/architecture_guide/security/
 [old-linux]: /docs/user_guide/networking/#gso
 [host-net]: /docs/user_guide/networking/#network-passthrough
-[k8s]: /docs/user_guide/kubernetes
+[debugging]: /docs/user_guide/debugging/
+[filesystem]: /docs/user_guide/filesystem/
+[docker]: /docs/user_guide/quick_start/docker/
+[k8s]: /docs/user_guide/quick_start/kubernetes/
