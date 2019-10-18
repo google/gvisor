@@ -16,6 +16,17 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "atomicptr_waiter",
+    out = "atomicptr_waiter_unsafe.go",
+    package = "futex",
+    suffix = "Waiter",
+    template = "//third_party/gvsync:generic_atomicptr",
+    types = {
+        "Value": "Waiter",
+    },
+)
+
+go_template_instance(
     name = "waiter_list",
     out = "waiter_list.go",
     package = "futex",
@@ -31,6 +42,7 @@ go_library(
     name = "futex",
     srcs = [
         "atomicptr_bucket_unsafe.go",
+        "atomicptr_waiter_unsafe.go",
         "futex.go",
         "waiter_list.go",
     ],

@@ -215,6 +215,11 @@ type Waiter struct {
 	// waiterEntry links Waiter into bucket.waiters.
 	waiterEntry
 
+	// nextToWake is used by Wake to form a list of waiters to be woken.
+	// It must be updated/read atomically. It's nil when the waiter is not
+	// on a wake up list.
+	nextToWake AtomicPtrWaiter
+
 	// bucket is the bucket this waiter is queued in. If bucket is nil, the
 	// waiter is not waiting and is not in any bucket.
 	bucket AtomicPtrBucket
@@ -255,11 +260,12 @@ type bucket struct {
 	waiters waiterList `state:"zerovalue"`
 }
 
-// wakeLocked wakes up to n waiters matching the bitmask at the addr for this
-// bucket and returns the number of waiters woken.
+// getWaiters returns up to n waiters matching the bitmask at the addr for this
+// bucket and returns the number of waiters that matched.
 //
 // Preconditions: b.mu must be locked.
-func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
+func (b *bucket) getWaiters(key *Key, bitmask uint32, n int) (*Waiter, int) {
+	var woken *Waiter
 	done := 0
 	for w := b.waiters.Front(); done < n && w != nil; {
 		if !w.key.matches(key) || w.bitmask&bitmask == 0 {
@@ -268,29 +274,54 @@ func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
 			continue
 		}
 
-		// Remove from the bucket and wake the waiter.
+		// Remove from the bucket and move waiter to the list
+		// of waiters to be woken.
 		woke := w
 		w = w.Next() // Next iteration.
-		b.wakeWaiterLocked(woke)
+
+		// Remove from the bucket.
+		b.waiters.Remove(woke)
+		// NOTE: Since we've dequeued woke and will never touch it again,
+		// we can safely store nil to woke.bucket here and allow the
+		// WaitComplete() to short-circuit grabbing the bucket lock.
+		woke.bucket.Store(nil)
 		done++
+
+		// If this waiter is already on a list to be woken up then
+		// just skip it as it will be woken anyway by the other
+		// list.
+		if woke.nextToWake.CompareAndSwap(nil, woke) {
+			// Push woke onto the wakeup list.
+			if woken != nil {
+				woke.nextToWake.Store(woken)
+			}
+			woken = woke
+		}
 	}
-	return done
+	return woken, done
 }
 
-func (b *bucket) wakeWaiterLocked(w *Waiter) {
-	// Remove from the bucket and wake the waiter.
-	b.waiters.Remove(w)
-	w.C <- struct{}{}
-
-	// NOTE: The above channel write establishes a write barrier according
-	// to the memory model, so nothing may be ordered around it. Since
-	// we've dequeued w and will never touch it again, we can safely
-	// store nil to w.bucket here and allow the WaitComplete() to
-	// short-circuit grabbing the bucket lock. If they somehow miss the
-	// store, we are still holding the lock, so we can know that they won't
-	// dequeue w, assume it's free and have the below operation
-	// afterwards.
-	w.bucket.Store(nil)
+// wakeLocked wakes up to n waiters matching the bitmask at the addr for this
+// bucket and returns the number of waiters woken.
+//
+// Preconditions: b.mu must be locked.
+func (b *bucket) wakeLocked(key *Key, bitmask uint32, n int) int {
+	w, done := b.getWaiters(key, bitmask, n)
+	if w != nil {
+		for {
+			nextW := w.nextToWake.Load()
+			w.nextToWake.Store(nil)
+			select {
+			case w.C <- struct{}{}:
+			default:
+			}
+			if w == nextW {
+				break
+			}
+			w = nextW
+		}
+	}
+	return done
 }
 
 // requeueLocked takes n waiters from the bucket and moves them to naddr on the
@@ -454,11 +485,24 @@ func (m *Manager) Wake(t Target, addr usermem.Addr, private bool, bitmask uint32
 	}
 
 	b := m.lockBucket(&k)
-	r := b.wakeLocked(&k, bitmask, n)
-
+	w, done := b.getWaiters(&k, bitmask, n)
 	b.mu.Unlock()
 	k.release()
-	return r, nil
+	if w != nil {
+		for {
+			nextW := w.nextToWake.Load()
+			w.nextToWake.Store(nil)
+			select {
+			case w.C <- struct{}{}:
+			default:
+			}
+			if w == nextW {
+				break
+			}
+			w = nextW
+		}
+	}
+	return done, nil
 }
 
 func (m *Manager) doRequeue(t Target, addr, naddr usermem.Addr, private bool, checkval bool, val uint32, nwake int, nreq int) (int, error) {
@@ -791,6 +835,14 @@ func (m *Manager) unlockPILocked(t Target, addr usermem.Addr, tid uint32, b *buc
 		return syserror.EINVAL
 	}
 
-	b.wakeWaiterLocked(next)
+	b.waiters.Remove(next)
+	next.bucket.Store(nil)
+	if next.nextToWake.CompareAndSwap(nil, next) {
+		next.nextToWake.Store(nil)
+		select {
+		case next.C <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }

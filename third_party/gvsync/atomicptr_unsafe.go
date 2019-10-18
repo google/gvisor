@@ -45,3 +45,8 @@ func (p *AtomicPtr) Load() *Value {
 func (p *AtomicPtr) Store(x *Value) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }
+
+// CompareAndSwap executes the compare-and-swap operation to p.
+func (p *AtomicPtr) CompareAndSwap(old *Value, new *Value) (swapped bool) {
+	return atomic.CompareAndSwapPointer(&p.ptr, (unsafe.Pointer)(old), (unsafe.Pointer)(new))
+}
