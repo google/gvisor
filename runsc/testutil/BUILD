@@ -9,6 +9,7 @@ go_library(
     importpath = "gvisor.dev/gvisor/runsc/testutil",
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/log",
         "//runsc/boot",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",

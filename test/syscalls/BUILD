@@ -79,6 +79,12 @@ syscall_test(test = "//test/syscalls/linux:clock_nanosleep_test")
 syscall_test(test = "//test/syscalls/linux:concurrency_test")
 
 syscall_test(
+    add_uds_tree = True,
+    test = "//test/syscalls/linux:connect_external_test",
+    use_tmpfs = True,
+)
+
+syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:creat_test",
 )
@@ -716,6 +722,7 @@ go_binary(
         "//runsc/specutils",
         "//runsc/testutil",
         "//test/syscalls/gtest",
+        "//test/uds",
         "@com_github_opencontainers_runtime-spec//specs-go:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],

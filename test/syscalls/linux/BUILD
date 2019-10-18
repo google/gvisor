@@ -480,6 +480,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "connect_external_test",
+    testonly = 1,
+    srcs = ["connect_external.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "creat_test",
     testonly = 1,
     srcs = ["creat.cc"],

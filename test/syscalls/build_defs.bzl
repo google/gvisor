@@ -8,6 +8,7 @@ def syscall_test(
         size = "small",
         use_tmpfs = False,
         add_overlay = False,
+        add_uds_tree = False,
         tags = None):
     _syscall_test(
         test = test,
@@ -15,6 +16,7 @@ def syscall_test(
         size = size,
         platform = "native",
         use_tmpfs = False,
+        add_uds_tree = add_uds_tree,
         tags = tags,
     )
 
@@ -24,6 +26,7 @@ def syscall_test(
         size = size,
         platform = "kvm",
         use_tmpfs = use_tmpfs,
+        add_uds_tree = add_uds_tree,
         tags = tags,
     )
 
@@ -33,6 +36,7 @@ def syscall_test(
         size = size,
         platform = "ptrace",
         use_tmpfs = use_tmpfs,
+        add_uds_tree = add_uds_tree,
         tags = tags,
     )
 
@@ -43,6 +47,7 @@ def syscall_test(
             size = size,
             platform = "ptrace",
             use_tmpfs = False,  # overlay is adding a writable tmpfs on top of root.
+            add_uds_tree = add_uds_tree,
             tags = tags,
             overlay = True,
         )
@@ -55,6 +60,7 @@ def syscall_test(
             size = size,
             platform = "ptrace",
             use_tmpfs = use_tmpfs,
+            add_uds_tree = add_uds_tree,
             tags = tags,
             file_access = "shared",
         )
@@ -67,7 +73,8 @@ def _syscall_test(
         use_tmpfs,
         tags,
         file_access = "exclusive",
-        overlay = False):
+        overlay = False,
+        add_uds_tree = False):
     test_name = test.split(":")[1]
 
     # Prepend "runsc" to non-native platform names.
@@ -103,6 +110,7 @@ def _syscall_test(
         "--use-tmpfs=" + str(use_tmpfs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
+        "--add-uds-tree=" + str(add_uds_tree),
     ]
 
     sh_test(
