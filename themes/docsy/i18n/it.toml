@@ -1,0 +1,43 @@
+
+
+# UI strings. Buttons and similar.
+
+[ui_pager_prev]
+other = "Precedente"
+
+[ui_pager_next]
+other = "Successivo"
+
+[ui_read_more]
+other = "Leggi tutto"
+
+[ui_search]
+other = "Cerca nel sito…"
+
+# Used in sentences such as "Posted in News"
+[ui_in]
+other = "in"
+
+# Footer text
+[footer_all_rights_reserved]
+other = "Tutti i diritti riservati"
+
+[footer_privacy_policy]
+other = "Privacy Policy"
+
+
+# Post (blog, articles etc.)
+[post_byline_by]
+other = "Di"
+[post_created]
+other = "Creato"
+[post_last_mod]
+other = "Ultima modifica"
+[post_edit_this]
+other = "Modifica"
+[post_create_issue]
+other = "Crea issue di documentazione"
+[post_create_project_issue]
+other = "Crea issue di progetto"
+[post_posts_in]
+other = "Post in"

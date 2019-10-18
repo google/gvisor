@@ -1,0 +1,13 @@
+# Hugo build configuration for Netlify 
+# (https://gohugo.io/hosting-and-deployment/hosting-on-netlify/#configure-hugo-version-in-netlify)
+
+# Default build settings
+[build]
+  publish = "userguide/public"
+  command = "git submodule update -f --init && cd userguide && npm install postcss-cli && hugo --themesDir ../.."
+
+# "production" environment specific build settings
+[build.environment]
+  HUGO_VERSION = "0.55.6"
+  HUGO_THEME = "repo"
+  HUGO_ENV = "production"

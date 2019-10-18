@@ -1,13 +1,19 @@
-# This the theme configuration.
+# This the theme configuration for Docsy.
 # Allowed configuration in a theme is (currently):
 # params (global and per language)
 # menu (global and per language)
 # outputformats and mediatypes
-
 
 [params]
 time_format_blog = "Monday, January 02, 2006"
 time_format_default = "January 2, 2006"
 # Sections to publish in the main RSS feed.
 rss_sections = ["blog"]
+
+
+# For a full list of parameters used in Docsy sites, see:
+# https://github.com/google/docsy-example/blob/master/config.toml
+
+
+
 

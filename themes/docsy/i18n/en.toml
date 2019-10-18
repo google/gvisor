@@ -36,6 +36,8 @@ other = "Last modified"
 [post_edit_this]
 other = "Edit this page"
 [post_create_issue]
-other = "Create issue"
+other = "Create documentation issue"
+[post_create_project_issue]
+other = "Create project issue"
 [post_posts_in]
 other = "Posts in"
