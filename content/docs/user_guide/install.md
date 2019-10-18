@@ -9,7 +9,7 @@ weight = 20
 ## Versions
 
 The `runsc` binaries and repositories are available in multiple versions and
-release channels. First, you should pick the version you'd like to install. For
+release channels. You should pick the version you'd like to install. For
 experimentation, the nightly release is recommended. For production use, the
 latest release is recommended.
 
@@ -63,7 +63,7 @@ Unlike the specific release above, which may include updates, this release will
 not change. To use a specific point release, use the above URL for `URL` in the
 manual instructions below. For apt, use `${yyyymmdd}.${rc}` for `DIST` below.
 
-## From an `apt` repository
+## Install from an `apt` repository
 
 First, appropriate dependencies must be installed to allow `apt` to install
 packages via https:
@@ -118,7 +118,7 @@ sudo apt-get update && sudo apt-get install -y runsc
 
 If you have Docker installed, it will be automatically configured.
 
-## Manually
+## Install manually
 
 After selecting an appropriate `URL` above, you can download `runsc` directly
 from `${URL}/runsc` ([latest][latest-nightly]) and a checksum hash from
@@ -131,8 +131,9 @@ appropriate location by running:
 (
   set -e
   wget ${URL}/runsc
-  wget ${URL/runsc.sha512
+  wget ${URL}/runsc.sha512
   sha512sum -c runsc.sha512
+  rm -f runsc.sha512
   sudo mv runsc /usr/local/bin
   sudo chown root:root /usr/local/bin/runsc
   sudo chmod 0755 /usr/local/bin/runsc
