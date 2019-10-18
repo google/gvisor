@@ -68,6 +68,6 @@ Congratulations! You have just deployed a WordPress site using Docker.
 [Learn how to deploy WordPress with Kubernetes][wordpress-k8s].
 
 [docker]: https://www.docker.com/
-[docker-install]: /docs/user_guide/docker/
+[docker-install]: /docs/user_guide/quick_start/docker/
 [wordpress]: https://wordpress.com/
 [wordpress-k8s]: /docs/tutorials/kubernetes/

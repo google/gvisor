@@ -175,7 +175,7 @@ similarly loads a number of modules and binds an HTTP server.
 > Note: most of the time overhead above is associated Docker itself. This is
 > evident with the empty `runc` benchmark. To avoid these costs with `runsc`,
 > you may also consider using `runsc do` mode or invoking the [OCI
-> runtime](../../user_guide/oci/) directly.
+> runtime](../../user_guide/quick_start/oci/) directly.
 
 ## Network
 

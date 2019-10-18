@@ -63,6 +63,10 @@ compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/li
 	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
 .PHONY: compatibility-docs
 
+check: website
+	docker run -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:3.10.2 htmlproofer --disable-external --check-html public/static
+.PHONY: check
+
 # Run a local content development server. Redirects will not be supported.
 devserver: all-upstream compatibility-docs
 	$(HUGO) server -FD --port 8080

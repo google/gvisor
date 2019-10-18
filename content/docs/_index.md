@@ -14,7 +14,7 @@ gVisor takes a distinct approach to container sandboxing and makes a different
 set of technical trade-offs compared to existing sandbox technologies, thus
 providing new tools and ideas for the container security landscape.
 
-Check out the [gVisor Quick Start](./user_guide/docker/) to get started
+Check out the [gVisor Quick Start](./user_guide/quick_start/docker/) to get started
 using gVisor.
 
 ## How this documentation is organized
