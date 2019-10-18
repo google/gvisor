@@ -5,9 +5,9 @@
 
 @import "../vendor/bootstrap/scss/bootstrap";
 
-@import "../vendor/Font-Awesome//web-fonts-with-css/scss/fontawesome.scss";
-@import "../vendor/Font-Awesome//web-fonts-with-css/scss/fa-solid.scss";
-@import "../vendor/Font-Awesome//web-fonts-with-css/scss/fa-brands.scss";
+@import "../vendor/Font-Awesome/scss/fontawesome.scss";
+@import "../vendor/Font-Awesome/scss/solid.scss";
+@import "../vendor/Font-Awesome/scss/brands.scss";
 
 @import "support/utilities";
 @import "colors";
@@ -24,6 +24,8 @@
 @import "search";
 @import "main-container";
 @import "blocks/blocks";
+@import "section-index";
+@import "pageinfo";
 
 @if $td-enable-google-fonts {
     @import url($web-font-path);

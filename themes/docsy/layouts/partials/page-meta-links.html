@@ -1,14 +1,24 @@
 {{ if .Path }}
 {{ $gh_repo := ($.Param "github_repo") }}
+{{ $gh_subdir := ($.Param "github_subdir") }}
+{{ $gh_project_repo := ($.Param "github_project_repo") }}
 {{ if $gh_repo }}
 <div class="td-page-meta ml-2 pb-1 pt-2 mb-0">
 {{ $editURL := printf "%s/edit/master/content/%s" $gh_repo .Path }}
-{{ if .Site.IsMultiLingual }}
+{{ if and ($gh_subdir) (.Site.Language.Lang) }}
+{{ $editURL = printf "%s/edit/master/%s/content/%s/%s" $gh_repo $gh_subdir ($.Site.Language.Lang) $.Path }}
+{{ else if .Site.Language.Lang }}
 {{ $editURL = printf "%s/edit/master/content/%s/%s" $gh_repo ($.Site.Language.Lang) .Path }}
+{{ else if $gh_subdir }}
+{{ $editURL = printf "%s/edit/master/%s/content/%s" $gh_repo $gh_subdir $.Path }}
 {{ end }}
 {{ $issuesURL := printf "%s/issues/new?title=%s" $gh_repo (htmlEscape $.Title )}}
 <a href="{{ $editURL }}" target="_blank"><i class="fa fa-edit fa-fw"></i> {{ T "post_edit_this" }}</a>
 <a href="{{ $issuesURL }}" target="_blank"><i class="fab fa-github fa-fw"></i> {{ T "post_create_issue" }}</a>
+{{ if $gh_project_repo }}
+{{ $project_issueURL := printf "%s/issues/new" $gh_project_repo }}
+<a href="{{ $project_issueURL }}" target="_blank"><i class="fas fa-tasks fa-fw"></i> {{ T "post_create_project_issue" }}</a>
+{{ end }}
 </div>
 {{ end }}
 {{ end }}

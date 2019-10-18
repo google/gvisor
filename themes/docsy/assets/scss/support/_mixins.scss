@@ -13,10 +13,6 @@
         @if $underline {
             text-decoration: underline;
         }
-
-        @include hover-focus {
-            color: $hover-color;
-        }
     }
 }
 
