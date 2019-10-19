@@ -182,7 +182,7 @@ func (fd *VFSPipeFD) Release() {
 }
 
 // OnClose implements vfs.FileDescriptionImpl.OnClose.
-func (fd *VFSPipeFD) OnClose() error {
+func (fd *VFSPipeFD) OnClose(_ context.Context) error {
 	return nil
 }
 

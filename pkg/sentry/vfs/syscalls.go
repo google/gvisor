@@ -96,6 +96,26 @@ func (vfs *VirtualFilesystem) MkdirAt(ctx context.Context, creds *auth.Credentia
 	}
 }
 
+// MknodAt creates a file of the given mode at the given path. It returns an
+// error from the syserror package.
+func (vfs *VirtualFilesystem) MknodAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MknodOptions) error {
+	rp, err := vfs.getResolvingPath(creds, pop)
+	if err != nil {
+		return nil
+	}
+	for {
+		if err = rp.mount.fs.impl.MknodAt(ctx, rp, *opts); err == nil {
+			vfs.putResolvingPath(rp)
+			return nil
+		}
+		// Handle mount traversals.
+		if !rp.handleError(err) {
+			vfs.putResolvingPath(rp)
+			return err
+		}
+	}
+}
+
 // OpenAt returns a FileDescription providing access to the file at the given
 // path. A reference is taken on the returned FileDescription.
 func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *OpenOptions) (*FileDescription, error) {
@@ -197,8 +217,6 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, flags uint32) err
 // - Something for syncfs(2)
 //
 // - VFS.LinkAt()
-//
-// - VFS.MknodAt()
 //
 // - VFS.ReadlinkAt()
 //
