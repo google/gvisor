@@ -233,7 +233,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	if err != nil {
 		return err
 	}
-	_, err = checkCreateLocked(rp, parentVFSD, parentInode)
+	pc, err := checkCreateLocked(rp, parentVFSD, parentInode)
 	if err != nil {
 		return err
 	}
@@ -241,8 +241,40 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	// TODO: actually implement mknod
-	return syserror.EPERM
+
+	switch opts.Mode.FileType() {
+	case 0:
+		// "Zero file type is equivalent to type S_IFREG." - mknod(2)
+		fallthrough
+	case linux.ModeRegular:
+		// TODO(b/138862511): Implement.
+		return syserror.EINVAL
+
+	case linux.ModeNamedPipe:
+		child := fs.newDentry(fs.newNamedPipe(rp.Credentials(), opts.Mode))
+		parentVFSD.InsertChild(&child.vfsd, pc)
+		parentInode.impl.(*directory).childList.PushBack(child)
+		return nil
+
+	case linux.ModeSocket:
+		// TODO(b/138862511): Implement.
+		return syserror.EINVAL
+
+	case linux.ModeCharacterDevice:
+		fallthrough
+	case linux.ModeBlockDevice:
+		// TODO(b/72101894): We don't support creating block or character
+		// devices at the moment.
+		//
+		// When we start supporting block and character devices, we'll
+		// need to check for CAP_MKNOD here.
+		return syserror.EPERM
+
+	default:
+		// "EINVAL - mode requested creation of something other than a
+		// regular file, device special file, FIFO or socket." - mknod(2)
+		return syserror.EINVAL
+	}
 }
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
@@ -250,8 +282,9 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 	// Filter out flags that are not supported by memfs. O_DIRECTORY and
 	// O_NOFOLLOW have no effect here (they're handled by VFS by setting
 	// appropriate bits in rp), but are returned by
-	// FileDescriptionImpl.StatusFlags().
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW
+	// FileDescriptionImpl.StatusFlags(). O_NONBLOCK is supported only by
+	// pipes.
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC | linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK
 
 	if opts.Flags&linux.O_CREAT == 0 {
 		fs.mu.RLock()
@@ -260,7 +293,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if err != nil {
 			return nil, err
 		}
-		return inode.open(rp, vfsd, opts.Flags, false)
+		return inode.open(ctx, rp, vfsd, opts.Flags, false)
 	}
 
 	mustCreate := opts.Flags&linux.O_EXCL != 0
@@ -275,7 +308,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, syserror.EEXIST
 		}
-		return inode.open(rp, vfsd, opts.Flags, false)
+		return inode.open(ctx, rp, vfsd, opts.Flags, false)
 	}
 afterTrailingSymlink:
 	// Walk to the parent directory of the last path component.
@@ -320,7 +353,7 @@ afterTrailingSymlink:
 		child := fs.newDentry(childInode)
 		vfsd.InsertChild(&child.vfsd, pc)
 		inode.impl.(*directory).childList.PushBack(child)
-		return childInode.open(rp, &child.vfsd, opts.Flags, true)
+		return childInode.open(ctx, rp, &child.vfsd, opts.Flags, true)
 	}
 	// Open existing file or follow symlink.
 	if mustCreate {
@@ -336,10 +369,10 @@ afterTrailingSymlink:
 		// symlink target.
 		goto afterTrailingSymlink
 	}
-	return childInode.open(rp, childVFSD, opts.Flags, false)
+	return childInode.open(ctx, rp, childVFSD, opts.Flags, false)
 }
 
-func (i *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afterCreate bool) (*vfs.FileDescription, error) {
+func (i *inode) open(ctx context.Context, rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afterCreate bool) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(flags)
 	if !afterCreate {
 		if err := i.checkPermissions(rp.Credentials(), ats, i.isDir()); err != nil {
@@ -378,6 +411,8 @@ func (i *inode) open(rp *vfs.ResolvingPath, vfsd *vfs.Dentry, flags uint32, afte
 	case *symlink:
 		// Can't open symlinks without O_PATH (which is unimplemented).
 		return nil, syserror.ELOOP
+	case *namedPipe:
+		return newNamedPipeFD(ctx, impl, rp, vfsd, flags)
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}
