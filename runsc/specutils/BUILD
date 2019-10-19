@@ -5,6 +5,7 @@ package(licenses = ["notice"])
 go_library(
     name = "specutils",
     srcs = [
+        "cri.go",
         "fs.go",
         "namespace.go",
         "specutils.go",

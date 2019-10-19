@@ -1149,7 +1149,7 @@ func maybeLockRootContainer(spec *specs.Spec, rootDir string) (func() error, err
 }
 
 func isRoot(spec *specs.Spec) bool {
-	return specutils.ShouldCreateSandbox(spec)
+	return specutils.SpecContainerType(spec) != specutils.ContainerTypeContainer
 }
 
 // runInCgroup executes fn inside the specified cgroup. If cg is nil, execute
@@ -1198,7 +1198,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) 
 	// Get the lowest score for all containers.
 	var lowScore int
 	scoreFound := false
-	if len(containers) == 1 && len(containers[0].Spec.Annotations[specutils.ContainerdContainerTypeAnnotation]) == 0 {
+	if len(containers) == 1 && specutils.SpecContainerType(containers[0].Spec) == specutils.ContainerTypeUnspecified {
 		// This is a single-container sandbox. Set the oom_score_adj to
 		// the value specified in the OCI bundle.
 		if containers[0].Spec.Process.OOMScoreAdj != nil {
@@ -1214,7 +1214,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, rootDir string, destroy bool) 
 			//
 			// We will use OOMScoreAdj in the single-container case where the
 			// containerd container-type annotation is not present.
-			if container.Spec.Annotations[specutils.ContainerdContainerTypeAnnotation] == specutils.ContainerdContainerTypeSandbox {
+			if specutils.SpecContainerType(container.Spec) == specutils.ContainerTypeSandbox {
 				continue
 			}
 
