@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"time"
 )
 
 // handleControl handles the case when an ICMP packet contains the headers of
@@ -133,6 +134,43 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 
 	case header.ICMPv4Timestamp:
 		received.Timestamp.Increment()
+
+		// Only send a reply if the checksum is valid.
+		wantChecksum := h.Checksum()
+
+		// It's possible that a raw socket expects to receive this.
+		h.SetChecksum(wantChecksum)
+		e.dispatcher.DeliverTransportPacket(r, header.ICMPv4ProtocolNumber, netHeader, vv)
+		// Reset the checksum field to 0 to can calculate the proper
+		// checksum. We'll have to reset this before we hand the packet off.
+		h.SetChecksum(0)
+
+		gotChecksum := ^header.ChecksumVV(vv, 0 /* initial */)
+		if gotChecksum != wantChecksum {
+			received.Invalid.Increment()
+			return
+		}
+
+		vv := vv.Clone(nil)
+		vv.TrimFront(header.ICMPv4TimeStampMinimumSize)
+		hdr := buffer.NewPrependable(int(r.MaxHeaderLength()) + header.ICMPv4TimeStampMinimumSize)
+		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4TimeStampMinimumSize))
+		copy(pkt, h)
+		pkt.SetType(header.ICMPv4TimestampReply)
+
+		// msPerDay is Milli Seconds in a day calculation for Timestamp reply messages.
+		const msPerDay = 24 * 60 * 60 * 1000
+		timeStamp := ((time.Now().UnixNano() / 1000000) % msPerDay)
+		pkt.SetRxTimeStamp(timeStamp)
+
+		pkt.SetChecksum(0)
+		pkt.SetChecksum(^header.Checksum(pkt, header.ChecksumVV(vv, 0)))
+		sent := stats.ICMP.V4PacketsSent
+		if err := r.WritePacket(nil /* gso */, hdr, vv, header.ICMPv4ProtocolNumber, 0, true /* useDefaultTTL */); err != nil {
+			sent.Dropped.Increment()
+			return
+		}
+		sent.TimestampReply.Increment()
 
 	case header.ICMPv4TimestampReply:
 		received.TimestampReply.Increment()

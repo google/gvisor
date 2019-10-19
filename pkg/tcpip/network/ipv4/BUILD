@@ -26,7 +26,10 @@ go_library(
 go_test(
     name = "ipv4_test",
     size = "small",
-    srcs = ["ipv4_test.go"],
+    srcs = [
+        "ipv4_test.go"
+        "icmpv4_test.go"
+    ],
     deps = [
         "//pkg/tcpip",
         "//pkg/tcpip/buffer",

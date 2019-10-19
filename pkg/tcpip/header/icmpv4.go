@@ -31,6 +31,9 @@ const (
 	// ICMPv4MinimumSize is the minimum size of a valid ICMP packet.
 	ICMPv4MinimumSize = 8
 
+	// ICMPv4TimeStampMinimumSize is minimum size of Timestamp reply packet.
+	ICMPv4TimeStampMinimumSize = 20
+
 	// ICMPv4ProtocolNumber is the ICMP transport protocol number.
 	ICMPv4ProtocolNumber tcpip.TransportProtocolNumber = 1
 
@@ -49,6 +52,12 @@ const (
 	// icmpv4SequenceOffset is the offset of the sequence field
 	// in a ICMPv4EchoRequest/Reply message.
 	icmpv4SequenceOffset = 6
+
+	// rxTSOffset is the offset of the Receive Timestamp
+	rxTSOffset = 12
+
+	// txTSOffset is the offset of the Trasnsmit Timestamp
+	txTSOffset = 16
 )
 
 // ICMPv4Type is the ICMP type field described in RFC 792.
@@ -148,6 +157,12 @@ func (b ICMPv4) Sequence() uint16 {
 // SetSequence sets the Sequence field from an ICMPv4 message.
 func (b ICMPv4) SetSequence(sequence uint16) {
 	binary.BigEndian.PutUint16(b[icmpv4SequenceOffset:], sequence)
+}
+
+// SetRxTimeStamp sets the receive timestamp and transmit timestamp field from an ICMPv4 Timestamp message.
+func (b ICMPv4) SetRxTimeStamp(timeStamp int64) {
+	binary.BigEndian.PutUint32(b[rxTSOffset:], uint32(timeStamp))
+	binary.BigEndian.PutUint32(b[txTSOffset:], uint32(timeStamp))
 }
 
 // ICMPv4Checksum calculates the ICMP checksum over the provided ICMP header,
