@@ -227,6 +227,8 @@ func (i *inode) statTo(stat *linux.Statx) {
 		stat.Mask |= linux.STATX_SIZE | linux.STATX_BLOCKS
 		stat.Size = uint64(len(impl.target))
 		stat.Blocks = allocatedBlocksForSize(stat.Size)
+	case *namedPipe:
+		stat.Mode |= linux.S_IFIFO
 	default:
 		panic(fmt.Sprintf("unknown inode type: %T", i.impl))
 	}
