@@ -19,7 +19,7 @@ the directory path within which the checkpoint state-file will be created. The
 file will be called `checkpoint.img` and necessary directories will be created
 if they do not yet exist.
 
-> Note: Two checkpoints cannot be saved to the save directory; every image-path
+> Note: Two checkpoints cannot be saved to the same directory; every image-path
 provided must be unique.
 
 ```bash
