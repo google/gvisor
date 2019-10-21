@@ -922,7 +922,7 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			HandleLocal:        true,
 			// Enable raw sockets for users with sufficient
 			// privileges.
-			UnassociatedFactory: raw.EndpointFactory{},
+			RawFactory: raw.EndpointFactory{},
 		})}
 
 		// Enable SACK Recovery.

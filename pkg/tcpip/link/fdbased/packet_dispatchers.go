@@ -118,9 +118,10 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	var (
 		p             tcpip.NetworkProtocolNumber
 		remote, local tcpip.LinkAddress
+		eth           header.Ethernet
 	)
 	if d.e.hdrSize > 0 {
-		eth := header.Ethernet(d.views[0])
+		eth = header.Ethernet(d.views[0][:header.EthernetMinimumSize])
 		p = eth.Type()
 		remote = eth.SourceAddress()
 		local = eth.DestinationAddress()
@@ -141,7 +142,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	vv := buffer.NewVectorisedView(n, d.views[:used])
 	vv.TrimFront(d.e.hdrSize)
 
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv)
+	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
 
 	// Prepare e.views for another packet: release used views.
 	for i := 0; i < used; i++ {
@@ -271,9 +272,10 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		var (
 			p             tcpip.NetworkProtocolNumber
 			remote, local tcpip.LinkAddress
+			eth           header.Ethernet
 		)
 		if d.e.hdrSize > 0 {
-			eth := header.Ethernet(d.views[k][0])
+			eth = header.Ethernet(d.views[k][0])
 			p = eth.Type()
 			remote = eth.SourceAddress()
 			local = eth.DestinationAddress()
@@ -293,7 +295,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		used := d.capViews(k, int(n), BufConfig)
 		vv := buffer.NewVectorisedView(int(n), d.views[k][:used])
 		vv.TrimFront(d.e.hdrSize)
-		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv)
+		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
 
 		// Prepare e.views for another packet: release used views.
 		for i := 0; i < used; i++ {

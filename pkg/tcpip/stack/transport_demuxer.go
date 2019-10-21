@@ -465,7 +465,7 @@ func (d *transportDemuxer) findEndpointLocked(eps *transportEndpoints, vv buffer
 func (d *transportDemuxer) registerRawEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
 	eps, ok := d.protocol[protocolIDs{netProto, transProto}]
 	if !ok {
-		return nil
+		return tcpip.ErrNotSupported
 	}
 
 	eps.mu.Lock()

@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
 #include "test/syscalls/linux/socket_test_util.h"
@@ -60,6 +61,9 @@ namespace gvisor {
 namespace testing {
 
 namespace {
+
+using ::testing::AnyOf;
+using ::testing::Eq;
 
 constexpr char kMessage[] = "soweoneul malhaebwa";
 constexpr in_port_t kPort = 0x409c;  // htons(40000)
@@ -97,9 +101,6 @@ class RawPacketTest : public ::testing::TestWithParam<int> {
 };
 
 void RawPacketTest::SetUp() {
-  // (b/129292371): Remove once we support packet sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
     ASSERT_THAT(socket(AF_PACKET, SOCK_RAW, htons(GetParam())),
                 SyscallFailsWithErrno(EPERM));
@@ -125,9 +126,6 @@ void RawPacketTest::SetUp() {
 }
 
 void RawPacketTest::TearDown() {
-  // (b/129292371): Remove once we support packet sockets.
-  SKIP_IF(IsRunningOnGvisor());
-
   // TearDown will be run even if we skip the test.
   if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
@@ -164,16 +162,16 @@ TEST_P(RawPacketTest, Receive) {
   ASSERT_THAT(recvfrom(socket_, buf, sizeof(buf), 0,
                        reinterpret_cast<struct sockaddr*>(&src), &src_len),
               SyscallSucceedsWithValue(packet_size));
-  // sizeof(src) is the size of a struct sockaddr_ll. sockaddr_ll ends with an 8
-  // byte physical address field, but ethernet (MAC) addresses only use 6 bytes.
-  // Thus src_len should get modified to be 2 less than the size of sockaddr_ll.
-  ASSERT_EQ(src_len, sizeof(src) - 2);
+  // sockaddr_ll ends with an 8 byte physical address field, but ethernet
+  // addresses only use 6 bytes.  Linux used to return sizeof(sockaddr_ll)-2
+  // here, but since commit b2cf86e1563e33a14a1c69b3e508d15dc12f804c returns
+  // sizeof(sockaddr_ll).
+  ASSERT_THAT(src_len, AnyOf(Eq(sizeof(src)), Eq(sizeof(src) - 2)));
 
+  // TODO(b/129292371): Verify protocol once we return it.
   // Verify the source address.
   EXPECT_EQ(src.sll_family, AF_PACKET);
-  EXPECT_EQ(src.sll_protocol, htons(ETH_P_IP));
   EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex());
-  EXPECT_EQ(src.sll_hatype, ARPHRD_LOOPBACK);
   EXPECT_EQ(src.sll_halen, ETH_ALEN);
   // This came from the loopback device, so the address is all 0s.
   for (int i = 0; i < src.sll_halen; i++) {
@@ -214,6 +212,9 @@ TEST_P(RawPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(RawPacketTest, Send) {
+  // TODO(b/129292371): Remove once we support packet socket writing.
+  SKIP_IF(IsRunningOnGvisor());
+
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -309,7 +310,7 @@ TEST_P(RawPacketTest, Send) {
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, RawPacketTest,
-                         ::testing::Values(ETH_P_IP /*, ETH_P_ALL*/));
+                         ::testing::Values(ETH_P_IP, ETH_P_ALL));
 
 }  // namespace
 

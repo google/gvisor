@@ -35,7 +35,7 @@ type countedEndpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-func (e *countedEndpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+func (e *countedEndpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
 	e.dispatchCount++
 }
 
@@ -66,6 +66,11 @@ func (e *countedEndpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 func (e *countedEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+	e.writeCount++
+	return nil
+}
+
+func (e *countedEndpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
 	e.writeCount++
 	return nil
 }
@@ -109,21 +114,21 @@ func TestWaitDispatch(t *testing.T) {
 	}
 
 	// Dispatch and check that it goes through.
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{}, buffer.View{})
 	if want := 1; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on writes, then try to dispatch. It must go through.
 	wep.WaitWrite()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{}, buffer.View{})
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}
 
 	// Wait on dispatches, then try to dispatch. It must not go through.
 	wep.WaitDispatch()
-	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{})
+	ep.dispatcher.DeliverNetworkPacket(ep, "", "", 0, buffer.VectorisedView{}, buffer.View{})
 	if want := 2; ep.dispatchCount != want {
 		t.Fatalf("Unexpected dispatchCount: got=%v, want=%v", ep.dispatchCount, want)
 	}

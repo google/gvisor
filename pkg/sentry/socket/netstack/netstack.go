@@ -53,6 +53,7 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -296,6 +297,7 @@ func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue 
 
 var sockAddrInetSize = int(binary.Size(linux.SockAddrInet{}))
 var sockAddrInet6Size = int(binary.Size(linux.SockAddrInet6{}))
+var sockAddrLinkSize = int(binary.Size(linux.SockAddrLink{}))
 
 // bytesToIPAddress converts an IPv4 or IPv6 address from the user to the
 // netstack representation taking any addresses into account.
@@ -307,12 +309,12 @@ func bytesToIPAddress(addr []byte) tcpip.Address {
 }
 
 // AddressAndFamily reads an sockaddr struct from the given address and
-// converts it to the FullAddress format. It supports AF_UNIX, AF_INET and
-// AF_INET6 addresses.
+// converts it to the FullAddress format. It supports AF_UNIX, AF_INET,
+// AF_INET6, and AF_PACKET addresses.
 //
 // strict indicates whether addresses with the AF_UNSPEC family are accepted of not.
 //
-// AddressAndFamily returns an address, its family.
+// AddressAndFamily returns an address and its family.
 func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress, uint16, *syserr.Error) {
 	// Make sure we have at least 2 bytes for the address family.
 	if len(addr) < 2 {
@@ -370,6 +372,22 @@ func AddressAndFamily(sfamily int, addr []byte, strict bool) (tcpip.FullAddress,
 			out.NIC = tcpip.NICID(a.Scope_id)
 		}
 		return out, family, nil
+
+	case linux.AF_PACKET:
+		var a linux.SockAddrLink
+		if len(addr) < sockAddrLinkSize {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+		binary.Unmarshal(addr[:sockAddrLinkSize], usermem.ByteOrder, &a)
+		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
+			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
+		}
+
+		// TODO(b/129292371): Return protocol too.
+		return tcpip.FullAddress{
+			NIC:  tcpip.NICID(a.InterfaceIndex),
+			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+		}, family, nil
 
 	case linux.AF_UNSPEC:
 		return tcpip.FullAddress{}, family, nil
@@ -1951,12 +1969,14 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 			return &out, uint32(2 + l)
 		}
 		return &out, uint32(3 + l)
+
 	case linux.AF_INET:
 		var out linux.SockAddrInet
 		copy(out.Addr[:], addr.Addr)
 		out.Family = linux.AF_INET
 		out.Port = htons(addr.Port)
-		return &out, uint32(binary.Size(out))
+		return &out, uint32(sockAddrInetSize)
+
 	case linux.AF_INET6:
 		var out linux.SockAddrInet6
 		if len(addr.Addr) == 4 {
@@ -1972,7 +1992,17 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		if isLinkLocal(addr.Addr) {
 			out.Scope_id = uint32(addr.NIC)
 		}
-		return &out, uint32(binary.Size(out))
+		return &out, uint32(sockAddrInet6Size)
+
+	case linux.AF_PACKET:
+		// TODO(b/129292371): Return protocol too.
+		var out linux.SockAddrLink
+		out.Family = linux.AF_PACKET
+		out.InterfaceIndex = int32(addr.NIC)
+		out.HardwareAddrLen = header.EthernetAddressSize
+		copy(out.HardwareAddr[:], addr.Addr)
+		return &out, uint32(sockAddrLinkSize)
+
 	default:
 		return nil, 0
 	}

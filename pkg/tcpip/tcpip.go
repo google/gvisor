@@ -255,7 +255,7 @@ type FullAddress struct {
 	// This may not be used by all endpoint types.
 	NIC NICID
 
-	// Addr is the network address.
+	// Addr is the network or link layer address.
 	Addr Address
 
 	// Port is the transport port.

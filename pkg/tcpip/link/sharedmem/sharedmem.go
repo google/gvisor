@@ -212,6 +212,21 @@ func (e *endpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	return nil
 }
 
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+	v := packet.ToView()
+	// Transmit the packet.
+	e.mu.Lock()
+	ok := e.tx.transmit(v, buffer.View{})
+	e.mu.Unlock()
+
+	if !ok {
+		return tcpip.ErrWouldBlock
+	}
+
+	return nil
+}
+
 // dispatchLoop reads packets from the rx queue in a loop and dispatches them
 // to the network stack.
 func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
@@ -254,7 +269,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 		// Send packet up the stack.
 		eth := header.Ethernet(b)
-		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView())
+		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView(), buffer.View(eth))
 	}
 
 	// Clean state.

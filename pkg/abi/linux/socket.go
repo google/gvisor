@@ -256,6 +256,17 @@ type SockAddrInet6 struct {
 	Scope_id uint32
 }
 
+// SockAddrLink is a struct sockaddr_ll, from uapi/linux/if_packet.h.
+type SockAddrLink struct {
+	Family          uint16
+	Protocol        uint16
+	InterfaceIndex  int32
+	ARPHardwareType uint16
+	PacketType      byte
+	HardwareAddrLen byte
+	HardwareAddr    [8]byte
+}
+
 // UnixPathMax is the maximum length of the path in an AF_UNIX socket.
 //
 // From uapi/linux/un.h.
@@ -278,6 +289,7 @@ type SockAddr interface {
 
 func (s *SockAddrInet) implementsSockAddr()    {}
 func (s *SockAddrInet6) implementsSockAddr()   {}
+func (s *SockAddrLink) implementsSockAddr()    {}
 func (s *SockAddrUnix) implementsSockAddr()    {}
 func (s *SockAddrNetlink) implementsSockAddr() {}
 
