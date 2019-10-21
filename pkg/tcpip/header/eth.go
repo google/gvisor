@@ -50,6 +50,24 @@ const (
 	EthernetAddressSize = 6
 )
 
+const (
+	// EthernetProtocolAll is a catch-all for all protocols carried inside
+	// an ethernet frame. It is mainly used to create packet sockets that
+	// capture all traffic.
+	EthernetProtocolAll tcpip.NetworkProtocolNumber = 0x0003
+
+	// EthernetProtocolPUP is the PARC Universial Packet protocol ethertype.
+	EthernetProtocolPUP tcpip.NetworkProtocolNumber = 0x0200
+)
+
+// Ethertypes holds the protocol numbers describing the payload of an ethernet
+// frame. These types aren't necessarily supported by netstack, but can be used
+// to catch all traffic of a type via packet endpoints.
+var Ethertypes = []tcpip.NetworkProtocolNumber{
+	EthernetProtocolAll,
+	EthernetProtocolPUP,
+}
+
 // SourceAddress returns the "MAC source" field of the ethernet frame header.
 func (b Ethernet) SourceAddress() tcpip.LinkAddress {
 	return tcpip.LinkAddress(b[srcMAC:][:EthernetAddressSize])

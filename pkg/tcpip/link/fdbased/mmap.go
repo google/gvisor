@@ -169,9 +169,10 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	var (
 		p             tcpip.NetworkProtocolNumber
 		remote, local tcpip.LinkAddress
+		eth           header.Ethernet
 	)
 	if d.e.hdrSize > 0 {
-		eth := header.Ethernet(pkt)
+		eth = header.Ethernet(pkt)
 		p = eth.Type()
 		remote = eth.SourceAddress()
 		local = eth.DestinationAddress()
@@ -189,6 +190,6 @@ func (d *packetMMapDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	pkt = pkt[d.e.hdrSize:]
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, buffer.NewVectorisedView(len(pkt), []buffer.View{buffer.View(pkt)}))
+	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, buffer.NewVectorisedView(len(pkt), []buffer.View{buffer.View(pkt)}), buffer.View(eth))
 	return true, nil
 }

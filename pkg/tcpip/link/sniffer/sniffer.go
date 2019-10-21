@@ -116,7 +116,7 @@ func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack
 // DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
 // called by the link-layer endpoint being wrapped when a packet arrives, and
 // logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("recv", protocol, vv.First(), nil)
 	}
@@ -147,7 +147,7 @@ func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local
 			panic(err)
 		}
 	}
-	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, vv, linkHeader)
 }
 
 // Attach implements the stack.LinkEndpoint interface. It saves the dispatcher
@@ -218,26 +218,54 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 			panic(err)
 		}
 		length -= len(hdrBuf)
-		if length > 0 {
-			for _, v := range payload.Views() {
-				if len(v) > length {
-					v = v[:length]
-				}
-				n, err := buf.Write(v)
-				if err != nil {
-					panic(err)
-				}
-				length -= n
-				if length == 0 {
-					break
-				}
-			}
-		}
+		logVectorisedView(payload, length, buf)
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 	}
 	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
+}
+
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
+		logPacket("send", 0, buffer.View("[raw packet, no header available]"), nil /* gso */)
+	}
+	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
+		length := packet.Size()
+		if length > int(e.maxPCAPLen) {
+			length = int(e.maxPCAPLen)
+		}
+
+		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
+		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(packet.Size()))); err != nil {
+			panic(err)
+		}
+		logVectorisedView(packet, length, buf)
+		if _, err := e.file.Write(buf.Bytes()); err != nil {
+			panic(err)
+		}
+	}
+	return e.lower.WriteRawPacket(packet)
+}
+
+func logVectorisedView(vv buffer.VectorisedView, length int, buf *bytes.Buffer) {
+	if length <= 0 {
+		return
+	}
+	for _, v := range vv.Views() {
+		if len(v) > length {
+			v = v[:length]
+		}
+		n, err := buf.Write(v)
+		if err != nil {
+			panic(err)
+		}
+		length -= n
+		if length == 0 {
+			return
+		}
+	}
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

@@ -79,9 +79,9 @@ func (m *InjectableEndpoint) IsAttached() bool {
 	return m.dispatcher != nil
 }
 
-// Inject implements stack.InjectableLinkEndpoint.
-func (m *InjectableEndpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
-	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv)
+// InjectInbound implements stack.InjectableLinkEndpoint.
+func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+	m.dispatcher.DeliverNetworkPacket(m, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
 }
 
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
@@ -94,14 +94,21 @@ func (m *InjectableEndpoint) WritePacket(r *stack.Route, _ *stack.GSO, hdr buffe
 	return tcpip.ErrNoRoute
 }
 
-// WriteRawPacket writes outbound packets to the appropriate
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (m *InjectableEndpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+	// WriteRawPacket doesn't get a route or network address, so there's
+	// nowhere to write this.
+	return tcpip.ErrNoRoute
+}
+
+// InjectOutbound writes outbound packets to the appropriate
 // LinkInjectableEndpoint based on the dest address.
-func (m *InjectableEndpoint) WriteRawPacket(dest tcpip.Address, packet []byte) *tcpip.Error {
+func (m *InjectableEndpoint) InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error {
 	endpoint, ok := m.routes[dest]
 	if !ok {
 		return tcpip.ErrNoRoute
 	}
-	return endpoint.WriteRawPacket(dest, packet)
+	return endpoint.InjectOutbound(dest, packet)
 }
 
 // Wait implements stack.LinkEndpoint.Wait.

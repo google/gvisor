@@ -62,6 +62,10 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		}
 
 	case linux.SOCK_RAW:
+		// TODO(b/142504697): "In order to create a raw socket, a
+		// process must have the CAP_NET_RAW capability in the user
+		// namespace that governs its network namespace." - raw(7)
+
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
@@ -85,7 +89,8 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 	return 0, true, syserr.ErrProtocolNotSupported
 }
 
-// Socket creates a new socket object for the AF_INET or AF_INET6 family.
+// Socket creates a new socket object for the AF_INET, AF_INET6, or AF_PACKET
+// family.
 func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
 	// Fail right away if we don't have a stack.
 	stack := t.NetworkContext()
@@ -97,6 +102,12 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	eps, ok := stack.(*Stack)
 	if !ok {
 		return nil, nil
+	}
+
+	// Packet sockets are handled separately, since they are neither INET
+	// nor INET6 specific.
+	if p.family == linux.AF_PACKET {
+		return packetSocket(t, eps, stype, protocol)
 	}
 
 	// Figure out the transport protocol.
@@ -121,12 +132,47 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	return New(t, p.family, stype, int(transProto), wq, ep)
 }
 
+func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+	// TODO(b/142504697): "In order to create a packet socket, a process
+	// must have the CAP_NET_RAW capability in the user namespace that
+	// governs its network namespace." - packet(7)
+
+	// Packet sockets require CAP_NET_RAW.
+	creds := auth.CredentialsFromContext(t)
+	if !creds.HasCapability(linux.CAP_NET_RAW) {
+		return nil, syserr.ErrNotPermitted
+	}
+
+	// "cooked" packets don't contain link layer information.
+	var cooked bool
+	switch stype {
+	case linux.SOCK_DGRAM:
+		cooked = true
+	case linux.SOCK_RAW:
+		cooked = false
+	default:
+		return nil, syserr.ErrProtocolNotSupported
+	}
+
+	// protocol is passed in network byte order, but netstack wants it in
+	// host order.
+	netProto := tcpip.NetworkProtocolNumber(ntohs(uint16(protocol)))
+
+	wq := &waiter.Queue{}
+	ep, err := epStack.Stack.NewPacketEndpoint(cooked, netProto, wq)
+	if err != nil {
+		return nil, syserr.TranslateNetstackError(err)
+	}
+
+	return New(t, linux.AF_PACKET, stype, protocol, wq, ep)
+}
+
 // Pair just returns nil sockets (not supported).
 func (*provider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
 	return nil, nil, nil
 }
 
-// init registers socket providers for AF_INET and AF_INET6.
+// init registers socket providers for AF_INET, AF_INET6, and AF_PACKET.
 func init() {
 	// Providers backed by netstack.
 	p := []provider{
@@ -137,6 +183,9 @@ func init() {
 		{
 			family:   linux.AF_INET6,
 			netProto: ipv6.ProtocolNumber,
+		},
+		{
+			family: linux.AF_PACKET,
 		},
 	}
 

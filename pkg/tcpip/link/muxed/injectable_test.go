@@ -31,7 +31,7 @@ import (
 func TestInjectableEndpointRawDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 
-	endpoint.WriteRawPacket(dstIP, []byte{0xFA})
+	endpoint.InjectOutbound(dstIP, []byte{0xFA})
 
 	buf := make([]byte, ipv4.MaxTotalSize)
 	bytesRead, err := sock.Read(buf)

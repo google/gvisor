@@ -78,9 +78,10 @@ func (q *queueBuffers) cleanup() {
 }
 
 type packetInfo struct {
-	addr  tcpip.LinkAddress
-	proto tcpip.NetworkProtocolNumber
-	vv    buffer.VectorisedView
+	addr       tcpip.LinkAddress
+	proto      tcpip.NetworkProtocolNumber
+	vv         buffer.VectorisedView
+	linkHeader buffer.View
 }
 
 type testContext struct {
@@ -130,12 +131,13 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, vv buffer.VectorisedView) {
+func (c *testContext) DeliverNetworkPacket(_ stack.LinkEndpoint, remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
-		addr:  remoteLinkAddr,
-		proto: proto,
-		vv:    vv.Clone(nil),
+		addr:       remoteLinkAddr,
+		proto:      proto,
+		vv:         vv.Clone(nil),
+		linkHeader: linkHeader,
 	})
 	c.mu.Unlock()
 

@@ -171,6 +171,10 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 	return nil
 }
 
+func (t *testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
+	return tcpip.ErrNotSupported
+}
+
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},

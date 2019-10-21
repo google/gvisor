@@ -4,26 +4,25 @@ load("//tools/go_stateify:defs.bzl", "go_library")
 package(licenses = ["notice"])
 
 go_template_instance(
-    name = "raw_packet_list",
-    out = "raw_packet_list.go",
-    package = "raw",
-    prefix = "rawPacket",
+    name = "packet_list",
+    out = "packet_list.go",
+    package = "packet",
+    prefix = "packet",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*rawPacket",
-        "Linker": "*rawPacket",
+        "Element": "*packet",
+        "Linker": "*packet",
     },
 )
 
 go_library(
-    name = "raw",
+    name = "packet",
     srcs = [
         "endpoint.go",
         "endpoint_state.go",
-        "protocol.go",
-        "raw_packet_list.go",
+        "packet_list.go",
     ],
-    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/raw",
+    importpath = "gvisor.dev/gvisor/pkg/tcpip/transport/packet",
     imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
@@ -34,7 +33,6 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/iptables",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/packet",
         "//pkg/waiter",
     ],
 )
@@ -42,7 +40,7 @@ go_library(
 filegroup(
     name = "autogen",
     srcs = [
-        "raw_packet_list.go",
+        "packet_list.go",
     ],
     visibility = ["//:sandbox"],
 )

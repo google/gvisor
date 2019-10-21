@@ -72,7 +72,7 @@ func (e *Endpoint) Inject(protocol tcpip.NetworkProtocolNumber, vv buffer.Vector
 
 // InjectLinkAddr injects an inbound packet with a remote link address.
 func (e *Endpoint) InjectLinkAddr(protocol tcpip.NetworkProtocolNumber, remote tcpip.LinkAddress, vv buffer.VectorisedView) {
-	e.dispatcher.DeliverNetworkPacket(e, remote, "" /* local */, protocol, vv.Clone(nil))
+	e.dispatcher.DeliverNetworkPacket(e, remote, "" /* local */, protocol, vv.Clone(nil), nil /* linkHeader */)
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
@@ -124,6 +124,23 @@ func (e *Endpoint) WritePacket(_ *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		Proto:   protocol,
 		Payload: payload.ToView(),
 		GSO:     gso,
+	}
+
+	select {
+	case e.C <- p:
+	default:
+	}
+
+	return nil
+}
+
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *Endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+	p := PacketInfo{
+		Header:  packet.ToView(),
+		Proto:   0,
+		Payload: buffer.View{},
+		GSO:     nil,
 	}
 
 	select {

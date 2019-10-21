@@ -351,10 +351,9 @@ type Stack struct {
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
-	// unassociatedFactory creates unassociated endpoints. If nil, raw
-	// endpoints are disabled. It is set during Stack creation and is
-	// immutable.
-	unassociatedFactory UnassociatedEndpointFactory
+	// rawFactory creates raw endpoints. If nil, raw endpoints are
+	// disabled. It is set during Stack creation and is immutable.
+	rawFactory RawFactory
 
 	demux *transportDemuxer
 
@@ -425,16 +424,16 @@ type Options struct {
 	// stack (false).
 	HandleLocal bool
 
-	// UnassociatedFactory produces unassociated endpoints raw endpoints.
-	// Raw endpoints are enabled only if this is non-nil.
-	UnassociatedFactory UnassociatedEndpointFactory
-
 	// NDPConfigs is the NDP configurations used by interfaces.
 	//
 	// By default, NDPConfigs will have a zero value for its
 	// DupAddrDetectTransmits field, implying that DAD will not be performed
 	// before assigning an address to a NIC.
 	NDPConfigs NDPConfigurations
+
+	// RawFactory produces raw endpoints. Raw endpoints are enabled only if
+	// this is non-nil.
+	RawFactory RawFactory
 }
 
 // TransportEndpointInfo holds useful information about a transport endpoint
@@ -514,8 +513,8 @@ func New(opts Options) *Stack {
 		}
 	}
 
-	// Add the factory for unassociated endpoints, if present.
-	s.unassociatedFactory = opts.UnassociatedFactory
+	// Add the factory for raw endpoints, if present.
+	s.rawFactory = opts.RawFactory
 
 	// Create the global transport demuxer.
 	s.demux = newTransportDemuxer(s)
@@ -650,12 +649,12 @@ func (s *Stack) NewEndpoint(transport tcpip.TransportProtocolNumber, network tcp
 // protocol. Raw endpoints receive all traffic for a given protocol regardless
 // of address.
 func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
-	if s.unassociatedFactory == nil {
+	if s.rawFactory == nil {
 		return nil, tcpip.ErrNotPermitted
 	}
 
 	if !associated {
-		return s.unassociatedFactory.NewUnassociatedRawEndpoint(s, network, transport, waiterQueue)
+		return s.rawFactory.NewUnassociatedEndpoint(s, network, transport, waiterQueue)
 	}
 
 	t, ok := s.transportProtocols[transport]
@@ -664,6 +663,16 @@ func (s *Stack) NewRawEndpoint(transport tcpip.TransportProtocolNumber, network 
 	}
 
 	return t.proto.NewRawEndpoint(s, network, waiterQueue)
+}
+
+// NewPacketEndpoint creates a new packet endpoint listening for the given
+// netProto.
+func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+	if s.rawFactory == nil {
+		return nil, tcpip.ErrNotPermitted
+	}
+
+	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
 }
 
 // createNIC creates a NIC with the provided id and link-layer endpoint, and
@@ -1133,6 +1142,109 @@ func (s *Stack) Resume() {
 	for _, e := range eps {
 		e.Resume(s)
 	}
+}
+
+// RegisterPacketEndpoint registers ep with the stack, causing it to receive
+// all traffic of the specified netProto on the given NIC. If nicID is 0, it
+// receives traffic from every NIC.
+func (s *Stack) RegisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// If no NIC is specified, capture on all devices.
+	if nicID == 0 {
+		// Register with each NIC.
+		for _, nic := range s.nics {
+			if err := nic.registerPacketEndpoint(netProto, ep); err != nil {
+				s.unregisterPacketEndpointLocked(0, netProto, ep)
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Capture on a specific device.
+	nic, ok := s.nics[nicID]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+	if err := nic.registerPacketEndpoint(netProto, ep); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// UnregisterPacketEndpoint unregisters ep for packets of the specified
+// netProto from the specified NIC. If nicID is 0, ep is unregistered from all
+// NICs.
+func (s *Stack) UnregisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unregisterPacketEndpointLocked(nicID, netProto, ep)
+}
+
+func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
+	// If no NIC is specified, unregister on all devices.
+	if nicID == 0 {
+		// Unregister with each NIC.
+		for _, nic := range s.nics {
+			nic.unregisterPacketEndpoint(netProto, ep)
+		}
+		return
+	}
+
+	// Unregister in a single device.
+	nic, ok := s.nics[nicID]
+	if !ok {
+		return
+	}
+	nic.unregisterPacketEndpoint(netProto, ep)
+}
+
+// WritePacket writes data directly to the specified NIC. It adds an ethernet
+// header based on the arguments.
+func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
+	s.mu.Lock()
+	nic, ok := s.nics[nicid]
+	s.mu.Unlock()
+	if !ok {
+		return tcpip.ErrUnknownDevice
+	}
+
+	// Add our own fake ethernet header.
+	ethFields := header.EthernetFields{
+		SrcAddr: nic.linkEP.LinkAddress(),
+		DstAddr: dst,
+		Type:    netProto,
+	}
+	fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
+	fakeHeader.Encode(&ethFields)
+	ethHeader := buffer.View(fakeHeader).ToVectorisedView()
+	ethHeader.Append(payload)
+
+	if err := nic.linkEP.WriteRawPacket(ethHeader); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// WriteRawPacket writes data directly to the specified NIC without adding any
+// headers.
+func (s *Stack) WriteRawPacket(nicid tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
+	s.mu.Lock()
+	nic, ok := s.nics[nicid]
+	s.mu.Unlock()
+	if !ok {
+		return tcpip.ErrUnknownDevice
+	}
+
+	if err := nic.linkEP.WriteRawPacket(payload); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the
