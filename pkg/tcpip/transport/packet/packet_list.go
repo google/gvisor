@@ -1,4 +1,4 @@
-package raw
+package packet
 
 // ElementMapper provides an identity mapping by default.
 //

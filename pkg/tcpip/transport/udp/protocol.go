@@ -121,8 +121,15 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 			payloadLen = available
 		}
 
-		payload := buffer.NewVectorisedView(len(netHeader), []buffer.View{netHeader})
-		payload.Append(vv)
+		// The buffers used by vv and netHeader may be used elsewhere
+		// in the system.  For example, a raw or packet socket may use
+		// what UDP considers an unreachable destination. Thus we deep
+		// copy vv and netHeader to prevent multiple ownership and SR
+		// errors.
+		newNetHeader := make(buffer.View, len(netHeader))
+		copy(newNetHeader, netHeader)
+		payload := buffer.NewVectorisedView(len(newNetHeader), []buffer.View{newNetHeader})
+		payload.Append(vv.ToView().ToVectorisedView())
 		payload.CapLength(payloadLen)
 
 		hdr := buffer.NewPrependable(headerLen)
