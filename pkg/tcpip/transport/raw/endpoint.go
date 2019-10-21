@@ -17,8 +17,7 @@
 //
 //   * manually write and inspect transport layer headers and payloads
 //   * receive all traffic of a given transport protocol (e.g. ICMP or UDP)
-//   * optionally write and inspect network layer and link layer headers for
-//     packets
+//   * optionally write and inspect network layer headers of packets
 //
 // Raw sockets don't have any notion of ports, and incoming packets are
 // demultiplexed solely by protocol number. Thus, a raw UDP endpoint will
@@ -38,8 +37,8 @@ import (
 )
 
 // +stateify savable
-type packet struct {
-	packetEntry
+type rawPacket struct {
+	rawPacketEntry
 	// data holds the actual packet data, including any headers and
 	// payload.
 	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
@@ -72,7 +71,7 @@ type endpoint struct {
 	// The following fields are used to manage the receive queue and are
 	// protected by rcvMu.
 	rcvMu         sync.Mutex `state:"nosave"`
-	rcvList       packetList
+	rcvList       rawPacketList
 	rcvBufSizeMax int `state:".(int)"`
 	rcvBufSize    int
 	rcvClosed     bool
@@ -90,7 +89,6 @@ type endpoint struct {
 }
 
 // NewEndpoint returns a raw  endpoint for the given protocols.
-// TODO(b/129292371): IP_HDRINCL and AF_PACKET.
 func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
 	return newEndpoint(stack, netProto, transProto, waiterQueue, true /* associated */)
 }
@@ -187,17 +185,17 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
-	packet := e.rcvList.Front()
-	e.rcvList.Remove(packet)
-	e.rcvBufSize -= packet.data.Size()
+	pkt := e.rcvList.Front()
+	e.rcvList.Remove(pkt)
+	e.rcvBufSize -= pkt.data.Size()
 
 	e.rcvMu.Unlock()
 
 	if addr != nil {
-		*addr = packet.senderAddr
+		*addr = pkt.senderAddr
 	}
 
-	return packet.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: packet.timestampNS}, nil
+	return pkt.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: pkt.timestampNS}, nil
 }
 
 // Write implements tcpip.Endpoint.Write.
@@ -602,7 +600,7 @@ func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv bu
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
-	packet := &packet{
+	pkt := &rawPacket{
 		senderAddr: tcpip.FullAddress{
 			NIC:  route.NICID(),
 			Addr: route.RemoteAddress,
@@ -611,11 +609,11 @@ func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv bu
 
 	combinedVV := netHeader.ToVectorisedView()
 	combinedVV.Append(vv)
-	packet.data = combinedVV.Clone(packet.views[:])
-	packet.timestampNS = e.stack.NowNanoseconds()
+	pkt.data = combinedVV.Clone(pkt.views[:])
+	pkt.timestampNS = e.stack.NowNanoseconds()
 
-	e.rcvList.PushBack(packet)
-	e.rcvBufSize += packet.data.Size()
+	e.rcvList.PushBack(pkt)
+	e.rcvBufSize += pkt.data.Size()
 
 	e.rcvMu.Unlock()
 	e.stats.PacketsReceived.Increment()

@@ -23,6 +23,7 @@ package loopback
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -70,6 +71,9 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
 
+// Wait implements stack.LinkEndpoint.Wait.
+func (*endpoint) Wait() {}
+
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
 func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
@@ -81,10 +85,22 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 	// Because we're immediately turning around and writing the packet back to the
 	// rx path, we intentionally don't preserve the remote and local link
 	// addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv)
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, vv, nil /* linkHeader */)
 
 	return nil
 }
 
-// Wait implements stack.LinkEndpoint.Wait.
-func (*endpoint) Wait() {}
+// WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+	// Reject the packet if it's shorter than an ethernet header.
+	if packet.Size() < header.EthernetMinimumSize {
+		return tcpip.ErrBadAddress
+	}
+
+	// There should be an ethernet header at the beginning of packet.
+	linkHeader := header.Ethernet(packet.First()[:header.EthernetMinimumSize])
+	packet.TrimFront(len(linkHeader))
+	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), packet, buffer.View(linkHeader))
+
+	return nil
+}
