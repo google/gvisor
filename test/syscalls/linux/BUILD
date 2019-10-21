@@ -670,6 +670,7 @@ cc_binary(
         "//test/util:thread_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:optional",
         "@com_google_googletest//:gtest",
     ],
 )

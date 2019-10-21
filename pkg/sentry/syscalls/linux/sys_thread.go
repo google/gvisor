@@ -15,10 +15,12 @@
 package linux
 
 import (
+	"path"
 	"syscall"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -67,8 +69,22 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	argvAddr := args[1].Pointer()
 	envvAddr := args[2].Pointer()
 
-	// Extract our arguments.
-	filename, err := t.CopyInString(filenameAddr, linux.PATH_MAX)
+	return execveat(t, linux.AT_FDCWD, filenameAddr, argvAddr, envvAddr, 0)
+}
+
+// Execveat implements linux syscall execveat(2).
+func Execveat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirFD := args[0].Int()
+	pathnameAddr := args[1].Pointer()
+	argvAddr := args[2].Pointer()
+	envvAddr := args[3].Pointer()
+	flags := args[4].Int()
+
+	return execveat(t, dirFD, pathnameAddr, argvAddr, envvAddr, flags)
+}
+
+func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr usermem.Addr, flags int32) (uintptr, *kernel.SyscallControl, error) {
+	pathname, err := t.CopyInString(pathnameAddr, linux.PATH_MAX)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -89,14 +105,38 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 		}
 	}
 
+	if flags != 0 {
+		// TODO(b/128449944): Handle AT_EMPTY_PATH and AT_SYMLINK_NOFOLLOW.
+		t.Kernel().EmitUnimplementedEvent(t)
+		return 0, nil, syserror.ENOSYS
+	}
+
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef()
-	wd := t.FSContext().WorkingDirectory()
+
+	var wd *fs.Dirent
+	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
+		// If pathname is absolute, LoadTaskImage() will ignore the wd.
+		wd = t.FSContext().WorkingDirectory()
+	} else {
+		// Need to extract the given FD.
+		f := t.GetFile(dirFD)
+		if f == nil {
+			return 0, nil, syserror.EBADF
+		}
+		defer f.DecRef()
+
+		wd = f.Dirent
+		wd.IncRef()
+		if !fs.IsDir(wd.Inode.StableAttr) {
+			return 0, nil, syserror.ENOTDIR
+		}
+	}
 	defer wd.DecRef()
 
 	// Load the new TaskContext.
 	maxTraversals := uint(linux.MaxSymlinkTraversals)
-	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, filename, nil, argv, envv, t.Arch().FeatureSet())
+	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, nil, argv, envv, t.Arch().FeatureSet())
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
