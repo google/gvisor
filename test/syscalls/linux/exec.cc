@@ -33,6 +33,7 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/synchronization/mutex.h"
+#include "absl/types/optional.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/multiprocess_util.h"
@@ -68,11 +69,12 @@ constexpr char kExit42[] = "--exec_exit_42";
 constexpr char kExecWithThread[] = "--exec_exec_with_thread";
 constexpr char kExecFromThread[] = "--exec_exec_from_thread";
 
-// Runs filename with argv and checks that the exit status is expect_status and
-// that stderr contains expect_stderr.
-void CheckOutput(const std::string& filename, const ExecveArray& argv,
-                 const ExecveArray& envv, int expect_status,
-                 const std::string& expect_stderr) {
+// Runs file specified by dirfd and pathname with argv and checks that the exit
+// status is expect_status and that stderr contains expect_stderr.
+void CheckExecHelper(const absl::optional<int32_t> dirfd,
+                     const std::string& pathname, const ExecveArray& argv,
+                     const ExecveArray& envv, const int flags,
+                     int expect_status, const std::string& expect_stderr) {
   int pipe_fds[2];
   ASSERT_THAT(pipe2(pipe_fds, O_CLOEXEC), SyscallSucceeds());
 
@@ -110,8 +112,15 @@ void CheckOutput(const std::string& filename, const ExecveArray& argv,
     // CloexecEventfd depend on that not happening.
   };
 
-  auto kill = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec(filename, argv, envv, remap_stderr, &child, &execve_errno));
+  Cleanup kill;
+  if (dirfd.has_value()) {
+    kill = ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(*dirfd, pathname, argv,
+                                                     envv, flags, remap_stderr,
+                                                     &child, &execve_errno));
+  } else {
+    kill = ASSERT_NO_ERRNO_AND_VALUE(
+        ForkAndExec(pathname, argv, envv, remap_stderr, &child, &execve_errno));
+  }
 
   ASSERT_EQ(0, execve_errno);
 
@@ -140,6 +149,21 @@ void CheckOutput(const std::string& filename, const ExecveArray& argv,
   EXPECT_TRUE(absl::StrContains(output, expect_stderr)) << output;
 }
 
+void CheckExec(const std::string& filename, const ExecveArray& argv,
+               const ExecveArray& envv, int expect_status,
+               const std::string& expect_stderr) {
+  CheckExecHelper(/*dirfd=*/absl::optional<int32_t>(), filename, argv, envv,
+                  /*flags=*/0, expect_status, expect_stderr);
+}
+
+void CheckExecveat(const int32_t dirfd, const std::string& pathname,
+                   const ExecveArray& argv, const ExecveArray& envv,
+                   const int flags, int expect_status,
+                   const std::string& expect_stderr) {
+  CheckExecHelper(absl::optional<int32_t>(dirfd), pathname, argv, envv, flags,
+                  expect_status, expect_stderr);
+}
+
 TEST(ExecTest, EmptyPath) {
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(ForkAndExec("", {}, {}, nullptr, &execve_errno));
@@ -147,46 +171,45 @@ TEST(ExecTest, EmptyPath) {
 }
 
 TEST(ExecTest, Basic) {
-  CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)}, {},
-              ArgEnvExitStatus(0, 0),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\n"));
+  CheckExec(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)}, {},
+            ArgEnvExitStatus(0, 0),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\n"));
 }
 
 TEST(ExecTest, OneArg) {
-  CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload), "1"},
-              {}, ArgEnvExitStatus(1, 0),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
+  CheckExec(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload), "1"},
+            {}, ArgEnvExitStatus(1, 0),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
 }
 
 TEST(ExecTest, FiveArg) {
-  CheckOutput(WorkloadPath(kBasicWorkload),
-              {WorkloadPath(kBasicWorkload), "1", "2", "3", "4", "5"}, {},
-              ArgEnvExitStatus(5, 0),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
+  CheckExec(WorkloadPath(kBasicWorkload),
+            {WorkloadPath(kBasicWorkload), "1", "2", "3", "4", "5"}, {},
+            ArgEnvExitStatus(5, 0),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
 }
 
 TEST(ExecTest, OneEnv) {
-  CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)},
-              {"1"}, ArgEnvExitStatus(0, 1),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
+  CheckExec(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)}, {"1"},
+            ArgEnvExitStatus(0, 1),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n"));
 }
 
 TEST(ExecTest, FiveEnv) {
-  CheckOutput(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)},
-              {"1", "2", "3", "4", "5"}, ArgEnvExitStatus(0, 5),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
+  CheckExec(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload)},
+            {"1", "2", "3", "4", "5"}, ArgEnvExitStatus(0, 5),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\n1\n2\n3\n4\n5\n"));
 }
 
 TEST(ExecTest, OneArgOneEnv) {
-  CheckOutput(WorkloadPath(kBasicWorkload),
-              {WorkloadPath(kBasicWorkload), "arg"}, {"env"},
-              ArgEnvExitStatus(1, 1),
-              absl::StrCat(WorkloadPath(kBasicWorkload), "\narg\nenv\n"));
+  CheckExec(WorkloadPath(kBasicWorkload), {WorkloadPath(kBasicWorkload), "arg"},
+            {"env"}, ArgEnvExitStatus(1, 1),
+            absl::StrCat(WorkloadPath(kBasicWorkload), "\narg\nenv\n"));
 }
 
 TEST(ExecTest, InterpreterScript) {
-  CheckOutput(WorkloadPath(kExitScript), {WorkloadPath(kExitScript), "25"}, {},
-              ArgEnvExitStatus(25, 0), "");
+  CheckExec(WorkloadPath(kExitScript), {WorkloadPath(kExitScript), "25"}, {},
+            ArgEnvExitStatus(25, 0), "");
 }
 
 // Everything after the path in the interpreter script is a single argument.
@@ -199,8 +222,8 @@ TEST(ExecTest, InterpreterScriptArgSplit) {
       GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path(), " foo bar"),
       0755));
 
-  CheckOutput(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
-              absl::StrCat(link.path(), "\nfoo bar\n", script.path(), "\n"));
+  CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
+            absl::StrCat(link.path(), "\nfoo bar\n", script.path(), "\n"));
 }
 
 // Original argv[0] is replaced with the script path.
@@ -212,8 +235,8 @@ TEST(ExecTest, InterpreterScriptArgvZero) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path()), 0755));
 
-  CheckOutput(script.path(), {"REPLACED"}, {}, ArgEnvExitStatus(1, 0),
-              absl::StrCat(link.path(), "\n", script.path(), "\n"));
+  CheckExec(script.path(), {"REPLACED"}, {}, ArgEnvExitStatus(1, 0),
+            absl::StrCat(link.path(), "\n", script.path(), "\n"));
 }
 
 // Original argv[0] is replaced with the script path, exactly as passed to
@@ -230,8 +253,8 @@ TEST(ExecTest, InterpreterScriptArgvZeroRelative) {
   auto script_relative =
       ASSERT_NO_ERRNO_AND_VALUE(GetRelativePath(cwd, script.path()));
 
-  CheckOutput(script_relative, {"REPLACED"}, {}, ArgEnvExitStatus(1, 0),
-              absl::StrCat(link.path(), "\n", script_relative, "\n"));
+  CheckExec(script_relative, {"REPLACED"}, {}, ArgEnvExitStatus(1, 0),
+            absl::StrCat(link.path(), "\n", script_relative, "\n"));
 }
 
 // argv[0] is added as the script path, even if there was none.
@@ -243,8 +266,8 @@ TEST(ExecTest, InterpreterScriptArgvZeroAdded) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path()), 0755));
 
-  CheckOutput(script.path(), {}, {}, ArgEnvExitStatus(1, 0),
-              absl::StrCat(link.path(), "\n", script.path(), "\n"));
+  CheckExec(script.path(), {}, {}, ArgEnvExitStatus(1, 0),
+            absl::StrCat(link.path(), "\n", script.path(), "\n"));
 }
 
 // A NUL byte in the script line ends parsing.
@@ -258,8 +281,8 @@ TEST(ExecTest, InterpreterScriptArgNUL) {
       absl::StrCat("#!", link.path(), " foo", std::string(1, '\0'), "bar"),
       0755));
 
-  CheckOutput(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
-              absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
+  CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
+            absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
 }
 
 // Trailing whitespace following interpreter path is ignored.
@@ -271,8 +294,8 @@ TEST(ExecTest, InterpreterScriptTrailingWhitespace) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path(), "  "), 0755));
 
-  CheckOutput(script.path(), {script.path()}, {}, ArgEnvExitStatus(1, 0),
-              absl::StrCat(link.path(), "\n", script.path(), "\n"));
+  CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(1, 0),
+            absl::StrCat(link.path(), "\n", script.path(), "\n"));
 }
 
 // Multiple whitespace characters between interpreter and arg allowed.
@@ -284,8 +307,8 @@ TEST(ExecTest, InterpreterScriptArgWhitespace) {
   TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::StrCat("#!", link.path(), "  foo"), 0755));
 
-  CheckOutput(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
-              absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
+  CheckExec(script.path(), {script.path()}, {}, ArgEnvExitStatus(2, 0),
+            absl::StrCat(link.path(), "\nfoo\n", script.path(), "\n"));
 }
 
 TEST(ExecTest, InterpreterScriptNoPath) {
@@ -314,15 +337,15 @@ TEST(ExecTest, ExecFn) {
   auto script_relative =
       ASSERT_NO_ERRNO_AND_VALUE(GetRelativePath(cwd, script.path()));
 
-  CheckOutput(script_relative, {script_relative}, {}, ArgEnvExitStatus(0, 0),
-              absl::StrCat(script_relative, "\n"));
+  CheckExec(script_relative, {script_relative}, {}, ArgEnvExitStatus(0, 0),
+            absl::StrCat(script_relative, "\n"));
 }
 
 TEST(ExecTest, ExecName) {
   std::string path = WorkloadPath(kStateWorkload);
 
-  CheckOutput(path, {path, "PrintExecName"}, {}, ArgEnvExitStatus(0, 0),
-              absl::StrCat(Basename(path).substr(0, 15), "\n"));
+  CheckExec(path, {path, "PrintExecName"}, {}, ArgEnvExitStatus(0, 0),
+            absl::StrCat(Basename(path).substr(0, 15), "\n"));
 }
 
 TEST(ExecTest, ExecNameScript) {
@@ -336,21 +359,21 @@ TEST(ExecTest, ExecNameScript) {
 
   std::string script_path = script.path();
 
-  CheckOutput(script_path, {script_path}, {}, ArgEnvExitStatus(0, 0),
-              absl::StrCat(Basename(script_path).substr(0, 15), "\n"));
+  CheckExec(script_path, {script_path}, {}, ArgEnvExitStatus(0, 0),
+            absl::StrCat(Basename(script_path).substr(0, 15), "\n"));
 }
 
 // execve may be called by a multithreaded process.
 TEST(ExecTest, WithSiblingThread) {
-  CheckOutput("/proc/self/exe", {"/proc/self/exe", kExecWithThread}, {},
-              W_EXITCODE(42, 0), "");
+  CheckExec("/proc/self/exe", {"/proc/self/exe", kExecWithThread}, {},
+            W_EXITCODE(42, 0), "");
 }
 
 // execve may be called from a thread other than the leader of a multithreaded
 // process.
 TEST(ExecTest, FromSiblingThread) {
-  CheckOutput("/proc/self/exe", {"/proc/self/exe", kExecFromThread}, {},
-              W_EXITCODE(42, 0), "");
+  CheckExec("/proc/self/exe", {"/proc/self/exe", kExecFromThread}, {},
+            W_EXITCODE(42, 0), "");
 }
 
 TEST(ExecTest, NotFound) {
@@ -388,7 +411,7 @@ TEST(ExecStateTest, HandlerReset) {
       absl::StrCat(absl::Hex(reinterpret_cast<uintptr_t>(SIG_DFL))),
   };
 
-  CheckOutput(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
 }
 
 // Ignored signal dispositions are not reset.
@@ -404,7 +427,7 @@ TEST(ExecStateTest, IgnorePreserved) {
       absl::StrCat(absl::Hex(reinterpret_cast<uintptr_t>(SIG_IGN))),
   };
 
-  CheckOutput(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
 }
 
 // Signal masks are not reset on exec
@@ -420,7 +443,7 @@ TEST(ExecStateTest, SignalMask) {
       absl::StrCat(SIGUSR1),
   };
 
-  CheckOutput(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kStateWorkload), args, {}, W_EXITCODE(0, 0), "");
 }
 
 // itimers persist across execve.
@@ -472,10 +495,10 @@ TEST(ExecStateTest, ItimerPreserved) {
 TEST(ProcSelfExe, ChangesAcrossExecve) {
   // See exec_proc_exe_workload for more details. We simply
   // assert that the /proc/self/exe link changes across execve.
-  CheckOutput(WorkloadPath(kProcExeWorkload),
-              {WorkloadPath(kProcExeWorkload),
-               ASSERT_NO_ERRNO_AND_VALUE(ProcessExePath(getpid()))},
-              {}, W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kProcExeWorkload),
+            {WorkloadPath(kProcExeWorkload),
+             ASSERT_NO_ERRNO_AND_VALUE(ProcessExePath(getpid()))},
+            {}, W_EXITCODE(0, 0), "");
 }
 
 TEST(ExecTest, CloexecNormalFile) {
@@ -484,20 +507,20 @@ TEST(ExecTest, CloexecNormalFile) {
   const FileDescriptor fd_closed_on_exec =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY | O_CLOEXEC));
 
-  CheckOutput(WorkloadPath(kAssertClosedWorkload),
-              {WorkloadPath(kAssertClosedWorkload),
-               absl::StrCat(fd_closed_on_exec.get())},
-              {}, W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kAssertClosedWorkload),
+            {WorkloadPath(kAssertClosedWorkload),
+             absl::StrCat(fd_closed_on_exec.get())},
+            {}, W_EXITCODE(0, 0), "");
 
   // The assert closed workload exits with code 2 if the file still exists.  We
   // can use this to do a negative test.
   const FileDescriptor fd_open_on_exec =
       ASSERT_NO_ERRNO_AND_VALUE(Open(tempFile.path(), O_RDONLY));
 
-  CheckOutput(WorkloadPath(kAssertClosedWorkload),
-              {WorkloadPath(kAssertClosedWorkload),
-               absl::StrCat(fd_open_on_exec.get())},
-              {}, W_EXITCODE(2, 0), "");
+  CheckExec(WorkloadPath(kAssertClosedWorkload),
+            {WorkloadPath(kAssertClosedWorkload),
+             absl::StrCat(fd_open_on_exec.get())},
+            {}, W_EXITCODE(2, 0), "");
 }
 
 TEST(ExecTest, CloexecEventfd) {
@@ -505,9 +528,40 @@ TEST(ExecTest, CloexecEventfd) {
   ASSERT_THAT(efd = eventfd(0, EFD_CLOEXEC), SyscallSucceeds());
   FileDescriptor fd(efd);
 
-  CheckOutput(WorkloadPath(kAssertClosedWorkload),
-              {WorkloadPath(kAssertClosedWorkload), absl::StrCat(fd.get())}, {},
-              W_EXITCODE(0, 0), "");
+  CheckExec(WorkloadPath(kAssertClosedWorkload),
+            {WorkloadPath(kAssertClosedWorkload), absl::StrCat(fd.get())}, {},
+            W_EXITCODE(0, 0), "");
+}
+
+TEST(ExecveatTest, BasicWithFDCWD) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  CheckExecveat(AT_FDCWD, path, {path}, {}, /*flags=*/0, ArgEnvExitStatus(0, 0),
+                absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, Basic) {
+  std::string absolute_path = WorkloadPath(kBasicWorkload);
+  std::string parent_dir = std::string(Dirname(absolute_path));
+  std::string relative_path = std::string(Basename(absolute_path));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
+
+  CheckExecveat(dirfd.get(), relative_path, {absolute_path}, {}, /*flags=*/0,
+                ArgEnvExitStatus(0, 0), absl::StrCat(absolute_path, "\n"));
+}
+
+TEST(ExecveatTest, AbsolutePathWithFDCWD) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  CheckExecveat(AT_FDCWD, path, {path}, {}, ArgEnvExitStatus(0, 0), 0,
+                absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, AbsolutePath) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  // File descriptor should be ignored when an absolute path is given.
+  const int32_t badFD = -1;
+  CheckExecveat(badFD, path, {path}, {}, ArgEnvExitStatus(0, 0), 0,
+                absl::StrCat(path, "\n"));
 }
 
 // Priority consistent across calls to execve()
@@ -522,9 +576,8 @@ TEST(GetpriorityTest, ExecveMaintainsPriority) {
 
   // Program run (priority_execve) will exit(X) where
   // X=getpriority(PRIO_PROCESS,0). Check that this exit value is prio.
-  CheckOutput(WorkloadPath(kPriorityWorkload),
-              {WorkloadPath(kPriorityWorkload)}, {},
-              W_EXITCODE(expected_exit_code, 0), "");
+  CheckExec(WorkloadPath(kPriorityWorkload), {WorkloadPath(kPriorityWorkload)},
+            {}, W_EXITCODE(expected_exit_code, 0), "");
 }
 
 void ExecWithThread() {
