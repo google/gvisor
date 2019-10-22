@@ -81,6 +81,9 @@ const (
 )
 
 func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback bool) *NIC {
+	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
+	// example, make sure that the link address it provides is a valid
+	// unicast ethernet address.
 	nic := &NIC{
 		stack:      stack,
 		id:         id,
@@ -139,11 +142,50 @@ func (n *NIC) enable() *tcpip.Error {
 	// when we perform Duplicate Address Detection, or Router Advertisement
 	// when we do Router Discovery. See RFC 4862, section 5.4.2 and RFC 4861
 	// section 4.2 for more information.
-	if _, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]; ok {
-		return n.joinGroup(header.IPv6ProtocolNumber, header.IPv6AllNodesMulticastAddress)
+	//
+	// Also auto-generate an IPv6 link-local address based on the NIC's
+	// link address if it is configured to do so. Note, each interface is
+	// required to have IPv6 link-local unicast address, as per RFC 4291
+	// section 2.1.
+	_, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]
+	if !ok {
+		return nil
 	}
 
-	return nil
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if err := n.joinGroupLocked(header.IPv6ProtocolNumber, header.IPv6AllNodesMulticastAddress); err != nil {
+		return err
+	}
+
+	if !n.stack.autoGenIPv6LinkLocal {
+		return nil
+	}
+
+	l2addr := n.linkEP.LinkAddress()
+
+	// Only attempt to generate the link-local address if we have a
+	// valid MAC address.
+	//
+	// TODO(b/141011931): Validate a LinkEndpoint's link address
+	// (provided by LinkEndpoint.LinkAddress) before reaching this
+	// point.
+	if !header.IsValidUnicastEthernetAddress(l2addr) {
+		return nil
+	}
+
+	addr := header.LinkLocalAddr(l2addr)
+
+	_, err := n.addPermanentAddressLocked(tcpip.ProtocolAddress{
+		Protocol: header.IPv6ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   addr,
+			PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen,
+		},
+	}, CanBePrimaryEndpoint)
+
+	return err
 }
 
 // attachLinkEndpoint attaches the NIC to the endpoint, which will enable it
@@ -582,6 +624,11 @@ func (n *NIC) joinGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address
 // exists yet. Otherwise it just increments its count. n MUST be locked before
 // joinGroupLocked is called.
 func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
+	// TODO(b/143102137): When implementing MLD, make sure MLD packets are
+	// not sent unless a valid link-local address is available for use on n
+	// as an MLD packet's source address must be a link-local address as
+	// outlined in RFC 3810 section 5.
+
 	id := NetworkEndpointID{addr}
 	joins := n.mcastJoins[id]
 	if joins == 0 {
