@@ -16,7 +16,12 @@
 package linux
 
 const (
-	_LINUX_SYSNAME = "Linux"
-	_LINUX_RELEASE = "4.4.0"
-	_LINUX_VERSION = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
+	// LinuxSysname is the OS name advertised by gVisor.
+	LinuxSysname = "Linux"
+
+	// LinuxRelease is the Linux release version number advertised by gVisor.
+	LinuxRelease = "4.4.0"
+
+	// LinuxVersion is the version info advertised by gVisor.
+	LinuxVersion = "#1 SMP Sun Jan 10 15:06:54 PST 2016"
 )
