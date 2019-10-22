@@ -16,5 +16,8 @@ go_library(
     visibility = [
         "//visibility:public",
     ],
-    deps = ["//pkg/tcpip"],
+    deps = [
+        "//pkg/tcpip",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
 )

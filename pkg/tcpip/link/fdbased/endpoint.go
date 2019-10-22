@@ -165,6 +165,9 @@ type Options struct {
 	// disabled.
 	GSOMaxSize uint32
 
+	// SoftwareGSOEnabled indicates whether software GSO is enabled or not.
+	SoftwareGSOEnabled bool
+
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
 	// used for this endpoint.
 	PacketDispatchMode PacketDispatchMode
@@ -242,7 +245,11 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		}
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
-				e.caps |= stack.CapabilityGSO
+				if opts.SoftwareGSOEnabled {
+					e.caps |= stack.CapabilitySoftwareGSO
+				} else {
+					e.caps |= stack.CapabilityHardwareGSO
+				}
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
 		}
@@ -397,7 +404,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		eth.Encode(ethHdr)
 	}
 
-	if e.Capabilities()&stack.CapabilityGSO != 0 {
+	if e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		vnetHdr := virtioNetHdr{}
 		vnetHdrBuf := vnetHdrToByteSlice(&vnetHdr)
 		if gso != nil {
@@ -428,6 +435,123 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 
 	return rawfile.NonBlockingWrite3(e.fds[0], hdr.View(), payload.ToView(), nil)
+}
+
+// WritePackets writes outbound packets to the file descriptor. If it is not
+// currently writable, the packet is dropped.
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+	var ethHdrBuf []byte
+	// hdr + data
+	iovLen := 2
+	if e.hdrSize > 0 {
+		// Add ethernet header if needed.
+		ethHdrBuf = make([]byte, header.EthernetMinimumSize)
+		eth := header.Ethernet(ethHdrBuf)
+		ethHdr := &header.EthernetFields{
+			DstAddr: r.RemoteLinkAddress,
+			Type:    protocol,
+		}
+
+		// Preserve the src address if it's set in the route.
+		if r.LocalLinkAddress != "" {
+			ethHdr.SrcAddr = r.LocalLinkAddress
+		} else {
+			ethHdr.SrcAddr = e.addr
+		}
+		eth.Encode(ethHdr)
+		iovLen++
+	}
+
+	n := len(hdrs)
+
+	views := payload.Views()
+	/*
+	 * Each bondary in views can add one more iovec.
+	 *
+	 * payload |      |          |         |
+	 *         -----------------------------
+	 * packets |    |    |    |    |    |  |
+	 *         -----------------------------
+	 * iovecs  |    | |  |    |  | |    |  |
+	 */
+	iovec := make([]syscall.Iovec, n*iovLen+len(views)-1)
+	mmsgHdrs := make([]rawfile.MMsgHdr, n)
+
+	iovecIdx := 0
+	viewIdx := 0
+	viewOff := 0
+	off := 0
+	nextOff := 0
+	for i := range hdrs {
+		prevIovecIdx := iovecIdx
+		mmsgHdr := &mmsgHdrs[i]
+		mmsgHdr.Msg.Iov = &iovec[iovecIdx]
+		packetSize := hdrs[i].Size
+		hdr := &hdrs[i].Hdr
+
+		off = hdrs[i].Off
+		if off != nextOff {
+			// We stop in a different point last time.
+			size := packetSize
+			viewIdx = 0
+			viewOff = 0
+			for size > 0 {
+				if size >= len(views[viewIdx]) {
+					viewIdx++
+					viewOff = 0
+					size -= len(views[viewIdx])
+				} else {
+					viewOff = size
+					size = 0
+				}
+			}
+		}
+		nextOff = off + packetSize
+
+		if ethHdrBuf != nil {
+			v := &iovec[iovecIdx]
+			v.Base = &ethHdrBuf[0]
+			v.Len = uint64(len(ethHdrBuf))
+			iovecIdx++
+		}
+
+		v := &iovec[iovecIdx]
+		hdrView := hdr.View()
+		v.Base = &hdrView[0]
+		v.Len = uint64(len(hdrView))
+		iovecIdx++
+
+		for packetSize > 0 {
+			vec := &iovec[iovecIdx]
+			iovecIdx++
+
+			v := views[viewIdx]
+			vec.Base = &v[viewOff]
+			s := len(v) - viewOff
+			if s <= packetSize {
+				viewIdx++
+				viewOff = 0
+			} else {
+				s = packetSize
+				viewOff += s
+			}
+			vec.Len = uint64(s)
+			packetSize -= s
+		}
+
+		mmsgHdr.Msg.Iovlen = uint64(iovecIdx - prevIovecIdx)
+	}
+
+	packets := 0
+	for packets < n {
+		sent, err := rawfile.NonBlockingSendMMsg(e.fds[0], mmsgHdrs)
+		if err != nil {
+			return packets, err
+		}
+		packets += sent
+		mmsgHdrs = mmsgHdrs[sent:]
+	}
+	return packets, nil
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.

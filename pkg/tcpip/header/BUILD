@@ -36,10 +36,14 @@ go_test(
     name = "header_x_test",
     size = "small",
     srcs = [
+        "checksum_test.go",
         "ipversion_test.go",
         "tcp_test.go",
     ],
-    deps = [":header"],
+    deps = [
+        ":header",
+        "//pkg/tcpip/buffer",
+    ],
 )
 
 go_test(

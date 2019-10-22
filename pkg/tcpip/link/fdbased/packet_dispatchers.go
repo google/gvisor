@@ -53,7 +53,7 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	d := &readVDispatcher{fd: fd, e: e}
 	d.views = make([]buffer.View, len(BufConfig))
 	iovLen := len(BufConfig)
-	if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+	if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		iovLen++
 	}
 	d.iovecs = make([]syscall.Iovec, iovLen)
@@ -63,7 +63,7 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 func (d *readVDispatcher) allocateViews(bufConfig []int) {
 	var vnetHdr [virtioNetHdrSize]byte
 	vnetHdrOff := 0
-	if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+	if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		// The kernel adds virtioNetHdr before each packet, but
 		// we don't use it, so so we allocate a buffer for it,
 		// add it in iovecs but don't add it in a view.
@@ -106,7 +106,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	if err != nil {
 		return false, err
 	}
-	if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+	if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		// Skip virtioNetHdr which is added before each packet, it
 		// isn't used and it isn't in a view.
 		n -= virtioNetHdrSize
@@ -195,7 +195,7 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	}
 	d.iovecs = make([][]syscall.Iovec, MaxMsgsPerRecv)
 	iovLen := len(BufConfig)
-	if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+	if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 		// virtioNetHdr is prepended before each packet.
 		iovLen++
 	}
@@ -226,7 +226,7 @@ func (d *recvMMsgDispatcher) allocateViews(bufConfig []int) {
 	for k := 0; k < len(d.views); k++ {
 		var vnetHdr [virtioNetHdrSize]byte
 		vnetHdrOff := 0
-		if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+		if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			// The kernel adds virtioNetHdr before each packet, but
 			// we don't use it, so so we allocate a buffer for it,
 			// add it in iovecs but don't add it in a view.
@@ -262,7 +262,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 	// Process each of received packets.
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
-		if d.e.Capabilities()&stack.CapabilityGSO != 0 {
+		if d.e.Capabilities()&stack.CapabilityHardwareGSO != 0 {
 			n -= virtioNetHdrSize
 		}
 		if n <= d.e.hdrSize {
