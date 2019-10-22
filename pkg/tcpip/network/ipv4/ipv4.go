@@ -198,10 +198,9 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 	return nil
 }
 
-// WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) {
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
-	length := uint16(hdr.UsedLength() + payload.Size())
+	length := uint16(hdr.UsedLength() + payloadSize)
 	id := uint32(0)
 	if length > header.IPv4MaximumHeaderSize+8 {
 		// Packets of 68 bytes or less are required by RFC 791 to not be
@@ -219,6 +218,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		DstAddr:     r.RemoteAddress,
 	})
 	ip.SetChecksum(^ip.CalculateChecksum())
+}
+
+// WritePacket writes a packet to the given destination address and protocol.
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+	e.addIPHeader(r, &hdr, payload.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
 		views := make([]buffer.View, 1, 1+len(payload.Views()))
@@ -240,6 +244,23 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 	r.Stats().IP.PacketsSent.Increment()
 	return nil
+}
+
+// WritePackets implements stack.NetworkEndpoint.WritePackets.
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
+	if loop&stack.PacketLoop != 0 {
+		panic("multiple packets in local loop")
+	}
+	if loop&stack.PacketOut == 0 {
+		return len(hdrs), nil
+	}
+
+	for i := range hdrs {
+		e.addIPHeader(r, &hdrs[i].Hdr, hdrs[i].Size, params)
+	}
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+	return n, err
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network

@@ -243,6 +243,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.AllowValue(0),
 		},
 	},
+	unix.SYS_SENDMMSG: []seccomp.Rule{
+		{
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+			seccomp.AllowAny{},
+			seccomp.AllowValue(syscall.MSG_DONTWAIT),
+			seccomp.AllowValue(0),
+		},
+	},
 	syscall.SYS_RESTART_SYSCALL: {},
 	syscall.SYS_RT_SIGACTION:    {},
 	syscall.SYS_RT_SIGPROCMASK:  {},

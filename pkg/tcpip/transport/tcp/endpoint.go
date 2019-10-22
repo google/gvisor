@@ -2327,11 +2327,7 @@ func (e *endpoint) completeState() stack.TCPEndpointState {
 	return s
 }
 
-func (e *endpoint) initGSO() {
-	if e.route.Capabilities()&stack.CapabilityGSO == 0 {
-		return
-	}
-
+func (e *endpoint) initHardwareGSO() {
 	gso := &stack.GSO{}
 	switch e.route.NetProto {
 	case header.IPv4ProtocolNumber:
@@ -2347,6 +2343,18 @@ func (e *endpoint) initGSO() {
 	gso.CsumOffset = header.TCPChecksumOffset
 	gso.MaxSize = e.route.GSOMaxSize()
 	e.gso = gso
+}
+
+func (e *endpoint) initGSO() {
+	if e.route.Capabilities()&stack.CapabilityHardwareGSO != 0 {
+		e.initHardwareGSO()
+	} else if e.route.Capabilities()&stack.CapabilitySoftwareGSO != 0 {
+		e.gso = &stack.GSO{
+			MaxSize:   e.route.GSOMaxSize(),
+			Type:      stack.GSOSW,
+			NeedsCsum: false,
+		}
+	}
 }
 
 // State implements tcpip.Endpoint.State. It exports the endpoint's protocol
