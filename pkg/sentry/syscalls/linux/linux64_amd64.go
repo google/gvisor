@@ -34,9 +34,9 @@ var AMD64 = &kernel.SyscallTable{
 		// guides the interface provided by this syscall table. The build
 		// version is that for a clean build with default kernel config, at 5
 		// minutes after v4.4 was tagged.
-		Sysname: _LINUX_SYSNAME,
-		Release: _LINUX_RELEASE,
-		Version: _LINUX_VERSION,
+		Sysname: LinuxSysname,
+		Release: LinuxRelease,
+		Version: LinuxVersion,
 	},
 	AuditNumber: linux.AUDIT_ARCH_X86_64,
 	Table: map[uintptr]kernel.Syscall{

@@ -30,9 +30,9 @@ var ARM64 = &kernel.SyscallTable{
 	OS:   abi.Linux,
 	Arch: arch.ARM64,
 	Version: kernel.Version{
-		Sysname: _LINUX_SYSNAME,
-		Release: _LINUX_RELEASE,
-		Version: _LINUX_VERSION,
+		Sysname: LinuxSysname,
+		Release: LinuxRelease,
+		Version: LinuxVersion,
 	},
 	AuditNumber: linux.AUDIT_ARCH_AARCH64,
 	Table: map[uintptr]kernel.Syscall{
