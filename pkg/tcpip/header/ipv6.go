@@ -101,6 +101,15 @@ var IPv6EmptySubnet = func() tcpip.Subnet {
 	return subnet
 }()
 
+// IPv6LinkLocalPrefix is the prefix for IPv6 link-local addresses, as defined
+// by RFC 4291 section 2.5.6.
+//
+// The prefix is fe80::/64
+var IPv6LinkLocalPrefix = tcpip.AddressWithPrefix{
+	Address:   "\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+	PrefixLen: 64,
+}
+
 // PayloadLength returns the value of the "payload length" field of the ipv6
 // header.
 func (b IPv6) PayloadLength() uint16 {
