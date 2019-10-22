@@ -17,6 +17,7 @@ package header
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -114,6 +115,40 @@ func TestNDPNeighborAdvert(t *testing.T) {
 	// Make sure flags got updated in the backing buffer.
 	if got := b[ndpNAFlagsOffset]; got != 64 {
 		t.Fatalf("got flags byte = %d, want = 64")
+	}
+}
+
+func TestNDPRouterAdvert(t *testing.T) {
+	b := []byte{
+		64, 128, 1, 2,
+		3, 4, 5, 6,
+		7, 8, 9, 10,
+	}
+
+	ra := NDPRouterAdvert(b)
+
+	if got := ra.CurrHopLimit(); got != 64 {
+		t.Fatalf("got ra.CurrHopLimit = %d, want = 64", got)
+	}
+
+	if got := ra.ManagedAddrConfFlag(); !got {
+		t.Fatalf("got ManagedAddrConfFlag = false, want = true")
+	}
+
+	if got := ra.OtherConfFlag(); got {
+		t.Fatalf("got OtherConfFlag = true, want = false")
+	}
+
+	if got, want := ra.RouterLifetime(), time.Second*258; got != want {
+		t.Fatalf("got ra.RouterLifetime = %d, want = %d", got, want)
+	}
+
+	if got, want := ra.ReachableTime(), time.Millisecond*50595078; got != want {
+		t.Fatalf("got ra.ReachableTime = %d, want = %d", got, want)
+	}
+
+	if got, want := ra.RetransTimer(), time.Millisecond*117967114; got != want {
+		t.Fatalf("got ra.RetransTimer = %d, want = %d", got, want)
 	}
 }
 

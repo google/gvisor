@@ -18,6 +18,8 @@ import "gvisor.dev/gvisor/pkg/tcpip"
 
 // NDPNeighborSolicit is an NDP Neighbor Solicitation message. It will only
 // contain the body of an ICMPv6 packet.
+//
+// See RFC 4861 section 4.3 for more details.
 type NDPNeighborSolicit []byte
 
 const (
