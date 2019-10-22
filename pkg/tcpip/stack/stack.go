@@ -401,6 +401,11 @@ type Stack struct {
 
 	// ndpConfigs is the NDP configurations used by interfaces.
 	ndpConfigs NDPConfigurations
+
+	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
+	// to auto-generate an IPv6 link-local address for newly enabled NICs.
+	// See the AutoGenIPv6LinkLocal field of Options for more details.
+	autoGenIPv6LinkLocal bool
 }
 
 // Options contains optional Stack configuration.
@@ -430,6 +435,18 @@ type Options struct {
 	// DupAddrDetectTransmits field, implying that DAD will not be performed
 	// before assigning an address to a NIC.
 	NDPConfigs NDPConfigurations
+
+	// AutoGenIPv6LinkLocal determins whether or not the stack will attempt
+	// to auto-generate an IPv6 link-local address for newly enabled NICs.
+	// Note, setting this to true does not mean that a link-local address
+	// will be assigned right away, or at all. If Duplicate Address
+	// Detection is enabled, an address will only be assigned if it
+	// successfully resolves. If it fails, no further attempt will be made
+	// to auto-generate an IPv6 link-local address.
+	//
+	// The generated link-local address will follow RFC 4291 Appendix A
+	// guidelines.
+	AutoGenIPv6LinkLocal bool
 
 	// RawFactory produces raw endpoints. Raw endpoints are enabled only if
 	// this is non-nil.
@@ -484,18 +501,19 @@ func New(opts Options) *Stack {
 	opts.NDPConfigs.validate()
 
 	s := &Stack{
-		transportProtocols: make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
-		networkProtocols:   make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
-		linkAddrResolvers:  make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
-		nics:               make(map[tcpip.NICID]*NIC),
-		linkAddrCache:      newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
-		PortManager:        ports.NewPortManager(),
-		clock:              clock,
-		stats:              opts.Stats.FillIn(),
-		handleLocal:        opts.HandleLocal,
-		icmpRateLimiter:    NewICMPRateLimiter(),
-		portSeed:           generateRandUint32(),
-		ndpConfigs:         opts.NDPConfigs,
+		transportProtocols:   make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
+		networkProtocols:     make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
+		linkAddrResolvers:    make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
+		nics:                 make(map[tcpip.NICID]*NIC),
+		linkAddrCache:        newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
+		PortManager:          ports.NewPortManager(),
+		clock:                clock,
+		stats:                opts.Stats.FillIn(),
+		handleLocal:          opts.HandleLocal,
+		icmpRateLimiter:      NewICMPRateLimiter(),
+		portSeed:             generateRandUint32(),
+		ndpConfigs:           opts.NDPConfigs,
+		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
 	}
 
 	// Add specified network protocols.

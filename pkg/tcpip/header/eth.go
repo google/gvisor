@@ -48,6 +48,28 @@ const (
 
 	// EthernetAddressSize is the size, in bytes, of an ethernet address.
 	EthernetAddressSize = 6
+
+	// unspecifiedEthernetAddress is the unspecified ethernet address
+	// (all bits set to 0).
+	unspecifiedEthernetAddress = tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00")
+
+	// unicastMulticastFlagMask is the mask of the least significant bit in
+	// the first octet (in network byte order) of an ethernet address that
+	// determines whether the ethernet address is a unicast or multicast. If
+	// the masked bit is a 1, then the address is a multicast, unicast
+	// otherwise.
+	//
+	// See the IEEE Std 802-2001 document for more details. Specifically,
+	// section 9.2.1 of http://ieee802.org/secmail/pdfocSP2xXA6d.pdf:
+	// "A 48-bit universal address consists of two parts. The first 24 bits
+	// correspond to the OUI as assigned by the IEEE, expect that the
+	// assignee may set the LSB of the first octet to 1 for group addresses
+	// or set it to 0 for individual addresses."
+	unicastMulticastFlagMask = 1
+
+	// unicastMulticastFlagByteIdx is the byte that holds the
+	// unicast/multicast flag. See unicastMulticastFlagMask.
+	unicastMulticastFlagByteIdx = 0
 )
 
 const (
@@ -89,4 +111,26 @@ func (b Ethernet) Encode(e *EthernetFields) {
 	binary.BigEndian.PutUint16(b[ethType:], uint16(e.Type))
 	copy(b[srcMAC:][:EthernetAddressSize], e.SrcAddr)
 	copy(b[dstMAC:][:EthernetAddressSize], e.DstAddr)
+}
+
+// IsValidUnicastEthernetAddress returns true if addr is a valid unicast
+// ethernet address.
+func IsValidUnicastEthernetAddress(addr tcpip.LinkAddress) bool {
+	// Must be of the right length.
+	if len(addr) != EthernetAddressSize {
+		return false
+	}
+
+	// Must not be unspecified.
+	if addr == unspecifiedEthernetAddress {
+		return false
+	}
+
+	// Must not be a multicast.
+	if addr[unicastMulticastFlagByteIdx]&unicastMulticastFlagMask != 0 {
+		return false
+	}
+
+	// addr is a valid unicast ethernet address.
+	return true
 }
