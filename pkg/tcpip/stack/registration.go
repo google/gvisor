@@ -201,6 +201,10 @@ type NetworkEndpoint interface {
 	// protocol.
 	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) *tcpip.Error
 
+	// WritePackets writes packets to the given destination address and
+	// protocol.
+	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) (int, *tcpip.Error)
+
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address.
 	WriteHeaderIncludedPacket(r *Route, payload buffer.VectorisedView, loop PacketLooping) *tcpip.Error
@@ -283,7 +287,11 @@ const (
 	CapabilitySaveRestore
 	CapabilityDisconnectOk
 	CapabilityLoopback
-	CapabilityGSO
+	CapabilityHardwareGSO
+
+	// CapabilitySoftwareGSO indicates the link endpoint supports of sending
+	// multiple packets using a single call (LinkEndpoint.WritePackets).
+	CapabilitySoftwareGSO
 )
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
@@ -317,6 +325,14 @@ type LinkEndpoint interface {
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
 	WritePacket(r *Route, gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error
+
+	// WritePackets writes packets with the given protocol through the
+	// given route.
+	//
+	// Right now, WritePackets is used only when the software segmentation
+	// offload is enabled. If it will be used for something else, it may
+	// require to change syscall filters.
+	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 
 	// WriteRawPacket writes a packet directly to the link. The packet
 	// should already have an ethernet header.
@@ -421,8 +437,14 @@ type GSOType int
 // Types of gso segments.
 const (
 	GSONone GSOType = iota
+
+	// Hardware GSO types:
 	GSOTCPv4
 	GSOTCPv6
+
+	// GSOSW is used for software GSO segments which have to be sent by
+	// endpoint.WritePackets.
+	GSOSW
 )
 
 // GSO contains generic segmentation offload properties.
@@ -450,3 +472,7 @@ type GSOEndpoint interface {
 	// GSOMaxSize returns the maximum GSO packet size.
 	GSOMaxSize() uint32
 }
+
+// SoftwareGSOMaxSize is a maximum allowed size of a software GSO segment.
+// This isn't a hard limit, because it is never set into packet headers.
+const SoftwareGSOMaxSize = (1 << 16)

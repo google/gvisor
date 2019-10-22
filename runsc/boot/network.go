@@ -50,12 +50,13 @@ type DefaultRoute struct {
 
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
-	Name        string
-	MTU         int
-	Addresses   []net.IP
-	Routes      []Route
-	GSOMaxSize  uint32
-	LinkAddress net.HardwareAddr
+	Name               string
+	MTU                int
+	Addresses          []net.IP
+	Routes             []Route
+	GSOMaxSize         uint32
+	SoftwareGSOEnabled bool
+	LinkAddress        net.HardwareAddr
 
 	// NumChannels controls how many underlying FD's are to be used to
 	// create this endpoint.
@@ -163,6 +164,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			Address:            mac,
 			PacketDispatchMode: fdbased.RecvMMsg,
 			GSOMaxSize:         link.GSOMaxSize,
+			SoftwareGSOEnabled: link.SoftwareGSOEnabled,
 			RXChecksumOffload:  true,
 		})
 		if err != nil {
