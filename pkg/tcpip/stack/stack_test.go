@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -2011,5 +2012,141 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 	}
 	if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddr(linkAddr1), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
 		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
+	}
+}
+
+// TestNewPEB tests that a new PrimaryEndpointBehavior value (peb) is respected
+// when an address's kind gets "promoted" to permanent from permanentExpired.
+func TestNewPEBOnPromotionToPermanent(t *testing.T) {
+	pebs := []stack.PrimaryEndpointBehavior{
+		stack.NeverPrimaryEndpoint,
+		stack.CanBePrimaryEndpoint,
+		stack.FirstPrimaryEndpoint,
+	}
+
+	for _, pi := range pebs {
+		for _, ps := range pebs {
+			t.Run(fmt.Sprintf("%d-to-%d", pi, ps), func(t *testing.T) {
+				s := stack.New(stack.Options{
+					NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+				})
+				ep1 := channel.New(10, defaultMTU, "")
+				if err := s.CreateNIC(1, ep1); err != nil {
+					t.Fatal("CreateNIC failed:", err)
+				}
+
+				// Add a permanent address with initial
+				// PrimaryEndpointBehavior (peb), pi. If pi is
+				// NeverPrimaryEndpoint, the address should not
+				// be returned by a call to GetMainNICAddress;
+				// else, it should.
+				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", pi); err != nil {
+					t.Fatal("AddAddressWithOptions failed:", err)
+				}
+				addr, err := s.GetMainNICAddress(1, fakeNetNumber)
+				if err != nil {
+					t.Fatal("s.GetMainNICAddress failed:", err)
+				}
+				if pi == stack.NeverPrimaryEndpoint {
+					if want := (tcpip.AddressWithPrefix{}); addr != want {
+						t.Fatalf("got GetMainNICAddress = %s, want = %s", addr, want)
+
+					}
+				} else if addr.Address != "\x01" {
+					t.Fatalf("got GetMainNICAddress = %s, want = 1", addr.Address)
+				}
+
+				{
+					subnet, err := tcpip.NewSubnet("\x00", "\x00")
+					if err != nil {
+						t.Fatalf("NewSubnet failed:", err)
+					}
+					s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+				}
+
+				// Take a route through the address so its ref
+				// count gets incremented and does not actually
+				// get deleted when RemoveAddress is called
+				// below. This is because we want to test that a
+				// new peb is respected when an address gets
+				// "promoted" to permanent from a
+				// permanentExpired kind.
+				r, err := s.FindRoute(1, "\x01", "\x02", fakeNetNumber, false)
+				if err != nil {
+					t.Fatal("FindRoute failed:", err)
+				}
+				defer r.Release()
+				if err := s.RemoveAddress(1, "\x01"); err != nil {
+					t.Fatalf("RemoveAddress failed:", err)
+				}
+
+				//
+				// At this point, the address should still be
+				// known by the NIC, but have its
+				// kind = permanentExpired.
+				//
+
+				// Add some other address with peb set to
+				// FirstPrimaryEndpoint.
+				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x03", stack.FirstPrimaryEndpoint); err != nil {
+					t.Fatal("AddAddressWithOptions failed:", err)
+
+				}
+
+				// Add back the address we removed earlier and
+				// make sure the new peb was respected.
+				// (The address should just be promoted now).
+				if err := s.AddAddressWithOptions(1, fakeNetNumber, "\x01", ps); err != nil {
+					t.Fatal("AddAddressWithOptions failed:", err)
+				}
+				var primaryAddrs []tcpip.Address
+				for _, pa := range s.NICInfo()[1].ProtocolAddresses {
+					primaryAddrs = append(primaryAddrs, pa.AddressWithPrefix.Address)
+				}
+				var expectedList []tcpip.Address
+				switch ps {
+				case stack.FirstPrimaryEndpoint:
+					expectedList = []tcpip.Address{
+						"\x01",
+						"\x03",
+					}
+				case stack.CanBePrimaryEndpoint:
+					expectedList = []tcpip.Address{
+						"\x03",
+						"\x01",
+					}
+				case stack.NeverPrimaryEndpoint:
+					expectedList = []tcpip.Address{
+						"\x03",
+					}
+				}
+				if !cmp.Equal(primaryAddrs, expectedList) {
+					t.Fatalf("got NIC's primary addresses = %v, want = %v", primaryAddrs, expectedList)
+				}
+
+				// Once we remove the other address, if the new
+				// peb, ps, was NeverPrimaryEndpoint, no address
+				// should be returned by a call to
+				// GetMainNICAddress; else, our original address
+				// should be returned.
+				if err := s.RemoveAddress(1, "\x03"); err != nil {
+					t.Fatalf("RemoveAddress failed:", err)
+				}
+				addr, err = s.GetMainNICAddress(1, fakeNetNumber)
+				if err != nil {
+					t.Fatal("s.GetMainNICAddress failed:", err)
+				}
+				if ps == stack.NeverPrimaryEndpoint {
+					if want := (tcpip.AddressWithPrefix{}); addr != want {
+						t.Fatalf("got GetMainNICAddress = %s, want = %s", addr, want)
+
+					}
+				} else {
+					if addr.Address != "\x01" {
+						t.Fatalf("got GetMainNICAddress = %s, want = 1", addr.Address)
+					}
+				}
+			})
+		}
 	}
 }
