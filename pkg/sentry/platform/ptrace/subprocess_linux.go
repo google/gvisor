@@ -129,6 +129,9 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
+	//
+	// In addition, we set the PTRACE_O_TRACEEXIT option to log more
+	// information about a stub process when it receives a fatal signal.
 	return attachedThread(uintptr(syscall.SIGKILL)|syscall.CLONE_FILES, defaultAction)
 }
 

@@ -327,6 +327,19 @@ func (t *thread) dumpAndPanic(message string) {
 	panic(message)
 }
 
+func (t *thread) unexpectedStubExit() {
+	msg, err := t.getEventMessage()
+	status := syscall.WaitStatus(msg)
+	if status.Signaled() && status.Signal() == syscall.SIGKILL {
+		// SIGKILL can be only sent by an user or OOM-killer. In both
+		// these cases, we don't need to panic. There is no reasons to
+		// think that something wrong in gVisor.
+		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)
+		syscall.Kill(os.Getpid(), syscall.SIGKILL)
+	}
+	t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
+}
+
 // wait waits for a stop event.
 //
 // Precondition: outcome is a valid waitOutcome.
@@ -355,8 +368,7 @@ func (t *thread) wait(outcome waitOutcome) syscall.Signal {
 			}
 			if stopSig == syscall.SIGTRAP {
 				if status.TrapCause() == syscall.PTRACE_EVENT_EXIT {
-					msg, err := t.getEventMessage()
-					t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
+					t.unexpectedStubExit()
 				}
 				// Re-encode the trap cause the way it's expected.
 				return stopSig | syscall.Signal(status.TrapCause()<<8)
