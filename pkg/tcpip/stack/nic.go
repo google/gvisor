@@ -335,9 +335,31 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 			// The NIC already have a permanent endpoint with that address.
 			return nil, tcpip.ErrDuplicateAddress
 		case permanentExpired, temporary:
-			// Promote the endpoint to become permanent.
+			// Promote the endpoint to become permanent and respect
+			// the new peb.
 			if ref.tryIncRef() {
 				ref.setKind(permanent)
+
+				refs := n.primary[ref.protocol]
+				for i, r := range refs {
+					if r == ref {
+						switch peb {
+						case CanBePrimaryEndpoint:
+							return ref, nil
+						case FirstPrimaryEndpoint:
+							if i == 0 {
+								return ref, nil
+							}
+							n.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
+						case NeverPrimaryEndpoint:
+							n.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
+							return ref, nil
+						}
+					}
+				}
+
+				n.insertPrimaryEndpointLocked(ref, peb)
+
 				return ref, nil
 			}
 			// tryIncRef failing means the endpoint is scheduled to be removed once
@@ -406,12 +428,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	n.endpoints[id] = ref
 
-	switch peb {
-	case CanBePrimaryEndpoint:
-		n.primary[protocolAddress.Protocol] = append(n.primary[protocolAddress.Protocol], ref)
-	case FirstPrimaryEndpoint:
-		n.primary[protocolAddress.Protocol] = append([]*referencedNetworkEndpoint{ref}, n.primary[protocolAddress.Protocol]...)
-	}
+	n.insertPrimaryEndpointLocked(ref, peb)
 
 	// If we are adding a tentative IPv6 address, start DAD.
 	if isIPv6Unicast && kind == permanentTentative {
@@ -533,6 +550,19 @@ func (n *NIC) AddressRanges() []tcpip.Subnet {
 	return append(sns, n.addressRanges...)
 }
 
+// insertPrimaryEndpointLocked adds r to n's primary endpoint list as required
+// by peb.
+//
+// n MUST be locked.
+func (n *NIC) insertPrimaryEndpointLocked(r *referencedNetworkEndpoint, peb PrimaryEndpointBehavior) {
+	switch peb {
+	case CanBePrimaryEndpoint:
+		n.primary[r.protocol] = append(n.primary[r.protocol], r)
+	case FirstPrimaryEndpoint:
+		n.primary[r.protocol] = append([]*referencedNetworkEndpoint{r}, n.primary[r.protocol]...)
+	}
+}
+
 func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 	id := *r.ep.ID()
 
@@ -550,9 +580,10 @@ func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
 	}
 
 	delete(n.endpoints, id)
-	for i, ref := range n.primary[r.protocol] {
+	refs := n.primary[r.protocol]
+	for i, ref := range refs {
 		if ref == r {
-			n.primary[r.protocol] = append(n.primary[r.protocol][:i], n.primary[r.protocol][i+1:]...)
+			n.primary[r.protocol] = append(refs[:i], refs[i+1:]...)
 			break
 		}
 	}
