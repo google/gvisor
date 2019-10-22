@@ -97,9 +97,8 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-// WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
-	length := uint16(hdr.UsedLength() + payload.Size())
+func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) {
+	length := uint16(hdr.UsedLength() + payloadSize)
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 	ip.Encode(&header.IPv6Fields{
 		PayloadLength: length,
@@ -109,6 +108,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		SrcAddr:       r.LocalAddress,
 		DstAddr:       r.RemoteAddress,
 	})
+}
+
+// WritePacket writes a packet to the given destination address and protocol.
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+	e.addIPHeader(r, &hdr, payload.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
 		views := make([]buffer.View, 1, 1+len(payload.Views()))
@@ -125,6 +129,26 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 
 	r.Stats().IP.PacketsSent.Increment()
 	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber)
+}
+
+// WritePackets implements stack.LinkEndpoint.WritePackets.
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
+	if loop&stack.PacketLoop != 0 {
+		panic("not implemented")
+	}
+	if loop&stack.PacketOut == 0 {
+		return len(hdrs), nil
+	}
+
+	for i := range hdrs {
+		hdr := &hdrs[i].Hdr
+		size := hdrs[i].Size
+		e.addIPHeader(r, hdr, size, params)
+	}
+
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
+	return n, err
 }
 
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet

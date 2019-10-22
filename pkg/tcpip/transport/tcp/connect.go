@@ -607,17 +607,11 @@ func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data bu
 	return nil
 }
 
-// sendTCP sends a TCP segment with the provided options via the provided
-// network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
+func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, d *stack.PacketDescriptor, data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
 	optLen := len(opts)
-	// Allocate a buffer for the TCP header.
-	hdr := buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen)
-
-	if rcvWnd > 0xffff {
-		rcvWnd = 0xffff
-	}
-
+	hdr := &d.Hdr
+	packetSize := d.Size
+	off := d.Off
 	// Initialize the header.
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
 	tcp.Encode(&header.TCPFields{
@@ -631,7 +625,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 	})
 	copy(tcp[header.TCPMinimumSize:], opts)
 
-	length := uint16(hdr.UsedLength() + data.Size())
+	length := uint16(hdr.UsedLength() + packetSize)
 	xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 	// Only calculate the checksum if offloading isn't supported.
 	if gso != nil && gso.NeedsCsum {
@@ -641,14 +635,71 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
-		xsum = header.ChecksumVV(data, xsum)
+		xsum = header.ChecksumVVWithOffset(data, xsum, off, packetSize)
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
+
+}
+
+func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
+	optLen := len(opts)
+	if rcvWnd > 0xffff {
+		rcvWnd = 0xffff
+	}
+
+	mss := int(gso.MSS)
+	n := (data.Size() + mss - 1) / mss
+
+	hdrs := stack.NewPacketDescriptors(n, header.TCPMinimumSize+int(r.MaxHeaderLength())+optLen)
+
+	size := data.Size()
+	off := 0
+	for i := 0; i < n; i++ {
+		packetSize := mss
+		if packetSize > size {
+			packetSize = size
+		}
+		size -= packetSize
+		hdrs[i].Off = off
+		hdrs[i].Size = packetSize
+		buildTCPHdr(r, id, &hdrs[i], data, flags, seq, ack, rcvWnd, opts, gso)
+		off += packetSize
+		seq = seq.Add(seqnum.Size(packetSize))
+	}
+	if ttl == 0 {
+		ttl = r.DefaultTTL()
+	}
+	sent, err := r.WritePackets(gso, hdrs, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos})
+	if err != nil {
+		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
+	}
+	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
+	return err
+}
+
+// sendTCP sends a TCP segment with the provided options via the provided
+// network endpoint and under the provided identity.
+func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
+	optLen := len(opts)
+	if rcvWnd > 0xffff {
+		rcvWnd = 0xffff
+	}
+
+	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
+		return sendTCPBatch(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso)
+	}
+
+	d := &stack.PacketDescriptor{
+		Hdr:  buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
+		Off:  0,
+		Size: data.Size(),
+	}
+	buildTCPHdr(r, id, d, data, flags, seq, ack, rcvWnd, opts, gso)
 
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, hdr, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}); err != nil {
+	if err := r.WritePacket(gso, d.Hdr, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
