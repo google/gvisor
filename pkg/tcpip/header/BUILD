@@ -45,7 +45,10 @@ go_test(
 go_test(
     name = "header_test",
     size = "small",
-    srcs = ["ndp_test.go"],
+    srcs = [
+        "eth_test.go",
+        "ndp_test.go",
+    ],
     embed = [":header"],
     deps = ["//pkg/tcpip"],
 )
