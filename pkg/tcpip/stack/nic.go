@@ -108,6 +108,7 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			dad: make(map[tcpip.Address]dadState),
 		},
 	}
+	nic.ndp.nic = nic
 
 	// Register supported packet endpoint protocols.
 	for _, netProto := range header.Ethertypes {
@@ -432,7 +433,7 @@ func (n *NIC) addAddressLocked(protocolAddress tcpip.ProtocolAddress, peb Primar
 
 	// If we are adding a tentative IPv6 address, start DAD.
 	if isIPv6Unicast && kind == permanentTentative {
-		if err := n.ndp.startDuplicateAddressDetection(n, protocolAddress.AddressWithPrefix.Address, ref); err != nil {
+		if err := n.ndp.startDuplicateAddressDetection(protocolAddress.AddressWithPrefix.Address, ref); err != nil {
 			return nil, err
 		}
 	}
