@@ -185,7 +185,7 @@ TEST_P(SendFileTest, Shutdown) {
   // Create a socket.
   std::tuple<int, int> fds = ASSERT_NO_ERRNO_AND_VALUE(Sockets());
   const FileDescriptor client(std::get<0>(fds));
-  FileDescriptor server(std::get<1>(fds));  // non-const, released below.
+  FileDescriptor server(std::get<1>(fds));  // non-const, reset below.
 
   // If this is a TCP socket, then turn off linger.
   if (GetParam() == AF_INET) {
@@ -210,14 +210,14 @@ TEST_P(SendFileTest, Shutdown) {
   // checking the contents (other tests do that), so we just re-use the same
   // buffer as above.
   ScopedThread t([&]() {
-    int done = 0;
+    size_t done = 0;
     while (done < data.size()) {
-      int n = read(server.get(), data.data(), data.size());
+      int n = RetryEINTR(read)(server.get(), data.data(), data.size());
       ASSERT_THAT(n, SyscallSucceeds());
       done += n;
     }
     // Close the server side socket.
-    ASSERT_THAT(close(server.release()), SyscallSucceeds());
+    server.reset();
   });
 
   // Continuously stream from the file to the socket. Note we do not assert
