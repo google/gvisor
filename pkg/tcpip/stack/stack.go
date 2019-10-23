@@ -406,6 +406,10 @@ type Stack struct {
 	// to auto-generate an IPv6 link-local address for newly enabled NICs.
 	// See the AutoGenIPv6LinkLocal field of Options for more details.
 	autoGenIPv6LinkLocal bool
+
+	// ndpDisp is the NDP event dispatcher that is used to send the netstack
+	// integrator NDP related events.
+	ndpDisp NDPDispatcher
 }
 
 // Options contains optional Stack configuration.
@@ -447,6 +451,10 @@ type Options struct {
 	// The generated link-local address will follow RFC 4291 Appendix A
 	// guidelines.
 	AutoGenIPv6LinkLocal bool
+
+	// NDPDisp is the NDP event dispatcher that an integrator can provide to
+	// receive NDP related events.
+	NDPDisp NDPDispatcher
 
 	// RawFactory produces raw endpoints. Raw endpoints are enabled only if
 	// this is non-nil.
@@ -514,6 +522,7 @@ func New(opts Options) *Stack {
 		portSeed:             generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
+		ndpDisp:              opts.NDPDisp,
 	}
 
 	// Add specified network protocols.
