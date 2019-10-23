@@ -144,7 +144,98 @@ func (s *Stack) SetTCPSACKEnabled(enabled bool) error {
 
 // Statistics implements inet.Stack.Statistics.
 func (s *Stack) Statistics(stat interface{}, arg string) error {
-	return syserr.ErrEndpointOperation.ToError()
+	switch stats := stat.(type) {
+	case *inet.StatSNMPIP:
+		ip := Metrics.IP
+		*stats = inet.StatSNMPIP{
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/Forwarding.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/DefaultTTL.
+			ip.PacketsReceived.Value(),          // InReceives.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InHdrErrors.
+			ip.InvalidAddressesReceived.Value(), // InAddrErrors.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ForwDatagrams.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InUnknownProtos.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/InDiscards.
+			ip.PacketsDelivered.Value(),         // InDelivers.
+			ip.PacketsSent.Value(),              // OutRequests.
+			ip.OutgoingPacketErrors.Value(),     // OutDiscards.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/OutNoRoutes.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmTimeout.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmReqds.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmOKs.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/ReasmFails.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragOKs.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragFails.
+			0,                                   // TODO(gvisor.dev/issue/969): Support Ip/FragCreates.
+		}
+	case *inet.StatSNMPICMP:
+		in := Metrics.ICMP.V4PacketsReceived.ICMPv4PacketStats
+		out := Metrics.ICMP.V4PacketsSent.ICMPv4PacketStats
+		*stats = inet.StatSNMPICMP{
+			0, // TODO(gvisor.dev/issue/969): Support Icmp/InMsgs.
+			Metrics.ICMP.V4PacketsSent.Dropped.Value(), // InErrors.
+			0,                         // TODO(gvisor.dev/issue/969): Support Icmp/InCsumErrors.
+			in.DstUnreachable.Value(), // InDestUnreachs.
+			in.TimeExceeded.Value(),   // InTimeExcds.
+			in.ParamProblem.Value(),   // InParmProbs.
+			in.SrcQuench.Value(),      // InSrcQuenchs.
+			in.Redirect.Value(),       // InRedirects.
+			in.Echo.Value(),           // InEchos.
+			in.EchoReply.Value(),      // InEchoReps.
+			in.Timestamp.Value(),      // InTimestamps.
+			in.TimestampReply.Value(), // InTimestampReps.
+			in.InfoRequest.Value(),    // InAddrMasks.
+			in.InfoReply.Value(),      // InAddrMaskReps.
+			0,                         // TODO(gvisor.dev/issue/969): Support Icmp/OutMsgs.
+			Metrics.ICMP.V4PacketsReceived.Invalid.Value(), // OutErrors.
+			out.DstUnreachable.Value(),                     // OutDestUnreachs.
+			out.TimeExceeded.Value(),                       // OutTimeExcds.
+			out.ParamProblem.Value(),                       // OutParmProbs.
+			out.SrcQuench.Value(),                          // OutSrcQuenchs.
+			out.Redirect.Value(),                           // OutRedirects.
+			out.Echo.Value(),                               // OutEchos.
+			out.EchoReply.Value(),                          // OutEchoReps.
+			out.Timestamp.Value(),                          // OutTimestamps.
+			out.TimestampReply.Value(),                     // OutTimestampReps.
+			out.InfoRequest.Value(),                        // OutAddrMasks.
+			out.InfoReply.Value(),                          // OutAddrMaskReps.
+		}
+	case *inet.StatSNMPTCP:
+		tcp := Metrics.TCP
+		// RFC 2012 (updates 1213):  SNMPv2-MIB-TCP.
+		*stats = inet.StatSNMPTCP{
+			1,                                     // RtoAlgorithm.
+			200,                                   // RtoMin.
+			120000,                                // RtoMax.
+			(1<<64 - 1),                           // MaxConn.
+			tcp.ActiveConnectionOpenings.Value(),  // ActiveOpens.
+			tcp.PassiveConnectionOpenings.Value(), // PassiveOpens.
+			tcp.FailedConnectionAttempts.Value(),  // AttemptFails.
+			tcp.EstablishedResets.Value(),         // EstabResets.
+			tcp.CurrentEstablished.Value(),        // CurrEstab.
+			tcp.ValidSegmentsReceived.Value(),     // InSegs.
+			tcp.SegmentsSent.Value(),              // OutSegs.
+			tcp.Retransmits.Value(),               // RetransSegs.
+			tcp.InvalidSegmentsReceived.Value(),   // InErrs.
+			tcp.ResetsSent.Value(),                // OutRsts.
+			tcp.ChecksumErrors.Value(),            // InCsumErrors.
+		}
+	case *inet.StatSNMPUDP:
+		udp := Metrics.UDP
+		*stats = inet.StatSNMPUDP{
+			udp.PacketsReceived.Value(),     // InDatagrams.
+			udp.UnknownPortErrors.Value(),   // NoPorts.
+			0,                               // TODO(gvisor.dev/issue/969): Support Udp/InErrors.
+			udp.PacketsSent.Value(),         // OutDatagrams.
+			udp.ReceiveBufferErrors.Value(), // RcvbufErrors.
+			0,                               // TODO(gvisor.dev/issue/969): Support Udp/SndbufErrors.
+			0,                               // TODO(gvisor.dev/issue/969): Support Udp/InCsumErrors.
+			0,                               // TODO(gvisor.dev/issue/969): Support Udp/IgnoredMulti.
+		}
+	default:
+		return syserr.ErrEndpointOperation.ToError()
+	}
+	return nil
 }
 
 // RouteTable implements inet.Stack.RouteTable.
