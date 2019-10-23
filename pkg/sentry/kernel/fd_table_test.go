@@ -70,6 +70,42 @@ func TestFDTableMany(t *testing.T) {
 		if err := fdTable.NewFDAt(ctx, 1, file, FDFlags{}); err != nil {
 			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}): got %v, wanted nil", err)
 		}
+
+		i := int32(2)
+		fdTable.Remove(i)
+		if fds, err := fdTable.NewFDs(ctx, 0, []*fs.File{file}, FDFlags{}); err != nil || fds[0] != i {
+			t.Fatalf("Allocated %v FDs but wanted to allocate %v: %v", i, maxFD, err)
+		}
+	})
+}
+
+func TestFDTableOverLimit(t *testing.T) {
+	runTest(t, func(ctx context.Context, fdTable *FDTable, file *fs.File, _ *limits.LimitSet) {
+		if _, err := fdTable.NewFDs(ctx, maxFD, []*fs.File{file}, FDFlags{}); err == nil {
+			t.Fatalf("fdTable.NewFDs(maxFD, f): got nil, wanted error")
+		}
+
+		if _, err := fdTable.NewFDs(ctx, maxFD-2, []*fs.File{file, file, file}, FDFlags{}); err == nil {
+			t.Fatalf("fdTable.NewFDs(maxFD-2, {f,f,f}): got nil, wanted error")
+		}
+
+		if fds, err := fdTable.NewFDs(ctx, maxFD-3, []*fs.File{file, file, file}, FDFlags{}); err != nil {
+			t.Fatalf("fdTable.NewFDs(maxFD-3, {f,f,f}): got %v, wanted nil", err)
+		} else {
+			for _, fd := range fds {
+				fdTable.Remove(fd)
+			}
+		}
+
+		if fds, err := fdTable.NewFDs(ctx, maxFD-1, []*fs.File{file}, FDFlags{}); err != nil || fds[0] != maxFD-1 {
+			t.Fatalf("fdTable.NewFDAt(1, r, FDFlags{}): got %v, wanted nil", err)
+		}
+
+		if fds, err := fdTable.NewFDs(ctx, 0, []*fs.File{file}, FDFlags{}); err != nil {
+			t.Fatalf("Adding an FD to a resized map: got %v, want nil", err)
+		} else if len(fds) != 1 || fds[0] != 0 {
+			t.Fatalf("Added an FD to a resized map: got %v, want {1}", fds)
+		}
 	})
 }
 
