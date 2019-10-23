@@ -51,7 +51,7 @@ const (
 	ContainerEvent = "containerManager.Event"
 
 	// ContainerExecuteAsync is the URPC endpoint for executing a command in a
-	// container..
+	// container.
 	ContainerExecuteAsync = "containerManager.ExecuteAsync"
 
 	// ContainerPause pauses the container.
