@@ -181,6 +181,28 @@ func (x *netDev) load(m state.Map) {
 	m.Load("s", &x.s)
 }
 
+func (x *netSnmp) beforeSave() {}
+func (x *netSnmp) save(m state.Map) {
+	x.beforeSave()
+	m.Save("s", &x.s)
+}
+
+func (x *netSnmp) afterLoad() {}
+func (x *netSnmp) load(m state.Map) {
+	m.Load("s", &x.s)
+}
+
+func (x *netRoute) beforeSave() {}
+func (x *netRoute) save(m state.Map) {
+	x.beforeSave()
+	m.Save("s", &x.s)
+}
+
+func (x *netRoute) afterLoad() {}
+func (x *netRoute) load(m state.Map) {
+	m.Load("s", &x.s)
+}
+
 func (x *netUnix) beforeSave() {}
 func (x *netUnix) save(m state.Map) {
 	x.beforeSave()
@@ -653,6 +675,8 @@ func init() {
 	state.Register("proc.mountsFile", (*mountsFile)(nil), state.Fns{Save: (*mountsFile).save, Load: (*mountsFile).load})
 	state.Register("proc.ifinet6", (*ifinet6)(nil), state.Fns{Save: (*ifinet6).save, Load: (*ifinet6).load})
 	state.Register("proc.netDev", (*netDev)(nil), state.Fns{Save: (*netDev).save, Load: (*netDev).load})
+	state.Register("proc.netSnmp", (*netSnmp)(nil), state.Fns{Save: (*netSnmp).save, Load: (*netSnmp).load})
+	state.Register("proc.netRoute", (*netRoute)(nil), state.Fns{Save: (*netRoute).save, Load: (*netRoute).load})
 	state.Register("proc.netUnix", (*netUnix)(nil), state.Fns{Save: (*netUnix).save, Load: (*netUnix).load})
 	state.Register("proc.netTCP", (*netTCP)(nil), state.Fns{Save: (*netTCP).save, Load: (*netTCP).load})
 	state.Register("proc.netTCP6", (*netTCP6)(nil), state.Fns{Save: (*netTCP6).save, Load: (*netTCP6).load})
