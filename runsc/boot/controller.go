@@ -161,7 +161,7 @@ func newController(fd int, l *Loader) (*controller, error) {
 	}, nil
 }
 
-// containerManager manages sandboes containers.
+// containerManager manages sandbox containers.
 type containerManager struct {
 	// startChan is used to signal when the root container process should
 	// be started.
