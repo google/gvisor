@@ -325,3 +325,9 @@ const (
 	RTA_SPORT         = 28
 	RTA_DPORT         = 29
 )
+
+// Route flags, from include/uapi/linux/route.h.
+const (
+	RTF_GATEWAY = 0x2
+	RTF_UP      = 0x1
+)

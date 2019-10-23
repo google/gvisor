@@ -674,6 +674,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		default:
 			s.ep.state = StateFinWait1
 		}
+		s.ep.stack.Stats().TCP.CurrentEstablished.Decrement()
 		s.ep.mu.Unlock()
 	} else {
 		// We're sending a non-FIN segment.

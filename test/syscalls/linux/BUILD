@@ -1568,11 +1568,14 @@ cc_binary(
     srcs = ["proc_net.cc"],
     linkstatic = 1,
     deps = [
+        ":socket_test_util",
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:test_main",
         "//test/util:test_util",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest",
     ],
 )
