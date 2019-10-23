@@ -1971,13 +1971,15 @@ func TestNICAutoGenAddr(t *testing.T) {
 // TestNICAutoGenAddrDoesDAD tests that the successful auto-generation of IPv6
 // link-local addresses will only be assigned after the DAD process resolves.
 func TestNICAutoGenAddrDoesDAD(t *testing.T) {
+	ndpDisp := ndpDispatcher{
+		dadC: make(chan ndpDADEvent),
+	}
+	ndpConfigs := stack.DefaultNDPConfigurations()
 	opts := stack.Options{
-		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-		NDPConfigs: stack.NDPConfigurations{
-			RetransmitTimer:        time.Second,
-			DupAddrDetectTransmits: 1,
-		},
+		NetworkProtocols:     []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPConfigs:           ndpConfigs,
 		AutoGenIPv6LinkLocal: true,
+		NDPDisp:              &ndpDisp,
 	}
 
 	e := channel.New(10, 1280, linkAddr1)
@@ -1996,21 +1998,35 @@ func TestNICAutoGenAddrDoesDAD(t *testing.T) {
 		t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
 	}
 
-	// Wait for the address to resolve (an extra
-	// 250ms to make sure the address resolves).
-	//
-	// TODO(b/140896005): Use events from the
-	// netstack to know immediately when DAD
-	// completes.
-	time.Sleep(time.Second + 250*time.Millisecond)
+	linkLocalAddr := header.LinkLocalAddr(linkAddr1)
 
-	// Should have auto-generated an address and
-	// resolved (if DAD).
+	// Wait for DAD to resolve.
+	select {
+	case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+		// We should get a resolution event after 1s (default time to
+		// resolve as per default NDP configurations). Waiting for that
+		// resolution time + an extra 1s without a resolution event
+		// means something is wrong.
+		t.Fatal("timed out waiting for DAD resolution")
+	case e := <-ndpDisp.dadC:
+		if e.err != nil {
+			t.Fatal("got DAD error: ", e.err)
+		}
+		if e.nicid != 1 {
+			t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+		}
+		if e.addr != linkLocalAddr {
+			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, linkLocalAddr)
+		}
+		if !e.resolved {
+			t.Fatal("got DAD event w/ resolved = false, want = true")
+		}
+	}
 	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 	if err != nil {
 		t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
 	}
-	if want := (tcpip.AddressWithPrefix{Address: header.LinkLocalAddr(linkAddr1), PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
+	if want := (tcpip.AddressWithPrefix{Address: linkLocalAddr, PrefixLen: header.IPv6LinkLocalPrefix.PrefixLen}); addr != want {
 		t.Fatalf("got stack.GetMainNICAddress(_, _) = %s, want = %s", addr, want)
 	}
 }

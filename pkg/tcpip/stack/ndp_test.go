@@ -67,6 +67,35 @@ func TestDADDisabled(t *testing.T) {
 	}
 }
 
+// ndpDADEvent is a set of parameters that was passed to
+// ndpDispatcher.OnDuplicateAddressDetectionStatus.
+type ndpDADEvent struct {
+	nicid    tcpip.NICID
+	addr     tcpip.Address
+	resolved bool
+	err      *tcpip.Error
+}
+
+var _ stack.NDPDispatcher = (*ndpDispatcher)(nil)
+
+// ndpDispatcher implements NDPDispatcher so tests can know when various NDP
+// related events happen for test purposes.
+type ndpDispatcher struct {
+	dadC chan ndpDADEvent
+}
+
+// Implements stack.NDPDispatcher.OnDuplicateAddressDetectionStatus.
+//
+// If the DAD event matches what we are expecting, send signal on n.dadC.
+func (n *ndpDispatcher) OnDuplicateAddressDetectionStatus(nicid tcpip.NICID, addr tcpip.Address, resolved bool, err *tcpip.Error) {
+	n.dadC <- ndpDADEvent{
+		nicid,
+		addr,
+		resolved,
+		err,
+	}
+}
+
 // TestDADResolve tests that an address successfully resolves after performing
 // DAD for various values of DupAddrDetectTransmits and RetransmitTimer.
 // Included in the subtests is a test to make sure that an invalid
@@ -88,8 +117,12 @@ func TestDADResolve(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				dadC: make(chan ndpDADEvent),
+			}
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+				NDPDisp:          &ndpDisp,
 			}
 			opts.NDPConfigs.RetransmitTimer = test.retransTimer
 			opts.NDPConfigs.DupAddrDetectTransmits = test.dupAddrDetectTransmits
@@ -106,8 +139,7 @@ func TestDADResolve(t *testing.T) {
 
 			stat := s.Stats().ICMP.V6PacketsSent.NeighborSolicit
 
-			// Should have sent an NDP NS almost immediately.
-			time.Sleep(100 * time.Millisecond)
+			// Should have sent an NDP NS immediately.
 			if got := stat.Value(); got != 1 {
 				t.Fatalf("got NeighborSolicit = %d, want = 1", got)
 
@@ -123,16 +155,10 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
 			}
 
-			// Wait for the remaining time - 500ms, to make sure
-			// the address is still not resolved. Note, we subtract
-			// 600ms because we already waited for 100ms earlier,
-			// so our remaining time is 100ms less than the expected
-			// time.
-			// (X - 100ms) - 500ms = X - 600ms
-			//
-			// TODO(b/140896005): Use events from the netstack to
-			// be signalled before DAD resolves.
-			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - 600*time.Millisecond)
+			// Wait for the remaining time - some delta (500ms), to
+			// make sure the address is still not resolved.
+			const delta = 500 * time.Millisecond
+			time.Sleep(test.expectedRetransmitTimer*time.Duration(test.dupAddrDetectTransmits) - delta)
 			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 			if err != nil {
 				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
@@ -141,13 +167,30 @@ func TestDADResolve(t *testing.T) {
 				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
 			}
 
-			// Wait for the remaining time + 250ms, at which point
-			// the address should be resolved. Note, the remaining
-			// time is 500ms. See above comments.
-			//
-			// TODO(b/140896005): Use events from the netstack to
-			// know immediately when DAD completes.
-			time.Sleep(750 * time.Millisecond)
+			// Wait for DAD to resolve.
+			select {
+			case <-time.After(2 * delta):
+				// We should get a resolution event after 500ms
+				// (delta) since we wait for 500ms less than the
+				// expected resolution time above to make sure
+				// that the address did not yet resolve. Waiting
+				// for 1s (2x delta) without a resolution event
+				// means something is wrong.
+				t.Fatal("timed out waiting for DAD resolution")
+			case e := <-ndpDisp.dadC:
+				if e.err != nil {
+					t.Fatal("got DAD error: ", e.err)
+				}
+				if e.nicid != 1 {
+					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				}
+				if e.addr != addr1 {
+					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
+				}
+				if !e.resolved {
+					t.Fatal("got DAD event w/ resolved = false, want = true")
+				}
+			}
 			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 			if err != nil {
 				t.Fatalf("stack.GetMainNICAddress(_, _) err = %s", err)
@@ -250,9 +293,14 @@ func TestDADFail(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				dadC: make(chan ndpDADEvent),
+			}
+			ndpConfigs := stack.DefaultNDPConfigurations()
 			opts := stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
-				NDPConfigs:       stack.DefaultNDPConfigurations(),
+				NDPConfigs:       ndpConfigs,
+				NDPDisp:          &ndpDisp,
 			}
 			opts.NDPConfigs.RetransmitTimer = time.Second * 2
 
@@ -286,8 +334,28 @@ func TestDADFail(t *testing.T) {
 				t.Fatalf("got stat = %d, want = 1", got)
 			}
 
-			// Wait 3 seconds to make sure that DAD did not resolve
-			time.Sleep(3 * time.Second)
+			// Wait for DAD to fail and make sure the address did
+			// not get resolved.
+			select {
+			case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+				// If we don't get a failure event after the
+				// expected resolution time + extra 1s buffer,
+				// something is wrong.
+				t.Fatal("timed out waiting for DAD failure")
+			case e := <-ndpDisp.dadC:
+				if e.err != nil {
+					t.Fatal("got DAD error: ", e.err)
+				}
+				if e.nicid != 1 {
+					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				}
+				if e.addr != addr1 {
+					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
+				}
+				if e.resolved {
+					t.Fatal("got DAD event w/ resolved = true, want = false")
+				}
+			}
 			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 			if err != nil {
 				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
@@ -302,11 +370,18 @@ func TestDADFail(t *testing.T) {
 // TestDADStop tests to make sure that the DAD process stops when an address is
 // removed.
 func TestDADStop(t *testing.T) {
+	ndpDisp := ndpDispatcher{
+		dadC: make(chan ndpDADEvent),
+	}
+	ndpConfigs := stack.NDPConfigurations{
+		RetransmitTimer:        time.Second,
+		DupAddrDetectTransmits: 2,
+	}
 	opts := stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+		NDPDisp:          &ndpDisp,
+		NDPConfigs:       ndpConfigs,
 	}
-	opts.NDPConfigs.RetransmitTimer = time.Second
-	opts.NDPConfigs.DupAddrDetectTransmits = 2
 
 	e := channel.New(10, 1280, linkAddr1)
 	s := stack.New(opts)
@@ -332,11 +407,27 @@ func TestDADStop(t *testing.T) {
 		t.Fatalf("RemoveAddress(_, %s) = %s", addr1, err)
 	}
 
-	// Wait for the time to normally resolve
-	// DupAddrDetectTransmits(2) * RetransmitTimer(1s) = 2s.
-	// An extra 250ms is added to make sure that if DAD was still running
-	// it resolves and the check below fails.
-	time.Sleep(2*time.Second + 250*time.Millisecond)
+	// Wait for DAD to fail (since the address was removed during DAD).
+	select {
+	case <-time.After(time.Duration(ndpConfigs.DupAddrDetectTransmits)*ndpConfigs.RetransmitTimer + time.Second):
+		// If we don't get a failure event after the expected resolution
+		// time + extra 1s buffer, something is wrong.
+		t.Fatal("timed out waiting for DAD failure")
+	case e := <-ndpDisp.dadC:
+		if e.err != nil {
+			t.Fatal("got DAD error: ", e.err)
+		}
+		if e.nicid != 1 {
+			t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+		}
+		if e.addr != addr1 {
+			t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
+		}
+		if e.resolved {
+			t.Fatal("got DAD event w/ resolved = true, want = false")
+		}
+
+	}
 	addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
 	if err != nil {
 		t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
