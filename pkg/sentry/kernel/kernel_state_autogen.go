@@ -69,6 +69,7 @@ func (x *FDTable) save(m state.Map) {
 	m.Save("AtomicRefCount", &x.AtomicRefCount)
 	m.Save("k", &x.k)
 	m.Save("uid", &x.uid)
+	m.Save("next", &x.next)
 	m.Save("used", &x.used)
 }
 
@@ -77,6 +78,7 @@ func (x *FDTable) load(m state.Map) {
 	m.Load("AtomicRefCount", &x.AtomicRefCount)
 	m.Load("k", &x.k)
 	m.Load("uid", &x.uid)
+	m.Load("next", &x.next)
 	m.Load("used", &x.used)
 	m.LoadValue("descriptorTable", new(map[int32]descriptor), func(y interface{}) { x.loadDescriptorTable(y.(map[int32]descriptor)) })
 }
