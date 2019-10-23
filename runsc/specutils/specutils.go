@@ -108,23 +108,18 @@ func ValidateSpec(spec *specs.Spec) error {
 		}
 	}
 
-	// Two annotations are use by containerd to support multi-container pods.
-	//   "io.kubernetes.cri.container-type"
-	//   "io.kubernetes.cri.sandbox-id"
-	containerType, hasContainerType := spec.Annotations[ContainerdContainerTypeAnnotation]
-	_, hasSandboxID := spec.Annotations[ContainerdSandboxIDAnnotation]
-	switch {
-	// Non-containerd use won't set a container type.
-	case !hasContainerType:
-	case containerType == ContainerdContainerTypeSandbox:
-	// When starting a container in an existing sandbox, the sandbox ID
-	// must be set.
-	case containerType == ContainerdContainerTypeContainer:
-		if !hasSandboxID {
-			return fmt.Errorf("spec has container-type of %s, but no sandbox ID set", containerType)
+	// CRI specifies whether a container should start a new sandbox, or run
+	// another container in an existing sandbox.
+	switch SpecContainerType(spec) {
+	case ContainerTypeContainer:
+		// When starting a container in an existing sandbox, the
+		// sandbox ID must be set.
+		if _, ok := SandboxID(spec); !ok {
+			return fmt.Errorf("spec has container-type of container, but no sandbox ID set")
 		}
+	case ContainerTypeUnknown:
+		return fmt.Errorf("unknown container-type")
 	default:
-		return fmt.Errorf("unknown container-type: %s", containerType)
 	}
 
 	return nil
@@ -336,39 +331,6 @@ func IsSupportedDevMount(m specs.Mount) bool {
 		}
 	}
 	return true
-}
-
-const (
-	// ContainerdContainerTypeAnnotation is the OCI annotation set by
-	// containerd to indicate whether the container to create should have
-	// its own sandbox or a container within an existing sandbox.
-	ContainerdContainerTypeAnnotation = "io.kubernetes.cri.container-type"
-	// ContainerdContainerTypeContainer is the container type value
-	// indicating the container should be created in an existing sandbox.
-	ContainerdContainerTypeContainer = "container"
-	// ContainerdContainerTypeSandbox is the container type value
-	// indicating the container should be created in a new sandbox.
-	ContainerdContainerTypeSandbox = "sandbox"
-
-	// ContainerdSandboxIDAnnotation is the OCI annotation set to indicate
-	// which sandbox the container should be created in when the container
-	// is not the first container in the sandbox.
-	ContainerdSandboxIDAnnotation = "io.kubernetes.cri.sandbox-id"
-)
-
-// ShouldCreateSandbox returns true if the spec indicates that a new sandbox
-// should be created for the container. If false, the container should be
-// started in an existing sandbox.
-func ShouldCreateSandbox(spec *specs.Spec) bool {
-	t, ok := spec.Annotations[ContainerdContainerTypeAnnotation]
-	return !ok || t == ContainerdContainerTypeSandbox
-}
-
-// SandboxID returns the ID of the sandbox to join and whether an ID was found
-// in the spec.
-func SandboxID(spec *specs.Spec) (string, bool) {
-	id, ok := spec.Annotations[ContainerdSandboxIDAnnotation]
-	return id, ok
 }
 
 // WaitForReady waits for a process to become ready. The process is ready when
