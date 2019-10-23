@@ -103,6 +103,58 @@ TEST(KillTest, CanKillAllPIDs) {
   EXPECT_EQ(0, WEXITSTATUS(status));
 }
 
+// Reaper process of pid namespace will ignore blockable
+// signal with SIG_DFL action, such as SIGTERM.
+TEST(KillTest, CannotTermReaper) {
+  pid_t pid = 1;
+  EXPECT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+  // Make sure the reaper process still alive.
+  EXPECT_THAT(kill(pid, 0), SyscallSucceeds());
+}
+
+// Nonreaper process of pid namespace can recieve blockable
+// signal with SIG_DFL action, such as SIGTERM.
+TEST(KillTest, CanTermNonReaper) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    while (true) {
+      pause();
+    }
+  }
+
+  EXPECT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSIGNALED(status));
+  EXPECT_EQ(SIGTERM, WTERMSIG(status));
+}
+
+static bool ReaperActed = false;
+
+static void ReaperSigHandler(int sig, siginfo_t* info, void* context) {
+  ReaperActed = true;
+}
+
+// Reaper process of pid namespace can recieve blockable
+// signal with not SIG_DFL action, such as SIGTERM.
+TEST(KillTest, CanTermReaperAction) {
+  pid_t pid = 1;
+
+  struct sigaction sa;
+  sa.sa_sigaction = ReaperSigHandler;
+  sigfillset(&sa.sa_mask);
+  sa.sa_flags = SA_SIGINFO;
+  TEST_PCHECK(sigaction(SIGTERM, &sa, nullptr) == 0);
+
+  EXPECT_THAT(kill(pid, SIGTERM), SyscallSucceeds());
+
+  // Make sure the reaper process still alive.
+  EXPECT_THAT(kill(pid, 0), SyscallSucceeds());
+  EXPECT_TRUE(ReaperActed);
+}
+
 TEST(KillTest, CannotKillInvalidPID) {
   // We need an unused pid to verify that kill fails when given one.
   //
