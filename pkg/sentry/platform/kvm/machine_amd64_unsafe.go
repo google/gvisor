@@ -26,30 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/time"
 )
 
-// setMemoryRegion initializes a region.
-//
-// This may be called from bluepillHandler, and therefore returns an errno
-// directly (instead of wrapping in an error) to avoid allocations.
-//
-//go:nosplit
-func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr) syscall.Errno {
-	userRegion := userMemoryRegion{
-		slot:          uint32(slot),
-		flags:         0,
-		guestPhysAddr: uint64(physical),
-		memorySize:    uint64(length),
-		userspaceAddr: uint64(virtual),
-	}
-
-	// Set the region.
-	_, _, errno := syscall.RawSyscall(
-		syscall.SYS_IOCTL,
-		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
-		uintptr(unsafe.Pointer(&userRegion)))
-	return errno
-}
-
 // loadSegments copies the current segments.
 //
 // This may be called from within the signal context and throws on error.

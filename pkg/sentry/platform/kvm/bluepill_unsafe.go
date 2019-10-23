@@ -162,7 +162,7 @@ func bluepillHandler(context unsafe.Pointer) {
 
 			// For MMIO, the physical address is the first data item.
 			physical := uintptr(c.runData.data[0])
-			virtual, ok := handleBluepillFault(c.machine, physical)
+			virtual, ok := handleBluepillFault(c.machine, physical, physicalRegions, _KVM_MEM_FLAGS_NONE)
 			if !ok {
 				c.die(bluepillArchContext(context), "invalid physical address")
 				return
