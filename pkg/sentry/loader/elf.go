@@ -640,7 +640,7 @@ func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace
 
 	var interp loadedELF
 	if bin.interpreter != "" {
-		d, i, err := openPath(ctx, mounts, root, wd, maxTraversals, bin.interpreter)
+		d, i, err := openPath(ctx, mounts, root, wd, maxTraversals, bin.interpreter, true /*resolveFinal*/)
 		if err != nil {
 			ctx.Infof("Error opening interpreter %s: %v", bin.interpreter, err)
 			return loadedELF{}, nil, err

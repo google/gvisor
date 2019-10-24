@@ -57,13 +57,19 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 // installed in the Task FDTable. The caller takes ownership of both.
 //
 // name must be a readable, executable, regular file.
-func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, name string) (*fs.Dirent, *fs.File, error) {
+func openPath(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, name string, resolveFinal bool) (*fs.Dirent, *fs.File, error) {
+	var err error
 	if name == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, nil, syserror.ENOENT
 	}
 
-	d, err := mm.FindInode(ctx, root, wd, name, maxTraversals)
+	var d *fs.Dirent
+	if resolveFinal {
+		d, err = mounts.FindInode(ctx, root, wd, name, maxTraversals)
+	} else {
+		d, err = mounts.FindLink(ctx, root, wd, name, maxTraversals)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,10 +77,13 @@ func openPath(ctx context.Context, mm *fs.MountNamespace, root, wd *fs.Dirent, m
 	// Open file will take a reference to Dirent, so destroy this one.
 	defer d.DecRef()
 
+	if !resolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
+		return nil, nil, syserror.ELOOP
+	}
+
 	return openFile(ctx, nil, d, name)
 }
 
-// openFile performs checks on a file to be executed. If provided a *fs.File,
 // openFile takes that file's Dirent and performs checks on it. If provided a
 // *fs.Dirent and not a *fs.File, it creates a *fs.File object from the Dirent's
 // Inode and performs checks on that.
@@ -181,7 +190,7 @@ const (
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
 //  * Possibly updated argv
-func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, features *cpuid.FeatureSet, filename string, passedFile *fs.File, argv []string) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, features *cpuid.FeatureSet, filename string, passedFile *fs.File, argv []string, resolveFinal bool) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		var (
 			d   *fs.Dirent
@@ -189,8 +198,7 @@ func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamesp
 			err error
 		)
 		if passedFile == nil {
-			d, f, err = openPath(ctx, mounts, root, wd, remainingTraversals, filename)
-
+			d, f, err = openPath(ctx, mounts, root, wd, remainingTraversals, filename, resolveFinal)
 		} else {
 			d, f, err = openFile(ctx, passedFile, nil, "")
 			// Set to nil in case we loop on a Interpreter Script.
@@ -255,9 +263,9 @@ func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamesp
 // Preconditions:
 //  * The Task MemoryManager is empty.
 //  * Load is called on the Task goroutine.
-func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, file *fs.File, argv, envv []string, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
+func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, file *fs.File, argv, envv []string, resolveFinal bool, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
 	// Load the binary itself.
-	loaded, ac, d, argv, err := loadBinary(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv)
+	loaded, ac, d, argv, err := loadBinary(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, resolveFinal)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", filename, err), syserr.FromError(err).ToLinux())
 	}

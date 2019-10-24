@@ -105,18 +105,24 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		}
 	}
 
-	if flags != 0 {
-		// TODO(b/128449944): Handle AT_EMPTY_PATH and AT_SYMLINK_NOFOLLOW.
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
+		return 0, nil, syserror.EINVAL
 	}
+	atEmptyPath := flags&linux.AT_EMPTY_PATH != 0
+	if !atEmptyPath && len(pathname) == 0 {
+		return 0, nil, syserror.ENOENT
+	}
+	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
 
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef()
 
 	var wd *fs.Dirent
+	var executable *fs.File
 	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
-		// If pathname is absolute, LoadTaskImage() will ignore the wd.
+		// Even if the pathname is absolute, we may still need the wd
+		// for interpreter scripts if the path of the interpreter is
+		// relative.
 		wd = t.FSContext().WorkingDirectory()
 	} else {
 		// Need to extract the given FD.
@@ -126,17 +132,23 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		}
 		defer f.DecRef()
 
-		wd = f.Dirent
-		wd.IncRef()
-		if !fs.IsDir(wd.Inode.StableAttr) {
-			return 0, nil, syserror.ENOTDIR
+		if atEmptyPath && len(pathname) == 0 {
+			executable = f
+		} else {
+			wd = f.Dirent
+			wd.IncRef()
+			if !fs.IsDir(wd.Inode.StableAttr) {
+				return 0, nil, syserror.ENOTDIR
+			}
 		}
 	}
-	defer wd.DecRef()
+	if wd != nil {
+		defer wd.DecRef()
+	}
 
 	// Load the new TaskContext.
 	maxTraversals := uint(linux.MaxSymlinkTraversals)
-	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, nil, argv, envv, t.Arch().FeatureSet())
+	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, executable, argv, envv, resolveFinal, t.Arch().FeatureSet())
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
