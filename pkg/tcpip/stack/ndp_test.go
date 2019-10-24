@@ -31,6 +31,7 @@ import (
 const (
 	addr1     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 	addr2     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+	addr3     = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03"
 	linkAddr1 = "\x02\x02\x03\x04\x05\x06"
 )
 
@@ -439,5 +440,170 @@ func TestDADStop(t *testing.T) {
 	// Should not have sent more than 1 NS message.
 	if got := s.Stats().ICMP.V6PacketsSent.NeighborSolicit.Value(); got > 1 {
 		t.Fatalf("got NeighborSolicit = %d, want <= 1", got)
+	}
+}
+
+// TestSetNDPConfigurationFailsForBadNICID tests to make sure we get an error if
+// we attempt to update NDP configurations using an invalid NICID.
+func TestSetNDPConfigurationFailsForBadNICID(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+	})
+
+	// No NIC with ID 1 yet.
+	if got := s.SetNDPConfigurations(1, stack.NDPConfigurations{}); got != tcpip.ErrUnknownNICID {
+		t.Fatalf("got s.SetNDPConfigurations = %v, want = %s", got, tcpip.ErrUnknownNICID)
+	}
+}
+
+// TestSetNDPConfigurations tests that we can update and use per-interface NDP
+// configurations without affecting the default NDP configurations or other
+// interfaces' configurations.
+func TestSetNDPConfigurations(t *testing.T) {
+	tests := []struct {
+		name                    string
+		dupAddrDetectTransmits  uint8
+		retransmitTimer         time.Duration
+		expectedRetransmitTimer time.Duration
+	}{
+		{
+			"OK",
+			1,
+			time.Second,
+			time.Second,
+		},
+		{
+			"Invalid Retransmit Timer",
+			1,
+			0,
+			time.Second,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ndpDisp := ndpDispatcher{
+				dadC: make(chan ndpDADEvent),
+			}
+			e := channel.New(10, 1280, linkAddr1)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{ipv6.NewProtocol()},
+				NDPDisp:          &ndpDisp,
+			})
+
+			// This NIC(1)'s NDP configurations will be updated to
+			// be different from the default.
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(1) = %s", err)
+			}
+
+			// Created before updating NIC(1)'s NDP configurations
+			// but updating NIC(1)'s NDP configurations should not
+			// affect other existing NICs.
+			if err := s.CreateNIC(2, e); err != nil {
+				t.Fatalf("CreateNIC(2) = %s", err)
+			}
+
+			// Update the NDP configurations on NIC(1) to use DAD.
+			configs := stack.NDPConfigurations{
+				DupAddrDetectTransmits: test.dupAddrDetectTransmits,
+				RetransmitTimer:        test.retransmitTimer,
+			}
+			if err := s.SetNDPConfigurations(1, configs); err != nil {
+				t.Fatalf("got SetNDPConfigurations(1, _) = %s", err)
+			}
+
+			// Created after updating NIC(1)'s NDP configurations
+			// but the stack's default NDP configurations should not
+			// have been updated.
+			if err := s.CreateNIC(3, e); err != nil {
+				t.Fatalf("CreateNIC(3) = %s", err)
+			}
+
+			// Add addresses for each NIC.
+			if err := s.AddAddress(1, header.IPv6ProtocolNumber, addr1); err != nil {
+				t.Fatalf("AddAddress(1, %d, %s) = %s", header.IPv6ProtocolNumber, addr1, err)
+			}
+			if err := s.AddAddress(2, header.IPv6ProtocolNumber, addr2); err != nil {
+				t.Fatalf("AddAddress(2, %d, %s) = %s", header.IPv6ProtocolNumber, addr2, err)
+			}
+			if err := s.AddAddress(3, header.IPv6ProtocolNumber, addr3); err != nil {
+				t.Fatalf("AddAddress(3, %d, %s) = %s", header.IPv6ProtocolNumber, addr3, err)
+			}
+
+			// Address should not be considered bound to NIC(1) yet
+			// (DAD ongoing).
+			addr, err := s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+			}
+			if want := (tcpip.AddressWithPrefix{}); addr != want {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+			}
+
+			// Should get the address on NIC(2) and NIC(3)
+			// immediately since we should not have performed DAD on
+			// it as the stack was configured to not do DAD by
+			// default and we only updated the NDP configurations on
+			// NIC(1).
+			addr, err = s.GetMainNICAddress(2, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(2, _) err = %s", err)
+			}
+			if addr.Address != addr2 {
+				t.Fatalf("got stack.GetMainNICAddress(2, _) = %s, want = %s", addr, addr2)
+			}
+			addr, err = s.GetMainNICAddress(3, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(3, _) err = %s", err)
+			}
+			if addr.Address != addr3 {
+				t.Fatalf("got stack.GetMainNICAddress(3, _) = %s, want = %s", addr, addr3)
+			}
+
+			// Sleep until right (500ms before) before resolution to
+			// make sure the address didn't resolve on NIC(1) yet.
+			const delta = 500 * time.Millisecond
+			time.Sleep(time.Duration(test.dupAddrDetectTransmits)*test.expectedRetransmitTimer - delta)
+			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = (_, %v), want = (_, nil)", err)
+			}
+			if want := (tcpip.AddressWithPrefix{}); addr != want {
+				t.Fatalf("got stack.GetMainNICAddress(_, _) = (%s, nil), want = (%s, nil)", addr, want)
+			}
+
+			// Wait for DAD to resolve.
+			select {
+			case <-time.After(2 * delta):
+				// We should get a resolution event after 500ms
+				// (delta) since we wait for 500ms less than the
+				// expected resolution time above to make sure
+				// that the address did not yet resolve. Waiting
+				// for 1s (2x delta) without a resolution event
+				// means something is wrong.
+				t.Fatal("timed out waiting for DAD resolution")
+			case e := <-ndpDisp.dadC:
+				if e.err != nil {
+					t.Fatal("got DAD error: ", e.err)
+				}
+				if e.nicid != 1 {
+					t.Fatalf("got DAD event w/ nicid = %d, want = 1", e.nicid)
+				}
+				if e.addr != addr1 {
+					t.Fatalf("got DAD event w/ addr = %s, want = %s", addr, addr1)
+				}
+				if !e.resolved {
+					t.Fatal("got DAD event w/ resolved = false, want = true")
+				}
+			}
+			addr, err = s.GetMainNICAddress(1, header.IPv6ProtocolNumber)
+			if err != nil {
+				t.Fatalf("stack.GetMainNICAddress(1, _) err = %s", err)
+			}
+			if addr.Address != addr1 {
+				t.Fatalf("got stack.GetMainNICAddress(1, _) = %s, want = %s", addr, addr1)
+			}
+		})
 	}
 }

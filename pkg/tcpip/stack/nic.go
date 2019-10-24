@@ -46,6 +46,10 @@ type NIC struct {
 
 	stats NICStats
 
+	// ndp is the NDP related state for NIC.
+	//
+	// Note, read and write operations on ndp require that the NIC is
+	// appropriately locked.
 	ndp ndpState
 }
 
@@ -80,6 +84,7 @@ const (
 	NeverPrimaryEndpoint
 )
 
+// newNIC returns a new NIC using the default NDP configurations from stack.
 func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback bool) *NIC {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
@@ -105,7 +110,8 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			},
 		},
 		ndp: ndpState{
-			dad: make(map[tcpip.Address]dadState),
+			configs: stack.ndpConfigs,
+			dad:     make(map[tcpip.Address]dadState),
 		},
 	}
 	nic.ndp.nic = nic
@@ -935,6 +941,18 @@ func (n *NIC) dupTentativeAddrDetected(addr tcpip.Address) *tcpip.Error {
 	}
 
 	return n.removePermanentAddressLocked(addr)
+}
+
+// setNDPConfigs sets the NDP configurations for n.
+//
+// Note, if c contains invalid NDP configuration values, it will be fixed to
+// use default values for the erroneous values.
+func (n *NIC) setNDPConfigs(c NDPConfigurations) {
+	c.validate()
+
+	n.mu.Lock()
+	n.ndp.configs = c
+	n.mu.Unlock()
 }
 
 type networkEndpointKind int32
