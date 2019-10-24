@@ -1548,7 +1548,8 @@ func TestAbbreviatedIDs(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfigWithRoot(rootDir)
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
 
 	cids := []string{
 		"foo-" + testutil.UniqueContainerID(),

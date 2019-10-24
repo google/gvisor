@@ -60,13 +60,8 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 }
 
 func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*Container, func(), error) {
-	// Setup root dir if one hasn't been provided.
 	if len(conf.RootDir) == 0 {
-		rootDir, err := testutil.SetupRootDir()
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating root dir: %v", err)
-		}
-		conf.RootDir = rootDir
+		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}
 
 	var containers []*Container
@@ -78,7 +73,6 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*C
 		for _, b := range bundles {
 			os.RemoveAll(b)
 		}
-		os.RemoveAll(conf.RootDir)
 	}
 	for i, spec := range specs {
 		bundleDir, err := testutil.SetupBundleDir(spec)
@@ -144,6 +138,13 @@ func TestMultiContainerSanity(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
+
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		specs, ids := createSpecs(sleep, sleep)
@@ -174,6 +175,13 @@ func TestMultiContainerSanity(t *testing.T) {
 func TestMultiPIDNS(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
@@ -212,6 +220,13 @@ func TestMultiPIDNS(t *testing.T) {
 func TestMultiPIDNSPath(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
@@ -268,13 +283,21 @@ func TestMultiPIDNSPath(t *testing.T) {
 }
 
 func TestMultiContainerWait(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	// The first container should run the entire duration of the test.
 	cmd1 := []string{"sleep", "100"}
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
 	specs, ids := createSpecs(cmd1, cmd2)
 
-	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -344,12 +367,14 @@ func TestExecWait(t *testing.T) {
 	}
 	defer os.RemoveAll(rootDir)
 
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	// The first container should run the entire duration of the test.
 	cmd1 := []string{"sleep", "100"}
 	// We'll wait on the second container, which is much shorter lived.
 	cmd2 := []string{"sleep", "1"}
 	specs, ids := createSpecs(cmd1, cmd2)
-	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -432,7 +457,15 @@ func TestMultiContainerMount(t *testing.T) {
 	})
 
 	// Setup the containers.
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
 	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	containers, cleanup, err := startContainers(conf, sps, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -453,6 +486,13 @@ func TestMultiContainerMount(t *testing.T) {
 func TestMultiContainerSignal(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
@@ -548,6 +588,13 @@ func TestMultiContainerDestroy(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
+
 		// First container will remain intact while the second container is killed.
 		podSpecs, ids := createSpecs(
 			[]string{"sleep", "100"},
@@ -599,13 +646,21 @@ func TestMultiContainerDestroy(t *testing.T) {
 }
 
 func TestMultiContainerProcesses(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	// Note: use curly braces to keep 'sh' process around. Otherwise, shell
 	// will just execve into 'sleep' and both containers will look the
 	// same.
 	specs, ids := createSpecs(
 		[]string{"sleep", "100"},
 		[]string{"sh", "-c", "{ sleep 100; }"})
-	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -650,6 +705,15 @@ func TestMultiContainerProcesses(t *testing.T) {
 // TestMultiContainerKillAll checks that all process that belong to a container
 // are killed when SIGKILL is sent to *all* processes in that container.
 func TestMultiContainerKillAll(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	for _, tc := range []struct {
 		killContainer bool
 	}{
@@ -665,7 +729,6 @@ func TestMultiContainerKillAll(t *testing.T) {
 		specs, ids := createSpecs(
 			[]string{app, "task-tree", "--depth=2", "--width=2"},
 			[]string{app, "task-tree", "--depth=4", "--width=2"})
-		conf := testutil.TestConfig()
 		containers, cleanup, err := startContainers(conf, specs, ids)
 		if err != nil {
 			t.Fatalf("error starting containers: %v", err)
@@ -739,19 +802,13 @@ func TestMultiContainerDestroyNotStarted(t *testing.T) {
 	specs, ids := createSpecs(
 		[]string{"/bin/sleep", "100"},
 		[]string{"/bin/sleep", "100"})
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
 
-	conf := testutil.TestConfigWithRoot(rootDir)
-
-	// Create and start root container.
-	rootBundleDir, err := testutil.SetupBundleDir(specs[0])
+	conf := testutil.TestConfig()
+	rootDir, rootBundleDir, err := testutil.SetupContainer(specs[0], conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
+	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(rootBundleDir)
 
 	rootArgs := Args{
@@ -800,19 +857,12 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 	}
 	specs, ids := createSpecs(cmds...)
 
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
-	conf := testutil.TestConfigWithRoot(rootDir)
-
-	// Create and start root container.
-	rootBundleDir, err := testutil.SetupBundleDir(specs[0])
+	conf := testutil.TestConfig()
+	rootDir, rootBundleDir, err := testutil.SetupContainer(specs[0], conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
 	}
+	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(rootBundleDir)
 
 	rootArgs := Args{
@@ -886,9 +936,17 @@ func TestMultiContainerDifferentFilesystems(t *testing.T) {
 	script := fmt.Sprintf("if [ -f %q ]; then exit 1; else touch %q; fi", filename, filename)
 	cmd := []string{"sh", "-c", script}
 
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	// Make sure overlay is enabled, and none of the root filesystems are
 	// read-only, otherwise we won't be able to create the file.
-	conf := testutil.TestConfig()
 	conf.Overlay = true
 	specs, ids := createSpecs(cmdRoot, cmd, cmd)
 	for _, s := range specs {
@@ -941,26 +999,21 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 	}
 	allSpecs, allIDs := createSpecs(cmds...)
 
-	rootDir, err := testutil.SetupRootDir()
-	if err != nil {
-		t.Fatalf("error creating root dir: %v", err)
-	}
-	defer os.RemoveAll(rootDir)
-
 	// Split up the specs and IDs.
 	rootSpec := allSpecs[0]
 	rootID := allIDs[0]
 	childrenSpecs := allSpecs[1:]
 	childrenIDs := allIDs[1:]
 
-	bundleDir, err := testutil.SetupBundleDir(rootSpec)
+	conf := testutil.TestConfig()
+	rootDir, bundleDir, err := testutil.SetupContainer(rootSpec, conf)
 	if err != nil {
-		t.Fatalf("error setting up bundle dir: %v", err)
+		t.Fatalf("error setting up container: %v", err)
 	}
+	defer os.RemoveAll(rootDir)
 	defer os.RemoveAll(bundleDir)
 
 	// Start root container.
-	conf := testutil.TestConfigWithRoot(rootDir)
 	rootArgs := Args{
 		ID:        rootID,
 		Spec:      rootSpec,
@@ -1028,6 +1081,13 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 func TestMultiContainerSharedMount(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
@@ -1137,6 +1197,13 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
 
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
+
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
@@ -1196,6 +1263,13 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 func TestMultiContainerSharedMountRestart(t *testing.T) {
 	for _, conf := range configs(all...) {
 		t.Logf("Running test with conf: %+v", conf)
+
+		rootDir, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating root dir: %v", err)
+		}
+		defer os.RemoveAll(rootDir)
+		conf.RootDir = rootDir
 
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
@@ -1300,8 +1374,14 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 // Test that unsupported pod mounts options are ignored when matching master and
 // slave mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
 	conf := testutil.TestConfig()
-	t.Logf("Running test with conf: %+v", conf)
+	conf.RootDir = rootDir
 
 	// Setup the containers.
 	sleep := []string{"/bin/sleep", "100"}
@@ -1376,6 +1456,15 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 		Type:        "tmpfs",
 	}
 
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	// Create the specs.
 	specs, ids := createSpecs(
 		[]string{"sleep", "1000"},
@@ -1386,7 +1475,6 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 	specs[1].Mounts = append(specs[2].Mounts, sharedMnt, writeableMnt)
 	specs[2].Mounts = append(specs[1].Mounts, sharedMnt)
 
-	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -1405,9 +1493,17 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 
 // Test that container is destroyed when Gofer is killed.
 func TestMultiContainerGoferKilled(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	sleep := []string{"sleep", "100"}
 	specs, ids := createSpecs(sleep, sleep, sleep)
-	conf := testutil.TestConfig()
 	containers, cleanup, err := startContainers(conf, specs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
@@ -1483,7 +1579,15 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 func TestMultiContainerLoadSandbox(t *testing.T) {
 	sleep := []string{"sleep", "100"}
 	specs, ids := createSpecs(sleep, sleep, sleep)
+
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
 	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
 
 	// Create containers for the sandbox.
 	wants, cleanup, err := startContainers(conf, specs, ids)
@@ -1576,7 +1680,15 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 		Type:        "bind",
 	})
 
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
 	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	pod, cleanup, err := startContainers(conf, podSpecs, ids)
 	if err != nil {
 		t.Fatalf("error starting containers: %v", err)
