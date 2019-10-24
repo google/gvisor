@@ -79,7 +79,7 @@ Most common utilities work. Note that:
 | sshd     | Partially working. Job control [in progress](https://github.com/google/gvisor/issues/154) |
 | strace   | Working |
 | tar      | Working |
-| tcpdump  | [In progress](https://github.com/google/gvisor/issues/173) |
+| tcpdump  | Working |
 | top      | Working |
 | uptime   | Working |
 | vim      | Working |
