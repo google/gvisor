@@ -13,8 +13,12 @@ release channels. You should pick the version you'd like to install. For
 experimentation, the nightly release is recommended. For production use, the
 latest release is recommended.
 
+<!--
+
 After selecting an appropriate release channel from the options below, proceed
 to the preferred installation mechanism: manual or from an `apt` repository.
+
+ -->
 
 ### Nightly
 
@@ -29,8 +33,12 @@ Specific nightly releases can be found at:
 
 Note that a release may not be available for every day.
 
+<!--
+
 To use a nightly release, use one of the above URLs for `URL` in the manual
 instructions below. For `apt`, use `nightly` for `DIST` below.
+
+ -->
 
 ### Latest release
 
@@ -38,8 +46,12 @@ The latest official release is available at the following URL:
 
    `https://storage.googleapis.com/gvisor/releases/release/latest`
 
+<!--
+
 To use the latest release, use the above URL for `URL` in the manual
 instructions below. For `apt`, use `latest` for `DIST` below.
+
+ -->
 
 ### Specific release
 
@@ -49,9 +61,13 @@ A given release release is available at the following URL:
 
 See the [releases][releases] page for information about specific releases.
 
+<!--
+
 This will include point updates for the release, if required. To use a specific
 release, use the above URL for `URL` in the manual instructions below. For
 `apt`, use `${yyyymmdd}` for `DIST` below.
+
+ -->
 
 ### Point release
 
@@ -59,11 +75,15 @@ A given point release is available at the following URL:
 
   `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}`
 
+<!--
+
 Unlike the specific release above, which may include updates, this release will
 not change. To use a specific point release, use the above URL for `URL` in the
 manual instructions below. For apt, use `${yyyymmdd}.${rc}` for `DIST` below.
 
-## Install from an `apt` repository
+ -->
+
+<!-- Install from an `apt` repository
 
 First, appropriate dependencies must be installed to allow `apt` to install
 packages via https:
@@ -117,6 +137,8 @@ sudo apt-get update && sudo apt-get install -y runsc
 ```
 
 If you have Docker installed, it will be automatically configured.
+
+-->
 
 ## Install manually
 
