@@ -78,9 +78,6 @@ type handshake struct {
 	// mss is the maximum segment size received from the peer.
 	mss uint16
 
-	// amss is the maximum segment size advertised by us to the peer.
-	amss uint16
-
 	// sndWndScale is the send window scale, as defined in RFC 1323. A
 	// negative value means no scaling is supported by the peer.
 	sndWndScale int
