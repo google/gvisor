@@ -403,6 +403,25 @@ func (s *SocketOperations) isPacketBased() bool {
 	return s.skType == linux.SOCK_DGRAM || s.skType == linux.SOCK_SEQPACKET || s.skType == linux.SOCK_RDM || s.skType == linux.SOCK_RAW
 }
 
+func (s *SocketOperations) fetchReadViewLocked() *syserr.Error {
+	if len(s.readView) > 0 {
+		return nil
+	}
+
+	s.readView = nil
+	s.sender = tcpip.FullAddress{}
+
+	v, cms, err := s.Endpoint.ReadLocked(&s.sender)
+	if err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+
+	s.readView = v
+	s.readCM = cms
+
+	return nil
+}
+
 // fetchReadView updates the readView field of the socket if it's currently
 // empty. It assumes that the socket is locked.
 func (s *SocketOperations) fetchReadView() *syserr.Error {
@@ -2043,9 +2062,10 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 	var err *syserr.Error
 	var copied int
 
+	s.Endpoint.ReadLock()
 	// Copy as many views as possible into the user-provided buffer.
 	for dst.NumBytes() != 0 {
-		err = s.fetchReadView()
+		err = s.fetchReadViewLocked()
 		if err != nil {
 			break
 		}
@@ -2072,6 +2092,8 @@ func (s *SocketOperations) coalescingRead(ctx context.Context, dst usermem.IOSeq
 			break
 		}
 	}
+
+	s.Endpoint.ReadUnlock()
 
 	// If we managed to copy something, we must deliver it.
 	if copied > 0 {

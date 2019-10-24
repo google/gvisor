@@ -131,18 +131,24 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
-// Read reads data from the endpoint. This method does not block if
-// there is no data pending.
-func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// ReadLock implements tcpip.Endpoint.ReadLock.
+func (e *endpoint) ReadLock() {
 	e.rcvMu.Lock()
+}
 
+// ReadUnlock implements tcpip.Endpoint.ReadUnlock.
+func (e *endpoint) ReadUnlock() {
+	e.rcvMu.Unlock()
+}
+
+// ReadLocked implements tcpip.Endpoint.ReadLocked.
+func (e *endpoint) ReadLocked(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
 			e.stats.ReadErrors.ReadClosed.Increment()
 			err = tcpip.ErrClosedForReceive
 		}
-		e.rcvMu.Unlock()
 		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
@@ -150,13 +156,20 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 	e.rcvList.Remove(p)
 	e.rcvBufSize -= p.data.Size()
 
-	e.rcvMu.Unlock()
-
 	if addr != nil {
 		*addr = p.senderAddress
 	}
 
 	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
+}
+
+// Read reads data from the endpoint. This method does not block if
+// there is no data pending.
+func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	e.ReadLock()
+	v, cms, err := e.ReadLocked(addr)
+	e.ReadUnlock()
+	return v, cms, err
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it

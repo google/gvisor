@@ -320,6 +320,19 @@ type Endpoint interface {
 	// associated with it.
 	Close()
 
+	// ReadLock() acquires all locks required to call ReadLocked.
+	ReadLock()
+
+	// ReadUnlock unlocks all locks acquired in ReadLock.
+	ReadUnlock()
+
+	// ReadLocked reads data from the endpoint and optionally returns an
+	// error to the sender.
+	//
+	// This method does not block if there is no data pending. It will
+	// either return an error or data, never both.
+	ReadLocked(*FullAddress) (buffer.View, ControlMessages, *Error)
+
 	// Read reads data from the endpoint and optionally returns the sender.
 	//
 	// This method does not block if there is no data pending. It will also

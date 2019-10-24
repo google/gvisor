@@ -136,9 +136,18 @@ func (ep *endpoint) IPTables() (iptables.IPTables, error) {
 	return ep.stack.IPTables(), nil
 }
 
-// Read implements tcpip.Endpoint.Read.
-func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// ReadLock implements tcpip.Endpoint.ReadLock.
+func (ep *endpoint) ReadLock() {
 	ep.rcvMu.Lock()
+}
+
+// ReadUnlock implements tcpip.Endpoint.ReadUnlock.
+func (ep *endpoint) ReadUnlock() {
+	ep.rcvMu.Unlock()
+}
+
+// ReadLocked implements tcpip.Endpoint.ReadLocked.
+func (ep *endpoint) ReadLocked(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 
 	// If there's no data to read, return that read would block or that the
 	// endpoint is closed.
@@ -148,7 +157,6 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 			ep.stats.ReadErrors.ReadClosed.Increment()
 			err = tcpip.ErrClosedForReceive
 		}
-		ep.rcvMu.Unlock()
 		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
@@ -156,13 +164,19 @@ func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMes
 	ep.rcvList.Remove(packet)
 	ep.rcvBufSize -= packet.data.Size()
 
-	ep.rcvMu.Unlock()
-
 	if addr != nil {
 		*addr = packet.senderAddr
 	}
 
 	return packet.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: packet.timestampNS}, nil
+}
+
+// Read implements tcpip.Endpoint.ReadLocked.
+func (ep *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	ep.ReadLock()
+	v, cms, err := ep.ReadLocked(addr)
+	ep.ReadUnlock()
+	return v, cms, err
 }
 
 func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {

@@ -827,43 +827,39 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
-// Read reads data from the endpoint.
-func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+// ReadLock implements tcpip.Endpoint.ReadLock.
+func (e *endpoint) ReadLock() {
 	e.mu.RLock()
+	e.rcvListMu.Lock()
+}
+
+// ReadUnlock implements tcpip.Endpoint.ReadUnlock.
+func (e *endpoint) ReadUnlock() {
+	e.rcvListMu.Unlock()
+	e.mu.RUnlock()
+}
+
+// ReadLocked implements tcpip.Endpoint.ReadLocked.
+func (e *endpoint) ReadLocked(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
 	// reads to proceed before returning a ECONNRESET.
-	e.rcvListMu.Lock()
 	bufUsed := e.rcvBufUsed
 	if s := e.state; !s.connected() && s != StateClose && bufUsed == 0 {
-		e.rcvListMu.Unlock()
 		he := e.HardError
-		e.mu.RUnlock()
 		if s == StateError {
 			return buffer.View{}, tcpip.ControlMessages{}, he
 		}
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
-
-	v, err := e.readLocked()
-	e.rcvListMu.Unlock()
-
-	e.mu.RUnlock()
-
-	if err == tcpip.ErrClosedForReceive {
-		e.stats.ReadErrors.ReadClosed.Increment()
-	}
-	return v, tcpip.ControlMessages{}, err
-}
-
-func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 	if e.rcvBufUsed == 0 {
 		if e.rcvClosed || !e.state.connected() {
-			return buffer.View{}, tcpip.ErrClosedForReceive
+			e.stats.ReadErrors.ReadClosed.Increment()
+			return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrClosedForReceive
 		}
-		return buffer.View{}, tcpip.ErrWouldBlock
+		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrWouldBlock
 	}
 
 	s := e.rcvList.Front()
@@ -885,7 +881,16 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
 
-	return v, nil
+	return v, tcpip.ControlMessages{}, nil
+}
+
+// Read reads data from the endpoint.
+func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+	e.ReadLock()
+	v, cms, err := e.ReadLocked(addr)
+	e.ReadUnlock()
+
+	return v, cms, err
 }
 
 // isEndpointWritableLocked checks if a given endpoint is writable
