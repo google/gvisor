@@ -550,6 +550,18 @@ TEST(ExecveatTest, Basic) {
                 ArgEnvExitStatus(0, 0), absl::StrCat(absolute_path, "\n"));
 }
 
+TEST(ExecveatTest, FDNotADirectory) {
+  std::string absolute_path = WorkloadPath(kBasicWorkload);
+  std::string relative_path = std::string(Basename(absolute_path));
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(absolute_path, 0));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(fd.get(), relative_path,
+                                            {absolute_path}, {}, /*flags=*/0,
+                                            /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ENOTDIR);
+}
+
 TEST(ExecveatTest, AbsolutePathWithFDCWD) {
   std::string path = WorkloadPath(kBasicWorkload);
   CheckExecveat(AT_FDCWD, path, {path}, {}, ArgEnvExitStatus(0, 0), 0,
@@ -562,6 +574,56 @@ TEST(ExecveatTest, AbsolutePath) {
   const int32_t badFD = -1;
   CheckExecveat(badFD, path, {path}, {}, ArgEnvExitStatus(0, 0), 0,
                 absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, EmptyPathBasic) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_PATH));
+
+  CheckExecveat(fd.get(), "", {path}, {}, AT_EMPTY_PATH, ArgEnvExitStatus(0, 0),
+                absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, EmptyPathWithDirFD) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  std::string parent_dir = std::string(Dirname(path));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(dirfd.get(), "", {path}, {},
+                                            AT_EMPTY_PATH,
+                                            /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, EACCES);
+}
+
+TEST(ExecveatTest, EmptyPathWithoutEmptyPathFlag) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_PATH));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(
+      fd.get(), "", {path}, {}, /*flags=*/0, /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ENOENT);
+}
+
+TEST(ExecveatTest, AbsolutePathWithEmptyPathFlag) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_PATH));
+
+  CheckExecveat(fd.get(), path, {path}, {}, AT_EMPTY_PATH,
+                ArgEnvExitStatus(0, 0), absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, RelativePathWithEmptyPathFlag) {
+  std::string absolute_path = WorkloadPath(kBasicWorkload);
+  std::string parent_dir = std::string(Dirname(absolute_path));
+  std::string relative_path = std::string(Basename(absolute_path));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
+
+  CheckExecveat(dirfd.get(), relative_path, {absolute_path}, {}, AT_EMPTY_PATH,
+                ArgEnvExitStatus(0, 0), absl::StrCat(absolute_path, "\n"));
 }
 
 // Priority consistent across calls to execve()

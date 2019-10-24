@@ -109,6 +109,15 @@ PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd, const std::string& pathname
                                       const std::function<void()>& fn,
                                       pid_t* child, int* execve_errno);
 
+inline PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
+                                             const std::string& pathname,
+                                             const ExecveArray& argv,
+                                             const ExecveArray& envv, int flags,
+                                             pid_t* child, int* execve_errno) {
+  return ForkAndExecveat(
+      dirfd, pathname, argv, envv, flags, [] {}, child, execve_errno);
+}
+
 // Calls fn in a forked subprocess and returns the exit status of the
 // subprocess.
 //
