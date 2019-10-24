@@ -90,7 +90,7 @@ Next, look at the different options available for gVisor: [platform][platforms],
 
 [docker]: https://docs.docker.com/install/
 [storage-driver]: https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-storage-driver
-
+[install]: /docs/user_guide/install/
 [filesystem]: /docs/user_guide/filesystem/
 [networking]: /docs/user_guide/networking/
 [platforms]: /docs/user_guide/platforms/
