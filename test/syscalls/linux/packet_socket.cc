@@ -130,6 +130,20 @@ void CookedPacketTest::SetUp() {
     GTEST_SKIP();
   }
 
+  if (!IsRunningOnGvisor()) {
+    FileDescriptor acceptLocal = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/accept_local", O_RDONLY));
+    FileDescriptor routeLocalnet = ASSERT_NO_ERRNO_AND_VALUE(
+        Open("/proc/sys/net/ipv4/conf/lo/route_localnet", O_RDONLY));
+    char enabled;
+    ASSERT_THAT(read(acceptLocal.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(enabled, '1');
+    ASSERT_THAT(read(routeLocalnet.get(), &enabled, 1),
+                SyscallSucceedsWithValue(1));
+    ASSERT_EQ(enabled, '1');
+  }
+
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
 }
