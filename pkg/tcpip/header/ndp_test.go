@@ -197,3 +197,74 @@ func TestNDPTargetLinkLayerAddressOptionSerialize(t *testing.T) {
 		})
 	}
 }
+
+// TestNDPPrefixInformationOption tests the field getters and serialization of a
+// NDPPrefixInformation.
+func TestNDPPrefixInformationOption(t *testing.T) {
+	b := []byte{
+		43, 127,
+		1, 2, 3, 4,
+		5, 6, 7, 8,
+		5, 5, 5, 5,
+		9, 10, 11, 12,
+		13, 14, 15, 16,
+		17, 18, 19, 20,
+		21, 22, 23, 24,
+	}
+
+	targetBuf := []byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+	opts := NDPOptions(targetBuf)
+	serializer := NDPOptionsSerializer{
+		NDPPrefixInformation(b),
+	}
+	opts.Serialize(serializer)
+	expectedBuf := []byte{
+		3, 4, 43, 64,
+		1, 2, 3, 4,
+		5, 6, 7, 8,
+		0, 0, 0, 0,
+		9, 10, 11, 12,
+		13, 14, 15, 16,
+		17, 18, 19, 20,
+		21, 22, 23, 24,
+	}
+	if !bytes.Equal(targetBuf, expectedBuf) {
+		t.Fatalf("got targetBuf = %x, want = %x", targetBuf, expectedBuf)
+	}
+
+	// First two bytes are the Type and Length fields, which are not part of
+	// the option body.
+	pi := NDPPrefixInformation(targetBuf[2:])
+
+	if got := pi.Type(); got != 3 {
+		t.Fatalf("got Type = %d, want = 3", got)
+	}
+
+	if got := pi.Length(); got != 30 {
+		t.Fatalf("got Length = %d, want = 30", got)
+	}
+
+	if got := pi.PrefixLength(); got != 43 {
+		t.Fatalf("got PrefixLength = %d, want = 43", got)
+	}
+
+	if pi.OnLinkFlag() {
+		t.Fatalf("got OnLinkFlag = true, want = false")
+	}
+
+	if !pi.AutonomousAddressConfigurationFlag() {
+		t.Fatalf("got AutonomousAddressConfigurationFlag = false, want = true")
+	}
+
+	if got, want := pi.ValidLifetime(), 16909060*time.Second; got != want {
+		t.Fatalf("got ValidLifetime = %d, want = %d", got, want)
+	}
+
+	if got, want := pi.PreferredLifetime(), 84281096*time.Second; got != want {
+		t.Fatalf("got PreferredLifetime = %d, want = %d", got, want)
+	}
+
+	if got, want := pi.Prefix(), tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18"); got != want {
+		t.Fatalf("got Prefix = %s, want = %s", got, want)
+	}
+}
