@@ -72,8 +72,6 @@ race detector. (The use of Go has its challenges too, and isn't free.)
 [apparmor]: https://wiki.ubuntu.com/AppArmor
 [golang]: https://golang.org
 [kvm]: https://www.linux-kvm.org
-[oci]: https://www.opencontainers.org
-[sandbox]: https://en.wikipedia.org/wiki/Sandbox_(computer_security)
 [seccomp]: https://www.kernel.org/doc/Documentation/prctl/seccomp_filter.txt
 [selinux]: https://selinuxproject.org
 [uml]: http://user-mode-linux.sourceforge.net/

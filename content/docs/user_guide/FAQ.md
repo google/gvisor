@@ -89,12 +89,12 @@ order to communicate to the DNS server. runsc network is isolated from the
 host and cannot access the DNS server on the host network without breaking the
 sandbox isolation. There are a few different workarounds you can try:
 
-* Use default bridge network with `--link` to connect containers. Default
-  bridge doesn't use embedded DNS.
-* Use [`--network=host`][host-net] option in runsc, however beware that it will
-  use the host network stack and is less secure.
-* Use IPs instead of container names.
-* Use [Kubernetes][k8s]. Container name lookup works fine in Kubernetes.
+*   Use default bridge network with `--link` to connect containers. Default
+    bridge doesn't use embedded DNS.
+*   Use [`--network=host`][host-net] option in runsc, however beware that it will
+    use the host network stack and is less secure.
+*   Use IPs instead of container names.
+*   Use [Kubernetes][k8s]. Container name lookup works fine in Kubernetes.
 
 [security-model]: /docs/architecture_guide/security/
 [old-linux]: /docs/user_guide/networking/#gso

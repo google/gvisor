@@ -8,12 +8,12 @@ be run.
 
 Each sandbox has its own isolated instance of:
 
-* The **Sentry**, A user-space kernel that runs the container and intercepts
-  and responds to system calls made by the application.
+*   The **Sentry**, A user-space kernel that runs the container and intercepts
+    and responds to system calls made by the application.
 
 Each container running in the sandbox has its own isolated instance of:
 
-* A **Gofer** which provides file system access to the container.
+*   A **Gofer** which provides file system access to the container.
 
 ![gVisor architecture diagram](../Sentry-Gofer.png "gVisor architecture diagram")
 

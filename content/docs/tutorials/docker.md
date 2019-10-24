@@ -59,7 +59,7 @@ docker run --runtime=runsc --name wordpress -d \
 ```
 
 Now, you can access the WordPress website pointing your favorite browser to
-http://localhost:8080.
+<http://localhost:8080>.
 
 Congratulations! You have just deployed a WordPress site using Docker.
 

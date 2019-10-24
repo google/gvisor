@@ -40,10 +40,10 @@ The following applications/images have been tested:
 
 Most common utilities work. Note that:
 
-* Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
-  enabling raw sockets via the unsafe `--net-raw` runsc flag.
-* Different Docker images can behave differently. For example, Alpine Linux and
-  Ubuntu have different `ip` binaries.
+*   Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
+    enabling raw sockets via the unsafe `--net-raw` runsc flag.
+*   Different Docker images can behave differently. For example, Alpine Linux and
+    Ubuntu have different `ip` binaries.
 
  Specific tools include:
 

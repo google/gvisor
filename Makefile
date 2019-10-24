@@ -10,6 +10,7 @@ GEN_SOURCE = $(wildcard cmd/generate-syscall-docs/*)
 APP_SOURCE = $(wildcard cmd/gvisor-website/*)
 # Target Go files, example: public/main.go, public/foo/bar.go.
 APP_TARGET = $(patsubst cmd/gvisor-website/%,public/%,$(APP_SOURCE))
+CONTENT_SOURCE = $(wildcard content/*)
 
 default: website
 .PHONY: default
@@ -63,9 +64,16 @@ compatibility-docs: bin/generate-syscall-docs upstream/gvisor/bazel-bin/runsc/li
 	./upstream/gvisor/bazel-bin/runsc/linux_amd64_pure_stripped/runsc help syscalls -o json | ./bin/generate-syscall-docs -out ./content/docs/user_guide/compatibility/
 .PHONY: compatibility-docs
 
-check: website
-	docker run -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:3.10.2 htmlproofer --disable-external --check-html public/static
+check: check-markdown check-html
 .PHONY: check
+
+check-markdown: node_modules $(CONTENT_SOURCE) compatibility-docs
+	npm run lint-md
+.PHONY: check-markdown
+
+check-html: website
+	docker run -v $(shell pwd)/public:/public gcr.io/gvisor-website/html-proofer:3.10.2 htmlproofer --disable-external --check-html public/static
+.PHONY: check-html
 
 # Run a local content development server. Redirects will not be supported.
 devserver: all-upstream compatibility-docs

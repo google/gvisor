@@ -11,9 +11,9 @@ This page shows you how to deploy a sample [WordPress][wordpress] site using
 
 Take the following steps to enable the Kubernetes Engine API:
 
-1. Visit the [Kubernetes Engine page][project-selector] in the Google Cloud
-   Platform Console.
-1. Create or select a project.
+1.  Visit the [Kubernetes Engine page][project-selector] in the Google Cloud
+    Platform Console.
+1.  Create or select a project.
 
 ### Creating a node pool with gVisor enabled
 
