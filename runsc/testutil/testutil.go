@@ -151,13 +151,6 @@ func TestConfig() *boot.Config {
 	}
 }
 
-// TestConfigWithRoot returns the default configuration to use in tests.
-func TestConfigWithRoot(rootDir string) *boot.Config {
-	conf := TestConfig()
-	conf.RootDir = rootDir
-	return conf
-}
-
 // NewSpecWithArgs creates a simple spec with the given args suitable for use
 // in tests.
 func NewSpecWithArgs(args ...string) *specs.Spec {

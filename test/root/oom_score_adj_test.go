@@ -40,6 +40,15 @@ var (
 // TestOOMScoreAdjSingle tests that oom_score_adj is set properly in a
 // single container sandbox.
 func TestOOMScoreAdjSingle(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	ppid, err := specutils.GetParentPid(os.Getpid())
 	if err != nil {
 		t.Fatalf("getting parent pid: %v", err)
@@ -84,7 +93,6 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 			s := testutil.NewSpecWithArgs("sleep", "1000")
 			s.Process.OOMScoreAdj = testCase.OOMScoreAdj
 
-			conf := testutil.TestConfig()
 			containers, cleanup, err := startContainers(conf, []*specs.Spec{s}, []string{id})
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
@@ -123,6 +131,15 @@ func TestOOMScoreAdjSingle(t *testing.T) {
 // TestOOMScoreAdjMulti tests that oom_score_adj is set properly in a
 // multi-container sandbox.
 func TestOOMScoreAdjMulti(t *testing.T) {
+	rootDir, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer os.RemoveAll(rootDir)
+
+	conf := testutil.TestConfig()
+	conf.RootDir = rootDir
+
 	ppid, err := specutils.GetParentPid(os.Getpid())
 	if err != nil {
 		t.Fatalf("getting parent pid: %v", err)
@@ -240,7 +257,6 @@ func TestOOMScoreAdjMulti(t *testing.T) {
 				}
 			}
 
-			conf := testutil.TestConfig()
 			containers, cleanup, err := startContainers(conf, specs, ids)
 			if err != nil {
 				t.Fatalf("error starting containers: %v", err)
@@ -327,13 +343,8 @@ func createSpecs(cmds ...[]string) ([]*specs.Spec, []string) {
 }
 
 func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*container.Container, func(), error) {
-	// Setup root dir if one hasn't been provided.
 	if len(conf.RootDir) == 0 {
-		rootDir, err := testutil.SetupRootDir()
-		if err != nil {
-			return nil, nil, fmt.Errorf("error creating root dir: %v", err)
-		}
-		conf.RootDir = rootDir
+		panic("conf.RootDir not set. Call testutil.SetupRootDir() to set.")
 	}
 
 	var containers []*container.Container
@@ -345,7 +356,6 @@ func startContainers(conf *boot.Config, specs []*specs.Spec, ids []string) ([]*c
 		for _, b := range bundles {
 			os.RemoveAll(b)
 		}
-		os.RemoveAll(conf.RootDir)
 	}
 	for i, spec := range specs {
 		bundleDir, err := testutil.SetupBundleDir(spec)
