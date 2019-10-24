@@ -145,7 +145,7 @@ func (t *Task) Stack() *arch.Stack {
 //  * argv: Binary argv
 //  * envv: Binary envv
 //  * fs: Binary FeatureSet
-func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, file *fs.File, argv, envv []string, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
+func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, file *fs.File, argv, envv []string, resolveFinal bool, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
 	// If File is not nil, we should load that instead of resolving filename.
 	if file != nil {
 		filename = file.MappedName(ctx)
@@ -155,7 +155,7 @@ func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, r
 	m := mm.NewMemoryManager(k, k)
 	defer m.DecUsers(ctx)
 
-	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, envv, k.extraAuxv, k.vdso)
+	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, envv, resolveFinal, k.extraAuxv, k.vdso)
 	if err != nil {
 		return nil, err
 	}

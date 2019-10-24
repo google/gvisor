@@ -105,16 +105,14 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		}
 	}
 
-	if flags&linux.AT_SYMLINK_NOFOLLOW != 0 {
-		// TODO(b/128449944): Handle AT_SYMLINK_NOFOLLOW.
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
+		return 0, nil, syserror.EINVAL
 	}
-
 	atEmptyPath := flags&linux.AT_EMPTY_PATH != 0
 	if !atEmptyPath && len(pathname) == 0 {
 		return 0, nil, syserror.ENOENT
 	}
+	resolveFinal := flags&linux.AT_SYMLINK_NOFOLLOW == 0
 
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef()
@@ -150,7 +148,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 
 	// Load the new TaskContext.
 	maxTraversals := uint(linux.MaxSymlinkTraversals)
-	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, executable, argv, envv, t.Arch().FeatureSet())
+	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, executable, argv, envv, resolveFinal, t.Arch().FeatureSet())
 	if se != nil {
 		return 0, nil, se.ToError()
 	}
