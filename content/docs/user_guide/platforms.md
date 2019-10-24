@@ -58,10 +58,10 @@ If you are using a virtual machine you will need to make sure that nested
 virtualization is configured. Here are links to documents on how to set up
 nested virtualization in several popular environments:
 
- * Google Cloud: [Enabling Nested Virtualization for VM Instances][nested-gcp]
- * Microsoft Azure: [How to enable nested virtualization in an Azure VM][nested-azure]
- * VirtualBox: [Nested Virtualization][nested-virtualbox]
- * KVM: [Nested Guests][nested-kvm]
+*   Google Cloud: [Enabling Nested Virtualization for VM Instances][nested-gcp]
+*   Microsoft Azure: [How to enable nested virtualization in an Azure VM][nested-azure]
+*   VirtualBox: [Nested Virtualization][nested-virtualbox]
+*   KVM: [Nested Guests][nested-kvm]
 
 ### Configuring Docker
 

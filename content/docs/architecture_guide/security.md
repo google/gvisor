@@ -32,9 +32,9 @@ are written in [C][clang], which is well-suited to interfacing with hardware but
 often prone to security issues. In order to exploit these issues, a typical attack
 might involve some combination of the following:
 
- 1. Opening or creating some combination of files, sockets or other descriptors.
- 1. Passing crafted, malicious arguments, structures or packets.
- 1. Racing with multiple threads in order to hit specific code paths.
+1.  Opening or creating some combination of files, sockets or other descriptors.
+1.  Passing crafted, malicious arguments, structures or packets.
+1.  Racing with multiple threads in order to hit specific code paths.
 
 For example, for the [Dirty Cow][dirtycow] privilege escalation bug, an
 application would open a specific file in `/proc` or use a specific `ptrace`
@@ -140,14 +140,14 @@ filesystem attributes) and not underlying host system resources.
 While the sandbox virtualizes many operations for the application, we limit the
 sandbox's own interactions with the host to the following high-level operations:
 
- 1. Communicate with a Gofer process via a connected socket. The sandbox may
+1.  Communicate with a Gofer process via a connected socket. The sandbox may
     receive new file descriptors from the Gofer process, corresponding to opened
     files. These files can then be read from and written to by the sandbox.
- 1. Make a minimal set of host system calls. The calls do not include the
+1.  Make a minimal set of host system calls. The calls do not include the
     creation of new sockets (unless host networking mode is enabled) or opening
     files. The calls include duplication and closing of file descriptors,
     synchronization, timers and signal management.
- 1. Read and write packets to a virtual ethernet device. This is not required if
+1.  Read and write packets to a virtual ethernet device. This is not required if
     host networking is enabled (or networking is disabled).
 
 ### System ABI, Side Channels and Other Vectors
@@ -173,17 +173,17 @@ less likely to exploit or override these controls through other means.
 For gVisor development, there are several engineering principles that are
 employed in order to ensure that the system meets its design goals.
 
- 1. No system call is passed through directly to the host. Every supported call
+1.  No system call is passed through directly to the host. Every supported call
     has an independent implementation in the Sentry, that is unlikely to suffer
     from identical vulnerabilities that may appear in the host. This has the
     consequence that all kernel features used by applications require an
     implementation within the Sentry.
- 1. Only common, universal functionality is implemented. Some filesystems,
+1.  Only common, universal functionality is implemented. Some filesystems,
     network devices or modules may expose specialized functionality to user
     space applications via mechanisms such as extended attributes, raw sockets
     or ioctls. Since the Sentry is responsible for implementing the full system
     call surface, we do not implement or pass through these specialized APIs.
- 1. The host surface exposed to the Sentry is minimized. While the system call
+1.  The host surface exposed to the Sentry is minimized. While the system call
     surface is not trivial, it is explicitly enumerated and controlled. The
     Sentry is not permitted to open new files, create new sockets or do many
     other interesting things on the host.
@@ -191,11 +191,11 @@ employed in order to ensure that the system meets its design goals.
 Additionally, we have practical restrictions that are imposed on the project to
 minimize the risk of Sentry exploitability. For example:
 
- 1. Unsafe code is carefully controlled. All unsafe code is isolated in files
+1.  Unsafe code is carefully controlled. All unsafe code is isolated in files
     that end with "unsafe.go", in order to facilitate validation and auditing.
     No file without the unsafe suffix may import the unsafe package.
- 1. No CGo is allowed. The Sentry must be a pure Go binary.
- 1. External imports are not generally allowed within the core packages. Only
+1.  No CGo is allowed. The Sentry must be a pure Go binary.
+1.  External imports are not generally allowed within the core packages. Only
     limited external imports are used within the setup code. The code available
     inside the Sentry is carefully controlled, to ensure that the above rules
     are effective.

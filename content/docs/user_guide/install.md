@@ -87,10 +87,10 @@ curl -fsSL https://gvisor.dev/archive.key | sudo apt-key add -
 Based on the release type, you will need to substitute `${DIST}` below, using
 one of:
 
- * `nightly`: For all nightly releases.
- * `latest`: For the latest release.
- * `${yyyymmdd}`: For specific releases.
- * `${yyyymmdd}.${rc}`: For a specific point release.
+*   `nightly`: For all nightly releases.
+*   `latest`: For the latest release.
+*   `${yyyymmdd}`: For specific releases.
+*   `${yyyymmdd}.${rc}`: For a specific point release.
 
 The repository for the release you wish to install should be added:
 
@@ -153,11 +153,6 @@ runsc install
 ```
 
 [latest-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
-
 [latest-hash]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
-
-[oci]: https://www.opencontainers.org
-
 [old-linux]: /docs/user_guide/networking/#gso
-
 [releases]: https://github.com/google/gvisor/releases

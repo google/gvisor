@@ -1,8 +1,18 @@
 {
-  "name": "gvisor-website",
-  "version": "0.0.0",
-  "devDependencies": {
-    "autoprefixer": "^9.4.7",
-    "postcss-cli": "^6.1.1"
-  }
+    "name": "gvisor-website",
+    "version": "0.0.0",
+    "devDependencies": {
+        "autoprefixer": "^9.4.7",
+        "postcss-cli": "^6.1.1",
+        "remark-cli": "^7.0.0",
+        "remark-preset-lint-recommended": "^3.0.3"
+    },
+    "scripts": {
+        "lint-md": "remark ./content -f"
+    },
+    "remarkConfig": {
+        "plugins": [
+            "remark-preset-lint-recommended"
+        ]
+    }
 }

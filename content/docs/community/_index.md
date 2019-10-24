@@ -9,8 +9,8 @@ repositories have their own guidelines and processes for contributing. See the
 
 The project maintains two mailing lists:
 
- * [gvisor-users][gvisor-users] for accouncements and general discussion.
- * [gvisor-dev][gvisor-dev] for development and contribution.
+*   [gvisor-users][gvisor-users] for accouncements and general discussion.
+*   [gvisor-dev][gvisor-dev] for development and contribution.
  
 We also have a [chat room hosted on Gitter][gitter-chat].
 

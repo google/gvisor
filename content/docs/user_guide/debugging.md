@@ -106,9 +106,9 @@ Then restart docker to refresh the runtime options. While the container is runni
 execute `runsc debug` to collect profile information and save to a file. Here are
 the options available:
 
- * **--profile-heap:** Generates heap profile to the speficied file.
- * **--profile-cpu:** Enables CPU profiler, waits for `--profile-delay` seconds 
-   and generates CPU profile to the speficied file.
+*   **--profile-heap:** Generates heap profile to the speficied file.
+*   **--profile-cpu:** Enables CPU profiler, waits for `--profile-delay` seconds 
+    and generates CPU profile to the speficied file.
 
 For example:
 
@@ -120,7 +120,7 @@ sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-heap=/
 sudo runsc --root /var/run/docker/runtime-runsc-prof/moby debug --profile-cpu=/tmp/cpu.prof --profile-delay=30 63254c6ab3a6989623fa1fb53616951eed31ac605a2637bb9ddba5d8d404b35b
 ```
 
-The resulting files can be opened using `go tool pprof` or [pprof]. The examples 
+The resulting files can be opened using `go tool pprof` or [pprof][pprof]. The examples 
 below create image file (`.svg`) with the heap profile and writes the top 
 functions using CPU to the console:
 

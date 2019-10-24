@@ -20,7 +20,7 @@ file will be called `checkpoint.img` and necessary directories will be created
 if they do not yet exist.
 
 > Note: Two checkpoints cannot be saved to the same directory; every image-path
-provided must be unique.
+> provided must be unique.
 
 ```bash
 runsc checkpoint --image-path=<path> <container id>
@@ -31,11 +31,11 @@ continue to run after the checkpoint has been made. (By default, containers stop
 their processes after committing a checkpoint.)
 
 > Note: All top-level runsc flags needed when calling run must be provided to
-checkpoint if --leave-running is used.
+> checkpoint if --leave-running is used.
 
 > Note: --leave-running functions by causing an immediate restore so the
-container, although will maintain its given container id, may have a different
-process id.
+> container, although will maintain its given container id, may have a different
+> process id.
 
 ```bash
 runsc checkpoint --image-path=<path> --leave-running <container id>
@@ -83,19 +83,19 @@ docker start --checkpoint --checkpoint-dir=<directory> <container>
 
 ### Issues Preventing Compatibility with Docker
 
-- **[Moby #37360][leave-running]:** Docker version 18.03.0-ce and earlier hangs
-  when checkpointing and does not create the checkpoint. To successfully use
-  this feature, install a custom version of docker-ce from the moby repository.
-  This issue is caused by an improper implementation of the `--leave-running`
-  flag. This issue is fixed in newer releases.
-- **Docker does not support restoration into new containers:** Docker currently
-  expects the container which created the checkpoint to be the same container
-  used to restore which is not possible in runsc. When Docker supports container
-  migration and therefore restoration into new containers, this will be the
-  flow.
-- **[Moby #37344][checkpoint-dir]:** Docker does not currently support the
-  `--checkpoint-dir` flag but this will be required when restoring from a
-  checkpoint made in another container.
+*   **[Moby #37360][leave-running]:** Docker version 18.03.0-ce and earlier hangs
+    when checkpointing and does not create the checkpoint. To successfully use
+    this feature, install a custom version of docker-ce from the moby repository.
+    This issue is caused by an improper implementation of the `--leave-running`
+    flag. This issue is fixed in newer releases.
+*   **Docker does not support restoration into new containers:** Docker currently
+    expects the container which created the checkpoint to be the same container
+    used to restore which is not possible in runsc. When Docker supports container
+    migration and therefore restoration into new containers, this will be the
+    flow.
+*   **[Moby #37344][checkpoint-dir]:** Docker does not currently support the
+    `--checkpoint-dir` flag but this will be required when restoring from a
+    checkpoint made in another container.
 
 [leave-running]: https://github.com/moby/moby/pull/37360
 [checkpoint-dir]: https://github.com/moby/moby/issues/37344
