@@ -542,23 +542,23 @@ TEST(ExecveatTest, BasicWithFDCWD) {
 TEST(ExecveatTest, Basic) {
   std::string absolute_path = WorkloadPath(kBasicWorkload);
   std::string parent_dir = std::string(Dirname(absolute_path));
-  std::string relative_path = std::string(Basename(absolute_path));
+  std::string base = std::string(Basename(absolute_path));
   const FileDescriptor dirfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
 
-  CheckExecveat(dirfd.get(), relative_path, {absolute_path}, {}, /*flags=*/0,
+  CheckExecveat(dirfd.get(), base, {absolute_path}, {}, /*flags=*/0,
                 ArgEnvExitStatus(0, 0), absl::StrCat(absolute_path, "\n"));
 }
 
 TEST(ExecveatTest, FDNotADirectory) {
   std::string absolute_path = WorkloadPath(kBasicWorkload);
-  std::string relative_path = std::string(Basename(absolute_path));
+  std::string base = std::string(Basename(absolute_path));
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(absolute_path, 0));
 
   int execve_errno;
-  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(fd.get(), relative_path,
-                                            {absolute_path}, {}, /*flags=*/0,
-                                            /*child=*/nullptr, &execve_errno));
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(fd.get(), base, {absolute_path}, {},
+                                            /*flags=*/0, /*child=*/nullptr,
+                                            &execve_errno));
   EXPECT_EQ(execve_errno, ENOTDIR);
 }
 
@@ -618,12 +618,75 @@ TEST(ExecveatTest, AbsolutePathWithEmptyPathFlag) {
 TEST(ExecveatTest, RelativePathWithEmptyPathFlag) {
   std::string absolute_path = WorkloadPath(kBasicWorkload);
   std::string parent_dir = std::string(Dirname(absolute_path));
-  std::string relative_path = std::string(Basename(absolute_path));
+  std::string base = std::string(Basename(absolute_path));
   const FileDescriptor dirfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
 
-  CheckExecveat(dirfd.get(), relative_path, {absolute_path}, {}, AT_EMPTY_PATH,
+  CheckExecveat(dirfd.get(), base, {absolute_path}, {}, AT_EMPTY_PATH,
                 ArgEnvExitStatus(0, 0), absl::StrCat(absolute_path, "\n"));
+}
+
+TEST(ExecveatTest, SymlinkNoFollowWithRelativePath) {
+  std::string parent_dir = "/tmp";
+  TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(parent_dir, WorkloadPath(kBasicWorkload)));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_DIRECTORY));
+  std::string base = std::string(Basename(link.path()));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(dirfd.get(), base, {base}, {},
+                                            AT_SYMLINK_NOFOLLOW,
+                                            /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ELOOP);
+}
+
+TEST(ExecveatTest, SymlinkNoFollowWithAbsolutePath) {
+  std::string parent_dir = "/tmp";
+  TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo(parent_dir, WorkloadPath(kBasicWorkload)));
+  std::string path = link.path();
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(AT_FDCWD, path, {path}, {},
+                                            AT_SYMLINK_NOFOLLOW,
+                                            /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ELOOP);
+}
+
+TEST(ExecveatTest, SymlinkNoFollowAndEmptyPath) {
+  TempPath link = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateSymlinkTo("/tmp", WorkloadPath(kBasicWorkload)));
+  std::string path = link.path();
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, 0));
+
+  CheckExecveat(fd.get(), "", {path}, {}, AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW,
+                ArgEnvExitStatus(0, 0), absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, SymlinkNoFollowIgnoreSymlinkAncestor) {
+  TempPath parent_link =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo("/tmp", "/bin"));
+  std::string path_with_symlink = JoinPath(parent_link.path(), "echo");
+
+  CheckExecveat(AT_FDCWD, path_with_symlink, {path_with_symlink}, {},
+                AT_SYMLINK_NOFOLLOW, ArgEnvExitStatus(0, 0), "");
+}
+
+TEST(ExecveatTest, SymlinkNoFollowWithNormalFile) {
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/bin", O_DIRECTORY));
+
+  CheckExecveat(dirfd.get(), "echo", {"echo"}, {}, AT_SYMLINK_NOFOLLOW,
+                ArgEnvExitStatus(0, 0), "");
+}
+
+TEST(ExecveatTest, InvalidFlags) {
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(
+      /*dirfd=*/-1, "", {}, {}, /*flags=*/0xFFFF, /*child=*/nullptr,
+      &execve_errno));
+  EXPECT_EQ(execve_errno, EINVAL);
 }
 
 // Priority consistent across calls to execve()
