@@ -107,6 +107,9 @@ type ndpState struct {
 	// The NIC this ndpState is for.
 	nic *NIC
 
+	// configs is the per-interface NDP configurations.
+	configs NDPConfigurations
+
 	// The DAD state to send the next NS message, or resolve the address.
 	dad map[tcpip.Address]dadState
 }
@@ -149,7 +152,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		panic(fmt.Sprintf("ndpdad: already performing DAD for addr %s on NIC(%d)", addr, ndp.nic.ID()))
 	}
 
-	remaining := ndp.nic.stack.ndpConfigs.DupAddrDetectTransmits
+	remaining := ndp.configs.DupAddrDetectTransmits
 
 	{
 		done, err := ndp.doDuplicateAddressDetection(addr, remaining, ref)
@@ -165,7 +168,7 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 
 	var done bool
 	var timer *time.Timer
-	timer = time.AfterFunc(ndp.nic.stack.ndpConfigs.RetransmitTimer, func() {
+	timer = time.AfterFunc(ndp.configs.RetransmitTimer, func() {
 		var d bool
 		var err *tcpip.Error
 
@@ -218,7 +221,6 @@ func (ndp *ndpState) startDuplicateAddressDetection(addr tcpip.Address, ref *ref
 		if doDadIteration() && ndp.nic.stack.ndpDisp != nil {
 			ndp.nic.stack.ndpDisp.OnDuplicateAddressDetectionStatus(ndp.nic.ID(), addr, d, err)
 		}
-
 	})
 
 	ndp.dad[addr] = dadState{

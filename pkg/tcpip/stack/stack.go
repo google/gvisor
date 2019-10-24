@@ -399,7 +399,7 @@ type Stack struct {
 	// TODO(gvisor.dev/issue/940): S/R this field.
 	portSeed uint32
 
-	// ndpConfigs is the NDP configurations used by interfaces.
+	// ndpConfigs is the default NDP configurations used by interfaces.
 	ndpConfigs NDPConfigurations
 
 	// autoGenIPv6LinkLocal determines whether or not the stack will attempt
@@ -433,7 +433,7 @@ type Options struct {
 	// stack (false).
 	HandleLocal bool
 
-	// NDPConfigs is the NDP configurations used by interfaces.
+	// NDPConfigs is the default NDP configurations used by interfaces.
 	//
 	// By default, NDPConfigs will have a zero value for its
 	// DupAddrDetectTransmits field, implying that DAD will not be performed
@@ -1423,6 +1423,25 @@ func (s *Stack) DupTentativeAddrDetected(id tcpip.NICID, addr tcpip.Address) *tc
 	}
 
 	return nic.dupTentativeAddrDetected(addr)
+}
+
+// SetNDPConfigurations sets the per-interface NDP configurations on the NIC
+// with ID id to c.
+//
+// Note, if c contains invalid NDP configuration values, it will be fixed to
+// use default values for the erroneous values.
+func (s *Stack) SetNDPConfigurations(id tcpip.NICID, c NDPConfigurations) *tcpip.Error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nic, ok := s.nics[id]
+	if !ok {
+		return tcpip.ErrUnknownNICID
+	}
+
+	nic.setNDPConfigs(c)
+
+	return nil
 }
 
 // PortSeed returns a 32 bit value that can be used as a seed value for port
