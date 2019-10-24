@@ -186,25 +186,6 @@ const (
 	RWF_VALID = RWF_HIPRI | RWF_DSYNC | RWF_SYNC
 )
 
-// Stat represents struct stat.
-type Stat struct {
-	Dev     uint64
-	Ino     uint64
-	Nlink   uint64
-	Mode    uint32
-	UID     uint32
-	GID     uint32
-	_       int32
-	Rdev    uint64
-	Size    int64
-	Blksize int64
-	Blocks  int64
-	ATime   Timespec
-	MTime   Timespec
-	CTime   Timespec
-	_       [3]int64
-}
-
 // SizeOfStat is the size of a Stat struct.
 var SizeOfStat = binary.Size(Stat{})
 
