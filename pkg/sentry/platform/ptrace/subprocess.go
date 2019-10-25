@@ -335,7 +335,8 @@ func (t *thread) unexpectedStubExit() {
 		// these cases, we don't need to panic. There is no reasons to
 		// think that something wrong in gVisor.
 		log.Warningf("The ptrace stub process %v has been killed by SIGKILL.", t.tgid)
-		syscall.Kill(os.Getpid(), syscall.SIGKILL)
+		pid := os.Getpid()
+		syscall.Tgkill(pid, pid, syscall.Signal(syscall.SIGKILL))
 	}
 	t.dumpAndPanic(fmt.Sprintf("wait failed: the process %d:%d exited: %x (err %v)", t.tgid, t.tid, msg, err))
 }
