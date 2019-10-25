@@ -22,6 +22,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/amutex"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
@@ -49,9 +50,10 @@ func (p *Pipe) Read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 		limit: func(l int64) {
 			dst = dst.TakeFirst64(l)
 		},
-		read: func(buf *buffer) (int64, error) {
-			n, err := dst.CopyOutFrom(ctx, buf)
+		read: func(view *buffer.View) (int64, error) {
+			n, err := dst.CopyOutFrom(ctx, view)
 			dst = dst.DropFirst64(n)
+			view.TrimFront(n)
 			return n, err
 		},
 	})
@@ -70,15 +72,14 @@ func (p *Pipe) WriteTo(ctx context.Context, w io.Writer, count int64, dup bool) 
 		limit: func(l int64) {
 			count = l
 		},
-		read: func(buf *buffer) (int64, error) {
-			n, err := buf.ReadToWriter(w, count, dup)
+		read: func(view *buffer.View) (int64, error) {
+			n, err := view.ReadToWriter(w, count)
+			if !dup {
+				view.TrimFront(n)
+			}
 			count -= n
 			return n, err
 		},
-	}
-	if dup {
-		// There is no notification for dup operations.
-		return p.dup(ctx, ops)
 	}
 	n, err := p.read(ctx, ops)
 	if n > 0 {
@@ -96,8 +97,8 @@ func (p *Pipe) Write(ctx context.Context, src usermem.IOSequence) (int64, error)
 		limit: func(l int64) {
 			src = src.TakeFirst64(l)
 		},
-		write: func(buf *buffer) (int64, error) {
-			n, err := src.CopyInTo(ctx, buf)
+		write: func(view *buffer.View) (int64, error) {
+			n, err := src.CopyInTo(ctx, view)
 			src = src.DropFirst64(n)
 			return n, err
 		},
@@ -117,8 +118,8 @@ func (p *Pipe) ReadFrom(ctx context.Context, r io.Reader, count int64) (int64, e
 		limit: func(l int64) {
 			count = l
 		},
-		write: func(buf *buffer) (int64, error) {
-			n, err := buf.WriteFromReader(r, count)
+		write: func(view *buffer.View) (int64, error) {
+			n, err := view.WriteFromReader(r, count)
 			count -= n
 			return n, err
 		},

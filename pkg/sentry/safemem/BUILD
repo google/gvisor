@@ -12,7 +12,7 @@ go_library(
         "seq_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/safemem",
-    visibility = ["//pkg/sentry:internal"],
+    visibility = ["//:sandbox"],
     deps = [
         "//pkg/sentry/platform/safecopy",
     ],
