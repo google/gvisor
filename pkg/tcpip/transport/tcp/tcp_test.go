@@ -1623,7 +1623,7 @@ func TestDelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOpt(tcpip.DelayOption(1))
+	c.EP.SetSockOptInt(tcpip.DelayOption, 1)
 
 	var allData []byte
 	for i, data := range [][]byte{{0}, {1, 2, 3, 4}, {5, 6, 7}, {8, 9}, {10}, {11}} {
@@ -1671,7 +1671,7 @@ func TestUndelay(t *testing.T) {
 
 	c.CreateConnected(789, 30000, -1 /* epRcvBuf */)
 
-	c.EP.SetSockOpt(tcpip.DelayOption(1))
+	c.EP.SetSockOptInt(tcpip.DelayOption, 1)
 
 	allData := [][]byte{{0}, {1, 2, 3}}
 	for i, data := range allData {
@@ -1704,7 +1704,7 @@ func TestUndelay(t *testing.T) {
 	// Check that we don't get the second packet yet.
 	c.CheckNoPacketTimeout("delayed second packet transmitted", 100*time.Millisecond)
 
-	c.EP.SetSockOpt(tcpip.DelayOption(0))
+	c.EP.SetSockOptInt(tcpip.DelayOption, 0)
 
 	// Check that data is received.
 	second := c.GetPacket()
@@ -1741,7 +1741,7 @@ func TestMSSNotDelayed(t *testing.T) {
 		fn   func(tcpip.Endpoint)
 	}{
 		{"no-op", func(tcpip.Endpoint) {}},
-		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOpt(tcpip.DelayOption(1)) }},
+		{"delay", func(ep tcpip.Endpoint) { ep.SetSockOptInt(tcpip.DelayOption, 1) }},
 		{"cork", func(ep tcpip.Endpoint) { ep.SetSockOpt(tcpip.CorkOption(1)) }},
 	}
 
