@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/synchronization/mutex.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"

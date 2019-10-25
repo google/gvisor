@@ -21,7 +21,6 @@
 #include <sys/types.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/strings/str_split.h"
 #include "absl/time/clock.h"
 #include "test/syscalls/linux/socket_test_util.h"

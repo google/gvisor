@@ -17,7 +17,6 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/test_util.h"
