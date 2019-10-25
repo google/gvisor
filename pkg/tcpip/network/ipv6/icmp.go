@@ -72,6 +72,18 @@ func (e *endpoint) handleICMP(r *stack.Route, netHeader buffer.View, vv buffer.V
 	h := header.ICMPv6(v)
 	iph := header.IPv6(netHeader)
 
+	// Validate ICMPv6 checksum before processing the packet.
+	//
+	// Only the first view in vv is accounted for by h. To account for the
+	// rest of vv, a shallow copy is made and the first view is removed.
+	// This copy is used as extra payload during the checksum calculation.
+	payload := vv
+	payload.RemoveFirst()
+	if got, want := h.Checksum(), header.ICMPv6Checksum(h, iph.SourceAddress(), iph.DestinationAddress(), payload); got != want {
+		received.Invalid.Increment()
+		return
+	}
+
 	// As per RFC 4861 sections 4.1 - 4.5, 6.1.1, 6.1.2, 7.1.1, 7.1.2 and
 	// 8.1, nodes MUST silently drop NDP packets where the Hop Limit field
 	// in the IPv6 header is not set to 255.
