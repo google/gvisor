@@ -598,6 +598,166 @@ func TestUserSuppliedMSSOnConnectV6(t *testing.T) {
 	}
 }
 
+// TestUserSuppliedMSSOnListenAcceptV4 tests that the user supplied MSS is used
+// when completing the handshake for a new IPv4 TCP connection from a TCP
+// listening socket. It should be present in the sent TCP SYN-ACK segment.
+func TestUserSuppliedMSSOnListenAcceptV4(t *testing.T) {
+	// Set the SynRcvd threshold to a small value to easily test a syn
+	// cookie based accept alongside the goroutine based accept.
+	saved := tcp.SynRcvdCountThreshold
+	defer func() {
+		tcp.SynRcvdCountThreshold = saved
+	}()
+	tcp.SynRcvdCountThreshold = 2
+
+	const mtu = 5000
+	const maxMSS = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
+	tests := []struct {
+		name   string
+		setMSS uint16
+		expMSS uint16
+	}{
+		{
+			"EqualToMaxMSS",
+			maxMSS,
+			maxMSS,
+		},
+		{
+			"LessThanMTU",
+			maxMSS - 1,
+			maxMSS - 1,
+		},
+		{
+			"GreaterThanMTU",
+			maxMSS + 1,
+			maxMSS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			c.Create(-1)
+
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Errorf("SetSockOpt(%#v) failed: %s", opt, err)
+			}
+
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind failed: %v", err)
+			}
+
+			if err := c.EP.Listen(10); err != nil {
+				t.Fatalf("Listen failed: %v", err)
+			}
+
+			// The first tcp.SynRcvdCountThreshold packets sent
+			// will trigger a goroutine based accept. The last two
+			// will trigger a cookie based accept.
+			for i := 0; i < int(tcp.SynRcvdCountThreshold)+2; i++ {
+				// Send a SYN requests.
+				iss := seqnum.Value(i)
+				srcPort := context.TestPort + uint16(i)
+				c.SendPacket(nil, &context.Headers{
+					SrcPort: srcPort,
+					DstPort: context.StackPort,
+					Flags:   header.TCPFlagSyn,
+					SeqNum:  iss,
+				})
+
+				// Receive the SYN-ACK reply.
+				checker.IPv4(t, c.GetPacket(), checker.TCP(
+					checker.DstPort(srcPort),
+					checker.TCPFlags(header.TCPFlagSyn|header.TCPFlagAck),
+					checker.TCPSynOptions(header.TCPSynOptions{MSS: test.expMSS, WS: -1})))
+			}
+		})
+	}
+}
+
+// TestUserSuppliedMSSOnListenAcceptV6 tests that the user supplied MSS is used
+// when completing the handshake for a new IPv6 TCP connection from a TCP
+// listening socket. It should be present in the sent TCP SYN-ACK segment.
+func TestUserSuppliedMSSOnListenAcceptV6(t *testing.T) {
+	// Set the SynRcvd threshold to a small value to easily test a syn
+	// cookie based accept alongside the goroutine based accept.
+	saved := tcp.SynRcvdCountThreshold
+	defer func() {
+		tcp.SynRcvdCountThreshold = saved
+	}()
+	tcp.SynRcvdCountThreshold = 2
+
+	const mtu = 5000
+	const maxMSS = mtu - header.IPv6MinimumSize - header.TCPMinimumSize
+	tests := []struct {
+		name   string
+		setMSS uint16
+		expMSS uint16
+	}{
+		{
+			"EqualToMaxMSS",
+			maxMSS,
+			maxMSS,
+		},
+		{
+			"LessThanMTU",
+			maxMSS - 1,
+			maxMSS - 1,
+		},
+		{
+			"GreaterThanMTU",
+			maxMSS + 1,
+			maxMSS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			c.CreateV6Endpoint(false)
+
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Errorf("SetSockOpt(%#v) failed: %s", opt, err)
+			}
+
+			if err := c.EP.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+				t.Fatalf("Bind failed: %v", err)
+			}
+
+			if err := c.EP.Listen(10); err != nil {
+				t.Fatalf("Listen failed: %v", err)
+			}
+
+			// The first tcp.SynRcvdCountThreshold packets sent
+			// will trigger a goroutine based accept. The last two
+			// will trigger a cookie based accept.
+			for i := 0; i < int(tcp.SynRcvdCountThreshold)+2; i++ {
+				// Send a SYN request.
+				iss := seqnum.Value(i)
+				srcPort := context.TestPort + uint16(i)
+				c.SendV6Packet(nil, &context.Headers{
+					SrcPort: srcPort,
+					DstPort: context.StackPort,
+					Flags:   header.TCPFlagSyn,
+					SeqNum:  iss,
+				})
+
+				// Receive the SYN-ACK reply.
+				checker.IPv6(t, c.GetV6Packet(), checker.TCP(
+					checker.DstPort(srcPort),
+					checker.TCPFlags(header.TCPFlagSyn|header.TCPFlagAck),
+					checker.TCPSynOptions(header.TCPSynOptions{MSS: test.expMSS, WS: -1})))
+			}
+		})
+	}
+}
+
 func TestTOSV4(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()

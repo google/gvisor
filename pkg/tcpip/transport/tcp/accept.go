@@ -228,13 +228,18 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 		netProto = s.route.NetProto
 	}
 	n := newEndpoint(l.stack, netProto, nil)
+	// Sockets accepted from a listening socket should inherit the user
+	// supplied MSS.
+	if l.listenEP != nil {
+		n.userMSS = l.listenEP.userMSS
+	}
 	n.v6only = l.v6only
 	n.ID = s.id
 	n.boundNICID = s.route.NICID()
 	n.route = s.route.Clone()
 	n.effectiveNetProtos = []tcpip.NetworkProtocolNumber{s.route.NetProto}
 	n.rcvBufSize = int(l.rcvWnd)
-	n.amss = mssForRoute(&n.route)
+	n.amss = calculateAdvertisedMSS(n.userMSS, n.route)
 
 	n.maybeEnableTimestamp(rcvdSynOpts)
 	n.maybeEnableSACKPermitted(rcvdSynOpts)
@@ -400,9 +405,6 @@ func (e *endpoint) acceptQueueIsFull() bool {
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
-	// TODO(b/143300739): Use the userMSS of the listening socket
-	// for accepted sockets.
-
 	switch s.flags {
 	case header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
@@ -433,16 +435,19 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
 			// Send SYN without window scaling because we currently
-			// dont't encode this information in the cookie.
+			// don't encode this information in the cookie.
 			//
 			// Enable Timestamp option if the original syn did have
 			// the timestamp option specified.
+			//
+			// Use the user supplied MSS on the listening socket for
+			// new connections, if available.
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
 				TSVal: tcpTimeStamp(timeStampOffset()),
 				TSEcr: opts.TSVal,
-				MSS:   mssForRoute(&s.route),
+				MSS:   calculateAdvertisedMSS(e.userMSS, s.route),
 			}
 			e.sendSynTCP(&s.route, s.id, e.ttl, e.sendTOS, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()

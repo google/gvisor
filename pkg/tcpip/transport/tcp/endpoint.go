@@ -510,7 +510,8 @@ type endpoint struct {
 // r, it will be used; otherwise, the maximum possible MSS will be used.
 func calculateAdvertisedMSS(userMSS uint16, r stack.Route) uint16 {
 	// The maximum possible MSS is dependent on the route.
-	maxMSS := mssForRoute(&r)
+	// TODO(b/143359391): Respect TCP Min and Max size.
+	maxMSS := uint16(r.MTU() - header.TCPMinimumSize)
 
 	if userMSS != 0 && userMSS < maxMSS {
 		return userMSS
@@ -2397,9 +2398,4 @@ func (e *endpoint) Info() tcpip.EndpointInfo {
 // Stats returns a pointer to the endpoint stats.
 func (e *endpoint) Stats() tcpip.EndpointStats {
 	return &e.stats
-}
-
-func mssForRoute(r *stack.Route) uint16 {
-	// TODO(b/143359391): Respect TCP Min and Max size.
-	return uint16(r.MTU() - header.TCPMinimumSize)
 }
