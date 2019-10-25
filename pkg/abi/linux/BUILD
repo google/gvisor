@@ -23,6 +23,8 @@ go_library(
         "exec.go",
         "fcntl.go",
         "file.go",
+        "file_amd64.go",
+        "file_arm64.go",
         "fs.go",
         "futex.go",
         "inotify.go",
