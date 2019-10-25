@@ -519,6 +519,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 	newUint16 := func(v uint16) *uint16 { return &v }
 
 	const mtu = 0xffff
+	const outerSrcAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa"
 	cases := []struct {
 		name           string
 		expectedCount  int
@@ -570,7 +571,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				PayloadLength: uint16(len(view) - header.IPv6MinimumSize - c.trunc),
 				NextHeader:    uint8(header.ICMPv6ProtocolNumber),
 				HopLimit:      20,
-				SrcAddr:       "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa",
+				SrcAddr:       outerSrcAddr,
 				DstAddr:       localIpv6Addr,
 			})
 
@@ -618,6 +619,10 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			o.extra = c.expectedExtra
 
 			vv := view[:len(view)-c.trunc].ToVectorisedView()
+
+			// Set ICMPv6 checksum.
+			icmp.SetChecksum(header.ICMPv6Checksum(icmp, outerSrcAddr, localIpv6Addr, buffer.VectorisedView{}))
+
 			ep.HandlePacket(&r, vv)
 			if want := c.expectedCount; o.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, o.controlCalls, want)

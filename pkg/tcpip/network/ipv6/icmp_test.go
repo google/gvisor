@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	linkAddr0 = tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06")
+	linkAddr0 = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
 	linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0f")
 )
 
@@ -357,5 +357,535 @@ func TestLinkResolution(t *testing.T) {
 		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6EchoReply},
 	} {
 		routeICMPv6Packet(t, args, nil)
+	}
+}
+
+func TestICMPChecksumValidationSimple(t *testing.T) {
+	types := []struct {
+		name        string
+		typ         header.ICMPv6Type
+		size        int
+		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
+	}{
+		{
+			"DstUnreachable",
+			header.ICMPv6DstUnreachable,
+			header.ICMPv6DstUnreachableMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.DstUnreachable
+			},
+		},
+		{
+			"PacketTooBig",
+			header.ICMPv6PacketTooBig,
+			header.ICMPv6PacketTooBigMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.PacketTooBig
+			},
+		},
+		{
+			"TimeExceeded",
+			header.ICMPv6TimeExceeded,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.TimeExceeded
+			},
+		},
+		{
+			"ParamProblem",
+			header.ICMPv6ParamProblem,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.ParamProblem
+			},
+		},
+		{
+			"EchoRequest",
+			header.ICMPv6EchoRequest,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoRequest
+			},
+		},
+		{
+			"EchoReply",
+			header.ICMPv6EchoReply,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoReply
+			},
+		},
+		{
+			"RouterSolicit",
+			header.ICMPv6RouterSolicit,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.RouterSolicit
+			},
+		},
+		{
+			"RouterAdvert",
+			header.ICMPv6RouterAdvert,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.RouterAdvert
+			},
+		},
+		{
+			"NeighborSolicit",
+			header.ICMPv6NeighborSolicit,
+			header.ICMPv6NeighborSolicitMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.NeighborSolicit
+			},
+		},
+		{
+			"NeighborAdvert",
+			header.ICMPv6NeighborAdvert,
+			header.ICMPv6NeighborAdvertSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.NeighborAdvert
+			},
+		},
+		{
+			"RedirectMsg",
+			header.ICMPv6RedirectMsg,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.RedirectMsg
+			},
+		},
+	}
+
+	for _, typ := range types {
+		t.Run(typ.name, func(t *testing.T) {
+			e := channel.New(10, 1280, linkAddr0)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(_) = %s", err)
+			}
+
+			if err := s.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
+				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+			}
+			{
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.SetRouteTable(
+					[]tcpip.Route{{
+						Destination: subnet,
+						NIC:         1,
+					}},
+				)
+			}
+
+			handleIPv6Payload := func(typ header.ICMPv6Type, size int, checksum bool) {
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + size)
+				pkt := header.ICMPv6(hdr.Prepend(size))
+				pkt.SetType(typ)
+				if checksum {
+					pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+				}
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(size),
+					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+					HopLimit:      header.NDPHopLimit,
+					SrcAddr:       lladdr1,
+					DstAddr:       lladdr0,
+				})
+				e.Inject(ProtocolNumber, hdr.View().ToVectorisedView())
+			}
+
+			stats := s.Stats().ICMP.V6PacketsReceived
+			invalid := stats.Invalid
+			typStat := typ.statCounter(stats)
+
+			// Initial stat counts should be 0.
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// Without setting checksum, the incoming packet should
+			// be invalid.
+			handleIPv6Payload(typ.typ, typ.size, false)
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+			// Rx count of type typ.typ should not have increased.
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// When checksum is set, it should be received.
+			handleIPv6Payload(typ.typ, typ.size, true)
+			if got := typStat.Value(); got != 1 {
+				t.Fatalf("got %s = %d, want = 1", typ.name, got)
+			}
+			// Invalid count should not have increased again.
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+		})
+	}
+}
+
+func TestICMPChecksumValidationWithPayload(t *testing.T) {
+	const simpleBodySize = 64
+	simpleBody := func(view buffer.View) {
+		for i := 0; i < simpleBodySize; i++ {
+			view[i] = uint8(i)
+		}
+	}
+
+	const errorICMPBodySize = header.IPv6MinimumSize + simpleBodySize
+	errorICMPBody := func(view buffer.View) {
+		ip := header.IPv6(view)
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength: simpleBodySize,
+			NextHeader:    10,
+			HopLimit:      20,
+			SrcAddr:       lladdr0,
+			DstAddr:       lladdr1,
+		})
+		simpleBody(view[header.IPv6MinimumSize:])
+	}
+
+	types := []struct {
+		name        string
+		typ         header.ICMPv6Type
+		size        int
+		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
+		payloadSize int
+		payload     func(buffer.View)
+	}{
+		{
+			"DstUnreachable",
+			header.ICMPv6DstUnreachable,
+			header.ICMPv6DstUnreachableMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.DstUnreachable
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"PacketTooBig",
+			header.ICMPv6PacketTooBig,
+			header.ICMPv6PacketTooBigMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.PacketTooBig
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"TimeExceeded",
+			header.ICMPv6TimeExceeded,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.TimeExceeded
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"ParamProblem",
+			header.ICMPv6ParamProblem,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.ParamProblem
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"EchoRequest",
+			header.ICMPv6EchoRequest,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoRequest
+			},
+			simpleBodySize,
+			simpleBody,
+		},
+		{
+			"EchoReply",
+			header.ICMPv6EchoReply,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoReply
+			},
+			simpleBodySize,
+			simpleBody,
+		},
+	}
+
+	for _, typ := range types {
+		t.Run(typ.name, func(t *testing.T) {
+			e := channel.New(10, 1280, linkAddr0)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(_) = %s", err)
+			}
+
+			if err := s.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
+				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+			}
+			{
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.SetRouteTable(
+					[]tcpip.Route{{
+						Destination: subnet,
+						NIC:         1,
+					}},
+				)
+			}
+
+			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func(buffer.View), checksum bool) {
+				icmpSize := size + payloadSize
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+				pkt := header.ICMPv6(hdr.Prepend(icmpSize))
+				pkt.SetType(typ)
+				payloadFn(pkt.Payload())
+
+				if checksum {
+					pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, buffer.VectorisedView{}))
+				}
+
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(icmpSize),
+					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+					HopLimit:      header.NDPHopLimit,
+					SrcAddr:       lladdr1,
+					DstAddr:       lladdr0,
+				})
+				e.Inject(ProtocolNumber, hdr.View().ToVectorisedView())
+			}
+
+			stats := s.Stats().ICMP.V6PacketsReceived
+			invalid := stats.Invalid
+			typStat := typ.statCounter(stats)
+
+			// Initial stat counts should be 0.
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// Without setting checksum, the incoming packet should
+			// be invalid.
+			handleIPv6Payload(typ.typ, typ.size, typ.payloadSize, typ.payload, false)
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+			// Rx count of type typ.typ should not have increased.
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// When checksum is set, it should be received.
+			handleIPv6Payload(typ.typ, typ.size, typ.payloadSize, typ.payload, true)
+			if got := typStat.Value(); got != 1 {
+				t.Fatalf("got %s = %d, want = 1", typ.name, got)
+			}
+			// Invalid count should not have increased again.
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+		})
+	}
+}
+
+func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
+	const simpleBodySize = 64
+	simpleBody := func(view buffer.View) {
+		for i := 0; i < simpleBodySize; i++ {
+			view[i] = uint8(i)
+		}
+	}
+
+	const errorICMPBodySize = header.IPv6MinimumSize + simpleBodySize
+	errorICMPBody := func(view buffer.View) {
+		ip := header.IPv6(view)
+		ip.Encode(&header.IPv6Fields{
+			PayloadLength: simpleBodySize,
+			NextHeader:    10,
+			HopLimit:      20,
+			SrcAddr:       lladdr0,
+			DstAddr:       lladdr1,
+		})
+		simpleBody(view[header.IPv6MinimumSize:])
+	}
+
+	types := []struct {
+		name        string
+		typ         header.ICMPv6Type
+		size        int
+		statCounter func(tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter
+		payloadSize int
+		payload     func(buffer.View)
+	}{
+		{
+			"DstUnreachable",
+			header.ICMPv6DstUnreachable,
+			header.ICMPv6DstUnreachableMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.DstUnreachable
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"PacketTooBig",
+			header.ICMPv6PacketTooBig,
+			header.ICMPv6PacketTooBigMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.PacketTooBig
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"TimeExceeded",
+			header.ICMPv6TimeExceeded,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.TimeExceeded
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"ParamProblem",
+			header.ICMPv6ParamProblem,
+			header.ICMPv6MinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.ParamProblem
+			},
+			errorICMPBodySize,
+			errorICMPBody,
+		},
+		{
+			"EchoRequest",
+			header.ICMPv6EchoRequest,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoRequest
+			},
+			simpleBodySize,
+			simpleBody,
+		},
+		{
+			"EchoReply",
+			header.ICMPv6EchoReply,
+			header.ICMPv6EchoMinimumSize,
+			func(stats tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
+				return stats.EchoReply
+			},
+			simpleBodySize,
+			simpleBody,
+		},
+	}
+
+	for _, typ := range types {
+		t.Run(typ.name, func(t *testing.T) {
+			e := channel.New(10, 1280, linkAddr0)
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocol{NewProtocol()},
+			})
+			if err := s.CreateNIC(1, e); err != nil {
+				t.Fatalf("CreateNIC(_) = %s", err)
+			}
+
+			if err := s.AddAddress(1, ProtocolNumber, lladdr0); err != nil {
+				t.Fatalf("AddAddress(_, %d, %s) = %s", ProtocolNumber, lladdr0, err)
+			}
+			{
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				if err != nil {
+					t.Fatal(err)
+				}
+				s.SetRouteTable(
+					[]tcpip.Route{{
+						Destination: subnet,
+						NIC:         1,
+					}},
+				)
+			}
+
+			handleIPv6Payload := func(typ header.ICMPv6Type, size, payloadSize int, payloadFn func(buffer.View), checksum bool) {
+				hdr := buffer.NewPrependable(header.IPv6MinimumSize + size)
+				pkt := header.ICMPv6(hdr.Prepend(size))
+				pkt.SetType(typ)
+
+				payload := buffer.NewView(payloadSize)
+				payloadFn(payload)
+
+				if checksum {
+					pkt.SetChecksum(header.ICMPv6Checksum(pkt, lladdr1, lladdr0, payload.ToVectorisedView()))
+				}
+
+				ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+				ip.Encode(&header.IPv6Fields{
+					PayloadLength: uint16(size + payloadSize),
+					NextHeader:    uint8(header.ICMPv6ProtocolNumber),
+					HopLimit:      header.NDPHopLimit,
+					SrcAddr:       lladdr1,
+					DstAddr:       lladdr0,
+				})
+				e.Inject(ProtocolNumber,
+					buffer.NewVectorisedView(header.IPv6MinimumSize+size+payloadSize,
+						[]buffer.View{hdr.View(), payload}))
+			}
+
+			stats := s.Stats().ICMP.V6PacketsReceived
+			invalid := stats.Invalid
+			typStat := typ.statCounter(stats)
+
+			// Initial stat counts should be 0.
+			if got := invalid.Value(); got != 0 {
+				t.Fatalf("got invalid = %d, want = 0", got)
+			}
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// Without setting checksum, the incoming packet should
+			// be invalid.
+			handleIPv6Payload(typ.typ, typ.size, typ.payloadSize, typ.payload, false)
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+			// Rx count of type typ.typ should not have increased.
+			if got := typStat.Value(); got != 0 {
+				t.Fatalf("got %s = %d, want = 0", typ.name, got)
+			}
+
+			// When checksum is set, it should be received.
+			handleIPv6Payload(typ.typ, typ.size, typ.payloadSize, typ.payload, true)
+			if got := typStat.Value(); got != 1 {
+				t.Fatalf("got %s = %d, want = 1", typ.name, got)
+			}
+			// Invalid count should not have increased again.
+			if got := invalid.Value(); got != 1 {
+				t.Fatalf("got invalid = %d, want = 1", got)
+			}
+		})
 	}
 }

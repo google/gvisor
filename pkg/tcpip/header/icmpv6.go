@@ -132,7 +132,7 @@ func (b ICMPv6) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[icmpv6ChecksumOffset:])
 }
 
-// SetChecksum calculates and sets the ICMP checksum field.
+// SetChecksum sets the ICMP checksum field.
 func (b ICMPv6) SetChecksum(checksum uint16) {
 	binary.BigEndian.PutUint16(b[icmpv6ChecksumOffset:], checksum)
 }
@@ -197,7 +197,7 @@ func (b ICMPv6) Payload() []byte {
 	return b[ICMPv6PayloadOffset:]
 }
 
-// ICMPv6Checksum calculates the ICMP checksum over the provided ICMP header,
+// ICMPv6Checksum calculates the ICMP checksum over the provided ICMPv6 header,
 // IPv6 src/dst addresses and the payload.
 func ICMPv6Checksum(h ICMPv6, src, dst tcpip.Address, vv buffer.VectorisedView) uint16 {
 	// Calculate the IPv6 pseudo-header upper-layer checksum.

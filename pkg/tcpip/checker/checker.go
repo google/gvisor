@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
@@ -639,6 +640,8 @@ func ICMPv4Code(want byte) TransportChecker {
 
 // ICMPv6 creates a checker that checks that the transport protocol is ICMPv6 and
 // potentially additional ICMPv6 header fields.
+//
+// ICMPv6 will validate the checksum field before calling checkers.
 func ICMPv6(checkers ...TransportChecker) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
@@ -650,6 +653,10 @@ func ICMPv6(checkers ...TransportChecker) NetworkChecker {
 		}
 
 		icmp := header.ICMPv6(last.Payload())
+		if got, want := icmp.Checksum(), header.ICMPv6Checksum(icmp, last.SourceAddress(), last.DestinationAddress(), buffer.VectorisedView{}); got != want {
+			t.Fatalf("Bad ICMPv6 checksum; got %d, want %d", got, want)
+		}
+
 		for _, f := range checkers {
 			f(t, icmp)
 		}
