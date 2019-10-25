@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +build i386 amd64
+
 package cpuid
 
 import (
