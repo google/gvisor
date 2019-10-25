@@ -22,7 +22,6 @@
 #include <string>
 
 #include "gtest/gtest.h"
-#include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
