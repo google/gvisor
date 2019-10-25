@@ -281,7 +281,7 @@ type SocketOperations struct {
 // New creates a new endpoint socket.
 func New(t *kernel.Task, family int, skType linux.SockType, protocol int, queue *waiter.Queue, endpoint tcpip.Endpoint) (*fs.File, *syserr.Error) {
 	if skType == linux.SOCK_STREAM {
-		if err := endpoint.SetSockOpt(tcpip.DelayOption(1)); err != nil {
+		if err := endpoint.SetSockOptInt(tcpip.DelayOption, 1); err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 	}
@@ -1055,8 +1055,8 @@ func getSockOptTCP(t *kernel.Task, ep commonEndpoint, name, outLen int) (interfa
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		var v tcpip.DelayOption
-		if err := ep.GetSockOpt(&v); err != nil {
+		v, err := ep.GetSockOptInt(tcpip.DelayOption)
+		if err != nil {
 			return nil, syserr.TranslateNetstackError(err)
 		}
 
@@ -1497,11 +1497,11 @@ func setSockOptTCP(t *kernel.Task, ep commonEndpoint, name int, optVal []byte) *
 		}
 
 		v := usermem.ByteOrder.Uint32(optVal)
-		var o tcpip.DelayOption
+		var o int
 		if v == 0 {
 			o = 1
 		}
-		return syserr.TranslateNetstackError(ep.SetSockOpt(o))
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.DelayOption, o))
 
 	case linux.TCP_CORK:
 		if len(optVal) < sizeOfInt32 {

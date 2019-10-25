@@ -489,6 +489,11 @@ const (
 	// number of unread bytes in the output buffer should be returned.
 	SendQueueSizeOption
 
+	// DelayOption is used by SetSockOpt/GetSockOpt to specify if data
+	// should be sent out immediately by the transport protocol. For TCP,
+	// it determines if the Nagle algorithm is on or off.
+	DelayOption
+
 	// TODO(b/137664753): convert all int socket options to be handled via
 	// GetSockOptInt.
 )
@@ -500,11 +505,6 @@ type ErrorOption struct{}
 // V6OnlyOption is used by SetSockOpt/GetSockOpt to specify whether an IPv6
 // socket is to be restricted to sending and receiving IPv6 packets only.
 type V6OnlyOption int
-
-// DelayOption is used by SetSockOpt/GetSockOpt to specify if data should be
-// sent out immediately by the transport protocol. For TCP, it determines if the
-// Nagle algorithm is on or off.
-type DelayOption int
 
 // CorkOption is used by SetSockOpt/GetSockOpt to specify if data should be
 // held until segments are full by the TCP transport protocol.

@@ -1133,16 +1133,6 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 		e.sndBufMu.Unlock()
 		return nil
 
-	default:
-		return nil
-	}
-}
-
-// SetSockOpt sets a socket option.
-func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
-	// Lower 2 bits represents ECN bits. RFC 3168, section 23.1
-	const inetECNMask = 3
-	switch v := opt.(type) {
 	case tcpip.DelayOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.delay, 0)
@@ -1154,6 +1144,16 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		}
 		return nil
 
+	default:
+		return nil
+	}
+}
+
+// SetSockOpt sets a socket option.
+func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
+	// Lower 2 bits represents ECN bits. RFC 3168, section 23.1
+	const inetECNMask = 3
+	switch v := opt.(type) {
 	case tcpip.CorkOption:
 		if v == 0 {
 			atomic.StoreUint32(&e.cork, 0)
@@ -1345,6 +1345,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
 	case tcpip.ReceiveQueueSizeOption:
 		return e.readyReceiveSize()
+
 	case tcpip.SendBufferSizeOption:
 		e.sndBufMu.Lock()
 		v := e.sndBufSize
@@ -1357,8 +1358,16 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		e.rcvListMu.Unlock()
 		return v, nil
 
+	case tcpip.DelayOption:
+		var o int
+		if v := atomic.LoadUint32(&e.delay); v != 0 {
+			o = 1
+		}
+		return o, nil
+
+	default:
+		return -1, tcpip.ErrUnknownProtocolOption
 	}
-	return -1, tcpip.ErrUnknownProtocolOption
 }
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
@@ -1377,13 +1386,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		// actual current MSS. Netstack just returns the defaultMSS
 		// always for now.
 		*o = header.TCPDefaultMSS
-		return nil
-
-	case *tcpip.DelayOption:
-		*o = 0
-		if v := atomic.LoadUint32(&e.delay); v != 0 {
-			*o = 1
-		}
 		return nil
 
 	case *tcpip.CorkOption:
