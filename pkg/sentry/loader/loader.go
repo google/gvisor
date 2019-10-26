@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package loader loads a binary into a MemoryManager.
+// Package loader loads an executable file into a MemoryManager.
 package loader
 
 import (
@@ -35,6 +35,48 @@ import (
 	"gvisor.dev/gvisor/pkg/syserror"
 )
 
+// LoadArgs holds specifications for an executable file to be loaded.
+type LoadArgs struct {
+	// MemoryManager is the memory manager to load the executable into.
+	MemoryManager *mm.MemoryManager
+
+	// Mounts is the mount namespace in which to look up Filename.
+	Mounts *fs.MountNamespace
+
+	// Root is the root directory under which to look up Filename.
+	Root *fs.Dirent
+
+	// WorkingDirectory is the working directory under which to look up
+	// Filename.
+	WorkingDirectory *fs.Dirent
+
+	// RemainingTraversals is the maximum number of symlinks to follow to
+	// resolve Filename. This counter is passed by reference to keep it
+	// updated throughout the call stack.
+	RemainingTraversals *uint
+
+	// ResolveFinal indicates whether the final link of Filename should be
+	// resolved, if it is a symlink.
+	ResolveFinal bool
+
+	// Filename is the path for the executable.
+	Filename string
+
+	// File is an open fs.File object of the executable. If File is not
+	// nil, then File will be loaded and Filename will be ignored.
+	File *fs.File
+
+	// Argv is the vector of arguments to pass to the executable.
+	Argv []string
+
+	// Envv is the vector of environment variables to pass to the
+	// executable.
+	Envv []string
+
+	// Features specifies the CPU feature set for the executable.
+	Features *cpuid.FeatureSet
+}
+
 // readFull behaves like io.ReadFull for an *fs.File.
 func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
 	var total int64
@@ -51,24 +93,24 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 	return total, nil
 }
 
-// openPath opens name for loading.
+// openPath opens args.Filename for loading.
 //
-// openPath returns the fs.Dirent and an *fs.File for name, which is not
-// installed in the Task FDTable. The caller takes ownership of both.
+// openPath returns the fs.Dirent and an *fs.File for args.Filename, which is
+// not installed in the Task FDTable. The caller takes ownership of both.
 //
-// name must be a readable, executable, regular file.
-func openPath(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, name string, resolveFinal bool) (*fs.Dirent, *fs.File, error) {
+// args.Filename must be a readable, executable, regular file.
+func openPath(ctx context.Context, args LoadArgs) (*fs.Dirent, *fs.File, error) {
 	var err error
-	if name == "" {
+	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, nil, syserror.ENOENT
 	}
 
 	var d *fs.Dirent
-	if resolveFinal {
-		d, err = mounts.FindInode(ctx, root, wd, name, maxTraversals)
+	if args.ResolveFinal {
+		d, err = args.Mounts.FindInode(ctx, args.Root, args.WorkingDirectory, args.Filename, args.RemainingTraversals)
 	} else {
-		d, err = mounts.FindLink(ctx, root, wd, name, maxTraversals)
+		d, err = args.Mounts.FindLink(ctx, args.Root, args.WorkingDirectory, args.Filename, args.RemainingTraversals)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -77,11 +119,11 @@ func openPath(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Diren
 	// Open file will take a reference to Dirent, so destroy this one.
 	defer d.DecRef()
 
-	if !resolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
+	if !args.ResolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
 		return nil, nil, syserror.ELOOP
 	}
 
-	return openFile(ctx, nil, d, name)
+	return openFile(ctx, nil, d, args.Filename)
 }
 
 // openFile takes that file's Dirent and performs checks on it. If provided a
@@ -182,34 +224,33 @@ const (
 	maxLoaderAttempts = 6
 )
 
-// loadBinary loads a binary that is pointed to by "file". If nil, the path
-// "filename" is resolved and loaded.
+// loadExecutable loads an executable that is pointed to by args.File. If nil,
+// the path args.Filename is resolved and loaded. If the executable is an
+// interpreter script rather than an ELF, the binary of the corresponding
+// interpreter will be loaded.
 //
 // It returns:
 //  * loadedELF, description of the loaded binary
 //  * arch.Context matching the binary arch
 //  * fs.Dirent of the binary file
-//  * Possibly updated argv
-func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, remainingTraversals *uint, features *cpuid.FeatureSet, filename string, passedFile *fs.File, argv []string, resolveFinal bool) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
+//  * Possibly updated args.Argv
+func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, *fs.Dirent, []string, error) {
 	for i := 0; i < maxLoaderAttempts; i++ {
 		var (
 			d   *fs.Dirent
-			f   *fs.File
 			err error
 		)
-		if passedFile == nil {
-			d, f, err = openPath(ctx, mounts, root, wd, remainingTraversals, filename, resolveFinal)
+		if args.File == nil {
+			d, args.File, err = openPath(ctx, args)
 		} else {
-			d, f, err = openFile(ctx, passedFile, nil, "")
-			// Set to nil in case we loop on a Interpreter Script.
-			passedFile = nil
+			d, args.File, err = openFile(ctx, args.File, nil, "")
 		}
 
 		if err != nil {
-			ctx.Infof("Error opening %s: %v", filename, err)
+			ctx.Infof("Error opening %s: %v", args.Filename, err)
 			return loadedELF{}, nil, nil, nil, err
 		}
-		defer f.DecRef()
+		defer args.File.DecRef()
 		// We will return d in the successful case, but defer a DecRef
 		// for intermediate loops and failure cases.
 		defer d.DecRef()
@@ -217,9 +258,9 @@ func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamesp
 		// Check the header. Is this an ELF or interpreter script?
 		var hdr [4]uint8
 		// N.B. We assume that reading from a regular file cannot block.
-		_, err = readFull(ctx, f, usermem.BytesIOSequence(hdr[:]), 0)
-		// Allow unexpected EOF, as a valid executable could be only three
-		// bytes (e.g., #!a).
+		_, err = readFull(ctx, args.File, usermem.BytesIOSequence(hdr[:]), 0)
+		// Allow unexpected EOF, as a valid executable could be only
+		// three bytes (e.g., #!a).
 		if err != nil && err != io.ErrUnexpectedEOF {
 			if err == io.EOF {
 				err = syserror.ENOEXEC
@@ -229,33 +270,33 @@ func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamesp
 
 		switch {
 		case bytes.Equal(hdr[:], []byte(elfMagic)):
-			loaded, ac, err := loadELF(ctx, m, mounts, root, wd, remainingTraversals, features, f)
+			loaded, ac, err := loadELF(ctx, args)
 			if err != nil {
 				ctx.Infof("Error loading ELF: %v", err)
 				return loadedELF{}, nil, nil, nil, err
 			}
 			// An ELF is always terminal. Hold on to d.
 			d.IncRef()
-			return loaded, ac, d, argv, err
+			return loaded, ac, d, args.Argv, err
 		case bytes.Equal(hdr[:2], []byte(interpreterScriptMagic)):
-			newpath, newargv, err := parseInterpreterScript(ctx, filename, f, argv)
+			args.Filename, args.Argv, err = parseInterpreterScript(ctx, args.Filename, args.File, args.Argv)
 			if err != nil {
 				ctx.Infof("Error loading interpreter script: %v", err)
 				return loadedELF{}, nil, nil, nil, err
 			}
-			filename = newpath
-			argv = newargv
 		default:
 			ctx.Infof("Unknown magic: %v", hdr)
 			return loadedELF{}, nil, nil, nil, syserror.ENOEXEC
 		}
+		// Set to nil in case we loop on a Interpreter Script.
+		args.File = nil
 	}
 
 	return loadedELF{}, nil, nil, nil, syserror.ELOOP
 }
 
-// Load loads "file" into a MemoryManager. If file is nil, the path "filename"
-// is resolved and loaded instead.
+// Load loads args.File into a MemoryManager. If args.File is nil, the path
+// args.Filename is resolved and loaded instead.
 //
 // If Load returns ErrSwitchFile it should be called again with the returned
 // path and argv.
@@ -263,37 +304,37 @@ func loadBinary(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamesp
 // Preconditions:
 //  * The Task MemoryManager is empty.
 //  * Load is called on the Task goroutine.
-func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, filename string, file *fs.File, argv, envv []string, resolveFinal bool, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
-	// Load the binary itself.
-	loaded, ac, d, argv, err := loadBinary(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, resolveFinal)
+func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, arch.Context, string, *syserr.Error) {
+	// Load the executable itself.
+	loaded, ac, d, newArgv, err := loadExecutable(ctx, args)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", filename, err), syserr.FromError(err).ToLinux())
+		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer d.DecRef()
 
 	// Load the VDSO.
-	vdsoAddr, err := loadVDSO(ctx, m, vdso, loaded)
+	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
-	// binary. Userspace can assume that the remainer of the page after
+	// executable. Userspace can assume that the remainer of the page after
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()
 	if !ok {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), linux.ENOEXEC)
 	}
-	m.BrkSetup(ctx, e)
+	args.MemoryManager.BrkSetup(ctx, e)
 
 	// Allocate our stack.
-	stack, err := allocStack(ctx, m, ac)
+	stack, err := allocStack(ctx, args.MemoryManager, ac)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Push the original filename to the stack, for AT_EXECFN.
-	execfn, err := stack.Push(filename)
+	execfn, err := stack.Push(args.Filename)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
 	}
@@ -327,11 +368,12 @@ func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, r
 	}...)
 	auxv = append(auxv, extraAuxv...)
 
-	sl, err := stack.Load(argv, envv, auxv)
+	sl, err := stack.Load(newArgv, args.Envv, auxv)
 	if err != nil {
 		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
+	m := args.MemoryManager
 	m.SetArgvStart(sl.ArgvStart)
 	m.SetArgvEnd(sl.ArgvEnd)
 	m.SetEnvvStart(sl.EnvvStart)
@@ -342,7 +384,7 @@ func Load(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, r
 	ac.SetIP(uintptr(loaded.entry))
 	ac.SetStack(uintptr(stack.Bottom))
 
-	name := path.Base(filename)
+	name := path.Base(args.Filename)
 	if len(name) > linux.TASK_COMM_LEN-1 {
 		name = name[:linux.TASK_COMM_LEN-1]
 	}

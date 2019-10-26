@@ -804,8 +804,20 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 
 	// Create a fresh task context.
 	remainingTraversals = uint(args.MaxSymlinkTraversals)
+	loadArgs := loader.LoadArgs{
+		Mounts:              mounts,
+		Root:                root,
+		WorkingDirectory:    wd,
+		RemainingTraversals: &remainingTraversals,
+		ResolveFinal:        true,
+		Filename:            args.Filename,
+		File:                args.File,
+		Argv:                args.Argv,
+		Envv:                args.Envv,
+		Features:            k.featureSet,
+	}
 
-	tc, se := k.LoadTaskImage(ctx, mounts, root, wd, &remainingTraversals, args.Filename, args.File, args.Argv, args.Envv, true /*resolveFinal*/, k.featureSet)
+	tc, se := k.LoadTaskImage(ctx, loadArgs)
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
