@@ -624,15 +624,15 @@ func loadInterpreterELF(ctx context.Context, m *mm.MemoryManager, f *fs.File, in
 	return loadParsedELF(ctx, m, f, info, 0)
 }
 
-// loadELF loads f into the Task address space.
+// loadELF loads args.File into the Task address space.
 //
 // If loadELF returns ErrSwitchFile it should be called again with the returned
 // path and argv.
 //
 // Preconditions:
-//  * f is an ELF file
-func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, fs *cpuid.FeatureSet, f *fs.File) (loadedELF, arch.Context, error) {
-	bin, ac, err := loadInitialELF(ctx, m, fs, f)
+//  * args.File is an ELF file
+func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error) {
+	bin, ac, err := loadInitialELF(ctx, args.MemoryManager, args.Features, args.File)
 	if err != nil {
 		ctx.Infof("Error loading binary: %v", err)
 		return loadedELF{}, nil, err
@@ -640,7 +640,12 @@ func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace
 
 	var interp loadedELF
 	if bin.interpreter != "" {
-		d, i, err := openPath(ctx, mounts, root, wd, maxTraversals, bin.interpreter, true /*resolveFinal*/)
+		// Even if we do not allow the final link of the script to be
+		// resolved, the interpreter should still be resolved if it is
+		// a symlink.
+		args.ResolveFinal = true
+		args.Filename = bin.interpreter
+		d, i, err := openPath(ctx, args)
 		if err != nil {
 			ctx.Infof("Error opening interpreter %s: %v", bin.interpreter, err)
 			return loadedELF{}, nil, err
@@ -649,7 +654,7 @@ func loadELF(ctx context.Context, m *mm.MemoryManager, mounts *fs.MountNamespace
 		// We don't need the Dirent.
 		d.DecRef()
 
-		interp, err = loadInterpreterELF(ctx, m, i, bin)
+		interp, err = loadInterpreterELF(ctx, args.MemoryManager, i, bin)
 		if err != nil {
 			ctx.Infof("Error loading interpreter: %v", err)
 			return loadedELF{}, nil, err
