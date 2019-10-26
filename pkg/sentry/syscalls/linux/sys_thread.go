@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/sched"
+	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
 	"gvisor.dev/gvisor/pkg/syserror"
 )
@@ -147,8 +148,21 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 	}
 
 	// Load the new TaskContext.
-	maxTraversals := uint(linux.MaxSymlinkTraversals)
-	tc, se := t.Kernel().LoadTaskImage(t, t.MountNamespace(), root, wd, &maxTraversals, pathname, executable, argv, envv, resolveFinal, t.Arch().FeatureSet())
+	remainingTraversals := uint(linux.MaxSymlinkTraversals)
+	loadArgs := loader.LoadArgs{
+		Mounts:              t.MountNamespace(),
+		Root:                root,
+		WorkingDirectory:    wd,
+		RemainingTraversals: &remainingTraversals,
+		ResolveFinal:        resolveFinal,
+		Filename:            pathname,
+		File:                executable,
+		Argv:                argv,
+		Envv:                envv,
+		Features:            t.Arch().FeatureSet(),
+	}
+
+	tc, se := t.Kernel().LoadTaskImage(t, loadArgs)
 	if se != nil {
 		return 0, nil, se.ToError()
 	}

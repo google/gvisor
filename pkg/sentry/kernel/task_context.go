@@ -18,10 +18,8 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/futex"
 	"gvisor.dev/gvisor/pkg/sentry/loader"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
@@ -132,30 +130,21 @@ func (t *Task) Stack() *arch.Stack {
 	return &arch.Stack{t.Arch(), t.MemoryManager(), usermem.Addr(t.Arch().Stack())}
 }
 
-// LoadTaskImage loads filename into a new TaskContext.
+// LoadTaskImage loads a specified file into a new TaskContext.
 //
-// It takes several arguments:
-//  * mounts: MountNamespace to lookup filename in
-//  * root: Root to lookup filename under
-//  * wd: Working directory to lookup filename under
-//  * maxTraversals: maximum number of symlinks to follow
-//  * filename: path to binary to load
-//  * file: an open fs.File object of the binary to load. If set,
-//  file will be loaded and not filename.
-//  * argv: Binary argv
-//  * envv: Binary envv
-//  * fs: Binary FeatureSet
-func (k *Kernel) LoadTaskImage(ctx context.Context, mounts *fs.MountNamespace, root, wd *fs.Dirent, maxTraversals *uint, filename string, file *fs.File, argv, envv []string, resolveFinal bool, fs *cpuid.FeatureSet) (*TaskContext, *syserr.Error) {
-	// If File is not nil, we should load that instead of resolving filename.
-	if file != nil {
-		filename = file.MappedName(ctx)
+// args.MemoryManager does not need to be set by the caller.
+func (k *Kernel) LoadTaskImage(ctx context.Context, args loader.LoadArgs) (*TaskContext, *syserr.Error) {
+	// If File is not nil, we should load that instead of resolving Filename.
+	if args.File != nil {
+		args.Filename = args.File.MappedName(ctx)
 	}
 
 	// Prepare a new user address space to load into.
 	m := mm.NewMemoryManager(k, k)
 	defer m.DecUsers(ctx)
+	args.MemoryManager = m
 
-	os, ac, name, err := loader.Load(ctx, m, mounts, root, wd, maxTraversals, fs, filename, file, argv, envv, resolveFinal, k.extraAuxv, k.vdso)
+	os, ac, name, err := loader.Load(ctx, args, k.extraAuxv, k.vdso)
 	if err != nil {
 		return nil, err
 	}
