@@ -528,7 +528,7 @@ func TestTransportForwarding(t *testing.T) {
 		NetworkProtocols:   []stack.NetworkProtocol{fakeNetFactory()},
 		TransportProtocols: []stack.TransportProtocol{fakeTransFactory()},
 	})
-	s.SetForwarding(true)
+	s.SetForwarding(fakeNetNumber, true)
 
 	// TODO(b/123449044): Change this to a channel NIC.
 	ep1 := loopback.New()

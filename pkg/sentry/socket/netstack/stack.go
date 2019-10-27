@@ -20,6 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/iptables"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -290,4 +291,27 @@ func (s *Stack) FillDefaultIPTables() {
 // Resume implements inet.Stack.Resume.
 func (s *Stack) Resume() {
 	s.Stack.Resume()
+}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	switch protocol {
+	case ipv4.ProtocolNumber, ipv6.ProtocolNumber:
+		return s.Stack.Forwarding(protocol)
+	default:
+		log.Warningf("Forwarding(%v) failed: unsupported protocol", protocol)
+		return false
+	}
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	switch protocol {
+	case ipv4.ProtocolNumber, ipv6.ProtocolNumber:
+		s.Stack.SetForwarding(protocol, enable)
+	default:
+		log.Warningf("SetForwarding(%v) failed: unsupported protocol", protocol)
+		return syserr.ErrProtocolNotSupported.ToError()
+	}
+	return nil
 }

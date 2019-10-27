@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fs/ramfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/usermem"
+	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -280,10 +281,114 @@ func (p *proc) newSysNetCore(ctx context.Context, msrc *fs.MountSource, s inet.S
 	return newProcInode(ctx, d, msrc, fs.SpecialDirectory, nil)
 }
 
+// ipForwarding implements fs.InodeOperations.
+//
+// ipForwarding is used to enable/disable packet forwarding of netstack.
+//
+// +stateify savable
+type ipForwarding struct {
+	stack inet.Stack `state:".(ipForwardingState)"`
+	fsutil.SimpleFileInode
+}
+
+// ipForwardingState is used to stores a state of netstack
+// for packet forwarding because netstack itself is stateless.
+//
+// +stateify savable
+type ipForwardingState struct {
+	stack inet.Stack `state:"wait"`
+
+	// enabled stores packet forwarding settings during save, and sets it back
+	// in netstack in restore. We must save/restore this here, since
+	// netstack itself is stateless.
+	enabled bool
+}
+
+func newIPForwardingInode(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
+	ipf := &ipForwarding{
+		SimpleFileInode: *fsutil.NewSimpleFileInode(ctx, fs.RootOwner, fs.FilePermsFromMode(0444), linux.PROC_SUPER_MAGIC),
+		stack:           s,
+	}
+	sattr := fs.StableAttr{
+		DeviceID:  device.ProcDevice.DeviceID(),
+		InodeID:   device.ProcDevice.NextIno(),
+		BlockSize: usermem.PageSize,
+		Type:      fs.SpecialFile,
+	}
+	return fs.NewInode(ctx, ipf, msrc, sattr)
+}
+
+// +stateify savable
+type ipForwardingFile struct {
+	fsutil.FileGenericSeek          `state:"nosave"`
+	fsutil.FileNoIoctl              `state:"nosave"`
+	fsutil.FileNoMMap               `state:"nosave"`
+	fsutil.FileNoSplice             `state:"nosave"`
+	fsutil.FileNoopRelease          `state:"nosave"`
+	fsutil.FileNoopFlush            `state:"nosave"`
+	fsutil.FileNoopFsync            `state:"nosave"`
+	fsutil.FileNotDirReaddir        `state:"nosave"`
+	fsutil.FileUseInodeUnstableAttr `state:"nosave"`
+	waiter.AlwaysReady              `state:"nosave"`
+
+	stack inet.Stack `state:"wait"`
+}
+
+// GetFile implements fs.InodeOperations.GetFile.
+func (ipf *ipForwarding) GetFile(ctx context.Context, dirent *fs.Dirent, flags fs.FileFlags) (*fs.File, error) {
+	flags.Pread = true
+	flags.Pwrite = true
+	return fs.NewFile(ctx, dirent, flags, &ipForwardingFile{
+		stack: ipf.stack,
+	}), nil
+}
+
+// Read implements fs.FileOperations.Read.
+func (f *ipForwardingFile) Read(ctx context.Context, _ *fs.File, dst usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		return 0, io.EOF
+	}
+
+	val := "0\n"
+	if f.stack.Forwarding(ipv4.ProtocolNumber) {
+		// Technically, this is not quite compatible with Linux. Linux
+		// stores these as an integer, so if you write "2" into
+		// ip_forward, you should get 2 back.
+		val = "1\n"
+	}
+
+	n, err := dst.CopyOut(ctx, []byte(val))
+	return int64(n), err
+}
+
+// Write implements fs.FileOperations.Write.
+//
+// Offset is ignored, multiple writes are not supported.
+func (f *ipForwardingFile) Write(ctx context.Context, _ *fs.File, src usermem.IOSequence, offset int64) (int64, error) {
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Only consider size of one memory page for input.
+	src = src.TakeFirst(usermem.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return n, err
+	}
+
+	enabled := v != 0
+	return n, f.stack.SetForwarding(ipv4.ProtocolNumber, enabled)
+}
+
 func (p *proc) newSysNetIPv4Dir(ctx context.Context, msrc *fs.MountSource, s inet.Stack) *fs.Inode {
 	contents := map[string]*fs.Inode{
 		// Add tcp_sack.
 		"tcp_sack": newTCPSackInode(ctx, msrc, s),
+
+		// Add ip_forward.
+		"ip_forward": newIPForwardingInode(ctx, msrc, s),
 
 		// The following files are simple stubs until they are
 		// implemented in netstack, most of these files are

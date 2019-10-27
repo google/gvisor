@@ -32,6 +32,9 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/syserr",
         "//pkg/syserror",
+        "//pkg/tcpip",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/waiter",
     ],
 )
