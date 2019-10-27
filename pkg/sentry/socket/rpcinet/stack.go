@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/conn"
 	"gvisor.dev/gvisor/pkg/sentry/socket/rpcinet/notifier"
 	"gvisor.dev/gvisor/pkg/syserr"
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/unet"
 )
 
@@ -165,3 +166,13 @@ func (s *Stack) RouteTable() []inet.Route {
 
 // Resume implements inet.Stack.Resume.
 func (s *Stack) Resume() {}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *Stack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	panic("rpcinet handles procfs directly this method should not be called")
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *Stack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	panic("rpcinet handles procfs directly this method should not be called")
+}

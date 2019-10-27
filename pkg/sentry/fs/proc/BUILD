@@ -53,6 +53,7 @@ go_library(
         "//pkg/sentry/usermem",
         "//pkg/syserror",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/network/ipv4",
         "//pkg/waiter",
     ],
 )

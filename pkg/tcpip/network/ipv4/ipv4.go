@@ -307,7 +307,9 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.Vect
 		return nil
 	}
 
-	hdr := buffer.NewPrependableFromView(payload.ToView())
+	// If we want to send the packet to a link-layer,
+	// we have to reserve space for an Ethernet header.
+	hdr := buffer.NewPrependableFromView(payload.ToView(), int(e.linkEP.MaxHeaderLength()))
 	r.Stats().IP.PacketsSent.Increment()
 	return e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
 }

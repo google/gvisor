@@ -32,13 +32,19 @@ func NewPrependable(size int) Prependable {
 	return Prependable{buf: NewView(size), usedIdx: size}
 }
 
-// NewPrependableFromView creates an entirely-used Prependable from a View.
+// NewPrependableFromView creates a Prependable from a View and allocates
+// additional space if needed.
 //
-// NewPrependableFromView takes ownership of v. Note that since the entire
-// prependable is used, further attempts to call Prepend will note that size >
-// p.usedIdx and return nil.
-func NewPrependableFromView(v View) Prependable {
-	return Prependable{buf: v, usedIdx: 0}
+// NewPrependableFromView takes ownership of v. Note that if the entire
+// prependable is used, further attempts to call Prepend will note that
+// size > p.usedIdx and return nil.
+func NewPrependableFromView(v View, extraCap int) Prependable {
+	if extraCap == 0 {
+		return Prependable{buf: v, usedIdx: 0}
+	}
+	buf := make([]byte, extraCap, extraCap + len(v))
+	buf = append(buf, v...)
+	return Prependable{buf: buf, usedIdx: extraCap}
 }
 
 // NewEmptyPrependableFromView creates a new prependable buffer from a View.

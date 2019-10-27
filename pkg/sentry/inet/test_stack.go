@@ -14,6 +14,10 @@
 
 package inet
 
+import (
+	"gvisor.dev/gvisor/pkg/tcpip"
+)
+
 // TestStack is a dummy implementation of Stack for tests.
 type TestStack struct {
 	InterfacesMap     map[int32]Interface
@@ -23,6 +27,7 @@ type TestStack struct {
 	TCPRecvBufSize    TCPBufferSize
 	TCPSendBufSize    TCPBufferSize
 	TCPSACKFlag       bool
+	IPForwarding      bool
 }
 
 // NewTestStack returns a TestStack with no network interfaces. The value of
@@ -95,4 +100,15 @@ func (s *TestStack) RouteTable() []Route {
 
 // Resume implements Stack.Resume.
 func (s *TestStack) Resume() {
+}
+
+// Forwarding implements inet.Stack.Forwarding.
+func (s *TestStack) Forwarding(protocol tcpip.NetworkProtocolNumber) bool {
+	return s.IPForwarding
+}
+
+// SetForwarding implements inet.Stack.SetForwarding.
+func (s *TestStack) SetForwarding(protocol tcpip.NetworkProtocolNumber, enable bool) error {
+	s.IPForwarding = enable
+	return nil
 }

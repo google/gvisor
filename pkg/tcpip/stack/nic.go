@@ -780,7 +780,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 	// packet and forward it to the NIC.
 	//
 	// TODO: Should we be forwarding the packet even if promiscuous?
-	if n.stack.Forwarding() {
+	if n.stack.Forwarding(protocol) {
 		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
 		if err != nil {
 			n.stack.stats.IP.InvalidAddressesReceived.Increment()
@@ -805,9 +805,12 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 		} else {
 			// n doesn't have a destination endpoint.
 			// Send the packet out of n.
-			hdr := buffer.NewPrependableFromView(vv.First())
+			// If we want to send the packet to a link-layer,
+			// we have to reserve space for an Ethernet header.
+			hdr := buffer.NewPrependableFromView(vv.First(), int(n.linkEP.MaxHeaderLength()))
 			vv.RemoveFirst()
 
+			// TODO(gvisor.dev/issue/1085): According to the RFC, we must decrease the TTL field for ipv4/ipv6.
 			// TODO(b/128629022): use route.WritePacket.
 			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, vv, protocol); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.Increment()
