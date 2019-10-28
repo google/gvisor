@@ -13,21 +13,31 @@ release channels. You should pick the version you'd like to install. For
 experimentation, the nightly release is recommended. For production use, the
 latest release is recommended.
 
+<!--
+
 After selecting an appropriate release channel from the options below, proceed
 to the preferred installation mechanism: manual or from an `apt` repository.
+
+ -->
 
 ### Nightly
 
 Nightly releases are built most nights from the master branch, and are available
 at the following URL:
 
-   `https://storage.googleapis.com/gvisor/releases/nightly/latest`
+   `https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc`
+
+Checksums for the release binary are at:
+
+   `https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512`
 
 Specific nightly releases can be found at:
 
-   `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}`
+   `https://storage.googleapis.com/gvisor/releases/nightly/${yyyy-mm-dd}/runsc`
 
 Note that a release may not be available for every day.
+
+<!--
 
 To use a nightly release, use one of the above URLs for `URL` in the manual
 instructions below. For `apt`, use `nightly` for `DIST` below.
@@ -49,9 +59,11 @@ A given release release is available at the following URL:
 
 See the [releases][releases] page for information about specific releases.
 
+
 This will include point updates for the release, if required. To use a specific
 release, use the above URL for `URL` in the manual instructions below. For
 `apt`, use `${yyyymmdd}` for `DIST` below.
+
 
 ### Point release
 
@@ -59,11 +71,14 @@ A given point release is available at the following URL:
 
   `https://storage.googleapis.com/gvisor/releases/release/${yyyymmdd}.${rc}`
 
+
 Unlike the specific release above, which may include updates, this release will
 not change. To use a specific point release, use the above URL for `URL` in the
 manual instructions below. For apt, use `${yyyymmdd}.${rc}` for `DIST` below.
 
-## Install from an `apt` repository
+ -->
+
+<!-- Install from an `apt` repository
 
 First, appropriate dependencies must be installed to allow `apt` to install
 packages via https:
@@ -118,18 +133,15 @@ sudo apt-get update && sudo apt-get install -y runsc
 
 If you have Docker installed, it will be automatically configured.
 
-## Install manually
+-->
 
-After selecting an appropriate `URL` above, you can download `runsc` directly
-from `${URL}/runsc` ([latest][latest-nightly]) and a checksum hash from
-`${URL}/runsc.sha512` ([latest][latest-hash]).
-
-For example, this binary can be downloaded, validated, and placed in an
-appropriate location by running:
+For example, the latest nightly binary can be downloaded, validated, 
+and placed in an appropriate location by running:
 
 ```bash
 (
   set -e
+  URL=https://storage.googleapis.com/gvisor/releases/nightly/latest
   wget ${URL}/runsc
   wget ${URL}/runsc.sha512
   sha512sum -c runsc.sha512
