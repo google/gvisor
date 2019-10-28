@@ -278,7 +278,7 @@ func (ndp *ndpState) doDuplicateAddressDetection(addr tcpip.Address, remaining u
 	pkt.SetChecksum(header.ICMPv6Checksum(pkt, r.LocalAddress, r.RemoteAddress, buffer.VectorisedView{}))
 
 	sent := r.Stats().ICMP.V6PacketsSent
-	if err := r.WritePacket(nil, hdr, buffer.VectorisedView{}, NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: DefaultTOS}); err != nil {
+	if err := r.WritePacket(nil, hdr, buffer.VectorisedView{}, NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: DefaultTOS}, DefaultPriority); err != nil {
 		sent.Dropped.Increment()
 		return false, err
 	}

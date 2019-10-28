@@ -60,6 +60,7 @@ type testObject struct {
 	v4       bool
 	typ      stack.ControlType
 	extra    uint32
+	priority uint32
 
 	dataCalls    int
 	controlCalls int
@@ -150,7 +151,9 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) *tcpip.Error {
+	t.priority = priority
+
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -160,7 +163,6 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
-
 	} else {
 		h := header.IPv6(hdr.View())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
@@ -172,11 +174,11 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prepen
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (t *testObject) WritePackets(_ *stack.Route, _ *stack.GSO, hdr []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	panic("not implemented")
+func (t *testObject) WritePackets(_ *stack.Route, _ *stack.GSO, hdr []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) (int, *tcpip.Error) {
+	return 0, tcpip.ErrNotSupported
 }
 
-func (t *testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
+func (t *testObject) WriteRawPacket(_ buffer.VectorisedView, priority uint32) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -239,8 +241,12 @@ func TestIPv4Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut); err != nil {
+	priority := uint32(123)
+	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut, priority); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
+	}
+	if got := o.priority; got != priority {
+		t.Errorf("Got priority after IPv4 send: %d, want: %d", got, priority)
 	}
 }
 
@@ -469,8 +475,12 @@ func TestIPv6Send(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut); err != nil {
+	priority := uint32(321)
+	if err := ep.WritePacket(&r, nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut, priority); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
+	}
+	if got := o.priority; got != priority {
+		t.Errorf("Got priority after IPv6 send: %d, want: %d", got, priority)
 	}
 }
 

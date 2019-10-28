@@ -3651,3 +3651,17 @@ cc_binary(
         "@com_google_googletest//:gtest",
     ],
 )
+
+cc_binary(
+    name = "socket_so_priority_test",
+    testonly = 1,
+    srcs = [
+        "socket_so_priority.cc",
+    ],
+    linkstatic = 1,
+    deps = [
+        ":ip_socket_test_util",
+        "//test/util:capability_util",
+        "//test/util:test_main",
+    ],
+)

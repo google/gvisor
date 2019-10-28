@@ -710,6 +710,8 @@ syscall_test(test = "//test/syscalls/linux:proc_net_tcp_test")
 
 syscall_test(test = "//test/syscalls/linux:proc_net_udp_test")
 
+syscall_test(test = "//test/syscalls/linux:socket_so_priority_test")
+
 go_binary(
     name = "syscall_test_runner",
     testonly = 1,

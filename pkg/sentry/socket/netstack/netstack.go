@@ -1041,6 +1041,19 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		return int32(v), nil
 
+	case linux.SO_PRIORITY:
+		if outLen < sizeOfInt32 {
+			return nil, syserr.ErrInvalidArgument
+		}
+		priority, err := ep.GetSockOptInt(tcpip.PriorityOption)
+		if err != nil {
+			return nil, syserr.TranslateNetstackError(err)
+		}
+		if priority > math.MaxInt32 {
+			priority = math.MaxInt32
+		}
+		return int32(priority), nil
+
 	default:
 		socket.GetSockOptEmitUnimplementedEvent(t, name)
 	}
@@ -1479,6 +1492,17 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 		}
 
 		return nil
+
+	case linux.SO_PRIORITY:
+		if len(optVal) < sizeOfInt32 {
+			return syserr.ErrInvalidArgument
+		}
+		v := usermem.ByteOrder.Uint32(optVal)
+		// TODO(jayzhuang): check capability and allow setting priority > 6.
+		if v > 6 {
+			return syserr.ErrNotPermitted
+		}
+		return syserr.TranslateNetstackError(ep.SetSockOptInt(tcpip.PriorityOption, int(v)))
 
 	default:
 		socket.SetSockOptEmitUnimplementedEvent(t, name)

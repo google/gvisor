@@ -76,7 +76,7 @@ func (*endpoint) Wait() {}
 
 // WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
 // packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) *tcpip.Error {
 	views := make([]buffer.View, 1, 1+len(payload.Views()))
 	views[0] = hdr.View()
 	views = append(views, payload.Views()...)
@@ -91,12 +91,12 @@ func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, hdr buffer.Prependa
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
-	panic("not implemented")
+func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) (int, *tcpip.Error) {
+	return 0, tcpip.ErrNotSupported
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView, priority uint32) *tcpip.Error {
 	// Reject the packet if it's shorter than an ethernet header.
 	if packet.Size() < header.EthernetMinimumSize {
 		return tcpip.ErrBadAddress

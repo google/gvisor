@@ -87,26 +87,26 @@ func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 // WritePackets writes outbound packets to the appropriate
 // LinkInjectableEndpoint based on the RemoteAddress. HandleLocal only works if
 // r.RemoteAddress has a route registered in this endpoint.
-func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (m *InjectableEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) (int, *tcpip.Error) {
 	endpoint, ok := m.routes[r.RemoteAddress]
 	if !ok {
 		return 0, tcpip.ErrNoRoute
 	}
-	return endpoint.WritePackets(r, gso, hdrs, payload, protocol)
+	return endpoint.WritePackets(r, gso, hdrs, payload, protocol, priority)
 }
 
 // WritePacket writes outbound packets to the appropriate LinkInjectableEndpoint
 // based on the RemoteAddress. HandleLocal only works if r.RemoteAddress has a
 // route registered in this endpoint.
-func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (m *InjectableEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) *tcpip.Error {
 	if endpoint, ok := m.routes[r.RemoteAddress]; ok {
-		return endpoint.WritePacket(r, gso, hdr, payload, protocol)
+		return endpoint.WritePacket(r, gso, hdr, payload, protocol, priority)
 	}
 	return tcpip.ErrNoRoute
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (m *InjectableEndpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (m *InjectableEndpoint) WriteRawPacket(packet buffer.VectorisedView, priority uint32) *tcpip.Error {
 	// WriteRawPacket doesn't get a route or network address, so there's
 	// nowhere to write this.
 	return tcpip.ErrNoRoute

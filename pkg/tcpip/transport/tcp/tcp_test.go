@@ -4792,3 +4792,48 @@ func TestReceiveBufferAutoTuning(t *testing.T) {
 		payloadSize *= 2
 	}
 }
+
+func TestPriority(t *testing.T) {
+	t.Run("v4", func(t *testing.T) {
+		c := context.New(t, defaultMTU)
+		defer c.Cleanup()
+
+		var err *tcpip.Error
+		c.EP, err = c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &c.WQ)
+		if err != nil {
+			t.Fatalf("NewNedpoint failed: %v", err)
+		}
+		checkSetGetPriority(t, c.EP)
+	})
+
+	t.Run("v6", func(t *testing.T) {
+		c := context.New(t, defaultMTU)
+		defer c.Cleanup()
+
+		c.CreateV6Endpoint(false)
+		checkSetGetPriority(t, c.EP)
+	})
+}
+
+func checkSetGetPriority(t *testing.T, ep tcpip.Endpoint) {
+	t.Helper()
+
+	gotDefault, err := ep.GetSockOptInt(tcpip.PriorityOption)
+	if err != nil {
+		t.Errorf("GetSockOptInt(tcpip.PriorityOption) got error: %v", err)
+	}
+	if gotDefault != 0 {
+		t.Errorf("GetSockOptInt(tcpip.PriorityOption) got default: %d, want: 0", gotDefault)
+	}
+
+	if err := ep.SetSockOptInt(tcpip.PriorityOption, 4); err != nil {
+		t.Errorf("SetSockOptInt(tcpip.PriorityOption, 4) error: %v", err)
+	}
+	gotPriority, err := ep.GetSockOptInt(tcpip.PriorityOption)
+	if err != nil {
+		t.Errorf("After setting priority to 4, GetSockOptInt(tcpip.PriorityOption) got error: %v", err)
+	}
+	if gotDefault != 0 {
+		t.Errorf("After setting priority to 4, GetSockOptInt(tcpip.PriorityOption) got: %d, want: 4", gotPriority)
+	}
+}

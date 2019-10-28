@@ -27,6 +27,7 @@ package raw
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -82,6 +83,7 @@ type endpoint struct {
 	closed     bool
 	connected  bool
 	bound      bool
+	priority   uint32
 	// route is the route to a remote network endpoint. It is set via
 	// Connect(), and is valid only when conneted is true.
 	route stack.Route                  `state:"manual"`
@@ -342,13 +344,13 @@ func (e *endpoint) finishWrite(payloadBytes []byte, route *stack.Route) (int64, 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		if !e.associated {
-			if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView()); err != nil {
+			if err := route.WriteHeaderIncludedPacket(buffer.View(payloadBytes).ToVectorisedView(), e.priority); err != nil {
 				return 0, nil, err
 			}
 			break
 		}
 		hdr := buffer.NewPrependable(len(payloadBytes) + int(route.MaxHeaderLength()))
-		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}); err != nil {
+		if err := route.WritePacket(nil /* gso */, hdr, buffer.View(payloadBytes).ToVectorisedView(), stack.NetworkHeaderParams{Protocol: e.TransProto, TTL: route.DefaultTTL(), TOS: stack.DefaultTOS}, e.priority); err != nil {
 			return 0, nil, err
 		}
 
@@ -510,7 +512,13 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 // SetSockOptInt implements tcpip.Endpoint.SetSockOptInt.
 func (ep *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
-	return tcpip.ErrUnknownProtocolOption
+	switch opt {
+	case tcpip.PriorityOption:
+		atomic.StoreUint32(&ep.priority, uint32(v))
+		return nil
+	default:
+		return nil
+	}
 }
 
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
@@ -538,6 +546,8 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		e.rcvMu.Unlock()
 		return v, nil
 
+	case tcpip.PriorityOption:
+		return int(atomic.LoadUint32(&e.priority)), nil
 	}
 
 	return -1, tcpip.ErrUnknownProtocolOption

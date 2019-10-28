@@ -111,7 +111,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	e.addIPHeader(r, &hdr, payload.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
@@ -128,11 +128,11 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 	}
 
 	r.Stats().IP.PacketsSent.Increment()
-	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber)
+	return e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber, priority)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) (int, *tcpip.Error) {
 	if loop&stack.PacketLoop != 0 {
 		panic("not implemented")
 	}
@@ -146,14 +146,14 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 		e.addIPHeader(r, hdr, size, params)
 	}
 
-	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber, priority)
 	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 	return n, err
 }
 
 // WriteHeaderIncludedPacker implements stack.NetworkEndpoint. It is not yet
 // supported by IPv6.
-func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (*endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	// TODO(b/119580726): Support IPv6 header-included packets.
 	return tcpip.ErrNotSupported
 }

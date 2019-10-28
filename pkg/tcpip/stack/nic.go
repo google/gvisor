@@ -814,7 +814,7 @@ func (n *NIC) DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.Link
 			vv.RemoveFirst()
 
 			// TODO(b/128629022): use route.WritePacket.
-			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, vv, protocol); err != nil {
+			if err := n.linkEP.WritePacket(&r, nil /* gso */, hdr, vv, protocol, DefaultPriority); err != nil {
 				r.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
 				n.stats.Tx.Packets.Increment()

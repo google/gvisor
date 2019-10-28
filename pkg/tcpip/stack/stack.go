@@ -46,6 +46,9 @@ const (
 
 	// DefaultTOS is the default type of service value for network endpoints.
 	DefaultTOS = 0
+
+	// DefaultPriority is the default priority for outgoing packets for sockets.
+	DefaultPriority uint32 = 0
 )
 
 type transportProtocolState struct {
@@ -1231,7 +1234,7 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 
 // WritePacket writes data directly to the specified NIC. It adds an ethernet
 // header based on the arguments.
-func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
+func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView, priority uint32) *tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicid]
 	s.mu.Unlock()
@@ -1250,7 +1253,7 @@ func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto t
 	ethHeader := buffer.View(fakeHeader).ToVectorisedView()
 	ethHeader.Append(payload)
 
-	if err := nic.linkEP.WriteRawPacket(ethHeader); err != nil {
+	if err := nic.linkEP.WriteRawPacket(ethHeader, priority); err != nil {
 		return err
 	}
 
@@ -1259,7 +1262,7 @@ func (s *Stack) WritePacket(nicid tcpip.NICID, dst tcpip.LinkAddress, netProto t
 
 // WriteRawPacket writes data directly to the specified NIC without adding any
 // headers.
-func (s *Stack) WriteRawPacket(nicid tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
+func (s *Stack) WriteRawPacket(nicid tcpip.NICID, payload buffer.VectorisedView, priority uint32) *tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicid]
 	s.mu.Unlock()
@@ -1267,7 +1270,7 @@ func (s *Stack) WriteRawPacket(nicid tcpip.NICID, payload buffer.VectorisedView)
 		return tcpip.ErrUnknownDevice
 	}
 
-	if err := nic.linkEP.WriteRawPacket(payload); err != nil {
+	if err := nic.linkEP.WriteRawPacket(payload, priority); err != nil {
 		return err
 	}
 

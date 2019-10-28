@@ -122,9 +122,10 @@ func (f *fakeNetworkEndpoint) Capabilities() stack.LinkEndpointCapabilities {
 	return f.ep.Capabilities()
 }
 
-func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
 	f.proto.sendPacketCount[int(r.RemoteAddress[0])%len(f.proto.sendPacketCount)]++
+	f.proto.priority = priority
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
@@ -144,15 +145,15 @@ func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr bu
 		return nil
 	}
 
-	return f.ep.WritePacket(r, gso, hdr, payload, fakeNetNumber)
+	return f.ep.WritePacket(r, gso, hdr, payload, fakeNetNumber, priority)
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
-	panic("not implemented")
+func (f *fakeNetworkEndpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) (int, *tcpip.Error) {
+	return 0, tcpip.ErrNotSupported
 }
 
-func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (*fakeNetworkEndpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
@@ -175,6 +176,7 @@ type fakeNetworkProtocol struct {
 	packetCount     [10]int
 	sendPacketCount [10]int
 	opts            fakeNetOptions
+	priority        uint32
 }
 
 func (f *fakeNetworkProtocol) Number() tcpip.NetworkProtocolNumber {
@@ -318,7 +320,7 @@ func sendTo(s *stack.Stack, addr tcpip.Address, payload buffer.View) *tcpip.Erro
 
 func send(r stack.Route, payload buffer.View) *tcpip.Error {
 	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
-	return r.WritePacket(nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS})
+	return r.WritePacket(nil /* gso */, hdr, payload.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, stack.DefaultPriority)
 }
 
 func testSendTo(t *testing.T, s *stack.Stack, addr tcpip.Address, ep *channel.Endpoint, payload buffer.View) {
@@ -464,6 +466,41 @@ func TestNetworkSendMultiRoute(t *testing.T) {
 
 	// Send a packet to an even destination.
 	testSendTo(t, s, "\x06", ep2, nil)
+}
+
+func TestPriorityPropagation(t *testing.T) {
+	ep := channel.New(10, defaultMTU, "")
+	s := stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocol{fakeNetFactory()},
+	})
+	if err := s.CreateNIC(1, ep); err != nil {
+		t.Fatalf("NewNIC failed: %v", err)
+	}
+
+	subnet, err := tcpip.NewSubnet("\x00", "\x00")
+	if err != nil {
+		t.Fatalf("NewSubnet failed: %v", err)
+	}
+	s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+
+	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
+		t.Fatalf("AddAddress failed: %v", err)
+	}
+
+	r, rErr := s.FindRoute(0, "", "\x05", fakeNetNumber, false /* multicastLoop */)
+	if rErr != nil {
+		t.Fatalf("FindRoute failed: %v", err)
+	}
+	payload := buffer.View(nil).ToVectorisedView()
+	hdr := buffer.NewPrependable(int(r.MaxHeaderLength()))
+	params := stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}
+	priority := uint32(42)
+	if err := r.WritePacket(nil /* gso */, hdr, payload, params, priority); err != nil {
+		t.Fatalf("WritePacket failed: %v", err)
+	}
+	if got := s.NetworkProtocolInstance(fakeNetNumber).(*fakeNetworkProtocol).priority; got != priority {
+		t.Errorf("Got priority on network layer: %d, want: %d", got, priority)
+	}
 }
 
 func testRoute(t *testing.T, s *stack.Stack, nic tcpip.NICID, srcAddr, dstAddr, expectedSrcAddr tcpip.Address) {

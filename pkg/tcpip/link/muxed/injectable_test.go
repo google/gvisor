@@ -50,8 +50,7 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
 
-	endpoint.WritePacket(&packetRoute, nil /* gso */, hdr,
-		buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(), ipv4.ProtocolNumber)
+	endpoint.WritePacket(&packetRoute, nil /* gso */, hdr, buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(), ipv4.ProtocolNumber, stack.DefaultPriority)
 
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
@@ -68,8 +67,7 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 	hdr := buffer.NewPrependable(1)
 	hdr.Prepend(1)[0] = 0xFA
 	packetRoute := stack.Route{RemoteAddress: dstIP}
-	endpoint.WritePacket(&packetRoute, nil /* gso */, hdr,
-		buffer.NewView(0).ToVectorisedView(), ipv4.ProtocolNumber)
+	endpoint.WritePacket(&packetRoute, nil /* gso */, hdr, buffer.NewView(0).ToVectorisedView(), ipv4.ProtocolNumber, stack.DefaultPriority)
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
 	if err != nil {

@@ -225,24 +225,24 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, hdr buffer.Prependable, payload bu
 // WritePacket implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) *tcpip.Error {
 	e.dumpPacket(gso, hdr, payload, protocol)
-	return e.lower.WritePacket(r, gso, hdr, payload, protocol)
+	return e.lower.WritePacket(r, gso, hdr, payload, protocol, priority)
 }
 
 // WritePackets implements the stack.LinkEndpoint interface. It is called by
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber, priority uint32) (int, *tcpip.Error) {
 	view := payload.ToView()
 	for _, d := range hdrs {
 		e.dumpPacket(gso, d.Hdr, buffer.NewVectorisedView(d.Size, []buffer.View{view[d.Off:][:d.Size]}), protocol)
 	}
-	return e.lower.WritePackets(r, gso, hdrs, payload, protocol)
+	return e.lower.WritePackets(r, gso, hdrs, payload, protocol, priority)
 }
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
-func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
+func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView, priority uint32) *tcpip.Error {
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("send", 0, buffer.View("[raw packet, no header available]"), nil /* gso */)
 	}
@@ -261,7 +261,7 @@ func (e *endpoint) WriteRawPacket(packet buffer.VectorisedView) *tcpip.Error {
 			panic(err)
 		}
 	}
-	return e.lower.WriteRawPacket(packet)
+	return e.lower.WriteRawPacket(packet, priority)
 }
 
 func logVectorisedView(vv buffer.VectorisedView, length int, buf *bytes.Buffer) {

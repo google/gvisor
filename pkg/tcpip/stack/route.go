@@ -154,19 +154,18 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams) *tcpip.Error {
+func (r *Route) WritePacket(gso *GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params NetworkHeaderParams, priority uint32) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	err := r.ref.ep.WritePacket(r, gso, hdr, payload, params, r.Loop)
-	if err != nil {
+	if err := r.ref.ep.WritePacket(r, gso, hdr, payload, params, r.Loop, priority); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
-	} else {
-		r.ref.nic.stats.Tx.Packets.Increment()
-		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
+		return err
 	}
-	return err
+	r.ref.nic.stats.Tx.Packets.Increment()
+	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdr.UsedLength() + payload.Size()))
+	return nil
 }
 
 // PacketDescriptor is a packet descriptor which contains a packet header and
@@ -188,12 +187,12 @@ func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
 }
 
 // WritePackets writes the set of packets through the given route.
-func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams) (int, *tcpip.Error) {
+func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams, priority uint32) (int, *tcpip.Error) {
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
-	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, params, r.Loop)
+	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, params, r.Loop, priority)
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
 	}
@@ -204,17 +203,17 @@ func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.V
 		payloadSize += hdrs[i].Size
 	}
 	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
-	return n, err
+	return n, nil
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView) *tcpip.Error {
+func (r *Route) WriteHeaderIncludedPacket(payload buffer.VectorisedView, priority uint32) *tcpip.Error {
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.Loop); err != nil {
+	if err := r.ref.ep.WriteHeaderIncludedPacket(r, payload, r.Loop, priority); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}

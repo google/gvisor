@@ -121,7 +121,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 // that only the IP header is in hdr. It assumes that the input packet's stated
 // length matches the length of the hdr+payload. mtu includes the IP header and
 // options. This does not support the DontFragment IP flag.
-func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, mtu int) *tcpip.Error {
+func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, mtu int, priority uint32) *tcpip.Error {
 	// This packet is too big, it needs to be fragmented.
 	ip := header.IPv4(hdr.View())
 	flags := ip.Flags()
@@ -161,7 +161,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 		if i > 0 {
 			newPayload := payload.Clone([]buffer.View{})
 			newPayload.CapLength(innerMTU)
-			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber); err != nil {
+			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber, priority); err != nil {
 				return err
 			}
 			r.Stats().IP.PacketsSent.Increment()
@@ -174,7 +174,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 			newPayload := payload.Clone([]buffer.View{})
 			newPayloadLength := outerMTU - hdr.UsedLength()
 			newPayload.CapLength(newPayloadLength)
-			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber); err != nil {
+			if err := e.linkEP.WritePacket(r, gso, hdr, newPayload, ProtocolNumber, priority); err != nil {
 				return err
 			}
 			r.Stats().IP.PacketsSent.Increment()
@@ -184,7 +184,7 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, hdr buff
 			startOfHdr := hdr
 			startOfHdr.TrimBack(hdr.UsedLength() - outerMTU)
 			emptyVV := buffer.NewVectorisedView(0, []buffer.View{})
-			if err := e.linkEP.WritePacket(r, gso, startOfHdr, emptyVV, ProtocolNumber); err != nil {
+			if err := e.linkEP.WritePacket(r, gso, startOfHdr, emptyVV, ProtocolNumber, priority); err != nil {
 				return err
 			}
 			r.Stats().IP.PacketsSent.Increment()
@@ -221,7 +221,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prependable, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	e.addIPHeader(r, &hdr, payload.Size(), params)
 
 	if loop&stack.PacketLoop != 0 {
@@ -237,9 +237,9 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 		return nil
 	}
 	if hdr.UsedLength()+payload.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
-		return e.writePacketFragments(r, gso, hdr, payload, int(e.linkEP.MTU()))
+		return e.writePacketFragments(r, gso, hdr, payload, int(e.linkEP.MTU()), priority)
 	}
-	if err := e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber); err != nil {
+	if err := e.linkEP.WritePacket(r, gso, hdr, payload, ProtocolNumber, priority); err != nil {
 		return err
 	}
 	r.Stats().IP.PacketsSent.Increment()
@@ -247,7 +247,7 @@ func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, hdr buffer.Prepen
 }
 
 // WritePackets implements stack.NetworkEndpoint.WritePackets.
-func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping) (int, *tcpip.Error) {
+func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.PacketDescriptor, payload buffer.VectorisedView, params stack.NetworkHeaderParams, loop stack.PacketLooping, priority uint32) (int, *tcpip.Error) {
 	if loop&stack.PacketLoop != 0 {
 		panic("multiple packets in local loop")
 	}
@@ -258,14 +258,14 @@ func (e *endpoint) WritePackets(r *stack.Route, gso *stack.GSO, hdrs []stack.Pac
 	for i := range hdrs {
 		e.addIPHeader(r, &hdrs[i].Hdr, hdrs[i].Size, params)
 	}
-	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber)
+	n, err := e.linkEP.WritePackets(r, gso, hdrs, payload, ProtocolNumber, priority)
 	r.Stats().IP.PacketsSent.IncrementBy(uint64(n))
 	return n, err
 }
 
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
-func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping) *tcpip.Error {
+func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.VectorisedView, loop stack.PacketLooping, priority uint32) *tcpip.Error {
 	// The packet already has an IP header, but there are a few required
 	// checks.
 	ip := header.IPv4(payload.First())
@@ -309,7 +309,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, payload buffer.Vect
 
 	hdr := buffer.NewPrependableFromView(payload.ToView())
 	r.Stats().IP.PacketsSent.Increment()
-	return e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber)
+	return e.linkEP.WritePacket(r, nil /* gso */, hdr, buffer.VectorisedView{}, ProtocolNumber, priority)
 }
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for

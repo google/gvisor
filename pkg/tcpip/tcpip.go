@@ -494,6 +494,10 @@ const (
 	// it determines if the Nagle algorithm is on or off.
 	DelayOption
 
+	// PriorityOption is used by SetSockOptInt/GetSockOptInt to specify priority of
+	// the socket.
+	PriorityOption
+
 	// TODO(b/137664753): convert all int socket options to be handled via
 	// GetSockOptInt.
 )

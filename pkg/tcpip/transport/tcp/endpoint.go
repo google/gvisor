@@ -400,6 +400,10 @@ type endpoint struct {
 	// slowAck is a boolean (0 is false) and must be accessed atomically.
 	slowAck uint32
 
+	// priority holds the priority for all packets to be sent on this socket
+	// associated to this endpoint.
+	priority uint32
+
 	// segmentQueue is used to hand received segments to the protocol
 	// goroutine. Segments are queued as long as the queue is not full,
 	// and dropped when it is.
@@ -1161,6 +1165,10 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 		}
 		return nil
 
+	case tcpip.PriorityOption:
+		atomic.StoreUint32(&e.priority, uint32(v))
+		return nil
+
 	default:
 		return nil
 	}
@@ -1381,6 +1389,9 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 			o = 1
 		}
 		return o, nil
+
+	case tcpip.PriorityOption:
+		return int(atomic.LoadUint32(&e.priority)), nil
 
 	default:
 		return -1, tcpip.ErrUnknownProtocolOption

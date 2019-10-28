@@ -16,6 +16,7 @@ package icmp
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
@@ -76,6 +77,7 @@ type endpoint struct {
 	state         endpointState
 	route         stack.Route `state:"manual"`
 	ttl           uint8
+	priority      uint32
 	stats         tcpip.TransportEndpointStats `state:"nosave"`
 }
 
@@ -316,10 +318,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
-		err = send4(route, e.ID.LocalPort, v, e.ttl)
+		err = send4(route, e.ID.LocalPort, v, e.ttl, e.priority)
 
 	case header.IPv6ProtocolNumber:
-		err = send6(route, e.ID.LocalPort, v, e.ttl)
+		err = send6(route, e.ID.LocalPort, v, e.ttl, e.priority)
 	}
 
 	if err != nil {
@@ -348,6 +350,11 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 
 // SetSockOptInt sets a socket option. Currently not supported.
 func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
+	switch opt {
+	case tcpip.PriorityOption:
+		atomic.StoreUint32(&e.priority, uint32(v))
+		return nil
+	}
 	return nil
 }
 
@@ -375,6 +382,8 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 		e.rcvMu.Unlock()
 		return v, nil
 
+	case tcpip.PriorityOption:
+		return int(atomic.LoadUint32(&e.priority)), nil
 	}
 	return -1, tcpip.ErrUnknownProtocolOption
 }
@@ -400,7 +409,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	}
 }
 
-func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Error {
+func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8, priority uint32) *tcpip.Error {
 	if len(data) < header.ICMPv4MinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -425,10 +434,10 @@ func send4(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS})
+	return r.WritePacket(nil /* gso */, hdr, data.ToVectorisedView(), stack.NetworkHeaderParams{Protocol: header.ICMPv4ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, priority)
 }
 
-func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Error {
+func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8, priority uint32) *tcpip.Error {
 	if len(data) < header.ICMPv6EchoMinimumSize {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -451,7 +460,7 @@ func send6(r *stack.Route, ident uint16, data buffer.View, ttl uint8) *tcpip.Err
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	return r.WritePacket(nil /* gso */, hdr, dataVV, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS})
+	return r.WritePacket(nil /* gso */, hdr, dataVV, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: ttl, TOS: stack.DefaultTOS}, priority)
 }
 
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {

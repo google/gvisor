@@ -1337,6 +1337,36 @@ func TestTOSV6(t *testing.T) {
 	}
 }
 
+func TestPriority(t *testing.T) {
+	for _, flow := range []testFlow{unicastV4, unicastV4in6, unicastV6, unicastV6Only, multicastV4, multicastV4in6, multicastV6, broadcast, broadcastIn6} {
+		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
+			c := newDualTestContext(t, defaultMTU)
+			defer c.cleanup()
+
+			c.createEndpointForFlow(flow)
+
+			gotDefault, err := c.ep.GetSockOptInt(tcpip.PriorityOption)
+			if err != nil {
+				c.t.Errorf("GetSockOptInt(tcpip.PriorityOption) got error: %v", err)
+			}
+			if gotDefault != 0 {
+				c.t.Errorf("GetSockOptInt(tcpip.PriorityOption) got default: %d, want: 0", gotDefault)
+			}
+
+			if err := c.ep.SetSockOptInt(tcpip.PriorityOption, 3); err != nil {
+				c.t.Errorf("SetSockOptInt(tcpip.PriorityOption, 3) error: %v", err)
+			}
+			gotPriority, err := c.ep.GetSockOptInt(tcpip.PriorityOption)
+			if err != nil {
+				c.t.Errorf("After setting priority to 3, GetSockOptInt(tcpip.PriorityOption) got error: %v", err)
+			}
+			if gotDefault != 0 {
+				c.t.Errorf("After setting priority to 3, GetSockOptInt(tcpip.PriorityOption) got: %d, want: 3", gotPriority)
+			}
+		})
+	}
+}
+
 func TestMulticastInterfaceOption(t *testing.T) {
 	for _, flow := range []testFlow{multicastV4, multicastV4in6, multicastV6, multicastV6Only} {
 		t.Run(fmt.Sprintf("flow:%s", flow), func(t *testing.T) {
