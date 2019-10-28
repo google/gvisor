@@ -164,7 +164,9 @@ optionally automatically configure Docker:
 runsc install
 ```
 
+[old-linux]: /docs/user_guide/networking/#gso
+<!--
 [latest-nightly]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc
 [latest-hash]: https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc.sha512
-[old-linux]: /docs/user_guide/networking/#gso
 [releases]: https://github.com/google/gvisor/releases
+-->
