@@ -225,8 +225,9 @@ func (f *fakeTransportEndpoint) IPTables() (iptables.IPTables, error) {
 	return iptables.IPTables{}, nil
 }
 
-func (f *fakeTransportEndpoint) Resume(*stack.Stack) {
-}
+func (f *fakeTransportEndpoint) Resume(*stack.Stack) {}
+
+func (f *fakeTransportEndpoint) Wait() {}
 
 type fakeTransportGoodOption bool
 

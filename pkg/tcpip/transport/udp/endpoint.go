@@ -1234,6 +1234,9 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 	return &e.stats
 }
 
+// Wait implements tcpip.Endpoint.Wait.
+func (*endpoint) Wait() {}
+
 func isBroadcastOrMulticast(a tcpip.Address) bool {
 	return a == header.IPv4Broadcast || header.IsV4MulticastAddress(a) || header.IsV6MulticastAddress(a)
 }

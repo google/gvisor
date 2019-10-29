@@ -2399,6 +2399,22 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 	return &e.stats
 }
 
+// Wait implements stack.TransportEndpoint.Wait.
+func (e *endpoint) Wait() {
+	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
+	e.waiterQueue.EventRegister(&waitEntry, waiter.EventHUp)
+	defer e.waiterQueue.EventUnregister(&waitEntry)
+	for {
+		e.mu.Lock()
+		running := e.workerRunning
+		e.mu.Unlock()
+		if !running {
+			break
+		}
+		<-notifyCh
+	}
+}
+
 func mssForRoute(r *stack.Route) uint16 {
 	// TODO(b/143359391): Respect TCP Min and Max size.
 	return uint16(r.MTU() - header.TCPMinimumSize)
