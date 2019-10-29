@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -99,20 +100,20 @@ func readFull(ctx context.Context, f *fs.File, dst usermem.IOSequence, offset in
 	return total, nil
 }
 
-// openPath opens args.Filename for loading.
+// openPath opens args.Filename and checks that it is valid for loading.
 //
-// openPath returns the fs.Dirent and an *fs.File for args.Filename, which is
-// not installed in the Task FDTable. The caller takes ownership of both.
+// openPath returns an *fs.Dirent and *fs.File for args.Filename, which is not
+// installed in the Task FDTable. The caller takes ownership of both.
 //
 // args.Filename must be a readable, executable, regular file.
 func openPath(ctx context.Context, args LoadArgs) (*fs.Dirent, *fs.File, error) {
-	var err error
 	if args.Filename == "" {
 		ctx.Infof("cannot open empty name")
 		return nil, nil, syserror.ENOENT
 	}
 
 	var d *fs.Dirent
+	var err error
 	if args.ResolveFinal {
 		d, err = args.Mounts.FindInode(ctx, args.Root, args.WorkingDirectory, args.Filename, args.RemainingTraversals)
 	} else {
@@ -121,67 +122,60 @@ func openPath(ctx context.Context, args LoadArgs) (*fs.Dirent, *fs.File, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-
-	// Open file will take a reference to Dirent, so destroy this one.
+	// Defer a DecRef for the sake of failure cases.
 	defer d.DecRef()
 
 	if !args.ResolveFinal && fs.IsSymlink(d.Inode.StableAttr) {
 		return nil, nil, syserror.ELOOP
 	}
 
-	return openFile(ctx, nil, d, args.Filename)
-}
-
-// openFile takes that file's Dirent and performs checks on it. If provided a
-// *fs.Dirent and not a *fs.File, it creates a *fs.File object from the Dirent's
-// Inode and performs checks on that.
-//
-// openFile returns an *fs.File and *fs.Dirent, and the caller takes ownership
-// of both.
-//
-// "dirent" and "file" must not both be nil and point to a readable, executable, regular file.
-func openFile(ctx context.Context, file *fs.File, dirent *fs.Dirent, name string) (*fs.Dirent, *fs.File, error) {
-	// file and dirent must not be nil.
-	if dirent == nil && file == nil {
-		ctx.Infof("dirent and file cannot both be nil.")
-		return nil, nil, syserror.ENOENT
-	}
-
-	if file != nil {
-		dirent = file.Dirent
-	}
-
-	// Perform permissions checks on the file.
-	if err := checkFile(ctx, dirent, name); err != nil {
+	if err := checkPermission(ctx, d); err != nil {
 		return nil, nil, err
 	}
 
-	if file == nil {
-		var ferr error
-		if file, ferr = dirent.Inode.GetFile(ctx, dirent, fs.FileFlags{Read: true}); ferr != nil {
-			return nil, nil, ferr
-		}
-	} else {
-		// GetFile takes a reference to the created file, so make one in the case
-		// that the file reference already existed.
-		file.IncRef()
+	// If they claim it's a directory, then make sure.
+	//
+	// N.B. we reject directories below, but we must first reject
+	// non-directories passed as directories.
+	if strings.HasSuffix(args.Filename, "/") && !fs.IsDir(d.Inode.StableAttr) {
+		return nil, nil, syserror.ENOTDIR
 	}
 
-	// We must be able to read at arbitrary offsets.
-	if !file.Flags().Pread {
-		file.DecRef()
-		ctx.Infof("%s cannot be read at an offset: %+v", file.MappedName(ctx), file.Flags())
-		return nil, nil, syserror.EACCES
+	if err := checkIsRegularFile(ctx, d, args.Filename); err != nil {
+		return nil, nil, err
 	}
 
-	// Grab reference for caller.
-	dirent.IncRef()
-	return dirent, file, nil
+	f, err := d.Inode.GetFile(ctx, d, fs.FileFlags{Read: true})
+	if err != nil {
+		return nil, nil, err
+	}
+	// Defer a DecRef for the sake of failure cases.
+	defer f.DecRef()
+
+	if err := checkPread(ctx, f, args.Filename); err != nil {
+		return nil, nil, err
+	}
+
+	d.IncRef()
+	f.IncRef()
+	return d, f, err
 }
 
-// checkFile performs file permissions checks for binaries called in openPath
-// and openFile
-func checkFile(ctx context.Context, d *fs.Dirent, name string) error {
+// checkFile performs checks on a file to be executed.
+func checkFile(ctx context.Context, f *fs.File, filename string) error {
+	if err := checkPermission(ctx, f.Dirent); err != nil {
+		return err
+	}
+
+	if err := checkIsRegularFile(ctx, f.Dirent, filename); err != nil {
+		return err
+	}
+
+	return checkPread(ctx, f, filename)
+}
+
+// checkPermission checks whether the file is readable and executable.
+func checkPermission(ctx context.Context, d *fs.Dirent) error {
 	perms := fs.PermMask{
 		// TODO(gvisor.dev/issue/160): Linux requires only execute
 		// permission, not read. However, our backing filesystems may
@@ -192,26 +186,26 @@ func checkFile(ctx context.Context, d *fs.Dirent, name string) error {
 		Read:    true,
 		Execute: true,
 	}
-	if err := d.Inode.CheckPermission(ctx, perms); err != nil {
-		return err
-	}
+	return d.Inode.CheckPermission(ctx, perms)
+}
 
-	// If they claim it's a directory, then make sure.
-	//
-	// N.B. we reject directories below, but we must first reject
-	// non-directories passed as directories.
-	if len(name) > 0 && name[len(name)-1] == '/' && !fs.IsDir(d.Inode.StableAttr) {
-		return syserror.ENOTDIR
-	}
-
-	// No exec-ing directories, pipes, etc!
-	if !fs.IsRegular(d.Inode.StableAttr) {
-		ctx.Infof("%s is not regular: %v", name, d.Inode.StableAttr)
+// checkIsRegularFile prevents us from trying to execute a directory, pipe, etc.
+func checkIsRegularFile(ctx context.Context, d *fs.Dirent, filename string) error {
+	attr := d.Inode.StableAttr
+	if !fs.IsRegular(attr) {
+		ctx.Infof("%s is not regular: %v", filename, attr)
 		return syserror.EACCES
 	}
-
 	return nil
+}
 
+// checkPread checks whether we can read the file at arbitrary offsets.
+func checkPread(ctx context.Context, f *fs.File, filename string) error {
+	if !f.Flags().Pread {
+		ctx.Infof("%s cannot be read at an offset: %+v", filename, f.Flags())
+		return syserror.EACCES
+	}
+	return nil
 }
 
 // allocStack allocates and maps a stack in to any available part of the address space.
@@ -248,25 +242,31 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 		)
 		if args.File == nil {
 			d, args.File, err = openPath(ctx, args)
+			// We will return d in the successful case, but defer a DecRef for the
+			// sake of intermediate loops and failure cases.
+			if d != nil {
+				defer d.DecRef()
+			}
+			if args.File != nil {
+				defer args.File.DecRef()
+			}
 		} else {
-			d, args.File, err = openFile(ctx, args.File, nil, "")
+			d = args.File.Dirent
+			d.IncRef()
+			defer d.DecRef()
+			err = checkFile(ctx, args.File, args.Filename)
 		}
-
 		if err != nil {
 			ctx.Infof("Error opening %s: %v", args.Filename, err)
 			return loadedELF{}, nil, nil, nil, err
 		}
-		defer args.File.DecRef()
-		// We will return d in the successful case, but defer a DecRef
-		// for intermediate loops and failure cases.
-		defer d.DecRef()
 
 		// Check the header. Is this an ELF or interpreter script?
 		var hdr [4]uint8
 		// N.B. We assume that reading from a regular file cannot block.
 		_, err = readFull(ctx, args.File, usermem.BytesIOSequence(hdr[:]), 0)
-		// Allow unexpected EOF, as a valid executable could be only
-		// three bytes (e.g., #!a).
+		// Allow unexpected EOF, as a valid executable could be only three bytes
+		// (e.g., #!a).
 		if err != nil && err != io.ErrUnexpectedEOF {
 			if err == io.EOF {
 				err = syserror.ENOEXEC
