@@ -36,18 +36,18 @@ func TestNDPNeighborSolicit(t *testing.T) {
 	ns := NDPNeighborSolicit(b)
 	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
 	if got := ns.TargetAddress(); got != addr {
-		t.Fatalf("got ns.TargetAddress = %s, want %s", got, addr)
+		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr)
 	}
 
 	// Test updating the Target Address.
 	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
 	ns.SetTargetAddress(addr2)
 	if got := ns.TargetAddress(); got != addr2 {
-		t.Fatalf("got ns.TargetAddress = %s, want %s", got, addr2)
+		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
 	if got := tcpip.Address(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
-		t.Fatalf("got targetaddress buffer = %s, want %s", got, addr2)
+		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 }
 
@@ -65,56 +65,56 @@ func TestNDPNeighborAdvert(t *testing.T) {
 	na := NDPNeighborAdvert(b)
 	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
 	if got := na.TargetAddress(); got != addr {
-		t.Fatalf("got TargetAddress = %s, want %s", got, addr)
+		t.Errorf("got TargetAddress = %s, want %s", got, addr)
 	}
 
 	// Test getting the Router Flag.
 	if got := na.RouterFlag(); !got {
-		t.Fatalf("got RouterFlag = false, want = true")
+		t.Errorf("got RouterFlag = false, want = true")
 	}
 
 	// Test getting the Solicited Flag.
 	if got := na.SolicitedFlag(); got {
-		t.Fatalf("got SolicitedFlag = true, want = false")
+		t.Errorf("got SolicitedFlag = true, want = false")
 	}
 
 	// Test getting the Override Flag.
 	if got := na.OverrideFlag(); !got {
-		t.Fatalf("got OverrideFlag = false, want = true")
+		t.Errorf("got OverrideFlag = false, want = true")
 	}
 
 	// Test updating the Target Address.
 	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
 	na.SetTargetAddress(addr2)
 	if got := na.TargetAddress(); got != addr2 {
-		t.Fatalf("got TargetAddress = %s, want %s", got, addr2)
+		t.Errorf("got TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
 	if got := tcpip.Address(b[ndpNATargetAddressOffset:][:IPv6AddressSize]); got != addr2 {
-		t.Fatalf("got targetaddress buffer = %s, want %s", got, addr2)
+		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 
 	// Test updating the Router Flag.
 	na.SetRouterFlag(false)
 	if got := na.RouterFlag(); got {
-		t.Fatalf("got RouterFlag = true, want = false")
+		t.Errorf("got RouterFlag = true, want = false")
 	}
 
 	// Test updating the Solicited Flag.
 	na.SetSolicitedFlag(true)
 	if got := na.SolicitedFlag(); !got {
-		t.Fatalf("got SolicitedFlag = false, want = true")
+		t.Errorf("got SolicitedFlag = false, want = true")
 	}
 
 	// Test updating the Override Flag.
 	na.SetOverrideFlag(false)
 	if got := na.OverrideFlag(); got {
-		t.Fatalf("got OverrideFlag = true, want = false")
+		t.Errorf("got OverrideFlag = true, want = false")
 	}
 
 	// Make sure flags got updated in the backing buffer.
 	if got := b[ndpNAFlagsOffset]; got != 64 {
-		t.Fatalf("got flags byte = %d, want = 64")
+		t.Errorf("got flags byte = %d, want = 64")
 	}
 }
 
@@ -128,28 +128,64 @@ func TestNDPRouterAdvert(t *testing.T) {
 	ra := NDPRouterAdvert(b)
 
 	if got := ra.CurrHopLimit(); got != 64 {
-		t.Fatalf("got ra.CurrHopLimit = %d, want = 64", got)
+		t.Errorf("got ra.CurrHopLimit = %d, want = 64", got)
 	}
 
 	if got := ra.ManagedAddrConfFlag(); !got {
-		t.Fatalf("got ManagedAddrConfFlag = false, want = true")
+		t.Errorf("got ManagedAddrConfFlag = false, want = true")
 	}
 
 	if got := ra.OtherConfFlag(); got {
-		t.Fatalf("got OtherConfFlag = true, want = false")
+		t.Errorf("got OtherConfFlag = true, want = false")
 	}
 
 	if got, want := ra.RouterLifetime(), time.Second*258; got != want {
-		t.Fatalf("got ra.RouterLifetime = %d, want = %d", got, want)
+		t.Errorf("got ra.RouterLifetime = %d, want = %d", got, want)
 	}
 
 	if got, want := ra.ReachableTime(), time.Millisecond*50595078; got != want {
-		t.Fatalf("got ra.ReachableTime = %d, want = %d", got, want)
+		t.Errorf("got ra.ReachableTime = %d, want = %d", got, want)
 	}
 
 	if got, want := ra.RetransTimer(), time.Millisecond*117967114; got != want {
-		t.Fatalf("got ra.RetransTimer = %d, want = %d", got, want)
+		t.Errorf("got ra.RetransTimer = %d, want = %d", got, want)
 	}
+}
+
+// TestNDPTargetLinkLayerAddressOptionEthernetAddress tests getting the
+// Ethernet address from an NDPTargetLinkLayerAddressOption.
+func TestNDPTargetLinkLayerAddressOptionEthernetAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		buf      []byte
+		expected tcpip.LinkAddress
+	}{
+		{
+			"ValidMAC",
+			[]byte{1, 2, 3, 4, 5, 6},
+			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+		},
+		{
+			"TLLBodyTooShort",
+			[]byte{1, 2, 3, 4, 5},
+			tcpip.LinkAddress([]byte(nil)),
+		},
+		{
+			"TLLBodyLargerThanNeeded",
+			[]byte{1, 2, 3, 4, 5, 6, 7, 8},
+			tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tll := NDPTargetLinkLayerAddressOption(test.buf)
+			if got := tll.EthernetAddress(); got != test.expected {
+				t.Errorf("got tll.EthernetAddress = %s, want = %s", got, test.expected)
+			}
+		})
+	}
+
 }
 
 // TestNDPTargetLinkLayerAddressOptionSerialize tests serializing a
@@ -194,6 +230,44 @@ func TestNDPTargetLinkLayerAddressOptionSerialize(t *testing.T) {
 			if !bytes.Equal(test.buf, test.expectedBuf) {
 				t.Fatalf("got b = %d, want = %d", test.buf, test.expectedBuf)
 			}
+
+			it, err := opts.Iter(true)
+			if err != nil {
+				t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+			}
+
+			if len(test.expectedBuf) > 0 {
+				next, done, err := it.Next()
+				if err != nil {
+					t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+				}
+				if done {
+					t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+				}
+				if got := next.Type(); got != NDPTargetLinkLayerAddressOptionType {
+					t.Fatalf("got Type %= %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
+				}
+				tll := next.(NDPTargetLinkLayerAddressOption)
+				if got, want := []byte(tll), test.expectedBuf[2:]; !bytes.Equal(got, want) {
+					t.Fatalf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
+				}
+
+				if got, want := tll.EthernetAddress(), tcpip.LinkAddress(test.expectedBuf[2:][:EthernetAddressSize]); got != want {
+					t.Errorf("got tll.MACAddress = %s, want = %s", got, want)
+				}
+			}
+
+			// Iterator should not return anything else.
+			next, done, err := it.Next()
+			if err != nil {
+				t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+			}
+			if !done {
+				t.Error("got Next = (_, false, _), want = (_, true, _)")
+			}
+			if next != nil {
+				t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+			}
 		})
 	}
 }
@@ -232,39 +306,265 @@ func TestNDPPrefixInformationOption(t *testing.T) {
 		t.Fatalf("got targetBuf = %x, want = %x", targetBuf, expectedBuf)
 	}
 
-	// First two bytes are the Type and Length fields, which are not part of
-	// the option body.
-	pi := NDPPrefixInformation(targetBuf[2:])
+	it, err := opts.Iter(true)
+	if err != nil {
+		t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+	}
+
+	next, done, err := it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got := next.Type(); got != NDPPrefixInformationType {
+		t.Errorf("got Type = %d, want = %d", got, NDPPrefixInformationType)
+	}
+
+	pi := next.(NDPPrefixInformation)
 
 	if got := pi.Type(); got != 3 {
-		t.Fatalf("got Type = %d, want = 3", got)
+		t.Errorf("got Type = %d, want = 3", got)
 	}
 
 	if got := pi.Length(); got != 30 {
-		t.Fatalf("got Length = %d, want = 30", got)
+		t.Errorf("got Length = %d, want = 30", got)
 	}
 
 	if got := pi.PrefixLength(); got != 43 {
-		t.Fatalf("got PrefixLength = %d, want = 43", got)
+		t.Errorf("got PrefixLength = %d, want = 43", got)
 	}
 
 	if pi.OnLinkFlag() {
-		t.Fatalf("got OnLinkFlag = true, want = false")
+		t.Error("got OnLinkFlag = true, want = false")
 	}
 
 	if !pi.AutonomousAddressConfigurationFlag() {
-		t.Fatalf("got AutonomousAddressConfigurationFlag = false, want = true")
+		t.Error("got AutonomousAddressConfigurationFlag = false, want = true")
 	}
 
 	if got, want := pi.ValidLifetime(), 16909060*time.Second; got != want {
-		t.Fatalf("got ValidLifetime = %d, want = %d", got, want)
+		t.Errorf("got ValidLifetime = %d, want = %d", got, want)
 	}
 
 	if got, want := pi.PreferredLifetime(), 84281096*time.Second; got != want {
-		t.Fatalf("got PreferredLifetime = %d, want = %d", got, want)
+		t.Errorf("got PreferredLifetime = %d, want = %d", got, want)
 	}
 
 	if got, want := pi.Prefix(), tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18"); got != want {
-		t.Fatalf("got Prefix = %s, want = %s", got, want)
+		t.Errorf("got Prefix = %s, want = %s", got, want)
+	}
+
+	// Iterator should not return anything else.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if !done {
+		t.Error("got Next = (_, false, _), want = (_, true, _)")
+	}
+	if next != nil {
+		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+	}
+}
+
+// TestNDPOptionsIterCheck tests that Iter will return false if the NDPOptions
+// the iterator was returned for is malformed.
+func TestNDPOptionsIterCheck(t *testing.T) {
+	tests := []struct {
+		name     string
+		buf      []byte
+		expected error
+	}{
+		{
+			"ZeroLengthField",
+			[]byte{0, 0, 0, 0, 0, 0, 0, 0},
+			ErrNDPOptZeroLength,
+		},
+		{
+			"ValidTargetLinkLayerAddressOption",
+			[]byte{2, 1, 1, 2, 3, 4, 5, 6},
+			nil,
+		},
+		{
+			"TooSmallTargetLinkLayerAddressOption",
+			[]byte{2, 1, 1, 2, 3, 4, 5},
+			ErrNDPOptBufExhausted,
+		},
+		{
+			"ValidPrefixInformation",
+			[]byte{
+				3, 4, 43, 64,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				0, 0, 0, 0,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				17, 18, 19, 20,
+				21, 22, 23, 24,
+			},
+			nil,
+		},
+		{
+			"TooSmallPrefixInformation",
+			[]byte{
+				3, 4, 43, 64,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				0, 0, 0, 0,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				17, 18, 19, 20,
+				21, 22, 23,
+			},
+			ErrNDPOptBufExhausted,
+		},
+		{
+			"InvalidPrefixInformationLength",
+			[]byte{
+				3, 3, 43, 64,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				0, 0, 0, 0,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+			},
+			ErrNDPOptMalformedBody,
+		},
+		{
+			"ValidTargetLinkLayerAddressWithPrefixInformation",
+			[]byte{
+				// Target Link-Layer Address.
+				2, 1, 1, 2, 3, 4, 5, 6,
+
+				// Prefix information.
+				3, 4, 43, 64,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				0, 0, 0, 0,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				17, 18, 19, 20,
+				21, 22, 23, 24,
+			},
+			nil,
+		},
+		{
+			"ValidTargetLinkLayerAddressWithPrefixInformationWithUnrecognized",
+			[]byte{
+				// Target Link-Layer Address.
+				2, 1, 1, 2, 3, 4, 5, 6,
+
+				// 255 is an unrecognized type. If 255 ends up
+				// being the type for some recognized type,
+				// update 255 to some other unrecognized value.
+				255, 2, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8,
+
+				// Prefix information.
+				3, 4, 43, 64,
+				1, 2, 3, 4,
+				5, 6, 7, 8,
+				0, 0, 0, 0,
+				9, 10, 11, 12,
+				13, 14, 15, 16,
+				17, 18, 19, 20,
+				21, 22, 23, 24,
+			},
+			nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			opts := NDPOptions(test.buf)
+
+			if _, err := opts.Iter(true); err != test.expected {
+				t.Fatalf("got Iter(true) = (_, %v), want = (_, %v)", err, test.expected)
+			}
+
+			// test.buf may be malformed but we chose not to check
+			// the iterator so it must return true.
+			if _, err := opts.Iter(false); err != nil {
+				t.Fatalf("got Iter(false) = (_, %s), want = (_, nil)", err)
+			}
+		})
+	}
+}
+
+// TestNDPOptionsIter tests that we can iterator over a valid NDPOptions. Note,
+// this test does not actually check any of the option's getters, it simply
+// checks the option Type and Body. We have other tests that tests the option
+// field gettings given an option body and don't need to duplicate those tests
+// here.
+func TestNDPOptionsIter(t *testing.T) {
+	buf := []byte{
+		// Target Link-Layer Address.
+		2, 1, 1, 2, 3, 4, 5, 6,
+
+		// 255 is an unrecognized type. If 255 ends up being the type
+		// for some recognized type, update 255 to some other
+		// unrecognized value. Note, this option should be skipped when
+		// iterating.
+		255, 2, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8,
+
+		// Prefix information.
+		3, 4, 43, 64,
+		1, 2, 3, 4,
+		5, 6, 7, 8,
+		0, 0, 0, 0,
+		9, 10, 11, 12,
+		13, 14, 15, 16,
+		17, 18, 19, 20,
+		21, 22, 23, 24,
+	}
+
+	opts := NDPOptions(buf)
+	it, err := opts.Iter(true)
+	if err != nil {
+		t.Fatalf("got Iter = (_, %s), want = (_, nil)", err)
+	}
+
+	// Test the first (Taret Link-Layer) option.
+	next, done, err := it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got, want := []byte(next.(NDPTargetLinkLayerAddressOption)), buf[2:][:6]; !bytes.Equal(got, want) {
+		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
+	}
+	if got := next.Type(); got != NDPTargetLinkLayerAddressOptionType {
+		t.Errorf("got Type = %d, want = %d", got, NDPTargetLinkLayerAddressOptionType)
+	}
+
+	// Test the next (Prefix Information) option.
+	// Note, the unrecognized option should be skipped.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Fatalf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if done {
+		t.Fatal("got Next = (_, true, _), want = (_, false, _)")
+	}
+	if got, want := next.(NDPPrefixInformation), buf[26:][:30]; !bytes.Equal(got, want) {
+		t.Errorf("got Next = (%x, _, _), want = (%x, _, _)", got, want)
+	}
+	if got := next.Type(); got != NDPPrefixInformationType {
+		t.Errorf("got Type = %d, want = %d", got, NDPPrefixInformationType)
+	}
+
+	// Iterator should not return anything else.
+	next, done, err = it.Next()
+	if err != nil {
+		t.Errorf("got Next = (_, _, %s), want = (_, _, nil)", err)
+	}
+	if !done {
+		t.Error("got Next = (_, false, _), want = (_, true, _)")
+	}
+	if next != nil {
+		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
 	}
 }
