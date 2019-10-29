@@ -293,6 +293,8 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 				ctx.Infof("Error loading interpreter script: %v", err)
 				return loadedELF{}, nil, nil, nil, err
 			}
+			// Refresh the traversal limit for the interpreter.
+			*args.RemainingTraversals = linux.MaxSymlinkTraversals
 		default:
 			ctx.Infof("Unknown magic: %v", hdr)
 			return loadedELF{}, nil, nil, nil, syserror.ENOEXEC

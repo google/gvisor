@@ -533,6 +533,47 @@ TEST(ExecTest, CloexecEventfd) {
             W_EXITCODE(0, 0), "");
 }
 
+constexpr int kLinuxMaxSymlinks = 40;
+
+TEST(ExecTest, SymlinkLimitExceeded) {
+  std::string path = WorkloadPath(kBasicWorkload);
+
+  // Hold onto TempPath objects so they are not destructed prematurely.
+  std::vector<TempPath> symlinks;
+  for (int i = 0; i < kLinuxMaxSymlinks + 1; i++) {
+    symlinks.push_back(
+        ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateSymlinkTo("/tmp", path)));
+    path = symlinks[i].path();
+  }
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(path, {path}, {}, /*child=*/nullptr, &execve_errno));
+  EXPECT_EQ(execve_errno, ELOOP);
+}
+
+TEST(ExecTest, SymlinkLimitRefreshedForInterpreter) {
+  std::string tmp_dir = "/tmp";
+  std::string interpreter_path = "/bin/echo";
+  TempPath script = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      tmp_dir, absl::StrCat("#!", interpreter_path), 0755));
+  std::string script_path = script.path();
+
+  // Hold onto TempPath objects so they are not destructed prematurely.
+  std::vector<TempPath> interpreter_symlinks;
+  std::vector<TempPath> script_symlinks;
+  for (int i = 0; i < kLinuxMaxSymlinks; i++) {
+    interpreter_symlinks.push_back(ASSERT_NO_ERRNO_AND_VALUE(
+        TempPath::CreateSymlinkTo(tmp_dir, interpreter_path)));
+    interpreter_path = interpreter_symlinks[i].path();
+    script_symlinks.push_back(ASSERT_NO_ERRNO_AND_VALUE(
+        TempPath::CreateSymlinkTo(tmp_dir, script_path)));
+    script_path = script_symlinks[i].path();
+  }
+
+  CheckExec(script_path, {script_path}, {}, ArgEnvExitStatus(0, 0), "");
+}
+
 TEST(ExecveatTest, BasicWithFDCWD) {
   std::string path = WorkloadPath(kBasicWorkload);
   CheckExecveat(AT_FDCWD, path, {path}, {}, /*flags=*/0, ArgEnvExitStatus(0, 0),
