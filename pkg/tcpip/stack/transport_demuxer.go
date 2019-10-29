@@ -240,6 +240,26 @@ func (ep *multiPortEndpoint) handlePacketAll(r *Route, id TransportEndpointID, v
 	ep.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
+// Close implements stack.TransportEndpoint.Close.
+func (ep *multiPortEndpoint) Close() {
+	ep.mu.RLock()
+	eps := append([]TransportEndpoint(nil), ep.endpointsArr...)
+	ep.mu.RUnlock()
+	for _, e := range eps {
+		e.Close()
+	}
+}
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (ep *multiPortEndpoint) Wait() {
+	ep.mu.RLock()
+	eps := append([]TransportEndpoint(nil), ep.endpointsArr...)
+	ep.mu.RUnlock()
+	for _, e := range eps {
+		e.Wait()
+	}
+}
+
 // singleRegisterEndpoint tries to add an endpoint to the multiPortEndpoint
 // list. The list might be empty already.
 func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, reusePort bool) *tcpip.Error {
