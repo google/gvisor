@@ -709,7 +709,7 @@ func (t *Task) FDTable() *FDTable {
 	return t.fdTable
 }
 
-// GetFile is a convenience wrapper t.FDTable().Get.
+// GetFile is a convenience wrapper for t.FDTable().Get.
 //
 // Precondition: same as FDTable.Get.
 func (t *Task) GetFile(fd int32) *fs.File {
