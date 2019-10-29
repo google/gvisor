@@ -411,7 +411,7 @@ type endpoint struct {
 
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
-	userMSS int
+	userMSS uint16
 
 	// The following fields are used to manage the send buffer. When
 	// segments are ready to be sent, they are added to sndQueue and the
@@ -502,6 +502,21 @@ type endpoint struct {
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
 	stats Stats `state:"nosave"`
+}
+
+// calculateAdvertisedMSS calculates the MSS to advertise.
+//
+// If userMSS is non-zero and is not greater than the maximum possible MSS for
+// r, it will be used; otherwise, the maximum possible MSS will be used.
+func calculateAdvertisedMSS(userMSS uint16, r stack.Route) uint16 {
+	// The maximum possible MSS is dependent on the route.
+	maxMSS := mssForRoute(&r)
+
+	if userMSS != 0 && userMSS < maxMSS {
+		return userMSS
+	}
+
+	return maxMSS
 }
 
 // StopWork halts packet processing. Only to be used in tests.
@@ -752,7 +767,9 @@ func (e *endpoint) initialReceiveWindow() int {
 	if rcvWnd > math.MaxUint16 {
 		rcvWnd = math.MaxUint16
 	}
-	routeWnd := InitialCwnd * int(mssForRoute(&e.route)) * 2
+
+	// Use the user supplied MSS, if available.
+	routeWnd := InitialCwnd * int(calculateAdvertisedMSS(e.userMSS, e.route)) * 2
 	if rcvWnd > routeWnd {
 		rcvWnd = routeWnd
 	}
@@ -1206,7 +1223,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 			return tcpip.ErrInvalidOptionValue
 		}
 		e.mu.Lock()
-		e.userMSS = int(userMSS)
+		e.userMSS = uint16(userMSS)
 		e.mu.Unlock()
 		e.notifyProtocolGoroutine(notifyMSSChanged)
 		return nil
@@ -2383,5 +2400,6 @@ func (e *endpoint) Stats() tcpip.EndpointStats {
 }
 
 func mssForRoute(r *stack.Route) uint16 {
+	// TODO(b/143359391): Respect TCP Min and Max size.
 	return uint16(r.MTU() - header.TCPMinimumSize)
 }

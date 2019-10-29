@@ -400,6 +400,9 @@ func (e *endpoint) acceptQueueIsFull() bool {
 // handleListenSegment is called when a listening endpoint receives a segment
 // and needs to handle it.
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
+	// TODO(b/143300739): Use the userMSS of the listening socket
+	// for accepted sockets.
+
 	switch s.flags {
 	case header.TCPFlagSyn:
 		opts := parseSynSegmentOptions(s)
@@ -434,13 +437,12 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			//
 			// Enable Timestamp option if the original syn did have
 			// the timestamp option specified.
-			mss := mssForRoute(&s.route)
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
 				TSVal: tcpTimeStamp(timeStampOffset()),
 				TSEcr: opts.TSVal,
-				MSS:   uint16(mss),
+				MSS:   mssForRoute(&s.route),
 			}
 			e.sendSynTCP(&s.route, s.id, e.ttl, e.sendTOS, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
