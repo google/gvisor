@@ -681,6 +681,39 @@ TEST(ExecveatTest, SymlinkNoFollowWithNormalFile) {
                 ArgEnvExitStatus(0, 0), "");
 }
 
+TEST(ExecveatTest, BasicWithCloexecFD) {
+  std::string path = WorkloadPath(kBasicWorkload);
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_CLOEXEC));
+
+  CheckExecveat(fd.get(), "", {path}, {}, AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH,
+                ArgEnvExitStatus(0, 0), absl::StrCat(path, "\n"));
+}
+
+TEST(ExecveatTest, InterpreterScriptWithCloexecFD) {
+  std::string path = WorkloadPath(kExitScript);
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_CLOEXEC));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(fd.get(), "", {path}, {},
+                                            AT_EMPTY_PATH, /*child=*/nullptr,
+                                            &execve_errno));
+  EXPECT_EQ(execve_errno, ENOENT);
+}
+
+TEST(ExecveatTest, InterpreterScriptWithCloexecDirFD) {
+  std::string absolute_path = WorkloadPath(kExitScript);
+  std::string parent_dir = std::string(Dirname(absolute_path));
+  std::string base = std::string(Basename(absolute_path));
+  const FileDescriptor dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(parent_dir, O_CLOEXEC | O_DIRECTORY));
+
+  int execve_errno;
+  ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(dirfd.get(), base, {base}, {},
+                                            /*flags=*/0, /*child=*/nullptr,
+                                            &execve_errno));
+  EXPECT_EQ(execve_errno, ENOENT);
+}
+
 TEST(ExecveatTest, InvalidFlags) {
   int execve_errno;
   ASSERT_NO_ERRNO_AND_VALUE(ForkAndExecveat(
