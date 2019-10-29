@@ -814,7 +814,7 @@ func StatToAttr(s *syscall.Stat_t, req AttrMask) (Attr, AttrMask) {
 		attr.Mode = FileMode(s.Mode)
 	}
 	if req.NLink {
-		attr.NLink = s.Nlink
+		attr.NLink = uint64(s.Nlink)
 	}
 	if req.UID {
 		attr.UID = UID(s.Uid)

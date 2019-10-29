@@ -601,7 +601,7 @@ func (l *localFile) GetAttr(_ p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error)
 		Mode:             p9.FileMode(stat.Mode),
 		UID:              p9.UID(stat.Uid),
 		GID:              p9.GID(stat.Gid),
-		NLink:            stat.Nlink,
+		NLink:            uint64(stat.Nlink),
 		RDev:             stat.Rdev,
 		Size:             uint64(stat.Size),
 		BlockSize:        uint64(stat.Blksize),
