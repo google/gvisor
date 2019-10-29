@@ -27,6 +27,30 @@ go_path(
     ],
 )
 
+# netstack_gopath only include necessary dependencies for netstack.
+go_path(
+    name = "netstack_gopath",
+    mode = "link",
+    deps = [
+        "//pkg/rand",
+        "//pkg/tcpip",
+        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/link/loopback",
+        "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/network/arp",
+        "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
+        "//pkg/tcpip/ports",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/transport/tcp",
+        "//pkg/tcpip/transport/udp",
+        "//pkg/waiter",
+    ],
+)
+
 # gazelle is a set of build tools.
 #
 # To update the WORKSPACE from go.mod, use:
