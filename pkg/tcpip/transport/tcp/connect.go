@@ -442,7 +442,7 @@ func (h *handshake) execute() *tcpip.Error {
 
 	// Send the initial SYN segment and loop until the handshake is
 	// completed.
-	h.ep.amss = mssForRoute(&h.ep.route)
+	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 
 	synOpts := header.TCPSynOptions{
 		WS:            h.rcvWndScale,

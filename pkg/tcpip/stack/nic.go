@@ -89,6 +89,11 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
 	// unicast ethernet address.
+
+	// TODO(b/143357959): RFC 8200 section 5 requires that IPv6 endpoints
+	// observe an MTU of at least 1280 bytes. Ensure that this requirement
+	// of IPv6 is supported on this endpoint's LinkEndpoint.
+
 	nic := &NIC{
 		stack:      stack,
 		id:         id,
