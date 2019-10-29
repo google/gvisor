@@ -120,6 +120,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 
 	var wd *fs.Dirent
 	var executable *fs.File
+	var closeOnExec bool
 	if dirFD == linux.AT_FDCWD || path.IsAbs(pathname) {
 		// Even if the pathname is absolute, we may still need the wd
 		// for interpreter scripts if the path of the interpreter is
@@ -127,11 +128,12 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		wd = t.FSContext().WorkingDirectory()
 	} else {
 		// Need to extract the given FD.
-		f := t.GetFile(dirFD)
+		f, fdFlags := t.FDTable().Get(dirFD)
 		if f == nil {
 			return 0, nil, syserror.EBADF
 		}
 		defer f.DecRef()
+		closeOnExec = fdFlags.CloseOnExec
 
 		if atEmptyPath && len(pathname) == 0 {
 			executable = f
@@ -157,6 +159,7 @@ func execveat(t *kernel.Task, dirFD int32, pathnameAddr, argvAddr, envvAddr user
 		ResolveFinal:        resolveFinal,
 		Filename:            pathname,
 		File:                executable,
+		CloseOnExec:         closeOnExec,
 		Argv:                argv,
 		Envv:                envv,
 		Features:            t.Arch().FeatureSet(),
