@@ -41,11 +41,46 @@ type transportEndpoints struct {
 	rawEndpoints []RawTransportEndpoint
 }
 
+// unregisterEndpoint unregisters the endpoint with the given id such that it
+// won't receive any more packets.
+func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+	eps.mu.Lock()
+	defer eps.mu.Unlock()
+	epsByNic, ok := eps.endpoints[id]
+	if !ok {
+		return
+	}
+	if !epsByNic.unregisterEndpoint(bindToDevice, ep) {
+		return
+	}
+	delete(eps.endpoints, id)
+}
+
+func (eps *transportEndpoints) transportEndpoints() []TransportEndpoint {
+	eps.mu.RLock()
+	defer eps.mu.RUnlock()
+	es := make([]TransportEndpoint, 0, len(eps.endpoints))
+	for _, e := range eps.endpoints {
+		es = append(es, e.transportEndpoints()...)
+	}
+	return es
+}
+
 type endpointsByNic struct {
 	mu        sync.RWMutex
 	endpoints map[tcpip.NICID]*multiPortEndpoint
 	// seed is a random secret for a jenkins hash.
 	seed uint32
+}
+
+func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
+	epsByNic.mu.RLock()
+	defer epsByNic.mu.RUnlock()
+	var eps []TransportEndpoint
+	for _, ep := range epsByNic.endpoints {
+		eps = append(eps, ep.transportEndpoints()...)
+	}
+	return eps
 }
 
 // HandlePacket is called by the stack when new packets arrive to this transport
@@ -127,21 +162,6 @@ func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t T
 	return len(epsByNic.endpoints) == 0
 }
 
-// unregisterEndpoint unregisters the endpoint with the given id such that it
-// won't receive any more packets.
-func (eps *transportEndpoints) unregisterEndpoint(id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
-	eps.mu.Lock()
-	defer eps.mu.Unlock()
-	epsByNic, ok := eps.endpoints[id]
-	if !ok {
-		return
-	}
-	if !epsByNic.unregisterEndpoint(bindToDevice, ep) {
-		return
-	}
-	delete(eps.endpoints, id)
-}
-
 // transportDemuxer demultiplexes packets targeted at a transport endpoint
 // (i.e., after they've been parsed by the network layer). It does two levels
 // of demultiplexing: first based on the network and transport protocols, then
@@ -183,12 +203,25 @@ func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNum
 // multiPortEndpoint is a container for TransportEndpoints which are bound to
 // the same pair of address and port. endpointsArr always has at least one
 // element.
+//
+// FIXME(gvisor.dev/issue/873): Restore this properly. Currently, we just save
+// this to ensure that the underlying endpoints get saved/restored, but not not
+// use the restored copy.
+//
+// +stateify savable
 type multiPortEndpoint struct {
-	mu           sync.RWMutex
+	mu           sync.RWMutex `state:"nosave"`
 	endpointsArr []TransportEndpoint
 	endpointsMap map[TransportEndpoint]int
 	// reuse indicates if more than one endpoint is allowed.
 	reuse bool
+}
+
+func (ep *multiPortEndpoint) transportEndpoints() []TransportEndpoint {
+	ep.mu.RLock()
+	eps := append([]TransportEndpoint(nil), ep.endpointsArr...)
+	ep.mu.RUnlock()
+	return eps
 }
 
 // reciprocalScale scales a value into range [0, n).
