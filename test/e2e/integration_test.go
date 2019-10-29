@@ -175,6 +175,9 @@ func TestCheckpointRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// TODO(b/143498576): Remove after github.com/moby/moby/issues/38963 is fixed.
+	time.Sleep(1 * time.Second)
+
 	if err := d.Restore("test"); err != nil {
 		t.Fatal("docker restore failed:", err)
 	}
