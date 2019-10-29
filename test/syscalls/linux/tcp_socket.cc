@@ -394,8 +394,15 @@ TEST_P(TcpSocketTest, PollWithFullBufferBlocks) {
                          sizeof(tcp_nodelay_flag)),
               SyscallSucceeds());
 
+  // Set a 256KB send/receive buffer.
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(setsockopt(t_, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &buf_sz, sizeof(buf_sz)),
+              SyscallSucceedsWithValue(0));
+
   // Create a large buffer that will be used for sending.
-  std::vector<char> buf(10 * sendbuf_size_);
+  std::vector<char> buf(1 << 16);
 
   // Write until we receive an error.
   while (RetryEINTR(send)(s_, buf.data(), buf.size(), 0) != -1) {
