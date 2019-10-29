@@ -13,5 +13,8 @@ go_library(
         "test_stack.go",
     ],
     importpath = "gvisor.dev/gvisor/pkg/sentry/inet",
-    deps = ["//pkg/sentry/context"],
+    deps = [
+        "//pkg/sentry/context",
+        "//pkg/tcpip/stack",
+    ],
 )

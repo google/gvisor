@@ -218,8 +218,7 @@ func (f *fakeTransportEndpoint) State() uint32 {
 	return 0
 }
 
-func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {
-}
+func (f *fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
 
 func (f *fakeTransportEndpoint) IPTables() (iptables.IPTables, error) {
 	return iptables.IPTables{}, nil

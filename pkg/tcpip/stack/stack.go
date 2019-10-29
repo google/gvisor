@@ -361,9 +361,10 @@ type Stack struct {
 
 	linkAddrCache *linkAddrCache
 
-	mu         sync.RWMutex
-	nics       map[tcpip.NICID]*NIC
-	forwarding bool
+	mu               sync.RWMutex
+	nics             map[tcpip.NICID]*NIC
+	forwarding       bool
+	cleanupEndpoints map[TransportEndpoint]struct{}
 
 	// route is the route table passed in by the user via SetRouteTable(),
 	// it is used by FindRoute() to build a route for a specific
@@ -513,6 +514,7 @@ func New(opts Options) *Stack {
 		networkProtocols:     make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
 		linkAddrResolvers:    make(map[tcpip.NetworkProtocolNumber]LinkAddressResolver),
 		nics:                 make(map[tcpip.NICID]*NIC),
+		cleanupEndpoints:     make(map[TransportEndpoint]struct{}),
 		linkAddrCache:        newLinkAddrCache(ageLimit, resolutionTimeout, resolutionAttempts),
 		PortManager:          ports.NewPortManager(),
 		clock:                clock,
@@ -1136,6 +1138,25 @@ func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip
 	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
+// StartTransportEndpointCleanup removes the endpoint with the given id from
+// the stack transport dispatcher. It also transitions it to the cleanup stage.
+func (s *Stack) StartTransportEndpointCleanup(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.cleanupEndpoints[ep] = struct{}{}
+
+	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
+}
+
+// CompleteTransportEndpointCleanup removes the endpoint from the cleanup
+// stage.
+func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
+	s.mu.Lock()
+	delete(s.cleanupEndpoints, ep)
+	s.mu.Unlock()
+}
+
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
@@ -1154,6 +1175,38 @@ func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip
 func (s *Stack) RegisterRestoredEndpoint(e ResumableEndpoint) {
 	s.mu.Lock()
 	s.resumableEndpoints = append(s.resumableEndpoints, e)
+	s.mu.Unlock()
+}
+
+// RegisteredEndpoints returns all endpoints which are currently registered.
+func (s *Stack) RegisteredEndpoints() []TransportEndpoint {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var es []TransportEndpoint
+	for _, e := range s.demux.protocol {
+		es = append(es, e.transportEndpoints()...)
+	}
+	return es
+}
+
+// CleanupEndpoints returns endpoints currently in the cleanup state.
+func (s *Stack) CleanupEndpoints() []TransportEndpoint {
+	s.mu.Lock()
+	es := make([]TransportEndpoint, 0, len(s.cleanupEndpoints))
+	for e := range s.cleanupEndpoints {
+		es = append(es, e)
+	}
+	s.mu.Unlock()
+	return es
+}
+
+// RestoreCleanupEndpoints adds endpoints to cleanup tracking. This is useful
+// for restoring a stack after a save.
+func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
+	s.mu.Lock()
+	for _, e := range es {
+		s.cleanupEndpoints[e] = struct{}{}
+	}
 	s.mu.Unlock()
 }
 

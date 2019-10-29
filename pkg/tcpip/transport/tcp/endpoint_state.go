@@ -193,8 +193,10 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		if len(e.BindAddr) == 0 {
 			e.BindAddr = e.ID.LocalAddress
 		}
-		if err := e.Bind(tcpip.FullAddress{Addr: e.BindAddr, Port: e.ID.LocalPort}); err != nil {
-			panic("endpoint binding failed: " + err.String())
+		addr := e.BindAddr
+		port := e.ID.LocalPort
+		if err := e.Bind(tcpip.FullAddress{Addr: addr, Port: port}); err != nil {
+			panic(fmt.Sprintf("endpoint binding [%v]:%d failed: %v", addr, port, err))
 		}
 	}
 
@@ -265,6 +267,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		}
 		fallthrough
 	case StateError:
+		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}
 }
