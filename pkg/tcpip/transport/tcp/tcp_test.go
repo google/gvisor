@@ -474,6 +474,130 @@ func TestSimpleReceive(t *testing.T) {
 	)
 }
 
+// TestUserSuppliedMSSOnConnectV4 tests that the user supplied MSS is used when
+// creating a new active IPv4 TCP socket. It should be present in the sent TCP
+// SYN segment.
+func TestUserSuppliedMSSOnConnectV4(t *testing.T) {
+	const mtu = 5000
+	const maxMSS = mtu - header.IPv4MinimumSize - header.TCPMinimumSize
+	tests := []struct {
+		name   string
+		setMSS uint16
+		expMSS uint16
+	}{
+		{
+			"EqualToMaxMSS",
+			maxMSS,
+			maxMSS,
+		},
+		{
+			"LessThanMTU",
+			maxMSS - 1,
+			maxMSS - 1,
+		},
+		{
+			"GreaterThanMTU",
+			maxMSS + 1,
+			maxMSS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			c.Create(-1)
+
+			// Set the MSS socket option.
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Fatalf("SetSockOpt(%#v) failed: %s", opt, err)
+			}
+
+			// Get expected window size.
+			rcvBufSize, err := c.EP.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
+			if err != nil {
+				t.Fatalf("GetSockOpt(%v) failed: %s", tcpip.ReceiveBufferSizeOption, err)
+			}
+			ws := tcp.FindWndScale(seqnum.Size(rcvBufSize))
+
+			// Start connection attempt to IPv4 address.
+			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
+				t.Fatalf("Unexpected return value from Connect: %v", err)
+			}
+
+			// Receive SYN packet with our user supplied MSS.
+			checker.IPv4(t, c.GetPacket(), checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagSyn),
+				checker.TCPSynOptions(header.TCPSynOptions{MSS: test.expMSS, WS: ws})))
+		})
+	}
+}
+
+// TestUserSuppliedMSSOnConnectV6 tests that the user supplied MSS is used when
+// creating a new active IPv6 TCP socket. It should be present in the sent TCP
+// SYN segment.
+func TestUserSuppliedMSSOnConnectV6(t *testing.T) {
+	const mtu = 5000
+	const maxMSS = mtu - header.IPv6MinimumSize - header.TCPMinimumSize
+	tests := []struct {
+		name   string
+		setMSS uint16
+		expMSS uint16
+	}{
+		{
+			"EqualToMaxMSS",
+			maxMSS,
+			maxMSS,
+		},
+		{
+			"LessThanMTU",
+			maxMSS - 1,
+			maxMSS - 1,
+		},
+		{
+			"GreaterThanMTU",
+			maxMSS + 1,
+			maxMSS,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := context.New(t, mtu)
+			defer c.Cleanup()
+
+			c.CreateV6Endpoint(true)
+
+			// Set the MSS socket option.
+			opt := tcpip.MaxSegOption(test.setMSS)
+			if err := c.EP.SetSockOpt(opt); err != nil {
+				t.Fatalf("SetSockOpt(%#v) failed: %s", opt, err)
+			}
+
+			// Get expected window size.
+			rcvBufSize, err := c.EP.GetSockOptInt(tcpip.ReceiveBufferSizeOption)
+			if err != nil {
+				t.Fatalf("GetSockOpt(%v) failed: %s", tcpip.ReceiveBufferSizeOption, err)
+			}
+			ws := tcp.FindWndScale(seqnum.Size(rcvBufSize))
+
+			// Start connection attempt to IPv6 address.
+			if err := c.EP.Connect(tcpip.FullAddress{Addr: context.TestV6Addr, Port: context.TestPort}); err != tcpip.ErrConnectStarted {
+				t.Fatalf("Unexpected return value from Connect: %v", err)
+			}
+
+			// Receive SYN packet with our user supplied MSS.
+			checker.IPv6(t, c.GetV6Packet(), checker.TCP(
+				checker.DstPort(context.TestPort),
+				checker.TCPFlags(header.TCPFlagSyn),
+				checker.TCPSynOptions(header.TCPSynOptions{MSS: test.expMSS, WS: ws})))
+		})
+	}
+}
+
 func TestTOSV4(t *testing.T) {
 	c := context.New(t, defaultMTU)
 	defer c.Cleanup()
