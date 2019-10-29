@@ -644,6 +644,8 @@ func loadELF(ctx context.Context, args LoadArgs) (loadedELF, arch.Context, error
 		// resolved, the interpreter should still be resolved if it is
 		// a symlink.
 		args.ResolveFinal = true
+		// Refresh the traversal limit.
+		*args.RemainingTraversals = linux.MaxSymlinkTraversals
 		args.Filename = bin.interpreter
 		d, i, err := openPath(ctx, args)
 		if err != nil {
