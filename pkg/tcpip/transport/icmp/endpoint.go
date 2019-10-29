@@ -798,3 +798,6 @@ func (e *endpoint) Info() tcpip.EndpointInfo {
 func (e *endpoint) Stats() tcpip.EndpointStats {
 	return &e.stats
 }
+
+// Wait implements stack.TransportEndpoint.Wait.
+func (*endpoint) Wait() {}
