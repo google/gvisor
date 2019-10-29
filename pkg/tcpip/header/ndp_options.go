@@ -16,6 +16,7 @@ package header
 
 import (
 	"encoding/binary"
+	"errors"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -30,9 +31,9 @@ const (
 	// Link Layer Option for an Ethernet address.
 	ndpTargetEthernetLinkLayerAddressSize = 8
 
-	// ndpPrefixInformationType is the type of the Prefix Information
+	// NDPPrefixInformationType is the type of the Prefix Information
 	// option, as per RFC 4861 section 4.6.2.
-	ndpPrefixInformationType = 3
+	NDPPrefixInformationType = 3
 
 	// ndpPrefixInformationLength is the expected length, in bytes, of the
 	// body of an NDP Prefix Information option, as per RFC 4861 section
@@ -95,8 +96,121 @@ const (
 	lengthByteUnits = 8
 )
 
+// NDPOptionIterator is an iterator of NDPOption.
+//
+// Note, between when an NDPOptionIterator is obtained and last used, no changes
+// to the NDPOptions may happen. Doing so may cause undefined and unexpected
+// behaviour. It is fine to obtain an NDPOptionIterator, iterate over the first
+// few NDPOption then modify the backing NDPOptions so long as the
+// NDPOptionIterator obtained before modification is no longer used.
+type NDPOptionIterator struct {
+	// The NDPOptions this NDPOptionIterator is iterating over.
+	opts NDPOptions
+}
+
+// Potential errors when iterating over an NDPOptions.
+var (
+	ErrNDPOptBufExhausted  = errors.New("Buffer unexpectedly exhausted")
+	ErrNDPOptZeroLength    = errors.New("NDP option has zero-valued Length field")
+	ErrNDPOptMalformedBody = errors.New("NDP option has a malformed body")
+)
+
+// Next returns the next element in the backing NDPOptions, or true if we are
+// done, or false if an error occured.
+//
+// The return can be read as option, done, error. Note, option should only be
+// used if done is false and error is nil.
+func (i *NDPOptionIterator) Next() (NDPOption, bool, error) {
+	for {
+		// Do we still have elements to look at?
+		if len(i.opts) == 0 {
+			return nil, true, nil
+		}
+
+		// Do we have enough bytes for an NDP option that has a Length
+		// field of at least 1? Note, 0 in the Length field is invalid.
+		if len(i.opts) < lengthByteUnits {
+			return nil, true, ErrNDPOptBufExhausted
+		}
+
+		// Get the Type field.
+		t := i.opts[0]
+
+		// Get the Length field.
+		l := i.opts[1]
+
+		// This would indicate an erroneous NDP option as the Length
+		// field should never be 0.
+		if l == 0 {
+			return nil, true, ErrNDPOptZeroLength
+		}
+
+		// How many bytes are in the option body?
+		numBytes := int(l) * lengthByteUnits
+		numBodyBytes := numBytes - 2
+
+		potentialBody := i.opts[2:]
+
+		// This would indicate an erroenous NDPOptions buffer as we ran
+		// out of the buffer in the middle of an NDP option.
+		if left := len(potentialBody); left < numBodyBytes {
+			return nil, true, ErrNDPOptBufExhausted
+		}
+
+		// Get only the options body, leaving the rest of the options
+		// buffer alone.
+		body := potentialBody[:numBodyBytes]
+
+		// Update opts with the remaining options body.
+		i.opts = i.opts[numBytes:]
+
+		switch t {
+		case NDPTargetLinkLayerAddressOptionType:
+			return NDPTargetLinkLayerAddressOption(body), false, nil
+
+		case NDPPrefixInformationType:
+			// Make sure the length of a Prefix Information option
+			// body is ndpPrefixInformationLength, as per RFC 4861
+			// section 4.6.2.
+			if numBodyBytes != ndpPrefixInformationLength {
+				return nil, true, ErrNDPOptMalformedBody
+			}
+
+			return NDPPrefixInformation(body), false, nil
+		default:
+			// We do not yet recognize the option, just skip for
+			// now. This is okay because RFC 4861 allows us to
+			// skip/ignore any unrecognized options. However,
+			// we MUST recognized all the options in RFC 4861.
+			//
+			// TODO(b/141487990): Handle all NDP options as defined
+			//                    by RFC 4861.
+		}
+	}
+}
+
 // NDPOptions is a buffer of NDP options as defined by RFC 4861 section 4.6.
 type NDPOptions []byte
+
+// Iter returns an iterator of NDPOption.
+//
+// If check is true, Iter will do an integrity check on the options by iterating
+// over it and returning an error if detected.
+//
+// See NDPOptionIterator for more information.
+func (b NDPOptions) Iter(check bool) (NDPOptionIterator, error) {
+	it := NDPOptionIterator{opts: b}
+
+	if check {
+		for it2 := it; true; {
+			if _, done, err := it2.Next(); err != nil || done {
+				return it, err
+			}
+		}
+	}
+
+	return it, nil
+}
 
 // Serialize serializes the provided list of NDP options into o.
 //
@@ -137,15 +251,15 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 	return done
 }
 
-// ndpOption is the set of functions to be implemented by all NDP option types.
-type ndpOption interface {
-	// Type returns the type of this ndpOption.
+// NDPOption is the set of functions to be implemented by all NDP option types.
+type NDPOption interface {
+	// Type returns the type of the receiver.
 	Type() uint8
 
-	// Length returns the length of the body of this ndpOption, in bytes.
+	// Length returns the length of the body of the receiver, in bytes.
 	Length() int
 
-	// serializeInto serializes this ndpOption into the provided byte
+	// serializeInto serializes the receiver into the provided byte
 	// buffer.
 	//
 	// Note, the caller MUST provide a byte buffer with size of at least
@@ -154,15 +268,15 @@ type ndpOption interface {
 	// buffer is not of sufficient size.
 	//
 	// serializeInto will return the number of bytes that was used to
-	// serialize this ndpOption. Implementers must only use the number of
-	// bytes required to serialize this ndpOption. Callers MAY provide a
+	// serialize the receiver. Implementers must only use the number of
+	// bytes required to serialize the receiver. Callers MAY provide a
 	// larger buffer than required to serialize into.
 	serializeInto([]byte) int
 }
 
 // paddedLength returns the length of o, in bytes, with any padding bytes, if
 // required.
-func paddedLength(o ndpOption) int {
+func paddedLength(o NDPOption) int {
 	l := o.Length()
 
 	if l == 0 {
@@ -201,7 +315,7 @@ func paddedLength(o ndpOption) int {
 }
 
 // NDPOptionsSerializer is a serializer for NDP options.
-type NDPOptionsSerializer []ndpOption
+type NDPOptionsSerializer []NDPOption
 
 // Length returns the total number of bytes required to serialize.
 func (b NDPOptionsSerializer) Length() int {
@@ -221,19 +335,32 @@ func (b NDPOptionsSerializer) Length() int {
 // where X is the value in Length multiplied by lengthByteUnits - 2 bytes.
 type NDPTargetLinkLayerAddressOption tcpip.LinkAddress
 
-// Type implements ndpOption.Type.
+// Type implements NDPOption.Type.
 func (o NDPTargetLinkLayerAddressOption) Type() uint8 {
 	return NDPTargetLinkLayerAddressOptionType
 }
 
-// Length implements ndpOption.Length.
+// Length implements NDPOption.Length.
 func (o NDPTargetLinkLayerAddressOption) Length() int {
 	return len(o)
 }
 
-// serializeInto implements ndpOption.serializeInto.
+// serializeInto implements NDPOption.serializeInto.
 func (o NDPTargetLinkLayerAddressOption) serializeInto(b []byte) int {
 	return copy(b, o)
+}
+
+// EthernetAddress will return an ethernet (MAC) address if the
+// NDPTargetLinkLayerAddressOption's body has at minimum EthernetAddressSize
+// bytes. If the body has more than EthernetAddressSize bytes, only the first
+// EthernetAddressSize bytes are returned as that is all that is needed for an
+// Ethernet address.
+func (o NDPTargetLinkLayerAddressOption) EthernetAddress() tcpip.LinkAddress {
+	if len(o) >= EthernetAddressSize {
+		return tcpip.LinkAddress(o[:EthernetAddressSize])
+	}
+
+	return tcpip.LinkAddress([]byte(nil))
 }
 
 // NDPPrefixInformation is the NDP Prefix Information option as defined by
@@ -243,17 +370,17 @@ func (o NDPTargetLinkLayerAddressOption) serializeInto(b []byte) int {
 // ndpPrefixInformationLength bytes.
 type NDPPrefixInformation []byte
 
-// Type implements ndpOption.Type.
+// Type implements NDPOption.Type.
 func (o NDPPrefixInformation) Type() uint8 {
-	return ndpPrefixInformationType
+	return NDPPrefixInformationType
 }
 
-// Length implements ndpOption.Length.
+// Length implements NDPOption.Length.
 func (o NDPPrefixInformation) Length() int {
 	return ndpPrefixInformationLength
 }
 
-// serializeInto implements ndpOption.serializeInto.
+// serializeInto implements NDPOption.serializeInto.
 func (o NDPPrefixInformation) serializeInto(b []byte) int {
 	used := copy(b, o)
 
