@@ -66,6 +66,12 @@ type LoadArgs struct {
 	// nil, then File will be loaded and Filename will be ignored.
 	File *fs.File
 
+	// CloseOnExec indicates that the executable (or one of its parent
+	// directories) was opened with O_CLOEXEC. If the executable is an
+	// interpreter script, then cause an ENOENT error to occur, since the
+	// script would otherwise be inaccessible to the interpreter.
+	CloseOnExec bool
+
 	// Argv is the vector of arguments to pass to the executable.
 	Argv []string
 
@@ -279,6 +285,9 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, arch.Context
 			d.IncRef()
 			return loaded, ac, d, args.Argv, err
 		case bytes.Equal(hdr[:2], []byte(interpreterScriptMagic)):
+			if args.CloseOnExec {
+				return loadedELF{}, nil, nil, nil, syserror.ENOENT
+			}
 			args.Filename, args.Argv, err = parseInterpreterScript(ctx, args.Filename, args.File, args.Argv)
 			if err != nil {
 				ctx.Infof("Error loading interpreter script: %v", err)
