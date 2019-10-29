@@ -99,6 +99,21 @@ func (x *TransportEndpointInfo) load(m state.Map) {
 	m.Load("RegisterNICID", &x.RegisterNICID)
 }
 
+func (x *multiPortEndpoint) beforeSave() {}
+func (x *multiPortEndpoint) save(m state.Map) {
+	x.beforeSave()
+	m.Save("endpointsArr", &x.endpointsArr)
+	m.Save("endpointsMap", &x.endpointsMap)
+	m.Save("reuse", &x.reuse)
+}
+
+func (x *multiPortEndpoint) afterLoad() {}
+func (x *multiPortEndpoint) load(m state.Map) {
+	m.Load("endpointsArr", &x.endpointsArr)
+	m.Load("endpointsMap", &x.endpointsMap)
+	m.Load("reuse", &x.reuse)
+}
+
 func init() {
 	state.Register("stack.linkAddrEntryList", (*linkAddrEntryList)(nil), state.Fns{Save: (*linkAddrEntryList).save, Load: (*linkAddrEntryList).load})
 	state.Register("stack.linkAddrEntryEntry", (*linkAddrEntryEntry)(nil), state.Fns{Save: (*linkAddrEntryEntry).save, Load: (*linkAddrEntryEntry).load})
@@ -106,4 +121,5 @@ func init() {
 	state.Register("stack.GSOType", (*GSOType)(nil), state.Fns{Save: (*GSOType).save, Load: (*GSOType).load})
 	state.Register("stack.GSO", (*GSO)(nil), state.Fns{Save: (*GSO).save, Load: (*GSO).load})
 	state.Register("stack.TransportEndpointInfo", (*TransportEndpointInfo)(nil), state.Fns{Save: (*TransportEndpointInfo).save, Load: (*TransportEndpointInfo).load})
+	state.Register("stack.multiPortEndpoint", (*multiPortEndpoint)(nil), state.Fns{Save: (*multiPortEndpoint).save, Load: (*multiPortEndpoint).load})
 }

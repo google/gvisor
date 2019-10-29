@@ -686,7 +686,7 @@ func (e *endpoint) Close() {
 	// in Listen() when trying to register.
 	if e.state == StateListen && e.isPortReserved {
 		if e.isRegistered {
-			e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
+			e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
 			e.isRegistered = false
 		}
 
@@ -747,7 +747,7 @@ func (e *endpoint) cleanupLocked() {
 	e.workerCleanup = false
 
 	if e.isRegistered {
-		e.stack.UnregisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
+		e.stack.StartTransportEndpointCleanup(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
 		e.isRegistered = false
 	}
 
@@ -757,6 +757,7 @@ func (e *endpoint) cleanupLocked() {
 	}
 
 	e.route.Release()
+	e.stack.CompleteTransportEndpointCleanup(e)
 	tcpip.DeleteDanglingEndpoint(e)
 }
 
