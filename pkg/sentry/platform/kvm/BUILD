@@ -23,6 +23,7 @@ go_library(
         "machine.go",
         "machine_amd64.go",
         "machine_amd64_unsafe.go",
+        "machine_arm64.go",
         "machine_unsafe.go",
         "physical_map.go",
         "virtual_map.go",
