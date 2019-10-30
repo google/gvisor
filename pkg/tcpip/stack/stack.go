@@ -1210,6 +1210,37 @@ func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
 	s.mu.Unlock()
 }
 
+// Close closes all currently registered transport endpoints.
+//
+// Endpoints created or modified during this call may not get closed.
+func (s *Stack) Close() {
+	for _, e := range s.RegisteredEndpoints() {
+		e.Close()
+	}
+}
+
+// Wait waits for all transport and link endpoints to halt their worker
+// goroutines.
+//
+// Endpoints created or modified during this call may not get waited on.
+//
+// Note that link endpoints must be stopped via an implementation specific
+// mechanism.
+func (s *Stack) Wait() {
+	for _, e := range s.RegisteredEndpoints() {
+		e.Wait()
+	}
+	for _, e := range s.CleanupEndpoints() {
+		e.Wait()
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, n := range s.nics {
+		n.linkEP.Wait()
+	}
+}
+
 // Resume restarts the stack after a restore. This must be called after the
 // entire system has been restored.
 func (s *Stack) Resume() {
