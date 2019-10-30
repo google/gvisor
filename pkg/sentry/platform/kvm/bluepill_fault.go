@@ -46,9 +46,9 @@ func yield() {
 // calculateBluepillFault calculates the fault address range.
 //
 //go:nosplit
-func calculateBluepillFault(physical uintptr) (virtualStart, physicalStart, length uintptr, ok bool) {
+func calculateBluepillFault(physical uintptr, phyRegions []physicalRegion) (virtualStart, physicalStart, length uintptr, ok bool) {
 	alignedPhysical := physical &^ uintptr(usermem.PageSize-1)
-	for _, pr := range physicalRegions {
+	for _, pr := range phyRegions {
 		end := pr.physical + pr.length
 		if physical < pr.physical || physical >= end {
 			continue
@@ -77,12 +77,12 @@ func calculateBluepillFault(physical uintptr) (virtualStart, physicalStart, leng
 // The corresponding virtual address is returned. This may throw on error.
 //
 //go:nosplit
-func handleBluepillFault(m *machine, physical uintptr) (uintptr, bool) {
+func handleBluepillFault(m *machine, physical uintptr, phyRegions []physicalRegion, flags uint32) (uintptr, bool) {
 	// Paging fault: we need to map the underlying physical pages for this
 	// fault. This all has to be done in this function because we're in a
 	// signal handler context. (We can't call any functions that might
 	// split the stack.)
-	virtualStart, physicalStart, length, ok := calculateBluepillFault(physical)
+	virtualStart, physicalStart, length, ok := calculateBluepillFault(physical, phyRegions)
 	if !ok {
 		return 0, false
 	}
@@ -96,7 +96,7 @@ func handleBluepillFault(m *machine, physical uintptr) (uintptr, bool) {
 		yield() // Race with another call.
 		slot = atomic.SwapUint32(&m.nextSlot, ^uint32(0))
 	}
-	errno := m.setMemoryRegion(int(slot), physicalStart, length, virtualStart)
+	errno := m.setMemoryRegion(int(slot), physicalStart, length, virtualStart, flags)
 	if errno == 0 {
 		// Successfully added region; we can increment nextSlot and
 		// allow another set to proceed here.
