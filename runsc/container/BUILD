@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "container.go",
         "hook.go",
+        "state_file.go",
         "status.go",
     ],
     importpath = "gvisor.dev/gvisor/runsc/container",
