@@ -355,3 +355,13 @@ func (m *machine) retryInGuest(fn func()) {
 		}
 	}
 }
+
+// On x86 platform, the flags for "setMemoryRegion" can always be set as 0.
+// There is no need to return read-only physicalRegions.
+func rdonlyRegionsForSetMem() (phyRegions []physicalRegion) {
+	return nil
+}
+
+func availableRegionsForSetMem() (phyRegions []physicalRegion) {
+	return physicalRegions
+}

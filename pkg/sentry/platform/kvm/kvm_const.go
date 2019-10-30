@@ -62,3 +62,10 @@ const (
 	_KVM_NR_INTERRUPTS    = 0x100
 	_KVM_NR_CPUID_ENTRIES = 0x100
 )
+
+// KVM kvm_memory_region::flags.
+const (
+	_KVM_MEM_LOG_DIRTY_PAGES = uint32(1) << 0
+	_KVM_MEM_READONLY        = uint32(1) << 1
+	_KVM_MEM_FLAGS_NONE      = 0
+)
