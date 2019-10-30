@@ -232,7 +232,7 @@ func New(args Args) (*Loader, error) {
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
 	// Run().
-	networkStack, err := newEmptyNetworkStack(args.Conf, k)
+	networkStack, err := newEmptyNetworkStack(args.Conf, k, k)
 	if err != nil {
 		return nil, fmt.Errorf("creating network: %v", err)
 	}
@@ -905,7 +905,7 @@ func (l *Loader) WaitExit() kernel.ExitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
+func newEmptyNetworkStack(conf *Config, clock tcpip.Clock, uniqueID stack.UniqueID) (inet.Stack, error) {
 	switch conf.Network {
 	case NetworkHost:
 		return hostinet.NewStack(), nil
@@ -923,6 +923,7 @@ func newEmptyNetworkStack(conf *Config, clock tcpip.Clock) (inet.Stack, error) {
 			// Enable raw sockets for users with sufficient
 			// privileges.
 			RawFactory: raw.EndpointFactory{},
+			UniqueID:   uniqueID,
 		})}
 
 		// Enable SACK Recovery.

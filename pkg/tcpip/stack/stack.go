@@ -22,6 +22,7 @@ package stack
 import (
 	"encoding/binary"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -344,6 +345,13 @@ type ResumableEndpoint interface {
 	Resume(*Stack)
 }
 
+// uniqueIDGenerator is a default unique ID generator.
+type uniqueIDGenerator uint64
+
+func (u *uniqueIDGenerator) UniqueID() uint64 {
+	return atomic.AddUint64((*uint64)(u), 1)
+}
+
 // Stack is a networking stack, with all supported protocols, NICs, and route
 // table.
 type Stack struct {
@@ -411,6 +419,14 @@ type Stack struct {
 	// ndpDisp is the NDP event dispatcher that is used to send the netstack
 	// integrator NDP related events.
 	ndpDisp NDPDispatcher
+
+	// uniqueIDGenerator is a generator of unique identifiers.
+	uniqueIDGenerator UniqueID
+}
+
+// UniqueID is an abstract generator of unique identifiers.
+type UniqueID interface {
+	UniqueID() uint64
 }
 
 // Options contains optional Stack configuration.
@@ -433,6 +449,9 @@ type Options struct {
 	// should be handled by the stack internally (true) or outside the
 	// stack (false).
 	HandleLocal bool
+
+	// UniqueID is an optional generator of unique identifiers.
+	UniqueID UniqueID
 
 	// NDPConfigs is the default NDP configurations used by interfaces.
 	//
@@ -506,6 +525,10 @@ func New(opts Options) *Stack {
 		clock = &tcpip.StdClock{}
 	}
 
+	if opts.UniqueID == nil {
+		opts.UniqueID = new(uniqueIDGenerator)
+	}
+
 	// Make sure opts.NDPConfigs contains valid values only.
 	opts.NDPConfigs.validate()
 
@@ -524,6 +547,7 @@ func New(opts Options) *Stack {
 		portSeed:             generateRandUint32(),
 		ndpConfigs:           opts.NDPConfigs,
 		autoGenIPv6LinkLocal: opts.AutoGenIPv6LinkLocal,
+		uniqueIDGenerator:    opts.UniqueID,
 		ndpDisp:              opts.NDPDisp,
 	}
 
@@ -549,6 +573,11 @@ func New(opts Options) *Stack {
 	s.demux = newTransportDemuxer(s)
 
 	return s
+}
+
+// UniqueID returns a unique identifier.
+func (s *Stack) UniqueID() uint64 {
+	return s.uniqueIDGenerator.UniqueID()
 }
 
 // SetNetworkProtocolOption allows configuring individual protocol level

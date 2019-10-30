@@ -80,6 +80,7 @@ type endpoint struct {
 	// change throughout the lifetime of the endpoint.
 	stack       *stack.Stack `state:"manual"`
 	waiterQueue *waiter.Queue
+	uniqueID    uint64
 
 	// The following fields are used to manage the receive queue, and are
 	// protected by rcvMu.
@@ -160,7 +161,13 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		rcvBufSizeMax: 32 * 1024,
 		sndBufSize:    32 * 1024,
 		state:         StateInitial,
+		uniqueID:      s.UniqueID(),
 	}
+}
+
+// UniqueID implements stack.TransportEndpoint.UniqueID.
+func (e *endpoint) UniqueID() uint64 {
+	return e.uniqueID
 }
 
 // Close puts the endpoint in a closed state and frees all resources

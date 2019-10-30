@@ -43,6 +43,7 @@ type fakeTransportEndpoint struct {
 	proto    *fakeTransportProtocol
 	peerAddr tcpip.Address
 	route    stack.Route
+	uniqueID uint64
 
 	// acceptQueue is non-nil iff bound.
 	acceptQueue []fakeTransportEndpoint
@@ -56,8 +57,8 @@ func (f *fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 	return nil
 }
 
-func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber) tcpip.Endpoint {
-	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto}
+func newFakeTransportEndpoint(s *stack.Stack, proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, uniqueID uint64) tcpip.Endpoint {
+	return &fakeTransportEndpoint{stack: s, TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: uniqueID}
 }
 
 func (f *fakeTransportEndpoint) Close() {
@@ -142,6 +143,10 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	f.route = r.Clone()
 
 	return nil
+}
+
+func (f *fakeTransportEndpoint) UniqueID() uint64 {
+	return f.uniqueID
 }
 
 func (f *fakeTransportEndpoint) ConnectEndpoint(e tcpip.Endpoint) *tcpip.Error {
@@ -251,7 +256,7 @@ func (*fakeTransportProtocol) Number() tcpip.TransportProtocolNumber {
 }
 
 func (f *fakeTransportProtocol) NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
-	return newFakeTransportEndpoint(stack, f, netProto), nil
+	return newFakeTransportEndpoint(stack, f, netProto, stack.UniqueID()), nil
 }
 
 func (f *fakeTransportProtocol) NewRawEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
