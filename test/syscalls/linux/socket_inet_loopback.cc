@@ -16,6 +16,7 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 
 #include <atomic>
@@ -514,6 +515,112 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThread) {
   for (int i = 0; i < kThreadCount; i++)
     EXPECT_THAT(packets_per_socket[i],
                 EquivalentWithin((kConnectAttempts / kThreadCount), 0.10));
+}
+
+TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
+  auto const& param = GetParam();
+
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+  sockaddr_storage listen_addr = listener.addr;
+  sockaddr_storage conn_addr = connector.addr;
+  constexpr int kThreadCount = 3;
+
+  // TODO(b/141211329): endpointsByNic.seed has to be saved/restored.
+  const DisableSave ds141211329;
+
+  // Create listening sockets.
+  FileDescriptor listener_fds[kThreadCount];
+  for (int i = 0; i < kThreadCount; i++) {
+    listener_fds[i] =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(listener.family(), SOCK_DGRAM, 0));
+    int fd = listener_fds[i].get();
+
+    ASSERT_THAT(setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &kSockOptOn,
+                           sizeof(kSockOptOn)),
+                SyscallSucceeds());
+    ASSERT_THAT(
+        bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
+        SyscallSucceeds());
+
+    // On the first bind we need to determine which port was bound.
+    if (i != 0) {
+      continue;
+    }
+
+    // Get the port bound by the listening socket.
+    socklen_t addrlen = listener.addr_len;
+    ASSERT_THAT(
+        getsockname(listener_fds[0].get(),
+                    reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+        SyscallSucceeds());
+    uint16_t const port =
+        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+    ASSERT_NO_ERRNO(SetAddrPort(listener.family(), &listen_addr, port));
+    ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  }
+
+  constexpr int kConnectAttempts = 10;
+  FileDescriptor client_fds[kConnectAttempts];
+
+  // Do the first run without save/restore.
+  DisableSave ds;
+  for (int i = 0; i < kConnectAttempts; i++) {
+    client_fds[i] =
+        ASSERT_NO_ERRNO_AND_VALUE(Socket(connector.family(), SOCK_DGRAM, 0));
+    EXPECT_THAT(RetryEINTR(sendto)(client_fds[i].get(), &i, sizeof(i), 0,
+                                   reinterpret_cast<sockaddr*>(&conn_addr),
+                                   connector.addr_len),
+                SyscallSucceedsWithValue(sizeof(i)));
+  }
+  ds.reset();
+
+  // Check that a mapping of client and server sockets has
+  // not been change after save/restore.
+  for (int i = 0; i < kConnectAttempts; i++) {
+    EXPECT_THAT(RetryEINTR(sendto)(client_fds[i].get(), &i, sizeof(i), 0,
+                                   reinterpret_cast<sockaddr*>(&conn_addr),
+                                   connector.addr_len),
+                SyscallSucceedsWithValue(sizeof(i)));
+  }
+
+  int epollfd;
+  ASSERT_THAT(epollfd = epoll_create1(0), SyscallSucceeds());
+
+  for (int i = 0; i < kThreadCount; i++) {
+    int fd = listener_fds[i].get();
+    struct epoll_event ev;
+    ev.data.fd = fd;
+    ev.events = EPOLLIN;
+    ASSERT_THAT(epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev), SyscallSucceeds());
+  }
+
+  std::map<uint16_t, int> portToFD;
+
+  for (int i = 0; i < kConnectAttempts * 2; i++) {
+    struct sockaddr_storage addr = {};
+    socklen_t addrlen = sizeof(addr);
+    struct epoll_event ev;
+    int data, fd;
+
+    ASSERT_THAT(epoll_wait(epollfd, &ev, 1, -1), SyscallSucceedsWithValue(1));
+
+    fd = ev.data.fd;
+    EXPECT_THAT(RetryEINTR(recvfrom)(fd, &data, sizeof(data), 0,
+                                     reinterpret_cast<struct sockaddr*>(&addr),
+                                     &addrlen),
+                SyscallSucceedsWithValue(sizeof(data)));
+    uint16_t const port =
+        ASSERT_NO_ERRNO_AND_VALUE(AddrPort(connector.family(), addr));
+    auto prev_port = portToFD.find(port);
+    // Check that all packets from one client have been delivered to the same
+    // server socket.
+    if (prev_port == portToFD.end()) {
+      portToFD[port] = ev.data.fd;
+    } else {
+      EXPECT_EQ(portToFD[port], ev.data.fd);
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
