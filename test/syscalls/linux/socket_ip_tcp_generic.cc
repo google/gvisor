@@ -30,7 +30,7 @@
 namespace gvisor {
 namespace testing {
 
-TEST_P(TCPSocketPairTest, TcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, TcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
@@ -39,7 +39,7 @@ TEST_P(TCPSocketPairTest, TcpInfoSucceedes) {
               SyscallSucceeds());
 }
 
-TEST_P(TCPSocketPairTest, ShortTcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, ShortTcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
@@ -48,7 +48,7 @@ TEST_P(TCPSocketPairTest, ShortTcpInfoSucceedes) {
               SyscallSucceeds());
 }
 
-TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceedes) {
+TEST_P(TCPSocketPairTest, ZeroTcpInfoSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct tcp_info opt = {};
