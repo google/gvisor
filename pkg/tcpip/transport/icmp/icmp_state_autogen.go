@@ -31,6 +31,7 @@ func (x *endpoint) save(m state.Map) {
 	m.SaveValue("rcvBufSizeMax", rcvBufSizeMax)
 	m.Save("TransportEndpointInfo", &x.TransportEndpointInfo)
 	m.Save("waiterQueue", &x.waiterQueue)
+	m.Save("uniqueID", &x.uniqueID)
 	m.Save("rcvReady", &x.rcvReady)
 	m.Save("rcvList", &x.rcvList)
 	m.Save("rcvBufSize", &x.rcvBufSize)
@@ -44,6 +45,7 @@ func (x *endpoint) save(m state.Map) {
 func (x *endpoint) load(m state.Map) {
 	m.Load("TransportEndpointInfo", &x.TransportEndpointInfo)
 	m.Load("waiterQueue", &x.waiterQueue)
+	m.Load("uniqueID", &x.uniqueID)
 	m.Load("rcvReady", &x.rcvReady)
 	m.Load("rcvList", &x.rcvList)
 	m.Load("rcvBufSize", &x.rcvBufSize)

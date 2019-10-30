@@ -99,6 +99,7 @@ func (x *endpoint) save(m state.Map) {
 	m.SaveValue("acceptedChan", acceptedChan)
 	m.Save("EndpointInfo", &x.EndpointInfo)
 	m.Save("waiterQueue", &x.waiterQueue)
+	m.Save("uniqueID", &x.uniqueID)
 	m.Save("rcvList", &x.rcvList)
 	m.Save("rcvClosed", &x.rcvClosed)
 	m.Save("rcvBufSize", &x.rcvBufSize)
@@ -148,6 +149,7 @@ func (x *endpoint) save(m state.Map) {
 func (x *endpoint) load(m state.Map) {
 	m.Load("EndpointInfo", &x.EndpointInfo)
 	m.LoadWait("waiterQueue", &x.waiterQueue)
+	m.Load("uniqueID", &x.uniqueID)
 	m.LoadWait("rcvList", &x.rcvList)
 	m.Load("rcvClosed", &x.rcvClosed)
 	m.Load("rcvBufSize", &x.rcvBufSize)
