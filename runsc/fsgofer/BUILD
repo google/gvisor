@@ -6,6 +6,8 @@ go_library(
     name = "fsgofer",
     srcs = [
         "fsgofer.go",
+        "fsgofer_amd64_unsafe.go",
+        "fsgofer_arm64_unsafe.go",
         "fsgofer_unsafe.go",
     ],
     importpath = "gvisor.dev/gvisor/runsc/fsgofer",
