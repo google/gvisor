@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -310,6 +311,15 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, reusePo
 	// endpointsMap. This will allow us to remove endpoint from the array fast.
 	ep.endpointsMap[t] = len(ep.endpointsArr)
 	ep.endpointsArr = append(ep.endpointsArr, t)
+
+	// ep.endpointsArr is sorted by endpoint unique IDs, so that endpoints
+	// can be restored in the same order.
+	sort.Slice(ep.endpointsArr, func(i, j int) bool {
+		return ep.endpointsArr[i].UniqueID() < ep.endpointsArr[j].UniqueID()
+	})
+	for i, e := range ep.endpointsArr {
+		ep.endpointsMap[e] = i
+	}
 	return nil
 }
 

@@ -60,6 +60,9 @@ const (
 // TransportEndpoint is the interface that needs to be implemented by transport
 // protocol (e.g., tcp, udp) endpoints that can handle packets.
 type TransportEndpoint interface {
+	// UniqueID returns an unique ID for this transport endpoint.
+	UniqueID() uint64
+
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint.
 	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
