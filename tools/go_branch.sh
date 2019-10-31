@@ -17,9 +17,9 @@
 set -eo pipefail
 
 # Discovery the package name from the go.mod file.
-declare -r gomod="$(pwd)/go.mod"
-declare -r module=$(cat "${gomod}" | grep -E "^module" | cut -d' ' -f2)
-declare -r gosum="$(pwd)/go.sum"
+declare -r module=$(cat go.mod | grep -E "^module" | cut -d' ' -f2)
+declare -r origpwd=$(pwd)
+declare -r othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
 
 # Check that gopath has been built.
 declare -r gopath_dir="$(pwd)/bazel-bin/gopath/src/${module}"
@@ -65,10 +65,22 @@ git checkout -b go "${go_branch}"
 git merge --no-commit --strategy ours ${head} || \
   git merge --allow-unrelated-histories --no-commit --strategy ours ${head}
 
-# Sync the entire gopath_dir and go.mod.
-rsync --recursive --verbose --delete --exclude .git --exclude README.md -L "${gopath_dir}/" .
-cp "${gomod}" .
-cp "${gosum}" .
+# Sync the entire gopath_dir.
+rsync --recursive --verbose --delete --exclude .git -L "${gopath_dir}/" .
+
+# Add additional files.
+for file in "${othersrc[@]}"; do
+  cp "${origpwd}"/"${file}" .
+done
+
+# Construct a new README.md.
+cat > README.md <<EOF
+# gVisor
+
+This branch is a synthetic branch, containing only Go sources, that is
+compatible with standard Go tools. See the `master` branch for authoritative
+sources and tests.
+EOF
 
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
