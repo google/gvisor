@@ -139,7 +139,7 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	used := d.capViews(n, BufConfig)
-	vv := buffer.NewVectorisedView(n, d.views[:used])
+	vv := buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...))
 	vv.TrimFront(d.e.hdrSize)
 
 	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
@@ -293,7 +293,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		}
 
 		used := d.capViews(k, int(n), BufConfig)
-		vv := buffer.NewVectorisedView(int(n), d.views[k][:used])
+		vv := buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...))
 		vv.TrimFront(d.e.hdrSize)
 		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
 
