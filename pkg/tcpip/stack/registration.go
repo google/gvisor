@@ -65,10 +65,14 @@ type TransportEndpoint interface {
 
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint.
+	//
+	// HandlePacket takes ownership of vv.
 	HandlePacket(r *Route, id TransportEndpointID, vv buffer.VectorisedView)
 
 	// HandleControlPacket is called by the stack when new control (e.g.,
 	// ICMP) packets arrive to this transport endpoint.
+	//
+	// HandleControlPacket takes ownership of vv.
 	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, vv buffer.VectorisedView)
 
 	// Close puts the endpoint in a closed state and frees all resources
@@ -94,6 +98,8 @@ type RawTransportEndpoint interface {
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
+	//
+	// HandlePacket takes ownership of packet and netHeader.
 	HandlePacket(r *Route, netHeader buffer.View, packet buffer.VectorisedView)
 }
 
@@ -110,6 +116,8 @@ type PacketEndpoint interface {
 	//
 	// linkHeader may have a length of 0, in which case the PacketEndpoint
 	// should construct its own ethernet header for applications.
+	//
+	// HandlePacket takes ownership of packet and linkHeader.
 	HandlePacket(nicid tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, packet buffer.VectorisedView, linkHeader buffer.View)
 }
 
@@ -160,10 +168,14 @@ type TransportDispatcher interface {
 	// DeliverTransportPacket delivers packets to the appropriate
 	// transport protocol endpoint. It also returns the network layer
 	// header for the enpoint to inspect or pass up the stack.
+	//
+	// DeliverTransportPacket takes ownership of vv and netHeader.
 	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, netHeader buffer.View, vv buffer.VectorisedView)
 
 	// DeliverTransportControlPacket delivers control packets to the
 	// appropriate transport protocol endpoint.
+	//
+	// DeliverTransportControlPacket takes ownership of vv.
 	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, vv buffer.VectorisedView)
 }
 
@@ -237,6 +249,8 @@ type NetworkEndpoint interface {
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint.
+	//
+	// HandlePacket takes ownership of vv.
 	HandlePacket(r *Route, vv buffer.VectorisedView)
 
 	// Close is called when the endpoint is reomved from a stack.
@@ -282,6 +296,8 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing. linkHeader may have
 	// length 0 when the caller does not have ethernet data.
+	//
+	// DeliverNetworkPacket takes ownership of vv and linkHeader.
 	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, vv buffer.VectorisedView, linkHeader buffer.View)
 }
 

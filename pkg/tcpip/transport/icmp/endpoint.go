@@ -31,9 +31,6 @@ type icmpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
-	// views is used as buffer for data when its length is large
-	// enough to store a VectorisedView.
-	views [8]buffer.View `state:"nosave"`
 }
 
 type endpointState int
@@ -767,7 +764,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 		},
 	}
 
-	pkt.data = vv.Clone(pkt.views[:])
+	pkt.data = vv
 
 	e.rcvList.PushBack(pkt)
 	e.rcvBufSize += pkt.data.Size()
