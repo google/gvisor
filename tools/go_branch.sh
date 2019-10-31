@@ -20,6 +20,8 @@ set -eo pipefail
 declare -r gomod="$(pwd)/go.mod"
 declare -r module=$(cat "${gomod}" | grep -E "^module" | cut -d' ' -f2)
 declare -r gosum="$(pwd)/go.sum"
+declare -r license="$(pwd)/LICENSE"
+declare -r authors="$(pwd)/AUTHORS"
 
 # Check that gopath has been built.
 declare -r gopath_dir="$(pwd)/bazel-bin/gopath/src/${module}"
@@ -67,8 +69,7 @@ git merge --no-commit --strategy ours ${head} || \
 
 # Sync the entire gopath_dir and go.mod.
 rsync --recursive --verbose --delete --exclude .git --exclude README.md -L "${gopath_dir}/" .
-cp "${gomod}" .
-cp "${gosum}" .
+cp "${gomod}" "${gosum}" "${license}" "${authors}" .
 
 # There are a few solitary files that can get left behind due to the way bazel
 # constructs the gopath target. Note that we don't find all Go files here
