@@ -41,10 +41,6 @@ type packet struct {
 	// data holds the actual packet data, including any headers and
 	// payload.
 	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	// views is pre-allocated space to back data. As long as the packet is
-	// made up of fewer than 8 buffer.Views, no extra allocation is
-	// necessary to store packet data.
-	views [8]buffer.View `state:"nosave"`
 	// timestampNS is the unix time at which the packet was received.
 	timestampNS int64
 	// senderAddr is the network address of the sender.
@@ -310,7 +306,7 @@ func (ep *endpoint) HandlePacket(nicid tcpip.NICID, localAddr tcpip.LinkAddress,
 
 	if ep.cooked {
 		// Cooked packets can simply be queued.
-		packet.data = vv.Clone(packet.views[:])
+		packet.data = vv
 	} else {
 		// Raw packets need their ethernet headers prepended before
 		// queueing.
@@ -328,7 +324,7 @@ func (ep *endpoint) HandlePacket(nicid tcpip.NICID, localAddr tcpip.LinkAddress,
 		}
 		combinedVV := buffer.View(ethHeader).ToVectorisedView()
 		combinedVV.Append(vv)
-		packet.data = combinedVV.Clone(packet.views[:])
+		packet.data = combinedVV
 	}
 	packet.timestampNS = ep.stack.NowNanoseconds()
 

@@ -42,10 +42,6 @@ type rawPacket struct {
 	// data holds the actual packet data, including any headers and
 	// payload.
 	data buffer.VectorisedView `state:".(buffer.VectorisedView)"`
-	// views is pre-allocated space to back data. As long as the packet is
-	// made up of fewer than 8 buffer.Views, no extra allocation is
-	// necessary to store packet data.
-	views [8]buffer.View `state:"nosave"`
 	// timestampNS is the unix time at which the packet was received.
 	timestampNS int64
 	// senderAddr is the network address of the sender.
@@ -609,7 +605,7 @@ func (e *endpoint) HandlePacket(route *stack.Route, netHeader buffer.View, vv bu
 
 	combinedVV := netHeader.ToVectorisedView()
 	combinedVV.Append(vv)
-	pkt.data = combinedVV.Clone(pkt.views[:])
+	pkt.data = combinedVV
 	pkt.timestampNS = e.stack.NowNanoseconds()
 
 	e.rcvList.PushBack(pkt)
