@@ -80,13 +80,17 @@ func bluepillHandler(context unsafe.Pointer) {
 			// interrupted KVM. Since we're in a signal handler
 			// currently, all signals are masked and the signal
 			// must have been delivered directly to this thread.
+			timeout := syscall.Timespec{}
 			sig, _, errno := syscall.RawSyscall6(
 				syscall.SYS_RT_SIGTIMEDWAIT,
 				uintptr(unsafe.Pointer(&bounceSignalMask)),
-				0, // siginfo.
-				0, // timeout.
-				8, // sigset size.
+				0,                                 // siginfo.
+				uintptr(unsafe.Pointer(&timeout)), // timeout.
+				8,                                 // sigset size.
 				0, 0)
+			if errno == syscall.EAGAIN {
+				continue
+			}
 			if errno != 0 {
 				throw("error waiting for pending signal")
 			}
