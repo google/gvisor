@@ -31,9 +31,6 @@ type udpPacket struct {
 	senderAddress tcpip.FullAddress
 	data          buffer.VectorisedView `state:".(buffer.VectorisedView)"`
 	timestamp     int64
-	// views is used as buffer for data when its length is large
-	// enough to store a VectorisedView.
-	views [8]buffer.View `state:"nosave"`
 }
 
 // EndpointState represents the state of a UDP endpoint.
@@ -1202,7 +1199,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, vv
 			Port: hdr.SourcePort(),
 		},
 	}
-	pkt.data = vv.Clone(pkt.views[:])
+	pkt.data = vv
 	e.rcvList.PushBack(pkt)
 	e.rcvBufSize += vv.Size()
 
