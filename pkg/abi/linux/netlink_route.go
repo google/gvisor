@@ -331,3 +331,27 @@ const (
 	RTF_GATEWAY = 0x2
 	RTF_UP      = 0x1
 )
+
+// Route message, from include/uapi/linux/rtnetlink.h.
+type RtMsg struct {
+	Family   uint8
+	Dst_len  uint8
+	Src_len  uint8
+	Tos      uint8
+	Table    uint8
+	Protocol uint8
+	Scope    uint8
+	Type     uint8
+	Flags    uint32
+}
+
+// Optional route information, from include/uapi/linux/rtnetlink.h.
+type RtAttr struct {
+	Len  uint16
+	Type uint16
+}
+
+const (
+	SizeofRtMsg  = 0xc
+	SizeofRtAttr = 0x4
+)

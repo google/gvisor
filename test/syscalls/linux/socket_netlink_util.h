@@ -38,6 +38,11 @@ PosixError NetlinkRequestResponse(
     const std::function<void(const struct nlmsghdr* hdr)>& fn,
     bool expect_nlmsgerr);
 
+// Send the passed request and call fn on all response netlink messages.
+PosixError NetlinkRequestResponseSingle(
+    const FileDescriptor& fd, void* request, size_t len,
+    const std::function<void(const struct nlmsghdr* hdr)>& fn);
+
 }  // namespace testing
 }  // namespace gvisor
 
