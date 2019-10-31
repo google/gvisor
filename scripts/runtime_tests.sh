@@ -16,10 +16,10 @@
 
 source $(dirname $0)/common.sh
 
-if [ ! -v RUNTIME ]; then
-  echo 'Must set $RUNTIME' >&2
+if [ ! -v RUNTIME_TEST_NAME ]; then
+  echo 'Must set $RUNTIME_TEST_NAME' >&2
   exit 1
 fi
 
 install_runsc_for_test runtimes
-test_runsc "//test/runtimes:${RUNTIME}_test"
+test_runsc "//test/runtimes:${RUNTIME_TEST_NAME}_test"
