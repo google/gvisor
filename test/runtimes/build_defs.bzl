@@ -52,6 +52,8 @@ def runtime_test(
         tags = [
             # Requires docker and runsc to be configured before the test runs.
             "local",
+            # Don't include test target in wildcard target patterns.
+            "manual",
         ],
     )
 
