@@ -42,8 +42,35 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 )
 
-// DefaultTimeout is a resonable timeout value for most applications.
-const DefaultTimeout = 3 * time.Minute
+// Opts configures the watchdog.
+type Opts struct {
+	// TaskTimeout is the amount of time to allow a task to execute the
+	// same syscall without blocking before it's declared stuck.
+	TaskTimeout time.Duration
+
+	// TaskTimeoutAction indicates what action to take when a stuck tasks
+	// is detected.
+	TaskTimeoutAction Action
+
+	// StartupTimeout is the amount of time to allow between watchdog
+	// creation and calling watchdog.Start.
+	StartupTimeout time.Duration
+
+	// StartupTimeoutAction indicates what action to take when
+	// watchdog.Start is not called within the timeout.
+	StartupTimeoutAction Action
+}
+
+// DefaultOpts is a default set of options for the watchdog.
+var DefaultOpts = Opts{
+	// Task timeout.
+	TaskTimeout:       3 * time.Minute,
+	TaskTimeoutAction: LogWarning,
+
+	// Startup timeout.
+	StartupTimeout:       30 * time.Second,
+	StartupTimeoutAction: LogWarning,
+}
 
 // descheduleThreshold is the amount of time scheduling needs to be off before the entire wait period
 // is discounted from task's last update time. It's set high enough that small scheduling delays won't
@@ -61,6 +88,7 @@ type Action int
 const (
 	// LogWarning logs warning message followed by stack trace.
 	LogWarning Action = iota
+
 	// Panic will do the same logging as LogWarning and panic().
 	Panic
 )
@@ -80,16 +108,12 @@ func (a Action) String() string {
 // Watchdog is the main watchdog class. It controls a goroutine that periodically
 // analyses all tasks and reports if any of them appear to be stuck.
 type Watchdog struct {
+	// Configuration options are embedded.
+	Opts
+
 	// period indicates how often to check all tasks. It's calculated based on
-	// 'taskTimeout'.
+	// opts.TaskTimeout.
 	period time.Duration
-
-	// taskTimeout is the amount of time to allow a task to execute the same syscall
-	// without blocking before it's declared stuck.
-	taskTimeout time.Duration
-
-	// timeoutAction indicates what action to take when a stuck tasks is detected.
-	timeoutAction Action
 
 	// k is where the tasks come from.
 	k *kernel.Kernel
@@ -113,8 +137,12 @@ type Watchdog struct {
 	// mu protects the fields below.
 	mu sync.Mutex
 
-	// started is true if the watchdog has been started before.
-	started bool
+	// running is true if the watchdog is running.
+	running bool
+
+	// startCalled is true if Start has ever been called. It remains true
+	// even if Stop is called.
+	startCalled bool
 }
 
 type offender struct {
@@ -122,56 +150,79 @@ type offender struct {
 }
 
 // New creates a new watchdog.
-func New(k *kernel.Kernel, taskTimeout time.Duration, a Action) *Watchdog {
-	// 4 is arbitrary, just don't want to prolong 'taskTimeout' too much.
-	period := taskTimeout / 4
-	return &Watchdog{
-		k:             k,
-		period:        period,
-		taskTimeout:   taskTimeout,
-		timeoutAction: a,
-		offenders:     make(map[*kernel.Task]*offender),
-		stop:          make(chan struct{}),
-		done:          make(chan struct{}),
+func New(k *kernel.Kernel, opts Opts) *Watchdog {
+	// 4 is arbitrary, just don't want to prolong 'TaskTimeout' too much.
+	period := opts.TaskTimeout / 4
+	w := &Watchdog{
+		Opts:      opts,
+		k:         k,
+		period:    period,
+		offenders: make(map[*kernel.Task]*offender),
+		stop:      make(chan struct{}),
+		done:      make(chan struct{}),
 	}
+
+	// Handle StartupTimeout if it exists.
+	if w.StartupTimeout > 0 {
+		log.Infof("Watchdog waiting %v for startup", w.StartupTimeout)
+		go w.waitForStart() // S/R-SAFE: watchdog is stopped buring save and restarted after restore.
+	}
+
+	return w
 }
 
 // Start starts the watchdog.
 func (w *Watchdog) Start() {
-	if w.taskTimeout == 0 {
-		log.Infof("Watchdog disabled")
-		return
-	}
-
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.started {
+	w.startCalled = true
+
+	if w.running {
 		return
 	}
 
+	if w.TaskTimeout == 0 {
+		log.Infof("Watchdog task timeout disabled")
+		return
+	}
 	w.lastRun = w.k.MonotonicClock().Now()
 
-	log.Infof("Starting watchdog, period: %v, timeout: %v, action: %v", w.period, w.taskTimeout, w.timeoutAction)
+	log.Infof("Starting watchdog, period: %v, timeout: %v, action: %v", w.period, w.TaskTimeout, w.TaskTimeoutAction)
 	go w.loop() // S/R-SAFE: watchdog is stopped during save and restarted after restore.
-	w.started = true
+	w.running = true
 }
 
 // Stop requests the watchdog to stop and wait for it.
 func (w *Watchdog) Stop() {
-	if w.taskTimeout == 0 {
+	if w.TaskTimeout == 0 {
 		return
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if !w.started {
+	if !w.running {
 		return
 	}
 	log.Infof("Stopping watchdog")
 	w.stop <- struct{}{}
 	<-w.done
-	w.started = false
+	w.running = false
 	log.Infof("Watchdog stopped")
+}
+
+// waitForStart waits for Start to be called and takes action if it does not
+// happen within the startup timeout.
+func (w *Watchdog) waitForStart() {
+	<-time.After(w.StartupTimeout)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.startCalled {
+		// We are fine.
+		return
+	}
+	var buf bytes.Buffer
+	buf.WriteString("Watchdog.Start() not called within %s:\n")
+	w.doAction(w.StartupTimeoutAction, false, &buf)
 }
 
 // loop is the main watchdog routine. It only returns when 'Stop()' is called.
@@ -202,7 +253,7 @@ func (w *Watchdog) runTurn() {
 
 	select {
 	case <-done:
-	case <-time.After(w.taskTimeout):
+	case <-time.After(w.TaskTimeout):
 		// Report if the watchdog is not making progress.
 		// No one is wathching the watchdog watcher though.
 		w.reportStuckWatchdog()
@@ -231,7 +282,7 @@ func (w *Watchdog) runTurn() {
 		if tsched.State == kernel.TaskGoroutineRunningSys {
 			lastUpdateTime := ktime.FromNanoseconds(int64(tsched.Timestamp * uint64(linux.ClockTick)))
 			elapsed := now.Sub(lastUpdateTime) - discount
-			if elapsed > w.taskTimeout {
+			if elapsed > w.TaskTimeout {
 				tc, ok := w.offenders[t]
 				if !ok {
 					// New stuck task detected.
@@ -261,28 +312,34 @@ func (w *Watchdog) report(offenders map[*kernel.Task]*offender, newTaskFound boo
 		tid := w.k.TaskSet().Root.IDOfTask(t)
 		buf.WriteString(fmt.Sprintf("\tTask tid: %v (%#x), entered RunSys state %v ago.\n", tid, uint64(tid), now.Sub(o.lastUpdateTime)))
 	}
+
 	buf.WriteString("Search for '(*Task).run(0x..., 0x<tid>)' in the stack dump to find the offending goroutine")
-	w.onStuckTask(newTaskFound, &buf)
+
+	// Dump stack only if a new task is detected or if it sometime has
+	// passed since the last time a stack dump was generated.
+	skipStack := newTaskFound || time.Since(w.lastStackDump) >= stackDumpSameTaskPeriod
+	w.doAction(w.TaskTimeoutAction, skipStack, &buf)
 }
 
 func (w *Watchdog) reportStuckWatchdog() {
 	var buf bytes.Buffer
 	buf.WriteString("Watchdog goroutine is stuck:\n")
-	w.onStuckTask(true, &buf)
+	w.doAction(w.TaskTimeoutAction, false, &buf)
 }
 
-func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
-	switch w.timeoutAction {
+// doAction will take the given action. If the action is LogWarnind and
+// skipStack is true, then the stack printing will be skipped.
+func (w *Watchdog) doAction(action Action, skipStack bool, msg *bytes.Buffer) {
+	switch action {
 	case LogWarning:
-		// Dump stack only if a new task is detected or if it sometime has passed since
-		// the last time a stack dump was generated.
-		if !newTaskFound && time.Since(w.lastStackDump) < stackDumpSameTaskPeriod {
+		if skipStack {
 			msg.WriteString("\n...[stack dump skipped]...")
 			log.Warningf(msg.String())
-		} else {
-			log.TracebackAll(msg.String())
-			w.lastStackDump = time.Now()
+			return
+
 		}
+		log.TracebackAll(msg.String())
+		w.lastStackDump = time.Now()
 
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
@@ -301,5 +358,8 @@ func (w *Watchdog) onStuckTask(newTaskFound bool, msg *bytes.Buffer) {
 		case <-time.After(1 * time.Second):
 		}
 		panic(fmt.Sprintf("Stack for running G's are skipped while panicking.\n%s", msg.String()))
+	default:
+		panic(fmt.Sprintf("Unknown watchdog action %v", action))
+
 	}
 }
