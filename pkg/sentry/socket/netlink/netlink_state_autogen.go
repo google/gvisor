@@ -18,6 +18,7 @@ func (x *Socket) save(m state.Map) {
 	m.Save("bound", &x.bound)
 	m.Save("portID", &x.portID)
 	m.Save("sendBufferSize", &x.sendBufferSize)
+	m.Save("passcred", &x.passcred)
 }
 
 func (x *Socket) afterLoad() {}
@@ -31,8 +32,19 @@ func (x *Socket) load(m state.Map) {
 	m.Load("bound", &x.bound)
 	m.Load("portID", &x.portID)
 	m.Load("sendBufferSize", &x.sendBufferSize)
+	m.Load("passcred", &x.passcred)
+}
+
+func (x *kernelSCM) beforeSave() {}
+func (x *kernelSCM) save(m state.Map) {
+	x.beforeSave()
+}
+
+func (x *kernelSCM) afterLoad() {}
+func (x *kernelSCM) load(m state.Map) {
 }
 
 func init() {
 	state.Register("netlink.Socket", (*Socket)(nil), state.Fns{Save: (*Socket).save, Load: (*Socket).load})
+	state.Register("netlink.kernelSCM", (*kernelSCM)(nil), state.Fns{Save: (*kernelSCM).save, Load: (*kernelSCM).load})
 }
