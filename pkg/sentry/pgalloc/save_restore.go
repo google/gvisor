@@ -16,6 +16,7 @@ package pgalloc
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"runtime"
@@ -29,7 +30,7 @@ import (
 )
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(w io.Writer) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w io.Writer) error {
 	// Wait for reclaim.
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -78,10 +79,10 @@ func (f *MemoryFile) SaveTo(w io.Writer) error {
 	}
 
 	// Save metadata.
-	if err := state.Save(w, &f.fileSize, nil); err != nil {
+	if err := state.Save(ctx, w, &f.fileSize, nil); err != nil {
 		return err
 	}
-	if err := state.Save(w, &f.usage, nil); err != nil {
+	if err := state.Save(ctx, w, &f.usage, nil); err != nil {
 		return err
 	}
 
@@ -114,9 +115,9 @@ func (f *MemoryFile) SaveTo(w io.Writer) error {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(r io.Reader) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r io.Reader) error {
 	// Load metadata.
-	if err := state.Load(r, &f.fileSize, nil); err != nil {
+	if err := state.Load(ctx, r, &f.fileSize, nil); err != nil {
 		return err
 	}
 	if err := f.file.Truncate(f.fileSize); err != nil {
@@ -124,7 +125,7 @@ func (f *MemoryFile) LoadFrom(r io.Reader) error {
 	}
 	newMappings := make([]uintptr, f.fileSize>>chunkShift)
 	f.mappings.Store(newMappings)
-	if err := state.Load(r, &f.usage, nil); err != nil {
+	if err := state.Load(ctx, r, &f.usage, nil); err != nil {
 		return err
 	}
 

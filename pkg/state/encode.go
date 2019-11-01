@@ -16,6 +16,7 @@ package state
 
 import (
 	"container/list"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -38,6 +39,9 @@ type queuedObject struct {
 // The encoding process is a breadth-first traversal of the object graph. The
 // inherent races and dependencies are much simpler than the decode case.
 type encodeState struct {
+	// ctx is the encode context.
+	ctx context.Context
+
 	// lastID is the last object ID.
 	//
 	// See idsByObject for context. Because of the special zero encoding
