@@ -12,10 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package context defines the sentry's Context type.
+// Package context defines an internal context type.
+//
+// The given Context conforms to the standard Go context, but mandates
+// additional methods that are specific to the kernel internals. Note however,
+// that the Context described by this package carries additional constraints
+// regarding concurrent access and retaining beyond the scope of a call.
+//
+// See the Context type for complete details.
 package context
 
 import (
+	"context"
+	"time"
+
 	"gvisor.dev/gvisor/pkg/amutex"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -59,6 +69,7 @@ func ThreadGroupIDFromContext(ctx Context) (tgid int32, ok bool) {
 type Context interface {
 	log.Logger
 	amutex.Sleeper
+	context.Context
 
 	// UninterruptibleSleepStart indicates the beginning of an uninterruptible
 	// sleep state (equivalent to Linux's TASK_UNINTERRUPTIBLE). If deactivate
@@ -72,32 +83,10 @@ type Context interface {
 	// AddressSpace is activated. Normally activate is the same value as the
 	// deactivate parameter passed to UninterruptibleSleepStart.
 	UninterruptibleSleepFinish(activate bool)
-
-	// Value returns the value associated with this Context for key, or nil if
-	// no value is associated with key. Successive calls to Value with the same
-	// key returns the same result.
-	//
-	// A key identifies a specific value in a Context. Functions that wish to
-	// retrieve values from Context typically allocate a key in a global
-	// variable then use that key as the argument to Context.Value. A key can
-	// be any type that supports equality; packages should define keys as an
-	// unexported type to avoid collisions.
-	Value(key interface{}) interface{}
 }
 
-type logContext struct {
-	log.Logger
-	NoopSleeper
-}
-
-// Value implements Context.Value.
-func (logContext) Value(key interface{}) interface{} {
-	return nil
-}
-
-// NoopSleeper is a noop implementation of amutex.Sleeper and
-// Context.UninterruptibleSleep* methods for anonymous embedding in other types
-// that do not want to notify kernel.Task about sleeps.
+// NoopSleeper is a noop implementation of amutex.Sleeper and UninterruptibleSleep
+// methods for anonymous embedding in other types that do not implement sleeps.
 type NoopSleeper struct {
 	amutex.NoopSleeper
 }
@@ -107,6 +96,32 @@ func (NoopSleeper) UninterruptibleSleepStart(bool) {}
 
 // UninterruptibleSleepFinish does nothing.
 func (NoopSleeper) UninterruptibleSleepFinish(bool) {}
+
+// Deadline returns zero values, meaning no deadline.
+func (NoopSleeper) Deadline() (time.Time, bool) {
+	return time.Time{}, false
+}
+
+// Done returns nil.
+func (NoopSleeper) Done() <-chan struct{} {
+	return nil
+}
+
+// Err returns nil.
+func (NoopSleeper) Err() error {
+	return nil
+}
+
+// logContext implements basic logging.
+type logContext struct {
+	log.Logger
+	NoopSleeper
+}
+
+// Value implements Context.Value.
+func (logContext) Value(key interface{}) interface{} {
+	return nil
+}
 
 // bgContext is the context returned by context.Background.
 var bgContext = &logContext{Logger: log.Log()}
