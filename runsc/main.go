@@ -46,6 +46,8 @@ var (
 	logFormat   = flag.String("log-format", "text", "log format: text (default), json, or json-k8s.")
 	debug       = flag.Bool("debug", false, "enable debug logging.")
 	showVersion = flag.Bool("version", false, "show version and exit.")
+	// TODO(gvisor.dev/issue/193): support systemd cgroups
+	systemdCgroup = flag.Bool("systemd-cgroup", false, "Use systemd for cgroups. NOT SUPPORTED.")
 
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
@@ -134,6 +136,12 @@ func main() {
 		fmt.Fprintf(os.Stdout, "runsc version %s\n", version)
 		fmt.Fprintf(os.Stdout, "spec: %s\n", specutils.Version)
 		os.Exit(0)
+	}
+
+	// TODO(gvisor.dev/issue/193): support systemd cgroups
+	if *systemdCgroup {
+		fmt.Fprintln(os.Stderr, "systemd cgroup flag passed, but systemd cgroups not supported. See gvisor.dev/issue/193")
+		os.Exit(1)
 	}
 
 	var errorLogger io.Writer
