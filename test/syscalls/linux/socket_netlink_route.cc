@@ -195,7 +195,8 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(SO_DOMAIN, IsEqual(AF_NETLINK),
                         absl::StrFormat("AF_NETLINK (%d)", AF_NETLINK)),
         std::make_tuple(SO_PROTOCOL, IsEqual(NETLINK_ROUTE),
-                        absl::StrFormat("NETLINK_ROUTE (%d)", NETLINK_ROUTE))));
+                        absl::StrFormat("NETLINK_ROUTE (%d)", NETLINK_ROUTE)),
+        std::make_tuple(SO_PASSCRED, IsEqual(0), "0")));
 
 // Validates the reponses to RTM_GETLINK + NLM_F_DUMP.
 void CheckGetLinkResponse(const struct nlmsghdr* hdr, int seq, int port) {
@@ -690,6 +691,113 @@ TEST(NetlinkRouteTest, RecvmsgTruncPeek) {
       type = hdr->nlmsg_type;
     }
   } while (type != NLMSG_DONE && type != NLMSG_ERROR);
+}
+
+// No SCM_CREDENTIALS are received without SO_PASSCRED set.
+TEST(NetlinkRouteTest, NoPasscredNoCreds) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  ASSERT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_PASSCRED, &kSockOptOff,
+                         sizeof(kSockOptOff)),
+              SyscallSucceeds());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req;
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETADDR;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rgm.rtgen_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  iov.iov_base = NULL;
+  iov.iov_len = 0;
+
+  char control[CMSG_SPACE(sizeof(struct ucred))] = {};
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  // Note: This test assumes at least one message is returned by the
+  // RTM_GETADDR request.
+  ASSERT_THAT(RetryEINTR(recvmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  // No control messages.
+  EXPECT_EQ(CMSG_FIRSTHDR(&msg), nullptr);
+}
+
+// SCM_CREDENTIALS are received with SO_PASSCRED set.
+TEST(NetlinkRouteTest, PasscredCreds) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+
+  ASSERT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_PASSCRED, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtgenmsg rgm;
+  };
+
+  constexpr uint32_t kSeq = 12345;
+
+  struct request req;
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETADDR;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rgm.rtgen_family = AF_UNSPEC;
+
+  struct iovec iov = {};
+  iov.iov_base = &req;
+  iov.iov_len = sizeof(req);
+
+  struct msghdr msg = {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+
+  ASSERT_THAT(RetryEINTR(sendmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  iov.iov_base = NULL;
+  iov.iov_len = 0;
+
+  char control[CMSG_SPACE(sizeof(struct ucred))] = {};
+  msg.msg_control = control;
+  msg.msg_controllen = sizeof(control);
+
+  // Note: This test assumes at least one message is returned by the
+  // RTM_GETADDR request.
+  ASSERT_THAT(RetryEINTR(recvmsg)(fd.get(), &msg, 0), SyscallSucceeds());
+
+  struct ucred creds;
+  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  ASSERT_NE(cmsg, nullptr);
+  ASSERT_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(creds)));
+  ASSERT_EQ(cmsg->cmsg_level, SOL_SOCKET);
+  ASSERT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+
+  memcpy(&creds, CMSG_DATA(cmsg), sizeof(creds));
+
+  // The peer is the kernel, which is "PID" 0.
+  EXPECT_EQ(creds.pid, 0);
+  // The kernel identifies as root. Also allow nobody in case this test is
+  // running in a userns without root mapped.
+  EXPECT_THAT(creds.uid, AnyOf(Eq(0), Eq(65534)));
+  EXPECT_THAT(creds.gid, AnyOf(Eq(0), Eq(65534)));
 }
 
 }  // namespace
