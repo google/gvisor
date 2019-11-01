@@ -453,7 +453,11 @@ func (cs *connState) initializeChannels() (err error) {
 		go func() { // S/R-SAFE: Server side.
 			defer cs.channelWg.Done()
 			if err := res.service(cs); err != nil {
-				log.Warningf("p9.channel.service: %v", err)
+				// Don't log flipcall.ShutdownErrors, which we expect to be
+				// returned during server shutdown.
+				if _, ok := err.(flipcall.ShutdownError); !ok {
+					log.Warningf("p9.channel.service: %v", err)
+				}
 			}
 		}()
 	}
