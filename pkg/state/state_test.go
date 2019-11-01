@@ -16,6 +16,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"math"
 	"reflect"
@@ -46,7 +47,7 @@ func runTest(t *testing.T, tests []TestCase) {
 			saveBuffer := &bytes.Buffer{}
 			saveObjectPtr := reflect.New(reflect.TypeOf(root))
 			saveObjectPtr.Elem().Set(reflect.ValueOf(root))
-			if err := Save(saveBuffer, saveObjectPtr.Interface(), nil); err != nil && !test.Fail {
+			if err := Save(context.Background(), saveBuffer, saveObjectPtr.Interface(), nil); err != nil && !test.Fail {
 				t.Errorf("    FAIL: Save failed unexpectedly: %v", err)
 				continue
 			} else if err != nil {
@@ -56,7 +57,7 @@ func runTest(t *testing.T, tests []TestCase) {
 
 			// Load a new copy of the object.
 			loadObjectPtr := reflect.New(reflect.TypeOf(root))
-			if err := Load(bytes.NewReader(saveBuffer.Bytes()), loadObjectPtr.Interface(), nil); err != nil && !test.Fail {
+			if err := Load(context.Background(), bytes.NewReader(saveBuffer.Bytes()), loadObjectPtr.Interface(), nil); err != nil && !test.Fail {
 				t.Errorf("    FAIL: Load failed unexpectedly: %v", err)
 				continue
 			} else if err != nil {
@@ -624,7 +625,7 @@ func BenchmarkEncoding(b *testing.B) {
 	bs := buildObject(b.N)
 	var stats Stats
 	b.StartTimer()
-	if err := Save(ioutil.Discard, bs, &stats); err != nil {
+	if err := Save(context.Background(), ioutil.Discard, bs, &stats); err != nil {
 		b.Errorf("save failed: %v", err)
 	}
 	b.StopTimer()
@@ -638,12 +639,12 @@ func BenchmarkDecoding(b *testing.B) {
 	bs := buildObject(b.N)
 	var newBS benchStruct
 	buf := &bytes.Buffer{}
-	if err := Save(buf, bs, nil); err != nil {
+	if err := Save(context.Background(), buf, bs, nil); err != nil {
 		b.Errorf("save failed: %v", err)
 	}
 	var stats Stats
 	b.StartTimer()
-	if err := Load(buf, &newBS, &stats); err != nil {
+	if err := Load(context.Background(), buf, &newBS, &stats); err != nil {
 		b.Errorf("load failed: %v", err)
 	}
 	b.StopTimer()
