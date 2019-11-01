@@ -300,7 +300,9 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create a watchdog.
-	dog := watchdog.New(k, watchdog.DefaultTimeout, args.Conf.WatchdogAction)
+	dogOpts := watchdog.DefaultOpts
+	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
+	dog := watchdog.New(k, dogOpts)
 
 	procArgs, err := newProcess(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
 	if err != nil {
