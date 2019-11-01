@@ -50,6 +50,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"reflect"
@@ -86,9 +87,10 @@ func UnwrapErrState(err error) error {
 }
 
 // Save saves the given object state.
-func Save(w io.Writer, rootPtr interface{}, stats *Stats) error {
+func Save(ctx context.Context, w io.Writer, rootPtr interface{}, stats *Stats) error {
 	// Create the encoding state.
 	es := &encodeState{
+		ctx:         ctx,
 		idsByObject: make(map[uintptr]uint64),
 		w:           w,
 		stats:       stats,
@@ -101,9 +103,10 @@ func Save(w io.Writer, rootPtr interface{}, stats *Stats) error {
 }
 
 // Load loads a checkpoint.
-func Load(r io.Reader, rootPtr interface{}, stats *Stats) error {
+func Load(ctx context.Context, r io.Reader, rootPtr interface{}, stats *Stats) error {
 	// Create the decoding state.
 	ds := &decodeState{
+		ctx:         ctx,
 		objectsByID: make(map[uint64]*objectState),
 		deferred:    make(map[uint64]*pb.Object),
 		r:           r,
