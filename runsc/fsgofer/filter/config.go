@@ -25,11 +25,7 @@ import (
 
 // allowedSyscalls is the set of syscalls executed by the gofer.
 var allowedSyscalls = seccomp.SyscallRules{
-	syscall.SYS_ACCEPT: {},
-	syscall.SYS_ARCH_PRCTL: []seccomp.Rule{
-		{seccomp.AllowValue(linux.ARCH_GET_FS)},
-		{seccomp.AllowValue(linux.ARCH_SET_FS)},
-	},
+	syscall.SYS_ACCEPT:        {},
 	syscall.SYS_CLOCK_GETTIME: {},
 	syscall.SYS_CLONE: []seccomp.Rule{
 		{
@@ -155,7 +151,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 	syscall.SYS_MPROTECT:   {},
 	syscall.SYS_MUNMAP:     {},
 	syscall.SYS_NANOSLEEP:  {},
-	syscall.SYS_NEWFSTATAT: {},
 	syscall.SYS_OPENAT:     {},
 	syscall.SYS_PPOLL:      {},
 	syscall.SYS_PREAD64:    {},
