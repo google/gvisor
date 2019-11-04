@@ -364,7 +364,7 @@ var AMD64 = &kernel.SyscallTable{
 		321: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
 		322: syscalls.Supported("execveat", Execveat),
 		323: syscalls.ErrorWithEvent("userfaultfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
-		324: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(b/118904897)
+		324: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(gvisor.dev/issue/267)
 		325: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 
 		// Syscalls after 325 are "backports" from versions of Linux after 4.4.

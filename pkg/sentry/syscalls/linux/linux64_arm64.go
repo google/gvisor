@@ -297,7 +297,7 @@ var ARM64 = &kernel.SyscallTable{
 		280: syscalls.CapError("bpf", linux.CAP_SYS_ADMIN, "", nil),
 		281: syscalls.ErrorWithEvent("execveat", syserror.ENOSYS, "", []string{"gvisor.dev/issue/265"}),    // TODO(b/118901836)
 		282: syscalls.ErrorWithEvent("userfaultfd", syserror.ENOSYS, "", []string{"gvisor.dev/issue/266"}), // TODO(b/118906345)
-		283: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(b/118904897)
+		283: syscalls.ErrorWithEvent("membarrier", syserror.ENOSYS, "", []string{"gvisor.dev/issue/267"}),  // TODO(gvisor.dev/issue/267)
 		284: syscalls.PartiallySupported("mlock2", Mlock2, "Stub implementation. The sandbox lacks appropriate permissions.", nil),
 		285: syscalls.ErrorWithEvent("copy_file_range", syserror.ENOSYS, "", nil),
 		286: syscalls.Supported("preadv2", Preadv2),
