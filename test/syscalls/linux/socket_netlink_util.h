@@ -17,7 +17,6 @@
 
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
-#include <linux/rtnetlink.h>
 
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -25,8 +24,8 @@
 namespace gvisor {
 namespace testing {
 
-// Returns a bound NETLINK_ROUTE socket.
-PosixErrorOr<FileDescriptor> NetlinkBoundSocket();
+// Returns a bound netlink socket.
+PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol);
 
 // Returns the port ID of the passed socket.
 PosixErrorOr<uint32_t> NetlinkPortID(int fd);

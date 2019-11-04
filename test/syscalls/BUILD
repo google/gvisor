@@ -511,7 +511,11 @@ syscall_test(test = "//test/syscalls/linux:socket_ip_unbound_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_netdevice_test")
 
+syscall_test(test = "//test/syscalls/linux:socket_netlink_test")
+
 syscall_test(test = "//test/syscalls/linux:socket_netlink_route_test")
+
+syscall_test(test = "//test/syscalls/linux:socket_netlink_uevent_test")
 
 syscall_test(test = "//test/syscalls/linux:socket_blocking_local_test")
 

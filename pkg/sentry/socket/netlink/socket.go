@@ -54,6 +54,8 @@ const (
 	maxSendBufferSize = 4 << 20 // 4MB
 )
 
+var errNoFilter = syserr.New("no filter attached", linux.ENOENT)
+
 // netlinkSocketDevice is the netlink socket virtual device.
 var netlinkSocketDevice = device.NewAnonDevice()
 
@@ -108,6 +110,12 @@ type Socket struct {
 
 	// passcred indicates if this socket wants SCM credentials.
 	passcred bool
+
+	// filter indicates that this socket has a BPF filter "installed".
+	//
+	// TODO(gvisor.dev/issue/1119): We don't actually support filtering,
+	// this is just bookkeeping for tracking add/remove.
+	filter bool
 }
 
 var _ socket.Socket = (*Socket)(nil)
@@ -398,6 +406,40 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 			s.mu.Lock()
 			s.passcred = passcred != 0
 			s.mu.Unlock()
+			return nil
+
+		case linux.SO_ATTACH_FILTER:
+			// TODO(gvisor.dev/issue/1119): We don't actually
+			// support filtering. If this socket can't ever send
+			// messages, then there is nothing to filter and we can
+			// advertise support. Otherwise, be conservative and
+			// return an error.
+			if s.protocol.CanSend() {
+				socket.SetSockOptEmitUnimplementedEvent(t, name)
+				return syserr.ErrProtocolNotAvailable
+			}
+
+			s.mu.Lock()
+			s.filter = true
+			s.mu.Unlock()
+			return nil
+
+		case linux.SO_DETACH_FILTER:
+			// TODO(gvisor.dev/issue/1119): See above.
+			if s.protocol.CanSend() {
+				socket.SetSockOptEmitUnimplementedEvent(t, name)
+				return syserr.ErrProtocolNotAvailable
+			}
+
+			s.mu.Lock()
+			filter := s.filter
+			s.filter = false
+			s.mu.Unlock()
+
+			if !filter {
+				return errNoFilter
+			}
+
 			return nil
 
 		default:

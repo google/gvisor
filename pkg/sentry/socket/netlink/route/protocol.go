@@ -61,6 +61,11 @@ func (p *Protocol) Protocol() int {
 	return linux.NETLINK_ROUTE
 }
 
+// CanSend implements netlink.Protocol.CanSend.
+func (p *Protocol) CanSend() bool {
+	return true
+}
+
 // dumpLinks handles RTM_GETLINK + NLM_F_DUMP requests.
 func (p *Protocol) dumpLinks(ctx context.Context, hdr linux.NetlinkMessageHeader, data []byte, ms *netlink.MessageSet) *syserr.Error {
 	// NLM_F_DUMP + RTM_GETLINK messages are supposed to include an
