@@ -19,6 +19,7 @@ func (x *Socket) save(m state.Map) {
 	m.Save("portID", &x.portID)
 	m.Save("sendBufferSize", &x.sendBufferSize)
 	m.Save("passcred", &x.passcred)
+	m.Save("filter", &x.filter)
 }
 
 func (x *Socket) afterLoad() {}
@@ -33,6 +34,7 @@ func (x *Socket) load(m state.Map) {
 	m.Load("portID", &x.portID)
 	m.Load("sendBufferSize", &x.sendBufferSize)
 	m.Load("passcred", &x.passcred)
+	m.Load("filter", &x.filter)
 }
 
 func (x *kernelSCM) beforeSave() {}
