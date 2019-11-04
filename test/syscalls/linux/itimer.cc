@@ -267,6 +267,9 @@ int TestSIGPROFFairness(absl::Duration sleep) {
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
 TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
+  // TODO(b/143247272): CPU time accounting is inaccurate for the KVM platform.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   pid_t child;
   int execve_errno;
   auto kill = ASSERT_NO_ERRNO_AND_VALUE(
@@ -288,6 +291,9 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
 TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle_NoRandomSave) {
+  // TODO(b/143247272): CPU time accounting is inaccurate for the KVM platform.
+  SKIP_IF(GvisorPlatform() == Platform::kKVM);
+
   pid_t child;
   int execve_errno;
   auto kill = ASSERT_NO_ERRNO_AND_VALUE(
