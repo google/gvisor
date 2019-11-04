@@ -16,7 +16,6 @@
 
 #include <linux/if_arp.h>
 #include <linux/netlink.h>
-#include <linux/rtnetlink.h>
 
 #include <vector>
 
@@ -27,9 +26,9 @@
 namespace gvisor {
 namespace testing {
 
-PosixErrorOr<FileDescriptor> NetlinkBoundSocket() {
+PosixErrorOr<FileDescriptor> NetlinkBoundSocket(int protocol) {
   FileDescriptor fd;
-  ASSIGN_OR_RETURN_ERRNO(fd, Socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
+  ASSIGN_OR_RETURN_ERRNO(fd, Socket(AF_NETLINK, SOCK_RAW, protocol));
 
   struct sockaddr_nl addr = {};
   addr.nl_family = AF_NETLINK;

@@ -2676,6 +2676,20 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_netlink_test",
+    testonly = 1,
+    srcs = ["socket_netlink.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_test_util",
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
     name = "socket_netlink_route_test",
     testonly = 1,
     srcs = ["socket_netlink_route.cc"],
@@ -2688,6 +2702,21 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_binary(
+    name = "socket_netlink_uevent_test",
+    testonly = 1,
+    srcs = ["socket_netlink_uevent.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_netlink_util",
+        ":socket_test_util",
+        "//test/util:file_descriptor",
+        "//test/util:test_main",
+        "//test/util:test_util",
         "@com_google_googletest//:gtest",
     ],
 )

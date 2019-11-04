@@ -30,6 +30,13 @@ type Protocol interface {
 	// Protocol returns the Linux netlink protocol value.
 	Protocol() int
 
+	// CanSend returns true if this protocol may ever send messages.
+	//
+	// TODO(gvisor.dev/issue/1119): This is a workaround to allow
+	// advertising support for otherwise unimplemented features on sockets
+	// that will never send messages, thus making those features no-ops.
+	CanSend() bool
+
 	// ProcessMessage processes a single message from userspace.
 	//
 	// If err == nil, any messages added to ms will be sent back to the

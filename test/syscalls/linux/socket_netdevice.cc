@@ -68,7 +68,8 @@ TEST(NetdeviceTest, Netmask) {
 
   // Use a netlink socket to get the netmask, which we'll then compare to the
   // netmask obtained via ioctl.
-  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
   uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
 
   struct request {
