@@ -76,16 +76,24 @@ pkg_tar(
 
 genrule(
     name = "deb-version",
+    # Note that runsc must appear in the srcs parameter and not the tools
+    # parameter, otherwise it will not be stamped. This is reasonable, as tools
+    # may be encoded differently in the build graph (cached more aggressively
+    # because they are assumes to be hermetic).
+    srcs = [":runsc"],
     outs = ["version.txt"],
     cmd = "$(location :runsc) -version | grep 'runsc version' | sed 's/^[^0-9]*//' > $@",
     stamp = 1,
-    tools = [":runsc"],
 )
 
 pkg_deb(
     name = "runsc-debian",
     architecture = "amd64",
     data = ":debian-data",
+    # Note that the description_file will be flatten (all newlines removed),
+    # and therefore it is kept to a simple one-line description. The expected
+    # format for debian packages is "short summary\nLonger explanation of
+    # tool." and this is impossible with the flattening.
     description_file = "debian/description",
     homepage = "https://gvisor.dev/",
     maintainer = "The gVisor Authors <gvisor-dev@googlegroups.com>",
