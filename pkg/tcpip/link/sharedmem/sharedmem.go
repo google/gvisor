@@ -273,8 +273,11 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		}
 
 		// Send packet up the stack.
-		eth := header.Ethernet(b)
-		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView(), buffer.View(eth))
+		eth := header.Ethernet(b[:header.EthernetMinimumSize])
+		d.DeliverNetworkPacket(e, eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), tcpip.PacketBuffer{
+			Data:       buffer.View(b[header.EthernetMinimumSize:]).ToVectorisedView(),
+			LinkHeader: buffer.View(eth),
+		})
 	}
 
 	// Clean state.

@@ -16,7 +16,6 @@ package udp
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -44,12 +43,12 @@ func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, netHeader buffer.View, vv buffer.VectorisedView) bool {
+func (f *Forwarder) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) bool {
 	f.handler(&ForwarderRequest{
 		stack: f.stack,
 		route: r,
 		id:    id,
-		vv:    vv,
+		pkt:   pkt,
 	})
 
 	return true
@@ -62,7 +61,7 @@ type ForwarderRequest struct {
 	stack *stack.Stack
 	route *stack.Route
 	id    stack.TransportEndpointID
-	vv    buffer.VectorisedView
+	pkt   tcpip.PacketBuffer
 }
 
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that
@@ -90,7 +89,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	ep.rcvReady = true
 	ep.rcvMu.Unlock()
 
-	ep.HandlePacket(r.route, r.id, r.vv)
+	ep.HandlePacket(r.route, r.id, r.pkt)
 
 	return ep, nil
 }

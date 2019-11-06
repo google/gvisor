@@ -139,10 +139,13 @@ func (d *readVDispatcher) dispatch() (bool, *tcpip.Error) {
 	}
 
 	used := d.capViews(n, BufConfig)
-	vv := buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...))
-	vv.TrimFront(d.e.hdrSize)
+	pkt := tcpip.PacketBuffer{
+		Data:       buffer.NewVectorisedView(n, append([]buffer.View(nil), d.views[:used]...)),
+		LinkHeader: buffer.View(eth),
+	}
+	pkt.Data.TrimFront(d.e.hdrSize)
 
-	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
+	d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, pkt)
 
 	// Prepare e.views for another packet: release used views.
 	for i := 0; i < used; i++ {
@@ -293,9 +296,12 @@ func (d *recvMMsgDispatcher) dispatch() (bool, *tcpip.Error) {
 		}
 
 		used := d.capViews(k, int(n), BufConfig)
-		vv := buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...))
-		vv.TrimFront(d.e.hdrSize)
-		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, vv, buffer.View(eth))
+		pkt := tcpip.PacketBuffer{
+			Data:       buffer.NewVectorisedView(int(n), append([]buffer.View(nil), d.views[k][:used]...)),
+			LinkHeader: buffer.View(eth),
+		}
+		pkt.Data.TrimFront(d.e.hdrSize)
+		d.e.dispatcher.DeliverNetworkPacket(d.e, remote, local, p, pkt)
 
 		// Prepare e.views for another packet: release used views.
 		for i := 0; i < used; i++ {

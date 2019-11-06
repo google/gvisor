@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -60,13 +61,13 @@ type segment struct {
 	xmitTime time.Time `state:".(unixTime)"`
 }
 
-func newSegment(r *stack.Route, id stack.TransportEndpointID, vv buffer.VectorisedView) *segment {
+func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) *segment {
 	s := &segment{
 		refCnt: 1,
 		id:     id,
 		route:  r.Clone(),
 	}
-	s.data = vv.Clone(s.views[:])
+	s.data = pkt.Data.Clone(s.views[:])
 	s.rcvdTime = time.Now()
 	return s
 }

@@ -328,7 +328,9 @@ func TestDADFail(t *testing.T) {
 			// Receive a packet to simulate multiple nodes owning or
 			// attempting to own the same address.
 			hdr := test.makeBuf(addr1)
-			e.Inject(header.IPv6ProtocolNumber, hdr.View().ToVectorisedView())
+			e.InjectInbound(header.IPv6ProtocolNumber, tcpip.PacketBuffer{
+				Data: hdr.View().ToVectorisedView(),
+			})
 
 			stat := test.getStat(s.Stats().ICMP.V6PacketsReceived)
 			if got := stat.Value(); got != 1 {
